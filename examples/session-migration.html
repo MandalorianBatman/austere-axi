@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session storage migration</title>
+<script src="../dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([intro, kpis, flow, options, openQuestion, change, decide], "column", "l")
+intro = Card([CardHeader("Session storage migration", "Move sessions from Redis to Postgres"), introText])
+introText = MarkDownRenderer("Sessions live only in Redis and are lost on failover — last month that logged out **~38k users** twice.
+
+**Goal:** durable sessions with no forced logout, and no extra p99 latency on the auth path.
+
+- Keep the `SessionStore` interface unchanged
+- Cut over behind the `sessions_pg` flag")
+kpis = OverviewCardBlock([kpiUsers, kpiP99, kpiCost])
+kpiUsers = OverviewCardItem("users", Text("text", "Forced logouts / mo"), MetricIndicatorInline("38,214", "last 30 days", {direction: "up", value: 12}))
+kpiP99 = OverviewCardItem("p99", Text("text", "Auth p99"), MetricIndicatorInline("41 ms", "target ≤ 45 ms"))
+kpiCost = OverviewCardItem("cost", Text("text", "Extra storage"), MetricIndicatorInline("$140/mo", "Postgres, 3 replicas"))
+flow = Card([CardHeader("Request path after the change"), flowDiagram])
+flowDiagram = Mermaid("flowchart LR
+  client[Client] --> edge[Edge worker]
+  edge --> api[API]
+  api --> pg[(Postgres)]
+  api -. read-through .-> redis[(Redis)]", "Redis stays as a read-through cache during rollout")
+options = Card([CardHeader("Rollout options"), optionTable, latencyChart])
+optionTable = Table([Col("Option", ["Big bang", "Dual-write"]), Col("Effort", ["2 days", "5 days"]), Col("Downtime", ["~10 min", "none"]), Col("Risk", [riskHigh, riskLow])])
+riskHigh = Tag("high", null, "sm", "danger")
+riskLow = Tag("low", null, "sm", "success")
+latencyChart = BarChart(["p50", "p90", "p99"], [Series("Redis", [4, 11, 38]), Series("Postgres", [6, 15, 44])], "grouped", "Percentile", "ms")
+openQuestion = Callout("warning", "Open question", "Keep Redis as a read-through cache after cutover, or drop it entirely?")
+change = Card([CardHeader("Core change", "src/session/store.ts"), storePatch])
+storePatch = Diff("diff --git a/src/session/store.ts b/src/session/store.ts
+--- a/src/session/store.ts
++++ b/src/session/store.ts
+@@ -12,7 +12,11 @@ export class SessionStore {
+   async get(id: string) {
+-    return this.redis.get(key(id));
++    const cached = await this.redis.get(key(id));
++    if (cached) return cached;
++    const row = await this.pg.sessions.find(id);
++    if (row) await this.redis.set(key(id), row, { ex: TTL });
++    return row;
+   }")
+decide = Card([CardHeader("Your call"), decideForm])
+decideForm = Form("rollout", decideButtons, [strategyField, notesField])
+strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big bang", "One deploy, short maintenance window", "bigbang"), RadioItem("Dual-write", "Two weeks writing to both stores", "dualwrite")]))
+notesField = FormControl("Notes", TextArea("notes", "Anything to change?", 3))
+decideButtons = Buttons([Button("Send decision", @ToAssistant("Decision: rollout strategy"), "primary"), Button("Explain the risk column")])
+</script>
+</body>
+</html>

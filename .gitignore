@@ -1,0 +1,5 @@
+node_modules/
+dist/
+scratch/
+*.export.html
+.DS_Store

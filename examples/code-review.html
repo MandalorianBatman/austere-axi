@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Retry fix review</title>
+<script src="../dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([summary, change, design, followUps], "column", "l")
+summary = Card([CardHeader("Retry fix", "1 file, +4 -1"), facts, why])
+facts = EntityList([{left: "Tests", right: "48 passed"}, {left: "Risk", right: "Low"}, {left: "Touches", right: "src/retry.ts"}])
+why = MarkDownRenderer("Retries fired back-to-back, so a flapping dependency got hammered 3× in ~20 ms. This adds **exponential backoff with jitter** and makes the attempt count configurable.")
+change = Card([CardHeader("Patch"), retryPatch])
+retryPatch = Diff("diff --git a/src/retry.ts b/src/retry.ts
+--- a/src/retry.ts
++++ b/src/retry.ts
+@@ -10,5 +10,8 @@ export async function retry(fn) {
+-  for (let i = 0; i < 3; i++) {
++  for (let i = 0; i < MAX_ATTEMPTS; i++) {
++    if (i > 0) await sleep(backoff(i));
+     try {
+       return await fn();
+     } catch {}
++  }
++  throw new RetryExhausted(MAX_ATTEMPTS);")
+design = Card([CardHeader("Backoff curve"), designTabs])
+designTabs = Tabs([TabItem("chart", "Delay per attempt", [backoffChart]), TabItem("code", "backoff()", [backoffCode])])
+backoffChart = LineChart(["1", "2", "3", "4", "5"], [Series("p50 delay (ms)", [100, 200, 400, 800, 1600]), Series("max with jitter", [150, 300, 600, 1200, 2400])], "linear", "Attempt", "ms")
+backoffCode = CodeBlock("ts", "export function backoff(attempt: number, base = 100): number {
+  const exp = base * 2 ** (attempt - 1);
+  return exp + Math.random() * exp * 0.5; // up to +50% jitter
+}")
+followUps = Buttons([Button("Ship it", @ToAssistant("Ship it"), "primary"), Button("Add a jitter test", @ToAssistant("Add a test for the jitter bounds"), "secondary"), Button("Make base delay configurable", null, "tertiary")])
+</script>
+</body>
+</html>

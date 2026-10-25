@@ -1,0 +1,444 @@
+/* austere-axi runtime styles: page frame, extra components, review layer. */
+
+:root,
+body {
+  --openui-font-body: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --openui-font-heading: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --openui-font-label: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --openui-font-numbers: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --openui-font-code: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --austere-accent: #8fb0ff;
+  --austere-accent-bg: rgba(143, 176, 255, 0.1);
+  --austere-changed: #f2c46d;
+  --austere-queued: #74d3a0;
+  --austere-surface: #1b1b1f;
+  --austere-surface-2: #232328;
+  --austere-line: rgba(255, 255, 255, 0.09);
+  --austere-text: #ececef;
+  --austere-muted: #9d9da6;
+  --austere-add: rgba(63, 185, 120, 0.14);
+  --austere-add-strong: #6fd39b;
+  --austere-del: rgba(240, 96, 96, 0.14);
+  --austere-del-strong: #f08a8a;
+}
+
+html.austere,
+html.austere body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--openui-background, #121214);
+  color: var(--openui-text-neutral-primary, var(--austere-text));
+  font-family: var(--openui-font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html.austere body > script[type="text/openui"],
+html.austere body > noscript {
+  display: none;
+}
+
+.austere-page {
+  box-sizing: border-box;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 40px 24px 96px;
+}
+
+@media (max-width: 640px) {
+  .austere-page {
+    padding: 20px 14px 72px;
+  }
+}
+
+.austere-node {
+  display: contents;
+}
+
+/* OpenUI components assume a border-box reset (their chat shell ships one). */
+.austere-page,
+.austere-page *,
+.austere-page *::before,
+.austere-page *::after,
+.austere-ui,
+.austere-ui * {
+  box-sizing: border-box;
+}
+
+/* The stock "card" variant is borderless (it was made for chat bubbles);
+   on a page, sections need to read as sections. */
+.austere-page .openui-card-card {
+  background: rgba(255, 255, 255, 0.028);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 14px;
+  padding: 22px 24px;
+  gap: var(--openui-space-l, 16px);
+}
+.austere-page .openui-card-card .openui-card-card {
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 16px;
+}
+@media (max-width: 640px) {
+  .austere-page .openui-card-card {
+    padding: 16px 14px;
+    border-radius: 12px;
+  }
+}
+
+/* Long tokens (paths, URLs, symbols) never push a layout wider than its column. */
+.austere-page :where(p, li, td, th, h1, h2, h3, h4, dd, blockquote, figcaption) {
+  overflow-wrap: anywhere;
+}
+.austere-page :where(img, svg, video, canvas) {
+  max-width: 100%;
+}
+
+/* ── Diff ── */
+.austere-diff {
+  width: 100%;
+  min-width: 0;
+  font-family: var(--openui-font-code);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.austere-diff-title {
+  font-family: var(--openui-font-body);
+  font-weight: 600;
+  font-size: 13px;
+  margin: 0 0 8px;
+  color: var(--austere-text);
+}
+.austere-diff-file {
+  border: 1px solid var(--austere-line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.18);
+}
+.austere-diff-file + .austere-diff-file {
+  margin-top: 12px;
+}
+.austere-diff-file-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--austere-line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--austere-text);
+}
+.austere-diff-path {
+  overflow-wrap: anywhere;
+}
+.austere-diff-stat {
+  white-space: nowrap;
+}
+.austere-diff-a {
+  color: var(--austere-add-strong);
+}
+.austere-diff-d {
+  color: var(--austere-del-strong);
+}
+.austere-diff-body {
+  overflow-x: auto;
+}
+.austere-diff table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: max-content;
+}
+.austere-diff td {
+  padding: 0 10px;
+  vertical-align: top;
+  white-space: pre;
+  color: #d6d6dc;
+  border: 0;
+}
+.austere-diff td.austere-diff-no {
+  width: 1%;
+  min-width: 2.5em;
+  text-align: right;
+  color: #6c6c76;
+  user-select: none;
+  padding: 0 6px;
+}
+.austere-diff-sign {
+  display: inline-block;
+  width: 1.2em;
+  user-select: none;
+  color: #7c7c86;
+}
+.austere-diff-add {
+  background: var(--austere-add);
+}
+.austere-diff-add .austere-diff-sign {
+  color: var(--austere-add-strong);
+}
+.austere-diff-del {
+  background: var(--austere-del);
+}
+.austere-diff-del .austere-diff-sign {
+  color: var(--austere-del-strong);
+}
+.austere-diff-hunk td {
+  color: #8fa3c8;
+  background: rgba(143, 176, 255, 0.06);
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.austere-diff-meta td {
+  color: #7c7c86;
+  font-style: italic;
+}
+
+/* ── Mermaid ── */
+.austere-mermaid {
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+}
+.austere-mermaid-svg {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  padding: 8px 0;
+}
+.austere-mermaid-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+.austere-mermaid figcaption {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--austere-muted);
+}
+.austere-render-error {
+  border: 1px solid rgba(240, 96, 96, 0.35);
+  background: var(--austere-del);
+  color: #f3c1c1;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+/* ── Review layer ── */
+html.austere-annotating .austere-page {
+  cursor: crosshair;
+}
+html.austere-annotating .austere-page :where(a, button, input, select, textarea, label, [role]) {
+  cursor: auto;
+}
+.austere-ui {
+  position: static;
+}
+.austere-hover {
+  position: fixed;
+  z-index: 2147483000;
+  pointer-events: none;
+  border: 1.5px solid var(--austere-accent);
+  background: var(--austere-accent-bg);
+  border-radius: 8px;
+  transition: left 60ms ease-out, top 60ms ease-out, width 60ms ease-out, height 60ms ease-out;
+}
+.austere-hover.locked {
+  border-style: solid;
+  box-shadow: 0 0 0 4px rgba(143, 176, 255, 0.12);
+}
+.austere-hover-label {
+  position: absolute;
+  left: -1.5px;
+  top: -22px;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 500 11px/20px var(--openui-font-code);
+  padding: 0 7px;
+  border-radius: 6px 6px 6px 0;
+  background: var(--austere-accent);
+  color: #0d1220;
+}
+.austere-selbtn {
+  position: fixed;
+  z-index: 2147483001;
+  font: 600 12px/1 var(--openui-font-body);
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(143, 176, 255, 0.5);
+  background: #1d2433;
+  color: #dbe5ff;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.austere-pop {
+  position: fixed;
+  z-index: 2147483002;
+  width: min(380px, calc(100vw - 16px));
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--austere-line);
+  background: var(--austere-surface);
+  color: var(--austere-text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  font-family: var(--openui-font-body);
+}
+.austere-pop.sheet {
+  left: 0 !important;
+  right: 0;
+  bottom: 0;
+  top: auto !important;
+  width: 100%;
+  border-radius: 14px 14px 0 0;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+.austere-pop-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.austere-chip {
+  font: 500 11.5px/1 var(--openui-font-code);
+  padding: 5px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--austere-line);
+  background: transparent;
+  color: var(--austere-muted);
+  cursor: pointer;
+}
+.austere-chip.active {
+  color: #0d1220;
+  background: var(--austere-accent);
+  border-color: var(--austere-accent);
+}
+.austere-chip-sep {
+  color: #5c5c66;
+  font-size: 12px;
+}
+.austere-pop-quote {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-left: 2px solid rgba(143, 176, 255, 0.5);
+  color: var(--austere-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  max-height: 4.4em;
+  overflow: hidden;
+}
+.austere-pop textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 72px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #121215;
+  color: var(--austere-text);
+  font: 14px/1.45 var(--openui-font-body);
+  outline: none;
+}
+.austere-pop textarea:focus {
+  border-color: rgba(143, 176, 255, 0.6);
+}
+.austere-pop textarea.shake {
+  animation: austere-shake 0.3s;
+}
+.austere-pop-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.austere-pop-hint {
+  font-size: 11px;
+  color: #6f6f78;
+}
+.austere-pop-actions {
+  display: flex;
+  gap: 6px;
+}
+.austere-pop-actions button {
+  font: 600 12.5px/1 var(--openui-font-body);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--austere-line);
+  background: transparent;
+  color: var(--austere-text);
+  cursor: pointer;
+}
+.austere-pop-actions button.primary {
+  background: var(--austere-accent);
+  border-color: var(--austere-accent);
+  color: #0d1220;
+}
+@media (max-width: 640px) {
+  .austere-pop-hint {
+    display: none;
+  }
+}
+
+.austere-flash {
+  position: absolute;
+  z-index: 2147482999;
+  pointer-events: none;
+  border-radius: 10px;
+  border: 1.5px solid var(--austere-changed);
+  background: rgba(242, 196, 109, 0.1);
+  animation: austere-flash 2.4s ease-out forwards;
+}
+.austere-flash.queued {
+  border-color: var(--austere-queued);
+  background: rgba(116, 211, 160, 0.1);
+  animation-duration: 1.2s;
+}
+@keyframes austere-flash {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes austere-shake {
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+.austere-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 2147483003;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #24242a;
+  border: 1px solid var(--austere-line);
+  color: var(--austere-text);
+  font: 500 13px/1.4 var(--openui-font-body);
+  white-space: pre-wrap;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.4s;
+}
+.austere-toast.out {
+  opacity: 0;
+}
