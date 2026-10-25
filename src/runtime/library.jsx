@@ -81,6 +81,7 @@ export const GROUPS = [
       '- A page is root = Stack([...sections], "column", "l"). Each section is a Card([CardHeader(title, subtitle), ...content]).',
       '- Side by side: Stack([a, b], "row", "m", "stretch", "start", true). Cards in a row share the width.',
       "- Tabs for alternative views, Accordion for detail the reader may skip, Steps for ordered procedures.",
+      "- Card children must match its list; anything else (Accordion, Tag, a Callout row) can sit in a Stack inside the Card, or directly in root's Stack.",
     ],
   },
   {
@@ -111,7 +112,7 @@ export const GROUPS = [
       "MetricIndicatorInline",
     ],
     notes: [
-      '- Table is COLUMN-oriented: Table([Col("Option", names), Col("Effort", efforts), Col("Risk", risks)]). Col data may be components, e.g. [Tag("high", null, "sm", "danger"), ...].',
+      '- Table is COLUMN-oriented: Table([Col("Option", names), Col("Effort", efforts), Col("Risk", risks)]). Col data may mix strings and components, e.g. ["n/a", Tag("high", null, "sm", "danger")]. Cells are plain text and wrap; Col type "number" for figures.',
       "- EntityList for key/value facts; OverviewCardBlock + OverviewCardItem + MetricIndicatorInline for a KPI row.",
       "- EditableTable when the reviewer should correct or fill in values; edits arrive with the next @ToAssistant from its Form.",
       "- Icon names are lucide kebab-case (circle-check, triangle-alert, git-branch).",
@@ -159,7 +160,8 @@ export const GROUPS = [
     ],
     notes: [
       "- Form(name, buttons, fields). Define each FormControl as its own statement. Never nest a Form in a Form.",
-      '- To ask the reviewer to decide: OptionCards or RadioGroup inside a Form whose button is Button("Send decision", @ToAssistant("Decision: rollout strategy"), "primary"). The form values arrive with that message.',
+      '- To ask the reviewer to decide: OptionCards or RadioGroup inside a Form whose button is Button("Send decision", @ToAssistant("Decision: rollout strategy"), "primary"). The values arrive with that message as form: {<formName>: {<fieldName>: value}}; no context needed.',
+      '- OptionCards("pick", "single", [OptionCard("a", "Option A", "why", Icon("zap")), OptionCard("b", "Option B")], {required: true}, "a") — the last argument pre-selects.',
       "- rules: {required: true, minLength: 10, ...}; the renderer shows the messages.",
     ],
   },

@@ -28,7 +28,7 @@ export function statementLines(html) {
 
 export function checkHtml(html) {
   const art = readArtifact(html);
-  const result = { ok: true, errors: [], warnings: [], statements: 0, title: art.title };
+  const result = { ok: true, errors: [], warnings: [], statements: 0, title: art.title, hasMermaid: false };
   if (art.program == null) {
     result.ok = false;
     result.errors.push({
@@ -43,6 +43,7 @@ export function checkHtml(html) {
       message: "No austere.js runtime <script> tag. Review still works, but the file will not render when opened directly.",
     });
   }
+  result.hasMermaid = /\bMermaid\s*\(/.test(art.program);
   const lines = statementLines(html);
   const lineOf = (id) => (id && lines.get(id)?.line) || undefined;
 

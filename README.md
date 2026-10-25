@@ -70,7 +70,7 @@ austere-axi reply <file>         post a reply without polling
 austere-axi end <file>           end the review as the agent
 austere-axi check <file>         validate the program (no browser)
 austere-axi patch <file>         merge statements from stdin into the program
-austere-axi spec [group...]      component reference (~5.6k tokens; groups narrow it)
+austere-axi spec [group...]      component reference (~5.8k tokens; groups narrow it)
 austere-axi export <file>        one self-contained HTML file, works offline
 austere-axi stop                 stop the background server
 ```

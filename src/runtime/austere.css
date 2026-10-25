@@ -88,6 +88,14 @@ html.austere body > noscript {
   }
 }
 
+/* Stock table cells never wrap (chat tables are short); review tables carry
+   sentences, so let them wrap and keep a sane minimum column width. */
+.austere-page .openui-table-cell {
+  white-space: normal;
+  min-width: 7.5em;
+  vertical-align: top;
+}
+
 /* Long tokens (paths, URLs, symbols) never push a layout wider than its column. */
 .austere-page :where(p, li, td, th, h1, h2, h3, h4, dd, blockquote, figcaption) {
   overflow-wrap: anywhere;

@@ -27,13 +27,30 @@ WORKFLOW
        intro = Card([CardHeader("Title", "Subtitle"), introText])
        introText = MarkDownRenderer("...")
        </script></body></html>
-  3. ${BIN} <file.html>          validate + open for review (fix any errors it lists)
+  3. ${BIN} <file.html>          validate + open for review (fix any errors it lists).
+                                   With --no-open the session still exists; it prints the url
+                                   (and a phone url when Tailscale is up) for the user.
   4. ${BIN} poll <file.html>     wait for feedback. Leave it running in the foreground;
-                                   it returns when the reviewer presses Send.
+                                   it returns when the reviewer presses Send. If your tool call
+                                   times out first, run the same poll again: nothing is lost.
   5. Apply feedback by editing ONLY the named statements (keep names stable). The page
      live-updates and highlights what changed. Then:
        ${BIN} poll <file.html> --agent-reply "one line: what changed"
   6. On status: ended, stop polling and continue in chat. Never reopen uninvited.
+
+FEEDBACK (what poll returns)
+  status: feedback | ended | browser_disconnected | interrupted | replaced, plus a next: hint.
+  items, each one of:
+    annotation: <statement> (<Component>)   line + source of that statement in the file,
+        within (parent statements), selection | excerpt, detail (table row/column,
+        diff file:+line, diagram node), note
+    action: <@ToAssistant message>           form: {<formName>: {<field>: value}}, context
+    message: <free text from the composer>
+    render_error: <statement>                a render failure the reviewer asked you to fix
+
+CHECK verifies syntax, component names, required props, unresolved references and
+statements unreachable from root. Mermaid syntax is only checked when it renders; failures
+show in the reviewer's panel and can come back as render_error.
 
 WHEN TO USE
   Plans, comparisons, decisions, reviews, reports: anything easier to grasp as a page.
@@ -43,11 +60,12 @@ COMMANDS
   ${BIN}                         sessions + this summary
   ${BIN} <file>                  open/resume a review   [--no-open] [--reopen]
   ${BIN} poll <file>             long-poll for feedback  [--agent-reply "..."] [--agent-reply-file f|-]
-                                                         [--owner label] [--takeover]
+                                   one poll per session; --takeover replaces a stuck one
   ${BIN} reply <file>            post a reply without polling  --agent-reply "..." | --agent-reply-file f|-
   ${BIN} end <file>              end the review as the agent
   ${BIN} check <file>            validate the program (no browser)
-  ${BIN} patch <file>            merge statements from stdin into the program (edit by name)
+  ${BIN} patch <file>            merge statements from stdin into the program: same name
+                                   replaces, new name adds, \`name = null\` deletes
   ${BIN} spec [group...]         component reference (groups: Layout Content Data Charts Forms Buttons)
   ${BIN} export <file>           single self-contained HTML   [--out path]
   ${BIN} stop                    stop the background server
@@ -320,6 +338,7 @@ function cmdCheck(file) {
   const out = { status: result.ok ? "ok" : "errors", file: abs, statements: result.statements };
   if (result.errors.length) out.errors = result.errors;
   if (result.warnings.length) out.warnings = result.warnings;
+  if (result.ok && result.hasMermaid) out.note = "Mermaid sources are checked only when they render in the review page.";
   print(out);
   if (!result.ok) process.exitCode = 1;
 }
