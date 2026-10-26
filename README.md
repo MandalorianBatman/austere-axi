@@ -1,5 +1,12 @@
 # austere-axi
 
+[![npm version](https://img.shields.io/npm/v/austere-axi)](https://www.npmjs.com/package/austere-axi)
+[![npm downloads](https://img.shields.io/npm/dm/austere-axi)](https://www.npmjs.com/package/austere-axi)
+[![jsDelivr hits](https://img.shields.io/jsdelivr/npm/hm/austere-axi)](https://www.jsdelivr.com/package/npm/austere-axi)
+[![CI](https://github.com/MandalorianBatman/austere-axi/actions/workflows/ci.yml/badge.svg)](https://github.com/MandalorianBatman/austere-axi/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/austere-axi)](https://www.npmjs.com/package/austere-axi)
+[![license](https://img.shields.io/npm/l/austere-axi)](LICENSE)
+
 Review artifacts for coding agents, written in [OpenUI Lang](https://github.com/thesysdev/openui) instead of hand-written HTML.
 
 The agent writes a short program: one named statement per line, built from a fixed set of components. The reviewer opens it in the browser, points at anything, and the agent gets the feedback back addressed by statement name. To revise, the agent edits only the statements the feedback names, and the page updates in place.
