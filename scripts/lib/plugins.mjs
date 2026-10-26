@@ -25,7 +25,7 @@ export const registryPlugin = {
     build.onResolve({ filter: /^austere:components$/ }, () => ({ path: "components", namespace: "austere-registry" }));
     build.onLoad({ filter: /.*/, namespace: "austere-registry" }, () => {
       const files = componentFiles();
-      const imports = files.map((f, i) => `import c${i} from ${JSON.stringify(path.join(COMPONENTS_DIR, f))};`);
+      const imports = files.map((f, i) => `import c${i} from ${JSON.stringify(`./${f}`)};`);
       const check = files.map(
         (f, i) =>
           `if (!c${i} || !c${i}.definition) throw new Error(${JSON.stringify(
