@@ -7,7 +7,7 @@ export const RULES = [
   "Statement names are what the reviewer clicks and what feedback points back to. Name every section, table, chart, diagram, option and risk descriptively in camelCase (rolloutTable, riskCallout, optionB), never s1/s2. Capitalized names read as components.",
   "To revise after feedback, edit only the statements the feedback names (and add new ones); untouched statements keep their state on the reviewer's screen.",
   'Pass null to skip an optional argument before one you set: Tag("high", null, "sm", "danger").',
-  "Strings may span lines (use that for Mermaid, Diff, CodeBlock and long markdown) and accept \\n escapes. Escape \" inside double-quoted strings, or use single quotes. Never write </script> inside the program.",
+  "Strings may span lines (use that for Mermaid, Diff, CodeBlock and long markdown) and accept \\n escapes; $ inside strings is literal. Escape \" inside double-quoted strings, or use single quotes. Never write </script> inside the program.",
   "Artifacts are static: no Query, Mutation or tools, and you never need $variables (omit $binding props).",
   "Size: one idea per section, 3-7 sections, tables up to ~12 rows with phrase-length cells. A page that could have been a paragraph should have been a paragraph.",
 ];

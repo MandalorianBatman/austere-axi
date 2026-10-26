@@ -27,6 +27,7 @@ WORKFLOW
        intro = Card([CardHeader("Title", "Subtitle"), introText])
        introText = MarkDownRenderer("...")
        </script></body></html>
+     The CDN tag lets the file open on its own (needs network); review and \`export\` work offline.
   3. ${BIN} <file.html>          validate + open for review (fix any errors it lists).
                                    With --no-open the session still exists; it prints the url
                                    (and a phone url when Tailscale is up) for the user.

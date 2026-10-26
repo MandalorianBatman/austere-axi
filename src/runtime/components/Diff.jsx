@@ -1,68 +1,7 @@
 import React, { useMemo } from "react";
 import { z } from "zod";
 import { austereComponent } from "../define.js";
-
-/** Parse a unified diff (git or plain) into files -> rows. Tolerant of partial input. */
-export function parseUnifiedDiff(patch) {
-  const files = [];
-  let file = null;
-  let oldNo = 0;
-  let newNo = 0;
-  const ensureFile = (name) => {
-    if (!file) {
-      file = { name: name || "", rows: [] };
-      files.push(file);
-    }
-    return file;
-  };
-  const lines = String(patch ?? "").replace(/\r\n/g, "\n").split("\n");
-  if (lines.length && lines[lines.length - 1] === "") lines.pop();
-  for (const raw of lines) {
-    if (raw.startsWith("diff --git ")) {
-      const m = / b\/(.+)$/.exec(raw);
-      file = { name: m ? m[1] : raw.slice(11), rows: [] };
-      files.push(file);
-      continue;
-    }
-    if (/^(index |new file mode|deleted file mode|similarity index|rename (from|to) |old mode|new mode)/.test(raw)) {
-      continue;
-    }
-    if (raw.startsWith("--- ")) {
-      const name = raw.slice(4).replace(/^a\//, "").replace(/\t.*$/, "");
-      if (!file || file.rows.length) {
-        file = { name: name === "/dev/null" ? "" : name, rows: [] };
-        files.push(file);
-      }
-      continue;
-    }
-    if (raw.startsWith("+++ ")) {
-      const name = raw.slice(4).replace(/^b\//, "").replace(/\t.*$/, "");
-      ensureFile(name);
-      if (name !== "/dev/null") file.name = name;
-      continue;
-    }
-    const f = ensureFile("");
-    if (raw.startsWith("@@")) {
-      const m = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(raw);
-      if (m) {
-        oldNo = Number(m[1]);
-        newNo = Number(m[2]);
-      }
-      f.rows.push({ kind: "hunk", text: raw });
-      continue;
-    }
-    if (raw.startsWith("\\")) {
-      f.rows.push({ kind: "meta", text: raw });
-      continue;
-    }
-    const sign = raw[0];
-    const text = raw.slice(1);
-    if (sign === "+") f.rows.push({ kind: "add", text, newNo: newNo++ });
-    else if (sign === "-") f.rows.push({ kind: "del", text, oldNo: oldNo++ });
-    else f.rows.push({ kind: "ctx", text: sign === " " ? text : raw, oldNo: oldNo++, newNo: newNo++ });
-  }
-  return files;
-}
+import { parseUnifiedDiff } from "./_diff-parse.js";
 
 function DiffView({ props }) {
   const files = useMemo(() => parseUnifiedDiff(props.patch), [props.patch]);
@@ -77,7 +16,10 @@ function DiffView({ props }) {
   };
   return (
     <div className="austere-diff">
-      {props.title ? <div className="austere-diff-title">{props.title}</div> : null}
+      {/* A title that just repeats the file path would show it twice. */}
+      {props.title && !files.some((f) => f.name && f.name === String(props.title).trim().replace(/^[ab]\//, "")) ? (
+        <div className="austere-diff-title">{props.title}</div>
+      ) : null}
       {files.map((file, fi) => {
         const { a, d } = stats(file.rows);
         return (
@@ -141,7 +83,7 @@ export default austereComponent({
   }),
   description:
     "Unified diff (git diff output, one or more files) with line numbers. patch is a raw multi-line string. Clicked lines reach the agent as file:+line.",
-  notes: ["- Diff for code changes; prefer it over two CodeBlocks."],
+  notes: ["- Diff for code changes: show the hunks that matter, not whole files. Hunk counts are recomputed, so only start lines matter."],
   renderer: DiffView,
   example: `retryPatch = Diff("diff --git a/src/retry.ts b/src/retry.ts
 --- a/src/retry.ts

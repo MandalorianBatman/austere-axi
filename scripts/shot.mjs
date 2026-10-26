@@ -64,7 +64,7 @@ await page.screenshot({ path: out, fullPage: !!flag("full", false) });
 await browser.close();
 
 console.log(`screenshot: ${out}`);
-console.log(`rendered statements: ${info.statements}`);
+console.log(`statements on screen: ${info.statements} (value-only components like Col/Series and hidden tab panels are not counted)`);
 if (info.overflowX) console.log(`WARNING: page scrolls horizontally at ${width}px`);
 for (const e of info.renderErrors) console.log(`render error: ${e}`);
 for (const p of problems) console.log(p);

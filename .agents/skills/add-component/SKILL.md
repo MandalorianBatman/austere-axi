@@ -64,6 +64,7 @@ export default austereComponent({
   notes: ["- …only if needed…"],
   renderer: ThingView,
   example: `myThing = Thing(["…realistic…"])`,
+  stress: `stressThing = Thing(["…hostile…"])`, // optional; see section 5
   // slots: null, tagged: false  ← only for value-only sub-components (like Series)
 });
 ```
@@ -75,6 +76,7 @@ Renderer rules:
 - **Dark only:** use the `--openui-*` and `--austere-*` variables. Put CSS in `src/runtime/austere.css` under a `/* ── Thing ── */` section, with an `austere-thing-` class prefix.
 - **Never overflow the column:** long paths and code must wrap or scroll inside the component. Check this at 390px.
 - **No interactive DOM for feedback:** let the annotation layer and OpenUI forms carry feedback. A toggle that only changes local UI state is fine.
+- **Testable parsing:** keep input parsing in a plain-JS helper next to the component, named `_<name>-parse.js`, so Node can import it. Unit-test it in `test/components.test.js` against the near-miss shapes agents actually write, such as markdown bullets, lowercase codes, long-form variants, absolute paths and duplicates. `_filetree-parse.js` and `_diff-parse.js` are the existing examples.
 
 ## 4. Make it annotatable
 
@@ -84,13 +86,15 @@ The whole component is already a target, through its statement name. Mark the sm
 - a node label
 - a file path
 
-The part nearest the click wins, and its text becomes the quote. Keep chrome such as line numbers and icons out of that text: Diff renders its line numbers with CSS `::before` for this reason, and icons should be `aria-hidden` SVGs.
+The part nearest the click wins, and its text becomes the quote. Keep chrome out of that text, including line numbers, status letters, counts and icons. Draw such labels with CSS `content: attr(data-…)`, as Diff does for line numbers and FileTree does for status letters and folder counts, and make icons `aria-hidden` SVGs.
 
 Plain `<table>`s get row and column detail automatically, so don't mark their cells.
 
-## 5. Example
+## 5. Example and stress
 
 `example` holds one or more statements. The first one calls the component with realistic content, and every other statement must be reachable from it. The example is checked by the tests, rendered in the gallery, and serves as your design review: if it reads awkwardly, the call design is wrong.
+
+`stress` is optional, but add it whenever the component takes free-form input. It has the same shape as `example`, filled with hostile input: very long unbroken tokens in every text slot, deep nesting, many items, empty values, and the malformed shapes agents write. It never appears in the prompt. The tests check it, and the browser suite renders it at phone width, where overflow bugs hide; realistic examples are too tidy to expose them.
 
 ## 6. Verify
 

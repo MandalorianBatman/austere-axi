@@ -50,11 +50,14 @@ test("custom components have short descriptions", () => {
   }
 });
 
-test("every custom component example passes check", () => {
+test("every custom component example and stress example passes check", () => {
   const schema = lib.schema();
   for (const c of lib.CUSTOM_COMPONENTS) {
-    const r = checkHtml(htmlPage(c.name, examplePage([c]), "austere.js"), { schema });
-    assert.equal(r.ok, true, `${c.name} example: ${JSON.stringify(r.errors)}`);
-    assert.deepEqual(r.warnings, [], `${c.name} example warnings: ${JSON.stringify(r.warnings)}`);
+    for (const field of ["example", "stress"]) {
+      if (!c[field]) continue;
+      const r = checkHtml(htmlPage(c.name, examplePage([c], field), "austere.js"), { schema });
+      assert.equal(r.ok, true, `${c.name} ${field}: ${JSON.stringify(r.errors)}`);
+      assert.deepEqual(r.warnings, [], `${c.name} ${field} warnings: ${JSON.stringify(r.warnings)}`);
+    }
   }
 });

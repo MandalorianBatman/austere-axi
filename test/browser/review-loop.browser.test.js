@@ -1,6 +1,6 @@
 // Opt-in browser suite (npm run test:browser; needs Chrome or CHROME_PATH).
 // Drives the real review loop: server + chrome page + artifact iframe.
-//   - every custom component example and every examples/*.html page renders at
+//   - every custom component example, stress example and examples/*.html page renders at
 //     desktop and phone width with no errors, no render issues, no sideways scroll
 //   - clicking a component's parts in Annotate mode, then Send, makes `poll`
 //     return each one addressed to the right statement with detail.part
@@ -56,11 +56,16 @@ function api(route, body) {
   });
 }
 
-/** Pages to check: one gallery of custom components, plus every example. */
+/** Pages to check: galleries of custom component examples and stress examples, plus every example page. */
 function pages() {
   const gallery = path.join(WORK, "gallery.html");
   fs.writeFileSync(gallery, htmlPage("Gallery", examplePage(lib.CUSTOM_COMPONENTS), CDN_RUNTIME_URL));
   const list = [{ name: "gallery", file: gallery }];
+  if (lib.CUSTOM_COMPONENTS.some((c) => c.stress)) {
+    const stress = path.join(WORK, "stress.html");
+    fs.writeFileSync(stress, htmlPage("Stress", examplePage(lib.CUSTOM_COMPONENTS, "stress"), CDN_RUNTIME_URL));
+    list.push({ name: "stress", file: stress });
+  }
   for (const f of fs.readdirSync(path.join(ROOT, "examples")).filter((x) => x.endsWith(".html"))) {
     // Copy beside the gallery so the runtime tag is rewritten the same way.
     const dest = path.join(WORK, f);

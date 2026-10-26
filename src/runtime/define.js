@@ -16,6 +16,9 @@ export const CONTENT_SLOTS = ["Card.children", "TabItem.content", "AccordionItem
  * @param {string} c.description   One line the agent reads in `spec`. Costs tokens in every session.
  * @param {Function} c.renderer    React renderer: ({ props, renderNode, statementId }) => node.
  * @param {string} c.example       OpenUI statements; the first one must call this component.
+ * @param {string} [c.stress]      Like example, with hostile input (long tokens, deep nesting, the
+ *                                 malformed shapes agents write). Never in the prompt; the tests and
+ *                                 the browser suite render it at phone width.
  * @param {string[]} [c.notes]     Extra prompt lines ("- ...") appended to the group's notes.
  * @param {string[]|null} [c.slots] Parent slots it may fill; null for value-only sub-components.
  * @param {boolean} [c.tagged]     Wrap the output with its statement name (default true).
@@ -31,6 +34,9 @@ export function austereComponent(c) {
   if (typeof c.example !== "string" || !c.example.includes(`${c.name}(`)) {
     throw new Error(`${where}: example must contain a ${c.name}(...) call`);
   }
+  if (c.stress !== undefined && (typeof c.stress !== "string" || !c.stress.includes(`${c.name}(`))) {
+    throw new Error(`${where}: stress must contain a ${c.name}(...) call`);
+  }
   const notes = c.notes ?? [];
   for (const n of notes) if (!n.startsWith("- ")) throw new Error(`${where}: notes start with "- "`);
   return {
@@ -40,6 +46,7 @@ export function austereComponent(c) {
     slots: c.slots === undefined ? CONTENT_SLOTS : c.slots,
     tagged: c.tagged !== false,
     example: c.example.trim(),
+    stress: c.stress ? c.stress.trim() : null,
     definition: defineComponent({ name: c.name, props: c.props, description: c.description, component: c.renderer }),
   };
 }

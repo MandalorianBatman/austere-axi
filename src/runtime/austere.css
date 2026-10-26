@@ -208,6 +208,11 @@ html.austere body > noscript {
 
 /* ── FileTree ── */
 .austere-filetree {
+  --austere-ft-added: var(--austere-add-strong);
+  --austere-ft-modified: var(--austere-changed);
+  --austere-ft-deleted: var(--austere-del-strong);
+  --austere-ft-renamed: #c4b1ff;
+  --austere-ft-indent: 18px;
   width: 100%;
   min-width: 0;
   font-family: var(--openui-font-code);
@@ -233,7 +238,7 @@ html.austere body > noscript {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  padding: 3px 12px 3px calc(8px + var(--depth, 0) * 18px);
+  padding: 3px 12px 3px calc(8px + var(--depth, 0) * var(--austere-ft-indent));
   color: #d6d6dc;
 }
 .austere-filetree-row:hover {
@@ -248,6 +253,7 @@ html.austere body > noscript {
   height: 20px;
   padding: 0;
   border: 0;
+  border-radius: 4px;
   background: none;
   color: var(--austere-muted);
   cursor: pointer;
@@ -271,7 +277,10 @@ span.austere-filetree-toggle {
   align-items: baseline;
   gap: 0 10px;
 }
-.austere-filetree-name {
+.austere-filetree-name,
+.austere-filetree-from,
+.austere-filetree-note {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 .austere-filetree-row.is-dir .austere-filetree-name {
@@ -281,10 +290,13 @@ span.austere-filetree-toggle {
   color: var(--austere-muted);
   text-decoration: line-through;
 }
-.austere-filetree-from {
-  color: #7c7c86;
+.austere-filetree-from,
+.austere-filetree-count::after {
+  color: var(--austere-muted);
   font-size: 12px;
-  overflow-wrap: anywhere;
+}
+.austere-filetree-count::after {
+  content: attr(data-n);
 }
 .austere-filetree-note {
   font-family: var(--openui-font-body);
@@ -302,21 +314,38 @@ span.austere-filetree-toggle {
   content: attr(data-s);
 }
 .austere-filetree .is-added {
-  color: var(--austere-add-strong);
+  color: var(--austere-ft-added);
 }
 .austere-filetree .is-modified {
-  color: #e5c07b;
+  color: var(--austere-ft-modified);
 }
 .austere-filetree .is-deleted.austere-filetree-status,
 .austere-filetree-summary .is-deleted,
 .austere-filetree .is-conflict {
-  color: var(--austere-del-strong);
+  color: var(--austere-ft-deleted);
 }
 .austere-filetree .is-renamed {
-  color: #8fb0ff;
+  color: var(--austere-ft-renamed);
 }
-.austere-filetree .is-untracked {
-  color: var(--austere-muted);
+/* Touch: a bigger chevron target, so a near miss doesn't start an annotation. */
+@media (pointer: coarse) {
+  .austere-filetree-toggle {
+    width: 28px;
+    height: 28px;
+    margin: -4px -2px -4px -6px;
+  }
+  span.austere-filetree-toggle {
+    height: 20px;
+    margin: 0 -2px 0 -6px;
+  }
+}
+@media (max-width: 640px) {
+  .austere-filetree {
+    --austere-ft-indent: 12px;
+  }
+  .austere-filetree-row {
+    padding-right: 8px;
+  }
 }
 
 /* ── Mermaid ── */

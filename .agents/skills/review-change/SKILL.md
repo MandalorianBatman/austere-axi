@@ -59,7 +59,7 @@ Give each agent only these inputs:
 
 - **change-reviewer:** the base ref, a head ref if you are reviewing a range, and the list of changed files.
 - **visual-qa:** the changed component names, plus any pages under `examples/` that use them.
-- **cold-start-author:** an output path under `.dev/cold-start/`, and a scenario: a realistic user request in which the changed component is the natural choice. **Do not name the component.** Whether the agent finds it is part of the test. For an agent-facing text change, choose a scenario that exercises the changed instruction.
+- **cold-start-author:** the repository path, an output path outside the repository (such as `/tmp/austere-cold-start/<name>.html`, so the harness doesn't load the repo's docs into its context), and a scenario: a realistic user request in which the changed component is the natural choice. **Do not name the component.** Whether the agent finds it is part of the test. For an agent-facing text change, choose a scenario that exercises the changed instruction.
 
 Leave out your own assessment, what you think is fine, the commit message's claims, and why you made each decision. An agent handed your conclusions tends to return them confirmed.
 

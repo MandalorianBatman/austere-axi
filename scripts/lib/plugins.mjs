@@ -129,15 +129,17 @@ export async function loadLibrary() {
 /** Rough token estimate used for the prompt budget (matches what the build prints). */
 export const estimateTokens = (text) => Math.round(text.length / 3.8);
 
-/** Wrap a component example in a minimal page program. */
-export function examplePage(components) {
-  const cards = components.map((c, i) => {
-    const first = c.example.match(/^\s*([A-Za-z_][\w]*)\s*=/m)?.[1];
-    return { id: `demo${i}`, line: `demo${i} = Card([CardHeader(${JSON.stringify(c.name)}), ${first}])`, example: c.example };
-  });
+/** Wrap each component's example (or its stress example) in a minimal page program. */
+export function examplePage(components, field = "example") {
+  const cards = components
+    .filter((c) => c[field])
+    .map((c, i) => {
+      const first = c[field].match(/^\s*([A-Za-z_][\w]*)\s*=/m)?.[1];
+      return { id: `demo${i}`, line: `demo${i} = Card([CardHeader(${JSON.stringify(c.name)}), ${first}])`, program: c[field] };
+    });
   return [
     `root = Stack([${cards.map((c) => c.id).join(", ")}], "column", "l")`,
-    ...cards.flatMap((c) => [c.line, c.example]),
+    ...cards.flatMap((c) => [c.line, c.program]),
   ].join("\n");
 }
 
