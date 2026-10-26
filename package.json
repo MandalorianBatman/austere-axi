@@ -1,6 +1,6 @@
 {
   "name": "austere-axi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent-authored review artifacts in OpenUI Lang: a few hundred tokens instead of a whole HTML page, with statement-level annotations fed back to the agent.",
   "type": "module",
   "license": "MIT",
