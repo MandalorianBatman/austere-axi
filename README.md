@@ -54,11 +54,42 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 
 ## Install
 
+Requires Node.js 20 or later.
+
+**Run it without installing** (what agents use):
+
+```sh
+npx -y austere-axi --help
+```
+
+`npx` downloads the package into npm's cache and runs it. `-y` skips the install prompt, so a non-interactive agent never stalls on it. Prefix every command below the same way: `npx -y austere-axi spec`, `npx -y austere-axi plan.html`, and so on.
+
+**Or install the command globally:**
+
+```sh
+npm install -g austere-axi
+austere-axi --help
+```
+
+A global install stays on the version you installed until `npm update -g austere-axi`. Mixing the two is fine: a newer CLI replaces an older background server automatically.
+
+**Agent skill (optional):**
+
 ```sh
 npx skills add MandalorianBatman/austere-axi --skill austere
 ```
 
-The skill is a stub that sends the agent to `npx -y austere-axi --help` and `spec`. The CLI is the source of truth, so an installed skill cannot go stale. No setup is needed: any agent can run `npx -y austere-axi` directly.
+The skill tells an agent when a page beats prose and adds an `/austere <request>` command. It is a stub that sends the agent to `npx -y austere-axi --help` and `spec`, so an installed copy cannot go stale. Agents that can run shell commands do not need it.
+
+## Quick start
+
+```sh
+npx -y austere-axi spec              # component reference for the agent (read once per session)
+npx -y austere-axi plan.html         # validate and open the page for review
+npx -y austere-axi poll plan.html    # wait for the reviewer to press Send
+```
+
+`--help` prints the file skeleton and the full review loop.
 
 ## CLI
 
