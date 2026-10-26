@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { austereComponent } from "../define.js";
 import { assetUrl, reportRuntimeError } from "../env.js";
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
@@ -100,6 +102,11 @@ function MermaidView({ props, statementId }) {
           el.style.height = "auto";
           if (!el.style.maxWidth) el.style.maxWidth = "100%";
         }
+        // Name each node, cluster and actor so a click reaches the agent as its label.
+        ref.current.querySelectorAll("g.node, g.cluster, g.edgeLabel, g.actor, text.actor, g.note").forEach((g) => {
+          const label = g.textContent.replace(/\s+/g, " ").trim();
+          if (label) g.setAttribute("data-austere-part", label.slice(0, 80));
+        });
         bindFunctions?.(ref.current);
         setError(null);
       })
@@ -128,4 +135,18 @@ function MermaidView({ props, statementId }) {
   );
 }
 
-export const MermaidRenderer = MermaidView;
+export default austereComponent({
+  name: "Mermaid",
+  group: "Content",
+  props: z.object({
+    source: z.string(),
+    caption: z.string().optional(),
+  }),
+  description:
+    "Diagram from Mermaid source (flowchart, sequence, state, class, ER, gantt). source is a raw multi-line string. Keep node labels to a few words; clicked nodes reach the agent by label.",
+  notes: ["- Mermaid for flows, architecture, sequences and state."],
+  renderer: MermaidView,
+  example: `requestPath = Mermaid("flowchart LR
+  client[Client] --> api[API]
+  api --> pg[(Postgres)]", "Request path")`,
+});

@@ -3,3 +3,4 @@ dist/
 scratch/
 *.export.html
 .DS_Store
+.dev/

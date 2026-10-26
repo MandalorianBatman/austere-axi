@@ -172,6 +172,9 @@ html.austere body > noscript {
   user-select: none;
   padding: 0 6px;
 }
+.austere-diff-no::before {
+  content: attr(data-n);
+}
 .austere-diff-sign {
   display: inline-block;
   width: 1.2em;

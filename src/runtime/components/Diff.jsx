@@ -1,4 +1,6 @@
 import React, { useMemo } from "react";
+import { z } from "zod";
+import { austereComponent } from "../define.js";
 
 /** Parse a unified diff (git or plain) into files -> rows. Tolerant of partial input. */
 export function parseUnifiedDiff(patch) {
@@ -109,9 +111,10 @@ function DiffView({ props }) {
                           ? `${file.name ? file.name + ":" : ""}-${r.oldNo}`
                           : `${file.name ? file.name + ":" : ""}${r.newNo}`;
                     return (
-                      <tr className={`austere-diff-${r.kind}`} key={ri} data-austere-line={lineRef}>
-                        <td className="austere-diff-no">{r.oldNo ?? ""}</td>
-                        <td className="austere-diff-no">{r.newNo ?? ""}</td>
+                      <tr className={`austere-diff-${r.kind}`} key={ri} data-austere-part={lineRef}>
+                        {/* Numbers come from CSS so a clicked line quotes only its code. */}
+                        <td className="austere-diff-no" data-n={r.oldNo ?? ""} />
+                        <td className="austere-diff-no" data-n={r.newNo ?? ""} />
                         <td className="austere-diff-code">
                           <span className="austere-diff-sign">{sign}</span>
                           {r.text || " "}
@@ -129,4 +132,22 @@ function DiffView({ props }) {
   );
 }
 
-export const DiffRenderer = DiffView;
+export default austereComponent({
+  name: "Diff",
+  group: "Content",
+  props: z.object({
+    patch: z.string(),
+    title: z.string().optional(),
+  }),
+  description:
+    "Unified diff (git diff output, one or more files) with line numbers. patch is a raw multi-line string. Clicked lines reach the agent as file:+line.",
+  notes: ["- Diff for code changes; prefer it over two CodeBlocks."],
+  renderer: DiffView,
+  example: `retryPatch = Diff("diff --git a/src/retry.ts b/src/retry.ts
+--- a/src/retry.ts
++++ b/src/retry.ts
+@@ -10,2 +10,3 @@
+-  for (let i = 0; i < 3; i++) {
++  for (let i = 0; i < MAX_ATTEMPTS; i++) {
++    if (i > 0) await sleep(backoff(i));")`,
+});

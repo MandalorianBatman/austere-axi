@@ -18,7 +18,11 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "pretest": "node scripts/build.mjs spec",
     "test": "node --test test/*.test.js",
+    "signatures": "node scripts/signatures.mjs",
+    "gallery": "node scripts/gallery.mjs",
+    "shot": "node scripts/shot.mjs",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
@@ -41,6 +45,7 @@
     "@openuidev/react-ui": "^0.18.1",
     "esbuild": "^0.28.2",
     "mermaid": "^11.17.2",
+    "playwright-core": "^1.64.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zod": "^4.6.7",

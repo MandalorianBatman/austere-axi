@@ -9,44 +9,22 @@ import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  ROOT,
+  estimateTokens,
+  fontPlugin,
+  loadLibrary,
+  registryPlugin,
+  slimHighlighterPlugin,
+} from "./lib/plugins.mjs";
 
 const require = createRequire(import.meta.url);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "dist");
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 const only = process.argv.slice(2);
 const want = (step) => only.length === 0 || only.includes(step);
 
 fs.mkdirSync(DIST, { recursive: true });
-
-function fontCss() {
-  const file = require.resolve("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2");
-  const b64 = fs.readFileSync(file).toString("base64");
-  return `@font-face{font-family:"Inter Variable";font-style:normal;font-display:swap;font-weight:100 900;src:url(data:font/woff2;base64,${b64}) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}`;
-}
-
-const virtualFont = {
-  name: "austere-font",
-  setup(build) {
-    build.onResolve({ filter: /\/font\.css$/ }, (args) => ({ path: args.path, namespace: "austere-font" }));
-    build.onLoad({ filter: /.*/, namespace: "austere-font" }, () => ({ contents: fontCss(), loader: "text" }));
-  },
-};
-
-// OpenUI's CodeBlock imports the full Prism build and every theme; swap in
-// the light build with common languages (saves ~0.5 MB).
-const slimHighlighter = {
-  name: "austere-slim-highlighter",
-  setup(build) {
-    build.onResolve({ filter: /^react-syntax-highlighter$/ }, () => ({
-      path: path.join(ROOT, "src/runtime/highlighter.js"),
-    }));
-    build.onResolve({ filter: /^react-syntax-highlighter\/dist\/cjs\/styles\/prism(\/index\.js)?$/ }, () => ({
-      path: path.join(ROOT, "src/runtime/highlighter-styles.js"),
-    }));
-  },
-};
 
 async function buildRuntime() {
   const result = await esbuild.build({
@@ -62,7 +40,7 @@ async function buildRuntime() {
       "process.env.NODE_ENV": '"production"',
       __AUSTERE_VERSION__: JSON.stringify(pkg.version),
     },
-    plugins: [virtualFont, slimHighlighter],
+    plugins: [fontPlugin, registryPlugin, slimHighlighterPlugin],
     outfile: path.join(DIST, "austere.js"),
     metafile: true,
     logLevel: "warning",
@@ -79,52 +57,13 @@ function copyMermaid() {
 }
 
 async function buildSpec() {
-  const tmp = path.join(ROOT, "node_modules/.austere-build");
-  fs.mkdirSync(tmp, { recursive: true });
-  const out = path.join(tmp, "spec-entry.mjs");
-  await esbuild.build({
-    stdin: {
-      contents: `
-        export { austereLibrary } from "./src/runtime/library.jsx";
-        export { PROMPT_OPTIONS } from "./src/runtime/prompt.js";
-        export { generateSystemPrompt } from "@openuidev/lang-core";
-      `,
-      resolveDir: ROOT,
-      loader: "js",
-    },
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    jsx: "automatic",
-    loader: { ".css": "empty", ".scss": "empty" },
-    plugins: [
-      virtualFont,
-      {
-        // Keep node_modules external, except component subpaths whose ESM uses
-        // extensionless imports Node cannot load (only the bundler can).
-        name: "externals",
-        setup(build) {
-          build.onResolve({ filter: /^[^./]/ }, (args) =>
-            args.path.startsWith("@openuidev/react-ui/") && args.path !== "@openuidev/react-ui/genui-lib"
-              ? undefined
-              : { path: args.path, external: true },
-          );
-        },
-      },
-    ],
-    outfile: out,
-    logLevel: "warning",
-  });
-  process.env.OPENUI_TELEMETRY_DISABLED = "1";
-  const mod = await import(pathToFileURL(out).href + `?t=${Date.now()}`);
-  const spec = mod.austereLibrary.toSpec();
-  const prompt = mod.generateSystemPrompt({ library: spec, promptOptions: mod.PROMPT_OPTIONS });
+  const lib = await loadLibrary();
+  const prompt = lib.prompt();
   // The parser validates against the library's JSON schema, not the prompt spec.
-  const schema = { ...mod.austereLibrary.toJSONSchema(), root: mod.austereLibrary.root || "Stack" };
-  fs.writeFileSync(path.join(DIST, "spec.json"), JSON.stringify(schema));
+  fs.writeFileSync(path.join(DIST, "spec.json"), JSON.stringify(lib.schema()));
   fs.writeFileSync(path.join(DIST, "prompt.md"), prompt);
-  const names = Object.keys(spec.components || {});
-  console.log(`spec     ${names.length} components, prompt ${prompt.length} chars (~${Math.round(prompt.length / 3.8)} tokens)`);
+  const names = Object.keys(lib.austereLibrary.components);
+  console.log(`spec     ${names.length} components, prompt ${prompt.length} chars (~${estimateTokens(prompt)} tokens)`);
 }
 
 async function buildChrome() {

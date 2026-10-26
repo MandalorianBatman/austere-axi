@@ -7,11 +7,16 @@ import { assetPath } from "./paths.js";
 import { splitStatements } from "../shared/statements.js";
 
 let parser = null;
-let spec = null;
+const customParsers = new WeakMap();
 
-function getParser() {
+/** Parser for the shipped spec, or for a given library schema (tests, maintainer scripts). */
+function getParser(schema) {
+  if (schema) {
+    if (!customParsers.has(schema)) customParsers.set(schema, createParser(schema, schema.root || "Stack"));
+    return customParsers.get(schema);
+  }
   if (!parser) {
-    spec = JSON.parse(fs.readFileSync(assetPath("spec.json"), "utf8"));
+    const spec = JSON.parse(fs.readFileSync(assetPath("spec.json"), "utf8"));
     parser = createParser(spec, spec.root || "Stack");
   }
   return parser;
@@ -26,7 +31,7 @@ export function statementLines(html) {
   return out;
 }
 
-export function checkHtml(html) {
+export function checkHtml(html, { schema } = {}) {
   const art = readArtifact(html);
   const result = { ok: true, errors: [], warnings: [], statements: 0, title: art.title, hasMermaid: false };
   if (art.program == null) {
@@ -49,7 +54,7 @@ export function checkHtml(html) {
 
   let parsed;
   try {
-    parsed = getParser().parse(art.program);
+    parsed = getParser(schema).parse(art.program);
   } catch (err) {
     result.ok = false;
     result.errors.push({ code: "parse-failed", message: String(err?.message || err) });

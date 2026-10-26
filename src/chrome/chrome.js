@@ -291,8 +291,7 @@ function flatForm(obj, prefix = "") {
 
 function itemQuote(item) {
   if (item.selection) return item.selection;
-  if (item.detail?.code) return `${item.detail.line}  ${item.detail.code}`;
-  if (item.detail?.diagramNode) return `node: ${item.detail.diagramNode}`;
+  if (item.detail?.part) return item.excerpt ? `${item.detail.part}  ${item.excerpt}` : item.detail.part;
   if (item.detail?.column) {
     const where = [item.detail.row && `row ${item.detail.row}`, `column ${item.detail.column}`].filter(Boolean).join(", ");
     return item.excerpt ? `${item.excerpt}  (${where})` : where;

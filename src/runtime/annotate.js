@@ -52,10 +52,25 @@ function pathOf(target) {
   return path;
 }
 
-/** Extra precision for tables, diffs and diagrams. */
+/**
+ * Extra precision inside a statement. Components mark sub-targets with
+ * data-austere-part="<what the agent should hear>" (a diff line, a diagram
+ * node, a file path); the nearest one wins and its text becomes the quote.
+ * Plain tables get row/column names without any marking.
+ */
+function partOf(target, el) {
+  const part = el.closest("[data-austere-part]");
+  return part && target.contains(part) ? part : null;
+}
+
 function detailOf(target, el) {
   const detail = {};
-  const cell = el.closest("[data-austere-line]") ? null : el.closest("td, th");
+  const part = partOf(target, el);
+  if (part) {
+    detail.part = part.getAttribute("data-austere-part");
+    return detail;
+  }
+  const cell = el.closest("td, th");
   if (cell && target.contains(cell)) {
     const row = cell.parentElement;
     const table = cell.closest("table");
@@ -68,15 +83,6 @@ function detailOf(target, el) {
       if (first && first !== cell) detail.row = clip(first.textContent, 60);
       detail.rowIndex = Array.prototype.indexOf.call(row.parentElement.children, row) + 1;
     }
-  }
-  const line = el.closest("[data-austere-line]");
-  if (line && target.contains(line)) {
-    detail.line = line.getAttribute("data-austere-line");
-    detail.code = clip(line.querySelector(".austere-diff-code")?.textContent, 160);
-  }
-  const node = el.closest("g.node, g.cluster, g.edgeLabel, g.actor, text.actor, g.note");
-  if (node && target.contains(node)) {
-    detail.diagramNode = clip(node.textContent, 80);
   }
   return Object.keys(detail).length ? detail : undefined;
 }
@@ -235,17 +241,22 @@ export function createAnnotator({ post }) {
   function open({ target, el, selection, point }) {
     const path = pathOf(target);
     const detail = detailOf(target, el);
+    const part = partOf(target, el);
+    let excerpt;
+    if (!selection) {
+      excerpt = clip((part || el).innerText || (part || el).textContent, 200) || undefined;
+      if (part && excerpt === detail?.part) excerpt = undefined;
+    }
     draft = {
       targetId: target.getAttribute("data-oui-id"),
       component: target.getAttribute("data-oui-c"),
       path,
       selection: selection || undefined,
-      excerpt:
-        selection || detail?.code || detail?.diagramNode ? undefined : clip(el.innerText || el.textContent, 200) || undefined,
+      excerpt,
       detail,
     };
     renderPath();
-    const quote = selection || draft.detail?.code || draft.detail?.diagramNode || draft.excerpt || "";
+    const quote = selection || excerpt || detail?.part || "";
     popQuote.textContent = clip(quote, 220);
     popQuote.hidden = !quote;
     popText.value = "";

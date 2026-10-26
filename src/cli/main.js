@@ -42,8 +42,8 @@ FEEDBACK (what poll returns)
   status: feedback | ended | browser_disconnected | interrupted | replaced, plus a next: hint.
   items, each one of:
     annotation: <statement> (<Component>)   line + source of that statement in the file,
-        within (parent statements), selection | excerpt, detail (table row/column,
-        diff file:+line, diagram node), note
+        within (parent statements), selection | excerpt, detail (table row/column, or
+        part: the exact piece clicked, e.g. a diff file:+line or a diagram node), note
     action: <@ToAssistant message>           form: {<formName>: {<field>: value}}, context
     message: <free text from the composer>
     render_error: <statement>                a render failure the reviewer asked you to fix
