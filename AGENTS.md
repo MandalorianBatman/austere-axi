@@ -8,12 +8,14 @@ austere-axi is a CLI, a local review server, and a browser runtime for agent rev
 - **What agents are told while using the tool:** CLI output: `--help` (`src/cli/main.js`), and `spec` (generated from `src/runtime/prompt.js`, the component files and `src/runtime/stock.js`).
 - **Shipped skill:** `skills/austere/SKILL.md`. It stays a stub that points at the CLI, so don't copy CLI guidance into it.
 - **Adding or changing a component:** follow `.agents/skills/add-component/SKILL.md`.
+- **Reviewing a change before committing:** follow `.agents/skills/review-change/SKILL.md`. It runs the checks and the agents in `.agents/agents/` (change-reviewer, visual-qa, cold-start-author).
 
 ## Commands
 
 ```sh
 npm run build        # dist/: runtime, mermaid, spec.json, prompt.md, chrome, cli.mjs
 npm test             # rebuilds spec first; unit, server loop, and library guards
+npm run test:browser # real review loop in headless Chrome: render checks + every part annotatable
 npm run signatures   # record new component signatures (refuses breaking changes)
 npm run gallery      # .dev/gallery.html with every custom component's example
 npm run shot -- <page> [--width 390] [--full] [--parts]   # needs Chrome or CHROME_PATH

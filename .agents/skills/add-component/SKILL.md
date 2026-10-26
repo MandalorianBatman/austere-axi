@@ -113,6 +113,8 @@ npm run shot -- .dev/gallery.html --full --width 390 --out .dev/shot-390.png
 
 Then use it the way an agent would. Add it to a realistic page in `examples/` and run `node dist/cli.mjs check` on that page. If you have a browser, also run the loop once: `node dist/cli.mjs <page> --no-open`, open the printed url, click a part in Annotate mode, press Send, and confirm that `node dist/cli.mjs poll <page>` shows `detail: {part: …}`.
 
+Finally, run the `review-change` skill. It runs the browser suite (`npm run test:browser`), which clicks every part through the real review loop, and launches the change-reviewer, visual-qa and cold-start-author agents.
+
 ## Other changes
 
 - **New prop on an existing component:** append it, make it optional, then run `npm run signatures`. Never reorder, rename or remove a prop.

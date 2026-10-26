@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { chromium } from "playwright-core";
+import { launchBrowser } from "./lib/browser.mjs";
 import { ROOT } from "./lib/plugins.mjs";
 
 const args = process.argv.slice(2);
@@ -29,14 +29,9 @@ const width = Number(flag("width", 1280));
 const height = Number(flag("height", 900));
 const out = flag("out", path.join(ROOT, ".dev", `shot-${width}.png`));
 
-const launch = process.env.CHROME_PATH
-  ? { executablePath: process.env.CHROME_PATH, args: ["--no-sandbox"] }
-  : { channel: "chrome" };
-let browser;
-try {
-  browser = await chromium.launch({ headless: true, ...launch });
-} catch (err) {
-  console.error(`Could not start a browser (${err.message.split("\n")[0]}). Install Chrome or set CHROME_PATH.`);
+const { browser, reason } = await launchBrowser();
+if (!browser) {
+  console.error(`Could not start a browser: ${reason}`);
   process.exit(2);
 }
 const page = await browser.newPage({ viewport: { width, height } });

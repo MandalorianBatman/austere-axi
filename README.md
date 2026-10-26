@@ -144,7 +144,18 @@ To add or change a component, follow [`.agents/skills/add-component/SKILL.md`](.
 - released prop orders are append-only (`npm run signatures`)
 - every example passes `check`
 
-For visual checks, `npm run gallery` and `npm run shot` render the components headlessly.
+For visual checks, `npm run gallery` and `npm run shot` render the components headlessly. `npm run test:browser` drives the real review loop in headless Chrome. It needs Chrome, or `CHROME_PATH` set to a browser, and it checks:
+
+- every component and example renders at desktop and phone width without errors or sideways scrolling
+- every clickable part reaches `poll` correctly
+
+Before committing, [`.agents/skills/review-change`](.agents/skills/review-change/SKILL.md) runs these checks plus three review agents from `.agents/agents/`:
+
+- **change-reviewer:** an independent code review
+- **visual-qa:** looks at screenshots, including stress inputs
+- **cold-start-author:** writes a page from `--help` and `spec` alone, to test the agent-facing docs
+
+All of this is maintainer-only and is not published.
 
 The runtime is about 3 MB minified. It is served locally and cached. `export` inlines it, and inlines Mermaid too when the artifact uses it.
 

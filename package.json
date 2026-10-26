@@ -20,6 +20,7 @@
     "build": "node scripts/build.mjs",
     "pretest": "node scripts/build.mjs spec",
     "test": "node --test test/*.test.js",
+    "test:browser": "node scripts/build.mjs runtime mermaid spec chrome && node --test test/browser/*.test.js",
     "signatures": "node scripts/signatures.mjs",
     "gallery": "node scripts/gallery.mjs",
     "shot": "node scripts/shot.mjs",
