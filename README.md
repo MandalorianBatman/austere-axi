@@ -157,6 +157,8 @@ Before committing, [`.agents/skills/review-change`](.agents/skills/review-change
 
 All of this is maintainer-only and is not published.
 
+CI (`.github/workflows/ci.yml`) builds and tests on every push to `main` and every pull request: Node 20, 22 and 24 on Linux, Node 24 on Windows, plus the browser suite. To release, bump `version` in `package.json`, push, and publish a GitHub Release. `.github/workflows/publish.yml` then tests again and publishes to npmjs.org through npm trusted publishing, with no token secret.
+
 The runtime is about 3 MB minified. It is served locally and cached. `export` inlines it, and inlines Mermaid too when the artifact uses it.
 
 ## License
