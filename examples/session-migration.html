@@ -7,7 +7,7 @@
 </head>
 <body>
 <script type="text/openui">
-root = Stack([intro, kpis, flow, options, openQuestion, change, decide], "column", "l")
+root = Stack([intro, kpis, flow, options, openQuestion, change, files, decide], "column", "l")
 intro = Card([CardHeader("Session storage migration", "Move sessions from Redis to Postgres"), introText])
 introText = MarkDownRenderer("Sessions live only in Redis and are lost on failover — last month that logged out **~38k users** twice.
 
@@ -44,6 +44,8 @@ storePatch = Diff("diff --git a/src/session/store.ts b/src/session/store.ts
 +    if (row) await this.redis.set(key(id), row, { ex: TTL });
 +    return row;
    }")
+files = Card([CardHeader("Files touched"), changedFiles])
+changedFiles = FileTree(["M src/session/store.ts # read-through to Postgres", "A src/session/pg-store.ts", "A migrations/0042_sessions.sql # table + expiry index", "M src/config.ts # SESSIONS_PG flag", "M test/session.test.ts"])
 decide = Card([CardHeader("Your call"), decideForm])
 decideForm = Form("rollout", decideButtons, [strategyField, notesField])
 strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big bang", "One deploy, short maintenance window", "bigbang"), RadioItem("Dual-write", "Two weeks writing to both stores", "dualwrite")]))

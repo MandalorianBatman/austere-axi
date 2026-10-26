@@ -130,10 +130,21 @@ node dist/cli.mjs examples/session-migration.html
 
 | Path | Contents |
 |---|---|
-| `src/runtime/` | Browser runtime: curated library, `Mermaid`/`Diff`/`Tabs` renderers, annotation layer, review bridge |
+| `src/runtime/components/` | Custom components (`Diff`, `Mermaid`, `FileTree`), one self-describing file each, collected automatically |
+| `src/runtime/stock.js` | Which stock OpenUI components ship, their prompt groups, renderer overrides |
+| `src/runtime/` | Library assembly, annotation layer, review bridge, styles |
 | `src/chrome/` | Review UI around the artifact iframe |
 | `src/cli/` | CLI, server, session store, `check`, `export` |
 | `src/shared/statements.js` | Statement splitter used by both sides |
+
+To add or change a component, follow [`.agents/skills/add-component/SKILL.md`](.agents/skills/add-component/SKILL.md). It is a maintainer-only skill and is not published; agents working in this repo pick it up through `AGENTS.md`. Tests enforce the mechanical rules:
+
+- every component sits in a prompt group
+- the component reference stays within its token budget
+- released prop orders are append-only (`npm run signatures`)
+- every example passes `check`
+
+For visual checks, `npm run gallery` and `npm run shot` render the components headlessly.
 
 The runtime is about 3 MB minified. It is served locally and cached. `export` inlines it, and inlines Mermaid too when the artifact uses it.
 

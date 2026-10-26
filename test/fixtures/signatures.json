@@ -18,6 +18,7 @@
   "Diff": {"props":["patch","title"],"required":["patch"]},
   "EditableTable": {"props":["name","columns","data"],"required":["name","columns","data"]},
   "EntityList": {"props":["rows","size","header","footer"],"required":["rows","size"]},
+  "FileTree": {"props":["entries"],"required":["entries"]},
   "Form": {"props":["name","buttons","fields"],"required":["name","buttons","fields"]},
   "FormControl": {"props":["label","input","hint"],"required":["label","input"]},
   "HorizontalBarChart": {"props":["labels","series","variant","xLabel","yLabel"],"required":["labels","series"]},
