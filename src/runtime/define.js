@@ -15,12 +15,13 @@ export const CONTENT_SLOTS = ["Card.children", "TabItem.content", "AccordionItem
  * @param {import("zod").ZodObject} c.props  Props IN POSITIONAL ORDER. Append-only once released.
  * @param {string} c.description   One line the agent reads in `spec`. Costs tokens in every session.
  * @param {Function} c.renderer    React renderer: ({ props, renderNode, statementId }) => node.
- * @param {string} [c.example]     OpenUI statements; the first one must call this component.
+ * @param {string|string[]} [c.example]  OpenUI statements whose first statement calls this
+ *                                 component; a list shows several uses, one gallery card each.
  *                                 Required, except for value-only parts (slots: null), which the
  *                                 container's example already shows.
- * @param {string} [c.stress]      Like example, with hostile input (long tokens, deep nesting, the
- *                                 malformed shapes agents write). Never in the prompt; the tests and
- *                                 the browser suite render it at phone width.
+ * @param {string|string[]} [c.stress]   Like example, with hostile input (long tokens, deep nesting,
+ *                                 the malformed shapes agents write). Never in the prompt; the tests
+ *                                 and the browser suite render it at phone width.
  * @param {string[]} [c.notes]     Extra prompt lines ("- ...") appended to the group's notes.
  * @param {string[]|null} [c.slots] Parent slots it may fill; null for value-only sub-components.
  * @param {boolean} [c.tagged]     Wrap the output with its statement name (default true).
@@ -34,12 +35,18 @@ export function austereComponent(c) {
   if (typeof c.description !== "string" || !c.description.trim()) throw new Error(`${where}: description is required`);
   if (typeof c.renderer !== "function") throw new Error(`${where}: renderer must be a React component`);
   const valueOnly = c.slots === null;
-  if ((!valueOnly || c.example !== undefined) && (typeof c.example !== "string" || !c.example.includes(`${c.name}(`))) {
-    throw new Error(`${where}: example must contain a ${c.name}(...) call`);
-  }
-  if (c.stress !== undefined && (typeof c.stress !== "string" || !c.stress.includes(`${c.name}(`))) {
-    throw new Error(`${where}: stress must contain a ${c.name}(...) call`);
-  }
+  const programs = (field, required) => {
+    const value = c[field];
+    if (value === undefined && !required) return null;
+    const list = [].concat(value ?? []);
+    const callsIt = new RegExp(`^\\s*[A-Za-z_]\\w*\\s*=\\s*${c.name}\\(`);
+    if (!list.length || !list.every((p) => typeof p === "string" && callsIt.test(p))) {
+      throw new Error(`${where}: each ${field} program must start with a statement that calls ${c.name}(...)`);
+    }
+    return list.map((p) => p.trim());
+  };
+  const example = programs("example", !valueOnly);
+  const stress = programs("stress", false);
   const notes = c.notes ?? [];
   for (const n of notes) if (!n.startsWith("- ")) throw new Error(`${where}: notes start with "- "`);
   return {
@@ -48,8 +55,8 @@ export function austereComponent(c) {
     notes,
     slots: c.slots === undefined ? CONTENT_SLOTS : c.slots,
     tagged: c.tagged !== false,
-    example: typeof c.example === "string" ? c.example.trim() : null,
-    stress: c.stress ? c.stress.trim() : null,
+    example,
+    stress,
     definition: defineComponent({ name: c.name, props: c.props, description: c.description, component: c.renderer }),
   };
 }

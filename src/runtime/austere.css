@@ -54,6 +54,12 @@ html.austere body > noscript {
   }
 }
 
+/* A page with a lanes diagram too wide for the column gets room for it on a
+   big screen. */
+.austere-page:has(.austere-arch-box.is-wide) {
+  max-width: 1360px;
+}
+
 .austere-node {
   display: contents;
 }
@@ -436,6 +442,15 @@ span.austere-filetree-toggle {
   .austere-arch-edge-hit {
     stroke-width: 30;
   }
+  /* Right-angle routes run on tracks 9px apart: a wider target would cover
+     the next line. */
+  .austere-arch-edge.is-orth .austere-arch-edge-hit {
+    stroke-width: 12;
+  }
+}
+.austere-arch-box {
+  width: 100%;
+  min-width: 0;
 }
 .austere-arch-edge.s-dashed .austere-arch-edge-line {
   stroke-dasharray: 5 4;
@@ -525,6 +540,91 @@ span.austere-filetree-toggle {
 .austere-arch-legend-item.g-security rect {
   stroke: rgba(240, 138, 138, 0.55);
   fill: rgba(240, 96, 96, 0.03);
+}
+
+/* Tones: meaning the author picks (risk, a store family, the end of the story). */
+.austere-arch {
+  --austere-t-info: #7fa7ff;
+  --austere-t-success: #5fcf8f;
+  --austere-t-warning: #f2c46d;
+  --austere-t-danger: #f07a6a;
+}
+.austere-arch-node.t-info .austere-arch-node-box {
+  fill: #18203a;
+  stroke: var(--austere-t-info);
+  stroke-opacity: 0.75;
+}
+.austere-arch-node.t-success .austere-arch-node-box {
+  fill: #142a1f;
+  stroke: var(--austere-t-success);
+  stroke-opacity: 0.7;
+}
+.austere-arch-node.t-warning .austere-arch-node-box {
+  fill: #2c2412;
+  stroke: var(--austere-t-warning);
+  stroke-opacity: 0.75;
+}
+.austere-arch-node.t-danger .austere-arch-node-box {
+  fill: #33181a;
+  stroke: var(--austere-t-danger);
+  stroke-opacity: 0.85;
+}
+.austere-arch-node.t-strong .austere-arch-node-box {
+  fill: #2a2a30;
+  stroke: #ececef;
+  stroke-opacity: 1;
+  stroke-width: 1.5;
+}
+.austere-arch-node-risk {
+  color: var(--austere-t-danger);
+}
+.austere-arch-legend-item.is-risk svg {
+  color: var(--austere-t-danger);
+}
+.austere-arch-edge.t-info .austere-arch-edge-line {
+  stroke: var(--austere-t-info);
+}
+.austere-arch-edge.t-success .austere-arch-edge-line {
+  stroke: var(--austere-t-success);
+}
+.austere-arch-edge.t-warning .austere-arch-edge-line {
+  stroke: var(--austere-t-warning);
+}
+.austere-arch-edge.t-danger .austere-arch-edge-line {
+  stroke: var(--austere-t-danger);
+  stroke-width: 1.8;
+}
+.austere-arch-arrow.t-info {
+  fill: var(--austere-t-info);
+}
+.austere-arch-arrow.t-success {
+  fill: var(--austere-t-success);
+}
+.austere-arch-arrow.t-warning {
+  fill: var(--austere-t-warning);
+}
+.austere-arch-arrow.t-danger {
+  fill: var(--austere-t-danger);
+}
+.austere-arch-edge.t-danger .austere-arch-edge-label text {
+  fill: var(--austere-t-danger);
+}
+.austere-arch-edge.t-success .austere-arch-edge-label text {
+  fill: var(--austere-t-success);
+}
+.austere-arch-group.is-lane .austere-arch-group-frame {
+  fill: rgba(255, 255, 255, 0.018);
+  stroke-dasharray: 3 4;
+}
+.austere-arch-lane-head rect {
+  fill: transparent;
+}
+.austere-arch-lane-head text {
+  fill: #d4d4d8;
+  font-family: var(--openui-font-code);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 /* ── Mermaid ── */

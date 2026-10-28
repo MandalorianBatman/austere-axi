@@ -94,9 +94,9 @@ Plain `<table>`s get row and column detail automatically, so don't mark their ce
 
 ## 5. Example and stress
 
-`example` holds one or more statements. The first one calls the component with realistic content, and every other statement must be reachable from it. Value-only parts (`slots: null`) may omit `example`, because their container's example shows them. The example is checked by the tests, rendered in the gallery, and serves as your design review: if it reads awkwardly, the call design is wrong.
+`example` holds one or more statements. The first one calls the component with realistic content, and every other statement must be reachable from it. When the component has distinct modes worth showing (Architecture's automatic layout and its lanes), `example` can be a list of such programs; each gets its own gallery card and its own part-click check. Value-only parts (`slots: null`) may omit `example`, because their container's example shows them. The example is checked by the tests, rendered in the gallery, and serves as your design review: if it reads awkwardly, the call design is wrong.
 
-`stress` is optional, but add it whenever the component takes free-form input. It has the same shape as `example`, filled with hostile input: very long unbroken tokens in every text slot, deep nesting, many items, empty values, and the malformed shapes agents write. It never appears in the prompt. The tests check it, and the browser suite renders it at phone width, where overflow bugs hide; realistic examples are too tidy to expose them.
+`stress` is optional, but add it whenever the component takes free-form input. It has the same shape as `example` (a program or a list of them), filled with hostile input: very long unbroken tokens in every text slot, deep nesting, many items, empty values, and the malformed shapes agents write. It never appears in the prompt. The tests check it, and the browser suite renders it at phone width, where overflow bugs hide; realistic examples are too tidy to expose them.
 
 ## 6. Verify
 

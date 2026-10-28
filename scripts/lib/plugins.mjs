@@ -133,13 +133,13 @@ export async function loadLibrary() {
 /** Rough token estimate used for the prompt budget (matches what the build prints). */
 export const estimateTokens = (text) => Math.round(text.length / 3.8);
 
-/** Wrap each component's example (or its stress example) in a minimal page program. */
+/** Wrap each component's examples (or its stress examples) in a minimal page program, one card each. */
 export function examplePage(components, field = "example") {
   const cards = components
-    .filter((c) => c[field])
-    .map((c, i) => {
-      const first = c[field].match(/^\s*([A-Za-z_][\w]*)\s*=/m)?.[1];
-      return { id: `demo${i}`, line: `demo${i} = Card([CardHeader(${JSON.stringify(c.name)}), ${first}])`, program: c[field] };
+    .flatMap((c) => (c[field] || []).map((program) => ({ name: c.name, program })))
+    .map(({ name, program }, i) => {
+      const first = program.match(/^\s*([A-Za-z_][\w]*)\s*=/m)?.[1];
+      return { id: `demo${i}`, line: `demo${i} = Card([CardHeader(${JSON.stringify(name)}), ${first}])`, program };
     });
   return [
     `root = Stack([${cards.map((c) => c.id).join(", ")}], "column", "l")`,

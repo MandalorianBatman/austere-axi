@@ -60,7 +60,7 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 
 - **An artifact is a plain `.html` file.** It contains one `<script>` tag for the runtime and one `<script type="text/openui">` block holding the program. Opened directly, it renders from the CDN. Under review, the server points that tag at a local copy.
 - **The runtime** bundles the OpenUI React renderer with a curated component library: 58 of the stock components, plus `Architecture` (with `Node`, `Edge` and `Group`), `Mermaid`, `Diff` and `FileTree`. Every rendered statement is tagged with its name.
-- **Architecture diagrams** are laid out automatically ([dagre](https://github.com/dagrejs/dagre)): the agent writes nodes, edges and groups as statements and never a coordinate. Each node and edge is its own click target, so feedback on a diagram arrives as `annotation: api (Node)` with its line. The layout runs across when that stays legible at the page width and down otherwise, so a phone gets a tall diagram. Mermaid stays for sequences, state machines, ER and gantt.
+- **Architecture diagrams** are laid out automatically ([dagre](https://github.com/dagrejs/dagre)): the agent writes nodes, edges and groups as statements and never a coordinate. Each node and edge is its own click target, so feedback on a diagram arrives as `annotation: api (Node)` with its line. The layout runs across when that stays legible at the page width and down otherwise, so a phone gets a tall diagram. For a system split by owner or tier, `lanes` turns each group into a column with right-angle lines between them (stacked as bands on a phone); `tone` tints a box or line to mark risk or a store family. Mermaid stays for sequences, state machines, ER and gantt.
 - **Annotations** resolve to the innermost named statement. They also carry precise detail where it exists: table row and column, `file:+line` for diff lines, the label of a diagram node, or the selected text. The popover shows the parent chain, so the reviewer can retarget a note to an enclosing section.
 - **Buttons and forms** are feedback channels. `@ToAssistant("…")` queues a message along with the form's values. A button with no action sends its label.
 - **Remote review.** When Tailscale is running, the server also listens on this machine's tailnet IP, and `open` prints a phone link. The review UI has a mobile layout with a conversation sheet.
@@ -114,7 +114,7 @@ austere-axi reply <file>         post a reply without polling
 austere-axi end <file>           end the review as the agent
 austere-axi check <file>         validate the program (no browser)
 austere-axi patch <file>         merge statements from stdin into the program
-austere-axi spec [group...]      component reference (~6.4k tokens; groups narrow it)
+austere-axi spec [group...]      component reference (~6.5k tokens; groups narrow it)
 austere-axi export <file>        one self-contained HTML file, works offline
 austere-axi stop                 stop the background server
 ```

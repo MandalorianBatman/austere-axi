@@ -5,6 +5,7 @@ import { createParser } from "@openuidev/lang-core";
 import { readArtifact } from "./artifact.js";
 import { assetPath } from "./paths.js";
 import { splitStatements } from "../shared/statements.js";
+import { architectureNotes } from "../runtime/components/_architecture-model.js";
 
 let parser = null;
 const customParsers = new WeakMap();
@@ -28,6 +29,21 @@ export function statementLines(html) {
   const out = new Map();
   if (art.program == null) return out;
   for (const s of splitStatements(art.program)) out.set(s.id, { line: art.programLine + s.line - 1, text: s.text });
+  return out;
+}
+
+/** Every rendered element of a component, found by walking from the root. */
+function elementsOf(root, typeName) {
+  const out = [];
+  const seen = new Set();
+  const stack = [root];
+  while (stack.length) {
+    const v = stack.pop();
+    if (!v || typeof v !== "object" || seen.has(v)) continue;
+    seen.add(v);
+    if (v.typeName === typeName && v.props) out.push(v);
+    for (const child of Array.isArray(v) ? v : Object.values(v.props || {})) stack.push(child);
+  }
   return out;
 }
 
@@ -97,6 +113,20 @@ export function checkHtml(html, { schema } = {}) {
   }
   if (parsed.meta.incomplete) {
     result.errors.push({ code: "incomplete", message: "The program ends mid-statement (an unclosed string or bracket)." });
+  }
+  // Diagrams: what the layout will do, which the parser cannot see.
+  const diagrams = new Set();
+  for (const el of elementsOf(parsed.root, "Architecture")) {
+    // A diagram shown in two places is one statement: warn once.
+    if (el.statementId && diagrams.has(el.statementId)) continue;
+    diagrams.add(el.statementId);
+    try {
+      for (const note of architectureNotes(el.props)) {
+        result.warnings.push({ code: note.code, statement: el.statementId, line: lineOf(el.statementId), message: note.message });
+      }
+    } catch {
+      // A layout bug must never fail check; the page reports it when it renders.
+    }
   }
   const dupes = new Map();
   for (const s of splitStatements(art.program)) dupes.set(s.id, (dupes.get(s.id) || 0) + 1);

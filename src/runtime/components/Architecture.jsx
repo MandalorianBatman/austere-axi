@@ -1,17 +1,21 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
-import { Cloud, Database, Globe, Inbox, Monitor, Server, ShieldCheck } from "lucide-react";
+import { Cloud, Database, Globe, Inbox, Monitor, Server, ShieldCheck, TriangleAlert } from "lucide-react";
 import { austereComponent } from "../define.js";
 import { reportRuntimeError } from "../env.js";
+import { LANES, orthogonalPath } from "./_architecture-lanes.js";
 import {
   DIRECTIONS,
   EDGE_STYLES,
+  EDGE_TONES,
   GROUP_KINDS,
   NODE_KINDS,
+  NODE_TONES,
   SIZES,
   DEFAULT_TARGET_WIDTH,
   LEGIBLE_SCALE,
   buildModel,
+  wantsWidePage,
   edgePath,
   layoutModel,
   textWidth,
@@ -41,7 +45,7 @@ function NodeBox({ n }) {
   const tagW = n.tagLine ? textWidth(n.tagLine, SIZES.tag) + 14 : 0;
   return (
     <g
-      className={`austere-arch-node k-${n.kind}`}
+      className={`austere-arch-node k-${n.kind}${n.tone ? ` t-${n.tone}` : ""}`}
       data-oui-id={n.named ? n.id : undefined}
       data-oui-c={n.named ? "Node" : undefined}
     >
@@ -55,10 +59,21 @@ function NodeBox({ n }) {
             {line}
           </T>
         ))}
-        {n.detailLine ? (
-          <T className="austere-arch-node-detail" x={left} y={top + 11 + n.labelLines.length * 17 + 4}>
-            {n.detailLine}
+        {n.detailLines.map((line, i) => (
+          <T key={`d${i}`} className="austere-arch-node-detail" x={left} y={top + 11 + n.labelLines.length * 17 + 4 + i * 15}>
+            {line}
           </T>
+        ))}
+        {n.tone === "danger" ? (
+          // Risk is never colour alone.
+          <TriangleAlert
+            className="austere-arch-node-risk"
+            x={n.x + n.width - 22 - (n.tagLine ? tagW + 4 : 0)}
+            y={n.tagRow ? n.y + 7 : top - 2}
+            width="14"
+            height="14"
+            aria-label="risk"
+          />
         ) : null}
         {n.tagLine ? (
           <g className="austere-arch-node-tag">
@@ -78,8 +93,10 @@ function ArchitectureView({ props, statementId }) {
   const uid = `austere-arch-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const model = useMemo(() => buildModel(props), [props]);
   // Room the page gives us, so "auto" can run across on desktop and down on a phone.
+  // Measured before the first layout, so a diagram is laid out once for the
+  // width it really has.
   const boxRef = useRef(null);
-  const [room, setRoom] = useState(DEFAULT_TARGET_WIDTH);
+  const [room, setRoom] = useState(null);
   // A diagram wider than its box scrolls; fade the cut edge so that shows.
   const scrollRef = useRef(null);
   const [fade, setFade] = useState(false);
@@ -89,24 +106,41 @@ function ArchitectureView({ props, statementId }) {
   };
   useLayoutEffect(() => {
     const el = boxRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    if (!el) return undefined;
     const update = () => {
       const w = el.clientWidth;
-      if (w > 0) setRoom((prev) => (Math.abs(prev - w) > 40 ? w : prev));
+      setRoom((prev) => {
+        if (prev === null) return w > 0 ? w : DEFAULT_TARGET_WIDTH;
+        return w > 0 && Math.abs(prev - w) > 40 ? w : prev;
+      });
       checkCut();
     };
+    if (typeof ResizeObserver === "undefined") {
+      update();
+      return undefined;
+    }
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
   const { layout, error } = useMemo(() => {
+    if (room === null) return { layout: null, error: null };
     try {
       return { layout: layoutModel(model, room), error: null };
     } catch (err) {
       return { layout: null, error: String(err?.message || err) };
     }
   }, [model, room]);
+  // Known before measuring (it does not depend on the width), so the page can
+  // widen first and the diagram is measured in the wider column.
+  const wide = useMemo(() => {
+    try {
+      return wantsWidePage(model);
+    } catch {
+      return false;
+    }
+  }, [model]);
 
   const problems = error ? [`Layout failed: ${error}`] : model.problems;
   const problemKey = problems.join("\n");
@@ -120,19 +154,29 @@ function ArchitectureView({ props, statementId }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(checkCut, [layout]);
 
-  if (error) {
-    return (
-      <div className="austere-render-error" ref={boxRef}>
-        <strong>Diagram failed to lay out.</strong> {error}
-      </div>
-    );
-  }
-  if (!layout) return <div ref={boxRef} />;
+  return (
+    <div className={`austere-arch-box${wide ? " is-wide" : ""}`} ref={boxRef}>
+      {error ? (
+        <div className="austere-render-error">
+          <strong>Diagram failed to lay out.</strong> {error}
+        </div>
+      ) : layout ? (
+        <Drawing layout={layout} uid={uid} fade={fade} scrollRef={scrollRef} checkCut={checkCut} />
+      ) : null}
+    </div>
+  );
+}
+
+function Drawing({ layout, uid, fade, scrollRef, checkCut }) {
 
   const byId = new Map(layout.nodes.map((n) => [n.id, n]));
   const kinds = [...new Set(layout.nodes.map((n) => n.kind))];
-  const styles = [...new Set(layout.edges.map((e) => e.style))];
-  const groupKinds = [...new Set(layout.groups.map((g) => g.kind))];
+  // A tone overrides the style's colour, so a toned main-path edge stays out
+  // of the style legend.
+  // (Dashes and dots survive a tone, so those edges stay in.)
+  const styles = [...new Set(layout.edges.filter((e) => !e.tone || e.style !== "emphasis").map((e) => e.style))];
+  const groupKinds = [...new Set(layout.groups.map((g) => g.kind))].filter((k) => k !== "plain");
+  const risky = layout.nodes.some((n) => n.tone === "danger") || layout.edges.some((e) => e.tone === "danger");
   const W = layout.width;
   const H = layout.height;
   // Shrink to fit down to the legible scale, then scroll.
@@ -146,7 +190,7 @@ function ArchitectureView({ props, statementId }) {
   };
 
   return (
-    <figure className="austere-arch" ref={boxRef}>
+    <figure className="austere-arch">
       <div
         className={`austere-arch-scroll${fade ? " is-cut" : ""}`}
         ref={scrollRef}
@@ -160,7 +204,7 @@ function ArchitectureView({ props, statementId }) {
           aria-label={`Architecture diagram: ${layout.nodes.map((n) => n.label).join(", ")}`}
         >
           <defs>
-            {EDGE_STYLES.map((s) => (
+            {[...EDGE_STYLES, ...EDGE_TONES.map((t) => `t-${t}`)].map((s) => (
               <marker
                 key={s}
                 id={`${uid}-${s}`}
@@ -172,34 +216,36 @@ function ArchitectureView({ props, statementId }) {
                 markerHeight="9"
                 orient="auto-start-reverse"
               >
-                <path d="M0,0L10,5L0,10z" className={`austere-arch-arrow s-${s}`} />
+                <path d="M0,0L10,5L0,10z" className={`austere-arch-arrow ${s.startsWith("t-") ? s : `s-${s}`}`} />
               </marker>
             ))}
           </defs>
 
-          {layout.groups.map((g) => (
-            <g
-              key={g.id}
-              className={`austere-arch-group g-${g.kind}`}
-              data-oui-id={g.named ? g.id : undefined}
-              data-oui-c={g.named ? "Group" : undefined}
-            >
-              <rect className="austere-arch-group-frame" x={g.x} y={g.y} width={g.width} height={g.height} rx="12" />
-            </g>
-          ))}
+          {layout.groups.map((g) =>
+            g.kind === "plain" ? null : (
+              <g
+                key={g.id}
+                className={`austere-arch-group g-${g.kind}${g.lane ? " is-lane" : ""}`}
+                data-oui-id={g.named ? g.id : undefined}
+                data-oui-c={g.named ? "Group" : undefined}
+              >
+                <rect className="austere-arch-group-frame" x={g.x} y={g.y} width={g.width} height={g.height} rx={g.lane ? 10 : 12} />
+              </g>
+            ),
+          )}
 
           {layout.edges.map((e) => {
-            const d = edgePath(e.points);
+            const d = e.orthogonal ? orthogonalPath(e.points) : edgePath(e.points);
             if (!d) return null;
             return (
               <g
                 key={e.id}
-                className={`austere-arch-edge s-${e.style}`}
+                className={`austere-arch-edge s-${e.style}${e.tone ? ` t-${e.tone}` : ""}${e.orthogonal ? " is-orth" : ""}`}
                 data-oui-id={e.named ? e.id : undefined}
                 data-oui-c={e.named ? "Edge" : undefined}
               >
                 <path className="austere-arch-edge-hit" d={d} data-austere-part={partOf(e)} />
-                <path className="austere-arch-edge-line" d={d} markerEnd={`url(#${uid}-${e.style})`} />
+                <path className="austere-arch-edge-line" d={d} markerEnd={`url(#${uid}-${e.tone ? `t-${e.tone}` : e.style})`} />
               </g>
             );
           })}
@@ -215,12 +261,23 @@ function ArchitectureView({ props, statementId }) {
               >
                 {/* Titles stay outside the part: its text becomes the annotation quote. */}
                 {g.labelLine !== g.label ? <title>{g.label}</title> : null}
-                <g className="austere-arch-group-label" data-austere-part={g.label}>
-                  <rect x={g.x + 12} y={g.y - 9} width={textWidth(g.labelLine, SIZES.group) + 14} height="18" rx="5" />
-                  <T x={g.x + 19} y={g.y + 4}>
-                    {g.labelLine}
-                  </T>
-                </g>
+                {g.lane ? (
+                  // A lane names its column with a heading inside the top edge.
+                  <g className="austere-arch-lane-head" data-austere-part={g.label}>
+                    {/* A target the size of the heading text (lines may pass beside it). */}
+                    <rect x={g.x + 8} y={g.y + 5} width={textWidth(g.labelLine, LANES.headSize + 1, true) + 12} height={LANES.head - 8} />
+                    <T x={g.x + 14} y={g.y + 21}>
+                      {g.labelLine}
+                    </T>
+                  </g>
+                ) : (
+                  <g className="austere-arch-group-label" data-austere-part={g.label}>
+                    <rect x={g.x + 12} y={g.y - 9} width={textWidth(g.labelLine, SIZES.group) + 14} height="18" rx="5" />
+                    <T x={g.x + 19} y={g.y + 4}>
+                      {g.labelLine}
+                    </T>
+                  </g>
+                )}
               </g>
             ) : null,
           )}
@@ -228,7 +285,7 @@ function ArchitectureView({ props, statementId }) {
             e.labelBox ? (
               <g
                 key={`el-${e.id}`}
-                className={`austere-arch-edge s-${e.style}`}
+                className={`austere-arch-edge s-${e.style}${e.tone ? ` t-${e.tone}` : ""}`}
                 data-oui-id={e.named ? e.id : undefined}
                 data-oui-c={e.named ? "Edge" : undefined}
               >
@@ -258,7 +315,7 @@ function ArchitectureView({ props, statementId }) {
           ))}
         </svg>
       </div>
-      {kinds.length > 1 || groupKinds.length || styles.some((s) => s !== "solid") ? (
+      {kinds.length > 1 || groupKinds.length || risky || styles.some((s) => s !== "solid") ? (
         <figcaption className="austere-arch-legend">
           {kinds.map((k) => {
             const Icon = ICONS[k];
@@ -269,6 +326,12 @@ function ArchitectureView({ props, statementId }) {
               </span>
             );
           })}
+          {risky ? (
+            <span className="austere-arch-legend-item is-risk">
+              <TriangleAlert size={13} aria-hidden="true" />
+              risk
+            </span>
+          ) : null}
           {groupKinds.map((k) => (
             <span key={`g-${k}`} className={`austere-arch-legend-item g-${k}`}>
               <svg width="18" height="12" aria-hidden="true">
@@ -303,9 +366,11 @@ const Node = austereComponent({
     kind: z.enum(NODE_KINDS).optional(),
     detail: z.string().optional(),
     tag: z.string().optional(),
+    tone: z.enum(NODE_TONES).optional(),
+    row: z.number().int().positive().optional(),
   }),
   description:
-    "A box in an Architecture. kind sets its icon and color (default backend); detail is a monospace second line such as tech or a port; tag is a small chip such as \"new\".",
+    "A box in an Architecture. kind sets icon and color (default backend); detail is monospace, up to 2 lines (\\n breaks); tag is a small chip such as \"new\"; tone tints it (danger = risk, strong = where it ends); row pins it to a row (1, 2, ...) in lanes.",
   renderer: nothing,
   slots: null,
   tagged: false,
@@ -319,9 +384,10 @@ const Edge = austereComponent({
     to: Node.definition.ref,
     label: z.string().optional(),
     style: z.enum(EDGE_STYLES).optional(),
+    tone: z.enum(EDGE_TONES).optional(),
   }),
   description:
-    "An arrow between two Node statements (pass their names, not strings). style: dashed for async, emphasis for the main path, security for auth or trust flows.",
+    "An arrow between two Node statements (pass their names, not strings). style: dashed for async, emphasis for the main path, security for auth or trust flows. tone colors it, e.g. danger for a risky write, success for a read.",
   renderer: nothing,
   slots: null,
   tagged: false,
@@ -336,7 +402,7 @@ const Group = austereComponent({
     kind: z.enum(GROUP_KINDS).optional(),
   }),
   description:
-    "A boundary around Node statements (a VPC, a cluster, a trust zone); members still sit where their edges put them. A group whose members are a subset of another's is drawn inside it; kind security draws it red.",
+    "A boundary around Node statements (a VPC, a cluster, a trust zone); members still sit where their edges put them. A group whose members are a subset of another's is drawn inside it; kind security draws it red, plain draws only its name.",
   renderer: nothing,
   slots: null,
   tagged: false,
@@ -352,12 +418,14 @@ const Architecture = austereComponent({
     direction: z.enum(DIRECTIONS).optional(),
   }),
   description:
-    "System diagram laid out automatically: write no coordinates. Every Node, Edge and Group is its own statement and click target. direction auto (default) runs right when that fits the page legibly, else down.",
+    "System diagram laid out automatically: write no coordinates. Every Node, Edge and Group is its own statement and click target. direction auto (default) runs right when that fits the page legibly, else down; lanes makes each top-level Group a column.",
   notes: [
-    "- Architecture for systems: services, stores, queues, trust boundaries. Name every Node, Edge and Group. Over ~15 nodes, split into several diagrams.",
+    "- Architecture for systems: services, stores, queues, trust boundaries. Name every Node, Edge and Group. Over ~15 nodes, use lanes or split the diagram.",
+    "- lanes: for systems split by owner, repo or tier. Groups are the columns, left to right as listed; put every node in one, in reading order (plain groups for a heading without a frame). About 4 columns fit a laptop; wider ones scroll (check warns). Phones get the lanes stacked as bands. Pin row only to put boxes side by side or line them up.",
   ],
   renderer: ArchitectureView,
-  example: `platformMap = Architecture([browser, edge, api, sessions, cache], [toEdge, toApi, readSessions, readCache], [vpc])
+  example: [
+    `platformMap = Architecture([browser, edge, api, sessions, cache], [toEdge, toApi, readSessions, readCache], [vpc])
 browser = Node("Browser", "external")
 edge = Node("Edge worker", "cloud", "Cloudflare")
 api = Node("API", "backend", "Node :8080")
@@ -368,7 +436,22 @@ toApi = Edge(edge, api)
 readSessions = Edge(api, sessions, "SQL")
 readCache = Edge(api, cache, "cache", "dashed")
 vpc = Group("Platform VPC", [api, sessions, cache])`,
-  stress: `stressArch = Architecture([a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p], [ab, bc, cd, de, ef, fg, gh, hi, ij, jk, kl, lm, mn, no, op, aa, ac, ac2, Edge(p, a, "loop back to the very beginning of the pipeline", "dashed")], [outer, inner, Group("", [o, p])])
+    `ownership = Architecture([web, ordersApi, ledger, ordersDb, billingJob], [placeOrder, writeOrder, readOrders, postLedger], [clients, ordersRepo, billingRepo], "lanes")
+web = Node("Web app", "frontend")
+ordersApi = Node("Orders API", "backend", "Node :8080")
+ordersDb = Node("orders table", "database", "Postgres", null, "success")
+billingJob = Node("Nightly billing", "backend", "cron 02:00")
+ledger = Node("Ledger", "database", "append-only", null, "info")
+placeOrder = Edge(web, ordersApi, "POST /orders")
+writeOrder = Edge(ordersApi, ordersDb, "insert")
+readOrders = Edge(billingJob, ordersDb, "read unbilled", null, "danger")
+postLedger = Edge(billingJob, ledger, "post")
+clients = Group("CLIENTS", [web], "plain")
+ordersRepo = Group("orders-service", [ordersApi, ordersDb])
+billingRepo = Group("billing", [billingJob, ledger])`,
+  ],
+  stress: [
+    `stressAuto = Architecture([a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p], [ab, bc, cd, de, ef, fg, gh, hi, ij, jk, kl, lm, mn, no, op, aa, ac, ac2, Edge(p, a, "loop back to the very beginning of the pipeline", "dashed")], [outer, inner, Group("", [o, p])])
 a = Node("SESSIONS_PG_READ_THROUGH_CACHE_TTL_SECONDS_OVERRIDE", "frontend", "a-very-long-unbroken-detail-token-that-must-be-cut.example.internal:65535", "experimental-feature-flag")
 b = Node("Billing service with a long human readable name that wraps", "backend")
 c = Node("支払いサービス", "database", "東京リージョン")
@@ -405,6 +488,37 @@ ac = Edge(a, c, "twice")
 ac2 = Edge(a, c, "twice again")
 outer = Group("Outer boundary with a long name", [b, c, d, e, f, g], "region")
 inner = Group("Trust zone", [d, e], "security")`,
+    `stressLanes = Architecture([users, gw, auth, svcA, svcB, worker, cache, db, bucket, audit, pager], [toGw, gwAuth, gwA, gwB, aCache, aDb, bDb, bBucket, workerDb, svcAWorker, skipAudit, backToGw, alertPage, retryA, Edge(db, users, "a reply that goes all the way back to the very first lane, past everything", "dashed", "info")], [edgeLane, appLane, trustZone, dataLane, Group("ops", [audit, pager], "plain")], "lanes")
+users = Node("Users")
+gw = Node("API gateway with a long human readable name", "cloud", "envoy :443\nTLS, rate limits, request ids and much more text", "new", "info")
+auth = Node("Auth", "security", "OIDC", null, "danger", 1)
+svcA = Node("Orders", "backend", "Go", null, null, 2)
+svcB = Node("Payments", "backend", "Java", "PCI", "danger", 2)
+worker = Node("Worker", "messagebus", "retries\nDLQ")
+cache = Node("Redis", "database")
+db = Node("支払い DB", "database", "東京", null, "success")
+bucket = Node("S3 📦", "cloud", "receipts", null, "warning")
+audit = Node("Audit log", "external")
+pager = Node("Pager", "frontend", "on-call", null, "strong")
+toGw = Edge(users, gw, "HTTPS", "emphasis")
+gwAuth = Edge(gw, auth, "verify token (signing keys)", "security")
+gwA = Edge(gw, svcA)
+gwB = Edge(gw, svcB, "charge", null, "danger")
+aCache = Edge(svcA, cache, "read", "dashed", "success")
+aDb = Edge(svcA, db, "SQL")
+bDb = Edge(svcB, db, "SQL")
+bBucket = Edge(svcB, bucket, "put receipt PDF and a long description of it")
+workerDb = Edge(worker, db)
+svcAWorker = Edge(svcA, worker, "enqueue")
+skipAudit = Edge(gw, audit, "access log")
+backToGw = Edge(worker, gw, "webhook", "dashed")
+alertPage = Edge(audit, pager)
+retryA = Edge(svcA, svcA, "retry")
+edgeLane = Group("EDGE", [gw], "plain")
+appLane = Group("services · k8s", [auth, svcA, svcB, worker])
+trustZone = Group("PCI zone", [svcB], "security")
+dataLane = Group("DATA STORES WITH A HEADING LONGER THAN THE COLUMN IS WIDE", [cache, db, bucket], "plain")`,
+  ],
 });
 
 export default [Architecture, Node, Edge, Group];

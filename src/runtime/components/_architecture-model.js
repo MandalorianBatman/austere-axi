@@ -2,12 +2,17 @@
 // dagre layout. Free of JSX and DOM so it can be unit-tested in Node
 // (test/components.test.js). Never throws on agent input.
 import dagre from "@dagrejs/dagre";
+import { lanesPlanWidth, runLanes, runStackedLanes } from "./_architecture-lanes.js";
 
 // Vocabulary borrowed from archify's JSON IR, so agents that know it feel at home.
 export const NODE_KINDS = ["frontend", "backend", "database", "messagebus", "cloud", "security", "external"];
 export const EDGE_STYLES = ["solid", "dashed", "emphasis", "security"];
-export const GROUP_KINDS = ["region", "security"];
-export const DIRECTIONS = ["auto", "right", "down"];
+export const GROUP_KINDS = ["region", "security", "plain"];
+export const DIRECTIONS = ["auto", "right", "down", "lanes"];
+// Tints that carry meaning the author chooses (risk, a store family, the end
+// of the story). Edges take the same names minus "strong".
+export const NODE_TONES = ["info", "success", "warning", "danger", "strong"];
+export const EDGE_TONES = ["info", "success", "warning", "danger"];
 
 export const SIZES = {
   label: 13,
@@ -26,6 +31,10 @@ export const SIZES = {
 // Width the page column gives a diagram on desktop; the renderer passes the
 // real width of its container when it knows it.
 export const DEFAULT_TARGET_WIDTH = 900;
+// A laptop (1280px window) on a page with a lanes diagram, which widens.
+export const LANES_TARGET_WIDTH = 1180;
+// From this width up, lanes too wide to fit scroll as columns rather than stack.
+export const LANES_SCROLL_WIDTH = 1000;
 
 /**
  * Approximate advance width of text at a font size. Deterministic (no DOM) and
@@ -122,6 +131,8 @@ export function buildModel(props) {
         kind: NODE_KINDS.includes(p.kind) ? p.kind : "backend",
         detail: str(p.detail).trim(),
         tag: str(p.tag).trim(),
+        tone: NODE_TONES.includes(p.tone) ? p.tone : "",
+        row: Number.isInteger(p.row) && p.row > 0 ? Math.min(p.row, 200) : null,
       });
     }
     seenEls.set(el, id);
@@ -147,6 +158,7 @@ export function buildModel(props) {
       to,
       label: str(el.props.label).trim(),
       style: EDGE_STYLES.includes(el.props.style) ? el.props.style : "solid",
+      tone: EDGE_TONES.includes(el.props.tone) ? el.props.tone : "",
     });
   }
 
@@ -219,26 +231,47 @@ function isAncestor(groups, ancestorId, id) {
   return false;
 }
 
+/** Detail text: up to two monospace lines; "\n" forces a break. */
+function detailLinesFor(detail, width) {
+  if (!detail) return [];
+  const parts = detail.split("\n").map((t) => t.trim()).filter(Boolean);
+  const lines = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (lines.length === 2) {
+      // More text than two lines: fold the rest into the last line, cut.
+      const last = lines.pop().replace(/…$/, "");
+      lines.push(wrapText(`${last} ${parts.slice(i).join(" ")}`, SIZES.detail, width, 1, true)[0]);
+      break;
+    }
+    lines.push(...wrapText(parts[i], SIZES.detail, width, 2 - lines.length, true));
+  }
+  return lines;
+}
+
 /**
  * Size a node box from its text: a tag chip row (when tagged), label (≤2
- * lines), detail (1 line). Everything stays inside the box, so a chip never
- * covers an arrowhead.
+ * lines), detail (≤2 lines). Everything stays inside the box, so a chip never
+ * covers an arrowhead. `forceWidth` stretches the box (lanes fill a column).
  */
-export function sizeNode(node) {
+export function sizeNode(node, forceWidth = 0) {
   const { label, detail, tag, nodeMinW, nodeMaxW, padX, icon } = SIZES;
-  const labelRoom = nodeMaxW - padX * 2 - icon - 6;
+  // A risk glyph shares the first label line when there is no tag row.
+  const glyph = node.tone === "danger" && !node.tag ? 20 : 0;
   const natural = Math.max(
-    textWidth(node.label, label) + icon + 6,
-    node.detail ? textWidth(node.detail, detail, true) : 0,
-    node.tag ? textWidth(node.tag, tag) + 14 : 0,
+    textWidth(node.label, label) + icon + 6 + glyph,
+    ...String(node.detail || "")
+      .split("\n")
+      .map((t) => textWidth(t.trim(), detail, true)),
+    // With a tag, the risk glyph sits beside the chip in the tag row.
+    node.tag ? textWidth(node.tag, tag) + 14 + (node.tone === "danger" ? 18 : 0) : 0,
   );
-  const width = Math.min(nodeMaxW, Math.max(nodeMinW, natural + padX * 2));
-  const labelLines = wrapText(node.label, label, Math.min(labelRoom, width - padX * 2 - icon - 6), 2);
-  const detailLine = node.detail ? wrapText(node.detail, detail, width - padX * 2, 1, true)[0] : "";
+  const width = forceWidth || Math.min(nodeMaxW, Math.max(nodeMinW, natural + padX * 2));
+  const labelLines = wrapText(node.label, label, width - padX * 2 - icon - 6 - glyph, 2);
+  const detailLines = detailLinesFor(node.detail, width - padX * 2);
   const tagLine = node.tag ? wrapText(node.tag, tag, width - padX * 2 - 14, 1)[0] : "";
   const tagRow = tagLine ? SIZES.tagRow : 0;
-  const height = 16 + tagRow + labelLines.length * 17 + (detailLine ? 16 : 0) + 8;
-  return { width, height, labelLines, detailLine, tagLine, tagRow };
+  const height = 16 + tagRow + labelLines.length * 17 + detailLines.length * 15 + (detailLines.length ? 1 : 0) + 8;
+  return { width, height, labelLines, detailLines, tagLine, tagRow };
 }
 
 /** An edge label: up to two lines, so a sentence does not widen the whole diagram. */
@@ -346,6 +379,11 @@ function runLayout(model, rankdir) {
 // Text shown at less than this fraction of its size starts to be hard to read.
 export const LEGIBLE_SCALE = 0.85;
 
+/** A lanes diagram too wide for the usual page column: the page widens for it. */
+export function wantsWidePage(model) {
+  return model.direction === "lanes" && lanesPlanWidth(model) * LEGIBLE_SCALE > DEFAULT_TARGET_WIDTH;
+}
+
 /** Fraction of natural size a layout is drawn at in `targetWidth`. */
 export function scaleAt(layout, targetWidth = DEFAULT_TARGET_WIDTH) {
   return Math.min(1, targetWidth / Math.max(1, layout.width));
@@ -362,6 +400,14 @@ export function layoutModel(model, targetWidth = DEFAULT_TARGET_WIDTH) {
   if (!model.nodes.length) return null;
   if (model.direction === "right") return runLayout(model, "LR");
   if (model.direction === "down") return runLayout(model, "TB");
+  // Lanes: columns on a desktop (shrunk to the legible scale, then scrolled);
+  // on a narrow screen that cannot hold them, the same lanes stacked as bands.
+  // Decided from the unrouted width, so a phone never routes the columns.
+  const planned = model.direction === "lanes" ? lanesPlanWidth(model) : 0;
+  if (planned) {
+    if (planned * LEGIBLE_SCALE <= targetWidth || targetWidth >= LANES_SCROLL_WIDTH) return runLanes(model);
+    return runStackedLanes(model, targetWidth);
+  }
   const lr = runLayout(model, "LR");
   if (scaleAt(lr, targetWidth) >= LEGIBLE_SCALE) return lr;
   const tb = runLayout(model, "TB");
@@ -370,6 +416,40 @@ export function layoutModel(model, targetWidth = DEFAULT_TARGET_WIDTH) {
   // keeps each group in fewer ranks, so zones stay compact instead of
   // stretching into bands across the diagram.
   return scaleAt(lr, targetWidth) > scaleAt(tb, targetWidth) * 1.1 ? lr : tb;
+}
+
+/**
+ * What `check` can tell an author without a browser: model problems (groups
+ * that cross) and layouts that will not come out as written on a laptop.
+ * @returns {{ code: string, message: string }[]}
+ */
+export function architectureNotes(props) {
+  const model = buildModel(props);
+  const notes = model.problems.map((message) => ({ code: "architecture", message }));
+  if (!model.nodes.length) return notes;
+  const layoutNote = (message) => notes.push({ code: "architecture-layout", message });
+  if (model.direction === "lanes") {
+    const lanes = runLanes(model);
+    if (!lanes) layoutNote('direction "lanes" needs Groups (each top-level Group is a column); without any it lays out as auto.');
+    else if (scaleAt(lanes, LANES_TARGET_WIDTH) < LEGIBLE_SCALE)
+      layoutNote(
+        `These lanes need about ${lanes.width}px; a laptop page gives about ${LANES_TARGET_WIDTH}px, so they scroll sideways there (narrow screens stack them as bands). To fit: fewer lanes, fewer boxes side by side, shorter edge labels.`,
+      );
+  } else {
+    const l = layoutModel(model, DEFAULT_TARGET_WIDTH);
+    if (scaleAt(l, DEFAULT_TARGET_WIDTH) < LEGIBLE_SCALE) {
+      const forced = model.direction === "right" || model.direction === "down";
+      const auto = forced ? layoutModel({ ...model, direction: "auto" }, DEFAULT_TARGET_WIDTH) : l;
+      const advice =
+        forced && scaleAt(auto, DEFAULT_TARGET_WIDTH) >= LEGIBLE_SCALE
+          ? "Leave direction out (auto) to fit the page."
+          : 'To fit: split it into smaller diagrams, or use direction "lanes" if it divides into owners or tiers.';
+      layoutNote(
+        `${forced ? `direction "${model.direction}" makes this` : "This diagram is"} about ${l.width}px wide, more than the page gives (about ${DEFAULT_TARGET_WIDTH}px), so it scrolls sideways. ${advice}`,
+      );
+    }
+  }
+  return notes;
 }
 
 /** d3 curveBasis through dagre's points, so edges read as smooth curves. */

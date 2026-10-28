@@ -8,7 +8,8 @@ import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/si
 
 // Every agent pays for the component reference on every `spec` read. Raise
 // this only as a deliberate decision, in the same change that needs it.
-const PROMPT_BUDGET_TOKENS = 6500;
+// 6500 → 6600: Architecture lanes, tones and row pins (6362 → ~6550 tokens).
+const PROMPT_BUDGET_TOKENS = 6600;
 const DESCRIPTION_MAX_CHARS = 280;
 
 let lib;
@@ -57,7 +58,8 @@ test("the gallery of every example (and of every stress example) passes check wi
   for (const field of ["example", "stress"]) {
     const r = checkHtml(htmlPage("gallery", examplePage(lib.CUSTOM_COMPONENTS, field), "austere.js"), { schema });
     assert.equal(r.ok, true, `${field}: ${JSON.stringify(r.errors)}`);
-    assert.deepEqual(r.warnings, [], `${field} warnings: ${JSON.stringify(r.warnings)}`);
+    const warnings = field === "stress" ? r.warnings.filter((w) => w.code !== "architecture-layout") : r.warnings;
+    assert.deepEqual(warnings, [], `${field} warnings: ${JSON.stringify(r.warnings)}`);
   }
 });
 
@@ -68,7 +70,9 @@ test("every custom component example and stress example passes check", () => {
       if (!c[field]) continue;
       const r = checkHtml(htmlPage(c.name, examplePage([c], field), "austere.js"), { schema });
       assert.equal(r.ok, true, `${c.name} ${field}: ${JSON.stringify(r.errors)}`);
-      assert.deepEqual(r.warnings, [], `${c.name} ${field} warnings: ${JSON.stringify(r.warnings)}`);
+      // Stress examples are oversized on purpose; a layout warning is expected there.
+      const warnings = field === "stress" ? r.warnings.filter((w) => w.code !== "architecture-layout") : r.warnings;
+      assert.deepEqual(warnings, [], `${c.name} ${field} warnings: ${JSON.stringify(r.warnings)}`);
     }
   }
 });

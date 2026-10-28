@@ -99,9 +99,9 @@ test("Diff: hunk headers show counts that match the lines given", () => {
 });
 
 // ── Architecture ──
-import { buildModel, layoutModel, textWidth, wrapText } from "../src/runtime/components/_architecture-model.js";
+import { buildModel, layoutModel, textWidth, wantsWidePage, wrapText } from "../src/runtime/components/_architecture-model.js";
 
-const N = (id, label, kind, detail, tag) => ({ statementId: id, props: { label, kind, detail, tag } });
+const N = (id, label, kind, detail, tag, tone, row) => ({ statementId: id, props: { label, kind, detail, tag, tone, row } });
 const E = (id, from, to, label, style) => ({ statementId: id, props: { from, to, label, style } });
 const G = (id, label, members, kind) => ({ statementId: id, props: { label, members, kind } });
 const overlaps = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
@@ -231,4 +231,214 @@ test("Architecture text: wrapping keeps lines within width and marks a cut", () 
   assert.equal(huge.length, 2);
   const emoji = wrapText("📦".repeat(40), 13, 100, 2);
   assert.ok(emoji.every((l) => !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(l)), JSON.stringify(emoji));
+});
+
+// ── Architecture lanes ──
+
+const treasury = (direction = "lanes", pins = {}) => {
+  const n = (id, label, kind, detail, tone) => N(id, label, kind, detail, null, tone, pins[id]);
+  const nodes = {
+    brokers: n("brokers", "~35 brokers / clearers", "external", "SFTP · email · HTTP\nPDF · CSV · DB"),
+    refData: n("refData", "Reference data", "external", "accounts→team→entity\nFX, secmaster, Oracle"),
+    scheduler: n("scheduler", "Scheduler (Airflow)", "external", "88 bash entrypoints"),
+    cli: n("cli", "MarginPush CLI", "backend", "click"),
+    factory: n("factory", "HelperFactory", "backend", "35 ES / 27 PG"),
+    adapters: n("adapters", "Broker adapters *Helper / *Parser", "backend", "normalize → enrich → add_aggregates"),
+    elasticPush: n("elasticPush", "elastic_push", "backend", "raw frame, full prec\nPROD only"),
+    treasuryHelper: n("treasuryHelper", "*TreasuryHelper ×27", "backend", "5 levels, 2dp\nmay overwrite MU", "danger"),
+    reports: n("reports", "Reports: consolidated, CAF, validation", "backend", "read ES"),
+    esMU: n("esMU", "ES margin_utilization", "database", "pt-margin2 · ~2M docs\n35 brokers + ABN_COH", "info"),
+    pgTreasury: n("pgTreasury", "PG treasurydb", "database", "unencumbered_cash\n27 brokers · 5 levels", "success"),
+    pgTables: n("pgTables", "PG treasury tables", "database", "abn_coh_summary,\nbroker_level_summary…", "success"),
+    abnCoh: n("abnCoh", "abn_coh_summary", "backend", "writes ES + PG"),
+    collateral: n("collateral", "collateral_alert*", "backend", "trends, gs_us alerts\ntrce_liquidity", "danger"),
+    fx: n("fx", "FX / financing", "backend", "27 interest procs\nfx_exposure"),
+    crypto: n("crypto", "Crypto / India PnL", "backend", "exchange APIs"),
+    torstone: n("torstone", "Torstone GL", "backend", "trial balances"),
+    slack: n("slack", "Slack / dashboards", "frontend", "operators act", "strong"),
+  };
+  const x = nodes;
+  return buildModel({
+    nodes: Object.values(nodes),
+    edges: [
+      E("e1", x.brokers, x.adapters), E("e2", x.refData, x.adapters), E("e3", x.scheduler, x.cli), E("e4", x.cli, x.factory),
+      E("e5", x.factory, x.adapters), E("e6", x.adapters, x.elasticPush), E("e7", x.adapters, x.treasuryHelper),
+      E("bulk", x.elasticPush, x.esMU, "bulk"), { statementId: "delIns", props: { from: x.treasuryHelper, to: x.pgTreasury, label: "del+ins", tone: "danger" } },
+      { statementId: "abn", props: { from: x.abnCoh, to: x.esMU, label: "ABN_COH", tone: "danger" } }, E("r1", x.pgTreasury, x.collateral),
+      E("r2", x.pgTreasury, x.fx), E("w1", x.abnCoh, x.pgTables), E("bl", x.fx, x.pgTables, "broker_level"), E("al", x.collateral, x.slack),
+      E("rep", x.esMU, x.reports, "read", "dashed"), E("retry", x.adapters, x.adapters, "retry"),
+    ],
+    groups: [
+      G("external", "EXTERNAL", [x.brokers, x.refData, x.scheduler], "plain"),
+      G("margin", "margin-reporting · py3.6", [x.cli, x.factory, x.adapters, x.elasticPush, x.treasuryHelper, x.reports]),
+      G("stores", "STORES", [x.esMU, x.pgTreasury, x.pgTables], "plain"),
+      G("pt", "pt-treasury", [x.abnCoh, x.collateral, x.fx, x.crypto, x.torstone, x.slack]),
+    ],
+    direction,
+  });
+};
+
+/** Invariants every lanes or stacked layout keeps; returns problems found. */
+function laneProblems(l) {
+  const out = [];
+  const box = new Map(l.nodes.map((n) => [n.id, n]));
+  const strictlyInside = (p, b) => p.x > b.x + 0.5 && p.x < b.x + b.width - 0.5 && p.y > b.y + 0.5 && p.y < b.y + b.height - 0.5;
+  for (let i = 0; i < l.nodes.length; i++) {
+    for (let j = i + 1; j < l.nodes.length; j++) if (overlaps(l.nodes[i], l.nodes[j])) out.push(`${l.nodes[i].id} overlaps ${l.nodes[j].id}`);
+    const n = l.nodes[i];
+    if (![n.x, n.y, n.width, n.height].every(Number.isFinite)) out.push(`${n.id} has a non-finite box`);
+  }
+  for (const e of l.edges) {
+    const pts = e.points;
+    if (!pts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))) out.push(`${e.id} has non-finite points`);
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1];
+      const b = pts[k];
+      if (a.x !== b.x && a.y !== b.y) out.push(`${e.id} has a slanted segment`);
+      // Sample the segment: it never runs through a box.
+      for (let t = 0.05; t < 1; t += 0.1) {
+        const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        const hit = l.nodes.find((n) => strictlyInside(p, n));
+        if (hit) {
+          out.push(`${e.id} runs through ${hit.id}`);
+          break;
+        }
+      }
+    }
+    if (e.from !== e.to) {
+      const onBorder = (p, b) => (p.x === b.x || p.x === b.x + b.width || p.y === b.y || p.y === b.y + b.height) && p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height;
+      if (!onBorder(pts[0], box.get(e.from))) out.push(`${e.id} does not start on ${e.from}`);
+      if (!onBorder(pts.at(-1), box.get(e.to))) out.push(`${e.id} does not end on ${e.to}`);
+    }
+    if (e.labelBox) {
+      const r = { x: e.labelBox.cx - e.labelBox.width / 2, y: e.labelBox.cy - e.labelBox.height / 2, width: e.labelBox.width, height: e.labelBox.height };
+      const hit = l.nodes.find((n) => overlaps(r, n));
+      if (hit) out.push(`${e.id} label covers ${hit.id}`);
+    }
+  }
+  // A node sits in a lane frame (its own lane when groups do not cross).
+  const lanes = l.groups.filter((x) => x.lane);
+  for (const n of l.nodes) {
+    const own = lanes.filter((g) => g.members.includes(n.id));
+    if (own.length && !own.some((g) => inside(n, g))) out.push(`${n.id} is outside lane ${own[0].id}`);
+  }
+  return out;
+}
+
+test("Architecture lanes: groups become columns in order, rows line up, every line is right-angled and clear of boxes", () => {
+  const l = layoutModel(treasury(), 1300);
+  assert.equal(l.rankdir, "lanes");
+  assert.deepEqual(laneProblems(l), []);
+  const lanes = l.groups.filter((g) => g.lane);
+  assert.deepEqual(lanes.map((g) => g.id), ["external", "margin", "stores", "pt"]);
+  for (let i = 1; i < lanes.length; i++) assert.ok(lanes[i].x >= lanes[i - 1].x + lanes[i - 1].width, `${lanes[i].id} starts inside ${lanes[i - 1].id}`);
+  const at = (id) => l.nodes.find((n) => n.id === id);
+  // Inside a lane, edges flow down; a fork sits side by side.
+  assert.ok(at("cli").y < at("factory").y && at("factory").y < at("adapters").y);
+  assert.equal(at("elasticPush").y + at("elasticPush").height / 2, at("treasuryHelper").y + at("treasuryHelper").height / 2);
+  // Across lanes, linked rows line up so the lines run straight.
+  const straight = (id) => {
+    const p = l.edges.find((e) => e.id === id).points;
+    return p.length === 2 && p[0].y === p[1].y;
+  };
+  assert.ok(straight("abn"), "ABN_COH runs straight");
+  // Boxes in a lane share its width.
+  assert.equal(at("cli").width, at("adapters").width);
+  // Tones and two-line details come through.
+  assert.equal(at("treasuryHelper").tone, "danger");
+  assert.equal(at("brokers").detailLines.length, 2);
+  assert.equal(l.edges.find((e) => e.id === "abn").tone, "danger");
+});
+
+test("Architecture lanes: a narrow screen gets the lanes stacked as bands that fit the width", () => {
+  const l = layoutModel(treasury(), 360);
+  assert.equal(l.rankdir, "stacked");
+  assert.deepEqual(laneProblems(l), []);
+  // It may shrink to the legible scale to fit, but never scroll.
+  assert.ok(l.width <= 360 / 0.85 + 1, `stacked width ${l.width}`);
+  const lanes = l.groups.filter((g) => g.lane);
+  for (let i = 1; i < lanes.length; i++) assert.ok(lanes[i].y >= lanes[i - 1].y + lanes[i - 1].height, `${lanes[i].id} starts inside ${lanes[i - 1].id}`);
+});
+
+test("Architecture lanes: a pinned row is exact, and two pins on one row sit side by side", () => {
+  const l = layoutModel(treasury("lanes", { cli: 1, factory: 1, slack: 9 }), 1600);
+  assert.deepEqual(laneProblems(l), []);
+  const at = (id) => l.nodes.find((n) => n.id === id);
+  assert.equal(at("cli").y, at("factory").y);
+  assert.ok(at("factory").x > at("cli").x + at("cli").width - 1);
+  assert.ok(at("slack").y > Math.max(...["crypto", "torstone", "fx"].map((id) => at(id).y)), "slack pinned below the rest");
+  // On a phone the bands keep the pinned order too.
+  const phone = layoutModel(treasury("lanes", { cli: 3, factory: 1, adapters: 2 }), 360);
+  const ph = (id) => phone.nodes.find((n) => n.id === id);
+  assert.equal(phone.rankdir, "stacked");
+  assert.ok(ph("factory").y < ph("adapters").y && ph("adapters").y < ph("cli").y, "pinned order on a phone");
+  // Without groups there are no lanes: the usual layout is used.
+  const plain = buildModel({ nodes: [N("a", "A"), N("b", "B")], edges: [E("ab", N("a", "A"), N("b", "B"))], direction: "lanes" });
+  assert.notEqual(layoutModel(plain).rankdir, "lanes");
+});
+
+test("Architecture lanes: random diagrams lay out without throwing, overlapping or slanting", () => {
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const pick = (arr) => arr[Math.floor(rand() * arr.length)];
+  const t0 = performance.now();
+  for (let round = 0; round < 120; round++) {
+    const count = 2 + Math.floor(rand() * 22);
+    const nodes = Array.from({ length: count }, (_, i) =>
+      N(`n${i}`, pick(["API", "Worker with a longer name", "支払い", "db", "Queue 📦"]), pick(["backend", "database", "external"]), rand() < 0.5 ? "detail\ntwo" : undefined, rand() < 0.2 ? "new" : undefined, pick([undefined, "danger", "strong"]), rand() < 0.15 ? 1 + Math.floor(rand() * 6) : undefined),
+    );
+    const edges = Array.from({ length: Math.floor(rand() * count * 1.6) }, (_, i) => E(`e${i}`, pick(nodes), pick(nodes), rand() < 0.4 ? pick(["read", "writes rows nightly", "x"]) : undefined));
+    const groupCount = 1 + Math.floor(rand() * 4);
+    const groups = Array.from({ length: groupCount }, (_, g) => G(`g${g}`, rand() < 0.8 ? `Group ${g}` : "", nodes.filter(() => rand() < 0.4), pick(["region", "plain", "security"])));
+    const model = buildModel({ nodes, edges, groups, direction: "lanes" });
+    for (const width of [1300, 360]) {
+      const l = layoutModel(model, width);
+      if (!l || !["lanes", "stacked"].includes(l.rankdir)) continue; // no groups: the usual layout
+      const problems = laneProblems(l);
+      assert.deepEqual(problems, [], `round ${round} at ${width}: ${problems.join("; ")}`);
+    }
+  }
+  assert.ok(performance.now() - t0 < 20000, `took ${Math.round(performance.now() - t0)} ms`);
+});
+
+test("Architecture lanes: a fork of three or more stacks in its column; two sit side by side", () => {
+  const src = N("src", "Fulfillment");
+  const outs = ["a", "b", "c"].map((id) => N(id, `Carrier ${id}`));
+  const two = layoutModel(buildModel({ nodes: [src, ...outs.slice(0, 2)], edges: outs.slice(0, 2).map((o, i) => E(`e${i}`, src, o)), groups: [G("lane", "Lane", [src, ...outs.slice(0, 2)])], direction: "lanes" }), 1300);
+  const twoAt = (id) => two.nodes.find((n) => n.id === id);
+  assert.equal(twoAt("a").y, twoAt("b").y);
+  const three = layoutModel(buildModel({ nodes: [src, ...outs], edges: outs.map((o, i) => E(`e${i}`, src, o)), groups: [G("lane", "Lane", [src, ...outs])], direction: "lanes" }), 1300);
+  const xs = new Set(three.nodes.map((n) => n.x));
+  assert.equal(xs.size, 1, "one column");
+  assert.deepEqual(laneProblems(three), []);
+});
+
+test("Architecture lanes: too wide for the page, columns scroll on a desktop and stack on a narrower screen; the page widens only when needed", () => {
+  const lanesOf = (count) => {
+    const nodes = Array.from({ length: count }, (_, i) => N(`n${i}`, `Service number ${i} with a name`, "backend", "detail"));
+    const edges = nodes.slice(1).map((n, i) => E(`e${i}`, nodes[i], n, "a label of some length"));
+    return buildModel({ nodes, edges, groups: nodes.map((n, i) => G(`g${i}`, `TEAM ${i}`, [n])), direction: "lanes" });
+  };
+  const seven = lanesOf(7);
+  assert.equal(layoutModel(seven, 1180).rankdir, "lanes");
+  assert.equal(layoutModel(seven, 900).rankdir, "stacked");
+  assert.equal(wantsWidePage(seven), true);
+  const three = lanesOf(3);
+  assert.equal(layoutModel(three, 900).rankdir, "lanes");
+  assert.equal(wantsWidePage(three), false);
+});
+
+test("Architecture lanes: a long path-like label wraps at its separators instead of running under boxes", () => {
+  const web = N("web", "Web app", "frontend");
+  const api = N("api", "Orders API");
+  const bucket = N("bucket", "Receipts", "cloud");
+  const model = buildModel({
+    nodes: [web, api, bucket],
+    edges: [E("a", web, api, "POST /api/v2/orders/checkout"), E("b", api, bucket, "s3://receipts-bucket/2026/")],
+    groups: [G("g1", "CLIENTS", [web], "plain"), G("g2", "orders", [api]), G("g3", "storage", [bucket])],
+    direction: "lanes",
+  });
+  const l = layoutModel(model, 1180);
+  assert.equal(l.rankdir, "lanes");
+  assert.deepEqual(laneProblems(l), []);
 });
