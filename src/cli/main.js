@@ -51,7 +51,8 @@ FEEDBACK (what poll returns)
 
 CHECK verifies syntax, component names, required props, unresolved references and
 statements unreachable from root. Mermaid syntax is only checked when it renders; failures
-show in the reviewer's panel and can come back as render_error.
+show in the reviewer's panel and can come back as render_error. CHECK does not judge how
+a page or diagram looks: open it for that.
 
 WHEN TO USE
   Plans, comparisons, decisions, reviews, reports: anything easier to grasp as a page.

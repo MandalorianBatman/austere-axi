@@ -351,12 +351,13 @@ span.austere-filetree-toggle {
 /* ── Architecture ── */
 .austere-arch {
   --austere-k-frontend: #5fb4e6;
-  --austere-k-backend: #6fd39b;
+  /* Green and amber stay free for page status (added, modified). */
+  --austere-k-backend: #c4c4cc;
   --austere-k-database: #b79cff;
-  --austere-k-messagebus: #f2c46d;
+  --austere-k-messagebus: #e88fc7;
   --austere-k-cloud: #8fb0ff;
   --austere-k-security: #f08a8a;
-  --austere-k-external: #a1a1aa;
+  --austere-k-external: #85858f;
   margin: 0;
   width: 100%;
   min-width: 0;
@@ -373,7 +374,11 @@ span.austere-filetree-toggle {
 .austere-arch-scroll {
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 10px 0 2px;
+  padding: 0 0 2px;
+}
+.austere-arch-scroll.is-cut {
+  -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
+  mask-image: linear-gradient(to right, #000 88%, transparent);
 }
 .austere-arch-svg {
   display: block;
@@ -418,12 +423,19 @@ span.austere-filetree-toggle {
   fill: none;
   stroke: #8b8b94;
   stroke-width: 1.4;
+  /* Clicks go to the wide hit path underneath, which carries the part. */
+  pointer-events: none;
 }
 .austere-arch-edge-hit {
   fill: none;
   stroke: transparent;
   stroke-width: 12;
   pointer-events: stroke;
+}
+@media (pointer: coarse) {
+  .austere-arch-edge-hit {
+    stroke-width: 30;
+  }
 }
 .austere-arch-edge.s-dashed .austere-arch-edge-line {
   stroke-dasharray: 5 4;
@@ -504,6 +516,15 @@ span.austere-filetree-toggle {
 .austere-arch-legend-item.s-security line {
   stroke: var(--austere-del-strong);
   stroke-dasharray: 2 3;
+}
+.austere-arch-legend-item[class*=" g-"] rect {
+  fill: rgba(255, 255, 255, 0.022);
+  stroke: #4a4a52;
+  stroke-dasharray: 3 2;
+}
+.austere-arch-legend-item.g-security rect {
+  stroke: rgba(240, 138, 138, 0.55);
+  fill: rgba(240, 96, 96, 0.03);
 }
 
 /* ── Mermaid ── */

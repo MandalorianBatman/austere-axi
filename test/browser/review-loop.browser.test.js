@@ -191,7 +191,15 @@ test("every component part is annotatable end to end", async (t) => {
       }
       return out;
     }, MAX_PARTS_PER_STATEMENT);
-    const withParts = new Set(targets.map((x) => x.id));
+    // A statement "has parts" when any part sits inside it, even one claimed
+    // by a nested statement (an Architecture's parts belong to its Nodes).
+    const withParts = new Set(
+      await frame.evaluate(() =>
+        Array.from(document.querySelectorAll("[data-oui-id]"))
+          .filter((el) => el.querySelector("[data-austere-part]"))
+          .map((el) => el.getAttribute("data-oui-id")),
+      ),
+    );
     for (const c of lib.CUSTOM_COMPONENTS) {
       if (!c.example) continue; // value-only parts are shown by their container's example
       const first = c.example.match(/^\s*([A-Za-z_]\w*)\s*=/m)[1];
@@ -201,14 +209,35 @@ test("every component part is annotatable end to end", async (t) => {
 
     for (const { id, part } of targets) {
       const loc = frame.locator(`[data-oui-id="${id}"] [data-austere-part="${part.replace(/"/g, '\\"')}"]`).first();
-      await loc.click();
+      // An SVG stroke (a diagram edge) is not hit at its bounding-box centre:
+      // find a point on the stroke that nothing covers, and click exactly there.
+      const point = await loc.evaluate((el) => {
+        if (typeof el.getTotalLength !== "function") return null;
+        el.scrollIntoView({ block: "center", inline: "center" });
+        const len = el.getTotalLength();
+        for (const t of [0.5, 0.3, 0.7, 0.2, 0.8, 0.12, 0.88]) {
+          const q = el.getPointAtLength(len * t);
+          const p = new DOMPoint(q.x, q.y).matrixTransform(el.getScreenCTM());
+          if (el.ownerDocument.elementFromPoint(p.x, p.y) === el) return { x: p.x, y: p.y };
+        }
+        return null;
+      });
+      if (point) {
+        const origin = await (await frame.frameElement()).evaluate((f) => {
+          const r = f.getBoundingClientRect();
+          return { x: r.left + f.clientLeft, y: r.top + f.clientTop };
+        });
+        await page.mouse.click(origin.x + point.x, origin.y + point.y);
+      } else {
+        await loc.click();
+      }
       const pop = frame.locator(".austere-pop");
       await pop.waitFor({ state: "visible", timeout: 3000 }).catch(() => {
         throw new Error(`clicking part "${part}" in ${id} did not open the annotation popover`);
       });
       const quote = (await frame.locator(".austere-pop-quote").innerText()).trim();
       assert.ok(quote, `part "${part}" in ${id}: the popover shows no quote`);
-      await frame.locator(".austere-pop textarea").fill(`check ${part}`);
+      await frame.locator(".austere-pop textarea").fill(`check ${id}: ${part}`);
       await frame.locator(".austere-pop textarea").press("Enter");
       await pop.waitFor({ state: "hidden", timeout: 3000 });
     }
@@ -216,7 +245,7 @@ test("every component part is annotatable end to end", async (t) => {
     const res = await api("/api/poll", { file: gallery.file, timeoutMs: 5000 });
     assert.equal(res.status, "feedback", `poll returned ${res.status}`);
     for (const { id, part } of targets) {
-      const hit = res.items.find((i) => i.kind === "annotation" && i.note === `check ${part}`);
+      const hit = res.items.find((i) => i.kind === "annotation" && i.note === `check ${id}: ${part}`);
       assert.ok(hit, `part "${part}" in ${id} never reached poll`);
       assert.equal(hit.target, id, `part "${part}" was addressed to ${hit.target}, expected ${id}`);
       assert.equal(hit.detail?.part, part, `part "${part}" in ${id} arrived as ${JSON.stringify(hit.detail)}`);

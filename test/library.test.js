@@ -50,6 +50,17 @@ test("custom components have short descriptions", () => {
   }
 });
 
+test("the gallery of every example (and of every stress example) passes check without warnings", () => {
+  // Examples share one page in the gallery and the browser suite, so their
+  // statement names must not collide.
+  const schema = lib.schema();
+  for (const field of ["example", "stress"]) {
+    const r = checkHtml(htmlPage("gallery", examplePage(lib.CUSTOM_COMPONENTS, field), "austere.js"), { schema });
+    assert.equal(r.ok, true, `${field}: ${JSON.stringify(r.errors)}`);
+    assert.deepEqual(r.warnings, [], `${field} warnings: ${JSON.stringify(r.warnings)}`);
+  }
+});
+
 test("every custom component example and stress example passes check", () => {
   const schema = lib.schema();
   for (const c of lib.CUSTOM_COMPONENTS) {

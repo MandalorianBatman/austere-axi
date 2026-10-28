@@ -53,3 +53,16 @@ test("reads, replaces the program and rewrites the runtime tag", () => {
   assert.match(local, /src="\/__austere\/austere\.js"/);
   assert.doesNotMatch(local, /jsdelivr/);
 });
+
+test("a bad statement referenced several times is reported once", () => {
+  const r = checkHtml(
+    page(`root = Stack([diagram])
+diagram = Architecture([api, db], [toDb], [zone])
+api = Node("API", "kafka")
+db = Node("DB", "database")
+toDb = Edge(api, db)
+zone = Group("Zone", [api, db])`),
+  );
+  const bad = r.errors.filter((e) => e.statement === "api");
+  assert.equal(bad.length, 1, JSON.stringify(r.errors));
+});

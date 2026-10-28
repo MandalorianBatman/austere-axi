@@ -17,8 +17,10 @@ export const SIZES = {
   group: 11,
   nodeMinW: 128,
   nodeMaxW: 232,
+  edgeMaxW: 176,
   padX: 14,
   icon: 15,
+  tagRow: 17,
 };
 
 // Width the page column gives a diagram on desktop; the renderer passes the
@@ -31,15 +33,17 @@ export const DEFAULT_TARGET_WIDTH = 900;
  */
 export function textWidth(text, size, mono = false) {
   let w = 0;
-  for (const ch of String(text ?? "")) {
-    if (mono) w += 0.62;
-    else if (ch.charCodeAt(0) > 0x2e7f) w += 1.02; // CJK and other wide scripts
-    else if (/[ilI.,:;'|!()[\]{} ]/.test(ch)) w += 0.32;
-    else if (/[mwMW@%&]/.test(ch)) w += 0.88;
-    else if (/[A-Z0-9#$?_~]/.test(ch)) w += 0.68;
-    else w += 0.57;
-  }
+  for (const ch of String(text ?? "")) w += charUnits(ch, mono);
   return Math.ceil(w * size);
+}
+
+function charUnits(ch, mono) {
+  if (mono) return 0.62;
+  if (ch.charCodeAt(0) > 0x2e7f) return 1.02; // CJK and other wide scripts
+  if (/[ilI.,:;'|!()[\]{} ]/.test(ch)) return 0.32;
+  if (/[mwMW@%&]/.test(ch)) return 0.88;
+  if (/[A-Z0-9#$?_~]/.test(ch)) return 0.68;
+  return 0.57;
 }
 
 /**
@@ -54,17 +58,27 @@ export function wrapText(text, size, maxWidth, maxLines = 2, mono = false) {
   let line = "";
   const push = (s) => lines.push(s.trimEnd());
   for (const word of words) {
+    // One line past the limit proves the text is cut; stop measuring there
+    // (an agent may paste a 10 kB token).
+    if (lines.length > maxLines) break;
     if (textWidth(line + word, size, mono) <= maxWidth) {
       line += word;
       continue;
     }
     if (line) push(line);
     line = "";
-    // A single word wider than the line: hard-break it.
+    // A single word wider than the line: hard-break it at the longest prefix
+    // that fits, measured forward and never inside a surrogate pair.
     let rest = word;
-    while (textWidth(rest, size, mono) > maxWidth) {
-      let cut = rest.length;
-      while (cut > 1 && textWidth(rest.slice(0, cut), size, mono) > maxWidth) cut--;
+    while (lines.length <= maxLines && textWidth(rest, size, mono) > maxWidth) {
+      let cut = 0;
+      let units = 0;
+      for (const ch of rest) {
+        const u = charUnits(ch, mono);
+        if (cut > 0 && Math.ceil((units + u) * size) > maxWidth) break;
+        units += u;
+        cut += ch.length;
+      }
       push(rest.slice(0, cut));
       rest = rest.slice(cut);
     }
@@ -73,9 +87,9 @@ export function wrapText(text, size, maxWidth, maxLines = 2, mono = false) {
   if (line) push(line);
   if (lines.length <= maxLines) return lines.length ? lines : [""];
   const kept = lines.slice(0, maxLines);
-  let last = kept[maxLines - 1];
-  while (last && textWidth(`${last}…`, size, mono) > maxWidth) last = last.slice(0, -1);
-  kept[maxLines - 1] = `${last}…`;
+  let last = Array.from(kept[maxLines - 1]);
+  while (last.length && textWidth(`${last.join("")}…`, size, mono) > maxWidth) last.pop();
+  kept[maxLines - 1] = `${last.join("").trimEnd()}…`;
   return kept;
 }
 
@@ -178,8 +192,14 @@ function nestGroups(groups, problems) {
     for (const m of g.members) {
       if (!owner.has(m)) owner.set(m, g.id);
       else {
-        const first = groups.find((x) => x.id === owner.get(m));
+        let first = groups.find((x) => x.id === owner.get(m));
         if (!isAncestor(groups, g.id, first.id)) {
+          // Name the outermost group around the first that does not contain g:
+          // that is the one g really crosses.
+          for (let up = groups.find((x) => x.id === first.parent); up; up = groups.find((x) => x.id === up.parent)) {
+            if (g.members.every((x) => up.memberSet.has(x))) break;
+            first = up;
+          }
           problems.push(
             `Groups ${first.named ? first.id : `"${first.label}"`} and ${g.named ? g.id : `"${g.label}"`} share ${m} but neither contains the other; it is drawn in the first. Nest one group inside the other or remove ${m} from one.`,
           );
@@ -199,25 +219,39 @@ function isAncestor(groups, ancestorId, id) {
   return false;
 }
 
-/** Size a node box from its text: label (≤2 lines), detail (1 line), tag chip. */
+/**
+ * Size a node box from its text: a tag chip row (when tagged), label (≤2
+ * lines), detail (1 line). Everything stays inside the box, so a chip never
+ * covers an arrowhead.
+ */
 export function sizeNode(node) {
   const { label, detail, tag, nodeMinW, nodeMaxW, padX, icon } = SIZES;
   const labelRoom = nodeMaxW - padX * 2 - icon - 6;
   const natural = Math.max(
     textWidth(node.label, label) + icon + 6,
     node.detail ? textWidth(node.detail, detail, true) : 0,
-    node.tag ? textWidth(node.tag, tag) + 24 : 0,
+    node.tag ? textWidth(node.tag, tag) + 14 : 0,
   );
   const width = Math.min(nodeMaxW, Math.max(nodeMinW, natural + padX * 2));
   const labelLines = wrapText(node.label, label, Math.min(labelRoom, width - padX * 2 - icon - 6), 2);
   const detailLine = node.detail ? wrapText(node.detail, detail, width - padX * 2, 1, true)[0] : "";
-  const height = 16 + labelLines.length * 17 + (detailLine ? 16 : 0) + 8;
-  return { width, height, labelLines, detailLine };
+  const tagLine = node.tag ? wrapText(node.tag, tag, width - padX * 2 - 14, 1)[0] : "";
+  const tagRow = tagLine ? SIZES.tagRow : 0;
+  const height = 16 + tagRow + labelLines.length * 17 + (detailLine ? 16 : 0) + 8;
+  return { width, height, labelLines, detailLine, tagLine, tagRow };
+}
+
+/** An edge label: up to two lines, so a sentence does not widen the whole diagram. */
+export function sizeEdgeLabel(label) {
+  if (!label) return null;
+  const lines = wrapText(label, SIZES.edge, SIZES.edgeMaxW - 12, 2);
+  const width = Math.max(...lines.map((l) => textWidth(l, SIZES.edge))) + 12;
+  return { lines, width, height: 6 + lines.length * 13 };
 }
 
 function runLayout(model, rankdir) {
   const g = new dagre.graphlib.Graph({ compound: true, multigraph: true });
-  g.setGraph({ rankdir, nodesep: rankdir === "LR" ? 26 : 34, ranksep: rankdir === "LR" ? 46 : 42, edgesep: 14, marginx: 18, marginy: 22 });
+  g.setGraph({ rankdir, nodesep: rankdir === "LR" ? 26 : 34, ranksep: rankdir === "LR" ? 46 : 42, edgesep: 14, marginx: 18, marginy: 14 });
   g.setDefaultEdgeLabel(() => ({}));
   const boxes = new Map();
   for (const n of model.nodes) {
@@ -230,9 +264,10 @@ function runLayout(model, rankdir) {
     if (grp.parent) g.setParent(`group:${grp.id}`, `group:${grp.parent}`);
     for (const m of grp.directMembers) g.setParent(m, `group:${grp.id}`);
   }
+  const labels = new Map(model.edges.map((e) => [e.id, sizeEdgeLabel(e.label)]));
   for (const e of model.edges) {
-    const lw = e.label ? textWidth(e.label, SIZES.edge) + 12 : 0;
-    g.setEdge(e.from, e.to, e.label ? { width: lw, height: 18, labelpos: "c" } : {}, e.id);
+    const lb = labels.get(e.id);
+    g.setEdge(e.from, e.to, lb ? { width: lb.width, height: lb.height, labelpos: "c" } : {}, e.id);
   }
   dagre.layout(g);
 
@@ -243,58 +278,98 @@ function runLayout(model, rankdir) {
   });
   const edges = model.edges.map((e) => {
     const d = g.edge({ v: e.from, w: e.to, name: e.id }) || {};
+    const lb = labels.get(e.id);
     return {
       ...e,
       points: (d.points || []).map((pt) => ({ x: pt.x, y: pt.y })),
-      labelBox: e.label ? { cx: d.x, cy: d.y, width: textWidth(e.label, SIZES.edge) + 12, height: 18 } : null,
+      labelBox: lb ? { cx: d.x, cy: d.y, width: lb.width, height: lb.height, lines: lb.lines } : null,
     };
   });
   const groups = model.groups.map((grp) => {
     const p = g.node(`group:${grp.id}`) || {};
-    return { ...grp, x: (p.x ?? 0) - (p.width ?? 0) / 2, y: (p.y ?? 0) - (p.height ?? 0) / 2, width: p.width ?? 0, height: p.height ?? 0 };
+    const width = p.width ?? 0;
+    // The label chip sits on the frame's top edge; it never runs past the frame.
+    const labelLine = grp.label ? wrapText(grp.label, SIZES.group, Math.max(24, width - 24 - 14), 1)[0] : "";
+    return { ...grp, labelLine, x: (p.x ?? 0) - width / 2, y: (p.y ?? 0) - (p.height ?? 0) / 2, width, height: p.height ?? 0 };
   });
   const gr = g.graph();
   let width = Math.ceil(gr.width || 0);
-  // dagre reserves room for self-loops but returns unusable points for them;
-  // draw each as a small arc off the node's right side, label beside it.
+  let height = Math.ceil(gr.height || 0);
+  // dagre reserves a spot for each self-loop's label next to its node (to the
+  // right going down, below going across, where no other edge attaches) but
+  // returns unusable points. Draw each loop as an arc reaching to its label.
   for (const e of edges) {
     if (e.from !== e.to) continue;
     const n = nodes.find((x) => x.id === e.from);
+    const d = g.edge({ v: e.from, w: e.to, name: e.id }) || {};
     const r = n.x + n.width;
-    const y1 = n.y + n.height * 0.3;
-    const y2 = n.y + n.height * 0.7;
-    e.points = [
-      { x: r, y: y1 },
-      { x: r + 26, y: y1 - 10 },
-      { x: r + 26, y: y2 + 10 },
-      { x: r, y: y2 },
-    ];
-    if (e.labelBox) e.labelBox = { ...e.labelBox, cx: r + 30 + e.labelBox.width / 2, cy: n.y + n.height / 2 };
-    const right = e.labelBox ? e.labelBox.cx + e.labelBox.width / 2 : r + 30;
-    width = Math.max(width, Math.ceil(right + 12));
+    const b = n.y + n.height;
+    const cx = n.x + n.width / 2;
+    const cy = n.y + n.height / 2;
+    const placed = Number.isFinite(d.x) && Number.isFinite(d.y);
+    if (rankdir === "TB") {
+      const lx = placed ? d.x : r + 30 + (e.labelBox ? e.labelBox.width / 2 : 0);
+      const reach = Math.max(r + 18, e.labelBox ? lx - e.labelBox.width / 2 - 3 : lx);
+      const y1 = cy - n.height * 0.22;
+      const y2 = cy + n.height * 0.22;
+      e.points = [
+        { x: r, y: y1 },
+        { x: reach, y: y1 - 8 },
+        { x: reach, y: y2 + 8 },
+        { x: r, y: y2 },
+      ];
+      if (e.labelBox) e.labelBox = { ...e.labelBox, cx: Math.max(lx, reach + 3 + e.labelBox.width / 2), cy };
+    } else {
+      const ly = placed ? d.y : b + 30 + (e.labelBox ? e.labelBox.height / 2 : 0);
+      const reach = Math.max(b + 16, e.labelBox ? ly - e.labelBox.height / 2 - 3 : ly);
+      const spread = Math.min(30, n.width * 0.3);
+      e.points = [
+        { x: cx - spread, y: b },
+        { x: cx - spread - 8, y: reach },
+        { x: cx + spread + 8, y: reach },
+        { x: cx + spread, y: b },
+      ];
+      if (e.labelBox) e.labelBox = { ...e.labelBox, cx, cy: Math.max(ly, reach + 3 + e.labelBox.height / 2) };
+    }
+    const xs = e.points.map((p) => p.x);
+    const ys = e.points.map((p) => p.y);
+    if (e.labelBox) {
+      xs.push(e.labelBox.cx + e.labelBox.width / 2);
+      ys.push(e.labelBox.cy + e.labelBox.height / 2);
+    }
+    width = Math.max(width, Math.ceil(Math.max(...xs) + 12));
+    height = Math.max(height, Math.ceil(Math.max(...ys) + 10));
   }
-  return { rankdir, nodes, edges, groups, width, height: Math.ceil(gr.height || 0) };
+  return { rankdir, nodes, edges, groups, width, height };
 }
 
-/** Higher is better: legible at the available width, and not absurdly tall. */
-export function fitScore(layout, targetWidth = DEFAULT_TARGET_WIDTH) {
-  const scale = Math.min(1, targetWidth / Math.max(1, layout.width));
-  const shown = layout.height * scale;
-  return scale - Math.max(0, (shown - 760) / 1600);
+// Text shown at less than this fraction of its size starts to be hard to read.
+export const LEGIBLE_SCALE = 0.85;
+
+/** Fraction of natural size a layout is drawn at in `targetWidth`. */
+export function scaleAt(layout, targetWidth = DEFAULT_TARGET_WIDTH) {
+  return Math.min(1, targetWidth / Math.max(1, layout.width));
 }
 
 /**
- * Lay out a model. direction "right" or "down" forces it; "auto" tries both
- * and keeps the one that stays legible at `targetWidth` (ties go to "right"),
- * so the same diagram can run across on a desktop and down on a phone.
+ * Lay out a model. direction "right" or "down" forces it. "auto" keeps
+ * left-to-right while its text stays legible at `targetWidth`, otherwise
+ * top-to-bottom (a long page is cheap to scroll; shrunken text is not), and
+ * when neither is legible, top-to-bottom unless left-to-right shrinks clearly
+ * less. So the same diagram can run across on a desktop and down on a phone.
  */
 export function layoutModel(model, targetWidth = DEFAULT_TARGET_WIDTH) {
   if (!model.nodes.length) return null;
   if (model.direction === "right") return runLayout(model, "LR");
   if (model.direction === "down") return runLayout(model, "TB");
   const lr = runLayout(model, "LR");
+  if (scaleAt(lr, targetWidth) >= LEGIBLE_SCALE) return lr;
   const tb = runLayout(model, "TB");
-  return fitScore(lr, targetWidth) >= fitScore(tb, targetWidth) - 0.04 ? lr : tb;
+  if (scaleAt(tb, targetWidth) >= LEGIBLE_SCALE) return tb;
+  // Neither fits: top-to-bottom unless left-to-right is clearly larger. Down
+  // keeps each group in fewer ranks, so zones stay compact instead of
+  // stretching into bands across the diagram.
+  return scaleAt(lr, targetWidth) > scaleAt(tb, targetWidth) * 1.1 ? lr : tb;
 }
 
 /** d3 curveBasis through dagre's points, so edges read as smooth curves. */

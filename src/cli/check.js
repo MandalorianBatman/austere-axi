@@ -61,7 +61,12 @@ export function checkHtml(html, { schema } = {}) {
     return result;
   }
   result.statements = parsed.meta.statementCount;
+  // The parser reports a bad statement once per reference to it; say it once.
+  const seen = new Set();
   for (const e of parsed.meta.errors) {
+    const key = `${e.severity}\0${e.code}\0${e.statementId}\0${e.message}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     const entry = {
       code: e.code,
       statement: e.statementId,

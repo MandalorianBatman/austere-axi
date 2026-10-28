@@ -10,6 +10,7 @@ import {
   NODE_KINDS,
   SIZES,
   DEFAULT_TARGET_WIDTH,
+  LEGIBLE_SCALE,
   buildModel,
   edgePath,
   layoutModel,
@@ -26,6 +27,7 @@ const ICONS = {
   external: Globe,
 };
 const STYLE_NAMES = { dashed: "async", emphasis: "main path", security: "auth / trust" };
+const GROUP_NAMES = { region: "boundary", security: "trust zone" };
 
 // Every SVG text ends in a space: annotation quotes use textContent, which
 // would otherwise run a label and its detail together.
@@ -35,8 +37,8 @@ function NodeBox({ n }) {
   const Icon = ICONS[n.kind];
   const { padX, icon } = SIZES;
   const left = n.x + padX;
-  const top = n.y + 14;
-  const tagW = n.tag ? textWidth(n.tag, SIZES.tag) + 14 : 0;
+  const top = n.y + 14 + n.tagRow;
+  const tagW = n.tagLine ? textWidth(n.tagLine, SIZES.tag) + 14 : 0;
   return (
     <g
       className={`austere-arch-node k-${n.kind}`}
@@ -58,11 +60,11 @@ function NodeBox({ n }) {
             {n.detailLine}
           </T>
         ) : null}
-        {n.tag ? (
+        {n.tagLine ? (
           <g className="austere-arch-node-tag">
-            <rect x={n.x + n.width - tagW - 10} y={n.y - 9} width={tagW} height="17" rx="8.5" />
-            <T x={n.x + n.width - tagW / 2 - 10} y={n.y + 3} textAnchor="middle">
-              {n.tag}
+            <rect x={n.x + n.width - tagW - 8} y={n.y + 7} width={tagW} height="15" rx="7.5" />
+            <T x={n.x + n.width - tagW / 2 - 8} y={n.y + 18} textAnchor="middle">
+              {n.tagLine}
             </T>
           </g>
         ) : null}
@@ -78,12 +80,20 @@ function ArchitectureView({ props, statementId }) {
   // Room the page gives us, so "auto" can run across on desktop and down on a phone.
   const boxRef = useRef(null);
   const [room, setRoom] = useState(DEFAULT_TARGET_WIDTH);
+  // A diagram wider than its box scrolls; fade the cut edge so that shows.
+  const scrollRef = useRef(null);
+  const [fade, setFade] = useState(false);
+  const checkCut = () => {
+    const el = scrollRef.current;
+    if (el) setFade(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  };
   useLayoutEffect(() => {
     const el = boxRef.current;
     if (!el || typeof ResizeObserver === "undefined") return undefined;
     const update = () => {
       const w = el.clientWidth;
       if (w > 0) setRoom((prev) => (Math.abs(prev - w) > 40 ? w : prev));
+      checkCut();
     };
     update();
     const ro = new ResizeObserver(update);
@@ -107,6 +117,9 @@ function ArchitectureView({ props, statementId }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [problemKey, statementId]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(checkCut, [layout]);
+
   if (error) {
     return (
       <div className="austere-render-error" ref={boxRef}>
@@ -119,13 +132,26 @@ function ArchitectureView({ props, statementId }) {
   const byId = new Map(layout.nodes.map((n) => [n.id, n]));
   const kinds = [...new Set(layout.nodes.map((n) => n.kind))];
   const styles = [...new Set(layout.edges.map((e) => e.style))];
+  const groupKinds = [...new Set(layout.groups.map((g) => g.kind))];
   const W = layout.width;
   const H = layout.height;
-  const minWidth = Math.round(Math.min(W, Math.max(320, W * 0.7)));
+  // Shrink to fit down to the legible scale, then scroll.
+  const minWidth = Math.round(Math.min(W, Math.max(320, W * LEGIBLE_SCALE)));
+  // Part names: "From → To", plus the label when two edges join the same pair.
+  const pairs = new Map();
+  for (const e of layout.edges) pairs.set(`${e.from}>${e.to}`, (pairs.get(`${e.from}>${e.to}`) || 0) + 1);
+  const partOf = (e) => {
+    const base = `${byId.get(e.from)?.label} → ${byId.get(e.to)?.label}`;
+    return pairs.get(`${e.from}>${e.to}`) > 1 && e.label ? `${base} (${e.label})` : base;
+  };
 
   return (
     <figure className="austere-arch" ref={boxRef}>
-      <div className="austere-arch-scroll">
+      <div
+        className={`austere-arch-scroll${fade ? " is-cut" : ""}`}
+        ref={scrollRef}
+        onScroll={checkCut}
+      >
         <svg
           className="austere-arch-svg"
           viewBox={`0 0 ${W} ${H}`}
@@ -141,8 +167,9 @@ function ArchitectureView({ props, statementId }) {
                 viewBox="0 0 10 10"
                 refX="9"
                 refY="5"
-                markerWidth="7"
-                markerHeight="7"
+                markerUnits="userSpaceOnUse"
+                markerWidth="9"
+                markerHeight="9"
                 orient="auto-start-reverse"
               >
                 <path d="M0,0L10,5L0,10z" className={`austere-arch-arrow s-${s}`} />
@@ -171,7 +198,7 @@ function ArchitectureView({ props, statementId }) {
                 data-oui-id={e.named ? e.id : undefined}
                 data-oui-c={e.named ? "Edge" : undefined}
               >
-                <path className="austere-arch-edge-hit" d={d} />
+                <path className="austere-arch-edge-hit" d={d} data-austere-part={partOf(e)} />
                 <path className="austere-arch-edge-line" d={d} markerEnd={`url(#${uid}-${e.style})`} />
               </g>
             );
@@ -186,10 +213,12 @@ function ArchitectureView({ props, statementId }) {
                 data-oui-id={g.named ? g.id : undefined}
                 data-oui-c={g.named ? "Group" : undefined}
               >
+                {/* Titles stay outside the part: its text becomes the annotation quote. */}
+                {g.labelLine !== g.label ? <title>{g.label}</title> : null}
                 <g className="austere-arch-group-label" data-austere-part={g.label}>
-                  <rect x={g.x + 12} y={g.y - 9} width={textWidth(g.label, SIZES.group) + 14} height="18" rx="5" />
+                  <rect x={g.x + 12} y={g.y - 9} width={textWidth(g.labelLine, SIZES.group) + 14} height="18" rx="5" />
                   <T x={g.x + 19} y={g.y + 4}>
-                    {g.label}
+                    {g.labelLine}
                   </T>
                 </g>
               </g>
@@ -203,10 +232,8 @@ function ArchitectureView({ props, statementId }) {
                 data-oui-id={e.named ? e.id : undefined}
                 data-oui-c={e.named ? "Edge" : undefined}
               >
-                <g
-                  className="austere-arch-edge-label"
-                  data-austere-part={`${byId.get(e.from)?.label} → ${byId.get(e.to)?.label}`}
-                >
+                {e.labelBox.lines.join(" ") !== e.label ? <title>{e.label}</title> : null}
+                <g className="austere-arch-edge-label" data-austere-part={partOf(e)}>
                   <rect
                     x={e.labelBox.cx - e.labelBox.width / 2}
                     y={e.labelBox.cy - e.labelBox.height / 2}
@@ -214,9 +241,13 @@ function ArchitectureView({ props, statementId }) {
                     height={e.labelBox.height}
                     rx="5"
                   />
-                  <T x={e.labelBox.cx} y={e.labelBox.cy + 4} textAnchor="middle">
-                    {e.label}
-                  </T>
+                  <text textAnchor="middle">
+                    {e.labelBox.lines.map((line, i) => (
+                      <tspan key={i} x={e.labelBox.cx} y={e.labelBox.cy + 4 + (i - (e.labelBox.lines.length - 1) / 2) * 13}>
+                        {line}{" "}
+                      </tspan>
+                    ))}
+                  </text>
                 </g>
               </g>
             ) : null,
@@ -227,7 +258,7 @@ function ArchitectureView({ props, statementId }) {
           ))}
         </svg>
       </div>
-      {kinds.length > 1 || styles.some((s) => s !== "solid") ? (
+      {kinds.length > 1 || groupKinds.length || styles.some((s) => s !== "solid") ? (
         <figcaption className="austere-arch-legend">
           {kinds.map((k) => {
             const Icon = ICONS[k];
@@ -238,6 +269,14 @@ function ArchitectureView({ props, statementId }) {
               </span>
             );
           })}
+          {groupKinds.map((k) => (
+            <span key={`g-${k}`} className={`austere-arch-legend-item g-${k}`}>
+              <svg width="18" height="12" aria-hidden="true">
+                <rect x="1" y="1" width="16" height="10" rx="3" />
+              </svg>
+              {GROUP_NAMES[k]}
+            </span>
+          ))}
           {styles
             .filter((s) => s !== "solid")
             .map((s) => (
@@ -297,7 +336,7 @@ const Group = austereComponent({
     kind: z.enum(GROUP_KINDS).optional(),
   }),
   description:
-    "A boundary around Node statements (a VPC, a cluster, a trust zone). A group whose members are a subset of another's is drawn inside it; kind security draws it red.",
+    "A boundary around Node statements (a VPC, a cluster, a trust zone); members still sit where their edges put them. A group whose members are a subset of another's is drawn inside it; kind security draws it red.",
   renderer: nothing,
   slots: null,
   tagged: false,
@@ -313,12 +352,12 @@ const Architecture = austereComponent({
     direction: z.enum(DIRECTIONS).optional(),
   }),
   description:
-    "System diagram laid out automatically: write no coordinates. Every Node, Edge and Group is its own statement and click target. direction auto (default) picks right or down to fit the page.",
+    "System diagram laid out automatically: write no coordinates. Every Node, Edge and Group is its own statement and click target. direction auto (default) runs right when that fits the page legibly, else down.",
   notes: [
-    "- Architecture for systems: services, stores, queues, trust boundaries. Name every Node, Edge and Group.",
+    "- Architecture for systems: services, stores, queues, trust boundaries. Name every Node, Edge and Group. Over ~15 nodes, split into several diagrams.",
   ],
   renderer: ArchitectureView,
-  example: `requestPath = Architecture([browser, edge, api, sessions, cache], [toEdge, toApi, readSessions, readCache], [vpc])
+  example: `platformMap = Architecture([browser, edge, api, sessions, cache], [toEdge, toApi, readSessions, readCache], [vpc])
 browser = Node("Browser", "external")
 edge = Node("Edge worker", "cloud", "Cloudflare")
 api = Node("API", "backend", "Node :8080")

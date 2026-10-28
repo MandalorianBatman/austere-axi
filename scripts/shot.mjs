@@ -53,7 +53,7 @@ const info = await page.evaluate(() => {
     (parts[id] ||= []).push(el.getAttribute("data-austere-part"));
   }
   return {
-    statements: document.querySelectorAll("[data-oui-id]").length,
+    statements: new Set(Array.from(document.querySelectorAll("[data-oui-id]"), (el) => el.getAttribute("data-oui-id"))).size,
     renderErrors: Array.from(document.querySelectorAll(".austere-render-error")).map((e) => e.textContent.trim()),
     overflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
     parts,

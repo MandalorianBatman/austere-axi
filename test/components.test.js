@@ -131,6 +131,12 @@ test("Architecture model: subset groups nest; overlapping groups are reported", 
   const crossed = buildModel({ nodes: [a, b, c], edges: [], groups: [G("left", "Left", [a, b]), G("right", "Right", [b, c])] });
   assert.equal(crossed.problems.length, 1);
   assert.match(crossed.problems[0], /share b but neither contains the other/);
+  // az1 sits inside vpcB; vpcB and vpcC cross. Name those two, not az1.
+  const deep = buildModel({ nodes: [a, b, c], edges: [], groups: [G("az1", "AZ 1", [a]), G("vpcB", "B", [a, b]), G("vpcC", "C", [a, c])] });
+  assert.equal(deep.problems.length, 1);
+  assert.match(deep.problems[0], /^Groups vpcB and vpcC share a/);
+  const inside3 = buildModel({ nodes: [a, b, c], edges: [], groups: [G("all", "All", [a, b, c]), G("ab", "AB", [a, b]), G("ac", "AC", [a, c])] });
+  assert.match(inside3.problems[0], /^Groups ab and ac share a/);
 });
 
 test("Architecture layout: nodes never overlap, groups contain their members, self-loops stay by their node", () => {
@@ -138,7 +144,7 @@ test("Architecture layout: nodes never overlap, groups contain their members, se
     N(id, `${id} service with a longer name`, ["external", "cloud", "cloud", "backend", "database", "database", "messagebus", "backend"][i], "detail :8080"),
   );
   const [users, cdn, lb, api, cache, db, queue, worker] = nodes;
-  const edges = [E("a", users, cdn, "HTTPS"), E("b", cdn, lb), E("c", lb, api), E("d", api, cache, "read"), E("e", api, db, "SQL"), E("f", api, queue), E("g", queue, worker), E("h", api, api, "retry")];
+  const edges = [E("a", users, cdn, "HTTPS"), E("b", cdn, lb), E("c", lb, api), E("d", api, cache, "read"), E("e", api, db, "SQL"), E("f", api, queue), E("g", queue, worker), E("h", api, api, "retry"), E("h2", api, api, "backoff")];
   for (const direction of ["right", "down", "auto"]) {
     const l = layoutModel(buildModel({ nodes, edges, groups: [G("vpc", "VPC", [lb, api, cache, db]), G("sg", "SG", [lb, api], "security")], direction }));
     for (let i = 0; i < l.nodes.length; i++) for (let j = i + 1; j < l.nodes.length; j++) {
@@ -147,10 +153,20 @@ test("Architecture layout: nodes never overlap, groups contain their members, se
     for (const g of l.groups) for (const m of g.members) {
       assert.ok(inside(l.nodes.find((n) => n.id === m), g), `${direction}: ${m} escapes group ${g.id}`);
     }
-    const loop = l.edges.find((e) => e.id === "h");
     const node = l.nodes.find((n) => n.id === "api");
-    for (const p of loop.points) assert.ok(p.x >= node.x + node.width - 1 && p.x <= node.x + node.width + 30 && p.y >= node.y - 12 && p.y <= node.y + node.height + 12, `${direction}: self-loop point ${JSON.stringify(p)} strays`);
-    assert.ok(loop.labelBox.cx + loop.labelBox.width / 2 <= l.width, `${direction}: self-loop label is outside the diagram`);
+    const chips = [];
+    for (const loop of l.edges.filter((e) => e.from === e.to)) {
+      for (const p of loop.points) assert.ok(p.x >= node.x && p.y >= node.y - 12, `${direction}: self-loop point ${JSON.stringify(p)} strays`);
+      const chip = { x: loop.labelBox.cx - loop.labelBox.width / 2, y: loop.labelBox.cy - loop.labelBox.height / 2, width: loop.labelBox.width, height: loop.labelBox.height };
+      assert.ok(chip.x + chip.width <= l.width && chip.y + chip.height <= l.height, `${direction}: self-loop label is outside the diagram`);
+      for (const n of l.nodes) assert.ok(!overlaps(chip, n), `${direction}: ${loop.id} label covers ${n.id}`);
+      for (const other of chips) assert.ok(!overlaps(chip, other), `${direction}: two self-loop labels on one node overlap`);
+      chips.push(chip);
+      // Across, edges leave from the right side, so loops hang below the node.
+      if (l.rankdir === "LR") assert.ok(loop.points.every((p) => p.y >= node.y + node.height - 1), `${direction}: loop is not under its node`);
+      else assert.ok(loop.points.every((p) => p.x >= node.x + node.width - 1), `${direction}: loop is not right of its node`);
+    }
+    assert.equal(chips.length, 2);
   }
 });
 
@@ -164,6 +180,43 @@ test("Architecture layout: auto runs across with room and down on a phone", () =
   assert.equal(layoutModel(buildModel({ nodes: [], edges: [] })), null);
 });
 
+test("Architecture layout: when neither direction is legible, auto prefers down unless across is clearly larger", () => {
+  // The cold-start author's notification-service diagram, verbatim: three zones, long edge labels.
+  const app = N("app", "Web and mobile apps", "frontend");
+  const monolith = N("monolith", "Monolith", "backend", "orders, accounts");
+  const auth = N("auth", "Auth", "security", "sessions, token issuer");
+  const kafka = N("kafka", "Kafka", "messagebus", "orders.*, accounts.*");
+  const consumer = N("consumer", "Event consumer", "backend", "consumer group", "new");
+  const prefsApi = N("prefsApi", "Preferences API", "backend", "REST, user-facing", "new");
+  const prefsDb = N("prefsDb", "Preferences DB", "database", "Postgres", "new");
+  const ses = N("ses", "Amazon SES", "external", "email");
+  const fcm = N("fcm", "Firebase Cloud Messaging", "external", "push");
+  const model = buildModel({
+    nodes: [app, monolith, auth, kafka, consumer, prefsApi, prefsDb, ses, fcm],
+    edges: [
+      E("appToPrefs", app, prefsApi, "HTTPS + user token", "security"),
+      E("prefsToAuth", prefsApi, auth, "verify token (signing keys)", "security"),
+      E("monolithToKafka", monolith, kafka, "publish events", "dashed"),
+      E("kafkaToConsumer", kafka, consumer, "consume", "dashed"),
+      E("consumerToDb", consumer, prefsDb, "read preferences"),
+      E("prefsToDb", prefsApi, prefsDb, "read / write"),
+      E("consumerToSes", consumer, ses, "send email", "emphasis"),
+      E("consumerToFcm", consumer, fcm, "send push", "emphasis"),
+    ],
+    groups: [
+      G("monolithZone", "Monolith zone (owns auth)", [monolith, auth], "security"),
+      G("notifZone", "Notifications zone (owns preferences)", [consumer, prefsApi, prefsDb], "security"),
+      G("providers", "Third-party providers", [ses, fcm], "region"),
+    ],
+  });
+  const lr = layoutModel({ ...model, direction: "right" });
+  const tb = layoutModel({ ...model, direction: "down" });
+  const auto = layoutModel(model, 900);
+  // Across does not fit legibly at page width, and it is not clearly bigger than down.
+  assert.ok(900 / lr.width < 0.85, `lr=${lr.width}`);
+  assert.equal(auto.rankdir, "TB", `lr=${lr.width} tb=${tb.width}`);
+});
+
 test("Architecture text: wrapping keeps lines within width and marks a cut", () => {
   const lines = wrapText("SESSIONS_PG_READ_THROUGH_CACHE_TTL_SECONDS_OVERRIDE_FOR_STAGING", 13, 160, 2);
   assert.equal(lines.length, 2);
@@ -171,4 +224,11 @@ test("Architecture text: wrapping keeps lines within width and marks a cut", () 
   assert.ok(lines[1].endsWith("…"));
   assert.deepEqual(wrapText("API", 13, 160, 2), ["API"]);
   assert.deepEqual(wrapText("", 13, 160, 2), [""]);
+  // A pasted 20 kB token is cut quickly, and an emoji is never split in half.
+  const t0 = performance.now();
+  const huge = wrapText("x".repeat(20000), 13, 160, 2);
+  assert.ok(performance.now() - t0 < 200, `took ${performance.now() - t0} ms`);
+  assert.equal(huge.length, 2);
+  const emoji = wrapText("📦".repeat(40), 13, 100, 2);
+  assert.ok(emoji.every((l) => !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(l)), JSON.stringify(emoji));
 });
