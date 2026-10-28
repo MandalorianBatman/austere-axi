@@ -15,7 +15,9 @@ export const CONTENT_SLOTS = ["Card.children", "TabItem.content", "AccordionItem
  * @param {import("zod").ZodObject} c.props  Props IN POSITIONAL ORDER. Append-only once released.
  * @param {string} c.description   One line the agent reads in `spec`. Costs tokens in every session.
  * @param {Function} c.renderer    React renderer: ({ props, renderNode, statementId }) => node.
- * @param {string} c.example       OpenUI statements; the first one must call this component.
+ * @param {string} [c.example]     OpenUI statements; the first one must call this component.
+ *                                 Required, except for value-only parts (slots: null), which the
+ *                                 container's example already shows.
  * @param {string} [c.stress]      Like example, with hostile input (long tokens, deep nesting, the
  *                                 malformed shapes agents write). Never in the prompt; the tests and
  *                                 the browser suite render it at phone width.
@@ -31,7 +33,8 @@ export function austereComponent(c) {
   if (!GROUP_NAMES.includes(c.group)) throw new Error(`${where}: group must be one of ${GROUP_NAMES.join(", ")}`);
   if (typeof c.description !== "string" || !c.description.trim()) throw new Error(`${where}: description is required`);
   if (typeof c.renderer !== "function") throw new Error(`${where}: renderer must be a React component`);
-  if (typeof c.example !== "string" || !c.example.includes(`${c.name}(`)) {
+  const valueOnly = c.slots === null;
+  if ((!valueOnly || c.example !== undefined) && (typeof c.example !== "string" || !c.example.includes(`${c.name}(`))) {
     throw new Error(`${where}: example must contain a ${c.name}(...) call`);
   }
   if (c.stress !== undefined && (typeof c.stress !== "string" || !c.stress.includes(`${c.name}(`))) {
@@ -45,7 +48,7 @@ export function austereComponent(c) {
     notes,
     slots: c.slots === undefined ? CONTENT_SLOTS : c.slots,
     tagged: c.tagged !== false,
-    example: c.example.trim(),
+    example: typeof c.example === "string" ? c.example.trim() : null,
     stress: c.stress ? c.stress.trim() : null,
     definition: defineComponent({ name: c.name, props: c.props, description: c.description, component: c.renderer }),
   };

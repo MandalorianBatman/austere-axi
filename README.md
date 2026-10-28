@@ -19,15 +19,19 @@ root = Stack([intro, flow, options, decide], "column", "l")
 intro = Card([CardHeader("Session storage migration", "Redis → Postgres"), introText])
 introText = MarkDownRenderer("Sessions are lost on failover. **Goal:** durable sessions, no forced logout.")
 flow = Card([CardHeader("Request path"), flowDiagram])
-flowDiagram = Mermaid("flowchart LR
-  client --> edge --> api --> pg[(Postgres)]")
+flowDiagram = Architecture([client, api, pg], [toApi, toPg])
+client = Node("Client", "external")
+api = Node("API", "backend", "Node :8080")
+pg = Node("Postgres", "database", "sessions table", "new")
+toApi = Edge(client, api, "HTTPS", "emphasis")
+toPg = Edge(api, pg, "SQL")
 options = Card([CardHeader("Rollout options"), optionTable])
 optionTable = Table([Col("Option", ["Big bang", "Dual-write"]), Col("Risk", [Tag("high", null, "sm", "danger"), Tag("low", null, "sm", "success")])])
 decide = Form("rollout", Buttons([Button("Send decision", @ToAssistant("Decision: rollout"), "primary")]), [strategyField])
 strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big bang", "", "bigbang"), RadioItem("Dual-write", "", "dualwrite")]))
 ```
 
-[`examples/session-migration.html`](examples/session-migration.html) is a full page: a KPI row, a diagram, a table, a chart, a diff, and a decision form. The whole file is about 900 tokens.
+[`examples/session-migration.html`](examples/session-migration.html) is a full page: a KPI row, a diagram, a table, a chart, a diff, and a decision form. The whole file is about 1,100 tokens.
 
 ## Why
 
@@ -55,7 +59,8 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 ```
 
 - **An artifact is a plain `.html` file.** It contains one `<script>` tag for the runtime and one `<script type="text/openui">` block holding the program. Opened directly, it renders from the CDN. Under review, the server points that tag at a local copy.
-- **The runtime** bundles the OpenUI React renderer with a curated component library: 58 of the stock components, plus `Mermaid`, `Diff` and `FileTree`. Every rendered statement is tagged with its name.
+- **The runtime** bundles the OpenUI React renderer with a curated component library: 58 of the stock components, plus `Architecture` (with `Node`, `Edge` and `Group`), `Mermaid`, `Diff` and `FileTree`. Every rendered statement is tagged with its name.
+- **Architecture diagrams** are laid out automatically ([dagre](https://github.com/dagrejs/dagre)): the agent writes nodes, edges and groups as statements and never a coordinate. Each node and edge is its own click target, so feedback on a diagram arrives as `annotation: api (Node)` with its line. The layout runs across on a desktop and down on a phone. Mermaid stays for sequences, state machines, ER and gantt.
 - **Annotations** resolve to the innermost named statement. They also carry precise detail where it exists: table row and column, `file:+line` for diff lines, the label of a diagram node, or the selected text. The popover shows the parent chain, so the reviewer can retarget a note to an enclosing section.
 - **Buttons and forms** are feedback channels. `@ToAssistant("…")` queues a message along with the form's values. A button with no action sends its label.
 - **Remote review.** When Tailscale is running, the server also listens on this machine's tailnet IP, and `open` prints a phone link. The review UI has a mobile layout with a conversation sheet.
@@ -169,7 +174,7 @@ node dist/cli.mjs examples/session-migration.html
 
 | Path | Contents |
 |---|---|
-| `src/runtime/components/` | Custom components (`Diff`, `Mermaid`, `FileTree`), one self-describing file each, collected automatically |
+| `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `Mermaid`, `FileTree`), one self-describing file each, collected automatically |
 | `src/runtime/stock.js` | Which stock OpenUI components ship, their prompt groups, renderer overrides |
 | `src/runtime/` | Library assembly, annotation layer, review bridge, styles |
 | `src/chrome/` | Review UI around the artifact iframe |

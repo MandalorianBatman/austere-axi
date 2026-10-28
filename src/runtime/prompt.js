@@ -19,11 +19,14 @@ root = Stack([intro, flow, options, openQuestion, decide], "column", "l")
 intro = Card([CardHeader("Session storage migration", "Move sessions from Redis to Postgres"), introText])
 introText = MarkDownRenderer("Sessions live only in Redis and are lost on failover. **Goal:** durable sessions with no forced logout.")
 flow = Card([CardHeader("Request path after the change"), flowDiagram])
-flowDiagram = Mermaid("flowchart LR
-  client[Client] --> edge[Edge worker]
-  edge --> api[API]
-  api --> pg[(Postgres)]
-  api -. read-through .-> redis[(Redis)]")
+flowDiagram = Architecture([client, api, pg, redis], [toApi, toPg, toRedis])
+client = Node("Client", "external")
+api = Node("API", "backend", "Node :8080")
+pg = Node("Postgres", "database", "sessions table", "new")
+redis = Node("Redis", "database")
+toApi = Edge(client, api, "HTTPS", "emphasis")
+toPg = Edge(api, pg, "SQL")
+toRedis = Edge(api, redis, "read-through", "dashed")
 options = Card([CardHeader("Rollout options"), optionTable])
 optionTable = Table([Col("Option", ["Big bang", "Dual-write"]), Col("Effort", ["2 days", "5 days"]), Col("Risk", [riskHigh, riskLow])])
 riskHigh = Tag("high", null, "sm", "danger")

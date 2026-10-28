@@ -20,11 +20,17 @@ kpiUsers = OverviewCardItem("users", Text("text", "Forced logouts / mo"), Metric
 kpiP99 = OverviewCardItem("p99", Text("text", "Auth p99"), MetricIndicatorInline("41 ms", "target ≤ 45 ms"))
 kpiCost = OverviewCardItem("cost", Text("text", "Extra storage"), MetricIndicatorInline("$140/mo", "Postgres, 3 replicas"))
 flow = Card([CardHeader("Request path after the change"), flowDiagram])
-flowDiagram = Mermaid("flowchart LR
-  client[Client] --> edge[Edge worker]
-  edge --> api[API]
-  api --> pg[(Postgres)]
-  api -. read-through .-> redis[(Redis)]", "Redis stays as a read-through cache during rollout")
+flowDiagram = Architecture([client, edge, api, pg, redis], [toEdge, toApi, toPg, toRedis], [platform])
+client = Node("Client", "external", "browser / mobile")
+edge = Node("Edge worker", "cloud", "Cloudflare")
+api = Node("API", "backend", "Node :8080")
+pg = Node("Postgres", "database", "sessions table", "new")
+redis = Node("Redis", "database", "read-through cache")
+toEdge = Edge(client, edge, "HTTPS", "emphasis")
+toApi = Edge(edge, api)
+toPg = Edge(api, pg, "SQL")
+toRedis = Edge(api, redis, "during rollout", "dashed")
+platform = Group("Platform VPC", [api, pg, redis])
 options = Card([CardHeader("Rollout options"), optionTable, latencyChart])
 optionTable = Table([Col("Option", ["Big bang", "Dual-write"]), Col("Effort", ["2 days", "5 days"]), Col("Downtime", ["~10 min", "none"]), Col("Risk", [riskHigh, riskLow])])
 riskHigh = Tag("high", null, "sm", "danger")

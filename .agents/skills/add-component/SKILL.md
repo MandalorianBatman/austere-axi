@@ -47,6 +47,8 @@ Agents write positional calls, and saved artifacts keep those calls forever.
 
 A component is one file: `src/runtime/components/<Name>.jsx`, default-exporting `austereComponent({...})`. The contract is documented in `src/runtime/define.js`. The build picks the file up automatically, so there is no list to edit. Files whose names start with `_` are helpers, not components.
 
+A family, meaning a container and its value-only parts, shares one file and default-exports an array in the order the spec should list them. `Architecture.jsx` is the example: it exports `[Architecture, Node, Edge, Group]`. Parts reference each other's `definition.ref`. A part that sits inside another part's prop (an `Edge` naming two `Node`s) reaches the renderer as the parsed element, and its `statementId` is the name the agent gave it. Use that as its id, and as its own click target with `data-oui-id` and `data-oui-c`.
+
 ```jsx
 import React from "react";
 import { z } from "zod";
@@ -92,7 +94,7 @@ Plain `<table>`s get row and column detail automatically, so don't mark their ce
 
 ## 5. Example and stress
 
-`example` holds one or more statements. The first one calls the component with realistic content, and every other statement must be reachable from it. The example is checked by the tests, rendered in the gallery, and serves as your design review: if it reads awkwardly, the call design is wrong.
+`example` holds one or more statements. The first one calls the component with realistic content, and every other statement must be reachable from it. Value-only parts (`slots: null`) may omit `example`, because their container's example shows them. The example is checked by the tests, rendered in the gallery, and serves as your design review: if it reads awkwardly, the call design is wrong.
 
 `stress` is optional, but add it whenever the component takes free-form input. It has the same shape as `example`, filled with hostile input: very long unbroken tokens in every text slot, deep nesting, many items, empty values, and the malformed shapes agents write. It never appears in the prompt. The tests check it, and the browser suite renders it at phone width, where overflow bugs hide; realistic examples are too tidy to expose them.
 

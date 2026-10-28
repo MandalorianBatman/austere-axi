@@ -193,6 +193,7 @@ test("every component part is annotatable end to end", async (t) => {
     }, MAX_PARTS_PER_STATEMENT);
     const withParts = new Set(targets.map((x) => x.id));
     for (const c of lib.CUSTOM_COMPONENTS) {
+      if (!c.example) continue; // value-only parts are shown by their container's example
       const first = c.example.match(/^\s*([A-Za-z_]\w*)\s*=/m)[1];
       if (!withParts.has(first)) t.diagnostic(`${c.name} (${first}) has no data-austere-part targets`);
     }

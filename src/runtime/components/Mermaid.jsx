@@ -144,7 +144,7 @@ export default austereComponent({
   }),
   description:
     "Diagram from Mermaid source (flowchart, sequence, state, class, ER, gantt). source is a raw multi-line string. Keep node labels to a few words; clicked nodes reach the agent by label.",
-  notes: ["- Mermaid for flows, architecture, sequences and state."],
+  notes: ["- Mermaid for sequences, state machines, ER, gantt and quick flowcharts."],
   renderer: MermaidView,
   example: `requestPath = Mermaid("flowchart LR
   client[Client] --> api[API]

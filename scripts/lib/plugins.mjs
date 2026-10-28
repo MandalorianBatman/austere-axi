@@ -18,7 +18,11 @@ export function componentFiles() {
     .sort();
 }
 
-/** `import components from "austere:components"` → array of every component file's default export. */
+/**
+ * `import components from "austere:components"` → every component file's
+ * default export, in file order. A file exports one component, or an array
+ * for a family (a container and its value-only parts, in prompt order).
+ */
 export const registryPlugin = {
   name: "austere-registry",
   setup(build) {
@@ -28,12 +32,12 @@ export const registryPlugin = {
       const imports = files.map((f, i) => `import c${i} from ${JSON.stringify(`./${f}`)};`);
       const check = files.map(
         (f, i) =>
-          `if (!c${i} || !c${i}.definition) throw new Error(${JSON.stringify(
-            `src/runtime/components/${f} must \`export default austereComponent({...})\` (or start its name with "_" if it is a helper)`,
+          `for (const c of [].concat(c${i})) if (!c || !c.definition) throw new Error(${JSON.stringify(
+            `src/runtime/components/${f} must \`export default austereComponent({...})\` or an array of them (or start its name with "_" if it is a helper)`,
           )});`,
       );
       return {
-        contents: [...imports, ...check, `export default [${files.map((_, i) => `c${i}`).join(", ")}];`].join("\n"),
+        contents: [...imports, ...check, `export default [${files.map((_, i) => `c${i}`).join(", ")}].flat();`].join("\n"),
         resolveDir: COMPONENTS_DIR,
         loader: "js",
         watchFiles: files.map((f) => path.join(COMPONENTS_DIR, f)),

@@ -348,6 +348,164 @@ span.austere-filetree-toggle {
   }
 }
 
+/* ── Architecture ── */
+.austere-arch {
+  --austere-k-frontend: #5fb4e6;
+  --austere-k-backend: #6fd39b;
+  --austere-k-database: #b79cff;
+  --austere-k-messagebus: #f2c46d;
+  --austere-k-cloud: #8fb0ff;
+  --austere-k-security: #f08a8a;
+  --austere-k-external: #a1a1aa;
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+}
+.austere-arch .k-frontend { --k: var(--austere-k-frontend); }
+.austere-arch .k-backend { --k: var(--austere-k-backend); }
+.austere-arch .k-database { --k: var(--austere-k-database); }
+.austere-arch .k-messagebus { --k: var(--austere-k-messagebus); }
+.austere-arch .k-cloud { --k: var(--austere-k-cloud); }
+.austere-arch .k-security { --k: var(--austere-k-security); }
+.austere-arch .k-external { --k: var(--austere-k-external); }
+/* Wide diagrams scroll inside their own box instead of shrinking text past
+   legibility or pushing the page sideways. */
+.austere-arch-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 10px 0 2px;
+}
+.austere-arch-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+  font-family: var(--openui-font-body);
+}
+.austere-arch-node-box {
+  fill: #1b1b1f;
+  stroke: var(--k);
+  stroke-opacity: 0.55;
+  stroke-width: 1.2;
+}
+.austere-arch-node-bar {
+  fill: var(--k);
+}
+.austere-arch-node-icon {
+  color: var(--k);
+}
+.austere-arch-node-label {
+  fill: #ececef;
+  font-size: 13px;
+  font-weight: 600;
+}
+.austere-arch-node-detail {
+  fill: var(--austere-muted);
+  font-family: var(--openui-font-code);
+  font-size: 11px;
+}
+.austere-arch-node-tag rect {
+  fill: #121214;
+  stroke: var(--k);
+  stroke-opacity: 0.7;
+}
+.austere-arch-node-tag text {
+  fill: var(--k);
+  font-size: 10px;
+  font-weight: 600;
+}
+.austere-arch-edge-line {
+  fill: none;
+  stroke: #8b8b94;
+  stroke-width: 1.4;
+}
+.austere-arch-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+}
+.austere-arch-edge.s-dashed .austere-arch-edge-line {
+  stroke-dasharray: 5 4;
+}
+.austere-arch-edge.s-emphasis .austere-arch-edge-line {
+  stroke: var(--austere-accent);
+  stroke-width: 2;
+}
+.austere-arch-edge.s-security .austere-arch-edge-line {
+  stroke: var(--austere-del-strong);
+  stroke-dasharray: 2 3;
+}
+.austere-arch-arrow {
+  fill: #8b8b94;
+}
+.austere-arch-arrow.s-emphasis {
+  fill: var(--austere-accent);
+}
+.austere-arch-arrow.s-security {
+  fill: var(--austere-del-strong);
+}
+.austere-arch-edge-label rect {
+  fill: #121214;
+  stroke: rgba(255, 255, 255, 0.08);
+}
+.austere-arch-edge-label text {
+  fill: #c4c4cc;
+  font-size: 11px;
+}
+.austere-arch-group-frame {
+  fill: rgba(255, 255, 255, 0.022);
+  stroke: #4a4a52;
+  stroke-dasharray: 6 4;
+}
+.austere-arch-group.g-security .austere-arch-group-frame {
+  stroke: rgba(240, 138, 138, 0.55);
+  fill: rgba(240, 96, 96, 0.03);
+}
+.austere-arch-group-label rect {
+  fill: #121214;
+  stroke: #4a4a52;
+}
+.austere-arch-group.g-security .austere-arch-group-label rect {
+  stroke: rgba(240, 138, 138, 0.55);
+}
+.austere-arch-group-label text {
+  fill: var(--austere-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.austere-arch-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--austere-muted);
+}
+.austere-arch-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.austere-arch-legend-item[class*=" k-"] svg {
+  color: var(--k);
+}
+.austere-arch-legend-item line {
+  stroke: #8b8b94;
+  stroke-width: 1.6;
+}
+.austere-arch-legend-item.s-dashed line {
+  stroke-dasharray: 5 4;
+}
+.austere-arch-legend-item.s-emphasis line {
+  stroke: var(--austere-accent);
+  stroke-width: 2;
+}
+.austere-arch-legend-item.s-security line {
+  stroke: var(--austere-del-strong);
+  stroke-dasharray: 2 3;
+}
+
 /* ── Mermaid ── */
 .austere-mermaid {
   margin: 0;
