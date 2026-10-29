@@ -9,6 +9,7 @@ import { after, before, test } from "node:test";
 import { InviteStore, cleanName, inviteId, tokenFromCookie } from "../src/cli/invites.js";
 import { SessionStore } from "../src/cli/sessions.js";
 import { Hub } from "../src/cli/hub.js";
+import { freePort } from "./port.js";
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 
@@ -160,8 +161,8 @@ test("an index made before team review gains the author column", async () => {
 
 // ── the server ──
 
-function startServer(extraEnv) {
-  const port = 49000 + Math.floor(Math.random() * 900);
+async function startServer(extraEnv) {
+  const port = await freePort();
   const state = tmp("austere-team-state-");
   const child = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(port)], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1", ...extraEnv },
@@ -267,7 +268,7 @@ root = Stack([intro])
 intro = TextContent("hello")
 </script></body></html>`,
   );
-  srv = startServer({ AUSTERE_AXI_LINK_HOST: "127.0.0.1" });
+  srv = await startServer({ AUSTERE_AXI_LINK_HOST: "127.0.0.1" });
   await up(srv.port);
   id = (await request(srv.port, "POST", "/api/open", { body: { file: FILE } })).data.session.id;
 });
@@ -314,7 +315,7 @@ test("sharing prints a tailnet link with a long random token", async () => {
 });
 
 test("sharing fails clearly when no tailnet address is up", async () => {
-  const other = startServer({});
+  const other = await startServer({});
   const file = path.join(WORK, "other.html");
   fs.writeFileSync(file, fs.readFileSync(FILE));
   try {

@@ -5,8 +5,9 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
+import { freePort } from "./port.js";
 
-const PORT = 46000 + Math.floor(Math.random() * 1000);
+const PORT = await freePort();
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-test-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-work-"));
 const FILE = path.join(WORK, "plan.html");
