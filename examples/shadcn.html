@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>shadcn pack sample</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([trail, card])
+trail = Breadcrumb([crumbRepo, crumbPack, crumbPage])
+crumbRepo = BreadcrumbItem("austere-axi")
+crumbPack = BreadcrumbItem("packs")
+crumbPage = BreadcrumbItem("shadcn")
+card = Card([intro, bar, team, term, svc, keys, loading, cal, history])
+intro = TextContent("Sample page for the shadcn pack.")
+bar = Progress(64, "Rows migrated")
+team = AvatarGroup([ada, grace, linus], 2)
+ada = Avatar("Ada Lovelace")
+grace = Avatar("Grace Hopper")
+linus = Avatar("Linus Torvalds")
+term = Tooltip("idempotent", "Safe to run twice with the same result.")
+svc = HoverCard("billing-api", "billing-api", "Owns invoices and refunds.")
+keys = Kbd("Ctrl+Shift+P")
+loading = Skeleton(3, "avatar")
+cal = Calendar("2026-11", ["2026-11-04 Code freeze", "2026-11-12 Release"])
+history = Timeline([found, fixed, rollout])
+found = TimelineItem("Bug found", "Oct 28", "Retries double-charge on timeout.")
+fixed = TimelineItem("Fix merged", "Oct 29", "Idempotency key added.", "current")
+rollout = TimelineItem("Rollout", "Nov 3", "", "upcoming")
+</script>
+</body>
+</html>

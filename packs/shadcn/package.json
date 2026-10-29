@@ -1,0 +1,6 @@
+{
+  "name": "@austere-axi/pack-shadcn",
+  "private": true,
+  "description": "shadcn/ui-style gap fillers for austere-axi: Progress, Avatar, Tooltip, HoverCard, Breadcrumb, Kbd, Skeleton, Calendar, Timeline. Bundled with austere-axi and versioned with it.",
+  "austere": { "bundled": true }
+}

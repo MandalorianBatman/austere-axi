@@ -10,12 +10,12 @@ import { isValidPackName } from "../shared/packs-meta.js";
 
 const TEMPLATE = {
   "src/index.js": `// The pack: every component it adds, plus CSS the runtime puts on the page once.
-import Timeline from "./Timeline.jsx";
+import Milestones from "./Milestones.jsx";
 import css from "./style.css";
 
-export default { components: [Timeline], css };
+export default { components: [Milestones], css };
 `,
-  "src/Timeline.jsx": `// One component per file. austereComponent is the same contract the core
+  "src/Milestones.jsx": `// One component per file. austereComponent is the same contract the core
 // components follow: PascalCase name, zod props in positional order (append
 // only once published), a one-line description, an example program.
 // React, zod and "austere-axi/pack" come from the page's runtime; do not
@@ -36,10 +36,10 @@ function parseEvents(lines) {
     });
 }
 
-function TimelineView({ props }) {
+function MilestonesView({ props }) {
   const events = parseEvents(props.events);
   return (
-    <ol className="pack-timeline">
+    <ol className="pack-milestones">
       {events.map((e, i) => (
         // data-austere-part makes each event its own annotation target.
         <li key={i} data-austere-part={e.what || e.when}>
@@ -53,20 +53,20 @@ function TimelineView({ props }) {
 }
 
 export default austereComponent({
-  name: "Timeline",
+  name: "Milestones",
   // A core group (Layout Content Data Charts Forms Buttons) or a category of your own.
   group: "Content",
   props: z.object({
     events: z.array(z.string()),
   }),
-  description: 'Vertical timeline. events are "when | what | detail" strings (detail optional), oldest first. A click reaches the agent as the event.',
-  renderer: TimelineView,
-  example: \`launch = Timeline(["Mon | Freeze | branch cut", "Wed | Canary | 5% of traffic", "Fri | GA"])\`,
+  description: 'Vertical milestones. events are "when | what | detail" strings (detail optional), oldest first. A click reaches the agent as the event.',
+  renderer: MilestonesView,
+  example: \`launch = Milestones(["Mon | Freeze | branch cut", "Wed | Canary | 5% of traffic", "Fri | GA"])\`,
 });
 `,
   "src/style.css": `/* Use the page's theme variables (--austere-*, --openui-*) so the pack fits the
    dark theme, and prefix every class with the pack's name. */
-.pack-timeline {
+.pack-milestones {
   list-style: none;
   margin: 0;
   padding: 0 0 0 18px;
@@ -76,13 +76,13 @@ export default austereComponent({
   font-size: 14px;
   min-width: 0;
 }
-.pack-timeline li {
+.pack-milestones li {
   position: relative;
   display: grid;
   gap: 2px;
   overflow-wrap: anywhere;
 }
-.pack-timeline li::before {
+.pack-milestones li::before {
   content: "";
   position: absolute;
   left: -24px;
@@ -92,11 +92,11 @@ export default austereComponent({
   border-radius: 50%;
   background: var(--austere-accent);
 }
-.pack-timeline time {
+.pack-milestones time {
   font-size: 12px;
   color: var(--austere-muted);
 }
-.pack-timeline span {
+.pack-milestones span {
   color: var(--austere-muted);
 }
 `,
@@ -125,7 +125,7 @@ Components for [austere-axi](https://github.com/MandalorianBatman/austere-axi) r
 npm install
 npm run build                          # dist/pack.js + dist/catalog.json
 npx austere-axi components add .       # use it on this machine
-npx austere-axi components show Timeline
+npx austere-axi components show Milestones
 \`\`\`
 
 A page that uses it must declare it: \`austere-axi check --fix page.html\` writes the
@@ -137,7 +137,7 @@ Publish with \`npm publish\` after \`npm run build\`. Others install it with
 }
 
 export function newPack(dir, { name } = {}) {
-  if (!dir) throw new Error("new needs a folder: austere-axi components new austere-pack-timeline");
+  if (!dir) throw new Error("new needs a folder: austere-axi components new austere-pack-milestones");
   const abs = path.resolve(dir);
   if (fs.existsSync(abs) && fs.readdirSync(abs).length) throw new Error(`${abs} is not empty`);
   const pkgName = name || path.basename(abs).toLowerCase().replace(/[^a-z0-9._-]+/g, "-");

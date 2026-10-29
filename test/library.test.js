@@ -13,7 +13,9 @@ import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/si
 // 6500 → 6600: Architecture lanes, tones and row pins (6362 → ~6550 tokens).
 // 6600 → 5800: rare stock components leave the prompt (tier "extended", found
 // with `components search|show`), ~6550 → ~5765 tokens.
-const PROMPT_BUDGET_TOKENS = 5800;
+// 5800 → 5950: the shadcn pack's names join the slot unions and the "Also in"
+// lines (~5765 → ~5905 tokens).
+const PROMPT_BUDGET_TOKENS = 5950;
 const DESCRIPTION_MAX_CHARS = 280;
 
 let lib;

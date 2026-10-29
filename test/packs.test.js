@@ -148,7 +148,7 @@ function tgz(files) {
 }
 
 test("folders and tarballs are told apart from npm names", () => {
-  for (const p of [".", "./x", "../x", "/abs/x", "~/x", "packs/timeline", "C:\\packs\\x", "x-1.0.0.tgz"]) assert.ok(looksLikePath(p), p);
+  for (const p of [".", "./x", "../x", "/abs/x", "~/x", "packs/milestones", "C:\\packs\\x", "x-1.0.0.tgz"]) assert.ok(looksLikePath(p), p);
   for (const n of ["gantt", "gantt@1.2.0", "@acme/flows", "@acme/flows@^1"]) assert.ok(!looksLikePath(n), n);
 });
 
@@ -160,40 +160,40 @@ test("untar reads files under the package folder", () => {
 
 // ── the loop through the CLI ──
 
-const PACK = path.join(WORK, "austere-pack-timeline");
+const PACK = path.join(WORK, "austere-pack-milestones");
 
 test("new → build → add → show → check --fix → export → spec → remove", async () => {
   let r = await cli("components", "new", PACK);
   assert.equal(r.code, 0, r.out);
-  assert.ok(fs.existsSync(path.join(PACK, "src/Timeline.jsx")));
+  assert.ok(fs.existsSync(path.join(PACK, "src/Milestones.jsx")));
   r = await cli("components", "build", PACK);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /status: built/);
   const cat = JSON.parse(fs.readFileSync(path.join(PACK, "dist/catalog.json"), "utf8"));
-  assert.equal(cat.pack, "austere-pack-timeline");
-  assert.equal(cat.components[0].signature, "Timeline(events: string[])");
-  assert.ok(cat.defs.Timeline);
+  assert.equal(cat.pack, "austere-pack-milestones");
+  assert.equal(cat.components[0].signature, "Milestones(events: string[])");
+  assert.ok(cat.defs.Milestones);
   assert.match(cat.integrity, /^sha384-/);
 
   r = await cli("components", "add", PACK);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /trust: local/);
-  r = await cli("components", "show", "Timeline");
-  assert.match(r.out, /from: pack austere-pack-timeline@0\.1\.0/);
+  r = await cli("components", "show", "Milestones");
+  assert.match(r.out, /from: pack austere-pack-milestones@0\.1\.0/);
   assert.match(r.out, /check --fix/);
-  r = await cli("components", "search", "timeline", "events");
-  assert.match(r.out, /Timeline\(events: string\[\]\)/);
+  r = await cli("components", "search", "milestones", "events");
+  assert.match(r.out, /Milestones\(events: string\[\]\)/);
 
   const file = path.join(WORK, "launch.html");
-  fs.writeFileSync(file, page('root = Stack([c])\nc = Card([CardHeader("Launch"), t])\nt = Timeline(["Mon | Freeze", "Fri | GA"])'));
+  fs.writeFileSync(file, page('root = Stack([c])\nc = Card([CardHeader("Launch"), t])\nt = Milestones(["Mon | Freeze", "Fri | GA"])'));
   r = await cli("check", file);
   assert.equal(r.code, 1);
   assert.match(r.out, /code: missing-pack/);
   assert.doesNotMatch(r.out, /Available components/);
   r = await cli("check", "--fix", file);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /declared austere-pack-timeline@0\.1\.0/);
-  assert.match(fs.readFileSync(file, "utf8"), /<meta name="austere-packs" content="austere-pack-timeline@0\.1\.0 sha384-/);
+  assert.match(r.out, /declared austere-pack-milestones@0\.1\.0/);
+  assert.match(fs.readFileSync(file, "utf8"), /<meta name="austere-packs" content="austere-pack-milestones@0\.1\.0 sha384-/);
   assert.match((await cli("check", file)).out, /status: ok/);
   // A second --fix changes nothing.
   assert.doesNotMatch((await cli("check", "--fix", file)).out, /fixed/);
@@ -204,7 +204,7 @@ test("new → build → add → show → check --fix → export → spec → rem
   assert.ok(exported.includes(fs.readFileSync(path.join(PACK, "dist/pack.js"), "utf8").slice(0, 200).replace(/<\/script/gi, "<\\/script")));
 
   // Rebuilt and added again at the same version: the page's hash is stale, and check says so.
-  fs.appendFileSync(path.join(PACK, "src/style.css"), "\n.pack-timeline strong { letter-spacing: 0; }\n");
+  fs.appendFileSync(path.join(PACK, "src/style.css"), "\n.pack-milestones strong { letter-spacing: 0; }\n");
   assert.equal((await cli("components", "build", PACK)).code, 0);
   r = await cli("components", "add", PACK);
   assert.match(r.out, /update their integrity hash/);
@@ -215,12 +215,12 @@ test("new → build → add → show → check --fix → export → spec → rem
   assert.doesNotMatch((await cli("check", file)).out, /pack-integrity/);
 
   r = await cli("spec");
-  assert.match(r.out, /## Installed packs\n.*check --fix.*\n- austere-pack-timeline@0\.1\.0: Timeline/);
-  r = await cli("spec", "austere-pack-timeline");
-  assert.match(r.out, /^### austere-pack-timeline@0\.1\.0 \(third-party\)/);
-  assert.match(r.out, /Timeline\(events: string\[\]\) — Vertical timeline/);
+  assert.match(r.out, /## Installed packs\n.*check --fix.*\n- austere-pack-milestones@0\.1\.0: Milestones/);
+  r = await cli("spec", "austere-pack-milestones");
+  assert.match(r.out, /^### austere-pack-milestones@0\.1\.0 \(third-party\)/);
+  assert.match(r.out, /Milestones\(events: string\[\]\) — Vertical milestones/);
 
-  r = await cli("components", "remove", "austere-pack-timeline");
+  r = await cli("components", "remove", "austere-pack-milestones");
   assert.match(r.out, /status: removed/);
   r = await cli("check", file);
   assert.match(r.out, /pack-not-installed/);
@@ -271,8 +271,8 @@ test("a tarball needs --trust whatever name it claims; a folder is local but sti
 test("components build refuses a slot that names no component", async () => {
   const dir = path.join(WORK, "bad-slot");
   await cli("components", "new", dir);
-  const file = path.join(dir, "src/Timeline.jsx");
-  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('renderer: TimelineView,', 'renderer: TimelineView,\n  slots: ["Nope.children"],'));
+  const file = path.join(dir, "src/Milestones.jsx");
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('renderer: MilestonesView,', 'renderer: MilestonesView,\n  slots: ["Nope.children"],'));
   const r = await cli("components", "build", dir);
   assert.equal(r.code, 1);
   assert.match(r.out, /slot Nope\.children: Nope is not a component here/);
@@ -417,7 +417,7 @@ test("the server serves an installed pack only at its locked version and hash", 
     const page3p = path.join(WORK, "steps.html");
     fs.writeFileSync(
       page3p,
-      page('root = Stack([t])\nt = Timeline(["Mon | Freeze"])', `<meta name="austere-packs" content="austere-pack-steps@1.1.0 ${lock.integrity}">\n`),
+      page('root = Stack([t])\nt = Milestones(["Mon | Freeze"])', `<meta name="austere-packs" content="austere-pack-steps@1.1.0 ${lock.integrity}">\n`),
     );
     const opened = await cli(page3p, "--no-open");
     assert.match(opened.out, /status: open/);
@@ -447,5 +447,14 @@ test("the server serves an installed pack only at its locked version and hash", 
     const exited = new Promise((r) => server.once("exit", r));
     server.kill();
     await exited;
+  }
+});
+
+test("the bundled shadcn pack lists its components in the built catalog", () => {
+  const file = path.join("dist", "packs", "shadcn", "catalog.json");
+  const catalog = JSON.parse(fs.readFileSync(file, "utf8"));
+  const names = catalog.components.map((c) => c.name);
+  for (const n of ["Progress", "Avatar", "AvatarGroup", "Tooltip", "HoverCard", "Breadcrumb", "BreadcrumbItem", "Kbd", "Skeleton", "Calendar", "Timeline", "TimelineItem"]) {
+    assert.ok(names.includes(n), `${n} is in the shadcn catalog`);
   }
 });

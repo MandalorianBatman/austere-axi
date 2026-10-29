@@ -92,7 +92,7 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 ```
 
 - **A page is a plain `.html` file**: one runtime `<script>` tag and one `<script type="text/openui">` block. Opened directly, it loads the runtime from the CDN. Under review, the server serves a local copy.
-- **Components**: 58 stock OpenUI components, plus `Architecture` (`Node`, `Edge`, `Group`), `Diff` and `FileTree`. `Mermaid` is a bundled [pack](#components-and-packs).
+- **Components**: 58 stock OpenUI components, plus `Architecture` (`Node`, `Edge`, `Group`), `Diff` and `FileTree`. `Mermaid` and nine shadcn-style components are bundled [packs](#components-and-packs).
 - **Architecture diagrams** lay out automatically ([dagre](https://github.com/dagrejs/dagre)). The agent never writes coordinates. Each node and edge is a click target. `lanes` puts each group in a column; `tone` colors a box or line to show risk. Use Mermaid for sequences, state machines, ER and gantt.
 - **Annotations** go to the smallest named statement under the click, with detail where it exists: table row and column, `file:+line` in a diff, a diagram node, or selected text. The reviewer can move a note to a parent section.
 - **Buttons and forms** send feedback. `@ToAssistant("…")` sends a message with the form values. A button with no action sends its label.
@@ -152,14 +152,19 @@ A page names its packs in the head, so it renders wherever you open it:
 - Under review, the server serves installed packs only while they match the hash in `~/.austere-axi/packs.json`. Opened directly, the page loads them from jsDelivr with Subresource Integrity. `export` inlines them.
 - A pack component with no pack tag is a `missing-pack` error. `check --fix` repairs it.
 - Mermaid ships as a bundled pack. It loads only when the page calls `Mermaid(...)` and needs no tag.
+- The `shadcn` pack ships the same way. It adds `Progress`, `Avatar`, `AvatarGroup`, `Tooltip`, `HoverCard`, `Breadcrumb` (`BreadcrumbItem`), `Kbd`, `Skeleton`, `Calendar` and `Timeline` (`TimelineItem`). They are read-only. Find them with `austere-axi components search`.
+  ```
+  rollout = Progress(64, "Rows migrated")
+  freeze = Calendar("2026-11", ["2026-11-04 Code freeze"])
+  ```
 
 **Trust.** Pack code runs inside your review pages, where notes and button presses also come from. Packs under `@austere-axi/` on npm install directly. Other npm packs and any `.tgz` need `--trust`; read them first. A local folder counts as your own. A page with third-party packs shows a warning, and `poll` tells the agent.
 
 **Write a pack:**
 
 ```sh
-austere-axi components new austere-pack-timeline
-cd austere-pack-timeline && npm install && npm run build
+austere-axi components new austere-pack-milestones
+cd austere-pack-milestones && npm install && npm run build
 austere-axi components add .
 ```
 
@@ -225,7 +230,7 @@ node dist/cli.mjs examples/session-migration.html
 |---|---|
 | `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `FileTree`), one file each |
 | `src/runtime/stock.js` | Which stock components ship, which stay out of `spec`, their groups |
-| `packs/` | Packs bundled with austere-axi (`mermaid`) |
+| `packs/` | Packs bundled with austere-axi (`mermaid`, `shadcn`) |
 | `src/runtime/pack-api.js`, `src/pack-kit/` | `austere-axi/pack` and the `components build` pipeline |
 | `src/shared/catalog.js` | Component catalog and prompt tiers |
 | `src/runtime/` | Library, annotation layer, review bridge, styles |
