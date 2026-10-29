@@ -6,7 +6,7 @@ austere-axi is a CLI, a local review server, and a browser runtime for agent rev
 
 - **User-facing contract:** `README.md`.
 - **What agents are told while using the tool:** CLI output: `--help` (`src/cli/main.js`), and `spec` (generated from `src/runtime/prompt.js`, the component files and `src/runtime/stock.js`).
-- **Shipped skill:** `skills/austere/SKILL.md`. It stays a stub that points at the CLI, so don't copy CLI guidance into it.
+- **Shipped skills:** `skills/austere/SKILL.md` stays a stub that points at the CLI, so don't copy CLI guidance into it. `skills/austere-setup/SKILL.md` walks an agent through setup; keep its commands in step with the CLI.
 - **Adding or changing a component:** follow `.agents/skills/add-component/SKILL.md`.
 - **Reviewing a change before committing:** follow `.agents/skills/review-change/SKILL.md`. It runs the checks and the agents in `.agents/agents/` (change-reviewer, visual-qa, cold-start-author).
 
