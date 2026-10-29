@@ -1,7 +1,7 @@
 // npm run shot -- <file.html|url> [--out shot.png] [--width 1280] [--height 900] [--full] [--parts]
 //
 // Renders an artifact headlessly with the freshly built runtime (requests for
-// austere.js / mermaid.min.js, including the CDN tag, are served from dist/)
+// austere.js / mermaid.min.js / bundled packs, including the CDN tag, are served from dist/)
 // and saves a screenshot. Prints page errors, render errors, and with --parts
 // every data-austere-part a reviewer could click, grouped by statement.
 //
@@ -40,8 +40,9 @@ page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
   if (m.type() === "error" || (m.type() === "warning" && m.text().startsWith("[austere]"))) problems.push(`console: ${m.text()}`);
 });
-await page.route(/\/(austere|mermaid\.min)\.js(\?.*)?$/, (route) => {
-  const name = /mermaid/.test(route.request().url()) ? "mermaid.min.js" : "austere.js";
+// The runtime, Mermaid and bundled packs come from dist/, wherever the page points.
+await page.route(/\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {
+  const name = /\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())[1];
   route.fulfill({ path: path.join(ROOT, "dist", name), contentType: "text/javascript" });
 });
 await page.goto(url, { waitUntil: "load" });

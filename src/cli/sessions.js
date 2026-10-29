@@ -16,7 +16,9 @@ export function newId(prefix) {
 }
 
 export class SessionStore {
-  constructor(dir) {
+  /** @param {{ onFlush?: (session) => void }} [options] onFlush runs after a session is written (the hub mirrors it) */
+  constructor(dir, { onFlush } = {}) {
+    this.onFlush = onFlush || null;
     this.dir = path.join(dir, "sessions");
     fs.mkdirSync(this.dir, { recursive: true });
     this.sessions = new Map();
@@ -86,6 +88,13 @@ export class SessionStore {
     } catch {
       // best effort; state is also in memory
     }
+    if (this.onFlush) {
+      try {
+        this.onFlush(s);
+      } catch {
+        // the hub index is a convenience; the session file is the record
+      }
+    }
   }
 
   flushAll() {
@@ -110,6 +119,27 @@ export class SessionStore {
     s.transcript.push(entry);
     this.touch(s);
     return entry;
+  }
+
+  /**
+   * Feedback no agent has acted on (`feedback <file>`): entries not yet
+   * received, plus received ones with no agent reply since; `all` adds the
+   * addressed ones. Unless `peek`, the not-yet-received ones become received,
+   * so a later poll does not deliver them again.
+   * @returns {{ entries: { id, at, items, status: "open"|"received"|"addressed" }[], fresh: object[] }}
+   */
+  feedback(s, { all = false, peek = false } = {}) {
+    const pending = new Set(s.pending);
+    const picked = s.transcript.filter((e) => e.role === "user" && (e.items || []).length && (all || pending.has(e.id) || !e.doneAt));
+    const entries = picked.map((e) => ({
+      id: e.id,
+      at: e.at,
+      items: e.items,
+      status: pending.has(e.id) ? "open" : e.doneAt ? "addressed" : "received",
+    }));
+    const fresh = picked.filter((e) => pending.has(e.id));
+    if (fresh.length && !peek) this.markDelivered(s, fresh);
+    return { entries, fresh: peek ? [] : fresh };
   }
 
   /** Entries the agent has not received yet. */

@@ -36,7 +36,7 @@ You get a base ref, an optional head ref, and the list of changed files.
 - A click still resolves to the innermost statement.
 - Real controls (links, buttons, inputs) still work in Annotate mode.
 - Bridge messages are accepted only from `window.parent`.
-- Nothing new reaches the network except the lazy Mermaid load.
+- Nothing new reaches the network except the lazy Mermaid load, packs a page declares (jsDelivr, with Subresource Integrity), and `components add` fetching from the npm registry.
 
 ### Review UI (`src/chrome/`)
 

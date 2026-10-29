@@ -1,0 +1,6 @@
+{
+  "name": "@austere-axi/pack-mermaid",
+  "private": true,
+  "description": "Mermaid diagrams for austere-axi. Bundled with austere-axi and versioned with it.",
+  "austere": { "bundled": true }
+}

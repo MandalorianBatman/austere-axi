@@ -4,6 +4,12 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.js";
+import { hubEnabled, hubUnsupported } from "./hub.js";
+
+/** Whether the server should run as the hub (`austere-axi hub on`, on a Node that can). */
+export function wantHub() {
+  return hubEnabled() && !hubUnsupported();
+}
 
 export function request(method, route, body, { timeoutMs = 0, port = configuredPort() } = {}) {
   return new Promise((resolve, reject) => {
@@ -79,8 +85,9 @@ export async function ensureServer() {
   if (h && h.stateDir !== stateDir()) {
     throw new Error(`port ${port} is served by an austere-axi with another state dir (${h.stateDir}); set AUSTERE_AXI_PORT`);
   }
-  if (h && versionGt(VERSION, h.version)) {
-    // Newer CLI replaces an older server; sessions persist on disk.
+  if (h && (versionGt(VERSION, h.version) || (VERSION === h.version && Boolean(h.hub) !== wantHub()))) {
+    // A newer CLI replaces an older server, and `hub on|off` switches its mode;
+    // sessions persist on disk.
     const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!h.tailnet || x !== h.tailnet.ip));
     await request("POST", "/api/shutdown", {}, { timeoutMs: 2000, port }).catch(() => {});
     for (let i = 0; i < 40 && (await health(port)); i++) await sleep(100);

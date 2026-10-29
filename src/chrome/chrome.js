@@ -100,6 +100,7 @@ document.body.innerHTML = `
     </div>
   </header>
   <div class="banner" hidden></div>
+  <div class="notice" hidden></div>
   <div class="main">
     <section class="stage">
       <iframe class="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms"></iframe>
@@ -666,6 +667,19 @@ $(".dock").addEventListener(
 
 // ── server events ──
 
+// Third-party packs run their own code inside the page, which is also where
+// annotations and button presses come from: say so, so the reviewer reads the
+// queue before sending.
+function showPackNotice(packs) {
+  const notice = $(".notice");
+  if (!packs || !packs.length) {
+    notice.hidden = true;
+    return;
+  }
+  notice.textContent = `This page runs code from third-party component packs (${packs.join(", ")}). Check the queued items before you send.`;
+  notice.hidden = false;
+}
+
 function showBanner(text, actions = []) {
   banner.textContent = "";
   if (!text) {
@@ -719,6 +733,7 @@ function connect() {
         h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() }),
       ]);
     }
+    showPackNotice(d.thirdPartyPacks);
     if (state.program === null) state.program = d.program;
     else if (d.program !== state.program) {
       state.program = d.program;
@@ -745,6 +760,7 @@ function connect() {
     const d = JSON.parse(e.data);
     state.parserErrors = [];
     state.runtimeErrors = [];
+    showPackNotice(d.thirdPartyPacks);
     if (d.shellChanged || !state.frameReady) {
       state.program = d.program;
       loadFrame();

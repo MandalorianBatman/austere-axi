@@ -1,3 +1,5 @@
+// First: component packs read React, zod and the pack API from the host it installs.
+import "./host.js";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Renderer } from "@openuidev/react-lang";
@@ -6,9 +8,11 @@ import uiDefaultsCss from "@openuidev/react-ui/defaults.css";
 import uiCss from "@openuidev/react-ui/styles/index.css";
 import austereCss from "./austere.css";
 import fontCss from "./font.css";
-import { austereLibrary } from "./library.jsx";
+import { austereLibrary, buildLibrary } from "./library.jsx";
 import { createAnnotator } from "./annotate.js";
-import { onRuntimeError } from "./env.js";
+import { onRuntimeError, reportRuntimeError } from "./env.js";
+import { registeredPacks } from "./pack-api.js";
+import { declaredPacks, injectPackStyles, loadPacks, packsFor } from "./packs.js";
 import { changedStatementIds, referencesTo, statementMap } from "../shared/statements.js";
 
 const VERSION = typeof __AUSTERE_VERSION__ === "string" ? __AUSTERE_VERSION__ : "dev";
@@ -90,19 +94,57 @@ function actionText(item) {
   return lines.join("\n");
 }
 
-function App({ initialProgram, bridge, annotator, initialState }) {
-  const [program, setProgram] = useState(initialProgram);
+// ── Packs ──
+
+const DECLARED = typeof document !== "undefined" ? declaredPacks() : [];
+let currentLibrary = austereLibrary;
+let librarySignature = "";
+
+function packError(pack, err) {
+  reportRuntimeError({ source: "pack", component: pack.name, message: `pack ${pack.name}@${pack.version}: ${err.message}` });
+}
+
+/** The library with every registered pack, rebuilt only when the set of packs changes. */
+function libraryWithPacks() {
+  const packs = registeredPacks();
+  const signature = packs.map((p) => `${p.name}@${p.version}`).join(",");
+  if (signature === librarySignature) return currentLibrary;
+  librarySignature = signature;
+  injectPackStyles(packs);
+  currentLibrary = packs.length
+    ? buildLibrary(
+        packs.flatMap((p) => p.components),
+        { onSkip: (c, message) => reportRuntimeError({ source: "pack", component: c.name, message }) },
+      )
+    : austereLibrary;
+  window.__austere.library = currentLibrary;
+  return currentLibrary;
+}
+
+/** Load what a program needs (declared packs, and bundled ones it calls), then the library to render it with. */
+async function prepare(program) {
+  const want = packsFor(program, DECLARED);
+  if (want.some((p) => !registeredPacks().some((r) => r.name === p.name))) await loadPacks(want, { onError: packError });
+  return libraryWithPacks();
+}
+
+function App({ initialProgram, initialLibrary, bridge, annotator, initialState }) {
+  const [view, setView] = useState({ program: initialProgram, library: initialLibrary });
+  const program = view.program;
   const programRef = useRef(initialProgram);
   const pendingFlash = useRef(null);
 
   useEffect(
     () =>
-      bridge.on("source", ({ program: next }) => {
+      bridge.on("source", async ({ program: next }) => {
         if (typeof next !== "string" || next === programRef.current) return;
         const changed = changedStatementIds(programRef.current, next);
         programRef.current = next;
+        // A new Mermaid(...) call may need its pack first.
+        const library = await prepare(next);
+        if (programRef.current !== next) return;
         pendingFlash.current = changed;
-        setProgram(next);
+        setView({ program: next, library });
       }),
     [bridge],
   );
@@ -178,7 +220,7 @@ function App({ initialProgram, bridge, annotator, initialState }) {
       <main className="austere-page">
         <Renderer
           response={program}
-          library={austereLibrary}
+          library={view.library}
           isStreaming={false}
           onAction={onAction}
           onError={onError}
@@ -199,15 +241,22 @@ function boot() {
   document.body.appendChild(mount);
   const bridge = createBridge();
   let annotator = null;
-  let rendered = false;
+  let started = null;
 
-  const render = (initialState) => {
-    if (rendered) return;
-    rendered = true;
-    createRoot(mount).render(
-      <App initialProgram={program} bridge={bridge} annotator={annotator} initialState={initialState} />,
-    );
-  };
+  // Packs load while the chrome handshakes; rendering waits for them.
+  const ready = prepare(program);
+  const render = (initialState) =>
+    (started ||= ready.then((library) =>
+      createRoot(mount).render(
+        <App
+          initialProgram={program}
+          initialLibrary={library}
+          bridge={bridge}
+          annotator={annotator}
+          initialState={initialState}
+        />,
+      ),
+    ));
 
   if (!bridge.framed) {
     render(undefined);
@@ -216,10 +265,11 @@ function boot() {
 
   annotator = createAnnotator({ post: (msg) => bridge.send(msg) });
   onRuntimeError((err) => bridge.send({ type: "runtime-error", error: err }));
-  bridge.on("init", (d) => {
+  bridge.on("init", async (d) => {
     bridge.connected = true;
     annotator.setMode(d.mode);
-    render(d.state || undefined);
+    // "ready" only once rendering has started: the chrome sends live updates after it.
+    await render(d.state || undefined);
     if (d.scrollY > 0) {
       // Restore position after a full reload once layout has settled.
       let tries = 0;
@@ -238,7 +288,7 @@ function boot() {
   setTimeout(() => render(undefined), 600);
 }
 
+window.__austere = { version: VERSION, library: austereLibrary, packs: registeredPacks };
+
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
 else boot();
-
-window.__austere = { version: VERSION, library: austereLibrary };

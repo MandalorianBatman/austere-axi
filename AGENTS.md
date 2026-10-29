@@ -13,7 +13,7 @@ austere-axi is a CLI, a local review server, and a browser runtime for agent rev
 ## Commands
 
 ```sh
-npm run build        # dist/: runtime, mermaid, spec.json, prompt.md, chrome, cli.mjs
+npm run build        # dist/: runtime, packs, pack-kit, mermaid, spec.json, prompt.md, catalog.json, chrome, cli.mjs
 npm test             # rebuilds spec first; unit, server loop, and library guards
 npm run test:browser # real review loop in headless Chrome: render checks + every part annotatable
 npm run signatures   # record new component signatures (refuses breaking changes)
@@ -24,11 +24,13 @@ npm run shot -- <page> [--width 390] [--full] [--parts]   # needs Chrome or CHRO
 ## Rules
 
 - Released component props are positional and append-only (`test/fixtures/signatures.json`).
+- Third-party packs build against `src/runtime/pack-api.js` (what `austere-axi/pack` exports) and the catalog format in `src/shared/catalog.js`. Change either additively; a breaking change bumps `PACK_API` or `CATALOG_FORMAT`.
 - The component reference has a token budget (`test/library.test.js`). Raise it only deliberately.
 - The served artifact must equal the file on disk, except for the runtime `<script>` tag.
 - The server binds to loopback, plus the Tailscale IP when Tailscale is up, and never to `0.0.0.0`.
   - `/api/*` answers loopback callers only.
   - Browser POST routes reject a foreign `Origin`.
   - Artifact files are served from the artifact's own directory only, with no dotfiles.
-- Tests that start the server set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.
+- Tests that start the server, or read packs or the hub, set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.
+- Nothing a pack ships runs in the CLI or the server; pack code runs only in the sandboxed artifact frame.
 - Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `scripts/` and `test/` are maintainer-only.

@@ -3,7 +3,7 @@
 // `austere:components` module); a file whose name starts with "_" is a helper,
 // not a component.
 import { defineComponent } from "@openuidev/react-lang";
-import { GROUP_NAMES } from "./stock.js";
+import { GROUP_NAMES } from "./groups.js";
 
 /** Where a content component may appear besides a Stack (which takes anything). */
 export const CONTENT_SLOTS = ["Card.children", "TabItem.content", "AccordionItem.content"];
@@ -11,7 +11,7 @@ export const CONTENT_SLOTS = ["Card.children", "TabItem.content", "AccordionItem
 /**
  * @param {object} c
  * @param {string} c.name          PascalCase component name the agent writes.
- * @param {string} c.group         Prompt group: one of GROUP_NAMES.
+ * @param {string} c.group         Prompt group: one of GROUP_NAMES (a pack may name its own category).
  * @param {import("zod").ZodObject} c.props  Props IN POSITIONAL ORDER. Append-only once released.
  * @param {string} c.description   One line the agent reads in `spec`. Costs tokens in every session.
  * @param {Function} c.renderer    React renderer: ({ props, renderNode, statementId }) => node.
@@ -25,13 +25,18 @@ export const CONTENT_SLOTS = ["Card.children", "TabItem.content", "AccordionItem
  * @param {string[]} [c.notes]     Extra prompt lines ("- ...") appended to the group's notes.
  * @param {string[]|null} [c.slots] Parent slots it may fill; null for value-only sub-components.
  * @param {boolean} [c.tagged]     Wrap the output with its statement name (default true).
+ * @param {"core"|"extended"} [c.tier] "extended" keeps it out of the prompt (searchable with
+ *                                 `components search|show`); default "core".
  */
 export function austereComponent(c) {
   const where = `component ${c?.name || "(unnamed)"}`;
   if (!c || typeof c.name !== "string" || !/^[A-Z][A-Za-z0-9]*$/.test(c.name)) {
     throw new Error(`${where}: name must be PascalCase`);
   }
-  if (!GROUP_NAMES.includes(c.group)) throw new Error(`${where}: group must be one of ${GROUP_NAMES.join(", ")}`);
+  // A stock group, or (packs) a category of its own, which `spec` lists after the stock ones.
+  if (typeof c.group !== "string" || !(GROUP_NAMES.includes(c.group) || /^[A-Z][A-Za-z0-9 ]{1,23}$/.test(c.group))) {
+    throw new Error(`${where}: group must be one of ${GROUP_NAMES.join(", ")}, or a short capitalized category name`);
+  }
   if (typeof c.description !== "string" || !c.description.trim()) throw new Error(`${where}: description is required`);
   if (typeof c.renderer !== "function") throw new Error(`${where}: renderer must be a React component`);
   const valueOnly = c.slots === null;
@@ -55,6 +60,7 @@ export function austereComponent(c) {
     notes,
     slots: c.slots === undefined ? CONTENT_SLOTS : c.slots,
     tagged: c.tagged !== false,
+    tier: c.tier === "extended" ? "extended" : "core",
     example,
     stress,
     definition: defineComponent({ name: c.name, props: c.props, description: c.description, component: c.renderer }),

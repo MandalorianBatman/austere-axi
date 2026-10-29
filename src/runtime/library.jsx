@@ -3,7 +3,7 @@ import { createLibrary, defineComponent } from "@openuidev/react-lang";
 import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
 // Every file in ./components/ (not starting with "_"), collected at build time.
 import customComponents from "austere:components";
-import { REMOVED, STOCK_GROUPS, STOCK_RENDERERS, STOCK_UNTAGGED } from "./stock.js";
+import { EXTENDED, REMOVED, STOCK_GROUPS, STOCK_RENDERERS, STOCK_UNTAGGED } from "./stock.js";
 
 /** Wrap a renderer so its DOM carries the statement name it came from. */
 function tagged(Comp, name) {
@@ -22,29 +22,70 @@ function tagged(Comp, name) {
 
 export const CUSTOM_COMPONENTS = customComponents;
 
-export const GROUPS = STOCK_GROUPS.map((g) => {
-  const mine = customComponents.filter((c) => c.group === g.name);
-  return {
-    name: g.name,
-    components: [...g.components, ...mine.map((c) => c.name)],
-    notes: [...g.notes, ...mine.flatMap((c) => c.notes)],
-  };
-});
+/** Components that leave the prompt but stay searchable (name → "extended"). */
+export function tiersFor(components = customComponents) {
+  return Object.fromEntries([
+    ...EXTENDED.map((n) => [n, "extended"]),
+    ...components.filter((c) => c.tier === "extended").map((c) => [c.name, "extended"]),
+  ]);
+}
 
-function build() {
+/** Example programs by component name, for the catalog. */
+export function examplesFor(components = customComponents) {
+  return Object.fromEntries(components.filter((c) => c.example).map((c) => [c.name, c.example]));
+}
+
+export const TIERS = tiersFor();
+export const EXAMPLES = examplesFor();
+
+/**
+ * Prompt groups: the stock groups with custom (and pack) components appended
+ * to the one they name; a group no stock group has (a pack's own category)
+ * comes after them, in the order it first appears.
+ */
+export function groupsFor(components = customComponents) {
+  const groups = STOCK_GROUPS.map((g) => ({ name: g.name, components: [...g.components], notes: [...g.notes] }));
+  for (const c of components) {
+    let g = groups.find((x) => x.name === c.group);
+    if (!g) groups.push((g = { name: c.group, components: [], notes: [] }));
+    g.components.push(c.name);
+    g.notes.push(...c.notes);
+  }
+  return groups;
+}
+
+export const GROUPS = groupsFor();
+
+/**
+ * The library the renderer and the parser use: stock OpenUI minus what we
+ * removed, plus our components and any pack components (`extra`). A pack
+ * component whose name is taken is skipped and reported through `onSkip`.
+ */
+export function buildLibrary(extra = [], { onSkip } = {}) {
   const stockNames = new Set(Object.keys(openuiLibrary.components));
   for (const c of customComponents) {
     if (stockNames.has(c.name) && !REMOVED.includes(c.name)) {
       throw new Error(`custom component ${c.name} collides with a stock OpenUI component`);
     }
   }
+  const taken = new Set([...[...stockNames].filter((n) => !REMOVED.includes(n)), ...customComponents.map((c) => c.name)]);
+  const added = [];
+  for (const c of extra) {
+    if (taken.has(c.name)) {
+      onSkip?.(c, `component ${c.name} is already defined; the pack's version is ignored`);
+      continue;
+    }
+    taken.add(c.name);
+    added.push(c);
+  }
+  const components = [...customComponents, ...added];
   const curated = openuiLibrary.extend({
     components: {
       remove: REMOVED,
-      add: customComponents.map((c) => (c.slots && c.slots.length ? { component: c.definition, slots: c.slots } : c.definition)),
+      add: components.map((c) => (c.slots && c.slots.length ? { component: c.definition, slots: c.slots } : c.definition)),
     },
   });
-  const untagged = new Set([...STOCK_UNTAGGED, ...customComponents.filter((c) => !c.tagged).map((c) => c.name)]);
+  const untagged = new Set([...STOCK_UNTAGGED, ...components.filter((c) => !c.tagged).map((c) => c.name)]);
   const overrides = Object.values(curated.components)
     .filter((c) => !untagged.has(c.name))
     .map((c) =>
@@ -60,8 +101,8 @@ function build() {
     id: "austere",
     root: "Stack",
     components: Object.values(final.components),
-    componentGroups: GROUPS,
+    componentGroups: added.length ? groupsFor(components) : GROUPS,
   });
 }
 
-export const austereLibrary = build();
+export const austereLibrary = buildLibrary();

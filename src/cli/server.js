@@ -3,7 +3,8 @@
 //   /s/:id        review page (chrome) for a session
 //   /s/:id/a/...  the artifact and its sibling assets, runtime tag pointed here
 //   /s/:id/events server-sent events for the chrome
-//   /__austere/*  runtime, mermaid, chrome assets
+//   /__austere/*  runtime, mermaid, bundled packs, chrome assets
+//   /__austere/installed-packs/<name@version>/pack.js  packs from `components add`
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -12,6 +13,11 @@ import { exportHtml } from "./export.js";
 import { allowedHosts, detectTailscale, hostOnly, isLoopback } from "./net.js";
 import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.js";
 import { SessionStore, newId } from "./sessions.js";
+import { installedPackFile, pagePacks, readLock } from "./packs.js";
+import { Hub, hubEnabled, hubUnsupported } from "./hub.js";
+import { hubPage } from "./hub-page.js";
+import { splitSpec } from "../shared/packs-meta.js";
+import crypto from "node:crypto";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -53,7 +59,29 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
   };
 
-  const store = new SessionStore(stateDir());
+  // Hub mode (`austere-axi hub on`): mirror sessions into the index and stay up.
+  let hub = null;
+  if (hubEnabled()) {
+    const why = hubUnsupported();
+    if (why) log("hub-unavailable", why);
+    else {
+      try {
+        hub = await Hub.open();
+      } catch (err) {
+        log("hub-unavailable", String(err?.message || err));
+      }
+    }
+  }
+  const store = new SessionStore(stateDir(), { onFlush: hub ? (s) => hub.syncSession(s) : undefined });
+  if (hub) {
+    for (const s of store.list()) {
+      try {
+        hub.syncSession(s);
+      } catch (err) {
+        log("hub-sync", s.id, String(err?.message || err));
+      }
+    }
+  }
   const clients = new Map(); // id -> Set<{res, id}>
   const polls = new Map(); // id -> poll
   const watchers = new Map(); // id -> { html, program, shell }
@@ -64,7 +92,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   let tailnet = null;
   let lastActivity = Date.now();
   const longGraceMs = msEnv("AUSTERE_AXI_DISCONNECT_GRACE_MS", 5 * 60_000);
-  const idleMs = msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
+  const idleMs = hub ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
 
   const activity = () => {
     lastActivity = Date.now();
@@ -195,7 +223,18 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       store.touch(s);
       broadcastTranscript(s, touched);
     }
-    broadcast(s.id, "changed", { revision: s.revision, program: art.program, shellChanged, title: art.title });
+    broadcast(s.id, "changed", {
+      revision: s.revision,
+      program: art.program,
+      shellChanged,
+      title: art.title,
+      thirdPartyPacks: thirdPartyPacks(html),
+    });
+  }
+
+  /** Packs on this page not published by austere-axi: the chrome warns that their code runs in it. */
+  function thirdPartyPacks(html) {
+    return html ? pagePacks(html).thirdParty.map((p) => `${p.name}@${p.version}`) : [];
   }
 
   // ── polling ──
@@ -260,6 +299,9 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
 
   async function handleApi(req, res, url) {
     if (!isLoopback(req.socket.remoteAddress)) return send(res, 403, { error: "control routes are loopback-only" });
+    // The CLI sends no Origin; a browser always does on POST. Any web page could
+    // otherwise reach these routes on localhost.
+    if (req.headers.origin || req.headers["sec-fetch-site"]) return send(res, 403, { error: "control routes are for the CLI" });
     activity();
     const route = url.pathname.slice(5);
     if (route === "health") {
@@ -271,6 +313,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         stateDir: stateDir(),
         listen: Array.from(listeners.keys()),
         tailnet: tailnet || undefined,
+        hub: Boolean(hub),
       });
     }
     if (route === "sessions") {
@@ -327,6 +370,17 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       broadcastTranscript(s, [entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at)]);
       broadcastPresence(s);
       return send(res, 200, { ok: true });
+    }
+
+    if (route === "feedback") {
+      // A later agent session catching up: what no agent has acted on yet.
+      // Unless peeking, pending entries count as received, so a poll does not repeat them.
+      const { entries, fresh } = store.feedback(s, { all: !!body.all, peek: !!body.peek });
+      if (fresh.length) {
+        broadcastTranscript(s, fresh);
+        broadcastPresence(s);
+      }
+      return send(res, 200, { session: publicSession(s), entries });
     }
 
     if (route === "end") {
@@ -392,7 +446,39 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
   }
 
-  function serveAsset(res, rel) {
+  /** An installed pack's script, only at the version in the lockfile and only if its hash still matches. */
+  function serveInstalledPack(res, rel, url) {
+    const m = /^installed-packs\/([^/]+)\/pack\.js$/.exec(rel);
+    if (!m) return send(res, 404, "not found");
+    let spec;
+    try {
+      spec = splitSpec(decodeURIComponent(m[1]));
+    } catch {
+      return send(res, 400, "bad pack name");
+    }
+    const file = installedPackFile(spec.name, spec.version);
+    if (!file) return send(res, 404, `pack ${spec.name}@${spec.version} is not installed (austere-axi components add ${spec.name}@${spec.version})`);
+    fs.readFile(file, (err, buf) => {
+      if (err) return send(res, 404, "not found");
+      const actual = `sha384-${crypto.createHash("sha384").update(buf).digest("base64")}`;
+      const locked = readLock().packs[spec.name]?.integrity;
+      const wanted = url.searchParams.get("integrity");
+      if ((locked && locked !== actual) || (wanted && wanted !== actual)) {
+        log("pack-integrity", spec.name, spec.version);
+        return send(res, 409, `pack ${spec.name}@${spec.version} does not match its integrity hash; reinstall it`);
+      }
+      res.writeHead(200, {
+        "content-type": MIME[".js"],
+        "content-length": buf.length,
+        "cache-control": "no-cache",
+        "x-content-type-options": "nosniff",
+      });
+      res.end(buf);
+    });
+  }
+
+  function serveAsset(res, rel, url) {
+    if (rel.startsWith("installed-packs/")) return serveInstalledPack(res, rel, url);
     const clean = path.normalize(rel).replace(/^(\.\.[/\\])+/, "");
     const file = path.join(ASSET_DIR, clean);
     if (!file.startsWith(ASSET_DIR + path.sep)) return send(res, 404, "not found");
@@ -463,6 +549,25 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
 </html>`;
   }
 
+  function hubHome(url) {
+    store.flushAll(); // writes (and so indexes) sessions changed in the last moments
+    const q = (url.searchParams.get("q") || "").slice(0, 200);
+    const project = (url.searchParams.get("project") || "").slice(0, 1000);
+    return hubPage(hub.list({ q, project }), { version: VERSION, q, project, stats: hub.stats() });
+  }
+
+  /** Open an indexed artifact for review (it may never have had a session) and go to it. */
+  function hubOpen(res, id) {
+    const a = /^[a-f0-9]{12}$/.test(id) ? hub.artifact(id) : null;
+    if (!a) return send(res, 404, "not in the hub");
+    if (!fs.existsSync(a.file)) return send(res, 410, `${a.file} no longer exists`);
+    const existed = store.byFile(a.file);
+    const s = store.ensure(a.file);
+    if (!existed) store.touch(s);
+    res.writeHead(302, { location: `/s/${s.id}` });
+    res.end();
+  }
+
   function homePage() {
     const rows = store
       .list()
@@ -483,8 +588,11 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       return send(res, 403, "host not allowed");
     }
     if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
-    if (url.pathname.startsWith("/__austere/")) return serveAsset(res, url.pathname.slice("/__austere/".length));
-    if (url.pathname === "/") return send(res, 200, homePage(), { "content-type": "text/html; charset=utf-8" });
+    if (url.pathname.startsWith("/__austere/")) return serveAsset(res, url.pathname.slice("/__austere/".length), url);
+    if (url.pathname === "/") {
+      return send(res, 200, hub ? hubHome(url) : homePage(), { "content-type": "text/html; charset=utf-8" });
+    }
+    if (hub && url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
     if (url.pathname === "/favicon.ico") return send(res, 204, "");
 
     const m = /^\/s\/([a-f0-9]{12})(\/.*)?$/.exec(url.pathname);
@@ -516,6 +624,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         transcript: s.transcript.slice(-200),
         revision: s.revision,
         program: w?.program ?? null,
+        thirdPartyPacks: thirdPartyPacks(w?.html),
         version: VERSION,
         links: links(s.id),
       };

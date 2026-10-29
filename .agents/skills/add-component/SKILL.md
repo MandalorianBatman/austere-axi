@@ -12,7 +12,7 @@ Read this whole file before writing code. The tests enforce the mechanical rules
 
 ## 1. Does it earn its place?
 
-Every component's signature, description and notes are part of the reference every agent reads (`austere-axi spec`). They cost tokens in every session, in every agent, for good. The budget is 6.5k tokens, enforced in `test/library.test.js`; the build prints the current size.
+Every component's signature, description and notes are part of the reference every agent reads (`austere-axi spec`). They cost tokens in every session, in every agent, for good. The budget is 5.75k tokens, enforced in `test/library.test.js`; the build prints the current size.
 
 Add a component only when all three hold:
 
@@ -25,7 +25,10 @@ Prefer, in this order:
 1. A note on an existing component.
 2. A new optional prop on an existing component.
 3. Re-enabling a stock OpenUI component from `REMOVED` in `src/runtime/stock.js`.
-4. A new component.
+4. A new component with `tier: "extended"`: in the library and `components search`, out of `spec` (one name in its group's notes).
+5. A new core component.
+
+A component only some users need belongs in a pack, not here: `austere-axi components new` scaffolds one, and it can live in its own repo. Bundle a pack with austere-axi (`packs/<id>/`, like Mermaid) only when it is core-worthy but heavy, so pages that do not use it should not load it.
 
 Never add raw HTML or JS escape hatches, components that fetch data, or theming knobs.
 

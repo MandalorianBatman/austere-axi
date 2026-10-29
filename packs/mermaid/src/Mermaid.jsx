@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { austereComponent } from "../define.js";
-import { assetUrl, reportRuntimeError } from "../env.js";
+import { assetUrl, austereComponent, reportRuntimeError } from "austere-axi/pack";
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
 let mermaidPromise = null;

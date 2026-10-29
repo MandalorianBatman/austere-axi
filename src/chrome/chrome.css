@@ -228,6 +228,19 @@ code {
 .banner[hidden] {
   display: none;
 }
+.notice {
+  flex: none;
+  padding: 6px 16px;
+  background: #1c1a14;
+  color: #d9c79a;
+  border-bottom: 1px solid rgba(242, 196, 109, 0.18);
+  font-size: 12.5px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.notice[hidden] {
+  display: none;
+}
 
 /* ── main ── */
 .main {

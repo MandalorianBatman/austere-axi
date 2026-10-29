@@ -17,6 +17,11 @@ export const VERSION =
 /** Script to run for `server` (the bundled CLI itself, or the dev entry). */
 export const CLI_ENTRY = BUNDLED ? fileURLToPath(import.meta.url) : path.resolve(HERE, "main.js");
 
+/** The pack kit (`components build`): bundled next to the CLI, or the source in development. */
+export function packKitPath() {
+  return BUNDLED ? path.join(HERE, "pack-kit.mjs") : path.resolve(HERE, "../pack-kit/index.js");
+}
+
 export function assetPath(name) {
   return path.join(ASSET_DIR, name);
 }

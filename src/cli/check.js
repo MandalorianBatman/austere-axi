@@ -4,23 +4,54 @@ import fs from "node:fs";
 import { createParser } from "@openuidev/lang-core";
 import { readArtifact } from "./artifact.js";
 import { assetPath } from "./paths.js";
+import { mergePackSchemas, packDefining, pagePacks } from "./packs.js";
 import { splitStatements } from "../shared/statements.js";
 import { architectureNotes } from "../runtime/components/_architecture-model.js";
 
-let parser = null;
+let coreSpec = null;
+const packParsers = new Map();
 const customParsers = new WeakMap();
 
-/** Parser for the shipped spec, or for a given library schema (tests, maintainer scripts). */
-function getParser(schema) {
+/**
+ * Parser for the shipped spec extended with the page's installed packs, or
+ * for a given library schema (tests, maintainer scripts).
+ */
+function getParser(schema, packs = []) {
   if (schema) {
     if (!customParsers.has(schema)) customParsers.set(schema, createParser(schema, schema.root || "Stack"));
     return customParsers.get(schema);
   }
-  if (!parser) {
-    const spec = JSON.parse(fs.readFileSync(assetPath("spec.json"), "utf8"));
-    parser = createParser(spec, spec.root || "Stack");
+  const key = packs.map((p) => `${p.name}@${p.version}:${p.integrity || ""}`).join(",");
+  if (!packParsers.has(key)) {
+    coreSpec ||= JSON.parse(fs.readFileSync(assetPath("spec.json"), "utf8"));
+    const spec = mergePackSchemas(coreSpec, packs.map((p) => p.catalog));
+    packParsers.set(key, createParser(spec, spec.root || "Stack"));
   }
-  return parser;
+  return packParsers.get(key);
+}
+
+/** The parser lists every component on an unknown name; say where to look instead. */
+function unknownComponent(entry, packs, file) {
+  const name = entry.component;
+  const from = name && packDefining(name);
+  if (from) {
+    return {
+      ...entry,
+      code: "missing-pack",
+      message: `${name} comes from pack ${from.name}@${from.version}, which this page does not declare. \`austere-axi check --fix ${file}\` adds it.`,
+    };
+  }
+  const unseen = [...packs.missing, ...packs.mismatched];
+  if (unseen.length) {
+    return {
+      ...entry,
+      message: `Unknown component "${name}" (not core; the page's pack ${unseen.map((p) => `${p.name}@${p.version}`).join(", ")} is not installed here, so check cannot see its components).`,
+    };
+  }
+  return {
+    ...entry,
+    message: `Unknown component "${name}". Find the right one: \`austere-axi components search ${String(name || "").toLowerCase()}\`.`,
+  };
 }
 
 /** Map statement id -> 1-based line in the HTML file. */
@@ -47,8 +78,9 @@ function elementsOf(root, typeName) {
   return out;
 }
 
-export function checkHtml(html, { schema } = {}) {
+export function checkHtml(html, { schema, file = "<file>" } = {}) {
   const art = readArtifact(html);
+  const packs = schema ? { installed: [], missing: [], mismatched: [], declared: [] } : pagePacks(html);
   const result = { ok: true, errors: [], warnings: [], statements: 0, title: art.title, hasMermaid: false };
   if (art.program == null) {
     result.ok = false;
@@ -65,12 +97,24 @@ export function checkHtml(html, { schema } = {}) {
     });
   }
   result.hasMermaid = /\bMermaid\s*\(/.test(art.program);
+  for (const p of packs.missing) {
+    result.warnings.push({
+      code: "pack-not-installed",
+      message: `The page declares pack ${p.name}@${p.version}, which is not installed here; its components cannot be checked. \`austere-axi components add ${p.name}@${p.version}\` installs it.`,
+    });
+  }
+  for (const p of packs.mismatched) {
+    result.warnings.push({
+      code: "pack-version",
+      message: `The page declares ${p.name}@${p.version} but ${p.installedVersion} is installed; check skipped its components. \`austere-axi check --fix ${file}\` switches the page to ${p.installedVersion}.`,
+    });
+  }
   const lines = statementLines(html);
   const lineOf = (id) => (id && lines.get(id)?.line) || undefined;
 
   let parsed;
   try {
-    parsed = getParser(schema).parse(art.program);
+    parsed = getParser(schema, packs.installed).parse(art.program);
   } catch (err) {
     result.ok = false;
     result.errors.push({ code: "parse-failed", message: String(err?.message || err) });
@@ -83,7 +127,7 @@ export function checkHtml(html, { schema } = {}) {
     const key = `${e.severity}\0${e.code}\0${e.statementId}\0${e.message}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const entry = {
+    let entry = {
       code: e.code,
       statement: e.statementId,
       line: lineOf(e.statementId),
@@ -91,6 +135,7 @@ export function checkHtml(html, { schema } = {}) {
       path: e.path || undefined,
       message: e.message,
     };
+    if (e.code === "unknown-component") entry = unknownComponent(entry, packs, file);
     if (e.severity === "warning") result.warnings.push(entry);
     else result.errors.push(entry);
   }

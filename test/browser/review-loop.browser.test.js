@@ -5,7 +5,7 @@
 //   - clicking a component's parts in Annotate mode, then Send, makes `poll`
 //     return each one addressed to the right statement with detail.part
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
@@ -97,7 +97,7 @@ async function openReview(file, viewport) {
 
 before(async () => {
   lib = await loadLibrary();
-  for (const f of ["austere.js", "mermaid.min.js", "chrome/chrome.js"]) {
+  for (const f of ["austere.js", "mermaid.min.js", "packs/mermaid/pack.js", "chrome/chrome.js"]) {
     if (!fs.existsSync(path.join(ROOT, "dist", f))) {
       skipReason = `dist/${f} missing; run npm run test:browser (it builds first)`;
       return;
@@ -252,6 +252,45 @@ test("every component part is annotatable end to end", async (t) => {
       assert.equal(hit.target, id, `part "${part}" was addressed to ${hit.target}, expected ${id}`);
       assert.equal(hit.detail?.part, part, `part "${part}" in ${id} arrived as ${JSON.stringify(hit.detail)}`);
     }
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});
+
+test("a page using an installed pack renders it, warns about third-party code, and its parts are annotatable", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const cli = (...args) => {
+    const r = spawnSync(process.execPath, [path.join(ROOT, "src/cli/main.js"), ...args], {
+      env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, OPENUI_TELEMETRY_DISABLED: "1" },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return r.stdout;
+  };
+  const dir = path.join(WORK, "austere-pack-timeline");
+  cli("components", "new", dir);
+  cli("components", "build", dir);
+  cli("components", "add", dir);
+  const file = path.join(WORK, "with-pack.html");
+  fs.writeFileSync(
+    file,
+    htmlPage("With a pack", 'root = Stack([c])\nc = Card([CardHeader("Launch"), launch])\nlaunch = Timeline(["Mon | Freeze | branch cut", "Fri | GA"])', CDN_RUNTIME_URL),
+  );
+  cli("check", "--fix", file);
+  const { context, page, frame, problems } = await openReview(file, VIEWPORTS[1]);
+  try {
+    await frame.waitForSelector(".pack-timeline li", { timeout: 10_000 });
+    assert.match(await page.locator(".notice").innerText(), /third-party component packs \(austere-pack-timeline@0\.1\.0\)/);
+    await frame.locator('[data-austere-part="GA"]').click();
+    await frame.locator(".austere-pop textarea").fill("move GA");
+    await frame.locator(".austere-pop textarea").press("Enter");
+    await page.locator(".dock").click().catch(() => {});
+    await page.locator(".composer .send").click();
+    const res = await api("/api/poll", { file, timeoutMs: 5000 });
+    const hit = res.items?.find((i) => i.note === "move GA");
+    assert.equal(hit?.target, "launch");
+    assert.equal(hit?.detail?.part, "GA");
     assert.deepEqual(problems, [], "browser errors");
   } finally {
     await context.close();

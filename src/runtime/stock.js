@@ -2,6 +2,7 @@
 // NOT go here: each lives in its own file in ./components/ (see
 // .agents/skills/add-component/SKILL.md).
 import { StaticTabsRenderer } from "./overrides/Tabs.jsx";
+import { GROUP_NAMES } from "./groups.js";
 
 // Stock components that do not earn their prompt tokens in review artifacts
 // (chat/commerce cards, image-first blocks, modals, carousels, duplicates).
@@ -30,6 +31,30 @@ export const REMOVED = [
   "MetricIndicatorWithStrikethrough",
   "ListBlock",
   "ListItem",
+];
+
+// Stock components that stay in the library but leave the prompt: rarely the
+// right choice in a review page. Each group's notes name them, and
+// `austere-axi components show <Name>` prints the signature on demand.
+export const EXTENDED = [
+  "ScatterChart",
+  "ScatterSeries",
+  "Point",
+  "AreaChart",
+  "HorizontalBarChart",
+  "Slider",
+  "SwitchGroup",
+  "SwitchItem",
+  "Chips",
+  "ChipItem",
+  "CheckBoxGroup",
+  "CheckBoxItem",
+  "Label",
+  "EditableTable",
+  "TagBlock",
+  "IconText",
+  "BoldText",
+  "Text",
 ];
 
 /** Stock renderers replaced with page-appropriate behavior (props unchanged). */
@@ -187,4 +212,8 @@ export const STOCK_GROUPS = [
   },
 ];
 
-export const GROUP_NAMES = STOCK_GROUPS.map((g) => g.name);
+export { GROUP_NAMES };
+
+if (STOCK_GROUPS.map((g) => g.name).join() !== GROUP_NAMES.join()) {
+  throw new Error("stock.js STOCK_GROUPS and groups.js GROUP_NAMES list different groups");
+}

@@ -9,7 +9,7 @@ import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/si
 // Every agent pays for the component reference on every `spec` read. Raise
 // this only as a deliberate decision, in the same change that needs it.
 // 6500 → 6600: Architecture lanes, tones and row pins (6362 → ~6550 tokens).
-const PROMPT_BUDGET_TOKENS = 6600;
+const PROMPT_BUDGET_TOKENS = 5750;
 const DESCRIPTION_MAX_CHARS = 280;
 
 let lib;

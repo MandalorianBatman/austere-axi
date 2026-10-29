@@ -59,7 +59,7 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 ```
 
 - **An artifact is a plain `.html` file.** It contains one `<script>` tag for the runtime and one `<script type="text/openui">` block holding the program. Opened directly, it renders from the CDN. Under review, the server points that tag at a local copy.
-- **The runtime** bundles the OpenUI React renderer with a curated component library: 58 of the stock components, plus `Architecture` (with `Node`, `Edge` and `Group`), `Mermaid`, `Diff` and `FileTree`. Every rendered statement is tagged with its name.
+- **The runtime** bundles the OpenUI React renderer with a curated component library: 58 of the stock components, plus `Architecture` (with `Node`, `Edge` and `Group`), `Diff` and `FileTree`. `Mermaid` ships as a bundled [pack](#components-and-packs) that loads only on pages that call it. Every rendered statement is tagged with its name.
 - **Architecture diagrams** are laid out automatically ([dagre](https://github.com/dagrejs/dagre)): the agent writes nodes, edges and groups as statements and never a coordinate. Each node and edge is its own click target, so feedback on a diagram arrives as `annotation: api (Node)` with its line. The layout runs across when that stays legible at the page width and down otherwise, so a phone gets a tall diagram. For a system split by owner or tier, `lanes` turns each group into a column with right-angle lines between them (stacked as bands on a phone); `tone` tints a box or line to mark risk or a store family. Mermaid stays for sequences, state machines, ER and gantt.
 - **Annotations** resolve to the innermost named statement. They also carry precise detail where it exists: table row and column, `file:+line` for diff lines, the label of a diagram node, or the selected text. The popover shows the parent chain, so the reviewer can retarget a note to an enclosing section.
 - **Buttons and forms** are feedback channels. `@ToAssistant("…")` queues a message along with the form's values. A button with no action sends its label.
@@ -112,10 +112,13 @@ austere-axi <file>               validate + open a review   [--no-open] [--reope
 austere-axi poll <file>          long-poll for feedback      [--agent-reply "..."] [--takeover]
 austere-axi reply <file>         post a reply without polling
 austere-axi end <file>           end the review as the agent
-austere-axi check <file>         validate the program (no browser)
+austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
+austere-axi check <file>         validate the program (no browser)    [--fix]
 austere-axi patch <file>         merge statements from stdin into the program
-austere-axi spec [group...]      component reference (~6.5k tokens; groups narrow it)
+austere-axi spec [group|pack...] component reference (~5.7k tokens; groups narrow it)
+austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi export <file>        one self-contained HTML file, works offline
+austere-axi hub on|off|status|list|open   persistent server with an index of every artifact
 austere-axi stop                 stop the background server
 ```
 
@@ -127,7 +130,58 @@ Session rules follow lavish:
 - Feedback sent while no agent is listening is queued until the next poll.
 - A review the user ended is not reopened unless `--reopen` is passed.
 - If every review tab stays closed, `poll` returns `browser_disconnected`. The wait is 10 s after a tab is closed, or 5 min after a dropped connection, such as a phone screen locking.
+- Feedback outlives the agent session. `feedback <file>` returns what the reviewer said that no agent has answered: sent after polling stopped, or days ago. Reading it counts as received, so a later `poll` does not repeat it; `reply` marks it addressed.
 
+## Components and packs
+
+`spec` covers the components most pages need. Rarer ones (area and scatter charts, sliders, switches, editable tables, …) stay in the library but out of `spec`, which keeps it near 5.7k tokens. Each group's notes name them, and `components` finds them:
+
+```sh
+austere-axi components                  # every component, by group
+austere-axi components search scatter   # ranked by name, group and description
+austere-axi components show AreaChart   # signature, notes, an example
+```
+
+**Packs** add components without growing the core. A pack is an npm package with two built files: `dist/pack.js`, the components (a few KB: they use the page's React and zod), and `dist/catalog.json`, their signatures, examples and the schema `check` validates against.
+
+```sh
+austere-axi components add austere-pack-gantt --trust   # from npm; also a folder or an `npm pack` .tgz
+austere-axi check --fix plan.html                       # declares the packs the page uses
+```
+
+A page that uses a pack names it in its head, so the page renders wherever it is opened:
+
+```html
+<meta name="austere-packs" content="austere-pack-gantt@1.2.0 sha384-…">
+```
+
+- Under review, the server serves installed packs, and only if they still match the hash in the lockfile (`~/.austere-axi/packs.json`). Opened directly, the page loads them from jsDelivr with Subresource Integrity. `export` inlines them.
+- `check`, `spec` and `components` know the installed packs. Using a pack's component without declaring the pack is a `missing-pack` error, which `check --fix` resolves.
+- Mermaid is the first pack. It ships inside austere-axi and loads only when the program calls `Mermaid(...)`, so it needs no tag and existing pages are unchanged.
+
+**Trust.** A pack's code runs inside your review pages, where annotations and button presses also come from. Packs published under `@austere-axi/` install directly; any other npm pack needs `--trust`, after you have read it. A local folder counts as your own. A page with third-party packs says so above the artifact, and `poll` tells the agent its items could have come from that code.
+
+**Writing a pack.** `components new` writes a working pack with one component:
+
+```sh
+austere-axi components new austere-pack-timeline
+cd austere-pack-timeline && npm install && npm run build
+austere-axi components add .
+```
+
+Components follow the core contract, `austereComponent` from `austere-axi/pack`: a PascalCase name, zod props in positional order (append-only once published), a one-line description and an example. The build maps React, zod and `austere-axi/pack` onto the page's copies. Publish with `npm publish`.
+
+## Hub
+
+By default the server starts on demand and stops after 30 idle minutes. `hub on` keeps it running and indexes every artifact you open or check:
+
+```sh
+austere-axi hub on      # http://127.0.0.1:4388/: artifacts by project (git root) and day, with search
+austere-axi hub list    # the same for an agent: [words] [--project dir]
+austere-axi hub off     # back to on-demand; the index stays
+```
+
+For each artifact the home page shows whether a review is live, and how much feedback is open (not yet received by an agent), received, or addressed. The index is SQLite (`~/.austere-axi/hub.db`), mirrored from the session files, so the review loop does not depend on it. The hub needs Node 22.13 or later, for `node:sqlite`; everything else runs on Node 20.
 ### Environment
 
 | Variable | Default | |
@@ -140,17 +194,19 @@ Session rules follow lavish:
 | `AUSTERE_AXI_LINK_HOST` | | host to print in the remote link |
 | `AUSTERE_AXI_ALLOWED_HOSTS` | | extra `Host` headers to accept (reverse proxy) |
 | `AUSTERE_AXI_DISCONNECT_GRACE_MS` | `300000` | how long a dropped connection may stay away before `poll` returns; `0` disables |
-| `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle server shutdown; `0` disables |
+| `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle server shutdown; `0` disables (the hub never idles out) |
+| `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` fetches packs |
 
 ## Security
 
 The server binds to loopback, plus the Tailscale IP when Tailscale is up. It never binds to every interface.
 
-- **CLI control routes** (`/api/*`) answer only loopback callers.
+- **CLI control routes** (`/api/*`) answer only loopback callers, and refuse any request a browser sends.
 - **Host headers** are checked against an allowlist, as a DNS-rebinding defense.
 - **Mutating browser routes** reject foreign `Origin` headers.
 - **The artifact** runs in a sandboxed iframe with no same-origin access.
 - **File access** covers only the artifact's own directory, with no dotfiles.
+- **Packs** run inside that sandboxed iframe, so they cannot reach the server's routes. Third-party packs need `--trust` to install; installed ones are served only while they match their lockfile hash, and CDN loads carry Subresource Integrity.
 
 The Node side of OpenUI ships PostHog telemetry. The CLI sets `OPENUI_TELEMETRY_DISABLED=1` so nothing is sent; the browser runtime never sends telemetry.
 
@@ -167,18 +223,21 @@ These are left out of v1 on purpose:
 
 ```sh
 npm install
-npm run build     # dist/: austere.js (runtime), mermaid.min.js, spec.json, prompt.md, chrome/, cli.mjs
+npm run build     # dist/: austere.js (runtime), packs/, pack-kit.mjs, mermaid.min.js, spec.json, prompt.md, catalog.json, chrome/, cli.mjs
 npm test
 node dist/cli.mjs examples/session-migration.html
 ```
 
 | Path | Contents |
 |---|---|
-| `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `Mermaid`, `FileTree`), one self-describing file each, collected automatically |
-| `src/runtime/stock.js` | Which stock OpenUI components ship, their prompt groups, renderer overrides |
+| `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `FileTree`), one self-describing file each, collected automatically |
+| `src/runtime/stock.js` | Which stock OpenUI components ship, which stay out of `spec` (`EXTENDED`), their prompt groups, renderer overrides |
+| `packs/` | Packs bundled with austere-axi (`mermaid`), built like any third-party pack |
+| `src/runtime/pack-api.js`, `src/pack-kit/` | What a pack imports as `austere-axi/pack`, and the build behind `components build` |
+| `src/shared/catalog.js` | The component catalog: `components list/search/show`, a pack's `catalog.json`, the prompt tiers |
 | `src/runtime/` | Library assembly, annotation layer, review bridge, styles |
 | `src/chrome/` | Review UI around the artifact iframe |
-| `src/cli/` | CLI, server, session store, `check`, `export` |
+| `src/cli/` | CLI, server, session store, `check`, `export`, packs (`packs.js`, `install.js`), hub (`hub.js`) |
 | `src/shared/statements.js` | Statement splitter used by both sides |
 
 To add or change a component, follow [`.agents/skills/add-component/SKILL.md`](.agents/skills/add-component/SKILL.md). It is a maintainer-only skill and is not published; agents working in this repo pick it up through `AGENTS.md`. Tests enforce the mechanical rules:
@@ -203,7 +262,7 @@ All of this is maintainer-only and is not published.
 
 CI (`.github/workflows/ci.yml`) builds and tests on every push to `main` and every pull request: Node 20, 22 and 24 on Linux, Node 24 on Windows, plus the browser suite. To release, bump `version` in `package.json`, push, and publish a GitHub Release. `.github/workflows/publish.yml` then tests again and publishes to npmjs.org through npm trusted publishing, with no token secret.
 
-The runtime is about 3 MB minified. It is served locally and cached. `export` inlines it, and inlines Mermaid too when the artifact uses it.
+The runtime is about 3 MB minified. It is served locally and cached. `export` inlines it, and inlines Mermaid and any packs the artifact uses.
 
 ## License
 

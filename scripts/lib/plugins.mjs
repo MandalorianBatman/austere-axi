@@ -9,6 +9,56 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const require = createRequire(import.meta.url);
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export const COMPONENTS_DIR = path.join(ROOT, "src/runtime/components");
+export const PACKS_DIR = path.join(ROOT, "packs");
+const ENTRY_CANDIDATES = ["src/index.jsx", "src/index.js", "index.jsx", "index.js"];
+
+/** Packs bundled with austere-axi: packs/<id>/ with a package.json and an entry module. */
+export function bundledPackSources() {
+  if (!fs.existsSync(PACKS_DIR)) return [];
+  return fs
+    .readdirSync(PACKS_DIR)
+    .sort()
+    .filter((id) => fs.existsSync(path.join(PACKS_DIR, id, "package.json")))
+    .map((id) => {
+      const dir = path.join(PACKS_DIR, id);
+      const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+      const entry = ENTRY_CANDIDATES.map((c) => path.join(dir, c)).find((f) => fs.existsSync(f));
+      if (!entry) throw new Error(`packs/${id} has no entry module (${ENTRY_CANDIDATES.join(", ")})`);
+      return { id, dir, name: pkg.name, entry };
+    });
+}
+
+/**
+ * `import bundledPacks from "austere:bundled-packs"` in the runtime → { <id>: { name, version,
+ * components } } from dist/packs/<id>/catalog.json, so the runtime knows which
+ * components load which bundled pack without carrying their code.
+ */
+export function bundledPacksPlugin(distDir) {
+  return {
+    name: "austere-bundled-packs",
+    setup(build) {
+      build.onResolve({ filter: /^austere:bundled-packs$/ }, () => ({ path: "bundled-packs", namespace: "austere-bundled-packs" }));
+      build.onLoad({ filter: /.*/, namespace: "austere-bundled-packs" }, () => {
+        const index = {};
+        for (const { id } of bundledPackSources()) {
+          const file = path.join(distDir, "packs", id, "catalog.json");
+          if (!fs.existsSync(file)) throw new Error(`dist/packs/${id}/catalog.json is missing: build the packs first (node scripts/build.mjs packs)`);
+          const cat = JSON.parse(fs.readFileSync(file, "utf8"));
+          index[id] = { name: cat.pack, version: cat.version, components: cat.components.map((c) => c.name) };
+        }
+        return { contents: `export default ${JSON.stringify(index)};`, loader: "js" };
+      });
+    },
+  };
+}
+
+/** In Node builds of the library, a bundled pack's "austere-axi/pack" import is the runtime's pack API. */
+const packApiAlias = {
+  name: "austere-pack-api",
+  setup(build) {
+    build.onResolve({ filter: /^austere-axi\/pack$/ }, () => ({ path: path.join(ROOT, "src/runtime/pack-api.js") }));
+  },
+};
 
 /** Component files: every .js/.jsx in components/ whose name does not start with "_". */
 export function componentFiles() {
@@ -90,17 +140,32 @@ const nodeExternals = {
 };
 
 /**
- * Bundle and import the library in Node: { austereLibrary, CUSTOM_COMPONENTS,
- * GROUPS, PROMPT_OPTIONS, generateSystemPrompt, prompt() }.
+ * Bundle and import the library in Node: { austereLibrary, CUSTOM_COMPONENTS
+ * (ours plus the bundled packs'), BUNDLED_PACKS, GROUPS, TIERS, EXAMPLES,
+ * buildLibrary, PROMPT_OPTIONS, prompt(), catalog(version), schema() }.
  */
 export async function loadLibrary() {
   const tmp = path.join(ROOT, "node_modules/.austere-build");
   fs.mkdirSync(tmp, { recursive: true });
   const out = path.join(tmp, `library-${process.pid}-${Date.now()}.mjs`);
+  const packs = bundledPackSources();
   await esbuild.build({
     stdin: {
       contents: `
-        export { austereLibrary, CUSTOM_COMPONENTS, GROUPS } from "./src/runtime/library.jsx";
+        import { buildLibrary, CUSTOM_COMPONENTS as CORE_COMPONENTS, groupsFor, tiersFor, examplesFor } from "./src/runtime/library.jsx";
+        ${packs.map((p, i) => `import pack${i} from ${JSON.stringify(p.entry)};`).join("\n")}
+        // Bundled packs (Mermaid) are part of the core spec: no tag needed to use them.
+        export const BUNDLED_PACKS = [${packs
+          .map((p, i) => `{ id: ${JSON.stringify(p.id)}, name: ${JSON.stringify(p.name)}, components: [].concat(pack${i}.components || pack${i}) }`)
+          .join(", ")}];
+        const packComponents = BUNDLED_PACKS.flatMap((p) => p.components);
+        export const CUSTOM_COMPONENTS = [...CORE_COMPONENTS, ...packComponents];
+        export const austereLibrary = buildLibrary(packComponents);
+        export const GROUPS = groupsFor(CUSTOM_COMPONENTS);
+        export const TIERS = tiersFor(CUSTOM_COMPONENTS);
+        export const EXAMPLES = examplesFor(CUSTOM_COMPONENTS);
+        export { buildLibrary };
+        export { catalogFromSpec, promptSpec } from "./src/shared/catalog.js";
         export { PROMPT_OPTIONS } from "./src/runtime/prompt.js";
         export { generateSystemPrompt } from "@openuidev/lang-core";
       `,
@@ -112,7 +177,7 @@ export async function loadLibrary() {
     format: "esm",
     jsx: "automatic",
     loader: { ".css": "empty", ".scss": "empty" },
-    plugins: [fontPlugin, registryPlugin, nodeExternals],
+    plugins: [fontPlugin, registryPlugin, packApiAlias, nodeExternals],
     outfile: out,
     logLevel: "error",
   });
@@ -122,7 +187,15 @@ export async function loadLibrary() {
     return {
       ...mod,
       prompt: () =>
-        mod.generateSystemPrompt({ library: mod.austereLibrary.toSpec(), promptOptions: mod.PROMPT_OPTIONS }),
+        mod.generateSystemPrompt({ library: mod.promptSpec(mod.austereLibrary.toSpec(), mod.TIERS), promptOptions: mod.PROMPT_OPTIONS }),
+      catalog: (version) => {
+        const cat = mod.catalogFromSpec(mod.austereLibrary.toSpec(), { version, tiers: mod.TIERS, examples: mod.EXAMPLES });
+        // Mark what a bundled pack provides, so `components` can say where it comes from.
+        for (const p of mod.BUNDLED_PACKS) {
+          for (const e of cat.components) if (p.components.some((c) => c.name === e.name)) e.pack = p.name;
+        }
+        return cat;
+      },
       schema: () => ({ ...mod.austereLibrary.toJSONSchema(), root: mod.austereLibrary.root || "Stack" }),
     };
   } finally {
