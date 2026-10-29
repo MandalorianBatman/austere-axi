@@ -1,3 +1,4 @@
+// @ts-check
 // Splits an OpenUI Lang program into top-level statements without parsing
 // expressions. Used by the runtime (change highlighting) and the CLI (line
 // numbers and source excerpts for feedback). Follows the language's rules for

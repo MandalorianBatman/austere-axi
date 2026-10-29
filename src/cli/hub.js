@@ -1,3 +1,4 @@
+// @ts-check
 // The hub (opt-in, `austere-axi hub on`): the review server stays up and keeps
 // an index of every artifact reviewed or checked on this machine, by project
 // (git root) and date, with each piece of feedback and whether the agent has

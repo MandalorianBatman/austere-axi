@@ -1,3 +1,4 @@
+// @ts-check
 // Network binding. Loopback always; plus this machine's Tailscale IPv4 when
 // Tailscale is up, so the review link opens on a phone on the same tailnet.
 // Never 0.0.0.0: the server can read local files, so only trusted networks.

@@ -1,3 +1,4 @@
+// @ts-check
 // The <meta name="austere-packs"> tag: which component packs a page needs.
 //   content="austere-pack-gantt@1.2.0 sha384-…, @acme/austere-pack-flows@0.3.1"
 // One entry per pack, comma-separated: name@version, then optionally the

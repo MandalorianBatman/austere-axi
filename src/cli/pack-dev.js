@@ -1,3 +1,4 @@
+// @ts-check
 // Writing your own pack: `components new` scaffolds one, `components build`
 // turns it into dist/pack.js + dist/catalog.json with the pack kit.
 import fs from "node:fs";
@@ -136,6 +137,7 @@ Publish with \`npm publish\` after \`npm run build\`. Others install it with
 `;
 }
 
+/** @param {string} dir @param {{ name?: string }} [options] */
 export function newPack(dir, { name } = {}) {
   if (!dir) throw new Error("new needs a folder: austere-axi components new austere-pack-milestones");
   const abs = path.resolve(dir);

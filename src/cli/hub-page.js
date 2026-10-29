@@ -1,3 +1,4 @@
+// @ts-check
 // The hub's home page: every artifact by project, then by day.
 import os from "node:os";
 import path from "node:path";
@@ -67,8 +68,8 @@ li.n{padding:12px 0}li.n>a{padding:0}
 `;
 
 /**
- * @param {object[]} rows   Hub.list() rows
- * @param {{ version: string, q: string, project: string, stats: object }} o
+ * @param {any[]} rows   Hub.list() rows
+ * @param {{ version: string, q: string, project: string, stats: { artifacts: number, projects: number, unanswered?: number } }} o
  */
 export function hubPage(rows, { version, q, project, stats }) {
   const byProject = new Map();

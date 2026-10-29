@@ -1,3 +1,4 @@
+// @ts-check
 // `austere-axi components ...`: browse the component catalog (core, bundled
 // packs, installed packs) and manage packs.
 import { coreCatalog, installedPacks, isThirdParty } from "./packs.js";
@@ -62,6 +63,7 @@ export function searchComponents(words) {
   const query = words.join(" ").trim();
   if (!query) return { status: "error", error: `search needs words: ${BIN} components search gantt timeline` };
   const { entries, notesOf } = catalogEntries();
+  /** @type {{ entry: any, score: number }[]} */
   const hits = searchCatalog(entries, query, { notesOf, limit: 8 });
   if (!hits.length) {
     return {

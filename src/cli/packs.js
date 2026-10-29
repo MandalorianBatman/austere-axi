@@ -1,3 +1,4 @@
+// @ts-check
 // Component packs on this machine.
 //   bundled    shipped in dist/packs/<id>/ (Mermaid); in the core spec, loaded implicitly
 //   installed  added with `components add`; files in <state>/packs/<name>@<version>/,
@@ -53,7 +54,7 @@ export function coreCatalog() {
 }
 
 let bundled = null;
-/** @returns {{ id: string, name: string, version: string, dir: string, catalog: object, bundled: true }[]} */
+/** @returns {{ id: string, name: string, version: string, dir: string, catalog: any, bundled: true }[]} */
 export function bundledPacks() {
   if (bundled) return bundled;
   bundled = [];
@@ -137,7 +138,7 @@ export function implicitPacks(program) {
 
 /**
  * What a page's packs look like here.
- * @returns {{ declared, installed, missing, mismatched, thirdParty }}
+ * @returns {{ declared, installed, missing, mismatched, stale, thirdParty }}
  *   installed: declared packs installed at that version (their catalogs extend `check`)
  *   missing: declared but not installed;  mismatched: installed at another version
  */

@@ -1,3 +1,4 @@
+// @ts-check
 // Installing component packs: from the npm registry, a .tgz (`npm pack`
 // output), or a pack folder that has been built. Only three files are kept
 // per pack: dist/pack.js, dist/catalog.json and package.json. Installing runs
@@ -116,13 +117,11 @@ async function fetchBuffer(url, accept) {
   try {
     res = await fetch(url, { headers: accept ? { accept } : {}, redirect: "follow" });
   } catch (err) {
-    const e = new Error(`could not reach ${url} (${err.cause?.code || err.message})`);
-    e.network = true;
+    const e = Object.assign(new Error(`could not reach ${url} (${err.cause?.code || err.message})`), { network: true });
     throw e;
   }
   if (!res.ok) {
-    const e = new Error(`${url}: HTTP ${res.status}`);
-    e.status = res.status;
+    const e = Object.assign(new Error(`${url}: HTTP ${res.status}`), { status: res.status });
     throw e;
   }
   const len = Number(res.headers.get("content-length") || 0);
@@ -222,22 +221,25 @@ export async function addPack(spec, { trust = false } = {}) {
   if (!local) {
     const { name } = spec.startsWith("@") || spec.includes("@") ? splitSpec(spec) : { name: spec };
     if (!isFirstParty(name) && !trust) {
-      const e = new Error(
-        `${name} is a third-party pack: its code would run inside your review pages, where it can read the page and add items to the feedback queue. Look at its source first (npm view ${name} repository), then rerun with --trust.`,
+      throw Object.assign(
+        new Error(
+          `${name} is a third-party pack: its code would run inside your review pages, where it can read the page and add items to the feedback queue. Look at its source first (npm view ${name} repository), then rerun with --trust.`,
+        ),
+        { code: "untrusted" },
       );
-      e.code = "untrusted";
-      throw e;
     }
   }
+  /** @type {{ expect?: { name: string, version: string }, [key: string]: any }} */
   const got = local ? fromFolder(spec) : await fromRegistry(spec);
   if (got.source === "tarball" && !trust) {
     // Nothing vouches for a tarball's name, so even an @austere-axi/ one needs --trust.
     const peek = parseCatalog(got.catalog, path.basename(got.resolved));
-    const e = new Error(
-      `${path.basename(got.resolved)} (${peek.pack}) comes from a file, not the registry: its code would run inside your review pages. Rerun with --trust once you have looked at it.`,
+    throw Object.assign(
+      new Error(
+        `${path.basename(got.resolved)} (${peek.pack}) comes from a file, not the registry: its code would run inside your review pages. Rerun with --trust once you have looked at it.`,
+      ),
+      { code: "untrusted" },
     );
-    e.code = "untrusted";
-    throw e;
   }
   const label = got.expect ? `${got.expect.name}@${got.expect.version}` : spec;
   const cat = parseCatalog(got.catalog, label);

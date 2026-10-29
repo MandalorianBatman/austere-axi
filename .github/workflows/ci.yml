@@ -32,6 +32,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - if: matrix.os == 'ubuntu-latest' && matrix.node == 24
+        run: npm run typecheck
 
   browser:
     runs-on: ubuntu-latest

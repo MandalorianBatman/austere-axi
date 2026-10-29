@@ -1,3 +1,4 @@
+// @ts-check
 // Reading and rewriting artifact HTML files. An artifact is an ordinary HTML
 // file with one runtime <script src=".../austere.js"> tag and one
 // <script type="text/openui"> block holding the program.

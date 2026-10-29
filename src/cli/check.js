@@ -1,3 +1,4 @@
+// @ts-check
 // Validate an artifact without a browser: the same parser the renderer uses,
 // run against the curated library's JSON schema.
 import fs from "node:fs";
@@ -78,6 +79,10 @@ function elementsOf(root, typeName) {
   return out;
 }
 
+/**
+ * @param {string} html
+ * @param {{ schema?: object, file?: string }} [options]
+ */
 export function checkHtml(html, { schema, file = "<file>" } = {}) {
   const art = readArtifact(html);
   const packs = schema ? { installed: [], missing: [], mismatched: [], stale: [], declared: [] } : pagePacks(html);

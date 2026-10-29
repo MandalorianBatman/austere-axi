@@ -1,3 +1,4 @@
+// @ts-check
 // Local review server. One per machine (per port), shared by every session.
 //   /api/*        control routes for the CLI (loopback only)
 //   /s/:id        review page (chrome) for a session
@@ -735,7 +736,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       server.requestTimeout = 0;
       server.headersTimeout = 60_000;
       server.once("error", (err) => {
-        log("listen-failed", host, err.code || err.message);
+        log("listen-failed", host, /** @type {NodeJS.ErrnoException} */ (err).code || err.message);
         resolve(false);
       });
       server.listen(port, host, () => {

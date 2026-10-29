@@ -1,3 +1,4 @@
+// @ts-check
 // One review session per artifact file (keyed by canonical path). Holds the
 // conversation, feedback not yet delivered to the agent, and who is listening.
 import crypto from "node:crypto";
@@ -16,7 +17,10 @@ export function newId(prefix) {
 }
 
 export class SessionStore {
-  /** @param {{ onFlush?: (session) => void }} [options] onFlush runs after a session is written (the hub mirrors it) */
+  /**
+   * @param {string} dir
+   * @param {{ onFlush?: (session) => void }} [options] onFlush runs after a session is written (the hub mirrors it)
+   */
   constructor(dir, { onFlush } = {}) {
     this.onFlush = onFlush || null;
     this.dir = path.join(dir, "sessions");

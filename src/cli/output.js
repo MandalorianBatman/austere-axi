@@ -1,3 +1,4 @@
+// @ts-check
 // Compact, YAML-shaped output: cheap for agents to read, easy for humans to scan.
 
 const PLAIN = /^[A-Za-z0-9_./@:+-][A-Za-z0-9 _./@:+(),=<>*#%?!'-]*$/;

@@ -1,3 +1,4 @@
+// @ts-check
 // CLI side of the server: find or start it, then talk JSON over loopback.
 import { spawn } from "node:child_process";
 import fs from "node:fs";

@@ -1,3 +1,4 @@
+// @ts-check
 // Standalone export: one HTML file that renders offline, with the runtime
 // (Mermaid and every pack the page uses, too) inlined. No network fetches.
 import fs from "node:fs";

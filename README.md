@@ -224,6 +224,7 @@ OpenUI's Node side has PostHog telemetry. The CLI sets `OPENUI_TELEMETRY_DISABLE
 npm install
 npm run build     # dist/: runtime, packs, pack kit, Mermaid, spec, catalog, review UI, cli.mjs
 npm test
+npm run typecheck # tsc over src/cli, src/shared and the pack types
 node dist/cli.mjs examples/session-migration.html
 ```
 

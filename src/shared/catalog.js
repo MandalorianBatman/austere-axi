@@ -1,3 +1,4 @@
+// @ts-check
 // The component catalog: one entry per component (signature, description,
 // group, tier, examples, pack). It is what `components list|search|show`
 // read, what a pack ships as catalog.json, and where the prompt's tiers are
@@ -64,7 +65,7 @@ const words = (text) =>
  * descriptions, signatures and the notes of the entry's group.
  * @returns {{ entry: object, score: number }[]}
  */
-export function searchCatalog(entries, query, { notesOf = () => [], limit = 8 } = {}) {
+export function searchCatalog(entries, query, { notesOf = /** @type {(entry: any) => string[]} */ (() => []), limit = 8 } = {}) {
   const q = String(query || "").trim().toLowerCase();
   const terms = words(q);
   if (!terms.length) return [];
