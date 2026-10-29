@@ -329,6 +329,38 @@ test("sharing fails clearly when no tailnet address is up", async () => {
   }
 });
 
+test("AUSTERE_AXI_LINK_URL sets every printed link and the host the server accepts", async () => {
+  const other = await startServer({ AUSTERE_AXI_LINK_URL: "https://austere.example.test/" });
+  const file = path.join(WORK, "linkurl.html");
+  fs.writeFileSync(file, fs.readFileSync(FILE));
+  try {
+    await up(other.port);
+    const opened = (await request(other.port, "POST", "/api/open", { body: { file } })).data;
+    const url = new URL(opened.links.remote);
+    assert.equal(url.origin, "https://austere.example.test", "scheme, host and no port from the URL, not from the listener");
+    assert.match(url.pathname + url.search, /^\/s\/[a-f0-9]{12}\?key=[A-Za-z0-9_-]{32,}$/);
+    const invite = (await request(other.port, "POST", "/api/share", { body: { file, name: "Ana" } })).data.link;
+    assert.match(invite, /^https:\/\/austere\.example\.test\/s\/[a-f0-9]{12}\?invite=/);
+    // The proxy forwards the public Host header: the server must accept it without AUSTERE_AXI_ALLOWED_HOSTS.
+    const viaProxy = await request(other.port, "GET", url.pathname + url.search, { remote: true, headers: { host: "austere.example.test" } });
+    assert.equal(viaProxy.status, 302);
+    const stranger = await request(other.port, "GET", url.pathname, { remote: true, headers: { host: "evil.example.test" } });
+    assert.equal(stranger.status, 403);
+    assert.equal((await request(other.port, "GET", "/api/health")).data.remote, "https://austere.example.test");
+  } finally {
+    await stop(other);
+  }
+});
+
+test("a bad AUSTERE_AXI_LINK_URL stops the server instead of printing links that would not work", async () => {
+  for (const value of ["ftp://example.test", "https://example.test/austere", "not a url"]) {
+    const bad = await startServer({ AUSTERE_AXI_LINK_URL: value });
+    const code = await new Promise((resolve) => bad.child.once("exit", resolve));
+    assert.notEqual(code, 0, value);
+    fs.rmSync(bad.state, { recursive: true, force: true });
+  }
+});
+
 test("an invalid or missing token is refused; a cookie for a revoked invite is not the owner", async () => {
   assert.equal((await request(srv.port, "GET", `/s/${id}?invite=nope`)).status, 403);
   assert.equal((await request(srv.port, "GET", `/s/${id}`)).status, 200, "no invite: the owner, as before");

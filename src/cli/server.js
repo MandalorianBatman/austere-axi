@@ -11,7 +11,7 @@ import http from "node:http";
 import path from "node:path";
 import { readArtifact, rewriteRuntime, escapeHtml } from "./artifact.js";
 import { exportHtml } from "./export.js";
-import { allowedHosts, detectTailscale, hostOnly, isLoopback } from "./net.js";
+import { allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.js";
 import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.js";
 import { SessionStore, newId } from "./sessions.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
@@ -95,6 +95,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   const byeAt = new Map(); // id -> ms of last explicit tab close
   const browserSeen = new Set();
   let tailnet = null;
+  const linkBase = linkUrl(); // throws on a bad AUSTERE_AXI_LINK_URL: better to stop here than print wrong links
   let lastActivity = Date.now();
   const longGraceMs = msEnv("AUSTERE_AXI_DISCONNECT_GRACE_MS", 5 * 60_000);
   const idleMs = hub ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
@@ -108,6 +109,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   function hostsAllowed() {
     const extra = [];
     if (tailnet) extra.push(tailnet.ip, tailnet.dnsName);
+    if (linkBase) extra.push(linkBase.host);
     for (const h of listeners.keys()) extra.push(h);
     return allowedHosts(extra);
   }
@@ -122,10 +124,17 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return null;
   }
 
-  /** The page's address on the tailnet, without any key, or null. */
-  function remoteUrl(id) {
+  /** Where a teammate or phone reaches this server, without a trailing slash, or null when only loopback listens. */
+  function remoteBase() {
+    if (linkBase) return linkBase.base;
     const host = remoteHost();
-    return host ? `http://${host}:${port}/s/${id}` : null;
+    return host ? `http://${host}:${port}` : null;
+  }
+
+  /** The page's address for a remote reviewer, without any key, or null. */
+  function remoteUrl(id) {
+    const base = remoteBase();
+    return base ? `${base}/s/${id}` : null;
   }
 
   /** The owner's links. The remote one carries the owner key, which the server swaps for a cookie. */
@@ -385,6 +394,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         stateDir: stateDir(),
         listen: Array.from(listeners.keys()),
         tailnet: tailnet || undefined,
+        remote: remoteBase() || undefined,
         hub: Boolean(hub),
         hubWanted,
       });
@@ -434,9 +444,9 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     if (route === "share") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
       await ensureTailnetListener();
-      if (!remoteHost()) {
+      if (!remoteBase()) {
         return send(res, 409, {
-          error: "no tailnet address: Tailscale is not running here and AUSTERE_AXI_HOST is not set, so a teammate could not open the link",
+          error: "no tailnet address: Tailscale is not running here and neither AUSTERE_AXI_HOST nor AUSTERE_AXI_LINK_URL is set, so a teammate could not open the link",
         });
       }
       let inv;

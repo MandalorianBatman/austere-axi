@@ -216,7 +216,8 @@ Off loopback, a request without a valid invite or the owner key is refused. The 
 | `AUSTERE_AXI_NO_OPEN` | | `1` = never open a browser |
 | `AUSTERE_AXI_HOST` | | extra bind address (never `0.0.0.0`) |
 | `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |
-| `AUSTERE_AXI_LINK_HOST` | | host in the printed remote link |
+| `AUSTERE_AXI_LINK_HOST` | | host in the printed remote link (`http://<host>:<port>`) |
+| `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS` |
 | `AUSTERE_AXI_ALLOWED_HOSTS` | | extra `Host` headers to accept (reverse proxy) |
 | `AUSTERE_AXI_DISCONNECT_GRACE_MS` | `300000` | how long a dropped connection can stay away before `poll` returns; `0` disables |
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables (the hub never idles out) |

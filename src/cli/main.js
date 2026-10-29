@@ -94,7 +94,7 @@ COMMANDS
 ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1  AUSTERE_AXI_DISCONNECT_GRACE_MS (300000)
-  AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_NPM_REGISTRY
+  AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL  AUSTERE_AXI_NPM_REGISTRY
 `;
 
 function parseArgs(argv) {
@@ -653,7 +653,7 @@ async function cmdHub(sub, args, flags) {
       return print({
         status: "on",
         url,
-        phone: h.tailnet ? `http://${h.tailnet.dnsName || h.tailnet.ip}:${port()}/` : undefined,
+        phone: h.remote ? `${h.remote}/` : h.tailnet ? `http://${h.tailnet.dnsName || h.tailnet.ip}:${port()}/` : undefined,
         index: hubDbFile(),
         note: "The server now stays up and indexes every artifact you open or check, by project and date. After a reboot, `austere-axi hub open` (or opening any review) starts it again.",
       });
