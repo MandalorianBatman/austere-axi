@@ -2,6 +2,8 @@
 
 const BOOT = window.__AUSTERE__;
 const SID = BOOT.id;
+const VIEWER = BOOT.viewer || { role: "owner", name: "" };
+const OWNER = VIEWER.role === "owner";
 const LS = {
   get(key, fallback) {
     try {
@@ -128,13 +130,20 @@ document.body.innerHTML = `
   <button type="button" class="dock"></button>
 </div>`;
 
+if (!OWNER) {
+  for (const sel of ['[data-cmd="copy-path"]', '[data-cmd="copy-link"]', '[data-cmd="export"]', '[data-cmd="end"]', ".send-end"]) $(sel)?.remove();
+  $(".composer-hint").textContent = VIEWER.auto
+    ? `Posting as ${VIEWER.name} · Enter sends`
+    : `Posting as ${VIEWER.name} · the owner sends your notes on · Enter sends`;
+}
+
 const frame = $(".frame");
 const log = $(".log");
 const textarea = $(".composer textarea");
 const banner = $(".banner");
 
 $(".title").textContent = BOOT.title;
-$(".file").textContent = BOOT.name;
+$(".file").textContent = OWNER ? BOOT.name : `reviewing as ${VIEWER.name}`;
 $(".file").title = BOOT.file;
 document.title = `${BOOT.title} · austere`;
 
@@ -364,7 +373,31 @@ function fmtTime(ms) {
   return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+/** "You" for the viewer's own notes, otherwise the author's name; the owner's notes read "Owner" to a reviewer. */
+function whoLabel(entry) {
+  if (OWNER) return entry.author || "You";
+  return entry.author === VIEWER.name ? "You" : entry.author || "Owner";
+}
+
+async function heldAction(kind, ids) {
+  try {
+    await fetch(`/s/${SID}/${kind}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(ids ? { ids } : { all: true }) });
+  } catch {
+    composerError("Could not reach the server. Try again.");
+  }
+}
+
 function receipt(entry) {
+  if (entry.held) {
+    const row = h("div", { class: "receipt held" }, h("span", { class: "held-label", text: OWNER ? "Held · not sent to the agent" : "Waiting for the owner to send it on" }));
+    if (OWNER) {
+      row.append(
+        h("button", { type: "button", class: "btn tiny primary", text: "Send", onclick: () => heldAction("release", [entry.id]) }),
+        h("button", { type: "button", class: "btn tiny ghost", text: "Discard", onclick: () => heldAction("discard", [entry.id]) }),
+      );
+    }
+    return row;
+  }
   const steps = [
     ["Seen", entry.seenAt],
     ["Working", entry.workAt],
@@ -434,11 +467,23 @@ function renderLog(scrollToEnd = false) {
         ),
       );
     } else {
-      const bubble = h("div", { class: "msg user" }, h("div", { class: "who", text: `You · ${fmtTime(entry.at)}${entry.end ? " · ended review" : ""}` }));
+      const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${whoLabel(entry)} · ${fmtTime(entry.at)}${entry.end ? " · ended review" : ""}` }));
       for (const it of entry.items || []) bubble.append(itemBody(it));
       bubble.append(receipt(entry));
       log.append(bubble);
     }
+  }
+  const heldCount = OWNER ? state.transcript.filter((e) => e.held).length : 0;
+  if (heldCount) {
+    log.append(
+      h(
+        "div",
+        { class: "held-bar" },
+        h("span", { text: `${heldCount} held from teammates` }),
+        h("button", { type: "button", class: "btn tiny primary", text: "Send all", onclick: () => heldAction("release") }),
+        h("button", { type: "button", class: "btn tiny ghost", text: "Discard all", onclick: () => heldAction("discard") }),
+      ),
+    );
   }
   if (state.queue.length) {
     const q = h("div", { class: "queued" }, h("div", { class: "queued-head", text: `Queued · ${state.queue.length}` }));
@@ -467,7 +512,7 @@ function renderLog(scrollToEnd = false) {
   }
   if (state.status === "ended") {
     log.append(
-      h("div", { class: "ended-note", text: state.endedBy === "agent" ? "The agent ended this review." : "You ended this review." }),
+      h("div", { class: "ended-note", text: state.endedBy === "agent" ? "The agent ended this review." : OWNER ? "You ended this review." : "The owner ended this review." }),
     );
   }
   const count = state.transcript.length + state.queue.length;
@@ -483,7 +528,7 @@ function renderComposer() {
   const n = state.queue.length;
   textarea.disabled = ended || state.sending;
   $(".send").disabled = ended || state.sending;
-  $(".send-end").disabled = ended || state.sending;
+  if ($(".send-end")) $(".send-end").disabled = ended || state.sending;
   $(".send").textContent = state.sending ? "Sending…" : n ? `Send ${n}` : "Send";
   textarea.placeholder = ended ? "Review ended" : n ? "Add a message (optional)…" : "Message the agent…";
 }
@@ -503,6 +548,7 @@ async function sendAll(end = false) {
     textarea.focus();
     return;
   }
+  if (end && !OWNER) return;
   if (end && !items.length && !confirm("End this review? The agent will stop listening.")) return;
   state.sending = true;
   composerError("");
@@ -532,7 +578,7 @@ $(".composer").addEventListener("submit", (e) => {
   e.preventDefault();
   sendAll(false);
 });
-$(".send-end").addEventListener("click", () => sendAll(true));
+$(".send-end")?.addEventListener("click", () => sendAll(true));
 textarea.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
@@ -695,7 +741,9 @@ function showBanner(text, actions = []) {
 function mergeEntries(entries) {
   for (const e of entries) {
     const i = state.transcript.findIndex((x) => x.id === e.id);
-    if (i >= 0) state.transcript[i] = e;
+    if (e.discarded) {
+      if (i >= 0) state.transcript.splice(i, 1);
+    } else if (i >= 0) state.transcript[i] = e;
     else state.transcript.push(e);
   }
   state.transcript.sort((a, b) => a.at - b.at);
@@ -725,7 +773,7 @@ function connect() {
   });
   es.addEventListener("snapshot", (e) => {
     const d = JSON.parse(e.data);
-    state.transcript = d.transcript || [];
+    state.transcript = (d.transcript || []).filter((e) => !e.discarded);
     state.presence = d.presence;
     state.status = d.session.status;
     state.endedBy = d.session.endedBy;
@@ -782,6 +830,12 @@ function connect() {
   });
   es.addEventListener("server", (e) => {
     const d = JSON.parse(e.data);
+    if (d.state === "revoked") {
+      es.close();
+      state.connected = false;
+      showBanner("Your invite was revoked. Ask the owner for a new link.");
+      return;
+    }
     if (d.state === "stopped") {
       showBanner("The austere-axi server stopped. Run any austere-axi command to start it again; this page reconnects on its own.");
     }

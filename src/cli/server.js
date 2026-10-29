@@ -16,6 +16,7 @@ import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.js";
 import { SessionStore, newId } from "./sessions.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
 import { Hub, hubEnabled, hubUnsupported } from "./hub.js";
+import { COOKIE, InviteStore, inviteId, tokenFromCookie } from "./invites.js";
 import { hubPage, notesPage } from "./hub-page.js";
 import { splitSpec } from "../shared/packs-meta.js";
 import crypto from "node:crypto";
@@ -48,6 +49,8 @@ const MIME = {
 };
 
 const SHORT_GRACE_MS = 10_000;
+const OWNER = Object.freeze({ role: "owner", name: "" });
+const REVIEWER_KINDS = new Set(["annotation", "message"]);
 
 export async function runServer({ port, verbose = false, alsoListen = [] }) {
   const log = (...a) => {
@@ -86,7 +89,8 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       }
     }
   }
-  const clients = new Map(); // id -> Set<{res, id}>
+  const invites = new InviteStore(stateDir());
+  const clients = new Map(); // id -> Set<{res, viewer}>
   const polls = new Map(); // id -> poll
   const watchers = new Map(); // id -> { html, program, shell }
   const listeners = new Map(); // host -> http.Server
@@ -111,13 +115,50 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return allowedHosts(extra);
   }
 
+  /** The host a teammate or phone reaches this server at, or null when only loopback listens. */
+  function remoteHost() {
+    const linkHost = process.env.AUSTERE_AXI_LINK_HOST;
+    if (linkHost) return linkHost;
+    if (tailnet && listeners.has(tailnet.ip)) return tailnet.dnsName || tailnet.ip;
+    const explicit = process.env.AUSTERE_AXI_HOST;
+    if (explicit && !/^(0\.0\.0\.0|::|\*)$/.test(explicit) && listeners.has(explicit)) return explicit;
+    return null;
+  }
+
   function links(id) {
     const local = `http://127.0.0.1:${port}/s/${id}`;
     const out = { local };
-    if (tailnet && listeners.has(tailnet.ip)) out.remote = `http://${tailnet.dnsName || tailnet.ip}:${port}/s/${id}`;
-    const linkHost = process.env.AUSTERE_AXI_LINK_HOST;
-    if (linkHost) out.remote = `http://${linkHost}:${port}/s/${id}`;
+    const host = remoteHost();
+    if (host) out.remote = `http://${host}:${port}/s/${id}`;
     return out;
+  }
+
+  /** The link a teammate opens: the page plus the token, which the server swaps for a cookie. */
+  function inviteLink(inv) {
+    return `${links(inv.sessionId).remote}?invite=${inv.token}`;
+  }
+
+  // ── who is asking ──
+
+  /**
+   * The owner (no invite cookie: loopback, the owner's own phone link) or a team reviewer (a valid
+   * invite cookie for this session). A cookie that matches no invite is refused, never treated as
+   * the owner, so revoking cuts access.
+   * @returns {{ role: "owner", name: string } | { role: "reviewer", name: string, auto: boolean, token: string } | null}
+   */
+  function identify(req, s) {
+    const token = tokenFromCookie(req.headers.cookie);
+    if (token == null) return OWNER;
+    const inv = invites.find(token);
+    if (!inv || inv.sessionId !== s.id) return null;
+    return { role: "reviewer", name: inv.name, auto: inv.auto, token: inv.token };
+  }
+
+  /** Held and discarded notes belong to the owner and to the author. */
+  function canSee(e, viewer) {
+    if (viewer.role === "owner") return true;
+    if (e.role === "user" && (e.held || e.discarded)) return e.author === viewer.name;
+    return true;
   }
 
   function send(res, status, body, headers = {}) {
@@ -171,7 +212,24 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   }
 
   function broadcastTranscript(s, entries) {
-    broadcast(s.id, "transcript", { entries });
+    const set = clients.get(s.id);
+    if (!set) return;
+    for (const c of set) {
+      const visible = entries.filter((e) => canSee(e, c.viewer));
+      if (visible.length) c.res.write(`event: transcript\ndata: ${JSON.stringify({ entries: visible })}\n\n`);
+    }
+  }
+
+  /** Close the event streams of revoked invites. */
+  function dropReviewers(tokens) {
+    for (const set of clients.values()) {
+      for (const c of Array.from(set)) {
+        if (c.viewer.role !== "reviewer" || !tokens.has(c.viewer.token)) continue;
+        c.res.write(`event: server\ndata: ${JSON.stringify({ state: "revoked" })}\n\n`);
+        c.res.end();
+        set.delete(c);
+      }
+    }
   }
 
   // ── file watching ──
@@ -248,7 +306,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     const items = [];
     let end = false;
     for (const e of entries) {
-      for (const it of e.items || []) items.push(it);
+      for (const it of e.items || []) items.push(e.author ? { ...it, author: e.author } : it);
       if (e.end) end = true;
     }
     const body = {
@@ -328,6 +386,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
           presence: presence(s),
           browsers: clientCount(s.id),
           pending: s.pending.length,
+          held: store.heldEntries(s).length,
           links: links(s.id),
         })),
       });
@@ -337,10 +396,51 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       setTimeout(() => shutdown("requested"), 50);
       return;
     }
+    if (route === "share/list") {
+      const withLinks = url.searchParams.get("links") === "1";
+      return send(res, 200, {
+        invites: invites.list().map((i) => ({
+          id: inviteId(i),
+          name: i.name,
+          file: i.file,
+          auto: i.auto,
+          createdAt: i.createdAt,
+          link: withLinks ? inviteLink(i) : undefined,
+        })),
+      });
+    }
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req);
+    if (route === "share/revoke") {
+      const gone = invites.revoke(String(body.key || ""));
+      if (!gone.length) return send(res, 404, { error: "no invite matches that name or id" });
+      dropReviewers(new Set(gone.map((i) => i.token)));
+      log("share-revoke", gone.map((i) => `${i.name}(${inviteId(i)})`).join(","));
+      return send(res, 200, { revoked: gone.map((i) => ({ id: inviteId(i), name: i.name, file: i.file })) });
+    }
     const file = typeof body.file === "string" ? body.file : "";
     if (!file) return send(res, 400, { error: "file is required" });
+
+    if (route === "share") {
+      if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
+      await ensureTailnetListener();
+      if (!remoteHost()) {
+        return send(res, 409, {
+          error: "no tailnet address: Tailscale is not running here and AUSTERE_AXI_HOST is not set, so a teammate could not open the link",
+        });
+      }
+      let inv;
+      try {
+        const s = store.ensure(file);
+        inv = invites.add({ name: body.name, sessionId: s.id, file: s.file, auto: !!body.auto });
+        watch(s);
+        store.touch(s);
+      } catch (err) {
+        return send(res, 400, { error: String(err.message || err) });
+      }
+      log("share", inv.name, inviteId(inv), inv.auto ? "auto" : "hold");
+      return send(res, 200, { id: inviteId(inv), name: inv.name, auto: inv.auto, link: inviteLink(inv), file: inv.file });
+    }
 
     if (route === "open") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
@@ -361,6 +461,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         links: links(s.id),
         browsers: clientCount(s.id),
         pending: s.pending.length,
+        held: store.heldEntries(s).length,
       });
     }
 
@@ -534,11 +635,12 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     });
   }
 
-  function chromePage(s) {
+  function chromePage(s, viewer) {
     const boot = {
       id: s.id,
       title: s.title,
-      file: s.file,
+      file: viewer.role === "owner" ? s.file : "",
+      viewer: { role: viewer.role, name: viewer.name, auto: viewer.role === "reviewer" ? viewer.auto : undefined },
       name: path.basename(s.file),
       artifactUrl: `/s/${s.id}/a/${encodeURIComponent(path.basename(s.file))}`,
       version: VERSION,
@@ -571,7 +673,9 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     const project = (url.searchParams.get("project") || "").slice(0, 1000);
     const st = url.searchParams.get("status");
     const status = st === "unanswered" || st === "answered" ? st : "all";
-    return notesPage(hub.notes({ q, project, status: status === "all" ? "" : status }), { version: VERSION, q, project, status, stats: hub.stats() });
+    const author = (url.searchParams.get("author") || "").slice(0, 80);
+    const rows = hub.notes({ q, project, author, status: status === "all" ? "" : status });
+    return notesPage(rows, { version: VERSION, q, project, status, author, authors: hub.authors(), stats: hub.stats() });
   }
 
   /** Open an indexed artifact for review (it may never have had a session) and go to it. */
@@ -621,9 +725,34 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     const sub = m[2] || "";
     activity();
 
+    // An invite link: trade the token for a cookie scoped to this page, then drop it from the URL.
+    const invite = url.searchParams.get("invite");
+    if (invite != null && (sub === "" || sub === "/")) {
+      const inv = invites.find(invite);
+      if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
+      res.writeHead(302, {
+        location: `/s/${s.id}`,
+        "set-cookie": `${COOKIE}=${inv.token}; Path=/s/${s.id}; HttpOnly; SameSite=Strict; Max-Age=2592000`,
+        "cache-control": "no-store",
+      });
+      return res.end();
+    }
+
+    const who = identify(req, s);
+    if (!who) {
+      return send(res, 403, "This invite is no longer valid. Ask for a new link.", {
+        "set-cookie": `${COOKIE}=; Path=/s/${s.id}; HttpOnly; SameSite=Strict; Max-Age=0`,
+      });
+    }
+    // Reviewers read the page and the conversation and add notes. Everything else is the owner's.
+    const reviewer = who.role === "reviewer";
+    if (reviewer && !(sub === "" || sub === "/" || sub.startsWith("/a/") || sub === "/events" || sub === "/send" || sub === "/bye")) {
+      return send(res, 403, { error: "reviewers can only read the page and add notes" });
+    }
+
     if (sub === "" || sub === "/") {
       watch(s);
-      return send(res, 200, chromePage(s), { "content-type": "text/html; charset=utf-8" });
+      return send(res, 200, chromePage(s, who), { "content-type": "text/html; charset=utf-8" });
     }
     if (sub.startsWith("/a/")) return serveArtifact(req, res, s, sub.slice(3));
 
@@ -638,9 +767,9 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       res.write("retry: 2000\n\n");
       const w = watchers.get(s.id);
       const snapshot = {
-        session: publicSession(s),
+        session: reviewer ? { ...publicSession(s), file: "" } : publicSession(s),
         presence: presence(s),
-        transcript: s.transcript.slice(-200),
+        transcript: s.transcript.filter((e) => !e.discarded && canSee(e, who)).slice(-200),
         revision: s.revision,
         program: w?.program ?? null,
         thirdPartyPacks: thirdPartyPacks(w?.html),
@@ -648,7 +777,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         links: links(s.id),
       };
       res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
-      const client = { res };
+      const client = { res, viewer: who };
       if (!clients.has(s.id)) clients.set(s.id, new Set());
       clients.get(s.id).add(client);
       browserSeen.add(s.id);
@@ -667,13 +796,20 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
 
     if (sub === "/send" && req.method === "POST") {
       const body = await readBody(req, 4 * 1024 * 1024);
-      const items = Array.isArray(body.items) ? body.items.filter((x) => x && typeof x === "object").slice(0, 200) : [];
+      const end = !reviewer && !!body.end;
+      let items = Array.isArray(body.items) ? body.items.filter((x) => x && typeof x === "object").slice(0, reviewer ? 50 : 200) : [];
+      if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind));
       if (s.status === "ended") return send(res, 409, { error: "session has ended" });
-      if (!items.length && !body.end) return send(res, 400, { error: "nothing to send" });
-      for (const it of items) it.id = it.id || newId("i");
+      if (!items.length && !end) return send(res, 400, { error: "nothing to send" });
+      // The server decides who wrote a note. A reviewer's own item id could overwrite another note in the hub.
+      for (const it of items) {
+        delete it.author;
+        it.id = reviewer || !it.id ? newId("i") : it.id;
+      }
+      const hold = reviewer && !who.auto;
       let entry = null;
-      if (items.length) entry = store.addUserBatch(s, items, { end: !!body.end });
-      if (body.end) {
+      if (items.length) entry = store.addUserBatch(s, items, { end, author: who.name, hold });
+      if (end) {
         store.end(s, "user");
         broadcast(s.id, "ended", { by: "user" });
       }
@@ -681,10 +817,20 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const poll = polls.get(s.id);
       if (poll && !poll.done) {
         if (s.pending.length) deliver(s, poll);
-        else if (body.end) finishPoll(s, poll, { status: "ended", endedBy: "user" });
+        else if (end) finishPoll(s, poll, { status: "ended", endedBy: "user" });
       }
       broadcastPresence(s);
       return send(res, 200, { ok: true, entry });
+    }
+    if ((sub === "/release" || sub === "/discard") && req.method === "POST") {
+      const body = await readBody(req);
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : body.all ? null : [];
+      const done = sub === "/release" ? store.release(s, ids) : store.discard(s, ids);
+      if (done.length) broadcastTranscript(s, done);
+      const poll = polls.get(s.id);
+      if (sub === "/release" && poll && !poll.done && s.pending.length) deliver(s, poll);
+      broadcastPresence(s);
+      return send(res, 200, { ok: true, count: done.length });
     }
     if (sub === "/end" && req.method === "POST") {
       if (s.status !== "ended") {

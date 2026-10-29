@@ -703,3 +703,30 @@ textarea.edit {
     }
   }
 }
+
+/* team review: held notes */
+.receipt.held span::before {
+  content: "";
+}
+.receipt.held .held-label {
+  color: var(--amber);
+  margin-right: auto;
+}
+.msg.user.held {
+  border-style: dashed;
+  border-color: rgba(242, 196, 109, 0.45);
+}
+.held-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px 12px;
+  border: 1px dashed rgba(242, 196, 109, 0.45);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--amber);
+}
+.held-bar span {
+  margin-right: auto;
+}

@@ -64,7 +64,8 @@ b{font-weight:600}b.open{color:#f2c46d;font-size:12px}
 form.f{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}button{background:#1c1c20;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit}select{background:#141417;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit;width:100%;box-sizing:border-box}
 .note{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}.note-t{color:#8a8a94;font-size:12px}.st{font-size:12px}.st.waiting{color:#f2c46d}.st.done{color:#8fd19e}
 li.n{padding:12px 0}li.n>a{padding:0}
-@media(min-width:600px){form.f{grid-template-columns:minmax(0,1fr) 150px auto}}
+b.by{color:#e8e8ec}
+@media(min-width:600px){form.f{grid-template-columns:minmax(0,1fr) 150px auto}form.f.p{grid-template-columns:minmax(0,1fr) 150px 150px auto}}
 `;
 
 /**
@@ -122,28 +123,33 @@ ${filter}${sections || `<p class="empty">${empty}</p>`}
 </main></body></html>`;
 }
 
-const STATUS_LABEL = { open: "unanswered", received: "unanswered", addressed: "answered" };
+const STATUS_LABEL = { open: "unanswered", received: "unanswered", addressed: "answered", held: "held for the owner" };
 
 /**
  * The Notes view: every note across pages, newest first.
- * @param {{ id: string, artifact_id: string, at: number, target: string | null, text: string | null, status: string, title: string | null, file: string, project: string }[]} rows Hub.notes() rows
- * @param {{ version: string, q: string, project: string, status: string, stats: { artifacts: number, projects: number, unanswered: number } }} o
+ * @param {{ id: string, artifact_id: string, at: number, target: string | null, text: string | null, status: string, author: string, title: string | null, file: string, project: string }[]} rows Hub.notes() rows
+ * @param {{ version: string, q: string, project: string, status: string, author?: string, authors?: string[], stats: { artifacts: number, projects: number, unanswered: number } }} o
  * @returns {string}
  */
-export function notesPage(rows, { version, q, project, status, stats }) {
+export function notesPage(rows, { version, q, project, status, author = "", authors = [], stats }) {
   const items = rows
     .map((n) => {
       const waiting = n.status !== "addressed";
       const when = `${day(n.at)} ${time(n.at)}`;
       return `<li class="n"><a href="/hub/open/${escapeHtml(n.artifact_id)}" title="${escapeHtml(n.file)}">
   <p class="note">${escapeHtml(n.text || "(no text)")}</p>
-  <span class="note-t">${n.target ? `on ${escapeHtml(n.target)} · ` : ""}<strong>${escapeHtml(n.title || path.basename(n.file))}</strong> · ${escapeHtml(path.basename(n.project) || n.project)} · ${escapeHtml(when)} · <span class="st ${waiting ? "waiting" : "done"}">${STATUS_LABEL[n.status] || escapeHtml(n.status)}</span></span>
+  <span class="note-t">${n.author ? `<b class="by">${escapeHtml(n.author)}</b> · ` : ""}${n.target ? `on ${escapeHtml(n.target)} · ` : ""}<strong>${escapeHtml(n.title || path.basename(n.file))}</strong> · ${escapeHtml(path.basename(n.project) || n.project)} · ${escapeHtml(when)} · <span class="st ${waiting ? "waiting" : "done"}">${STATUS_LABEL[n.status] || escapeHtml(n.status)}</span></span>
 </a></li>`;
     })
     .join("");
   const opt = (v, label) => `<option value="${v}"${status === v ? " selected" : ""}>${label}</option>`;
+  const people = authors.length
+    ? `<select name="author" aria-label="Author"><option value="">Everyone</option><option value="owner"${author === "owner" ? " selected" : ""}>Owner</option>${authors
+        .map((a) => `<option value="${escapeHtml(a)}"${author === a ? " selected" : ""}>${escapeHtml(a)}</option>`)
+        .join("")}</select>`
+    : "";
   const filter = project ? `<p class="filter">Project ${escapeHtml(tilde(project))} · <a href="/notes">all projects</a></p>` : "";
-  const empty = q || project || status !== "all" ? "No notes match." : "No notes yet.";
+  const empty = q || project || author || status !== "all" ? "No notes match." : "No notes yet.";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notes · austere-axi hub</title><meta name="color-scheme" content="dark">
 <style>
@@ -152,7 +158,7 @@ ${STYLE}</style></head>
 <header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><nav class="nav"><a href="/">Pages</a><a href="/notes">Notes</a></nav><span class="stats">${rows.length} notes${
     stats.unanswered ? ` · ${stats.unanswered} unanswered` : ""
   }</span></header>
-<form class="f" method="get" action="/notes">${project ? `<input type="hidden" name="project" value="${escapeHtml(project)}">` : ""}<input type="search" name="q" value="${escapeHtml(q)}" placeholder="Search notes, targets, page titles" aria-label="Search notes"><select name="status" aria-label="Status">${opt("all", "All")}${opt("unanswered", "Unanswered")}${opt("answered", "Answered")}</select><button type="submit">Filter</button></form>
+<form class="f${authors.length ? " p" : ""}" method="get" action="/notes">${project ? `<input type="hidden" name="project" value="${escapeHtml(project)}">` : ""}<input type="search" name="q" value="${escapeHtml(q)}" placeholder="Search notes, targets, page titles" aria-label="Search notes"><select name="status" aria-label="Status">${opt("all", "All")}${opt("unanswered", "Unanswered")}${opt("answered", "Answered")}</select>${people}<button type="submit">Filter</button></form>
 ${filter}${items ? `<ul>${items}</ul>` : `<p class="empty">${empty}</p>`}
 </main></body></html>`;
 }

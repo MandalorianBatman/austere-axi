@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS items (
   target TEXT,
   text TEXT,
   status TEXT NOT NULL,
-  data TEXT NOT NULL
+  data TEXT NOT NULL,
+  author TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS items_artifact ON items(artifact_id, at);
 CREATE TABLE IF NOT EXISTS replies (
@@ -101,8 +102,10 @@ CREATE TABLE IF NOT EXISTS replies (
 );
 `;
 
-/** Where a piece of feedback stands: open (not yet received by an agent), received, addressed (replied to). */
+/** Where a piece of feedback stands: held (waiting for the owner), discarded, open (not yet received by an agent), received, addressed (replied to). */
 export function itemStatus(entry, pending) {
+  if (entry.discarded) return "discarded";
+  if (entry.held) return "held";
   if (pending) return "open";
   if (entry.doneAt) return "addressed";
   return "received";
@@ -124,6 +127,10 @@ export class Hub {
   constructor(db) {
     this.db = db;
     db.exec(SCHEMA);
+    // Indexes made before team review have no author column.
+    if (!db.prepare("PRAGMA table_info(items)").all().some((c) => c.name === "author")) {
+      db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
+    }
     this.q = {
       upsertArtifact: db.prepare(`
         INSERT INTO artifacts (id, file, project, title, created_at, updated_at, reviewed, status, ended_by)
@@ -135,9 +142,9 @@ export class Hub {
           status = COALESCE(excluded.status, artifacts.status),
           ended_by = CASE WHEN excluded.status IS NULL THEN artifacts.ended_by ELSE excluded.ended_by END`),
       upsertItem: db.prepare(`
-        INSERT INTO items (id, artifact_id, entry_id, at, kind, target, text, status, data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET status = excluded.status, text = excluded.text, data = excluded.data`),
+        INSERT INTO items (id, artifact_id, entry_id, at, kind, target, text, status, data, author)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET status = excluded.status, text = excluded.text, data = excluded.data, author = excluded.author`),
       upsertReply: db.prepare(`INSERT INTO replies (id, artifact_id, at, text) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`),
       artifact: db.prepare(`SELECT * FROM artifacts WHERE id = ?`),
     };
@@ -167,7 +174,7 @@ export class Hub {
         const status = itemStatus(e, pending.has(e.id));
         (e.items || []).forEach((it, i) => {
           const id = it.id || `${e.id}.${i}`;
-          this.q.upsertItem.run(id, s.id, e.id, e.at, it.kind || "message", it.target || it.statement || null, itemText(it), status, JSON.stringify(it));
+          this.q.upsertItem.run(id, s.id, e.id, e.at, it.kind || "message", it.target || it.statement || null, itemText(it), status, JSON.stringify(it), e.author || "");
         });
       }
       this.db.exec("COMMIT");
@@ -189,42 +196,55 @@ export class Hub {
         `SELECT a.*,
            SUM(CASE WHEN i.status = 'open' THEN 1 ELSE 0 END) AS open,
            SUM(CASE WHEN i.status = 'received' THEN 1 ELSE 0 END) AS received,
-           SUM(CASE WHEN i.status = 'addressed' THEN 1 ELSE 0 END) AS addressed
+           SUM(CASE WHEN i.status = 'addressed' THEN 1 ELSE 0 END) AS addressed,
+           SUM(CASE WHEN i.status = 'held' THEN 1 ELSE 0 END) AS held
          FROM artifacts a LEFT JOIN items i ON i.artifact_id = a.id
          WHERE (? = '' OR a.title LIKE ? ESCAPE '\\' OR a.file LIKE ? ESCAPE '\\' OR a.project LIKE ? ESCAPE '\\')
            AND (? = '' OR a.project = ?)
          GROUP BY a.id ORDER BY a.updated_at DESC LIMIT ?`,
       )
       .all(q, like, like, like, project, project, limit)
-      .map((r) => ({ ...r, open: r.open || 0, received: r.received || 0, addressed: r.addressed || 0 }));
+      .map((r) => ({ ...r, open: r.open || 0, received: r.received || 0, addressed: r.addressed || 0, held: r.held || 0 }));
   }
 
   /**
    * Notes (annotations and messages) across all pages, newest first.
-   * `q` matches note text, target and page title. `status`: "unanswered" (open + received), "answered", or "" for all.
-   * @param {{ q?: string, status?: string, project?: string, limit?: number }} [o]
+   * `q` matches note text, target and page title. `status`: "unanswered" (held, open and received), "answered", or "" for all.
+   * `author`: a reviewer's name, "owner" for the owner's own notes, or "" for everyone. Discarded notes are left out.
+   * @param {{ q?: string, status?: string, project?: string, author?: string, limit?: number }} [o]
    */
-  notes({ q = "", status = "", project = "", limit = 200 } = {}) {
+  notes({ q = "", status = "", project = "", author = "", limit = 200 } = {}) {
+    const anyAuthor = author === "" ? "all" : "one";
+    const who = author === "owner" ? "" : author;
     const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     return this.db
       .prepare(
-        `SELECT i.id, i.artifact_id, i.at, i.kind, i.target, i.text, i.status,
+        `SELECT i.id, i.artifact_id, i.at, i.kind, i.target, i.text, i.status, i.author,
                 a.title, a.file, a.project
          FROM items i JOIN artifacts a ON a.id = i.artifact_id
-         WHERE i.kind IN ('annotation', 'message')
+         WHERE i.kind IN ('annotation', 'message') AND i.status != 'discarded'
+           AND (? = 'all' OR i.author = ?)
            AND (? = '' OR i.text LIKE ? ESCAPE '\\' OR i.target LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')
            AND (? = '' OR a.project = ?)
            AND (? = '' OR (? = 'unanswered' AND i.status != 'addressed') OR (? = 'answered' AND i.status = 'addressed'))
          ORDER BY i.at DESC, i.id LIMIT ?`,
       )
-      .all(q, like, like, like, project, project, status, status, status, limit);
+      .all(anyAuthor, who, q, like, like, like, project, project, status, status, status, limit);
+  }
+
+  /** Reviewer names with notes in the index (the owner's own notes are not listed). */
+  authors() {
+    return this.db
+      .prepare(`SELECT DISTINCT author FROM items WHERE author != '' AND status != 'discarded' ORDER BY author COLLATE NOCASE`)
+      .all()
+      .map((r) => String(r.author));
   }
 
   stats() {
     return this.db
       .prepare(
         `SELECT (SELECT COUNT(*) FROM artifacts) AS artifacts, (SELECT COUNT(DISTINCT project) FROM artifacts) AS projects,
-                (SELECT COUNT(*) FROM items WHERE status != 'addressed') AS unanswered`,
+                (SELECT COUNT(*) FROM items WHERE status IN ('open', 'received', 'held')) AS unanswered`,
       )
       .get();
   }

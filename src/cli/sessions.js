@@ -107,13 +107,48 @@ export class SessionStore {
 
   // ── conversation ──
 
-  /** Reviewer sent a batch of items. Returns the transcript entry. */
-  addUserBatch(s, items, { end = false } = {}) {
+  /**
+   * Reviewer sent a batch of items. Returns the transcript entry.
+   * `author` is a team reviewer's name (empty: the owner). `hold` keeps the entry out of
+   * `pending` until the owner releases it.
+   */
+  addUserBatch(s, items, { end = false, author = "", hold = false } = {}) {
     const entry = { id: newId("u"), role: "user", at: Date.now(), items, end: end || undefined, seenAt: null, doneAt: null };
+    if (author) entry.author = author;
+    if (hold) entry.held = true;
     s.transcript.push(entry);
-    s.pending.push(entry.id);
+    if (!hold) s.pending.push(entry.id);
     this.touch(s);
     return entry;
+  }
+
+  /** Held entries, oldest first. */
+  heldEntries(s) {
+    return s.transcript.filter((e) => e.role === "user" && e.held);
+  }
+
+  /** The owner sends held notes on to the agent (`ids` omitted: all of them). Returns the entries released. */
+  release(s, ids) {
+    const want = ids ? new Set(ids) : null;
+    const out = this.heldEntries(s).filter((e) => !want || want.has(e.id));
+    for (const e of out) {
+      e.held = false;
+      s.pending.push(e.id);
+    }
+    if (out.length) this.touch(s);
+    return out;
+  }
+
+  /** The owner drops held notes. They stay on record, marked discarded, and never reach the agent. */
+  discard(s, ids) {
+    const want = ids ? new Set(ids) : null;
+    const out = this.heldEntries(s).filter((e) => !want || want.has(e.id));
+    for (const e of out) {
+      e.held = false;
+      e.discarded = true;
+    }
+    if (out.length) this.touch(s);
+    return out;
   }
 
   addAgentReply(s, text) {
@@ -134,10 +169,13 @@ export class SessionStore {
    */
   feedback(s, { all = false, peek = false } = {}) {
     const pending = new Set(s.pending);
-    const picked = s.transcript.filter((e) => e.role === "user" && (e.items || []).length && (all || pending.has(e.id) || !e.doneAt));
+    const picked = s.transcript.filter(
+      (e) => e.role === "user" && !e.held && !e.discarded && (e.items || []).length && (all || pending.has(e.id) || !e.doneAt),
+    );
     const entries = picked.map((e) => ({
       id: e.id,
       at: e.at,
+      author: e.author || undefined,
       items: e.items,
       status: pending.has(e.id) ? "open" : e.doneAt ? "addressed" : "received",
     }));

@@ -113,6 +113,8 @@ austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narro
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi export <file>        one self-contained HTML file, works offline
 austere-axi hub on|off|status|list|notes|open   persistent server with an index of every page
+austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
+austere-axi share list|revoke           see invites, cut one off
 austere-axi stop                 stop the background server
 ```
 
@@ -183,6 +185,26 @@ austere-axi hub off     # back to on-demand; the index stays
 
 `/notes` lists every note on every page, newest first, with search, status and project filters. The home page shows which reviews are live and how much feedback the agent has answered. The index is SQLite (`~/.austere-axi/hub.db`), copied from the session files; the review loop does not need it. The hub needs Node 22.13 or later (`node:sqlite`).
 
+## Team review
+
+Teammates on your tailnet can review a page and leave notes under their own name. The server still runs on your machine. There are no accounts and no hosted service.
+
+```sh
+austere-axi share plan.html --as "Ana"           # prints a link; notes wait for you
+austere-axi share plan.html --as "Bo" --auto     # Bo's notes go straight to the agent
+austere-axi share list [--links]                 # who has a link
+austere-axi share revoke Ana                     # name or id; takes effect at once
+```
+
+Send the link to the teammate. The link needs Tailscale (or `AUSTERE_AXI_HOST`); without one, `share` stops with an error.
+
+- **Hold (default):** a teammate's note waits in your side panel. Press **Send** on one note, or **Send all**. **Discard** removes it. Held notes are not in `poll` or `feedback`, so the agent does not see them until you send them.
+- **Auto:** the note goes to the agent without your approval.
+- **Author:** `poll` and `feedback` show `from: <name>` on each teammate's note. Your own notes have no `from`. The hub Notes view shows the author and can filter on it.
+- **Reviewers can:** read the page and the conversation, and add notes. They cannot end the review, export, or send held notes.
+
+Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token; the browser keeps it in a cookie and the address bar drops it. A request with no invite cookie still acts as you, as before. That keeps loopback and your own phone link working; it also means a link adds names and the hold queue, not a wall around the rest of your server.
+
 ## Environment
 
 | Variable | Default | |
@@ -205,6 +227,7 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. It nev
 - `/api/*` answers only loopback callers and refuses browser requests.
 - `Host` headers must be on an allowlist (DNS-rebinding defense).
 - Browser routes that change state refuse a foreign `Origin`.
+- Invite tokens are random, compared in constant time, and kept out of the log. A reviewer link can only add notes to its own page. See [Team review](#team-review).
 - The page runs in a sandboxed iframe with no same-origin access. Packs run there too.
 - The server serves files only from the page's own directory, with no dotfiles.
 - Third-party packs need `--trust`. Installed packs must match their lockfile hash; CDN loads use Subresource Integrity.

@@ -8,6 +8,7 @@ import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.js";
 import { checkHtml, statementLines } from "./check.js";
 import { ensureServer, openBrowser, request, serverIfRunning, wantHub } from "./client.js";
 import { HUB_MIN_NODE, Hub, hubDbFile, hubEnabled, hubUnsupported, registerWithHub, setHubEnabled } from "./hub.js";
+import { InviteStore, inviteId } from "./invites.js";
 import { SessionStore, sessionId } from "./sessions.js";
 import { exportHtml } from "./export.js";
 import { format, print } from "./output.js";
@@ -85,6 +86,9 @@ COMMANDS
   ${BIN} components new <dir> | build [dir]    write your own pack
   ${BIN} export <file>           single self-contained HTML   [--out path]
   ${BIN} hub on|off|status|list|notes|open   keep the server up, indexing every artifact by project/date
+  ${BIN} share <file> --as "<name>" [--auto]   invite link for a teammate on your tailnet. Their notes
+                                   wait for the owner to send them on; --auto skips the wait
+  ${BIN} share list [--links] | revoke <name|id>
   ${BIN} stop                    stop the background server
 
 ENV
@@ -105,7 +109,7 @@ function parseArgs(argv) {
     if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const key = eq > 0 ? a.slice(2, eq) : a.slice(2);
-      const takesValue = ["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "project"].includes(key);
+      const takesValue = ["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "project", "as"].includes(key);
       let val = true;
       if (eq > 0) val = a.slice(eq + 1);
       else if (takesValue) val = argv[++i];
@@ -215,6 +219,7 @@ async function cmdOpen(file, flags) {
     check: compactCheck(check),
   };
   if (d.pending) out.queued_feedback = d.pending;
+  if (d.held) out.held_notes = `${d.held} from teammates, waiting for the owner to send them`;
   out.next = check.ok
     ? `Run \`${BIN} poll ${quote(file)}\` and leave it running until it returns.`
     : `Fix the errors above (the page renders what it can), then run \`${BIN} poll ${quote(file)}\`.`;
@@ -239,28 +244,33 @@ function describeItems(abs, items) {
     return { line: l.line, source: first.length > 110 ? first.slice(0, 109) + "…" : first };
   };
   return items.map((it) => {
-    if (it.kind === "annotation") {
-      /** @type {Record<string, any>} */
-      const o = { annotation: `${it.target} (${it.component})`, ...at(it.target) };
-      const within = (it.path || []).slice(0, -1).filter((p) => p !== "root");
-      if (within.length) o.within = within.join(" > ");
-      if (it.selection) o.selection = it.selection;
-      else if (it.excerpt) o.excerpt = it.excerpt;
-      if (it.detail) o.detail = it.detail;
-      o.note = it.note || "(no note: the selection itself is the point)";
-      return o;
-    }
-    if (it.kind === "action") {
-      const o = { action: it.message };
-      if (it.form) o.form = it.form;
-      if (it.context !== undefined) o.context = it.context;
-      return o;
-    }
-    if (it.kind === "render-error") {
-      return { render_error: it.statement || "(page)", ...at(it.statement), error: it.message, note: it.note };
-    }
-    return { message: it.text ?? it.note ?? "" };
+    const o = describeItem(it, at);
+    return it.author ? { from: it.author, ...o } : o;
   });
+}
+
+function describeItem(it, at) {
+  if (it.kind === "annotation") {
+    /** @type {Record<string, any>} */
+    const o = { annotation: `${it.target} (${it.component})`, ...at(it.target) };
+    const within = (it.path || []).slice(0, -1).filter((p) => p !== "root");
+    if (within.length) o.within = within.join(" > ");
+    if (it.selection) o.selection = it.selection;
+    else if (it.excerpt) o.excerpt = it.excerpt;
+    if (it.detail) o.detail = it.detail;
+    o.note = it.note || "(no note: the selection itself is the point)";
+    return o;
+  }
+  if (it.kind === "action") {
+    const o = { action: it.message };
+    if (it.form) o.form = it.form;
+    if (it.context !== undefined) o.context = it.context;
+    return o;
+  }
+  if (it.kind === "render-error") {
+    return { render_error: it.statement || "(page)", ...at(it.statement), error: it.message, note: it.note };
+  }
+  return { message: it.text ?? it.note ?? "" };
 }
 
 function thirdPartyOf(abs) {
@@ -602,7 +612,7 @@ async function cmdFeedback(file, flags) {
   }
   const items = [];
   for (const e of entries) {
-    for (const it of describeItems(abs, e.items || [])) {
+    for (const it of describeItems(abs, (e.items || []).map((x) => (e.author ? { ...x, author: e.author } : x)))) {
       items.push(opts.all ? { sent: shortDate(e.at), status: e.status, ...it } : { sent: shortDate(e.at), ...it });
     }
   }
@@ -729,9 +739,10 @@ async function cmdHub(sub, args, flags) {
       if (!rows.length) return print({ notes: "none" });
       return print({
         notes: rows.map((r) => ({
+          from: r.author || undefined,
           text: r.text || undefined,
           target: r.target || undefined,
-          status: r.status === "addressed" ? "answered" : "unanswered",
+          status: r.status === "addressed" ? "answered" : r.status === "held" ? "held" : "unanswered",
           page: r.title || path.basename(r.file),
           file: r.file,
           sent: shortDate(r.at),
@@ -747,6 +758,70 @@ async function cmdHub(sub, args, flags) {
     default:
       return fail(`unknown hub command: ${sub}. One of: on off status list notes open`);
   }
+}
+
+// ── share (team review) ──
+
+function ago(ms) {
+  return shortDate(ms);
+}
+
+async function cmdShare(args, flags) {
+  const [sub, ...more] = args;
+  if (sub === "list") {
+    let invites;
+    const withLinks = Boolean(flags.links);
+    if (await serverIfRunning()) {
+      const r = await request("GET", `/api/share/list${withLinks ? "?links=1" : ""}`);
+      if (r.status !== 200) return fail(r.data?.error || `share list failed (${r.status})`);
+      invites = r.data.invites;
+    } else {
+      invites = new InviteStore(stateDir()).list().map((i) => ({ id: inviteId(i), name: i.name, file: i.file, auto: i.auto, createdAt: i.createdAt }));
+    }
+    if (!invites.length) return print({ invites: "none", next: `${BIN} share <file> --as "<name>"` });
+    return print({
+      invites: invites.map((i) => ({
+        name: i.name,
+        id: i.id,
+        file: i.file,
+        mode: i.auto ? "auto" : "hold",
+        created: ago(i.createdAt),
+        link: i.link,
+      })),
+      next: withLinks ? undefined : `--links shows the links. ${BIN} share revoke <name|id> cuts one off.`,
+    });
+  }
+  if (sub === "revoke") {
+    const key = more.join(" ");
+    if (!key) return fail(`revoke needs a name or id: ${BIN} share revoke <name|id> (see ${BIN} share list)`);
+    let revoked;
+    if (await serverIfRunning()) {
+      const r = await request("POST", "/api/share/revoke", { key });
+      if (r.status !== 200) return fail(r.data?.error || `revoke failed (${r.status})`);
+      revoked = r.data.revoked;
+    } else {
+      revoked = new InviteStore(stateDir()).revoke(key).map((i) => ({ id: inviteId(i), name: i.name, file: i.file }));
+      if (!revoked.length) return fail("no invite matches that name or id");
+    }
+    return print({ status: "revoked", invites: revoked.map((i) => `${i.name} (${i.id})`), note: "Their link and open pages stop working at once." });
+  }
+  // share <file> --as "<name>"
+  const abs = needFile(sub, "share");
+  if (!abs) return;
+  if (typeof flags.as !== "string" || !flags.as.trim()) return fail(`share needs a reviewer name: ${BIN} share ${quote(sub)} --as "<name>"`);
+  await ensureServer();
+  const r = await request("POST", "/api/share", { file: abs, name: flags.as, auto: !!flags.auto });
+  if (r.status !== 200) return fail(r.data?.error || `share failed (${r.status})`);
+  const d = r.data;
+  print({
+    status: "shared",
+    reviewer: d.name,
+    file: abs,
+    mode: d.auto ? "auto: their notes go straight to the agent" : "hold: their notes wait until the owner sends them on",
+    link: d.link,
+    note: "Anyone with this link on your tailnet can post notes under this name until you revoke it.",
+    next: `${BIN} share revoke ${JSON.stringify(d.name)} cuts it off.`,
+  });
 }
 
 async function cmdStop() {
@@ -799,6 +874,8 @@ async function main() {
       return cmdSpec(rest);
     case "export":
       return cmdExport(rest[0], flags);
+    case "share":
+      return cmdShare(rest, flags);
     case "stop":
       return cmdStop();
     case "server":
