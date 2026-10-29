@@ -32,11 +32,11 @@ export function cleanName(raw) {
   return name;
 }
 
-/** The token in a Cookie header, or null. */
-export function tokenFromCookie(header) {
+/** The value of cookie `name` (default: the invite cookie) in a Cookie header, or null. */
+export function tokenFromCookie(header, name = COOKIE) {
   for (const part of String(header || "").split(";")) {
     const i = part.indexOf("=");
-    if (i > 0 && part.slice(0, i).trim() === COOKIE) return part.slice(i + 1).trim();
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
   }
   return null;
 }
@@ -104,4 +104,25 @@ export class InviteStore {
     }
     return gone;
   }
+}
+
+export const OWNER_COOKIE = "austere_owner";
+
+/**
+ * The owner's key: a random token in the state dir (owner.key), made on first use. Off loopback,
+ * only a request with this key (as a cookie, set from the owner's own remote link) acts as the owner.
+ * @param {string} dir state dir
+ */
+export function ownerKey(dir) {
+  const file = path.join(dir, "owner.key");
+  try {
+    const key = fs.readFileSync(file, "utf8").trim();
+    if (key.length >= 22) return key;
+  } catch {
+    // none yet
+  }
+  const key = crypto.randomBytes(24).toString("base64url");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, key + "\n", { mode: 0o600 });
+  return key;
 }

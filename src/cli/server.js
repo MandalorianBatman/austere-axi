@@ -16,7 +16,7 @@ import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.js";
 import { SessionStore, newId } from "./sessions.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
 import { Hub, hubEnabled, hubUnsupported } from "./hub.js";
-import { COOKIE, InviteStore, inviteId, tokenFromCookie } from "./invites.js";
+import { COOKIE, InviteStore, OWNER_COOKIE, inviteId, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
 import { hubPage, notesPage } from "./hub-page.js";
 import { splitSpec } from "../shared/packs-meta.js";
 import crypto from "node:crypto";
@@ -90,6 +90,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
   }
   const invites = new InviteStore(stateDir());
+  const ownerToken = ownerKey(stateDir());
   const clients = new Map(); // id -> Set<{res, viewer}>
   const polls = new Map(); // id -> poll
   const watchers = new Map(); // id -> { html, program, shell }
@@ -125,30 +126,43 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return null;
   }
 
-  function links(id) {
-    const local = `http://127.0.0.1:${port}/s/${id}`;
-    const out = { local };
+  /** The page's address on the tailnet, without any key, or null. */
+  function remoteUrl(id) {
     const host = remoteHost();
-    if (host) out.remote = `http://${host}:${port}/s/${id}`;
+    return host ? `http://${host}:${port}/s/${id}` : null;
+  }
+
+  /** The owner's links. The remote one carries the owner key, which the server swaps for a cookie. */
+  function links(id) {
+    const out = { local: `http://127.0.0.1:${port}/s/${id}` };
+    const remote = remoteUrl(id);
+    if (remote) out.remote = `${remote}?key=${ownerToken}`;
     return out;
   }
 
   /** The link a teammate opens: the page plus the token, which the server swaps for a cookie. */
   function inviteLink(inv) {
-    return `${links(inv.sessionId).remote}?invite=${inv.token}`;
+    return `${remoteUrl(inv.sessionId)}?invite=${inv.token}`;
+  }
+
+  /** Loopback is the owner. Off loopback (tailnet), only a request with the owner key cookie is. */
+  function isOwner(req) {
+    if (isLoopback(req.socket.remoteAddress)) return true;
+    const key = tokenFromCookie(req.headers.cookie, OWNER_COOKIE);
+    return key != null && safeEqual(key, ownerToken);
   }
 
   // ── who is asking ──
 
   /**
-   * The owner (no invite cookie: loopback, the owner's own phone link) or a team reviewer (a valid
-   * invite cookie for this session). A cookie that matches no invite is refused, never treated as
-   * the owner, so revoking cuts access.
+   * A team reviewer (a valid invite cookie for this session), else the owner (loopback, or the owner
+   * key cookie from the owner's own remote link), else nobody. A cookie that matches no invite is
+   * refused, never treated as the owner, so revoking cuts access.
    * @returns {{ role: "owner", name: string } | { role: "reviewer", name: string, auto: boolean, token: string } | null}
    */
   function identify(req, s) {
     const token = tokenFromCookie(req.headers.cookie);
-    if (token == null) return OWNER;
+    if (token == null) return isOwner(req) ? OWNER : null;
     const inv = invites.find(token);
     if (!inv || inv.sessionId !== s.id) return null;
     return { role: "reviewer", name: inv.name, auto: inv.auto, token: inv.token };
@@ -711,6 +725,21 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
     if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
     if (url.pathname.startsWith("/__austere/")) return serveAsset(res, url.pathname.slice("/__austere/".length), url);
+    // The owner's remote link: trade the key for a cookie, then drop it from the URL.
+    const key = url.searchParams.get("key");
+    if (key != null) {
+      if (!safeEqual(key, ownerToken)) return send(res, 403, "This link is not valid.");
+      url.searchParams.delete("key");
+      res.writeHead(302, {
+        location: url.pathname + url.search,
+        "set-cookie": `${OWNER_COOKIE}=${ownerToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+        "cache-control": "no-store",
+      });
+      return res.end();
+    }
+    // The hub lists every page and every note: the owner's only.
+    const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
+    if (ownerOnly && !isOwner(req)) return send(res, 403, "Only the owner can open this. Ask the owner for a link to the page.");
     if (url.pathname === "/") {
       return send(res, 200, hub ? hubHome(url) : homePage(), { "content-type": "text/html; charset=utf-8" });
     }
@@ -732,7 +761,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
       res.writeHead(302, {
         location: `/s/${s.id}`,
-        "set-cookie": `${COOKIE}=${inv.token}; Path=/s/${s.id}; HttpOnly; SameSite=Strict; Max-Age=2592000`,
+        "set-cookie": `${COOKIE}=${inv.token}; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=2592000`,
         "cache-control": "no-store",
       });
       return res.end();
@@ -740,8 +769,9 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
 
     const who = identify(req, s);
     if (!who) {
+      if (tokenFromCookie(req.headers.cookie) == null) return send(res, 403, "Ask the owner for a link to this page.");
       return send(res, 403, "This invite is no longer valid. Ask for a new link.", {
-        "set-cookie": `${COOKIE}=; Path=/s/${s.id}; HttpOnly; SameSite=Strict; Max-Age=0`,
+        "set-cookie": `${COOKIE}=; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=0`,
       });
     }
     // Reviewers read the page and the conversation and add notes. Everything else is the owner's.
@@ -774,7 +804,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         program: w?.program ?? null,
         thirdPartyPacks: thirdPartyPacks(w?.html),
         version: VERSION,
-        links: links(s.id),
+        links: reviewer ? null : links(s.id),
       };
       res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
       const client = { res, viewer: who };
@@ -873,7 +903,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       if (listeners.has(host)) return resolve(true);
       const server = http.createServer((req, res) => {
         handle(req, res).catch((err) => {
-          log("error", req.method, req.url, String(err?.stack || err));
+          log("error", req.method, req.url.split("?")[0], String(err?.stack || err));
           if (!res.headersSent) send(res, err.status || 500, { error: String(err.message || err) });
           else res.end();
         });

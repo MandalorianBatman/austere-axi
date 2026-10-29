@@ -96,7 +96,7 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 - **Architecture diagrams** lay out automatically ([dagre](https://github.com/dagrejs/dagre)). The agent never writes coordinates. Each node and edge is a click target. `lanes` puts each group in a column; `tone` colors a box or line to show risk. Use Mermaid for sequences, state machines, ER and gantt.
 - **Annotations** go to the smallest named statement under the click, with detail where it exists: table row and column, `file:+line` in a diff, a diagram node, or selected text. The reviewer can move a note to a parent section.
 - **Buttons and forms** send feedback. `@ToAssistant("…")` sends a message with the form values. A button with no action sends its label.
-- **Phone review**: when Tailscale runs, the server also listens on the tailnet IP and prints a phone link. The review UI has a mobile layout.
+- **Phone review**: when Tailscale runs, the server also listens on the tailnet IP and prints a phone link. The link carries your owner key; keep it to yourself. The review UI has a mobile layout.
 
 ## CLI
 
@@ -203,7 +203,9 @@ Send the link to the teammate. The link needs Tailscale (or `AUSTERE_AXI_HOST`);
 - **Author:** `poll` and `feedback` show `from: <name>` on each teammate's note. Your own notes have no `from`. The hub Notes view shows the author and can filter on it.
 - **Reviewers can:** read the page and the conversation, and add notes. They cannot end the review, export, or send held notes.
 
-Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token; the browser keeps it in a cookie and the address bar drops it. A request with no invite cookie still acts as you, as before. That keeps loopback and your own phone link working; it also means a link adds names and the hold queue, not a wall around the rest of your server.
+Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token; the browser keeps it in a cookie and the address bar drops it.
+
+Off loopback, a request without a valid invite or the owner key is refused. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links stop working, delete that file and restart the server. Behind a reverse proxy on the same machine, every request looks local, so it acts as you.
 
 ## Environment
 

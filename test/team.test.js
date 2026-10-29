@@ -171,11 +171,12 @@ function startServer(extraEnv) {
   return { port, state, child };
 }
 
-function request(port, method, route, { body, headers = {} } = {}) {
+/** `remote`: send from 127.0.0.2, which the server does not count as loopback, like a tailnet peer. */
+function request(port, method, route, { body, headers = {}, remote = false } = {}) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const r = http.request(
-      { host: "127.0.0.1", port, method, path: route, headers: { host: `127.0.0.1:${port}`, ...(payload ? { "content-type": "application/json" } : {}), ...headers } },
+      { host: "127.0.0.1", port, method, path: route, ...(remote ? { localAddress: "127.0.0.2" } : {}), headers: { host: `127.0.0.1:${port}`, ...(payload ? { "content-type": "application/json" } : {}), ...headers } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -287,7 +288,7 @@ async function accept(link) {
   assert.equal(r.headers.location, `/s/${id}`, "the token is gone from the URL");
   const set = [].concat(r.headers["set-cookie"])[0];
   assert.match(set, /HttpOnly/);
-  assert.match(set, /SameSite=Strict/);
+  assert.match(set, /SameSite=Lax/, "Lax, so the cookie comes back after a click in chat or email");
   assert.match(set, new RegExp(`Path=/s/${id}`));
   return { cookie: set.split(";")[0] };
 }
@@ -492,4 +493,37 @@ test("the server log never holds a token", async () => {
   const log = fs.readFileSync(path.join(srv.state, "server.log"), "utf8");
   assert.ok(log.includes("share Hal"), "shares are logged by name");
   assert.ok(!log.includes(token));
+});
+
+// Off loopback (a tailnet peer), nobody is the owner without the owner key. Otherwise a reviewer
+// could open the page URL from their invite without the cookie and skip the hold queue.
+const canBindRemote = process.platform !== "darwin";
+
+test("off loopback, the hub and pages need the owner key or an invite", { skip: !canBindRemote }, async () => {
+  for (const p of ["/", "/notes", `/s/${id}`, `/s/${id}/events`]) {
+    assert.equal((await request(srv.port, "GET", p, { remote: true })).status, 403, `${p} is refused without a key`);
+  }
+  assert.equal((await request(srv.port, "GET", `/s/${id}?key=wrong`, { remote: true })).status, 403);
+
+  const remote = (await request(srv.port, "POST", "/api/open", { body: { file: FILE } })).data.links.remote;
+  const u = new URL(remote);
+  assert.match(u.search, /^\?key=[A-Za-z0-9_-]{32,}$/, "the owner's remote link carries the key");
+  const r = await request(srv.port, "GET", u.pathname + u.search, { remote: true });
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.location, `/s/${id}`, "the key is gone from the URL");
+  const set = [].concat(r.headers["set-cookie"])[0];
+  assert.match(set, /^austere_owner=.*HttpOnly; SameSite=Lax/);
+  const owner = { cookie: set.split(";")[0] };
+  assert.equal((await request(srv.port, "GET", `/s/${id}`, { remote: true, headers: owner })).status, 200);
+  assert.equal((await request(srv.port, "GET", "/", { remote: true, headers: owner })).status, 200);
+
+  const ana = await accept((await share("Ana")).data.link);
+  try {
+    assert.equal((await request(srv.port, "GET", `/s/${id}`, { remote: true, headers: ana })).status, 200, "the reviewer gets in");
+    assert.equal((await request(srv.port, "GET", "/", { remote: true, headers: ana })).status, 403, "but not to the hub");
+    const held = await request(srv.port, "POST", `/s/${id}/release`, { remote: true, body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+    assert.equal(held.status, 403, "dropping the cookie does not make a reviewer the owner");
+  } finally {
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ana" } });
+  }
 });
