@@ -13,6 +13,7 @@ import { catalogFromSpec, promptSpec, searchCatalog } from "../src/shared/catalo
 import { formatPacksMeta, parsePacksMeta, splitSpec } from "../src/shared/packs-meta.js";
 import { mergePackSchemas, setPacksMeta } from "../src/cli/packs.js";
 import { looksLikePath, pickVersion, untar } from "../src/cli/install.js";
+import { freePort } from "./port.js";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-work-"));
@@ -385,7 +386,7 @@ test("installing from the registry: third-party packs need --trust; ranges resol
 // ── the review server serves installed packs ──
 
 test("the server serves an installed pack only at its locked version and hash", async () => {
-  const port = 47000 + Math.floor(Math.random() * 1000);
+  const port = await freePort();
   const server = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(port)], { env: ENV, stdio: "ignore" });
   const get = (p, headers = {}) =>
     new Promise((resolve, reject) => {

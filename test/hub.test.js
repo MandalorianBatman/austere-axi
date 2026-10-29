@@ -10,8 +10,9 @@ import { after, before, test } from "node:test";
 import { SessionStore } from "../src/cli/sessions.js";
 import { Hub, projectOf } from "../src/cli/hub.js";
 import { notesPage } from "../src/cli/hub-page.js";
+import { freePort } from "./port.js";
 
-const PORT = 48000 + Math.floor(Math.random() * 1000);
+const PORT = await freePort();
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-work-"));
 const PROJECT = path.join(WORK, "shop");
@@ -175,7 +176,7 @@ test("hub: stays up, indexes checked and reviewed artifacts by project, hands fe
 });
 
 test("hub on/off switches the server's mode; a hub whose index will not open does not restart it on every command", async () => {
-  const port = PORT + 1000;
+  const port = await freePort();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-mode-"));
   const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
   const health = async () => JSON.parse((await req("GET", "/api/health", undefined, port)).data);
