@@ -8,7 +8,8 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { SessionStore } from "../src/cli/sessions.js";
-import { hubUnsupported, projectOf } from "../src/cli/hub.js";
+import { Hub, hubUnsupported, projectOf } from "../src/cli/hub.js";
+import { notesPage } from "../src/cli/hub-page.js";
 
 const PORT = 48000 + Math.floor(Math.random() * 1000);
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-state-"));
@@ -214,5 +215,56 @@ test("hub on/off switches the server's mode; a hub whose index will not open doe
     await cliWith(env, "hub", "off");
     await cliWith(env, "stop");
     fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+async function notesHub() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-notes-"));
+  const hub = await Hub.open(path.join(dir, "hub.db"));
+  hub.register({ id: "aaaaaaaaaaaa", file: path.join(dir, "a", "plan.html"), title: "Plan <A>" });
+  hub.register({ id: "bbbbbbbbbbbb", file: path.join(dir, "b", "report.html"), title: "Report" });
+  const put = (id, artifact, at, kind, target, text, status) =>
+    hub.db.prepare("INSERT INTO items (id, artifact_id, entry_id, at, kind, target, text, status, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}')").run(id, artifact, id, at, kind, target, text, status);
+  put("n1", "aaaaaaaaaaaa", 1000, "annotation", "intro", "make it 100% shorter", "open");
+  put("n2", "aaaaaaaaaaaa", 3000, "message", null, "<script>alert(1)</script>", "received");
+  put("n3", "bbbbbbbbbbbb", 2000, "annotation", "table_1", "add a_b column", "addressed");
+  put("n4", "bbbbbbbbbbbb", 4000, "render-error", "x", "boom", "open");
+  return { hub, dir };
+}
+
+test("Hub.notes: newest first, filters by text, target, title, status and project", { skip: skip || false }, async () => {
+  const { hub, dir } = await notesHub();
+  try {
+    assert.deepEqual(hub.notes().map((n) => n.id), ["n2", "n3", "n1"], "render errors are not notes");
+    assert.deepEqual(hub.notes({ status: "unanswered" }).map((n) => n.id), ["n2", "n1"]);
+    assert.deepEqual(hub.notes({ status: "answered" }).map((n) => n.id), ["n3"]);
+    assert.deepEqual(hub.notes({ q: "table_1" }).map((n) => n.id), ["n3"], "matches target");
+    assert.deepEqual(hub.notes({ q: "plan <a>" }).map((n) => n.id), ["n2", "n1"], "matches page title");
+    assert.deepEqual(hub.notes({ q: "%" }).map((n) => n.id), ["n1"], "LIKE wildcards are escaped");
+    assert.deepEqual(hub.notes({ q: "a_b" }).map((n) => n.id), ["n3"]);
+    assert.deepEqual(hub.notes({ q: "a_c" }).map((n) => n.id), []);
+    assert.deepEqual(hub.notes({ project: path.join(dir, "b") }).map((n) => n.id), ["n3"]);
+    assert.equal(hub.notes({ limit: 1 }).length, 1);
+  } finally {
+    hub.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("notesPage escapes note text, target, title and filters", { skip: skip || false }, async () => {
+  const { hub, dir } = await notesHub();
+  try {
+    const rows = hub.notes();
+    rows[0].target = '"><img src=x>';
+    const html = notesPage(rows, { version: "1", q: '"><b>', project: "/p/<i>", status: "all", stats: { artifacts: 2, projects: 2, unanswered: 2 } });
+    assert.ok(!html.includes("<script>alert"), "note text escaped");
+    assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+    assert.ok(!html.includes("<img src=x>"));
+    assert.ok(!html.includes("<b>"), "query escaped");
+    assert.ok(html.includes("Plan &lt;A&gt;"));
+    assert.ok(html.includes('href="/hub/open/aaaaaaaaaaaa"'));
+  } finally {
+    hub.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

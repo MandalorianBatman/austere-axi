@@ -112,7 +112,7 @@ austere-axi patch <file>         merge statements from stdin into the program
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi export <file>        one self-contained HTML file, works offline
-austere-axi hub on|off|status|list|open   persistent server with an index of every page
+austere-axi hub on|off|status|list|notes|open   persistent server with an index of every page
 austere-axi stop                 stop the background server
 ```
 
@@ -177,10 +177,11 @@ The server starts when needed and stops after 30 idle minutes. `hub on` keeps it
 ```sh
 austere-axi hub on      # http://127.0.0.1:4388/: pages by project and day, with search
 austere-axi hub list    # the same, for an agent: [words] [--project dir]
+austere-axi hub notes   # every note, same for an agent: [words] [--project dir] [--unanswered]
 austere-axi hub off     # back to on-demand; the index stays
 ```
 
-The home page shows which reviews are live and how much feedback the agent has answered. The index is SQLite (`~/.austere-axi/hub.db`), copied from the session files; the review loop does not need it. The hub needs Node 22.13 or later (`node:sqlite`).
+`/notes` lists every note on every page, newest first, with search, status and project filters. The home page shows which reviews are live and how much feedback the agent has answered. The index is SQLite (`~/.austere-axi/hub.db`), copied from the session files; the review loop does not need it. The hub needs Node 22.13 or later (`node:sqlite`).
 
 ## Environment
 

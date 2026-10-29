@@ -43,6 +43,29 @@ function state(a) {
   return `<em class="live">in review</em>`;
 }
 
+const STYLE = `body{margin:0;background:#0b0b0d;color:#e8e8ec;font:14px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif}
+main{max-width:860px;margin:0 auto;padding:32px 16px 64px}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content:space-between}
+h1{font-size:18px;font-weight:600;margin:0}h1 small{color:#77777f;font-weight:400;font-size:13px;margin-left:6px}
+.stats{color:#8a8a94;font-size:12.5px}
+form{margin:18px 0 8px}input{width:100%;box-sizing:border-box;background:#141417;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit}
+input:focus{outline:none;border-color:#5b6b99}
+section{margin-top:28px}h2{font-size:15px;font-weight:600;margin:0 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+h2 a{color:#e8e8ec;text-decoration:none}h2 small{color:#8a8a94;font-weight:400;font-size:12px;overflow-wrap:anywhere}
+h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:#8a8a94;font-weight:600;margin:14px 0 2px}
+ul{list-style:none;padding:0;margin:0}li{border-bottom:1px solid #1c1c20}
+li>a{display:grid;gap:2px;padding:10px 0;min-height:28px;text-decoration:none;color:inherit}
+li strong{color:#a9c1ff;font-weight:600;overflow-wrap:anywhere}li>a:hover strong{text-decoration:underline}
+.meta{color:#8a8a94;font-size:12px;overflow-wrap:anywhere}em{font-style:normal}em.live{color:#8fd19e}
+b{font-weight:600}b.open{color:#f2c46d;font-size:12px}
+.filter{color:#8a8a94;font-size:12.5px}.filter a{color:#a9c1ff}.empty{color:#8a8a94;margin-top:28px}
+.nav{display:flex;gap:14px;font-size:13px}.nav a{color:#a9c1ff;text-decoration:none}
+form.f{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}button{background:#1c1c20;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit}select{background:#141417;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit;width:100%;box-sizing:border-box}
+.note{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}.note-t{color:#8a8a94;font-size:12px}.st{font-size:12px}.st.waiting{color:#f2c46d}.st.done{color:#8fd19e}
+li.n{padding:12px 0}li.n>a{padding:0}
+@media(min-width:600px){form.f{grid-template-columns:minmax(0,1fr) 150px auto}}
+`;
+
 /**
  * @param {object[]} rows   Hub.list() rows
  * @param {{ version: string, q: string, project: string, stats: object }} o
@@ -87,28 +110,48 @@ export function hubPage(rows, { version, q, project, stats }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>austere-axi hub</title><meta name="color-scheme" content="dark">
 <style>
-body{margin:0;background:#0b0b0d;color:#e8e8ec;font:14px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif}
-main{max-width:860px;margin:0 auto;padding:32px 16px 64px}
-header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content:space-between}
-h1{font-size:18px;font-weight:600;margin:0}h1 small{color:#77777f;font-weight:400;font-size:13px;margin-left:6px}
-.stats{color:#8a8a94;font-size:12.5px}
-form{margin:18px 0 8px}input{width:100%;box-sizing:border-box;background:#141417;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit}
-input:focus{outline:none;border-color:#5b6b99}
-section{margin-top:28px}h2{font-size:15px;font-weight:600;margin:0 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
-h2 a{color:#e8e8ec;text-decoration:none}h2 small{color:#8a8a94;font-weight:400;font-size:12px;overflow-wrap:anywhere}
-h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:#8a8a94;font-weight:600;margin:14px 0 2px}
-ul{list-style:none;padding:0;margin:0}li{border-bottom:1px solid #1c1c20}
-li>a{display:grid;gap:2px;padding:10px 0;min-height:28px;text-decoration:none;color:inherit}
-li strong{color:#a9c1ff;font-weight:600;overflow-wrap:anywhere}li>a:hover strong{text-decoration:underline}
-.meta{color:#8a8a94;font-size:12px;overflow-wrap:anywhere}em{font-style:normal}em.live{color:#8fd19e}
-b{font-weight:600}b.open{color:#f2c46d;font-size:12px}
-.filter{color:#8a8a94;font-size:12.5px}.filter a{color:#a9c1ff}.empty{color:#8a8a94;margin-top:28px}
+${STYLE}
 </style></head>
 <body><main>
-<header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><span class="stats">${stats.artifacts} artifacts · ${stats.projects} projects${
+<header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><nav class="nav"><a href="/">Pages</a><a href="/notes">Notes</a></nav><span class="stats">${stats.artifacts} artifacts · ${stats.projects} projects${
     stats.unanswered ? ` · ${stats.unanswered} unanswered` : ""
   }</span></header>
 <form method="get" action="/">${project ? `<input type="hidden" name="project" value="${escapeHtml(project)}">` : ""}<input type="search" name="q" value="${escapeHtml(q)}" placeholder="Search titles, files, projects" aria-label="Search"></form>
 ${filter}${sections || `<p class="empty">${empty}</p>`}
+</main></body></html>`;
+}
+
+const STATUS_LABEL = { open: "unanswered", received: "unanswered", addressed: "answered" };
+
+/**
+ * The Notes view: every note across pages, newest first.
+ * @param {{ id: string, artifact_id: string, at: number, target: string | null, text: string | null, status: string, title: string | null, file: string, project: string }[]} rows Hub.notes() rows
+ * @param {{ version: string, q: string, project: string, status: string, stats: { artifacts: number, projects: number, unanswered: number } }} o
+ * @returns {string}
+ */
+export function notesPage(rows, { version, q, project, status, stats }) {
+  const items = rows
+    .map((n) => {
+      const waiting = n.status !== "addressed";
+      const when = `${day(n.at)} ${time(n.at)}`;
+      return `<li class="n"><a href="/hub/open/${escapeHtml(n.artifact_id)}" title="${escapeHtml(n.file)}">
+  <p class="note">${escapeHtml(n.text || "(no text)")}</p>
+  <span class="note-t">${n.target ? `on ${escapeHtml(n.target)} · ` : ""}<strong>${escapeHtml(n.title || path.basename(n.file))}</strong> · ${escapeHtml(path.basename(n.project) || n.project)} · ${escapeHtml(when)} · <span class="st ${waiting ? "waiting" : "done"}">${STATUS_LABEL[n.status] || escapeHtml(n.status)}</span></span>
+</a></li>`;
+    })
+    .join("");
+  const opt = (v, label) => `<option value="${v}"${status === v ? " selected" : ""}>${label}</option>`;
+  const filter = project ? `<p class="filter">Project ${escapeHtml(tilde(project))} · <a href="/notes">all projects</a></p>` : "";
+  const empty = q || project || status !== "all" ? "No notes match." : "No notes yet.";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes · austere-axi hub</title><meta name="color-scheme" content="dark">
+<style>
+${STYLE}</style></head>
+<body><main>
+<header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><nav class="nav"><a href="/">Pages</a><a href="/notes">Notes</a></nav><span class="stats">${rows.length} notes${
+    stats.unanswered ? ` · ${stats.unanswered} unanswered` : ""
+  }</span></header>
+<form class="f" method="get" action="/notes">${project ? `<input type="hidden" name="project" value="${escapeHtml(project)}">` : ""}<input type="search" name="q" value="${escapeHtml(q)}" placeholder="Search notes, targets, page titles" aria-label="Search notes"><select name="status" aria-label="Status">${opt("all", "All")}${opt("unanswered", "Unanswered")}${opt("answered", "Answered")}</select><button type="submit">Filter</button></form>
+${filter}${items ? `<ul>${items}</ul>` : `<p class="empty">${empty}</p>`}
 </main></body></html>`;
 }

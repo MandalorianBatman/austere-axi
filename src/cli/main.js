@@ -83,7 +83,7 @@ COMMANDS
                                    (check --fix writes the <meta name="austere-packs"> tag)
   ${BIN} components new <dir> | build [dir]    write your own pack
   ${BIN} export <file>           single self-contained HTML   [--out path]
-  ${BIN} hub on|off|status|list|open   keep the server up, indexing every artifact by project/date
+  ${BIN} hub on|off|status|list|notes|open   keep the server up, indexing every artifact by project/date
   ${BIN} stop                    stop the background server
 
 ENV
@@ -707,13 +707,43 @@ async function cmdHub(sub, args, flags) {
         next: `\`${BIN} feedback <file>\` for what a reviewer said that no agent has answered.`,
       });
     }
+    case "notes": {
+      const why = hubUnsupported();
+      if (why) return fail(why);
+      if (!fs.existsSync(hubDbFile())) return print({ notes: "none", next: `\`${BIN} hub on\` starts indexing.` });
+      const project = typeof flags.project === "string" ? path.resolve(flags.project) : "";
+      let hub;
+      try {
+        hub = await Hub.open();
+      } catch (err) {
+        return fail(`${hubDbFile()} cannot be opened: ${err.message}`);
+      }
+      let rows;
+      try {
+        rows = hub.notes({ q: args.join(" "), project, status: flags.unanswered ? "unanswered" : "", limit: 40 });
+      } finally {
+        hub.close();
+      }
+      if (!rows.length) return print({ notes: "none" });
+      return print({
+        notes: rows.map((r) => ({
+          text: r.text || undefined,
+          target: r.target || undefined,
+          status: r.status === "addressed" ? "answered" : "unanswered",
+          page: r.title || path.basename(r.file),
+          file: r.file,
+          sent: shortDate(r.at),
+        })),
+        next: `\`${BIN} feedback <file>\` for what a reviewer said that no agent has answered.`,
+      });
+    }
     case "open": {
       if (!wantHub()) return fail(`the hub is off: \`${BIN} hub on\``);
       await ensureServer();
       return print({ status: openBrowser(url) ? "opened" : "open the url", url });
     }
     default:
-      return fail(`unknown hub command: ${sub}. One of: on off status list open`);
+      return fail(`unknown hub command: ${sub}. One of: on off status list notes open`);
   }
 }
 

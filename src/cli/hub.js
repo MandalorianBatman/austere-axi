@@ -198,6 +198,27 @@ export class Hub {
       .map((r) => ({ ...r, open: r.open || 0, received: r.received || 0, addressed: r.addressed || 0 }));
   }
 
+  /**
+   * Notes (annotations and messages) across all pages, newest first.
+   * `q` matches note text, target and page title. `status`: "unanswered" (open + received), "answered", or "" for all.
+   * @param {{ q?: string, status?: string, project?: string, limit?: number }} [o]
+   */
+  notes({ q = "", status = "", project = "", limit = 200 } = {}) {
+    const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+    return this.db
+      .prepare(
+        `SELECT i.id, i.artifact_id, i.at, i.kind, i.target, i.text, i.status,
+                a.title, a.file, a.project
+         FROM items i JOIN artifacts a ON a.id = i.artifact_id
+         WHERE i.kind IN ('annotation', 'message')
+           AND (? = '' OR i.text LIKE ? ESCAPE '\\' OR i.target LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')
+           AND (? = '' OR a.project = ?)
+           AND (? = '' OR (? = 'unanswered' AND i.status != 'addressed') OR (? = 'answered' AND i.status = 'addressed'))
+         ORDER BY i.at DESC, i.id LIMIT ?`,
+      )
+      .all(q, like, like, like, project, project, status, status, status, limit);
+  }
+
   stats() {
     return this.db
       .prepare(

@@ -15,7 +15,7 @@ import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.js";
 import { SessionStore, newId } from "./sessions.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
 import { Hub, hubEnabled, hubUnsupported } from "./hub.js";
-import { hubPage } from "./hub-page.js";
+import { hubPage, notesPage } from "./hub-page.js";
 import { splitSpec } from "../shared/packs-meta.js";
 import crypto from "node:crypto";
 
@@ -564,6 +564,15 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return hubPage(hub.list({ q, project }), { version: VERSION, q, project, stats: hub.stats() });
   }
 
+  function hubNotes(url) {
+    store.flushAll();
+    const q = (url.searchParams.get("q") || "").slice(0, 200);
+    const project = (url.searchParams.get("project") || "").slice(0, 1000);
+    const st = url.searchParams.get("status");
+    const status = st === "unanswered" || st === "answered" ? st : "all";
+    return notesPage(hub.notes({ q, project, status: status === "all" ? "" : status }), { version: VERSION, q, project, status, stats: hub.stats() });
+  }
+
   /** Open an indexed artifact for review (it may never have had a session) and go to it. */
   function hubOpen(res, id) {
     const a = /^[a-f0-9]{12}$/.test(id) ? hub.artifact(id) : null;
@@ -600,6 +609,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     if (url.pathname === "/") {
       return send(res, 200, hub ? hubHome(url) : homePage(), { "content-type": "text/html; charset=utf-8" });
     }
+    if (hub && url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
     if (hub && url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
     if (url.pathname === "/favicon.ico") return send(res, 204, "");
 
