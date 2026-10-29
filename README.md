@@ -45,7 +45,7 @@ Fewer output tokens means faster pages and lower cost.
 
 ## Install
 
-You need Node.js 20 or later.
+You need Node.js 22.18 or later.
 
 **Let your agent do it.** Install the setup skill, then ask your agent to "set up austere-axi":
 
@@ -183,7 +183,7 @@ austere-axi hub notes   # every note, same for an agent: [words] [--project dir]
 austere-axi hub off     # back to on-demand; the index stays
 ```
 
-`/notes` lists every note on every page, newest first, with search, status and project filters. The home page shows which reviews are live and how much feedback the agent has answered. The index is SQLite (`~/.austere-axi/hub.db`), copied from the session files; the review loop does not need it. The hub needs Node 22.13 or later (`node:sqlite`).
+`/notes` lists every note on every page, newest first, with search, status and project filters. The home page shows which reviews are live and how much feedback the agent has answered. The index is SQLite (`~/.austere-axi/hub.db`), copied from the session files; the review loop does not need it.
 
 ## Team review
 
@@ -269,7 +269,7 @@ Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/ad
 
 Visual checks: `npm run gallery`, `npm run shot`, and `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
 
-**CI** builds and tests every push to `main` and every pull request (Node 20, 22, 24 on Linux; Node 24 on Windows; browser suite). **Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
+**CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). **Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
 
 ## License
 

@@ -7,7 +7,7 @@ import { mergeStatements } from "@openuidev/lang-core";
 import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.js";
 import { checkHtml, statementLines } from "./check.js";
 import { ensureServer, openBrowser, request, serverIfRunning, wantHub } from "./client.js";
-import { HUB_MIN_NODE, Hub, hubDbFile, hubEnabled, hubUnsupported, registerWithHub, setHubEnabled } from "./hub.js";
+import { Hub, hubDbFile, hubEnabled, registerWithHub, setHubEnabled } from "./hub.js";
 import { InviteStore, inviteId } from "./invites.js";
 import { SessionStore, sessionId } from "./sessions.js";
 import { exportHtml } from "./export.js";
@@ -634,8 +634,6 @@ async function cmdHub(sub, args, flags) {
   const url = `http://127.0.0.1:${port()}/`;
   switch (sub) {
     case "on": {
-      const why = hubUnsupported();
-      if (why) return fail(why);
       setHubEnabled(true);
       let h = await ensureServer();
       if (h.hubWanted && !h.hub) {
@@ -673,10 +671,8 @@ async function cmdHub(sub, args, flags) {
         hub: hubEnabled() ? "on" : "off",
         server: h ? `running on ${port()}${h.hub ? " (hub)" : h.hubWanted ? ` (hub could not start; see ${path.join(stateDir(), "server.log")})` : ""}` : "not running",
       };
-      const why = hubUnsupported();
-      if (why) out.unavailable = why;
       if (hubEnabled() && h?.hub) out.url = url;
-      if (!why && fs.existsSync(hubDbFile())) {
+      if (fs.existsSync(hubDbFile())) {
         try {
           const hub = await Hub.open();
           try {
@@ -688,12 +684,10 @@ async function cmdHub(sub, args, flags) {
           out.index = `${hubDbFile()} cannot be opened: ${err.message}`;
         }
       }
-      if (!hubEnabled()) out.next = `\`${BIN} hub on\` keeps the server up with an index of every artifact (Node ${HUB_MIN_NODE}+).`;
+      if (!hubEnabled()) out.next = `\`${BIN} hub on\` keeps the server up with an index of every artifact.`;
       return print(out);
     }
     case "list": {
-      const why = hubUnsupported();
-      if (why) return fail(why);
       if (!fs.existsSync(hubDbFile())) return print({ artifacts: "none", next: `\`${BIN} hub on\` starts indexing.` });
       const project = typeof flags.project === "string" ? path.resolve(flags.project) : "";
       let hub;
@@ -720,8 +714,6 @@ async function cmdHub(sub, args, flags) {
       });
     }
     case "notes": {
-      const why = hubUnsupported();
-      if (why) return fail(why);
       if (!fs.existsSync(hubDbFile())) return print({ notes: "none", next: `\`${BIN} hub on\` starts indexing.` });
       const project = typeof flags.project === "string" ? path.resolve(flags.project) : "";
       let hub;
@@ -837,7 +829,14 @@ async function cmdServer(flags) {
   await runServer({ port: p, verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [] });
 }
 
+/** The oldest Node this CLI supports: node:sqlite, and type stripping for development. Keep in step with `engines`. */
+const MIN_NODE = [22, 18];
+
 async function main() {
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  if (major < MIN_NODE[0] || (major === MIN_NODE[0] && minor < MIN_NODE[1])) {
+    return fail(`austere-axi needs Node ${MIN_NODE.join(".")} or newer; this is ${process.versions.node}. Install a current Node LTS.`);
+  }
   const { flags, pos } = parseArgs(process.argv.slice(2));
   if (flags.version) return process.stdout.write(VERSION + "\n");
   const [cmd, ...rest] = pos;

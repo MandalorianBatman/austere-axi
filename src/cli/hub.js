@@ -2,13 +2,11 @@
 // The hub (opt-in, `austere-axi hub on`): the review server stays up and keeps
 // an index of every artifact reviewed or checked on this machine, by project
 // (git root) and date, with each piece of feedback and whether the agent has
-// addressed it. The index is SQLite (node:sqlite, Node 22.13+), next to the
+// addressed it. The index is SQLite (node:sqlite), next to the
 // session files it mirrors; the review loop itself does not depend on it.
 import fs from "node:fs";
 import path from "node:path";
 import { stateDir } from "./paths.js";
-
-export const HUB_MIN_NODE = "22.13.0";
 
 export function hubConfigFile() {
   return path.join(stateDir(), "hub.json");
@@ -28,14 +26,6 @@ export function setHubEnabled(enabled) {
 
 export function hubDbFile() {
   return path.join(stateDir(), "hub.db");
-}
-
-/** null when this Node can run the hub, else why not. */
-export function hubUnsupported(version = process.versions.node) {
-  const [a, b] = version.split(".").map(Number);
-  const [x, y] = HUB_MIN_NODE.split(".").map(Number);
-  if (a > x || (a === x && b >= y)) return null;
-  return `the hub needs Node ${HUB_MIN_NODE} or newer (for node:sqlite); this is ${version}`;
 }
 
 let DatabaseSync = null;
@@ -252,7 +242,7 @@ export class Hub {
 
 /** Register an artifact with the hub from a CLI command, if the hub is on. Never fails the command. */
 export async function registerWithHub(file, title, id) {
-  if (!hubEnabled() || hubUnsupported()) return;
+  if (!hubEnabled()) return;
   try {
     const hub = await Hub.open();
     try {

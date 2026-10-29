@@ -8,9 +8,8 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { InviteStore, cleanName, inviteId, tokenFromCookie } from "../src/cli/invites.js";
 import { SessionStore } from "../src/cli/sessions.js";
-import { Hub, hubUnsupported } from "../src/cli/hub.js";
+import { Hub } from "../src/cli/hub.js";
 
-const skipHub = hubUnsupported() || false;
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 
 // ── invites ──
@@ -100,7 +99,7 @@ test("held notes stay out of pending, poll and feedback until the owner sends th
 
 // ── the hub ──
 
-test("the hub records the author and held status, and filters on the author", { skip: skipHub }, async () => {
+test("the hub records the author and held status, and filters on the author", async () => {
   const dir = tmp("austere-hubauthor-");
   const hub = await Hub.open(path.join(dir, "hub.db"));
   try {
@@ -132,7 +131,7 @@ test("the hub records the author and held status, and filters on the author", { 
   }
 });
 
-test("an index made before team review gains the author column", { skip: skipHub }, async () => {
+test("an index made before team review gains the author column", async () => {
   const dir = tmp("austere-hubmigrate-");
   const file = path.join(dir, "hub.db");
   try {

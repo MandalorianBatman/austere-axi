@@ -5,11 +5,11 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.js";
-import { hubEnabled, hubUnsupported } from "./hub.js";
+import { hubEnabled } from "./hub.js";
 
-/** Whether the server should run as the hub (`austere-axi hub on`, on a Node that can). */
+/** Whether the server should run as the hub (`austere-axi hub on`). */
 export function wantHub() {
-  return hubEnabled() && !hubUnsupported();
+  return hubEnabled();
 }
 
 export function request(method, route, body, { timeoutMs = 0, port = configuredPort() } = {}) {
@@ -63,6 +63,7 @@ async function health(port) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Start a detached server. Returns a probe that tells whether the process has already exited. */
 function spawnServer(port, alsoListen = []) {
   const log = fs.openSync(path.join(stateDir(), "server.log"), "a");
   const args = [CLI_ENTRY, "server", "--port", String(port)];
@@ -73,13 +74,20 @@ function spawnServer(port, alsoListen = []) {
     env: { ...process.env, OPENUI_TELEMETRY_DISABLED: "1" },
     windowsHide: true,
   });
+  let exited = null;
+  child.on("exit", (code) => (exited = code ?? "signal"));
   child.unref();
+  return () => exited;
 }
+
+// A cold start can take many seconds on a busy Windows machine (antivirus scans every file Node loads).
+const START_TIMEOUT_MS = 30_000;
 
 /** Make sure a compatible server is running; returns its health info. */
 export async function ensureServer() {
   const port = configuredPort();
   let h = await health(port);
+  let exited = () => null;
   if (h?.foreign) {
     throw new Error(`port ${port} is in use by something that is not austere-axi; set AUSTERE_AXI_PORT to another port`);
   }
@@ -93,15 +101,22 @@ export async function ensureServer() {
     await request("POST", "/api/shutdown", {}, { timeoutMs: 2000, port }).catch(() => {});
     for (let i = 0; i < 40 && (await health(port)); i++) await sleep(100);
     h = null;
-    spawnServer(port, keep);
+    exited = spawnServer(port, keep);
   } else if (!h) {
-    spawnServer(port);
+    exited = spawnServer(port);
   }
   if (!h) {
-    for (let i = 0; i < 80; i++) {
+    const deadline = Date.now() + START_TIMEOUT_MS;
+    while (Date.now() < deadline) {
       await sleep(100);
       h = await health(port);
       if (h && !h.foreign) return h;
+      if (exited() != null) {
+        // It may have lost the port to a server another command started at the same time.
+        h = await health(port);
+        if (h && !h.foreign) return h;
+        break;
+      }
     }
     throw new Error(`server did not start on port ${port}; see ${path.join(stateDir(), "server.log")}`);
   }

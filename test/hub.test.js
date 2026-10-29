@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { SessionStore } from "../src/cli/sessions.js";
-import { Hub, hubUnsupported, projectOf } from "../src/cli/hub.js";
+import { Hub, projectOf } from "../src/cli/hub.js";
 import { notesPage } from "../src/cli/hub-page.js";
 
 const PORT = 48000 + Math.floor(Math.random() * 1000);
@@ -25,7 +25,6 @@ const ENV = {
   AUSTERE_AXI_IDLE_TIMEOUT_MS: "300",
   OPENUI_TELEMETRY_DISABLED: "1",
 };
-const skip = hubUnsupported();
 
 function cli(...args) {
   return cliWith(ENV, ...args);
@@ -106,7 +105,7 @@ test("projectOf is the nearest git root, else the file's folder", () => {
   assert.equal(projectOf(path.join(os.tmpdir(), "loose.html")), os.tmpdir());
 });
 
-test("hub: stays up, indexes checked and reviewed artifacts by project, hands feedback to a later session", { skip: skip || false }, async () => {
+test("hub: stays up, indexes checked and reviewed artifacts by project, hands feedback to a later session", async () => {
   let r = await cli("hub", "on");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /status: on/);
@@ -175,7 +174,7 @@ test("hub: stays up, indexes checked and reviewed artifacts by project, hands fe
   assert.match(r.out, /artifacts: 1/);
 });
 
-test("hub on/off switches the server's mode; a hub whose index will not open does not restart it on every command", { skip: skip || false }, async () => {
+test("hub on/off switches the server's mode; a hub whose index will not open does not restart it on every command", async () => {
   const port = PORT + 1000;
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-mode-"));
   const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
@@ -232,7 +231,7 @@ async function notesHub() {
   return { hub, dir };
 }
 
-test("Hub.notes: newest first, filters by text, target, title, status and project", { skip: skip || false }, async () => {
+test("Hub.notes: newest first, filters by text, target, title, status and project", async () => {
   const { hub, dir } = await notesHub();
   try {
     assert.deepEqual(hub.notes().map((n) => n.id), ["n2", "n3", "n1"], "render errors are not notes");
@@ -251,7 +250,7 @@ test("Hub.notes: newest first, filters by text, target, title, status and projec
   }
 });
 
-test("notesPage escapes note text, target, title and filters", { skip: skip || false }, async () => {
+test("notesPage escapes note text, target, title and filters", async () => {
   const { hub, dir } = await notesHub();
   try {
     const rows = hub.notes();

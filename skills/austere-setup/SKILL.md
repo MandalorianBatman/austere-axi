@@ -14,10 +14,9 @@ Ask the user only the questions in steps 3 and 4. Use the default for each if th
 
 Run `node --version`.
 
-- Node 20 or later is necessary.
-- The hub (step 4) needs Node 22.13 or later.
+- Node 22.18 or later is necessary.
 
-If Node is older than 20, stop. Tell the user to install a current Node LTS.
+If Node is older than 22.18, stop. Tell the user to install a current Node LTS.
 
 ## 2. Check the CLI
 
@@ -41,7 +40,7 @@ If the `skills` tool asks which agents to install for, pick the agent the user w
 Ask the user about each item. Default: no.
 
 - **Global command.** `npm install -g austere-axi`. Then `austere-axi` works without `npx -y`. Update it later with `npm update -g austere-axi`.
-- **Hub.** `npx -y austere-axi hub on`. It keeps the server running and lists every page at `http://127.0.0.1:4388/`. Needs Node 22.13 or later.
+- **Hub.** `npx -y austere-axi hub on`. It keeps the server running and lists every page at `http://127.0.0.1:4388/`.
 - **Phone review.** If Tailscale is running, the server also listens on the tailnet, and `open` prints a phone link. Nothing to install. Run `tailscale status` to check.
 
 On a machine with no screen (SSH, CI, container), tell the user to set `AUSTERE_AXI_NO_OPEN=1`, so the CLI prints links and does not try to open a browser.

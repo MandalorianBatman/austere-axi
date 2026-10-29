@@ -15,7 +15,7 @@ import { allowedHosts, detectTailscale, hostOnly, isLoopback } from "./net.js";
 import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.js";
 import { SessionStore, newId } from "./sessions.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
-import { Hub, hubEnabled, hubUnsupported } from "./hub.js";
+import { Hub, hubEnabled } from "./hub.js";
 import { COOKIE, InviteStore, OWNER_COOKIE, inviteId, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
 import { hubPage, notesPage } from "./hub-page.js";
 import { splitSpec } from "../shared/packs-meta.js";
@@ -69,14 +69,10 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   // that cannot open its index does not make every command restart the server.
   const hubWanted = hubEnabled();
   if (hubWanted) {
-    const why = hubUnsupported();
-    if (why) log("hub-unavailable", why);
-    else {
-      try {
-        hub = await Hub.open();
-      } catch (err) {
-        log("hub-unavailable", String(err?.message || err));
-      }
+    try {
+      hub = await Hub.open();
+    } catch (err) {
+      log("hub-unavailable", String(err?.message || err));
     }
   }
   const store = new SessionStore(stateDir(), { onFlush: hub ? (s) => hub.syncSession(s) : undefined });
