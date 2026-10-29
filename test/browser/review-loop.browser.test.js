@@ -281,7 +281,7 @@ test("a page using an installed pack renders it, warns about third-party code, a
   const { context, page, frame, problems } = await openReview(file, VIEWPORTS[1]);
   try {
     await frame.waitForSelector(".pack-timeline li", { timeout: 10_000 });
-    assert.match(await page.locator(".notice").textContent(), /third-party pack code \(austere-pack-timeline@0\.1\.0\)/);
+    assert.match(await page.locator(".notice").textContent(), /Third-party pack code runs in this page: check queued items before you send \(austere-pack-timeline@0\.1\.0\)/);
     await frame.locator('[data-austere-part="GA"]').click();
     await frame.locator(".austere-pop textarea").fill("move GA");
     await frame.locator(".austere-pop textarea").press("Enter");

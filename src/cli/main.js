@@ -625,7 +625,21 @@ async function cmdHub(sub, args, flags) {
       const why = hubUnsupported();
       if (why) return fail(why);
       setHubEnabled(true);
-      const h = await ensureServer();
+      let h = await ensureServer();
+      if (h.hubWanted && !h.hub) {
+        // Asked for the hub before but it could not open its index: try again once.
+        await request("POST", "/api/shutdown", {}).catch(() => {});
+        for (let i = 0; i < 40 && (await serverIfRunning()); i++) await new Promise((r) => setTimeout(r, 100));
+        h = await ensureServer();
+      }
+      if (!h.hub) {
+        process.exitCode = 1;
+        return print({
+          status: "unavailable",
+          error: `the hub could not open its index (${hubDbFile()}); see ${path.join(stateDir(), "server.log")}`,
+          note: "Reviews still work; the server idles out as usual. Run `austere-axi hub on` again once the index can be opened.",
+        });
+      }
       return print({
         status: "on",
         url,

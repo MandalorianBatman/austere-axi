@@ -128,11 +128,8 @@ npx austere-axi components add .       # use it on this machine
 npx austere-axi components show Timeline
 \`\`\`
 
-A page that uses it declares it in its head (\`austere-axi check --fix page.html\` writes this):
-
-\`\`\`html
-<meta name="austere-packs" content="${name}@0.1.0">
-\`\`\`
+A page that uses it must declare it: \`austere-axi check --fix page.html\` writes the
+\`<meta name="austere-packs">\` tag, with the build's integrity hash.
 
 Publish with \`npm publish\` after \`npm run build\`. Others install it with
 \`austere-axi components add ${name} --trust\`.

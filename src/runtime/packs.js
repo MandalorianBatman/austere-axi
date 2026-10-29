@@ -29,7 +29,8 @@ export function packsFor(program, declared) {
   return out;
 }
 
-function served() {
+/** Under review: the runtime came from the local server, which also serves installed packs. */
+export function served() {
   return /\/__austere\/$/.test(RUNTIME_BASE);
 }
 

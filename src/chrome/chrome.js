@@ -677,7 +677,7 @@ function showPackNotice(packs) {
     return;
   }
   // Lead with what to do: on a phone the line is cut to fit.
-  notice.textContent = `Check queued items before you send: this page runs third-party pack code (${packs.join(", ")}), which can add to the queue.`;
+  notice.textContent = `Third-party pack code runs in this page: check queued items before you send (${packs.join(", ")}).`;
   notice.title = notice.textContent;
   notice.hidden = false;
 }

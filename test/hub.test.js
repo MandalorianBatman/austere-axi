@@ -183,7 +183,7 @@ test("hub on/off switches the server's mode; a hub whose index will not open doe
     // An index that cannot be opened: the server runs without the hub, and stays up.
     fs.mkdirSync(path.join(state, "hub.db"));
     let r = await cliWith(env, "hub", "on");
-    assert.match(r.out, /status: on/);
+    assert.match(r.out, /status: unavailable/);
     let h = await health();
     assert.equal(h.hub, false);
     assert.equal(h.hubWanted, true);
@@ -192,19 +192,24 @@ test("hub on/off switches the server's mode; a hub whose index will not open doe
     await cliWith(env, "reply", FILE, "--agent-reply", "x");
     assert.equal((await health()).pid, pid, "no restart per command");
     assert.match((await cliWith(env, "hub", "status")).out, /hub could not start/);
+    // Fixed, then on again: it retries.
+    fs.rmSync(path.join(state, "hub.db"), { recursive: true });
+    r = await cliWith(env, "hub", "on");
+    assert.match(r.out, /status: on/);
+    assert.equal((await health()).hub, true);
 
     // Off, then a plain command: an ordinary server.
     await cliWith(env, "hub", "off");
-    fs.rmSync(path.join(state, "hub.db"), { recursive: true });
     await cliWith(env, FILE);
     h = await health();
     assert.equal(h.hub, false);
     assert.equal(h.hubWanted, false);
+    const plain = h.pid;
     // On again: the CLI replaces it with a hub.
     await cliWith(env, "hub", "on");
     h = await health();
     assert.equal(h.hub, true);
-    assert.notEqual(h.pid, pid);
+    assert.notEqual(h.pid, plain);
   } finally {
     await cliWith(env, "hub", "off");
     await cliWith(env, "stop");

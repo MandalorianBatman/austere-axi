@@ -12,7 +12,7 @@ import { austereLibrary, buildLibrary } from "./library.jsx";
 import { createAnnotator } from "./annotate.js";
 import { onRuntimeError, reportRuntimeError } from "./env.js";
 import { registeredPacks } from "./pack-api.js";
-import { declaredPacks, injectPackStyles, loadPacks, packsFor } from "./packs.js";
+import { declaredPacks, injectPackStyles, loadPacks, packsFor, served } from "./packs.js";
 import { changedStatementIds, referencesTo, statementMap } from "../shared/statements.js";
 
 const VERSION = typeof __AUSTERE_VERSION__ === "string" ? __AUSTERE_VERSION__ : "dev";
@@ -103,7 +103,9 @@ let librarySignature = "";
 
 function packError(pack, err) {
   failed.add(pack.name);
-  reportRuntimeError({ source: "pack", component: pack.name, message: `pack ${pack.name}@${pack.version}: ${err.message}` });
+  // A script's onerror carries no reason; for an installed pack, check knows it.
+  const why = !pack.bundled && served() ? " (`austere-axi check <file>` says why)" : "";
+  reportRuntimeError({ source: "pack", component: pack.name, message: `pack ${pack.name}@${pack.version}: ${err.message}${why}` });
 }
 
 /** The library with every registered pack, rebuilt only when the set of packs changes. */

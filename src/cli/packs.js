@@ -25,7 +25,7 @@ export function isFirstParty(name) {
  * here is fetched from the registry by name.
  */
 export function isThirdParty(name, installed = findInstalled(name)) {
-  if (installed) return installed.trust !== "first-party";
+  if (installed) return !(installed.trust === "first-party" && installed.source === "npm");
   return !isFirstParty(name);
 }
 
