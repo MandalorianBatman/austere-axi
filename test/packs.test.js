@@ -12,7 +12,7 @@ import { after, before, test } from "node:test";
 import { catalogFromSpec, promptSpec, searchCatalog } from "../src/shared/catalog.js";
 import { formatPacksMeta, parsePacksMeta, splitSpec } from "../src/shared/packs-meta.js";
 import { mergePackSchemas, setPacksMeta } from "../src/cli/packs.js";
-import { pickVersion, untar } from "../src/cli/install.js";
+import { looksLikePath, pickVersion, untar } from "../src/cli/install.js";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-work-"));
@@ -146,6 +146,11 @@ function tarEntry(name, data) {
 function tgz(files) {
   return zlib.gzipSync(Buffer.concat([...Object.entries(files).map(([n, d]) => tarEntry(`package/${n}`, Buffer.from(d))), Buffer.alloc(1024)]));
 }
+
+test("folders and tarballs are told apart from npm names", () => {
+  for (const p of [".", "./x", "../x", "/abs/x", "~/x", "packs/timeline", "C:\\packs\\x", "x-1.0.0.tgz"]) assert.ok(looksLikePath(p), p);
+  for (const n of ["gantt", "gantt@1.2.0", "@acme/flows", "@acme/flows@^1"]) assert.ok(!looksLikePath(n), n);
+});
 
 test("untar reads files under the package folder", () => {
   const files = untar(zlib.gunzipSync(tgz({ "dist/pack.js": "x()", "package.json": "{}" })));

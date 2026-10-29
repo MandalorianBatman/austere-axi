@@ -18,8 +18,14 @@ export function registryUrl() {
   return r.endsWith("/") ? r : r + "/";
 }
 
+/** A folder or tarball rather than an npm name: anything path-shaped (an npm name has a slash only after "@scope"). */
 export function looksLikePath(spec) {
-  return /^(\.{1,2}([\\/]|$)|[\\/]|~[\\/]|[A-Za-z]:[\\/])/.test(spec) || /\.t(ar\.)?gz$/i.test(spec);
+  return (
+    /^(\.{1,2}([\\/]|$)|[\\/]|~[\\/]|[A-Za-z]:[\\/])/.test(spec) ||
+    /\.t(ar\.)?gz$/i.test(spec) ||
+    spec.includes("\\") ||
+    (spec.includes("/") && !spec.startsWith("@"))
+  );
 }
 
 function sri(alg, buf) {
