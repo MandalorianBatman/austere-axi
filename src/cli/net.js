@@ -55,6 +55,27 @@ export function allowedHosts(extra = []) {
   return set;
 }
 
+/**
+ * AUSTERE_AXI_LINK_URL: the address a reviewer reaches this server at when something in front of it
+ * (a reverse proxy with TLS, say) changes the scheme, host or port, e.g. `https://austere.example.com`.
+ * Returns it without a trailing slash, or null when unset. Throws on a value that is not a plain http(s) origin
+ * (the server answers at the root only, so a path prefix would give links that redirect to the wrong place).
+ * @returns {{ base: string, host: string } | null}
+ */
+export function linkUrl() {
+  const raw = String(process.env.AUSTERE_AXI_LINK_URL || "").trim();
+  if (!raw) return null;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error(`AUSTERE_AXI_LINK_URL is not a URL: ${raw}`);
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error(`AUSTERE_AXI_LINK_URL must be http or https: ${raw}`);
+  if (u.pathname !== "/" || u.search || u.hash || u.username || u.password) throw new Error(`AUSTERE_AXI_LINK_URL must be just scheme, host and optional port, like https://austere.example.com: ${raw}`);
+  return { base: u.origin, host: u.hostname.toLowerCase() };
+}
+
 export function hostOnly(hostHeader) {
   const h = String(hostHeader || "").toLowerCase();
   if (h.startsWith("[")) return h.slice(0, h.indexOf("]") + 1);
