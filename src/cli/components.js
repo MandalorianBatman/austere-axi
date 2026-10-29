@@ -1,6 +1,6 @@
 // `austere-axi components ...`: browse the component catalog (core, bundled
 // packs, installed packs) and manage packs.
-import { coreCatalog, installedPacks, isFirstParty } from "./packs.js";
+import { coreCatalog, installedPacks, isThirdParty } from "./packs.js";
 import { searchCatalog } from "../shared/catalog.js";
 
 const BIN = "austere-axi";
@@ -47,7 +47,7 @@ export function listComponents(filter) {
   if (packs.length) {
     out.packs = packs.map((p) => ({
       pack: `${p.name}@${p.version}`,
-      trust: isFirstParty(p.name) ? undefined : "third-party",
+      trust: isThirdParty(p.name, p) ? "third-party" : undefined,
       components: p.catalog.components.map((c) => c.name).join(", "),
     }));
   }
@@ -95,9 +95,7 @@ export function showComponents(names) {
       const notes = notesOf(e).filter((line) => new RegExp(`\\b${e.name}\\b`).test(line) && !line.startsWith("- Also in "));
       if (notes.length) o.notes = notes.map((l) => l.replace(/^- /, ""));
       if (e.examples && e.examples.length) o.example = e.examples[0];
-      if (e.source === "installed") {
-        o.use = `Declare the pack in the page head: <meta name="austere-packs" content="${e.pack}@${e.version}"> (\`${BIN} check --fix <file>\` writes it).`;
-      }
+      if (e.source === "installed") o.use = `From pack ${e.pack}: after writing the page, \`${BIN} check --fix <file>\` declares it.`;
       return o;
     }),
   };

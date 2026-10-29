@@ -74,9 +74,40 @@ function initMermaid(m) {
         sequenceNumberColor: "#121214",
       },
       flowchart: { htmlLabels: false, curve: "basis", padding: 12 },
+      gantt: { axisFormat: "%m-%d", fontSize: 12, barHeight: 22 },
     });
   }
   return m;
+}
+
+/** Agents sometimes wrap the source in a markdown fence. */
+function stripFence(source) {
+  const m = /^```(?:mermaid)?\s*\n([\s\S]*?)\n?```\s*$/.exec(source);
+  return m ? m[1] : source;
+}
+
+/** Words of an SVG text element, lines joined with spaces (tspans would run together). */
+function words(el) {
+  const lines = el.querySelectorAll("tspan, div, span, p");
+  const parts = lines.length ? Array.from(lines, (x) => (x.children.length ? "" : x.textContent)) : [el.textContent];
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Name what a reviewer points at, so a click reaches the agent as its label:
+ * flowchart nodes, clusters and edge labels; sequence actors, messages and
+ * notes; class and ER entities (by title); gantt tasks.
+ */
+function labelParts(root) {
+  const set = (el, label) => {
+    if (label) el.setAttribute("data-austere-part", label.slice(0, 80));
+  };
+  root.querySelectorAll("g.node, g.cluster, g.edgeLabel").forEach((g) => {
+    // Class and ER boxes hold every member: name them by their title.
+    const title = g.querySelector(".classTitle, .label-group, .er.entityLabel, .name");
+    set(g, words(title || g));
+  });
+  root.querySelectorAll("text.actor, text.messageText, text.noteText, text.taskText").forEach((el) => set(el, words(el)));
 }
 
 function MermaidView({ props, statementId }) {
@@ -87,34 +118,36 @@ function MermaidView({ props, statementId }) {
   useEffect(() => {
     let cancelled = false;
     if (!source) return undefined;
+    const id = `austere-mmd-${++seq}`;
     loadMermaid()
       .then(async (m) => {
-        const id = `austere-mmd-${++seq}`;
-        const { svg, bindFunctions } = await m.render(id, source);
+        const { svg, bindFunctions } = await m.render(id, stripFence(source));
         if (cancelled || !ref.current) return;
         ref.current.innerHTML = svg;
         const el = ref.current.querySelector("svg");
         if (el) {
-          // Keep Mermaid's natural max-width so small diagrams are not blown up;
-          // just let them shrink on narrow screens.
+          // Keep Mermaid's natural max-width so small diagrams are not blown up,
+          // and let wide ones shrink, but not below 60% of their natural size:
+          // past that the text is unreadable, so the diagram scrolls instead.
           el.removeAttribute("height");
           el.style.height = "auto";
           if (!el.style.maxWidth) el.style.maxWidth = "100%";
+          const natural = el.viewBox && el.viewBox.baseVal ? el.viewBox.baseVal.width : 0;
+          if (natural > 0) el.style.minWidth = `${Math.round(Math.min(natural, natural * 0.6))}px`;
         }
-        // Name each node, cluster and actor so a click reaches the agent as its label.
-        ref.current.querySelectorAll("g.node, g.cluster, g.edgeLabel, g.actor, text.actor, g.note").forEach((g) => {
-          const label = g.textContent.replace(/\s+/g, " ").trim();
-          if (label) g.setAttribute("data-austere-part", label.slice(0, 80));
-        });
+        labelParts(ref.current);
         bindFunctions?.(ref.current);
         setError(null);
       })
       .catch((err) => {
         if (cancelled) return;
-        const message = String(err?.message || err).split("\n").slice(0, 4).join(" ");
+        // Keep where it failed; drop the parser's list of expected tokens.
+        const message = String(err?.message || err).split("\n").slice(0, 4).join(" ").split(/\s*Expecting /)[0];
         setError(message);
         reportRuntimeError({ source: "mermaid", statementId, component: "Mermaid", message });
-        document.querySelectorAll(`[id^="daustere-mmd-"], #d${"austere-mmd-" + seq}`).forEach((n) => n.remove());
+        // Mermaid leaves its scratch node behind on a failure; remove only this
+        // render's, not one another diagram is still using.
+        document.getElementById(`d${id}`)?.remove();
       });
     return () => {
       cancelled = true;

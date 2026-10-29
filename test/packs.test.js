@@ -180,7 +180,7 @@ test("new → build → add → show → check --fix → export → spec → rem
   assert.match(r.out, /trust: local/);
   r = await cli("components", "show", "Timeline");
   assert.match(r.out, /from: pack austere-pack-timeline@0\.1\.0/);
-  assert.match(r.out, /austere-packs/);
+  assert.match(r.out, /check --fix/);
   r = await cli("components", "search", "timeline", "events");
   assert.match(r.out, /Timeline\(events: string\[\]\)/);
 
@@ -203,8 +203,19 @@ test("new → build → add → show → check --fix → export → spec → rem
   const exported = fs.readFileSync(path.join(WORK, "launch.export.html"), "utf8");
   assert.ok(exported.includes(fs.readFileSync(path.join(PACK, "dist/pack.js"), "utf8").slice(0, 200).replace(/<\/script/gi, "<\\/script")));
 
+  // Rebuilt and added again at the same version: the page's hash is stale, and check says so.
+  fs.appendFileSync(path.join(PACK, "src/style.css"), "\n.pack-timeline strong { letter-spacing: 0; }\n");
+  assert.equal((await cli("components", "build", PACK)).code, 0);
+  r = await cli("components", "add", PACK);
+  assert.match(r.out, /update their integrity hash/);
+  r = await cli("check", file);
+  assert.match(r.out, /code: pack-integrity/);
+  r = await cli("check", "--fix", file);
+  assert.match(r.out, /fixed: \[updated integrity hashes\]/);
+  assert.doesNotMatch((await cli("check", file)).out, /pack-integrity/);
+
   r = await cli("spec");
-  assert.match(r.out, /## Installed packs\n.*\n- austere-pack-timeline@0\.1\.0: Timeline/);
+  assert.match(r.out, /## Installed packs\n.*check --fix.*\n- austere-pack-timeline@0\.1\.0: Timeline/);
   r = await cli("spec", "austere-pack-timeline");
   assert.match(r.out, /^### austere-pack-timeline@0\.1\.0 \(third-party\)/);
   assert.match(r.out, /Timeline\(events: string\[\]\) — Vertical timeline/);
@@ -214,6 +225,57 @@ test("new → build → add → show → check --fix → export → spec → rem
   r = await cli("check", file);
   assert.match(r.out, /pack-not-installed/);
   assert.match(r.out, /is not installed here/);
+});
+
+test("export inlines the bundled Mermaid pack after the runtime", async () => {
+  const file = path.join(WORK, "flow.html");
+  fs.writeFileSync(file, page('root = Stack([f])\nf = Mermaid("flowchart LR\n  a --> b")'));
+  const r = await cli("export", file, "--out", path.join(WORK, "flow.export.html"));
+  assert.equal(r.code, 0, r.out);
+  const html = fs.readFileSync(path.join(WORK, "flow.export.html"), "utf8");
+  const head = (f) => fs.readFileSync(path.join("dist", f), "utf8").slice(0, 300).replace(/<\/script/gi, "<\\/script");
+  const runtimeAt = html.indexOf(head("austere.js"));
+  const packAt = html.indexOf(head("packs/mermaid/pack.js"));
+  assert.ok(packAt > 0, "the Mermaid pack is inlined");
+  assert.ok(runtimeAt > 0 && runtimeAt < packAt, "after the runtime");
+  assert.doesNotMatch(html, /cdn\.jsdelivr\.net\/npm\/austere-axi/);
+});
+
+test("a tarball needs --trust whatever name it claims; a folder is local but still third-party", async () => {
+  const dir = path.join(WORK, "claims-first-party");
+  await cli("components", "new", dir, "--name", "@austere-axi/pack-claims");
+  assert.equal((await cli("components", "build", dir)).code, 0);
+  const file = path.join(WORK, "claims.tgz");
+  fs.writeFileSync(
+    file,
+    tgz({
+      "package.json": fs.readFileSync(path.join(dir, "package.json")),
+      "dist/pack.js": fs.readFileSync(path.join(dir, "dist/pack.js")),
+      "dist/catalog.json": fs.readFileSync(path.join(dir, "dist/catalog.json")),
+    }),
+  );
+  let r = await cli("components", "add", file);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /needs --trust/);
+  r = await cli("components", "add", file, "--trust");
+  assert.match(r.out, /trust: --trust/);
+  r = await cli("components", "list");
+  assert.match(r.out, /pack: @austere-axi\/pack-claims@0\.1\.0\n\s+trust: third-party/);
+  r = await cli("components", "add", dir);
+  assert.match(r.out, /trust: local/);
+  r = await cli("spec", "@austere-axi/pack-claims");
+  assert.match(r.out, /\(third-party\)/);
+  await cli("components", "remove", "@austere-axi/pack-claims");
+});
+
+test("components build refuses a slot that names no component", async () => {
+  const dir = path.join(WORK, "bad-slot");
+  await cli("components", "new", dir);
+  const file = path.join(dir, "src/Timeline.jsx");
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('renderer: TimelineView,', 'renderer: TimelineView,\n  slots: ["Nope.children"],'));
+  const r = await cli("components", "build", dir);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /slot Nope\.children: Nope is not a component here/);
 });
 
 test("unknown components point at search instead of listing everything", async () => {
@@ -349,6 +411,31 @@ test("the server serves an installed pack only at its locked version and hash", 
     assert.match(ok.body, /registerPack|austere-pack-steps/);
     assert.equal((await get(`/__austere/installed-packs/${encodeURIComponent("austere-pack-steps@1.0.0")}/pack.js`)).status, 404);
     assert.equal((await get(`${route}?integrity=sha384-wrong`)).status, 409);
+
+    // poll tells the agent when the page runs third-party pack code.
+    ENV.AUSTERE_AXI_PORT = String(port);
+    const page3p = path.join(WORK, "steps.html");
+    fs.writeFileSync(
+      page3p,
+      page('root = Stack([t])\nt = Timeline(["Mon | Freeze"])', `<meta name="austere-packs" content="austere-pack-steps@1.1.0 ${lock.integrity}">\n`),
+    );
+    const opened = await cli(page3p, "--no-open");
+    assert.match(opened.out, /status: open/);
+    const sid = /\/s\/([a-f0-9]{12})/.exec(opened.out)[1];
+    await new Promise((resolve, reject) => {
+      const body = JSON.stringify({ items: [{ kind: "message", text: "ship it" }] });
+      const r = http.request(
+        { host: "127.0.0.1", port, method: "POST", path: `/s/${sid}/send`, headers: { "content-type": "application/json", host: `127.0.0.1:${port}` } },
+        (res) => res.resume().on("end", resolve),
+      );
+      r.on("error", reject);
+      r.end(body);
+    });
+    const polled = await cli("poll", page3p);
+    assert.match(polled.out, /status: feedback/);
+    assert.match(polled.out, /caution: .*third-party pack code \(austere-pack-steps@1\.1\.0\)/);
+    delete ENV.AUSTERE_AXI_PORT;
+
     // Tampered on disk after install.
     const file = path.join(STATE, "packs", "austere-pack-steps@1.1.0", "pack.js");
     fs.appendFileSync(file, "\n;");

@@ -1,7 +1,11 @@
 // Installing component packs: from the npm registry, a .tgz (`npm pack`
 // output), or a pack folder that has been built. Only three files are kept
-// per pack: dist/pack.js, dist/catalog.json and package.json. Nothing from a
-// pack ever runs in the CLI; its code runs only inside review pages.
+// per pack: dist/pack.js, dist/catalog.json and package.json. Installing runs
+// nothing from the pack; its code runs only inside review pages.
+//
+// Trust: a pack counts as first-party only when it came from the registry
+// under @austere-axi/ (the registry vouches for the scope). A tarball needs
+// --trust whatever name its catalog claims; a folder is the user's own.
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -202,6 +206,9 @@ function parseCatalog(buf, label) {
   if (!Array.isArray(cat.components) || !cat.components.length) throw new Error(`${label}: catalog lists no components`);
   for (const c of cat.components) {
     if (!/^[A-Z][A-Za-z0-9]*$/.test(c.name || "") || typeof c.signature !== "string") throw new Error(`${label}: bad component entry ${JSON.stringify(c.name)}`);
+    if (c.slots != null && !(Array.isArray(c.slots) && c.slots.every((x) => /^[A-Z][A-Za-z0-9]*\.[a-z][A-Za-z0-9]*$/.test(x)))) {
+      throw new Error(`${label}: ${c.name} has malformed slots (expected ["Card.children", ...] or null)`);
+    }
   }
   return cat;
 }
@@ -224,12 +231,13 @@ export async function addPack(spec, { trust = false } = {}) {
   }
   const got = local ? fromFolder(spec) : await fromRegistry(spec);
   if (got.source === "tarball" && !trust) {
+    // Nothing vouches for a tarball's name, so even an @austere-axi/ one needs --trust.
     const peek = parseCatalog(got.catalog, path.basename(got.resolved));
-    if (!isFirstParty(peek.pack)) {
-      const e = new Error(`${peek.pack} is a third-party pack: its code would run inside your review pages. Rerun with --trust once you have looked at it.`);
-      e.code = "untrusted";
-      throw e;
-    }
+    const e = new Error(
+      `${path.basename(got.resolved)} (${peek.pack}) comes from a file, not the registry: its code would run inside your review pages. Rerun with --trust once you have looked at it.`,
+    );
+    e.code = "untrusted";
+    throw e;
   }
   const label = got.expect ? `${got.expect.name}@${got.expect.version}` : spec;
   const cat = parseCatalog(got.catalog, label);
@@ -267,7 +275,7 @@ export async function addPack(spec, { trust = false } = {}) {
     integrity,
     source: got.source,
     resolved: got.resolved,
-    trust: isFirstParty(cat.pack) ? "first-party" : got.source === "folder" ? "local" : "--trust",
+    trust: got.source === "npm" && isFirstParty(cat.pack) ? "first-party" : got.source === "folder" ? "local" : "--trust",
     components: cat.components.map((c) => c.name),
     installedAt: new Date().toISOString(),
   };

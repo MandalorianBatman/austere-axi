@@ -12,7 +12,7 @@ import { exportHtml } from "./export.js";
 import { format, print } from "./output.js";
 import { VERSION, assetPath, canonicalFile, port, stateDir } from "./paths.js";
 import { listComponents, searchComponents, showComponents } from "./components.js";
-import { installedPacks, isFirstParty, neededPacks, pagePacks, setPacksMeta } from "./packs.js";
+import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.js";
 
 const BIN = "austere-axi";
 
@@ -419,8 +419,8 @@ async function cmdPatch(file) {
 
 /** A pack's part of the reference: its signatures and notes, as `spec` prints core groups. */
 function packSpec(p) {
-  const lines = [`### ${p.name}@${p.version}${isFirstParty(p.name) ? "" : " (third-party)"}`];
-  lines.push(`Declare it in the page head: <meta name="austere-packs" content="${p.name}@${p.version}"> (\`${BIN} check --fix <file>\` writes it).`);
+  const lines = [`### ${p.name}@${p.version}${isThirdParty(p.name, p) ? " (third-party)" : ""}`];
+  lines.push(`A page using these must declare the pack: run \`${BIN} check --fix <file>\` after writing it. Examples: \`${BIN} components show <Name>\`.`);
   for (const c of p.catalog.components) lines.push(`${c.signature}${c.description ? ` — ${c.description}` : ""}`);
   for (const g of p.catalog.groups || []) lines.push(...(g.notes || []));
   return lines.join("\n") + "\n";
@@ -436,7 +436,7 @@ function cmdSpec(groups) {
   if (!groups.length) {
     if (!text.endsWith("\n")) text += "\n";
     if (packs.length) {
-      text += `\n## Installed packs\nMore components, usable once the page declares the pack (\`${BIN} spec <pack>\` for signatures):\n`;
+      text += `\n## Installed packs\nMore components (\`${BIN} spec <pack>\` for signatures). A page using one must declare its pack: run \`${BIN} check --fix <file>\` after writing it.\n`;
       for (const p of packs) text += `- ${p.name}@${p.version}: ${p.catalog.components.map((c) => c.name).join(", ")}\n`;
     }
     return process.stdout.write(text);
@@ -493,7 +493,9 @@ async function cmdComponents(sub, args, flags) {
         trust: r.trust,
         components: r.components,
         warnings: r.warnings.length ? r.warnings : undefined,
-        next: `\`${BIN} components show ${r.components[0]}\` for its signature. A page that uses it must declare it: \`${BIN} check --fix <file>\` adds the tag.`,
+        next: r.previous === r.version
+          ? `Same version as before: run \`${BIN} check --fix <file>\` on pages that use it, to update their integrity hash.`
+          : `\`${BIN} components show ${r.components[0]}\` for its signature. A page that uses it must declare it: \`${BIN} check --fix <file>\` adds the tag.`,
       });
     }
     case "remove": {
@@ -501,7 +503,11 @@ async function cmdComponents(sub, args, flags) {
       const { removePack } = await import("./install.js");
       const r = removePack(args[0]);
       if (!r) return fail(`${args[0]} is not installed (${BIN} components list)`);
-      return print({ status: "removed", pack: `${r.name}@${r.version}`, note: "Pages that declare it still load it from the CDN; `check` no longer knows its components." });
+      return print({
+        status: "removed",
+        pack: `${r.name}@${r.version}`,
+        note: "Pages that declare it lose its components under review and in `check`; opened directly, they still load it from the CDN.",
+      });
     }
     case "new": {
       const { newPack } = await import("./pack-dev.js");
@@ -529,7 +535,7 @@ async function cmdComponents(sub, args, flags) {
           bytes: r.size,
           files: r.files,
           warnings: r.warnings.length ? r.warnings : undefined,
-          next: `\`${BIN} components add ${quote(args[0] || ".")}\` to use it here (again after each build).`,
+          next: `\`${BIN} components add ${quote(args[0] || ".")}\` to use it here (again after each build), then \`${BIN} check --fix <file>\` on pages that use it.`,
         });
       } catch (err) {
         return fail(err.message);
@@ -625,13 +631,13 @@ async function cmdHub(sub, args, flags) {
         url,
         phone: h.tailnet ? `http://${h.tailnet.dnsName || h.tailnet.ip}:${port()}/` : undefined,
         index: hubDbFile(),
-        note: "The server now stays up and indexes every artifact you open or check, by project and date. After a reboot, any austere-axi command starts it again.",
+        note: "The server now stays up and indexes every artifact you open or check, by project and date. After a reboot, `austere-axi hub open` (or opening any review) starts it again.",
       });
     }
     case "off": {
       setHubEnabled(false);
       const h = await serverIfRunning();
-      if (h && h.hub) await request("POST", "/api/shutdown", {}).catch(() => {});
+      if (h && (h.hub || h.hubWanted)) await request("POST", "/api/shutdown", {}).catch(() => {});
       return print({ status: "off", note: `The index stays in ${hubDbFile()}; \`${BIN} hub on\` picks it up again. Reviews work as before.` });
     }
     case undefined:
@@ -639,17 +645,21 @@ async function cmdHub(sub, args, flags) {
       const h = await serverIfRunning();
       const out = {
         hub: hubEnabled() ? "on" : "off",
-        server: h ? `running on ${port()}${h.hub ? " (hub)" : ""}` : "not running",
+        server: h ? `running on ${port()}${h.hub ? " (hub)" : h.hubWanted ? ` (hub could not start; see ${path.join(stateDir(), "server.log")})` : ""}` : "not running",
       };
       const why = hubUnsupported();
       if (why) out.unavailable = why;
       if (hubEnabled() && h?.hub) out.url = url;
       if (!why && fs.existsSync(hubDbFile())) {
-        const hub = await Hub.open();
         try {
-          Object.assign(out, hub.stats());
-        } finally {
-          hub.close();
+          const hub = await Hub.open();
+          try {
+            Object.assign(out, hub.stats());
+          } finally {
+            hub.close();
+          }
+        } catch (err) {
+          out.index = `${hubDbFile()} cannot be opened: ${err.message}`;
         }
       }
       if (!hubEnabled()) out.next = `\`${BIN} hub on\` keeps the server up with an index of every artifact (Node ${HUB_MIN_NODE}+).`;
@@ -660,7 +670,12 @@ async function cmdHub(sub, args, flags) {
       if (why) return fail(why);
       if (!fs.existsSync(hubDbFile())) return print({ artifacts: "none", next: `\`${BIN} hub on\` starts indexing.` });
       const project = typeof flags.project === "string" ? path.resolve(flags.project) : "";
-      const hub = await Hub.open();
+      let hub;
+      try {
+        hub = await Hub.open();
+      } catch (err) {
+        return fail(`${hubDbFile()} cannot be opened: ${err.message}`);
+      }
       let rows;
       try {
         rows = hub.list({ q: args.join(" "), project, limit: 40 });
@@ -673,9 +688,9 @@ async function cmdHub(sub, args, flags) {
           file: r.file,
           title: r.title || undefined,
           updated: shortDate(r.updated_at),
-          feedback: r.open + r.received ? `${r.open + r.received} unaddressed` : undefined,
+          feedback: r.open + r.received ? `${r.open + r.received} unanswered` : undefined,
         })),
-        next: `\`${BIN} feedback <file>\` for what a reviewer said that is not addressed yet.`,
+        next: `\`${BIN} feedback <file>\` for what a reviewer said that no agent has answered.`,
       });
     }
     case "open": {

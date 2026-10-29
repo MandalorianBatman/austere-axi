@@ -96,11 +96,13 @@ function actionText(item) {
 
 // ── Packs ──
 
-const DECLARED = typeof document !== "undefined" ? declaredPacks() : [];
+let declared = null; // read at first use: a hand-written tag may sit after the runtime <script>
+const failed = new Set(); // packs that failed to load: not retried on every live update
 let currentLibrary = austereLibrary;
 let librarySignature = "";
 
 function packError(pack, err) {
+  failed.add(pack.name);
   reportRuntimeError({ source: "pack", component: pack.name, message: `pack ${pack.name}@${pack.version}: ${err.message}` });
 }
 
@@ -111,19 +113,26 @@ function libraryWithPacks() {
   if (signature === librarySignature) return currentLibrary;
   librarySignature = signature;
   injectPackStyles(packs);
-  currentLibrary = packs.length
-    ? buildLibrary(
-        packs.flatMap((p) => p.components),
-        { onSkip: (c, message) => reportRuntimeError({ source: "pack", component: c.name, message }) },
-      )
-    : austereLibrary;
+  try {
+    currentLibrary = packs.length
+      ? buildLibrary(
+          packs.flatMap((p) => p.components),
+          { onSkip: (c, message) => reportRuntimeError({ source: "pack", component: c.name, message }) },
+        )
+      : austereLibrary;
+  } catch (err) {
+    // Never let a pack blank the page: render with the core components.
+    reportRuntimeError({ source: "pack", message: `packs could not be added (${err.message}); rendering without them` });
+    currentLibrary = austereLibrary;
+  }
   window.__austere.library = currentLibrary;
   return currentLibrary;
 }
 
 /** Load what a program needs (declared packs, and bundled ones it calls), then the library to render it with. */
 async function prepare(program) {
-  const want = packsFor(program, DECLARED);
+  declared ||= declaredPacks();
+  const want = packsFor(program, declared).filter((p) => !failed.has(p.name));
   if (want.some((p) => !registeredPacks().some((r) => r.name === p.name))) await loadPacks(want, { onError: packError });
   return libraryWithPacks();
 }

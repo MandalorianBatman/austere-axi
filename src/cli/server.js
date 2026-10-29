@@ -61,7 +61,10 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
 
   // Hub mode (`austere-axi hub on`): mirror sessions into the index and stay up.
   let hub = null;
-  if (hubEnabled()) {
+  // What this server was asked to be. The CLI compares it with the config, so a hub
+  // that cannot open its index does not make every command restart the server.
+  const hubWanted = hubEnabled();
+  if (hubWanted) {
     const why = hubUnsupported();
     if (why) log("hub-unavailable", why);
     else {
@@ -314,6 +317,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         listen: Array.from(listeners.keys()),
         tailnet: tailnet || undefined,
         hub: Boolean(hub),
+        hubWanted,
       });
     }
     if (route === "sessions") {
@@ -463,9 +467,13 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const actual = `sha384-${crypto.createHash("sha384").update(buf).digest("base64")}`;
       const locked = readLock().packs[spec.name]?.integrity;
       const wanted = url.searchParams.get("integrity");
-      if ((locked && locked !== actual) || (wanted && wanted !== actual)) {
-        log("pack-integrity", spec.name, spec.version);
-        return send(res, 409, `pack ${spec.name}@${spec.version} does not match its integrity hash; reinstall it`);
+      if (locked && locked !== actual) {
+        log("pack-integrity", spec.name, spec.version, "file changed since install");
+        return send(res, 409, `pack ${spec.name}@${spec.version} changed on disk since it was installed; add it again`);
+      }
+      if (wanted && wanted !== actual) {
+        log("pack-integrity", spec.name, spec.version, "page pins another build");
+        return send(res, 409, `the page pins another build of ${spec.name}@${spec.version}; \`austere-axi check --fix <file>\` updates it`);
       }
       res.writeHead(200, {
         "content-type": MIME[".js"],

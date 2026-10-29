@@ -80,7 +80,7 @@ function elementsOf(root, typeName) {
 
 export function checkHtml(html, { schema, file = "<file>" } = {}) {
   const art = readArtifact(html);
-  const packs = schema ? { installed: [], missing: [], mismatched: [], declared: [] } : pagePacks(html);
+  const packs = schema ? { installed: [], missing: [], mismatched: [], stale: [], declared: [] } : pagePacks(html);
   const result = { ok: true, errors: [], warnings: [], statements: 0, title: art.title, hasMermaid: false };
   if (art.program == null) {
     result.ok = false;
@@ -101,6 +101,12 @@ export function checkHtml(html, { schema, file = "<file>" } = {}) {
     result.warnings.push({
       code: "pack-not-installed",
       message: `The page declares pack ${p.name}@${p.version}, which is not installed here; its components cannot be checked. \`austere-axi components add ${p.name}@${p.version}\` installs it.`,
+    });
+  }
+  for (const p of packs.stale || []) {
+    result.warnings.push({
+      code: "pack-integrity",
+      message: `The page pins ${p.name}@${p.version} to another build than the one installed (rebuilt and added again?), so the review page will refuse to load it. \`austere-axi check --fix ${file}\` updates the hash.`,
     });
   }
   for (const p of packs.mismatched) {

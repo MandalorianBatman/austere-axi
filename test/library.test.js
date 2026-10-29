@@ -2,6 +2,8 @@
 // break without noticing; see .agents/skills/add-component/SKILL.md.
 import assert from "node:assert/strict";
 import { before, test } from "node:test";
+import { defineComponent } from "@openuidev/react-lang";
+import { z } from "zod";
 import { checkHtml } from "../src/cli/check.js";
 import { estimateTokens, examplePage, htmlPage, loadLibrary } from "../scripts/lib/plugins.mjs";
 import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/signatures.mjs";
@@ -9,7 +11,9 @@ import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/si
 // Every agent pays for the component reference on every `spec` read. Raise
 // this only as a deliberate decision, in the same change that needs it.
 // 6500 → 6600: Architecture lanes, tones and row pins (6362 → ~6550 tokens).
-const PROMPT_BUDGET_TOKENS = 5750;
+// 6600 → 5800: rare stock components leave the prompt (tier "extended", found
+// with `components search|show`), ~6550 → ~5765 tokens.
+const PROMPT_BUDGET_TOKENS = 5800;
 const DESCRIPTION_MAX_CHARS = 280;
 
 let lib;
@@ -35,6 +39,61 @@ test("every component is in exactly one prompt group", () => {
 test(`component reference stays within ${PROMPT_BUDGET_TOKENS} tokens`, () => {
   const tokens = estimateTokens(lib.prompt());
   assert.ok(tokens <= PROMPT_BUDGET_TOKENS, `prompt is ~${tokens} tokens, over the ${PROMPT_BUDGET_TOKENS} budget`);
+});
+
+/** Top-level parameters of a signature: [{ name, optional, type }]. */
+function params(signature) {
+  const inner = signature.slice(signature.indexOf("(") + 1, signature.lastIndexOf(")"));
+  const out = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of inner) {
+    if ("([{<".includes(ch)) depth++;
+    if (")]}>".includes(ch)) depth--;
+    if (ch === "," && depth === 0) {
+      out.push(cur.trim());
+      cur = "";
+    } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out.map((p) => /^(\w+)(\?)?:\s*([\s\S]*)$/.exec(p)).filter(Boolean).map(([, name, q, type]) => ({ name, optional: !!q, type }));
+}
+
+test("a component the spec leaves out is never the only way to fill a required prop of one it keeps", () => {
+  const spec = lib.austereLibrary.toSpec();
+  const extended = new Set(Object.keys(lib.TIERS));
+  for (const [name, c] of Object.entries(spec.components)) {
+    if (extended.has(name)) continue;
+    for (const p of params(c.signature)) {
+      if (p.optional) continue;
+      const refs = [...p.type.matchAll(/\b([A-Z][A-Za-z0-9]*)\b/g)].map((m) => m[1]).filter((n) => spec.components[n]);
+      if (refs.length && refs.every((n) => extended.has(n))) {
+        assert.fail(`${name}(${p.name}) takes only ${refs.join(" | ")}, which are all out of the spec; keep one of them in it`);
+      }
+    }
+  }
+});
+
+test("a pack component whose slot the library cannot place keeps its other slots, and the page still renders", () => {
+  const skipped = [];
+  const zed = {
+    name: "Zed",
+    group: "Content",
+    notes: [],
+    tagged: true,
+    slots: ["Nope.children", "Card.children"],
+    definition: defineComponent({ name: "Zed", props: z.object({ text: z.string() }), description: "test", component: () => null }),
+  };
+  const withZed = lib.buildLibrary([zed], { onSkip: (c, message) => skipped.push(message) });
+  assert.ok(withZed.components.Zed);
+  assert.match(skipped.join("\n"), /Nope/);
+  assert.match(JSON.stringify(withZed.toJSONSchema().$defs.Card), /#\/\$defs\/Zed/);
+  assert.deepEqual(zed.slots, ["Nope.children", "Card.children"], "the pack's own component is not mutated");
+  // A pack component named like a core one is skipped, not fatal.
+  const dup = { ...zed, name: "Card", slots: null };
+  const notes = [];
+  lib.buildLibrary([dup], { onSkip: (c, message) => notes.push(message) });
+  assert.match(notes.join(), /already defined/);
 });
 
 test("released prop orders are append-only", () => {

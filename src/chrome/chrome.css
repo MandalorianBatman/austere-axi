@@ -241,6 +241,14 @@ code {
 .notice[hidden] {
   display: none;
 }
+@media (max-width: 860px) {
+  .notice {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+  }
+}
 
 /* ── main ── */
 .main {

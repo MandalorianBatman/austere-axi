@@ -202,7 +202,7 @@ export class Hub {
     return this.db
       .prepare(
         `SELECT (SELECT COUNT(*) FROM artifacts) AS artifacts, (SELECT COUNT(DISTINCT project) FROM artifacts) AS projects,
-                (SELECT COUNT(*) FROM items WHERE status != 'addressed') AS unaddressed`,
+                (SELECT COUNT(*) FROM items WHERE status != 'addressed') AS unanswered`,
       )
       .get();
   }

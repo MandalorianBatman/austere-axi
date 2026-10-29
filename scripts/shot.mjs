@@ -1,7 +1,8 @@
 // npm run shot -- <file.html|url> [--out shot.png] [--width 1280] [--height 900] [--full] [--parts]
 //
 // Renders an artifact headlessly with the freshly built runtime (requests for
-// austere.js / mermaid.min.js / bundled packs, including the CDN tag, are served from dist/)
+// austere.js / mermaid.min.js / bundled packs, including the CDN tag, are served from dist/,
+// and installed packs from AUSTERE_AXI_STATE_DIR)
 // and saves a screenshot. Prints page errors, render errors, and with --parts
 // every data-austere-part a reviewer could click, grouped by statement.
 //
@@ -11,6 +12,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { launchBrowser } from "./lib/browser.mjs";
 import { ROOT } from "./lib/plugins.mjs";
+import { installedPackFile } from "../src/cli/packs.js";
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -39,6 +41,14 @@ const problems = [];
 page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
   if (m.type() === "error" || (m.type() === "warning" && m.text().startsWith("[austere]"))) problems.push(`console: ${m.text()}`);
+});
+// Packs the page loads from the CDN come from this machine's installed packs
+// (AUSTERE_AXI_STATE_DIR), so a page with a pack renders offline too.
+await page.route(/^https:\/\/cdn\.jsdelivr\.net\/npm\/(.+)@(\d[^/]*)\/dist\/pack\.js$/, (route) => {
+  const [, name, version] = /^https:\/\/cdn\.jsdelivr\.net\/npm\/(.+)@(\d[^/]*)\/dist\/pack\.js$/.exec(route.request().url());
+  const file = installedPackFile(name, version);
+  if (!file) return route.continue();
+  route.fulfill({ path: file, contentType: "text/javascript", headers: { "access-control-allow-origin": "*" } });
 });
 // The runtime, Mermaid and bundled packs come from dist/, wherever the page points.
 await page.route(/\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {

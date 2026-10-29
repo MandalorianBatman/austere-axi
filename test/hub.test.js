@@ -27,8 +27,12 @@ const ENV = {
 const skip = hubUnsupported();
 
 function cli(...args) {
+  return cliWith(ENV, ...args);
+}
+
+function cliWith(env, ...args) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["src/cli/main.js", ...args], { env: ENV });
+    const child = spawn(process.execPath, ["src/cli/main.js", ...args], { env });
     let out = "";
     child.stdout.on("data", (c) => (out += c));
     child.stderr.on("data", (c) => (out += c));
@@ -36,11 +40,11 @@ function cli(...args) {
   });
 }
 
-function req(method, route, body) {
+function req(method, route, body, port = PORT) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const r = http.request(
-      { host: "127.0.0.1", port: PORT, method, path: route, headers: { "content-type": "application/json", host: `127.0.0.1:${PORT}` } },
+      { host: "127.0.0.1", port, method, path: route, headers: { "content-type": "application/json", host: `127.0.0.1:${port}` } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -132,14 +136,14 @@ test("hub: stays up, indexes checked and reviewed artifacts by project, hands fe
   assert.match(r.out, /status: open/);
   await req("POST", `/s/${id}/send`, { items: [{ kind: "annotation", target: "intro", component: "TextContent", note: "say more" }] });
   home = (await req("GET", "/")).data;
-  assert.match(home, /1 open/);
+  assert.match(home, /1 unanswered/);
 
   r = await cli("feedback", FILE);
   assert.match(r.out, /status: feedback/);
   assert.match(r.out, /annotation: intro \(TextContent\)/);
   assert.match(r.out, /note: say more/);
   home = (await req("GET", "/")).data;
-  assert.match(home, /1 received/);
+  assert.match(home, /1 unanswered/);
   // Received, so the next poll does not repeat it.
   const poll = JSON.parse((await req("POST", "/api/poll", { file: FILE, timeoutMs: 200 })).data);
   assert.notEqual(poll.status, "feedback");
@@ -149,7 +153,8 @@ test("hub: stays up, indexes checked and reviewed artifacts by project, hands fe
   r = await cli("feedback", FILE);
   assert.match(r.out, /status: none/);
   home = (await req("GET", "/")).data;
-  assert.match(home, /1 addressed/);
+  assert.match(home, /1 answered/);
+  assert.doesNotMatch(home, /unanswered/);
 
   r = await cli("hub", "list");
   assert.match(r.out, /plan\.html/);
@@ -167,4 +172,42 @@ test("hub: stays up, indexes checked and reviewed artifacts by project, hands fe
   r = await cli("hub", "status");
   assert.match(r.out, /hub: off/);
   assert.match(r.out, /artifacts: 1/);
+});
+
+test("hub on/off switches the server's mode; a hub whose index will not open does not restart it on every command", { skip: skip || false }, async () => {
+  const port = PORT + 1000;
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-mode-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
+  const health = async () => JSON.parse((await req("GET", "/api/health", undefined, port)).data);
+  try {
+    // An index that cannot be opened: the server runs without the hub, and stays up.
+    fs.mkdirSync(path.join(state, "hub.db"));
+    let r = await cliWith(env, "hub", "on");
+    assert.match(r.out, /status: on/);
+    let h = await health();
+    assert.equal(h.hub, false);
+    assert.equal(h.hubWanted, true);
+    const pid = h.pid;
+    await cliWith(env, FILE);
+    await cliWith(env, "reply", FILE, "--agent-reply", "x");
+    assert.equal((await health()).pid, pid, "no restart per command");
+    assert.match((await cliWith(env, "hub", "status")).out, /hub could not start/);
+
+    // Off, then a plain command: an ordinary server.
+    await cliWith(env, "hub", "off");
+    fs.rmSync(path.join(state, "hub.db"), { recursive: true });
+    await cliWith(env, FILE);
+    h = await health();
+    assert.equal(h.hub, false);
+    assert.equal(h.hubWanted, false);
+    // On again: the CLI replaces it with a hub.
+    await cliWith(env, "hub", "on");
+    h = await health();
+    assert.equal(h.hub, true);
+    assert.notEqual(h.pid, pid);
+  } finally {
+    await cliWith(env, "hub", "off");
+    await cliWith(env, "stop");
+    fs.rmSync(state, { recursive: true, force: true });
+  }
 });

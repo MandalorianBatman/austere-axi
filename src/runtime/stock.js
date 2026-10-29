@@ -35,7 +35,9 @@ export const REMOVED = [
 
 // Stock components that stay in the library but leave the prompt: rarely the
 // right choice in a review page. Each group's notes name them, and
-// `austere-axi components show <Name>` prints the signature on demand.
+// `austere-axi components show <Name>` prints the signature on demand. A
+// required prop of a core component must keep a core option (Text stays for
+// OverviewCardItem's top); test/library.test.js checks this.
 export const EXTENDED = [
   "ScatterChart",
   "ScatterSeries",
@@ -54,7 +56,6 @@ export const EXTENDED = [
   "TagBlock",
   "IconText",
   "BoldText",
-  "Text",
 ];
 
 /** Stock renderers replaced with page-appropriate behavior (props unchanged). */

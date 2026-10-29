@@ -24,17 +24,26 @@ import React from "react";
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
 
+// Lenient: a line without "|" is just the event; blank lines are skipped.
+function parseEvents(lines) {
+  return (Array.isArray(lines) ? lines : [])
+    .map((line) => String(line ?? "").trim())
+    .filter(Boolean)
+    .map((line) => {
+      if (!line.includes("|")) return { when: "", what: line, detail: "" };
+      const [when, what, ...rest] = line.split("|").map((s) => s.trim());
+      return { when, what, detail: rest.join(" | ") };
+    });
+}
+
 function TimelineView({ props }) {
-  const events = (props.events ?? []).map((line) => {
-    const [when, what, ...rest] = String(line).split("|").map((s) => s.trim());
-    return { when, what: what ?? "", detail: rest.join(" | ") };
-  });
+  const events = parseEvents(props.events);
   return (
     <ol className="pack-timeline">
       {events.map((e, i) => (
         // data-austere-part makes each event its own annotation target.
         <li key={i} data-austere-part={e.what || e.when}>
-          <time>{e.when}</time>
+          {e.when ? <time>{e.when}</time> : null}
           <strong>{e.what}</strong>
           {e.detail ? <span>{e.detail}</span> : null}
         </li>
@@ -50,30 +59,45 @@ export default austereComponent({
   props: z.object({
     events: z.array(z.string()),
   }),
-  description: 'Vertical timeline. events are "when | what | detail" strings, oldest first.',
+  description: 'Vertical timeline. events are "when | what | detail" strings (detail optional), oldest first. A click reaches the agent as the event.',
   renderer: TimelineView,
   example: \`launch = Timeline(["Mon | Freeze | branch cut", "Wed | Canary | 5% of traffic", "Fri | GA"])\`,
 });
 `,
-  "src/style.css": `.pack-timeline {
-  font-size: 14px;
+  "src/style.css": `/* Use the page's theme variables (--austere-*, --openui-*) so the pack fits the
+   dark theme, and prefix every class with the pack's name. */
+.pack-timeline {
   list-style: none;
   margin: 0;
-  padding: 0 0 0 14px;
-  border-left: 2px solid #34343a;
+  padding: 0 0 0 18px;
+  border-left: 2px solid var(--austere-line);
   display: grid;
-  gap: 12px;
+  gap: 16px;
+  font-size: 14px;
+  min-width: 0;
 }
 .pack-timeline li {
+  position: relative;
   display: grid;
   gap: 2px;
+  overflow-wrap: anywhere;
+}
+.pack-timeline li::before {
+  content: "";
+  position: absolute;
+  left: -24px;
+  top: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--austere-accent);
 }
 .pack-timeline time {
   font-size: 12px;
-  color: #8b8b94;
+  color: var(--austere-muted);
 }
 .pack-timeline span {
-  color: #b4b4bc;
+  color: var(--austere-muted);
 }
 `,
 };

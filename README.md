@@ -115,7 +115,7 @@ austere-axi end <file>           end the review as the agent
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix]
 austere-axi patch <file>         merge statements from stdin into the program
-austere-axi spec [group|pack...] component reference (~5.7k tokens; groups narrow it)
+austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi export <file>        one self-contained HTML file, works offline
 austere-axi hub on|off|status|list|open   persistent server with an index of every artifact
@@ -134,7 +134,7 @@ Session rules follow lavish:
 
 ## Components and packs
 
-`spec` covers the components most pages need. Rarer ones (area and scatter charts, sliders, switches, editable tables, …) stay in the library but out of `spec`, which keeps it near 5.7k tokens. Each group's notes name them, and `components` finds them:
+`spec` covers the components most pages need. Rarer ones (area and scatter charts, sliders, switches, editable tables, …) stay in the library but out of `spec`, which keeps it near 5.8k tokens. Each group's notes name them, and `components` finds them:
 
 ```sh
 austere-axi components                  # every component, by group
@@ -159,7 +159,7 @@ A page that uses a pack names it in its head, so the page renders wherever it is
 - `check`, `spec` and `components` know the installed packs. Using a pack's component without declaring the pack is a `missing-pack` error, which `check --fix` resolves.
 - Mermaid is the first pack. It ships inside austere-axi and loads only when the program calls `Mermaid(...)`, so it needs no tag and existing pages are unchanged.
 
-**Trust.** A pack's code runs inside your review pages, where annotations and button presses also come from. Packs published under `@austere-axi/` install directly; any other npm pack needs `--trust`, after you have read it. A local folder counts as your own. A page with third-party packs says so above the artifact, and `poll` tells the agent its items could have come from that code.
+**Trust.** A pack's code runs inside your review pages, where annotations and button presses also come from. Packs published to npm under `@austere-axi/` install directly; any other npm pack, and any `.tgz`, needs `--trust`, after you have read it. A local folder counts as your own. A page with third-party packs says so above the artifact, and `poll` tells the agent its items could have come from that code.
 
 **Writing a pack.** `components new` writes a working pack with one component:
 
@@ -169,7 +169,7 @@ cd austere-pack-timeline && npm install && npm run build
 austere-axi components add .
 ```
 
-Components follow the core contract, `austereComponent` from `austere-axi/pack`: a PascalCase name, zod props in positional order (append-only once published), a one-line description and an example. The build maps React, zod and `austere-axi/pack` onto the page's copies. Publish with `npm publish`.
+Components follow the core contract, `austereComponent` from `austere-axi/pack`: a PascalCase name, zod props in positional order (append-only once published), a one-line description and an example. The build maps React, zod and `austere-axi/pack` onto the page's copies. It also loads the pack in Node to read its components, so build only code you trust, as with any npm script. Publish with `npm publish`.
 
 ## Hub
 
@@ -181,7 +181,7 @@ austere-axi hub list    # the same for an agent: [words] [--project dir]
 austere-axi hub off     # back to on-demand; the index stays
 ```
 
-For each artifact the home page shows whether a review is live, and how much feedback is open (not yet received by an agent), received, or addressed. The index is SQLite (`~/.austere-axi/hub.db`), mirrored from the session files, so the review loop does not depend on it. The hub needs Node 22.13 or later, for `node:sqlite`; everything else runs on Node 20.
+For each artifact the home page shows whether a review is live and how much of its feedback the agent has answered. The index is SQLite (`~/.austere-axi/hub.db`), mirrored from the session files, so the review loop does not depend on it. The hub needs Node 22.13 or later, for `node:sqlite`; everything else runs on Node 20.
 ### Environment
 
 | Variable | Default | |

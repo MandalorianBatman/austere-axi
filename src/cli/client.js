@@ -85,7 +85,7 @@ export async function ensureServer() {
   if (h && h.stateDir !== stateDir()) {
     throw new Error(`port ${port} is served by an austere-axi with another state dir (${h.stateDir}); set AUSTERE_AXI_PORT`);
   }
-  if (h && (versionGt(VERSION, h.version) || (VERSION === h.version && Boolean(h.hub) !== wantHub()))) {
+  if (h && (versionGt(VERSION, h.version) || (VERSION === h.version && Boolean(h.hubWanted ?? h.hub) !== hubEnabled()))) {
     // A newer CLI replaces an older server, and `hub on|off` switches its mode;
     // sessions persist on disk.
     const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!h.tailnet || x !== h.tailnet.ip));

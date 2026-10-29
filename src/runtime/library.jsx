@@ -76,15 +76,31 @@ export function buildLibrary(extra = [], { onSkip } = {}) {
       continue;
     }
     taken.add(c.name);
-    added.push(c);
+    added.push({ ...c, slots: c.slots ? [...c.slots] : c.slots });
   }
   const components = [...customComponents, ...added];
-  const curated = openuiLibrary.extend({
-    components: {
-      remove: REMOVED,
-      add: components.map((c) => (c.slots && c.slots.length ? { component: c.definition, slots: c.slots } : c.definition)),
-    },
-  });
+  const extendWith = () =>
+    openuiLibrary.extend({
+      components: {
+        remove: REMOVED,
+        add: components.map((c) => (c.slots && c.slots.length ? { component: c.definition, slots: c.slots } : c.definition)),
+      },
+    });
+  // A pack slot this library cannot place ("Nope.children") is dropped, not fatal:
+  // the component still works in a Stack, and the page still renders.
+  let curated;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      curated = extendWith();
+      break;
+    } catch (err) {
+      const m = /Slot "([^"]+)" for "([^"]+)"/.exec(String(err && err.message));
+      const victim = m && added.find((c) => c.name === m[2]);
+      if (!victim || attempt > 50) throw err;
+      onSkip?.(victim, `${victim.name}: ${String(err.message).replace(/^\[extend\] /, "")} It can still be used in a Stack.`);
+      victim.slots = victim.slots.filter((x) => x !== m[1]);
+    }
+  }
   const untagged = new Set([...STOCK_UNTAGGED, ...components.filter((c) => !c.tagged).map((c) => c.name)]);
   const overrides = Object.values(curated.components)
     .filter((c) => !untagged.has(c.name))

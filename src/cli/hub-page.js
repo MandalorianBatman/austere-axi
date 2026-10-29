@@ -22,12 +22,19 @@ function tilde(p) {
   return p === home || p.startsWith(home + path.sep) ? "~" + p.slice(home.length) : p;
 }
 
+/** Feedback in the reviewer's terms: answered by the agent or not (yet). */
 function counts(a) {
+  const waiting = a.open + a.received;
   const parts = [];
-  if (a.open) parts.push(`<b class="open">${a.open} open</b>`);
-  if (a.received) parts.push(`<b class="recv">${a.received} received</b>`);
-  if (a.addressed) parts.push(`<span>${a.addressed} addressed</span>`);
+  if (waiting) parts.push(`<b class="open">${waiting} unanswered</b>`);
+  if (a.addressed) parts.push(`${a.addressed} answered`);
   return parts.join(" · ");
+}
+
+/** A long path, shortened in the middle; the full one goes in a title. */
+function shortPath(p, max = 48) {
+  const t = tilde(p);
+  return t.length <= max ? t : `${t.slice(0, 16)}…${t.slice(t.length - (max - 17))}`;
 }
 
 function state(a) {
@@ -59,19 +66,20 @@ export function hubPage(rows, { version, q, project, stats }) {
           ([d, items]) =>
             `<h3>${escapeHtml(d)}</h3><ul>${items
               .map(
-                (a) => `<li>
-  <a href="/hub/open/${a.id}">${escapeHtml(a.title || path.basename(a.file))}</a>
-  <span class="meta">${escapeHtml(path.relative(proj, a.file) || path.basename(a.file))} · ${time(a.updated_at)} · ${state(a)}</span>
-  ${counts(a) ? `<span class="counts">${counts(a)}</span>` : ""}
-</li>`,
+                (a) => `<li><a href="/hub/open/${a.id}" title="${escapeHtml(a.file)}">
+  <strong>${escapeHtml(a.title || path.basename(a.file))}</strong>
+  <span class="meta">${escapeHtml(path.relative(proj, a.file) || path.basename(a.file))} · ${time(a.updated_at)} · ${state(a)}${
+    counts(a) ? ` · ${counts(a)}` : ""
+  }</span>
+</a></li>`,
               )
               .join("")}</ul>`,
         )
         .join("");
-      const unaddressed = list.reduce((n, a) => n + a.open + a.received, 0);
-      return `<section><h2><a href="/?project=${encodeURIComponent(proj)}">${escapeHtml(path.basename(proj) || proj)}</a> <small>${escapeHtml(tilde(proj))}</small>${
-        unaddressed ? ` <b class="open">${unaddressed} unaddressed</b>` : ""
-      }</h2>${body}</section>`;
+      const unanswered = list.reduce((n, a) => n + a.open + a.received, 0);
+      return `<section><h2><a href="/?project=${encodeURIComponent(proj)}">${escapeHtml(path.basename(proj) || proj)}</a> <small title="${escapeHtml(proj)}">${escapeHtml(
+        shortPath(proj),
+      )}</small>${unanswered ? ` <b class="open">${unanswered} unanswered</b>` : ""}</h2>${body}</section>`;
     })
     .join("");
   const filter = project ? `<p class="filter">Project ${escapeHtml(tilde(project))} · <a href="/">all projects</a></p>` : "";
@@ -87,17 +95,18 @@ h1{font-size:18px;font-weight:600;margin:0}h1 small{color:#77777f;font-weight:40
 form{margin:18px 0 8px}input{width:100%;box-sizing:border-box;background:#141417;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit}
 input:focus{outline:none;border-color:#5b6b99}
 section{margin-top:28px}h2{font-size:15px;font-weight:600;margin:0 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
-h2 a{color:#e8e8ec;text-decoration:none}h2 small{color:#6f6f78;font-weight:400;font-size:12px;overflow-wrap:anywhere}
-h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:#6f6f78;font-weight:600;margin:14px 0 2px}
-ul{list-style:none;padding:0;margin:0}li{display:grid;gap:1px;padding:9px 0;border-bottom:1px solid #1c1c20}
-li>a{color:#a9c1ff;text-decoration:none;font-weight:600;overflow-wrap:anywhere}li>a:hover{text-decoration:underline}
+h2 a{color:#e8e8ec;text-decoration:none}h2 small{color:#8a8a94;font-weight:400;font-size:12px;overflow-wrap:anywhere}
+h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:#8a8a94;font-weight:600;margin:14px 0 2px}
+ul{list-style:none;padding:0;margin:0}li{border-bottom:1px solid #1c1c20}
+li>a{display:grid;gap:2px;padding:10px 0;min-height:28px;text-decoration:none;color:inherit}
+li strong{color:#a9c1ff;font-weight:600;overflow-wrap:anywhere}li>a:hover strong{text-decoration:underline}
 .meta{color:#8a8a94;font-size:12px;overflow-wrap:anywhere}em{font-style:normal}em.live{color:#8fd19e}
-.counts{font-size:12px;color:#8a8a94}b{font-weight:600}b.open{color:#f2c46d;font-size:12px}b.recv{color:#a9c1ff}
+b{font-weight:600}b.open{color:#f2c46d;font-size:12px}
 .filter{color:#8a8a94;font-size:12.5px}.filter a{color:#a9c1ff}.empty{color:#8a8a94;margin-top:28px}
 </style></head>
 <body><main>
 <header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><span class="stats">${stats.artifacts} artifacts · ${stats.projects} projects${
-    stats.unaddressed ? ` · ${stats.unaddressed} unaddressed` : ""
+    stats.unanswered ? ` · ${stats.unanswered} unanswered` : ""
   }</span></header>
 <form method="get" action="/">${project ? `<input type="hidden" name="project" value="${escapeHtml(project)}">` : ""}<input type="search" name="q" value="${escapeHtml(q)}" placeholder="Search titles, files, projects" aria-label="Search"></form>
 ${filter}${sections || `<p class="empty">${empty}</p>`}

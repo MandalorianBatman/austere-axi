@@ -150,9 +150,16 @@ export async function buildPack({ dir, esbuild, outDir, name, version, coreNames
     if (!c || !c.definition) throw new Error(`pack ${name}: components must be austereComponent(...) results`);
   }
   const seen = new Set();
+  const parents = new Set([...coreNames, ...components.map((c) => c.name)]);
   for (const c of components) {
     if (seen.has(c.name)) throw new Error(`pack ${name}: two components are named ${c.name}`);
     seen.add(c.name);
+    for (const slot of c.slots || []) {
+      if (!/^[A-Z][A-Za-z0-9]*\.[a-z][A-Za-z0-9]*$/.test(slot)) throw new Error(`pack ${name}: ${c.name} slot ${JSON.stringify(slot)} is not "Parent.prop"`);
+      if (coreNames.length && !parents.has(slot.split(".")[0])) {
+        throw new Error(`pack ${name}: ${c.name} slot ${slot}: ${slot.split(".")[0]} is not a component here (core slots: ${CONTENT_SLOTS.join(", ")})`);
+      }
+    }
     if (coreNames.includes(c.name)) warnings.push(`${c.name} is already a core component; pages will use the core one`);
     if (c.slots !== null && !c.example) warnings.push(`${c.name} has no example; add one so \`components show\` can teach it`);
   }

@@ -5,7 +5,7 @@
 }
 .austere-mermaid-svg {
   display: flex;
-  justify-content: center;
+  justify-content: safe center;
   overflow-x: auto;
   padding: 8px 0;
 }

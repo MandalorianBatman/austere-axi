@@ -14,8 +14,19 @@ export const PACK_API = 1;
 /** Packs published by austere-axi itself; anything else needs --trust to install. */
 export const TRUSTED_SCOPE = "@austere-axi/";
 
+/** By name alone: what the registry (and so jsDelivr) serves under @austere-axi/ is ours. */
 export function isFirstParty(name) {
   return name.startsWith(TRUSTED_SCOPE);
+}
+
+/**
+ * Whether a pack's code is someone else's. An installed pack goes by how it
+ * was installed (a folder or tarball can claim any name); one not installed
+ * here is fetched from the registry by name.
+ */
+export function isThirdParty(name, installed = findInstalled(name)) {
+  if (installed) return installed.trust !== "first-party";
+  return !isFirstParty(name);
 }
 
 function readJson(file, fallback) {
@@ -141,7 +152,16 @@ export function pagePacks(html) {
     else if (p.version !== d.version) mismatched.push({ ...d, installedVersion: p.version });
     else installed.push(p);
   }
-  return { declared, installed, missing, mismatched, thirdParty: declared.filter((d) => !isFirstParty(d.name)) };
+  // Declared with a hash that is not the installed build's (rebuilt and re-added at the same version).
+  const stale = declared.filter((d) => d.integrity && installed.some((p) => p.name === d.name && p.integrity !== d.integrity));
+  return {
+    declared,
+    installed,
+    missing,
+    mismatched,
+    stale,
+    thirdParty: declared.filter((d) => isThirdParty(d.name, installed.find((p) => p.name === d.name) || findInstalled(d.name))),
+  };
 }
 
 /** Installed pack that defines a component, for "declare this pack" hints. */

@@ -32,5 +32,5 @@ npm run shot -- <page> [--width 390] [--full] [--parts]   # needs Chrome or CHRO
   - Browser POST routes reject a foreign `Origin`.
   - Artifact files are served from the artifact's own directory only, with no dotfiles.
 - Tests that start the server, or read packs or the hub, set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.
-- Nothing a pack ships runs in the CLI or the server; pack code runs only in the sandboxed artifact frame.
+- Nothing an installed pack ships runs in the CLI or the server; its code runs only in the sandboxed artifact frame. (`components build` does load the pack being built, in Node, to read its components.)
 - Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `scripts/` and `test/` are maintainer-only.

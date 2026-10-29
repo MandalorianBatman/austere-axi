@@ -12,7 +12,7 @@ Read this whole file before writing code. The tests enforce the mechanical rules
 
 ## 1. Does it earn its place?
 
-Every component's signature, description and notes are part of the reference every agent reads (`austere-axi spec`). They cost tokens in every session, in every agent, for good. The budget is 5.75k tokens, enforced in `test/library.test.js`; the build prints the current size.
+Every component's signature, description and notes are part of the reference every agent reads (`austere-axi spec`). They cost tokens in every session, in every agent, for good. The budget is 5.8k tokens, enforced in `test/library.test.js`; the build prints the current size.
 
 Add a component only when all three hold:
 
