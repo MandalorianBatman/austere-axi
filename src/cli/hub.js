@@ -21,7 +21,7 @@ export function hubEnabled() {
 }
 
 export function setHubEnabled(enabled) {
-  fs.writeFileSync(hubConfigFile(), JSON.stringify({ enabled, changedAt: new Date().toISOString() }) + "\n");
+  fs.writeFileSync(hubConfigFile(), JSON.stringify({ enabled, changedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
 }
 
 export function hubDbFile() {
@@ -111,6 +111,8 @@ function itemText(it) {
 export class Hub {
   static async open(file = hubDbFile()) {
     const Database = await loadSqlite();
+    // Every note is in here: create it as the owner's only (SQLite gives its WAL the same mode).
+    if (file !== ":memory:") fs.closeSync(fs.openSync(file, "a", 0o600));
     return new Hub(new Database(file));
   }
 

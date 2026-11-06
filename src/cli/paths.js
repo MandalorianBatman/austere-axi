@@ -29,7 +29,8 @@ export function assetPath(name) {
 
 export function stateDir() {
   const dir = process.env.AUSTERE_AXI_STATE_DIR || path.join(os.homedir(), ".austere-axi");
-  fs.mkdirSync(dir, { recursive: true });
+  // Sessions, invites, the owner key and logs live here: the owner's only.
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
 

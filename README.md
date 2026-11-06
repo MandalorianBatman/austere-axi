@@ -205,14 +205,14 @@ Send the link to the teammate. The link needs Tailscale (or `AUSTERE_AXI_HOST`);
 
 Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token; the browser keeps it in a cookie and the address bar drops it.
 
-Off loopback, a request without a valid invite or the owner key is refused. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links stop working, delete that file and restart the server. Behind a reverse proxy on the same machine, every request looks local, so it acts as you.
+A request without a valid invite or the owner key is refused, on loopback too. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links stop working, delete that file and restart the server. A reverse proxy on the same machine gets no owner rights from looking local.
 
 ## Environment
 
 | Variable | Default | |
 |---|---|---|
 | `AUSTERE_AXI_PORT` | `4388` | server port |
-| `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | sessions, server log |
+| `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | sessions, owner key, server log (created mode 0700) |
 | `AUSTERE_AXI_NO_OPEN` | | `1` = never open a browser |
 | `AUSTERE_AXI_HOST` | | extra bind address (never `0.0.0.0`) |
 | `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |
@@ -227,7 +227,9 @@ Off loopback, a request without a valid invite or the owner key is refused. The 
 
 The server binds to loopback, plus the Tailscale IP when Tailscale is up. It never binds to all interfaces.
 
-- `/api/*` answers only loopback callers and refuses browser requests.
+- Loopback is not the owner: other OS users on the machine can reach it too. The owner key in `owner.key` (mode 0600) is.
+  - `/api/*` answers only loopback callers that send the owner key, and refuses browser requests. `/api/health` needs no key; it proves the server holds the key with an HMAC of the CLI's nonce, so the CLI never talks to another program on its port.
+  - When the CLI opens your browser, it goes through a mode-0600 file in the state dir that hands the key to the server, which sets a cookie; the key is never on a command line. A printed `url` works in a browser that already has the cookie. Elsewhere, open the page with the CLI once.
 - `Host` headers must be on an allowlist (DNS-rebinding defense).
 - Browser routes that change state refuse a foreign `Origin`.
 - Invite tokens are random, compared in constant time, and kept out of the log. A reviewer link can only add notes to its own page. See [Team review](#team-review).

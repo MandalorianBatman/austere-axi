@@ -28,7 +28,8 @@ npm run shot -- <page> [--width 390] [--full] [--parts]   # needs Chrome or CHRO
 - The component reference has a token budget (`test/library.test.js`). Raise it only deliberately.
 - The served artifact must equal the file on disk, except for the runtime `<script>` tag.
 - The server binds to loopback, plus the Tailscale IP when Tailscale is up, and never to `0.0.0.0`.
-  - `/api/*` answers loopback callers only.
+  - `/api/*` answers loopback callers only, and only with the owner key (`x-austere-key`), except `/api/health`.
+  - Loopback is not the owner; the owner key (header or cookie) is. Never put the key on a command line or in printed output.
   - Browser POST routes reject a foreign `Origin`.
   - Artifact files are served from the artifact's own directory only, with no dotfiles.
 - Tests that start the server, or read packs or the hub, set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.

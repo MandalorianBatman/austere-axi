@@ -10,10 +10,13 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { launchBrowser } from "../../scripts/lib/browser.mjs";
+import { ownerKey } from "../../src/cli/invites.js";
+import { launcherFile } from "../../src/cli/client.js";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-team-browser-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-team-browser-work-"));
 const FILE = path.join(WORK, "plan.html");
+const KEY = ownerKey(STATE);
 let port;
 let server;
 let browser;
@@ -32,7 +35,7 @@ function freePort() {
 function api(route, body, timeoutMs = 0) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
-    const r = http.request({ host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json" } }, (res) => {
+    const r = http.request({ host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } }, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
       res.on("end", () => resolve(JSON.parse(data)));
@@ -100,7 +103,7 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
   const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   try {
     const owner = await ownerCtx.newPage();
-    await owner.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+    await owner.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${KEY}`);
     await owner.waitForSelector(".composer textarea");
 
     // The teammate follows the link; the token leaves the address bar.
@@ -141,5 +144,26 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
   } finally {
     await ownerCtx.close();
     await guestCtx.close();
+  }
+});
+
+test("the CLI's launcher file signs the browser in as the owner", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { session } = await api("/api/open", { file: FILE });
+  const ctx = await browser.newContext();
+  const saved = process.env.AUSTERE_AXI_STATE_DIR;
+  process.env.AUSTERE_AXI_STATE_DIR = STATE;
+  try {
+    const launcher = launcherFile(`http://127.0.0.1:${port}/s/${session.id}`);
+    const page = await ctx.newPage();
+    await page.goto(`file://${launcher}`);
+    await page.waitForURL(`http://127.0.0.1:${port}/s/${session.id}`);
+    await page.waitForSelector(".composer textarea");
+    assert.ok(!page.url().includes("key="), "the key leaves the address bar");
+    assert.ok((await ctx.cookies()).some((c) => c.name === "austere_owner"));
+  } finally {
+    if (saved === undefined) delete process.env.AUSTERE_AXI_STATE_DIR;
+    else process.env.AUSTERE_AXI_STATE_DIR = saved;
+    await ctx.close();
   }
 });
