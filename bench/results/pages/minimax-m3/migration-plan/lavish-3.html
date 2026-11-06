@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en" data-theme="luxury" data-lavish-annotate="off">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Session Migration Plan Review</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :where(.grid, .flex) > * { min-width: 0; }
+    :where(p, h1, h2, h3, li, td, th, .badge) { overflow-wrap: anywhere; }
+    :where(img, svg) { max-width: 100%; height: auto; }
+    .page-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(18rem, 0.75fr);
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .route-flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .route-node {
+      min-height: 5.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      text-align: center;
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 14%, transparent);
+      border-radius: 0.75rem;
+      background: var(--color-base-200);
+      padding: 0.75rem;
+    }
+    .route-arrow { text-align: center; color: var(--color-base-content); opacity: 0.55; }
+    .phase-line {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+    .phase-line::before {
+      content: "";
+      position: absolute;
+      top: 1.25rem;
+      left: 10%;
+      right: 10%;
+      height: 2px;
+      background: color-mix(in oklab, var(--color-primary) 42%, transparent);
+    }
+    .phase {
+      position: relative;
+      z-index: 1;
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+      border-radius: 0.75rem;
+      background: var(--color-base-100);
+      padding: 1rem;
+    }
+    .phase-number {
+      display: grid;
+      place-items: center;
+      width: 2.5rem;
+      height: 2.5rem;
+      margin-bottom: 0.75rem;
+      border-radius: 999px;
+      background: var(--color-primary);
+      color: var(--color-primary-content);
+      font-weight: 700;
+    }
+    .strategy-option {
+      border: 2px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+      border-radius: 1rem;
+      background: var(--color-base-100);
+      padding: 1rem;
+      transition: border-color 150ms ease, background-color 150ms ease;
+    }
+    .strategy-option:has(input:checked) {
+      border-color: var(--color-primary);
+      background: color-mix(in oklab, var(--color-primary) 8%, var(--color-base-100));
+    }
+    .decision-status {
+      min-height: 2.5rem;
+    }
+    @media (max-width: 900px) {
+      .page-grid { grid-template-columns: minmax(0, 1fr); }
+      .route-flow { grid-template-columns: minmax(0, 1fr); }
+      .route-arrow { transform: rotate(90deg); }
+      .phase-line { grid-template-columns: minmax(0, 1fr); }
+      .phase-line::before { display: none; }
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-base-200 text-base-content">
+  <main class="mx-auto max-w-7xl p-4 sm:p-6 lg:p-10">
+    <header class="mb-8 rounded-box border border-base-content/10 bg-base-100 p-6 shadow-sm lg:p-8">
+      <div class="mb-4 flex flex-wrap items-center gap-2">
+        <span class="badge badge-primary badge-soft">Migration plan</span>
+        <span class="badge badge-warning badge-soft">Decision required</span>
+      </div>
+      <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Move user sessions from Redis to Postgres</h1>
+      <p class="mt-3 max-w-3xl text-base leading-relaxed text-base-content/70">
+        Review the migration, approve the plan, and choose a rollout strategy.
+      </p>
+    </header>
+
+    <div class="page-grid">
+      <div class="space-y-6">
+        <section class="card border border-base-content/10 bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h2 class="card-title">Why this migration</h2>
+            <p class="leading-relaxed text-base-content/75">
+              Sessions live only in Redis and are lost on failover. Last month, that forced
+              <strong class="text-base-content">38,214 users</strong> to log in again.
+            </p>
+            <div class="mt-3 grid gap-3 sm:grid-cols-3">
+              <div class="rounded-box bg-base-200 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-base-content/55">Users affected</div>
+                <div class="mt-1 text-2xl font-bold">38,214</div>
+              </div>
+              <div class="rounded-box bg-base-200 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-base-content/55">Auth p99 today</div>
+                <div class="mt-1 text-2xl font-bold">41 ms</div>
+              </div>
+              <div class="rounded-box bg-base-200 p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide text-base-content/55">Auth p99 target</div>
+                <div class="mt-1 text-2xl font-bold">≤ 45 ms</div>
+              </div>
+            </div>
+            <div class="alert alert-success alert-soft mt-4">
+              <span>Goal: durable sessions, no forced logout, and auth p99 at or under 45 ms.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card border border-base-content/10 bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h2 class="card-title">Request path after the change</h2>
+            <p class="text-sm text-base-content/65">Redis remains a read-through cache in front of Postgres.</p>
+            <div class="mt-4 route-flow" aria-label="Request flow">
+              <div class="route-node" id="client">
+                <span class="font-semibold">Client</span>
+              </div>
+              <div class="route-arrow" aria-hidden="true">→</div>
+              <div class="route-node" id="api">
+                <span class="font-semibold">API</span>
+                <span class="text-xs text-base-content/60">Node · port 8080</span>
+              </div>
+              <div class="route-arrow" aria-hidden="true">→</div>
+              <div class="route-node" id="postgres">
+                <span class="font-semibold">Postgres</span>
+                <span class="text-xs text-base-content/60">New “sessions” table</span>
+              </div>
+            </div>
+            <div class="mt-4 rounded-box border border-info/30 bg-info/10 p-4">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div class="font-semibold">Redis</div>
+                  <div class="text-sm text-base-content/65">Read-through cache in front of Postgres</div>
+                </div>
+                <span class="badge badge-info badge-soft">Cache retained</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card border border-base-content/10 bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h2 class="card-title">Migration phases</h2>
+            <div class="mt-3 phase-line">
+              <article class="phase">
+                <div class="phase-number">1</div>
+                <h3 class="font-semibold">Create table & dual-write</h3>
+                <p class="mt-1 text-sm text-base-content/65">Create the sessions table and dual-write.</p>
+                <span class="badge badge-ghost badge-sm mt-3">1 week</span>
+              </article>
+              <article class="phase">
+                <div class="phase-number">2</div>
+                <h3 class="font-semibold">Backfill sessions</h3>
+                <p class="mt-1 text-sm text-base-content/65">Backfill existing sessions.</p>
+                <span class="badge badge-ghost badge-sm mt-3">2 days</span>
+              </article>
+              <article class="phase">
+                <div class="phase-number">3</div>
+                <h3 class="font-semibold">Switch reads</h3>
+                <p class="mt-1 text-sm text-base-content/65">Switch reads to Postgres behind the sessions_pg flag.</p>
+                <span class="badge badge-ghost badge-sm mt-3">1 week</span>
+              </article>
+              <article class="phase">
+                <div class="phase-number">4</div>
+                <h3 class="font-semibold">Remove Redis writes</h3>
+                <p class="mt-1 text-sm text-base-content/65">Remove Redis writes.</p>
+                <span class="badge badge-ghost badge-sm mt-3">1 day</span>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="card border border-base-content/10 bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h2 class="card-title">Risks and mitigations</h2>
+            <div class="mt-2 overflow-x-auto rounded-box border border-base-content/10">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Risk</th>
+                    <th>Mitigation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Write latency on login</td>
+                    <td>Async write with a 50 ms timeout</td>
+                  </tr>
+                  <tr>
+                    <td>Table bloat from expired rows</td>
+                    <td>Nightly partition drop</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-4 flex items-center justify-between rounded-box bg-base-200 p-4">
+              <span class="font-medium">Extra cost</span>
+              <span class="text-xl font-bold">$140/month</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="space-y-6 lg:sticky lg:top-6">
+        <section class="card border border-primary/30 bg-base-100 shadow-sm">
+          <div class="card-body">
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <h2 class="card-title">Reviewer decision</h2>
+              <span class="badge badge-warning badge-soft">Required</span>
+            </div>
+
+            <form id="review-form" data-lavish-question="session-migration-rollout">
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Approve the migration plan</legend>
+                <label class="label cursor-pointer justify-start gap-3 rounded-box border border-base-content/10 p-3">
+                  <input type="radio" name="approval" value="approved" class="radio radio-primary" required>
+                  <span>
+                    <span class="block font-semibold">Approve plan</span>
+                    <span class="block text-sm text-base-content/60">Approve the migration as described.</span>
+                  </span>
+                </label>
+                <label class="label cursor-pointer justify-start gap-3 rounded-box border border-base-content/10 p-3">
+                  <input type="radio" name="approval" value="not-approved" class="radio radio-primary">
+                  <span>
+                    <span class="block font-semibold">Do not approve</span>
+                    <span class="block text-sm text-base-content/60">Do not approve the plan in its current form.</span>
+                  </span>
+                </label>
+              </fieldset>
+
+              <fieldset class="fieldset mt-5">
+                <legend class="fieldset-legend">Choose a rollout strategy</legend>
+                <div class="space-y-3">
+                  <label class="strategy-option block cursor-pointer">
+                    <span class="flex items-start gap-3">
+                      <input type="radio" name="rollout" value="Big bang" class="radio radio-primary mt-1" required>
+                      <span>
+                        <span class="flex flex-wrap items-center gap-2">
+                          <span class="font-bold">Big bang</span>
+                          <span class="badge badge-error badge-soft badge-sm">High risk</span>
+                        </span>
+                        <span class="mt-1 block text-sm text-base-content/65">One deploy.</span>
+                      </span>
+                    </span>
+                  </label>
+                  <label class="strategy-option block cursor-pointer">
+                    <span class="flex items-start gap-3">
+                      <input type="radio" name="rollout" value="Dual-write" class="radio radio-primary mt-1">
+                      <span>
+                        <span class="flex flex-wrap items-center gap-2">
+                          <span class="font-bold">Dual-write</span>
+                          <span class="badge badge-success badge-soft badge-sm">Low risk</span>
+                        </span>
+                        <span class="mt-1 block text-sm text-base-content/65">Gradual.</span>
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <button type="submit" class="btn btn-primary btn-block mt-5">
+                Send approval and strategy
+              </button>
+
+              <p class="mt-3 min-h-10 text-sm text-base-content/60" data-decision-status role="status" aria-live="polite">
+                Select an approval decision and a rollout strategy before sending.
+              </p>
+            </form>
+          </div>
+        </section>
+
+        <section class="card border border-base-content/10 bg-base-100 shadow-sm">
+          <div class="card-body">
+            <h2 class="card-title text-base">Decision summary</h2>
+            <dl class="space-y-3 text-sm">
+              <div>
+                <dt class="text-base-content/55">Plan approval</dt>
+                <dd class="font-semibold" data-summary-approval>Not selected</dd>
+              </div>
+              <div>
+                <dt class="text-base-content/55">Rollout strategy</dt>
+                <dd class="font-semibold" data-summary-rollout>Not selected</dd>
+              </div>
+              <div>
+                <dt class="text-base-content/55">Expected result</dt>
+                <dd class="text-base-content/75">Durable sessions with no forced logout; auth p99 target ≤ 45 ms.</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        <div class="rounded-box border border-base-content/10 bg-base-100 p-4">
+          <button type="button" class="btn btn-ghost btn-sm" id="copy-answers">
+            Copy all answers
+          </button>
+          <span class="ml-2 text-sm text-base-content/60" data-copy-status role="status" aria-live="polite"></span>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById('review-form');
+    const status = form.querySelector('[data-decision-status]');
+    const approvalSummary = document.querySelector('[data-summary-approval]');
+    const rolloutSummary = document.querySelector('[data-summary-rollout]');
+
+    function updateSummary() {
+      const approval = form.querySelector('input[name="approval"]:checked');
+      const rollout = form.querySelector('input[name="rollout"]:checked');
+
+      approvalSummary.textContent = approval
+        ? (approval.value === 'approved' ? 'Approved' : 'Not approved')
+        : 'Not selected';
+
+      rolloutSummary.textContent = rollout ? rollout.value : 'Not selected';
+
+      status.textContent = approval && rollout
+        ? `Ready to send: ${approvalSummary.textContent} · ${rollout.value} rollout.`
+        : 'Select an approval decision and a rollout strategy before sending.';
+    }
+
+    form.addEventListener('change', updateSummary);
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const approval = data.get('approval');
+      const rollout = data.get('rollout');
+
+      if (!approval || !rollout) {
+        status.textContent = 'Choose an approval decision and a rollout strategy.';
+        return;
+      }
+
+      const approvalText = approval === 'approved' ? 'Approved' : 'Not approved';
+      const message = `Session migration decision: ${approvalText}. Rollout strategy: ${rollout}.`;
+      const details = {
+        tag: 'decision',
+        text: message,
+        element: form,
+        data: {
+          question: 'session-migration-rollout',
+          approval,
+          rolloutStrategy: rollout
+        }
+      };
+
+      if (window.lavish?.queuePrompt) {
+        window.lavish.queuePrompt(message, details);
+        status.textContent = 'Decision queued. Send it to the agent when ready.';
+      } else {
+        const output = `${message}\n\nApproval: ${approval}\nRollout strategy: ${rollout}`;
+        navigator.clipboard?.writeText(output).then(() => {
+          status.textContent = 'Decision copied to the clipboard. Paste it to the agent.';
+        }).catch(() => {
+          status.textContent = 'Decision ready: ' + message;
+        });
+      }
+    });
+
+    document.getElementById('copy-answers').addEventListener('click', async () => {
+      const data = new FormData(form);
+      const approval = data.get('approval');
+      const rollout = data.get('rollout');
+      const copyStatus = document.querySelector('[data-copy-status]');
+
+      if (!approval || !rollout) {
+        copyStatus.textContent = 'No complete answers to copy yet.';
+        return;
+      }
+
+      const approvalText = approval === 'approved' ? 'Approved' : 'Not approved';
+      const output = `Plan approval: ${approvalText}\nRollout strategy: ${rollout}`;
+
+      try {
+        await navigator.clipboard.writeText(output);
+        copyStatus.textContent = 'Answers copied.';
+      } catch {
+        copyStatus.textContent = output;
+      }
+    });
+
+    updateSummary();
+  </script>
+</body>
+</html>

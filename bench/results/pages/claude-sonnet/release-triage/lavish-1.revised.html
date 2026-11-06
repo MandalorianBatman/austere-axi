@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en" data-theme="luxury" data-lavish-annotate="off">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release 3.8 bug triage</title>
+<!-- Design source: step 3 (Lavish-recommended Tailwind v4 + DaisyUI v5, luxury theme). The user said no existing design system applies, so there was no project design system to match. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, li, td, th, .badge, .label) { overflow-wrap: anywhere; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+</style>
+</head>
+<body>
+<main class="mx-auto max-w-6xl p-6 lg:p-10">
+
+  <header class="mb-6">
+    <p class="text-sm opacity-70">Release 3.8 &middot; Bug triage</p>
+    <h1 class="text-3xl font-bold lg:text-4xl">Decide each open bug, then send all five at once</h1>
+  </header>
+
+  <section class="mb-6 grid gap-4 md:grid-cols-3" style="grid-template-columns: repeat(auto-fit, minmax(0, 1fr));">
+    <div class="alert alert-warning alert-soft" role="alert">
+      <span><strong>Code freeze:</strong> Wednesday 18:00</span>
+    </div>
+    <div class="alert alert-info alert-soft" role="alert">
+      <span><strong>Release 3.8 ships:</strong> Thursday</span>
+    </div>
+    <div class="alert alert-soft" role="status">
+      <span><strong>Suggested:</strong> fix BUG-311, BUG-318 and BUG-330; defer BUG-322 and BUG-327</span>
+    </div>
+  </section>
+
+  <form id="triage" data-lavish-question="release-3.8-triage" class="card card-border bg-base-200">
+    <div class="card-body gap-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="card-title">Open bugs</h2>
+        <div class="flex flex-wrap items-center gap-2">
+          <span id="count" class="badge badge-outline">0 of 5 decided</span>
+          <button type="button" id="apply-suggestion" class="btn btn-sm btn-outline">Fill in my suggestion</button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-100">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Bug</th>
+              <th>Title</th>
+              <th>Severity</th>
+              <th>Users affected</th>
+              <th>Fix estimate</th>
+              <th>Suggested</th>
+              <th>Decision</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-bug="BUG-311" data-title="Checkout button disabled after coupon removal" data-suggest="fix for 3.8">
+              <td class="font-mono font-bold whitespace-nowrap">BUG-311</td>
+              <td class="min-w-48">Checkout button disabled after coupon removal</td>
+              <td><span class="badge badge-error">High</span></td>
+              <td>~4% of carts</td>
+              <td>0.5 day</td>
+              <td><span class="badge badge-soft badge-success">fix for 3.8</span></td>
+              <td>
+                <fieldset class="flex flex-col gap-1 min-w-40">
+                  <legend class="sr-only">Decision for BUG-311</legend>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-311" value="fix for 3.8"> fix for 3.8</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-311" value="defer to 3.9"> defer to 3.9</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-311" value="won't fix"> won't fix</label>
+                </fieldset>
+              </td>
+            </tr>
+            <tr data-bug="BUG-318" data-title="Dark mode: unreadable table headers in Reports" data-suggest="fix for 3.8">
+              <td class="font-mono font-bold whitespace-nowrap">BUG-318</td>
+              <td class="min-w-48">Dark mode: unreadable table headers in Reports</td>
+              <td><span class="badge badge-info">Low</span></td>
+              <td>Reports users</td>
+              <td>1 hour</td>
+              <td><span class="badge badge-soft badge-success">fix for 3.8</span></td>
+              <td>
+                <fieldset class="flex flex-col gap-1 min-w-40">
+                  <legend class="sr-only">Decision for BUG-318</legend>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-318" value="fix for 3.8"> fix for 3.8</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-318" value="defer to 3.9"> defer to 3.9</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-318" value="won't fix"> won't fix</label>
+                </fieldset>
+              </td>
+            </tr>
+            <tr data-bug="BUG-322" data-title="CSV export drops rows over 10,000" data-suggest="defer to 3.9">
+              <td class="font-mono font-bold whitespace-nowrap">BUG-322</td>
+              <td class="min-w-48">CSV export drops rows over 10,000</td>
+              <td><span class="badge badge-warning">Medium</span></td>
+              <td>120 accounts</td>
+              <td>2 days</td>
+              <td><span class="badge badge-soft badge-warning">defer to 3.9</span></td>
+              <td>
+                <fieldset class="flex flex-col gap-1 min-w-40">
+                  <legend class="sr-only">Decision for BUG-322</legend>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-322" value="fix for 3.8"> fix for 3.8</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-322" value="defer to 3.9"> defer to 3.9</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-322" value="won't fix"> won't fix</label>
+                </fieldset>
+              </td>
+            </tr>
+            <tr data-bug="BUG-327" data-title="Push notification sent twice on Android 15" data-suggest="defer to 3.9">
+              <td class="font-mono font-bold whitespace-nowrap">BUG-327</td>
+              <td class="min-w-48">Push notification sent twice on Android 15</td>
+              <td><span class="badge badge-warning">Medium</span></td>
+              <td>~9% of Android</td>
+              <td>unknown</td>
+              <td><span class="badge badge-soft badge-warning">defer to 3.9</span></td>
+              <td>
+                <fieldset class="flex flex-col gap-1 min-w-40">
+                  <legend class="sr-only">Decision for BUG-327</legend>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-327" value="fix for 3.8"> fix for 3.8</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-327" value="defer to 3.9"> defer to 3.9</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-327" value="won't fix"> won't fix</label>
+                </fieldset>
+              </td>
+            </tr>
+            <tr data-bug="BUG-330" data-title="Password reset email links expire after 5 minutes instead of 60" data-suggest="fix for 3.8">
+              <td class="font-mono font-bold whitespace-nowrap">BUG-330</td>
+              <td class="min-w-48">Password reset email links expire after 5 minutes instead of 60</td>
+              <td><span class="badge badge-error">High</span></td>
+              <td>All users who reset a password</td>
+              <td>1 hour</td>
+              <td><span class="badge badge-soft badge-success">fix for 3.8</span></td>
+              <td>
+                <fieldset class="flex flex-col gap-1 min-w-40">
+                  <legend class="sr-only">Decision for BUG-330</legend>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-330" value="fix for 3.8"> fix for 3.8</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-330" value="defer to 3.9"> defer to 3.9</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-330" value="won't fix"> won't fix</label>
+                </fieldset>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="submit" class="btn btn-primary">Queue all 5 decisions</button>
+        <span id="status" role="status" aria-live="polite" class="text-sm opacity-80">Nothing selected yet. Selections stay local until you queue them.</span>
+      </div>
+    </div>
+  </form>
+</main>
+
+<script>
+(function () {
+  var form = document.getElementById('triage');
+  var rows = Array.prototype.slice.call(form.querySelectorAll('tr[data-bug]'));
+  var count = document.getElementById('count');
+  var status = document.getElementById('status');
+  var queued = false;
+
+  function read() {
+    return rows.map(function (row) {
+      var id = row.getAttribute('data-bug');
+      var checked = form.querySelector('input[name="' + id + '"]:checked');
+      return { id: id, label: row.getAttribute('data-title'), disposition: checked ? checked.value : null };
+    });
+  }
+
+  function refresh() {
+    var items = read();
+    var n = items.filter(function (i) { return i.disposition; }).length;
+    count.textContent = n + ' of 5 decided';
+    count.className = 'badge ' + (n === 5 ? 'badge-success' : 'badge-outline');
+    if (queued) {
+      status.textContent = 'Changed since queued. Queue again to replace the earlier answer.';
+      queued = false;
+    } else if (n === 5) {
+      status.textContent = 'All 5 selected locally. Not queued yet.';
+    } else {
+      status.textContent = n + ' selected locally. Choose a decision for every bug before queuing.';
+    }
+  }
+
+  form.addEventListener('change', refresh);
+
+  document.getElementById('apply-suggestion').addEventListener('click', function () {
+    rows.forEach(function (row) {
+      var radio = form.querySelector('input[name="' + row.getAttribute('data-bug') + '"][value="' + row.getAttribute('data-suggest') + '"]');
+      if (radio) radio.checked = true;
+    });
+    queued = false;
+    refresh();
+  });
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var items = read();
+    var missing = items.filter(function (i) { return !i.disposition; }).map(function (i) { return i.id; });
+    if (missing.length) {
+      status.textContent = 'Still needs a decision: ' + missing.join(', ');
+      return;
+    }
+    if (!window.lavish || !window.lavish.queuePrompt) {
+      status.textContent = 'Lavish is not connected, so nothing was queued.';
+      return;
+    }
+    var summary = items.map(function (i) { return i.id + ': ' + i.disposition; }).join('; ');
+    window.lavish.queuePrompt(
+      'Apply these release 3.8 triage decisions and return an item-by-item receipt. Account for every submitted bug ID before reporting completion. ' + summary,
+      {
+        tag: 'triage',
+        text: 'Release 3.8 triage: ' + items.length + ' bugs',
+        element: form,
+        queueKey: 'release-3.8-triage',
+        data: { items: items }
+      }
+    );
+    queued = true;
+    status.textContent = 'Queued all 5 decisions. Press Send to Agent to deliver them.';
+  });
+
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #482 review: Add user search endpoint</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, li, td, th, .badge) { overflow-wrap: anywhere; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+</style>
+</head>
+<body class="bg-base-100 text-base-content">
+<main class="mx-auto max-w-6xl p-6 lg:p-10 space-y-8">
+
+  <header class="space-y-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <span class="badge badge-error badge-lg font-bold">Verdict: Request changes</span>
+      <span class="text-sm opacity-70">Review of PR #482</span>
+    </div>
+    <h1 class="text-3xl font-bold">Add user search endpoint</h1>
+    <p class="font-mono text-sm opacity-80">src/routes/users.js</p>
+  </header>
+
+  <section class="stats stats-vertical sm:stats-horizontal shadow bg-base-200 w-full">
+    <div class="stat">
+      <div class="stat-title">Findings</div>
+      <div class="stat-value">4</div>
+      <div class="stat-desc">1 Blocker, 2 Medium, 1 Low</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Change size</div>
+      <div class="stat-value text-2xl">+9 -1</div>
+      <div class="stat-desc">src/routes/users.js</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Tests</div>
+      <div class="stat-value text-2xl">31 passed</div>
+      <div class="stat-desc">No test covers /users/export</div>
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-xl font-bold">Findings</h2>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
+      <table class="table">
+        <thead>
+          <tr><th>#</th><th>Severity</th><th>Finding</th><th>Location</th></tr>
+        </thead>
+        <tbody>
+          <tr id="f1">
+            <td>1</td>
+            <td><span class="badge badge-error">Blocker</span></td>
+            <td><strong>SQL injection.</strong> The query concatenates <code>req.query.q</code> into the SQL string. Fix: use a parameterized query (<a class="link" href="#fix">see the fix below</a>).</td>
+            <td class="font-mono text-sm">line 18</td>
+          </tr>
+          <tr id="f2">
+            <td>2</td>
+            <td><span class="badge badge-warning">Medium</span></td>
+            <td><strong>No pagination.</strong> The search returns every matching row; with 2.1M users this can time out.</td>
+            <td class="font-mono text-sm">/users search route</td>
+          </tr>
+          <tr id="f3">
+            <td>3</td>
+            <td><span class="badge badge-warning">Medium</span></td>
+            <td><strong>Email exposed.</strong> The email column is returned to any logged-in user. Return only id and name.</td>
+            <td class="font-mono text-sm">line 18</td>
+          </tr>
+          <tr id="f4">
+            <td>4</td>
+            <td><span class="badge badge-info">Low</span></td>
+            <td><strong>Missing test.</strong> <code>/users/export</code> has no test.</td>
+            <td class="font-mono text-sm">/users/export route</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-xl font-bold">Diff with findings in place</h2>
+    <p class="text-sm opacity-80">
+      <span class="font-mono">src/routes/users.js</span> (JavaScript): each finding is attached under the line it refers to.
+    </p>
+    <div id="diff" class="rounded-box overflow-hidden border border-base-content/10"></div>
+    <div id="diff-error" class="alert alert-warning hidden" role="alert">
+      <span>The diff viewer could not load (it needs network access to esm.sh). The findings table above still applies.</span>
+    </div>
+  </section>
+
+  <section id="fix" class="space-y-3">
+    <h2 class="text-xl font-bold">Fix for finding 1 (Blocker)</h2>
+    <p class="text-sm opacity-80">
+      <span class="font-mono">src/routes/users.js</span>: replace the concatenated query with a parameterized one, <code>WHERE name ILIKE $1</code>, passing <code>%${q}%</code> as the value.
+    </p>
+    <div id="fix-code" class="rounded-box overflow-hidden border border-base-content/10"></div>
+  </section>
+
+</main>
+
+<script type="module">
+  import { File, FileDiff, parsePatchFiles } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+
+  const patch = `diff --git a/src/routes/users.js b/src/routes/users.js
+--- a/src/routes/users.js
++++ b/src/routes/users.js
+@@ -12,7 +12,15 @@ router.get("/users/:id", async (req, res) => {
+   res.json(user);
+ });
+ 
+-router.get("/users", listUsers);
++router.get("/users", async (req, res) => {
++  const q = req.query.q;
++  const rows = await db.query(
++    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"
++  );
++  res.json(rows);
++});
++
++router.get("/users/export", exportUsers);
+ 
+ module.exports = router;
+`;
+
+  const findings = {
+    1: { sev: "Blocker", cls: "alert-error", text: "SQL injection. The query concatenates req.query.q into the SQL string. Fix: use a parameterized query, WHERE name ILIKE $1 with the value %${q}% (see the fix below)." },
+    2: { sev: "Medium", cls: "alert-warning", text: "No pagination. The search returns every matching row; with 2.1M users this can time out." },
+    3: { sev: "Medium", cls: "alert-warning", text: "The email column is returned to any logged-in user. Return only id and name." },
+    4: { sev: "Low", cls: "alert-info", text: "/users/export has no test." },
+  };
+
+  const lineAnnotations = [
+    { side: "additions", lineNumber: 15, metadata: { id: 2 } },
+    { side: "additions", lineNumber: 18, metadata: { id: 1 } },
+    { side: "additions", lineNumber: 18, metadata: { id: 3 } },
+    { side: "additions", lineNumber: 23, metadata: { id: 4 } },
+  ];
+
+  try {
+    const fileDiff = parsePatchFiles(patch)[0].files[0];
+    const options = {
+      theme: { light: "github-light", dark: "github-dark" },
+      themeType: "dark",
+      overflow: "wrap",
+      diffStyle: "unified",
+      renderAnnotation(annotation) {
+        const f = findings[annotation.metadata.id];
+        const el = document.createElement("div");
+        el.className = "alert alert-soft " + f.cls + " m-2 text-sm";
+        el.setAttribute("role", "note");
+        el.style.whiteSpace = "normal";
+        el.textContent = "Finding " + annotation.metadata.id + " (" + f.sev + "): " + f.text;
+        return el;
+      },
+    };
+    new FileDiff(options).render({
+      fileDiff,
+      lineAnnotations,
+      containerWrapper: document.querySelector("#diff"),
+    });
+
+    const fixContents = [
+      "const rows = await db.query(",
+      "  \"SELECT id, name, email FROM users WHERE name ILIKE $1\",",
+      "  [`%${q}%`]",
+      ");",
+      "",
+    ].join("\n");
+    new File({
+      theme: { light: "github-light", dark: "github-dark" },
+      themeType: "dark",
+      overflow: "wrap",
+    }).render({
+      containerWrapper: document.querySelector("#fix-code"),
+      file: { name: "src/routes/users.js", contents: fixContents },
+    });
+  } catch (e) {
+    console.error(e);
+    document.querySelector("#diff-error").classList.remove("hidden");
+  }
+</script>
+</body>
+</html>

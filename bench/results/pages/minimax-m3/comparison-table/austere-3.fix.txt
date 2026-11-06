@@ -1,0 +1,12 @@
+```openui
+qdrantOverview = OverviewCardItem("qdrant", qdrantHeading, qdrantMetric)
+qdrantHeading = IconText(Icon("circle-gauge"), "info", "m", "Qdrant", "Best latency per dollar")
+qdrantMetric = MetricIndicatorInline("44 ms p95", "$1,250 estimated monthly cost")
+pineconeOverview = OverviewCardItem("pinecone", pineconeHeading, pineconeMetric)
+pineconeHeading = IconText(Icon("zap"), "success", "m", "Pinecone", "Lowest latency, no ops")
+pineconeMetric = MetricIndicatorInline("38 ms p95", "$3,100 estimated monthly cost")
+pineconeChoice = CheckBoxItem("Pinecone", "38 ms p95, $3,100, managed only, proprietary", "pinecone")
+weaviateChoice = CheckBoxItem("Weaviate", "61 ms p95, $1,900, managed or self-host, BSD-3", "weaviate")
+qdrantChoice = CheckBoxItem("Qdrant", "44 ms p95, $1,250, managed or self-host, Apache-2.0", "qdrant")
+milvusChoice = CheckBoxItem("Milvus", "52 ms p95, $1,400 plus ops time, self-host, Apache-2.0", "milvus")
+```

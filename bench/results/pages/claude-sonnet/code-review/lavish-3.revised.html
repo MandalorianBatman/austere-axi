@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review: PR #482 Add user search endpoint</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, td, th, .badge) { overflow-wrap: anywhere; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+  .finding-note { border-left: 4px solid; padding: .5rem .75rem; margin: .25rem 0; font-family: system-ui, sans-serif; font-size: .85rem; line-height: 1.4; background: rgba(127,127,127,.12); }
+  .finding-note.high { border-color: var(--color-error); }
+  .finding-note.medium { border-color: var(--color-warning); }
+  .finding-note.low { border-color: var(--color-info); }
+</style>
+</head>
+<body>
+<main class="mx-auto max-w-7xl p-4 lg:p-8">
+
+  <header class="mb-6">
+    <p class="text-sm opacity-70">Pull request review</p>
+    <h1 class="text-3xl font-bold">PR #482: Add user search endpoint</h1>
+    <p class="mt-1 font-mono text-sm opacity-80">src/routes/users.js</p>
+  </header>
+
+  <section class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+    <div role="alert" class="alert alert-error alert-soft">
+      <div>
+        <h2 class="text-xl font-bold">Verdict: request changes</h2>
+        <p>One blocker, the SQL injection, must be fixed before this can merge. Two medium and one low finding are also listed below.</p>
+      </div>
+    </div>
+    <div class="stats stats-vertical sm:stats-horizontal shadow">
+      <div class="stat"><div class="stat-title">Diff</div><div class="stat-value text-2xl">+9 -1</div></div>
+      <div class="stat"><div class="stat-title">Tests</div><div class="stat-value text-2xl">31</div><div class="stat-desc">passed</div></div>
+      <div class="stat"><div class="stat-title">Findings</div><div class="stat-value text-2xl">4</div><div class="stat-desc">1 blocker, 2 medium, 1 low</div></div>
+    </div>
+  </section>
+
+  <div class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+
+    <section aria-labelledby="findings-h">
+      <h2 id="findings-h" class="mb-3 text-xl font-bold">Findings</h2>
+      <div class="flex flex-col gap-3">
+
+        <article id="f1" class="card card-border border-error bg-base-200">
+          <div class="card-body p-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="badge badge-error">BLOCKER</span>
+              <span class="text-sm opacity-70">Finding 1 &middot; line 18</span>
+            </div>
+            <h3 class="card-title text-base">SQL injection</h3>
+            <p>The query concatenates <code>req.query.q</code> into the SQL string (line 18).</p>
+            <p class="text-sm font-semibold">Fix: parameterized query</p>
+            <p class="text-sm">Use <code>WHERE name ILIKE $1</code> and pass the value <code>%${q}%</code> as a parameter.</p>
+            <div id="fix" class="overflow-x-auto rounded-box border border-base-content/10"></div>
+          </div>
+        </article>
+
+        <article id="f2" class="card card-border border-warning bg-base-200">
+          <div class="card-body p-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="badge badge-warning">MEDIUM</span>
+              <span class="text-sm opacity-70">Finding 2 &middot; search query</span>
+            </div>
+            <h3 class="card-title text-base">No pagination</h3>
+            <p>The search returns every matching row. With 2.1M users this can time out.</p>
+          </div>
+        </article>
+
+        <article id="f3" class="card card-border border-warning bg-base-200">
+          <div class="card-body p-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="badge badge-warning">MEDIUM</span>
+              <span class="text-sm opacity-70">Finding 3 &middot; line 18</span>
+            </div>
+            <h3 class="card-title text-base">Email returned to any logged-in user</h3>
+            <p>The email column is returned to any logged-in user (line 18). Return only <code>id</code> and <code>name</code>.</p>
+          </div>
+        </article>
+
+        <article id="f4" class="card card-border border-info bg-base-200">
+          <div class="card-body p-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="badge badge-info">LOW</span>
+              <span class="text-sm opacity-70">Finding 4 &middot; <code>/users/export</code></span>
+            </div>
+            <h3 class="card-title text-base">No test for /users/export</h3>
+            <p><code>/users/export</code> has no test.</p>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <section aria-labelledby="diff-h">
+      <h2 id="diff-h" class="mb-1 text-xl font-bold">Diff</h2>
+      <p class="mb-3 text-sm opacity-80">
+        <span class="font-mono">src/routes/users.js</span> &middot; JavaScript &middot; findings are annotated on the lines they refer to.
+      </p>
+      <div id="diff" class="overflow-x-auto rounded-box border border-base-content/10"></div>
+      <div id="diff-fallback" class="hidden alert alert-warning mt-3" role="alert">
+        <span>The diff viewer could not be loaded (network needed for esm.sh). Findings on the left still apply to the lines noted.</span>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<script type="module">
+  const patch = `diff --git a/src/routes/users.js b/src/routes/users.js
+--- a/src/routes/users.js
++++ b/src/routes/users.js
+@@ -12,7 +12,15 @@ router.get("/users/:id", async (req, res) => {
+   res.json(user);
+ });
+ 
+-router.get("/users", listUsers);
++router.get("/users", async (req, res) => {
++  const q = req.query.q;
++  const rows = await db.query(
++    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"
++  );
++  res.json(rows);
++});
++
++router.get("/users/export", exportUsers);
+ 
+ module.exports = router;
+`;
+
+  const notes = [
+    { lineNumber: 17, id: "f2", level: "medium", label: "MEDIUM - Finding 2", text: "No pagination: returns every matching row; with 2.1M users this can time out." },
+    { lineNumber: 18, id: "f1", level: "high", label: "BLOCKER - Finding 1", text: "SQL injection: req.query.q is concatenated into the SQL string." },
+    { lineNumber: 18, id: "f3", level: "medium", label: "MEDIUM - Finding 3", text: "email is returned to any logged-in user. Return only id and name." },
+    { lineNumber: 23, id: "f4", level: "low", label: "LOW - Finding 4", text: "/users/export has no test." },
+  ];
+
+  try {
+    const { File, FileDiff, parsePatchFiles } = await import("https://esm.sh/@pierre/diffs@1.2.10?bundle");
+    const fileDiff = parsePatchFiles(patch)[0].files[0];
+
+    const diff = new FileDiff({
+      theme: { light: "github-light", dark: "github-dark" },
+      themeType: "dark",
+      overflow: "wrap",
+      diffStyle: "split",
+      renderAnnotation(annotation) {
+        const n = annotation.metadata;
+        const el = document.createElement("div");
+        el.className = "finding-note " + n.level;
+        const strong = document.createElement("strong");
+        strong.textContent = n.label + ": ";
+        el.append(strong, document.createTextNode(n.text));
+        return el;
+      },
+    });
+
+    diff.render({
+      fileDiff,
+      containerWrapper: document.querySelector("#diff"),
+      lineAnnotations: notes.map((n) => ({ side: "additions", lineNumber: n.lineNumber, metadata: n })),
+    });
+
+    new File({
+      theme: { light: "github-light", dark: "github-dark" },
+      themeType: "dark",
+      overflow: "wrap",
+    }).render({
+      containerWrapper: document.querySelector("#fix"),
+      file: {
+        name: "src/routes/users.js",
+        contents: "const q = req.query.q;\nconst rows = await db.query(\n  \"SELECT id, name, email FROM users WHERE name ILIKE $1\",\n  [`%${q}%`]\n);\n",
+      },
+    });
+  } catch (err) {
+    console.error("Diff render failed:", err);
+    document.querySelector("#diff-fallback").classList.remove("hidden");
+  }
+</script>
+</body>
+</html>

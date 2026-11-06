@@ -36,12 +36,18 @@ The loop is the same as [lavish-axi](https://github.com/kunchenguid/lavish-axi).
 | | lavish-axi | austere-axi |
 |---|---|---|
 | Agent writes | Full HTML + CSS + SVG | OpenUI Lang statements |
-| After feedback | Writes the file again | Edits the named statements; the page patches in place |
+| After feedback | Edits the HTML; the page reloads | Edits the named statements; the page patches in place |
 | Feedback points at | CSS selector + text | Statement name and line, plus table cell, diff line, diagram node or selected text |
 | Validation | Layout audit in the browser | `austere-axi check`, in Node, no browser |
 | Look | Different for each agent | One dark design |
 
-Fewer output tokens means faster pages and lower cost.
+Fewer output tokens means faster pages and lower cost. From the [benchmark](docs/benchmark.md):
+
+<!-- bench:start -->
+Across 36 paired runs (6 review pages, 2 models), lavish-axi spent a median **3.2×** the output tokens of austere-axi to produce the same page, took **2.4×** as long and cost **2.5×** as much. Answering one reviewer note took **2.7×** the output tokens.
+<!-- bench:end -->
+
+The benchmark also shows where lavish-axi does better; read its caveats before quoting the numbers.
 
 ## Install
 
@@ -269,6 +275,8 @@ node dist/cli.mjs examples/session-migration.html
 Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/add-component`](.agents/skills/add-component/SKILL.md) to add a component, [`.agents/skills/review-change`](.agents/skills/review-change/SKILL.md) before you commit. Tests enforce the component rules: every component has a group, `spec` stays in its token budget, released prop orders are append-only (`npm run signatures`), and every example passes `check`.
 
 Visual checks: `npm run gallery`, `npm run shot`, and `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
+
+Benchmark against lavish-axi: `npm run bench` (needs model keys; see [docs/benchmark.md](docs/benchmark.md)). `npm run bench:report` rebuilds its tables from the committed results.
 
 **CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). **Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
 

@@ -1,0 +1,15 @@
+<<<<<<< SEARCH
+            <td class="col-proposed"><span class="badge badge-success badge-soft">High</span></td>
+          </tr>
+        </tbody>
+=======
+            <td class="col-proposed"><span class="badge badge-success badge-soft">High</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Monthly cost estimate <span class="block text-xs font-normal opacity-70">at our volume</span></th>
+            <td>about $2,400</td>
+            <td>about $900</td>
+            <td class="col-proposed"><strong>about $310</strong></td>
+          </tr>
+        </tbody>
+>>>>>>> REPLACE

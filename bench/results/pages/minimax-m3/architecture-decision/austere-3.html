@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Review ADR-017</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([reviewHeader, contextCard, optionsCard, proposalCard, consequencesCard, decisionCard], "column", "l")
+reviewHeader = Card([CardHeader("ADR-017: Event bus for order events", "Architecture decision review · Status: proposed"), headerFacts])
+headerFacts = EntityList([{left: "Decision", right: "Amazon SQS + SNS"}, {left: "Status", right: "Proposed"}, {left: "Scope", right: "Order events"}])
+contextCard = Card([CardHeader("Context", "Why an event bus is being considered"), contextText])
+contextText = MarkDownRenderer("The Orders service currently calls **Billing**, **Shipping**, and **Notifications** over HTTP in sequence. One slow call blocks checkout. Last quarter, this caused **3 incidents**.")
+optionsCard = Card([CardHeader("Options considered", "Throughput, replay, operational cost, and team experience"), optionsTable])
+optionsTable = Table([Col("Option", ["Kafka", "NATS JetStream", "Amazon SQS + SNS"]), Col("Throughput", ["1M msg/s", "200k msg/s", "Effectively unlimited"]), Col("Replay", ["Yes", "Yes", "No (14-day retention only)"]), Col("Ops cost", ["High (3-broker cluster)", "Medium", "Low (managed)"]), Col("Team experience", ["None", "One engineer", "High"])])
+proposalCard = Card([CardHeader("Proposed decision", "Amazon SQS + SNS"), proposalText, proposalFlow])
+proposalText = MarkDownRenderer("Orders publishes `order.placed` to an **SNS topic**. Billing, Shipping, and Notifications each read from their own **SQS queue**.")
+proposalFlow = Architecture([orders, sns, billingQueue, shippingQueue, notificationsQueue], [ordersToSns, snsToBilling, snsToShipping, snsToNotifications], "right")
+orders = Node("Orders", "backend", "Publishes order.placed")
+sns = Node("SNS topic", "messagebus", "order.placed")
+billingQueue = Node("Billing queue", "messagebus", "SQS")
+shippingQueue = Node("Shipping queue", "messagebus", "SQS")
+notificationsQueue = Node("Notifications queue", "messagebus", "SQS")
+ordersToSns = Edge(orders, sns, "Publishes", "emphasis")
+snsToBilling = Edge(sns, billingQueue, "Delivers", "dashed")
+snsToShipping = Edge(sns, shippingQueue, "Delivers", "dashed")
+snsToNotifications = Edge(sns, notificationsQueue, "Delivers", "dashed")
+consequencesCard = Card([CardHeader("Consequences", "Tradeoffs accepted with this proposal"), consequencesText])
+consequencesText = MarkDownRenderer("- **No event replay:** keep an outbox table in the Orders database.\n- **At-least-once delivery:** every consumer must be idempotent.")
+decisionCard = Card([CardHeader("Decision", "Accept or reject the proposed decision"), decisionCallout, decisionForm])
+decisionCallout = Callout("info", "Review requested", "Accept or reject Amazon SQS + SNS for ADR-017. An optional comment can explain the decision.")
+decisionForm = Form("adr017_decision", decisionButtons, [decisionField, commentField])
+decisionField = FormControl("Decision", RadioGroup("decision", [RadioItem("Accept", "Accept the proposed SQS + SNS decision", "accept"), RadioItem("Reject", "Reject the proposed SQS + SNS decision", "reject")], null, {required: true}))
+commentField = FormControl("Comment (optional)", TextArea("comment", "Add any context for the decision", 4))
+decisionButtons = Buttons([Button("Submit review", @ToAssistant("ADR-017 review submitted"), "primary")])
+</script>
+</body>
+</html>

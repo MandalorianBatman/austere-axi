@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vector Database Shortlist</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([overview, comparison, recommendation, shortlist], "column", "l")
+overview = Card([CardHeader("Vector database review", "Shortlist two options for semantic search over 40M document chunks"), overviewText, requirementFacts])
+overviewText = MarkDownRenderer("Compare four vector databases using only the supplied test results and product facts. The use case is **semantic search over 40M document chunks** with **768-dimensional embeddings** and a **p95 query latency target of 50 ms**.")
+requirementFacts = EntityList([{left: "Document chunks", right: "40M"}, {left: "Embedding dimensions", right: "768"}, {left: "p95 query latency target", right: "50 ms"}])
+comparison = Card([CardHeader("Full comparison", "Measured p95 latency, estimated cost, operational model, and product capabilities"), comparisonTable])
+comparisonTable = Table([Col("Vector database", ["Pinecone", "Weaviate", "Qdrant", "Milvus"]), Col("Hosting", ["Managed only", "Managed or self-host", "Managed or self-host", "Self-host (Zilliz for managed)"]), Col("p95 latency at 40M (our test)", ["38 ms", "61 ms", "44 ms", "52 ms"]), Col("Est. monthly cost", ["$3,100", "$1,900", "$1,250", "$1,400 + ops time"]), Col("Hybrid search", ["Yes", "Yes", "Yes", "Partial"]), Col("Metadata filtering", ["Good", "Good", "Very good", "Good"]), Col("License", ["Proprietary", "BSD-3", "Apache-2.0", "Apache-2.0"])])
+latencyCallout = Callout("info", "Latency target", "Pinecone and Qdrant are below the 50 ms p95 target in our test. Weaviate is above it, and Milvus is above it before accounting for any operational considerations.")
+recommendation = Card([CardHeader("Recommended shortlist", "Qdrant offers the best latency per dollar; Pinecone offers the lowest latency with no operations"), recommendationText, recommendationFacts])
+recommendationText = MarkDownRenderer("**Qdrant:** 44 ms p95 and $1,250 estimated monthly cost. It offers the best latency per dollar in the supplied comparison.\n\n**Pinecone:** 38 ms p95—the lowest measured latency—and managed-only hosting with no ops. It is the highest-cost option in the comparison.")
+recommendationFacts = EntityList([{left: "Qdrant p95 / est. monthly cost", right: "44 ms / $1,250"}, {left: "Pinecone p95 / est. monthly cost", right: "38 ms / $3,100"}])
+shortlist = Card([CardHeader("Reviewer shortlist", "Select exactly two options to send"), shortlistText, shortlistForm, shortlistButtons])
+shortlistText = MarkDownRenderer("The current recommendation is **Qdrant + Pinecone**. Change the selection if you prefer a different pair.")
+shortlistForm = Form("vectorDatabaseShortlist", shortlistButtons, [shortlistControl])
+shortlistControl = FormControl("Select two vector databases", CheckBoxGroup("databases", [CheckBoxItem("Pinecone", "Lowest p95 latency; managed only; no ops"), CheckBoxItem("Weaviate", "Managed or self-host; BSD-3 license"), CheckBoxItem("Qdrant", "Best latency per dollar; managed or self-host"), CheckBoxItem("Milvus", "Self-host; Zilliz offers managed hosting")], ["qdrant", "pinecone"]))
+shortlistButtons = Buttons([Button("Send shortlist", @ToAssistant("Vector database shortlist decision"), "primary")])
+</script>
+</body>
+</html>
