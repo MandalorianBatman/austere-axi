@@ -614,14 +614,32 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     if (!file.startsWith(ASSET_DIR + path.sep)) return send(res, 404, "not found");
     fs.stat(file, (err, st) => {
       if (err || !st.isFile()) return send(res, 404, "not found");
-      res.writeHead(200, {
+      streamFile(res, file, {
         "content-type": MIME[path.extname(file)] || "application/octet-stream",
         "content-length": st.size,
         "cache-control": "no-cache",
         "x-content-type-options": "nosniff",
       });
-      fs.createReadStream(file).pipe(res);
     });
+  }
+
+  /**
+   * Stream a file as a 200. Headers go out only once the file has opened, so an open failure
+   * (EACCES) is a 404 and a later read failure drops the connection. Without the error
+   * listener either one would be an unhandled 'error' event and exit the server.
+   */
+  function streamFile(res, file, headers) {
+    const rs = fs.createReadStream(file);
+    rs.once("open", () => {
+      res.writeHead(200, headers);
+      rs.pipe(res);
+    });
+    rs.once("error", (e) => {
+      log("error", "file stream", String(e?.message || e));
+      if (!res.headersSent) send(res, 404, "not found");
+      else res.destroy();
+    });
+    res.once("close", () => rs.destroy());
   }
 
   function serveArtifact(req, res, s, rest) {
@@ -639,19 +657,26 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     } catch {
       return send(res, 400, "bad path");
     }
+    if (decoded.includes("\0")) return send(res, 404, "not found");
     const file = path.resolve(dir, decoded);
     if (!file.startsWith(dir + path.sep) || decoded.split(/[/\\]/).some((p) => p.startsWith("."))) {
       return send(res, 404, "not found");
     }
-    fs.stat(file, (err, st) => {
-      if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
-      res.writeHead(200, {
-        "content-type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
-        "content-length": st.size,
-        "cache-control": "no-cache",
-        "x-content-type-options": "nosniff",
+    // The check above is lexical; a symlink inside the directory can still lead out of it.
+    fs.realpath(dir, (e1, realDir) => {
+      if (e1) return send(res, 404, "not found");
+      fs.realpath(file, (e2, real) => {
+        if (e2 || !real.startsWith(realDir + path.sep)) return send(res, 404, "not found");
+        fs.stat(real, (err, st) => {
+          if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
+          streamFile(res, real, {
+            "content-type": MIME[path.extname(real).toLowerCase()] || "application/octet-stream",
+            "content-length": st.size,
+            "cache-control": "no-cache",
+            "x-content-type-options": "nosniff",
+          });
+        });
       });
-      fs.createReadStream(file).pipe(res);
     });
   }
 
@@ -910,7 +935,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const server = http.createServer((req, res) => {
         handle(req, res).catch((err) => {
           log("error", req.method, req.url.split("?")[0], String(err?.stack || err));
-          if (!res.headersSent) send(res, err.status || 500, { error: String(err.message || err) });
+          if (!res.headersSent) send(res, err.status || 500, { error: err.status ? String(err.message) : "internal error" });
           else res.end();
         });
       });
