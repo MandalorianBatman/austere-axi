@@ -1,0 +1,105 @@
+<<<<<<< SEARCH
+          <p class="text-sm opacity-80">Self-host (Zilliz for managed), partial hybrid search, Apache-2.0. $1,400/mo plus ops time.</p>
+        </div>
+      </label>
+
+    </div>
+  </section>
+=======
+          <p class="text-sm opacity-80">Self-host (Zilliz for managed), partial hybrid search, Apache-2.0. $1,400/mo plus ops time.</p>
+        </div>
+      </label>
+
+      <label class="opt card card-border bg-base-200 cursor-pointer" data-opt="pgvector">
+        <div class="card-body gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="card-title">pgvector</h3>
+            <input type="checkbox" class="checkbox checkbox-primary" value="pgvector" aria-label="Shortlist pgvector">
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <span class="badge badge-soft badge-error">Misses target: 95 ms</span>
+          </div>
+          <p class="text-sm opacity-80">Self-host on our existing Postgres, hybrid search via tsvector, good metadata filtering, PostgreSQL license. About $400/mo.</p>
+        </div>
+      </label>
+
+    </div>
+  </section>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      <svg viewBox="0 0 600 190" role="img" aria-label="Bar chart of p95 latency: Pinecone 38 ms, Qdrant 44 ms, Milvus 52 ms, Weaviate 61 ms, with a 50 ms target line">
+=======
+      <svg viewBox="0 0 780 235" role="img" aria-label="Bar chart of p95 latency: Pinecone 38 ms, Qdrant 44 ms, Milvus 52 ms, Weaviate 61 ms, pgvector 95 ms, with a 50 ms target line">
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <text x="464" y="154" font-weight="700">61 ms</text>
+        </g>
+        <line x1="390" y1="8" x2="390" y2="170" stroke="currentColor" stroke-width="2" stroke-dasharray="5 4"/>
+        <text x="390" y="185" font-size="12" text-anchor="middle" fill="currentColor">Target 50 ms</text>
+=======
+          <text x="464" y="154" font-weight="700">61 ms</text>
+
+          <text x="0" y="193">pgvector</text>
+          <rect x="90" y="176" width="570" height="26" rx="4" style="fill: var(--color-error)"/>
+          <text x="668" y="194" font-weight="700">95 ms</text>
+        </g>
+        <line x1="390" y1="8" x2="390" y2="210" stroke="currentColor" stroke-width="2" stroke-dasharray="5 4"/>
+        <text x="390" y="226" font-size="12" text-anchor="middle" fill="currentColor">Target 50 ms</text>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+Green bars meet the target, red bars miss it. Pinecone and Qdrant pass; Milvus and Weaviate do not.</p>
+=======
+Green bars meet the target, red bars miss it. Pinecone and Qdrant pass; Milvus, Weaviate and pgvector do not.</p>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <th data-col="Milvus">Milvus</th>
+=======
+            <th data-col="Milvus">Milvus</th>
+            <th data-col="pgvector">pgvector</th>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus">Self-host (Zilliz for managed)</td>
+=======
+            <td data-col="Milvus">Self-host (Zilliz for managed)</td>
+            <td data-col="pgvector">Self-host on our existing Postgres</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus"><strong>52 ms</strong> (misses)</td>
+=======
+            <td data-col="Milvus"><strong>52 ms</strong> (misses)</td>
+            <td data-col="pgvector"><strong>95 ms</strong> (misses)</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus"><strong>$1,400</strong> + ops time</td>
+=======
+            <td data-col="Milvus"><strong>$1,400</strong> + ops time</td>
+            <td data-col="pgvector"><strong>About $400</strong></td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus">Partial</td>
+=======
+            <td data-col="Milvus">Partial</td>
+            <td data-col="pgvector">Yes (with tsvector)</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus">Good</td>
+=======
+            <td data-col="Milvus">Good</td>
+            <td data-col="pgvector">Good</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus">Apache-2.0</td>
+=======
+            <td data-col="Milvus">Apache-2.0</td>
+            <td data-col="pgvector">PostgreSQL</td>
+>>>>>>> REPLACE

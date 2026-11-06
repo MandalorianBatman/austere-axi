@@ -1,0 +1,9 @@
+<<<<<<< SEARCH
+            <td class="font-mono">INC-1047</td><td>Wed</td>
+            <td><span class="badge badge-soft badge-info">Sev3</span></td>
+            <td>12 min</td><td>Bad config push to the cart cache</td>
+=======
+            <td class="font-mono">INC-1047</td><td>Wed</td>
+            <td><span class="badge badge-soft badge-warning">Sev2</span></td>
+            <td>47 min</td><td>Bad config push to the cart cache · <a href="#" class="link link-primary font-mono">PM-1047</a></td>
+>>>>>>> REPLACE

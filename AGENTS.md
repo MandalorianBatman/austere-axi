@@ -19,6 +19,7 @@ npm run test:browser # real review loop in headless Chrome: render checks + ever
 npm run signatures   # record new component signatures (refuses breaking changes)
 npm run gallery      # .dev/gallery.html with every custom component's example
 npm run shot -- <page> [--width 390] [--full] [--parts]   # needs Chrome or CHROME_PATH
+npm run bench       # austere-axi vs lavish-axi benchmark (model keys from env); see docs/benchmark.md
 ```
 
 ## Rules
@@ -33,4 +34,4 @@ npm run shot -- <page> [--width 390] [--full] [--parts]   # needs Chrome or CHRO
   - Artifact files are served from the artifact's own directory only, with no dotfiles.
 - Tests that start the server, or read packs or the hub, set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.
 - Nothing an installed pack ships runs in the CLI or the server; its code runs only in the sandboxed artifact frame. (`components build` does load the pack being built, in Node, to read its components.)
-- Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `scripts/` and `test/` are maintainer-only.
+- Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `bench/`, `docs/`, `scripts/` and `test/` are maintainer-only.

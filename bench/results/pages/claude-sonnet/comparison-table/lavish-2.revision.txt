@@ -1,0 +1,119 @@
+<<<<<<< SEARCH
+    <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" id="cards">
+=======
+    <div class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5" id="cards">
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <p class="text-sm">44 ms p95, meets target. $1,250/mo, the lowest cost. Very good metadata filtering.</p>
+=======
+          <p class="text-sm">44 ms p95, meets target. $1,250/mo. Very good metadata filtering.</p>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <p class="text-sm">52 ms p95, 2 ms over target. $1,400/mo plus ops time. Hybrid search only partial.</p>
+        </div>
+      </label>
+    </div>
+=======
+          <p class="text-sm">52 ms p95, 2 ms over target. $1,400/mo plus ops time. Hybrid search only partial.</p>
+        </div>
+      </label>
+
+      <label class="card card-border bg-base-200 cursor-pointer" data-db="pgvector">
+        <div class="card-body gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="card-title">pgvector</h3>
+            <input type="checkbox" class="checkbox checkbox-primary pick" value="pgvector" aria-label="Shortlist pgvector">
+          </div>
+          <span class="badge badge-error badge-soft">Misses latency target</span>
+          <p class="text-sm">95 ms p95, 45 ms over target. About $400/mo, the lowest cost. Self-host on our existing Postgres. Hybrid search via tsvector. PostgreSQL license.</p>
+        </div>
+      </label>
+    </div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <div class="bar-track"><div class="bar-fill bg-success" style="width:54.3%"></div><div class="target-line" style="left:71.4%"></div></div>
+=======
+          <div class="bar-track"><div class="bar-fill bg-success" style="width:38%"></div><div class="target-line" style="left:50%"></div></div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <div class="bar-track"><div class="bar-fill bg-success" style="width:62.9%"></div><div class="target-line" style="left:71.4%"></div></div>
+=======
+          <div class="bar-track"><div class="bar-fill bg-success" style="width:44%"></div><div class="target-line" style="left:50%"></div></div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <div class="bar-track"><div class="bar-fill bg-error" style="width:74.3%"></div><div class="target-line" style="left:71.4%"></div></div>
+=======
+          <div class="bar-track"><div class="bar-fill bg-error" style="width:52%"></div><div class="target-line" style="left:50%"></div></div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <div class="bar-track"><div class="bar-fill bg-error" style="width:87.1%"></div><div class="target-line" style="left:71.4%"></div></div>
+          <span class="text-sm">61 ms · misses</span>
+=======
+          <div class="bar-track"><div class="bar-fill bg-error" style="width:61%"></div><div class="target-line" style="left:50%"></div></div>
+          <span class="text-sm">61 ms · misses</span>
+
+          <span class="font-semibold">pgvector</span>
+          <div class="bar-track"><div class="bar-fill bg-error" style="width:95%"></div><div class="target-line" style="left:50%"></div></div>
+          <span class="text-sm">95 ms · misses</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <th data-col="Milvus">Milvus</th>
+=======
+            <th data-col="Milvus">Milvus</th>
+            <th data-col="pgvector">pgvector</th>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus">Self-host (Zilliz for managed)</td>
+=======
+            <td data-col="Milvus">Self-host (Zilliz for managed)</td>
+            <td data-col="pgvector">Self-host on our existing Postgres</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus"><span class="badge badge-error badge-soft">✗ 52 ms</span></td>
+=======
+            <td data-col="Milvus"><span class="badge badge-error badge-soft">✗ 52 ms</span></td>
+            <td data-col="pgvector"><span class="badge badge-error badge-soft">✗ 95 ms</span></td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus">$1,400 + ops time</td>
+=======
+            <td data-col="Milvus">$1,400 + ops time</td>
+            <td data-col="pgvector">About $400</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus"><span class="badge badge-warning badge-soft">Partial</span></td>
+=======
+            <td data-col="Milvus"><span class="badge badge-warning badge-soft">Partial</span></td>
+            <td data-col="pgvector">Yes (with tsvector)</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus">Good</td>
+=======
+            <td data-col="Milvus">Good</td>
+            <td data-col="pgvector">Good</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="Milvus">Apache-2.0</td>
+=======
+            <td data-col="Milvus">Apache-2.0</td>
+            <td data-col="pgvector">PostgreSQL</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    <p class="text-sm opacity-70">Tradeoff to weigh: Pinecone is fastest and needs no ops but costs the most ($3,100) and is proprietary. Qdrant is the cheapest ($1,250) and still meets the target. Milvus's cost excludes ops time, which is not quantified here.</p>
+=======
+    <p class="text-sm opacity-70">Tradeoff to weigh: Pinecone is fastest and needs no ops but costs the most ($3,100) and is proprietary. Qdrant is the cheapest option that meets the target ($1,250). pgvector is the cheapest overall (about $400) and reuses our Postgres, but at 95 ms it misses the 50 ms target. Milvus's cost excludes ops time, which is not quantified here.</p>
+>>>>>>> REPLACE

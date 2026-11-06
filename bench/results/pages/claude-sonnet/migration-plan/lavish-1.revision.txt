@@ -1,0 +1,6 @@
+<<<<<<< SEARCH
+          <tr id="risk-bloat"><td>Table bloat from expired rows</td><td>Nightly partition drop</td></tr>
+=======
+          <tr id="risk-bloat"><td>Table bloat from expired rows</td><td>Nightly partition drop</td></tr>
+          <tr id="risk-pool"><td>Connection pool exhaustion during the dual-write phase</td><td>Put PgBouncer in transaction mode in front of Postgres</td></tr>
+>>>>>>> REPLACE

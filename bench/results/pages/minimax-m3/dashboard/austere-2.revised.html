@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Checkout Service Health — Week of 2026-10-26</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([overview, dailyPerformance, incidents, actions, reviewFocus], "column", "l")
+overview = Card([CardHeader("Checkout service health", "Weekly review · Week of 2026-10-26"), overviewMetrics, overviewSummary])
+overviewMetrics = OverviewCardBlock([requestsMetric, errorRateMetric, latencyMetric, errorBudgetMetric], "grid", true, null, "m")
+requestsMetric = OverviewCardItem("requests", IconText(Icon("arrow-up-right"), "neutral", "m", "Requests"), MetricIndicatorInline("48.2M", "Up 6% week over week"))
+errorRateMetric = OverviewCardItem("error-rate", IconText(Icon("circle-check"), "success", "m", "Error rate"), MetricIndicatorInline("0.21%", "SLO 0.5%"))
+latencyMetric = OverviewCardItem("latency", IconText(Icon("triangle-alert"), "warning", "m", "p95 latency"), MetricIndicatorInline("312 ms", "Target 300 ms · breached"))
+errorBudgetMetric = OverviewCardItem("error-budget", IconText(Icon("circle-dollar-sign"), "info", "m", "Error budget left this month"), MetricIndicatorInline("64%", null))
+overviewSummary = MarkDownRenderer("Checkout volume increased **6% week over week**. The error rate remains below its **0.5% SLO**, while **p95 latency breached the 300 ms target**. The monthly error budget has **64% remaining**.")
+dailyPerformance = Card([CardHeader("Daily performance", "Latency target: 300 ms"), dailyTabs])
+dailyTabs = Tabs([latencyTab, errorsTab])
+latencyTab = TabItem("latency", "p95 latency", [latencyChart, latencyTable])
+latencyChart = LineChart(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], [Series("p95 latency (ms)", [288, 295, 340, 331, 305, 297, 330])], "linear", "Day", "ms", 280)
+latencyTable = Table([Col("Day", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]), Col("p95 latency (ms)", [288, 295, 340, 331, 305, 297, 330], "number"), Col("Target", ["300", "300", "300", "300", "300", "300", "300"], "number")])
+errorsTab = TabItem("errors", "Daily errors", [errorsChart, errorsTable])
+errorsChart = BarChart(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], [Series("Errors", [9800, 10400, 15900, 12100, 9900, 8700, 9300])], "grouped", "Day", "Errors", 280)
+errorsTable = Table([Col("Day", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]), Col("Errors", ["9,800", "10,400", "15,900", "12,100", "9,900", "8,700", "9,300"], "number")])
+incidents = Card([CardHeader("Incidents", "Three incidents this week · two resolved · one investigating"), incidentTable])
+incidentTable = Table([Col("Incident", ["INC-1042", "INC-1047", "INC-1051"]), Col("Day", ["Tue", "Wed", "Sun"]), Col("Severity", ["Sev2", "Sev2", "Sev3"]), Col("Duration", ["38 min", "47 min", "Ongoing"]), Col("Summary", ["Payment provider timeouts", "Bad config push to the cart cache", "Elevated p95 from a slow inventory query"]), Col("Status", [resolvedIncident1042, resolvedIncident1047, investigatingIncident1051]), Col("Postmortem", ["—", "PM-1047", "—"])])
+resolvedIncident1042 = Tag("Resolved", null, "sm", "success")
+resolvedIncident1047 = Tag("Resolved", null, "sm", "success")
+investigatingIncident1051 = Tag("Investigating", null, "sm", "warning")
+actions = Card([CardHeader("Action items", "Owners and due dates"), actionTable])
+actionTable = Table([Col("Action", ["Add an index on inventory(sku, warehouse_id)", "Add a timeout alert for the payment provider"]), Col("Owner", ["Priya", "Marco"]), Col("Due", ["Nov 4", "Nov 6"]), Col("Status", ["Open", "Open"])])
+reviewFocus = Card([CardHeader("Monday review focus"), reviewFocusBody])
+reviewFocusBody = Stack([reviewFocusText, reviewFocusCallout], "column", "m")
+reviewFocusText = MarkDownRenderer("- Review the **ongoing** Sunday incident and the slow inventory query.\n- Track the **p95 latency breach** against the 300 ms target.\n- Confirm progress on both action items.")
+reviewFocusCallout = Callout("warning", "Open issue", "INC-1051 remains under investigation. The p95 latency target was breached for the week.")
+</script>
+</body>
+</html>

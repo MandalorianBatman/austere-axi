@@ -1,0 +1,76 @@
+<<<<<<< SEARCH
+      <span><strong>Verdict: request changes.</strong> One high-severity SQL injection and two medium issues need fixing before merge.</span>
+=======
+      <span><strong>Verdict: request changes.</strong> One blocker (SQL injection) and two medium issues need fixing before merge.</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+<div class="stat-desc">1 high · 2 medium · 1 low</div>
+=======
+<div class="stat-desc">1 blocker · 2 medium · 1 low</div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+<td><span class="badge badge-error">High</span></td>
+=======
+<td><span class="badge badge-error">Blocker</span></td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      { sev: "high", label: "High", n: 1,
+=======
+      { sev: "high", label: "Blocker", n: 1,
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    <p id="diff-error" class="alert alert-warning hidden"></p>
+  </section>
+=======
+    <p id="diff-error" class="alert alert-warning hidden"></p>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-xl font-bold">Suggested fix for finding 1 (Blocker)</h2>
+    <p class="text-sm opacity-80"><span class="font-mono">src/routes/users.js</span> — pass <code>q</code> as a bound parameter with <code>WHERE name ILIKE $1</code> and the value <code>%${q}%</code>, instead of concatenating it into the SQL string. The email column is left as-is here; it is covered separately by finding 3.</p>
+    <div id="fix" class="rounded-box overflow-hidden border border-base-content/10"></div>
+    <p id="fix-error" class="alert alert-warning hidden"></p>
+  </section>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+  import { FileDiff, parsePatchFiles } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+=======
+  import { File, FileDiff, parsePatchFiles } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    el.classList.remove("hidden");
+  }
+</script>
+=======
+    el.classList.remove("hidden");
+  }
+
+  try {
+    const fixContents = [
+      "const rows = await db.query(",
+      "  \"SELECT id, name, email FROM users WHERE name ILIKE $1\",",
+      "  [`%${q}%`]",
+      ");",
+      ""
+    ].join("\n");
+    new File({
+      theme: { light: "github-light", dark: "github-dark" },
+      themeType: "dark",
+      overflow: "wrap"
+    }).render({
+      containerWrapper: document.querySelector("#fix"),
+      file: { name: "src/routes/users.js", contents: fixContents }
+    });
+  } catch (err) {
+    const el = document.querySelector("#fix-error");
+    el.textContent = "Could not render the fix: " + err.message;
+    el.classList.remove("hidden");
+  }
+</script>
+>>>>>>> REPLACE
