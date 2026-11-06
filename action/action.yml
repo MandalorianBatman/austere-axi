@@ -32,7 +32,7 @@ inputs:
     description: Names the sticky comment. Use a different tag for each use of the action in one pull request.
     default: default
   github-token:
-    description: Token that posts the comment. Needs `pull-requests: write`.
+    description: "Token that posts the comment. Needs `pull-requests: write`."
     default: ${{ github.token }}
 
 outputs:
