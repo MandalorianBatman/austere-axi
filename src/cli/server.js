@@ -860,7 +860,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
     if ((sub === "/release" || sub === "/discard") && req.method === "POST") {
       const body = await readBody(req);
-      const ids = Array.isArray(body.ids) ? body.ids.map(String) : body.all ? null : [];
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : sub === "/discard" && body.all ? null : [];
       const done = sub === "/release" ? store.release(s, ids) : store.discard(s, ids);
       if (done.length) broadcastTranscript(s, done);
       const poll = polls.get(s.id);

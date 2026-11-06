@@ -407,6 +407,46 @@ test("a held note waits: poll and feedback skip it until the owner sends it", as
   await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ana" } });
 });
 
+test("releasing held notes needs explicit ids: a note the owner was never shown stays held", async () => {
+  const origin = `http://127.0.0.1:${srv.port}`;
+  const mal = await accept((await share("Mal")).data.link);
+  try {
+    const early = (await sendNote(mal, "UNSEEN-EARLY")).data.entry;
+    for (let n = 0; n < 200; n++) assert.equal((await sendNote(mal, `filler ${n}`)).status, 200);
+
+    // The owner's snapshot keeps only the last 200 entries, so the early note is not on screen.
+    const owner = stream(srv.port, `/s/${id}/events`);
+    let rendered;
+    try {
+      assert.ok(await until(() => owner.events.some((e) => e.name === "snapshot")));
+      rendered = owner.events.find((e) => e.name === "snapshot").data.transcript.filter((e) => e.held).map((e) => e.id);
+    } finally {
+      owner.close();
+    }
+    assert.equal(rendered.length, 200);
+    assert.ok(!rendered.includes(early.id), "the owner was not shown the early note");
+
+    // The bulk shortcut and an empty body release nothing.
+    assert.equal((await request(srv.port, "POST", `/s/${id}/release`, { body: { all: true }, headers: { origin } })).data.count, 0);
+    assert.equal((await request(srv.port, "POST", `/s/${id}/release`, { body: {}, headers: { origin } })).data.count, 0);
+    const feedbackFromMal = async () => (await request(srv.port, "POST", "/api/feedback", { body: { file: FILE, all: true, peek: true } })).data.entries.filter((e) => e.author === "Mal");
+    assert.equal((await feedbackFromMal()).length, 0);
+
+    // Send all posts the rendered ids: only those are released.
+    const released = await request(srv.port, "POST", `/s/${id}/release`, { body: { ids: rendered }, headers: { origin } });
+    assert.equal(released.data.count, 200);
+    const fb = await feedbackFromMal();
+    assert.equal(fb.length, 200);
+    assert.ok(!JSON.stringify(fb).includes("UNSEEN-EARLY"), "the unseen note never reached the agent");
+    // Drain what was released so later tests start from an empty queue.
+    await request(srv.port, "POST", "/api/poll", { body: { file: FILE, timeoutMs: 200 } });
+    await request(srv.port, "POST", "/api/reply", { body: { file: FILE, text: "done" } });
+  } finally {
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Mal" } });
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin } });
+  }
+});
+
 test("auto mode goes straight to the agent; discard keeps a note from it", async () => {
   const bo = await accept((await share("Bo", true)).data.link);
   const waiting = request(srv.port, "POST", "/api/poll", { body: { file: FILE, takeover: true } });
@@ -482,7 +522,7 @@ test("reviewers see their own held notes but not another reviewer's", async () =
     const fayPage = await request(srv.port, "GET", `/s/${id}`, { headers: { cookie: fay.cookie } });
     assert.equal(fayPage.status, 200);
 
-    await request(srv.port, "POST", `/s/${id}/release`, { body: { all: true }, headers: { origin } });
+    await request(srv.port, "POST", `/s/${id}/release`, { body: { ids: [sent.id] }, headers: { origin } });
     assert.ok(await until(() => fays.events.some((e) => e.name === "transcript" && e.data.entries.some((x) => x.id === sent.id && !x.held))), "once sent on, everyone sees it");
   } finally {
     evesStream.close();
