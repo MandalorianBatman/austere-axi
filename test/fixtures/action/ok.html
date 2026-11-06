@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Action fixture: retry backoff</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([summary, decide], "column", "l")
+summary = Card([CardHeader("Retry backoff", "1 file, +4 -1"), why])
+why = MarkDownRenderer("Retries fired back-to-back. This adds **exponential backoff with jitter**.")
+decide = Buttons([Button("Approve"), Button("Request changes")])
+</script>
+</body>
+</html>

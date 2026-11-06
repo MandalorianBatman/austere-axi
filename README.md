@@ -207,6 +207,47 @@ Trust model: anyone who has the link, and can reach your machine on the tailnet,
 
 Off loopback, a request without a valid invite or the owner key is refused. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links stop working, delete that file and restart the server. Behind a reverse proxy on the same machine, every request looks local, so it acts as you.
 
+## GitHub Action
+
+Post an austere review page on every pull request. The action runs `austere-axi check` on the pages you commit, exports each one as a self-contained HTML file with `austere-axi export`, uploads them as a workflow artifact, and posts or updates **one** comment on the PR with a summary and a download link.
+
+```yaml
+# .github/workflows/austere.yml
+name: austere review
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write   # to post the comment
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: MandalorianBatman/austere-axi/action@main   # pin a release tag or SHA once you settle
+        with:
+          pages: reviews/*.html
+```
+
+| Input | Default | |
+|---|---|---|
+| `pages` | required | paths or globs, one per line, relative to the workspace |
+| `version` | `latest` | austere-axi version from npm; pin it for reproducible runs |
+| `artifact-name` | `austere-review` | workflow artifact that holds the exported pages |
+| `retention-days` | repository default | artifact retention |
+| `comment` | `true` | `false` leaves only the artifact and the job summary |
+| `comment-tag` | `default` | names the sticky comment; use one per use of the action in the same PR |
+| `github-token` | `github.token` | needs `pull-requests: write` to comment |
+
+Outputs: `ok` (`true` when every page passed) and `artifact-url`.
+
+- **A failing check fails the job.** The `check` output, with each error's statement and line, is in the log and in the job summary; pages that passed are still exported.
+- **Fork PRs** get a read-only token, so the comment is skipped with a warning. The job summary and the artifact still carry the report.
+- **Triggers:** use `pull_request`. Do not use `pull_request_target` to run pages from a fork.
+- **Artifact:** GitHub zips it and requires a login to download it. Unzip and open the HTML in a browser; it works offline. A Pages preview is not part of the action.
+- The action lives in this repository, under `action/`, so one ref pins the action and the CLI contract it calls. `version` still picks the CLI.
+
 ## Environment
 
 | Variable | Default | |
@@ -264,13 +305,14 @@ node dist/cli.mjs examples/session-migration.html
 | `src/runtime/` | Library, annotation layer, review bridge, styles |
 | `src/chrome/` | Review UI around the page iframe |
 | `src/cli/` | CLI, server, sessions, `check`, `export`, packs, hub |
+| `action/` | The [GitHub Action](#github-action) (not published to npm) |
 | `skills/` | Published skills: `austere`, `austere-setup` |
 
 Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/add-component`](.agents/skills/add-component/SKILL.md) to add a component, [`.agents/skills/review-change`](.agents/skills/review-change/SKILL.md) before you commit. Tests enforce the component rules: every component has a group, `spec` stays in its token budget, released prop orders are append-only (`npm run signatures`), and every example passes `check`.
 
 Visual checks: `npm run gallery`, `npm run shot`, and `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
 
-**CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). **Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
+**CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). `action.yml` runs the GitHub Action on fixture pages (`test/fixtures/action/`). **Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
 
 ## License
 
