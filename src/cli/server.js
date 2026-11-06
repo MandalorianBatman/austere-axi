@@ -51,6 +51,10 @@ const MIME = {
 const SHORT_GRACE_MS = 10_000;
 const OWNER = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set(["annotation", "message"]);
+// A stalled event stream is dropped once this much is queued for it; reviewers get a few streams each.
+const SSE_MAX_BUFFER = 1 << 20;
+const SSE_MAX_PER_REVIEWER = 4;
+const SSE_MAX_PER_SESSION = 16;
 
 export async function runServer({ port, verbose = false, alsoListen = [] }) {
   const log = (...a) => {
@@ -219,11 +223,19 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return { id: s.id, file: s.file, title: s.title, status: s.status, endedBy: s.endedBy };
   }
 
+  /** Write to an event stream, and drop the client when its socket backs up instead of buffering for it. */
+  function sseWrite(set, c, msg) {
+    if (c.res.writableLength > SSE_MAX_BUFFER || (!c.res.write(msg) && c.res.writableLength > SSE_MAX_BUFFER)) {
+      set.delete(c);
+      c.res.destroy();
+    }
+  }
+
   function broadcast(id, event, data) {
     const set = clients.get(id);
     if (!set) return;
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    for (const c of set) c.res.write(msg);
+    for (const c of Array.from(set)) sseWrite(set, c, msg);
   }
 
   function broadcastPresence(s) {
@@ -233,9 +245,9 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   function broadcastTranscript(s, entries) {
     const set = clients.get(s.id);
     if (!set) return;
-    for (const c of set) {
+    for (const c of Array.from(set)) {
       const visible = entries.filter((e) => canSee(e, c.viewer));
-      if (visible.length) c.res.write(`event: transcript\ndata: ${JSON.stringify({ entries: visible })}\n\n`);
+      if (visible.length) sseWrite(set, c, `event: transcript\ndata: ${JSON.stringify({ entries: visible })}\n\n`);
     }
   }
 
@@ -793,6 +805,12 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     if (sub.startsWith("/a/")) return serveArtifact(req, res, s, sub.slice(3));
 
     if (sub === "/events") {
+      if (reviewer) {
+        const open = Array.from(clients.get(s.id) || []).filter((c) => c.viewer.role === "reviewer");
+        if (open.length >= SSE_MAX_PER_SESSION || open.filter((c) => c.viewer.token === who.token).length >= SSE_MAX_PER_REVIEWER) {
+          return send(res, 429, { error: "too many event streams" });
+        }
+      }
       watch(s);
       res.writeHead(200, {
         "content-type": "text/event-stream",

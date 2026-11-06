@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
@@ -557,5 +558,95 @@ test("off loopback, the hub and pages need the owner key or an invite", { skip: 
     assert.equal(held.status, 403, "dropping the cookie does not make a reviewer the owner");
   } finally {
     await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ana" } });
+  }
+});
+
+// ── event stream limits ──
+
+/** An event stream that is never read: its socket buffers fill and the server has to cope. Resolves with the HTTP status line. */
+function stalledStream(port, cookie) {
+  return new Promise((resolve, reject) => {
+    const sock = net.connect(port, "127.0.0.1", () => {
+      sock.write(`GET /s/${id}/events HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nCookie: ${cookie}\r\n\r\n`);
+    });
+    sock.once("data", (d) => {
+      sock.pause();
+      resolve({ sock, status: Number(/^HTTP\/1\.1 (\d+)/.exec(d.toString())?.[1]) });
+    });
+    sock.on("error", () => {});
+    sock.once("close", () => reject(new Error("closed before responding")));
+  });
+}
+
+const browsers = async () => (await request(srv.port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id).browsers;
+
+test("an event stream that never reads is dropped once its backlog passes the cap", async () => {
+  const eve = await accept((await share("Eve")).data.link);
+  const socks = [];
+  try {
+    for (let i = 0; i < 4; i++) {
+      const s = await stalledStream(srv.port, eve.cookie);
+      assert.equal(s.status, 200);
+      socks.push(s.sock);
+    }
+    assert.equal(await browsers(), 4);
+    const big = "x".repeat(3_000_000);
+    let posts = 0;
+    while ((await browsers()) > 0 && posts < 40) {
+      assert.equal((await sendNote(eve, big)).status, 200);
+      posts++;
+    }
+    assert.equal(await browsers(), 0, `all four stalled streams are dropped (after ${posts} posts)`);
+  } finally {
+    for (const s of socks) s.destroy();
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Eve" } });
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+  }
+});
+
+test("a reviewer gets a few event streams, and the whole session a few more", async () => {
+  const fay = await accept((await share("Fay")).data.link);
+  const stalled = [];
+  try {
+    for (let i = 0; i < 4; i++) stalled.push((await stalledStream(srv.port, fay.cookie)).sock);
+    const fifth = await stalledStream(srv.port, fay.cookie).catch(() => null);
+    assert.equal(fifth?.status, 429, "a fifth stream for the same invite is refused");
+    fifth?.sock.destroy();
+
+    // Another reviewer is not affected by Fay's streams, but the session has its own ceiling.
+    const others = [];
+    for (let i = 0; i < 12; i++) {
+      const g = await accept((await share(`Guest${i}`)).data.link);
+      others.push(g);
+      for (let j = 0; j < 4; j++) {
+        const s = await stalledStream(srv.port, g.cookie).catch(() => null);
+        if (!s || s.status !== 200) {
+          s?.sock.destroy();
+          assert.ok(i >= 3, "the session ceiling is reached only after several reviewers");
+          return;
+        }
+        stalled.push(s.sock);
+      }
+    }
+    assert.fail("no session-wide limit on reviewer event streams");
+  } finally {
+    for (const s of stalled) s.destroy();
+    for (const n of ["Fay", ...Array.from({ length: 12 }, (_, i) => `Guest${i}`)]) await request(srv.port, "POST", "/api/share/revoke", { body: { key: n } });
+  }
+});
+
+test("the transcript is trimmed, keeping what is still waiting on the owner", () => {
+  const dir = tmp("austere-trim-");
+  try {
+    const store = new SessionStore(dir);
+    const s = store.ensure(path.join(dir, "plan.html"));
+    const held = store.addUserBatch(s, [{ kind: "message", text: "held", id: "h" }], { author: "Ana", hold: true });
+    const waiting = store.addUserBatch(s, [{ kind: "message", text: "waiting", id: "w" }]);
+    for (let i = 0; i < 1000; i++) store.addAgentReply(s, `reply ${i}`);
+    assert.ok(s.transcript.length < 600, `the transcript stays bounded (${s.transcript.length})`);
+    assert.equal(s.transcript.at(-1).text, "reply 999", "the newest entry stays");
+    assert.ok(s.transcript.includes(held) && s.transcript.includes(waiting), "held and pending notes are never trimmed away");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
