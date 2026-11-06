@@ -106,6 +106,7 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
     // The teammate follows the link; the token leaves the address bar.
     const guest = await guestCtx.newPage();
     await guest.goto(invite.link);
+    await guest.click("form[action$='/join'] button");
     await guest.waitForSelector(".composer textarea");
     assert.ok(!guest.url().includes("invite="), "token dropped from the URL");
     assert.equal(await guest.locator('[data-cmd="end"]').count(), 0, "no End review for a reviewer");
