@@ -77,6 +77,12 @@ function createBridge() {
   };
 }
 
+// The frame's popups stay sandboxed, so in review the chrome opens links.
+function openExternal(bridge, url) {
+  if (bridge.framed) bridge.send({ type: "open-url", url });
+  else window.open(url, "_blank", "noopener");
+}
+
 function toast(text) {
   const t = document.createElement("div");
   t.className = "austere-toast";
@@ -186,7 +192,7 @@ function App({ initialProgram, initialLibrary, bridge, annotator, initialState }
     (event) => {
       if (event.type === "open_url") {
         const url = event.params?.url;
-        if (typeof url === "string" && /^(https?:|mailto:)/i.test(url)) window.open(url, "_blank", "noopener");
+        if (typeof url === "string" && /^(https?:|mailto:)/i.test(url)) openExternal(bridge, url);
         return;
       }
       if (event.type !== "continue_conversation") return;
