@@ -10,6 +10,10 @@
 
 Review pages for coding agents. The agent writes a short [OpenUI Lang](https://github.com/thesysdev/openui) program, not HTML. You open it in the browser, click on any part, and write a note. The agent gets each note with the name of the statement it points at. It edits only those statements, and the page updates in place.
 
+![An agent writes a page, the reviewer clicks a table cell and a diagram node and sends two notes, and the page patches in place with the changed statements flashing](docs/demo.gif)
+
+<sub>The real loop, about 30 s: [MP4](docs/demo.mp4) · [WebM](docs/demo.webm).</sub>
+
 ```
 root = Stack([intro, flow, options, decide], "column", "l")
 intro = Card([CardHeader("Session storage migration", "Redis → Postgres"), introText])
