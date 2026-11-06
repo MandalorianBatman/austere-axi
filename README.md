@@ -70,6 +70,44 @@ npx skills add MandalorianBatman/austere-axi --skill austere   # tells agents wh
 
 The `austere` skill is a stub that points at `--help` and `spec`, so it does not go out of date. A global install stays on its version until `npm update -g austere-axi`.
 
+## Install as a Claude Code plugin
+
+The plugin bundles the `austere` skill (and `/austere`), the `austere-setup` skill and the MCP server below:
+
+```sh
+claude plugin marketplace add MandalorianBatman/austere-axi
+claude plugin install austere@austere-axi
+```
+
+In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/plugin install austere@austere-axi`. The MCP server runs `npx -y austere-axi mcp`, so it needs Node 22.18 or later and npm access. `claude plugin update austere` picks up new skill text; the CLI comes from npm each time.
+
+## Use with MCP
+
+`austere-axi mcp` is an MCP server on stdio. Its tools are `spec`, `check`, `open` (validate and open the review), `poll`, `reply`, `patch` and `end`. Each runs the CLI command of the same name and returns its output, so the review loop is the same as on the command line. `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer tool calls; the agent polls again and nothing is lost. Pass `timeout_ms: 0` to wait until feedback arrives when your client allows long calls.
+
+**Claude Desktop** (`claude_desktop_config.json`) and **Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project):
+
+```json
+{
+  "mcpServers": {
+    "austere": {
+      "command": "npx",
+      "args": ["-y", "austere-axi", "mcp"]
+    }
+  }
+}
+```
+
+**Codex** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.austere]
+command = "npx"
+args = ["-y", "austere-axi", "mcp"]
+```
+
+Or `codex mcp add austere -- npx -y austere-axi mcp`. On a machine with no screen, add `AUSTERE_AXI_NO_OPEN=1` to the server's `env` so `open` prints the link instead of launching a browser. The other [environment variables](#environment) work the same way. Pass absolute file paths: the server resolves relative ones against its own working directory, which depends on the client.
+
 ## Quick start
 
 ```sh
@@ -116,6 +154,7 @@ austere-axi hub on|off|status|list|notes|open   persistent server with an index 
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
 austere-axi stop                 stop the background server
+austere-axi mcp                  MCP server on stdio (see Use with MCP)
 ```
 
 Output is compact YAML for agents. Each `poll` item has its statement and that statement's line, so the agent does not need to read the file again.
@@ -265,6 +304,7 @@ node dist/cli.mjs examples/session-migration.html
 | `src/chrome/` | Review UI around the page iframe |
 | `src/cli/` | CLI, server, sessions, `check`, `export`, packs, hub |
 | `skills/` | Published skills: `austere`, `austere-setup` |
+| `.claude-plugin/` | Claude Code marketplace and plugin manifest (in git, not in the npm package) |
 
 Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/add-component`](.agents/skills/add-component/SKILL.md) to add a component, [`.agents/skills/review-change`](.agents/skills/review-change/SKILL.md) before you commit. Tests enforce the component rules: every component has a group, `spec` stays in its token budget, released prop orders are append-only (`npm run signatures`), and every example passes `check`.
 
