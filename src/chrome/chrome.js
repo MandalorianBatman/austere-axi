@@ -480,7 +480,7 @@ function renderLog(scrollToEnd = false) {
         "div",
         { class: "held-bar" },
         h("span", { text: `${heldCount} held from teammates` }),
-        h("button", { type: "button", class: "btn tiny primary", text: "Send all", onclick: () => heldAction("release") }),
+        h("button", { type: "button", class: "btn tiny primary", text: "Send all", onclick: () => heldAction("release", state.transcript.filter((e) => e.held).map((e) => e.id)) }),
         h("button", { type: "button", class: "btn tiny ghost", text: "Discard all", onclick: () => heldAction("discard") }),
       ),
     );
