@@ -162,7 +162,7 @@ A page names its packs in the head, so it renders wherever you open it:
 
 **Trust.** Pack code runs inside your review pages, where notes and button presses also come from. Packs under `@austere-axi/` on npm install directly. Other npm packs and any `.tgz` need `--trust`; read them first. A local folder counts as your own. A page with third-party packs shows a warning, and `poll` tells the agent.
 
-**Write a pack:**
+**Write a pack:** [Writing a pack](docs/writing-a-pack.md) walks through one from scaffold to `npm publish`, using [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt), a Gantt chart pack built outside this repo, as the example. The short version:
 
 ```sh
 austere-axi components new austere-pack-milestones
@@ -258,6 +258,7 @@ node dist/cli.mjs examples/session-migration.html
 |---|---|
 | `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `FileTree`), one file each |
 | `src/runtime/stock.js` | Which stock components ship, which stay out of `spec`, their groups |
+| `docs/` | [Writing a pack](docs/writing-a-pack.md) |
 | `packs/` | Packs bundled with austere-axi (`mermaid`, `shadcn`) |
 | `src/runtime/pack-api.js`, `src/pack-kit/` | `austere-axi/pack` and the `components build` pipeline |
 | `src/shared/catalog.js` | Component catalog and prompt tiers |
