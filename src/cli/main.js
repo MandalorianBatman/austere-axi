@@ -244,8 +244,15 @@ function describeItems(abs, items) {
     return { line: l.line, source: first.length > 110 ? first.slice(0, 109) + "…" : first };
   };
   return items.map((it) => {
-    const o = describeItem(it, at);
-    return it.author ? { from: it.author, ...o } : o;
+    /** @type {Record<string, any>} */
+    let o;
+    try {
+      o = describeItem(it, at);
+    } catch {
+      // one malformed item must not hide the rest of the delivery, which the server already marked received
+      o = { malformed: `could not read this ${typeof it?.kind === "string" ? it.kind : "feedback"} item` };
+    }
+    return it?.author ? { from: it.author, ...o } : o;
   });
 }
 
@@ -253,7 +260,7 @@ function describeItem(it, at) {
   if (it.kind === "annotation") {
     /** @type {Record<string, any>} */
     const o = { annotation: `${it.target} (${it.component})`, ...at(it.target) };
-    const within = (it.path || []).slice(0, -1).filter((p) => p !== "root");
+    const within = (Array.isArray(it.path) ? it.path : []).slice(0, -1).filter((p) => typeof p === "string" && p !== "root");
     if (within.length) o.within = within.join(" > ");
     if (it.selection) o.selection = it.selection;
     else if (it.excerpt) o.excerpt = it.excerpt;
