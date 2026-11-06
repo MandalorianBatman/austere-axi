@@ -57,7 +57,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     const line = `${new Date().toISOString()} ${a.join(" ")}`;
     if (verbose) process.stderr.write(line + "\n");
     try {
-      fs.appendFileSync(path.join(stateDir(), "server.log"), line + "\n");
+      fs.appendFileSync(path.join(stateDir(), "server.log"), line + "\n", { mode: 0o600 });
     } catch {
       // ignore
     }
@@ -137,7 +137,10 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return base ? `${base}/s/${id}` : null;
   }
 
-  /** The owner's links. The remote one carries the owner key, which the server swaps for a cookie. */
+  /**
+   * The owner's links. The remote one carries the owner key, which the server swaps for a cookie. The
+   * local one does not: the CLI opens it through a 0600 launcher file that adds the key (client.js).
+   */
   function links(id) {
     const out = { local: `http://127.0.0.1:${port}/s/${id}` };
     const remote = remoteUrl(id);
@@ -150,19 +153,27 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return `${remoteUrl(inv.sessionId)}?invite=${inv.token}`;
   }
 
-  /** Loopback is the owner. Off loopback (tailnet), only a request with the owner key cookie is. */
+  /**
+   * Only a request with the owner key cookie is the owner, on loopback too: another OS user on this
+   * machine can reach 127.0.0.1 but cannot read owner.key (mode 0600).
+   */
   function isOwner(req) {
-    if (isLoopback(req.socket.remoteAddress)) return true;
     const key = tokenFromCookie(req.headers.cookie, OWNER_COOKIE);
     return key != null && safeEqual(key, ownerToken);
+  }
+
+  /** The 403 text for a request that is not the owner. On loopback it is most likely the owner in a browser without the cookie yet. */
+  function notOwner(req, text = "Only the owner can open this. Ask the owner for a link to the page.") {
+    if (!isLoopback(req.socket.remoteAddress)) return text;
+    return `${text}\nIf this is your page, open it with the austere-axi CLI (austere-axi <file>, or austere-axi hub open): it signs this browser in with your owner key.`;
   }
 
   // ── who is asking ──
 
   /**
-   * A team reviewer (a valid invite cookie for this session), else the owner (loopback, or the owner
-   * key cookie from the owner's own remote link), else nobody. A cookie that matches no invite is
-   * refused, never treated as the owner, so revoking cuts access.
+   * A team reviewer (a valid invite cookie for this session), else the owner (the owner key cookie, set
+   * from a link the CLI opened or the owner's own remote link), else nobody. A cookie that matches no
+   * invite is refused, never treated as the owner, so revoking cuts access.
    * @returns {{ role: "owner", name: string } | { role: "reviewer", name: string, auto: boolean, token: string } | null}
    */
   function identify(req, s) {
@@ -383,15 +394,24 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     // The CLI sends no Origin; a browser always does on POST. Any web page could
     // otherwise reach these routes on localhost.
     if (req.headers.origin || req.headers["sec-fetch-site"]) return send(res, 403, { error: "control routes are for the CLI" });
-    activity();
     const route = url.pathname.slice(5);
+    // Loopback is not a person: every other OS user on this machine can reach it. The CLI proves it
+    // is the owner with the key from owner.key (mode 0600). Health stays open so a CLI can find and
+    // check the server; it answers the CLI's nonce with an HMAC under the key instead of the key.
+    if (route !== "health") {
+      const key = req.headers["x-austere-key"];
+      if (typeof key !== "string" || !safeEqual(key, ownerToken)) return send(res, 403, { error: "owner key required" });
+    }
+    activity();
     if (route === "health") {
+      const nonce = url.searchParams.get("nonce");
       return send(res, 200, {
         name: "austere-axi",
         version: VERSION,
         pid: process.pid,
         port,
         stateDir: stateDir(),
+        proof: nonce ? crypto.createHmac("sha256", ownerToken).update(nonce).digest("base64url") : undefined,
         listen: Array.from(listeners.keys()),
         tailnet: tailnet || undefined,
         remote: remoteBase() || undefined,
@@ -745,7 +765,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
     // The hub lists every page and every note: the owner's only.
     const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
-    if (ownerOnly && !isOwner(req)) return send(res, 403, "Only the owner can open this. Ask the owner for a link to the page.");
+    if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
     if (url.pathname === "/") {
       return send(res, 200, hub ? hubHome(url) : homePage(), { "content-type": "text/html; charset=utf-8" });
     }
@@ -775,7 +795,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
 
     const who = identify(req, s);
     if (!who) {
-      if (tokenFromCookie(req.headers.cookie) == null) return send(res, 403, "Ask the owner for a link to this page.");
+      if (tokenFromCookie(req.headers.cookie) == null) return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
       return send(res, 403, "This invite is no longer valid. Ask for a new link.", {
         "set-cookie": `${COOKIE}=; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=0`,
       });

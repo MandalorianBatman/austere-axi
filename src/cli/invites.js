@@ -115,14 +115,31 @@ export const OWNER_COOKIE = "austere_owner";
  */
 export function ownerKey(dir) {
   const file = path.join(dir, "owner.key");
-  try {
-    const key = fs.readFileSync(file, "utf8").trim();
-    if (key.length >= 22) return key;
-  } catch {
-    // none yet
-  }
+  const read = () => {
+    try {
+      const key = fs.readFileSync(file, "utf8").trim();
+      return key.length >= 22 ? key : null;
+    } catch {
+      return null; // none yet
+    }
+  };
+  const have = read();
+  if (have) return have;
   const key = crypto.randomBytes(24).toString("base64url");
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, key + "\n", { mode: 0o600 });
-  return key;
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, key + "\n", { mode: 0o600 });
+  try {
+    // link() never replaces a file: the CLI and the server it starts end up with the same key.
+    fs.linkSync(tmp, file);
+    return key;
+  } catch (err) {
+    if (err?.code !== "EEXIST") throw err;
+    const theirs = read();
+    if (theirs) return theirs;
+    fs.renameSync(tmp, file); // there but unusable: replace it
+    return key;
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
 }
