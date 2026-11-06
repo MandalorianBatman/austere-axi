@@ -12,7 +12,9 @@ ${program}
 </script></body></html>`;
 
 test("examples pass check", () => {
-  for (const f of ["examples/session-migration.html", "examples/code-review.html"]) {
+  const files = fs.readdirSync("examples").filter((n) => n.endsWith(".html"));
+  assert.ok(files.length > 0);
+  for (const f of files.map((n) => `examples/${n}`)) {
     const r = checkHtml(fs.readFileSync(f, "utf8"));
     assert.equal(r.ok, true, `${f}: ${JSON.stringify(r.errors)}`);
     assert.ok(r.statements > 5);

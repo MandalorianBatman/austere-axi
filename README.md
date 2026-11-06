@@ -29,6 +29,8 @@ strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big ba
 
 [`examples/session-migration.html`](examples/session-migration.html) is a full page (KPIs, diagram, table, chart, diff, decision form) in about 1,000 tokens.
 
+**Website:** [mandalorianbatman.github.io/austere-axi](https://mandalorianbatman.github.io/austere-axi/) has a [gallery](https://mandalorianbatman.github.io/austere-axi/gallery/) of example pages (postmortem, API review, PR summary, sprint plan) next to their source and token counts.
+
 ## Why
 
 The loop is the same as [lavish-axi](https://github.com/kunchenguid/lavish-axi). The difference: the agent never writes HTML, CSS or layout.
@@ -252,6 +254,7 @@ npm run build     # dist/: runtime, packs, pack kit, Mermaid, spec, catalog, rev
 npm test
 npm run typecheck # tsc over src/cli, src/shared and the pack types
 node dist/cli.mjs examples/session-migration.html
+npm run site      # _site/: the website (needs Chrome or CHROME_PATH); see site/ and examples/
 ```
 
 | Path | Contents |
@@ -269,6 +272,8 @@ node dist/cli.mjs examples/session-migration.html
 Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/add-component`](.agents/skills/add-component/SKILL.md) to add a component, [`.agents/skills/review-change`](.agents/skills/review-change/SKILL.md) before you commit. Tests enforce the component rules: every component has a group, `spec` stays in its token budget, released prop orders are append-only (`npm run signatures`), and every example passes `check`.
 
 Visual checks: `npm run gallery`, `npm run shot`, and `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
+
+Website: `site/` holds the hand-written pages and CSS, `examples/` feeds the gallery (add a file there and it appears with a generated thumbnail), `scripts/site.mjs` builds `_site/`, and `.github/workflows/pages.yml` deploys it to GitHub Pages on every push to `main`. Examples need a `<meta name="description">` for the gallery blurb. None of it is published to npm.
 
 **CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). **Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
 

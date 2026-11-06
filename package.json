@@ -36,6 +36,7 @@
     "test:browser": "node scripts/build.mjs packs runtime mermaid spec chrome && node --test test/browser/*.test.js",
     "signatures": "node scripts/signatures.mjs",
     "gallery": "node scripts/gallery.mjs",
+    "site": "node scripts/site.mjs",
     "shot": "node scripts/shot.mjs",
     "prepublishOnly": "npm run build && npm test",
     "typecheck": "tsc --noEmit -p jsconfig.json"
