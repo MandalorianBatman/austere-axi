@@ -37,6 +37,8 @@
     "signatures": "node scripts/signatures.mjs",
     "gallery": "node scripts/gallery.mjs",
     "shot": "node scripts/shot.mjs",
+    "demo": "node scripts/demo.mjs",
+    "social": "node scripts/social.mjs",
     "prepublishOnly": "npm run build && npm test",
     "typecheck": "tsc --noEmit -p jsconfig.json"
   },

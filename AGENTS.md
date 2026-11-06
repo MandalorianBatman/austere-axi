@@ -19,6 +19,8 @@ npm run test:browser # real review loop in headless Chrome: render checks + ever
 npm run signatures   # record new component signatures (refuses breaking changes)
 npm run gallery      # .dev/gallery.html with every custom component's example
 npm run shot -- <page> [--width 390] [--full] [--parts]   # needs Chrome or CHROME_PATH
+npm run demo         # re-record docs/demo.{gif,mp4,webm} (after build; needs Chrome and ffmpeg)
+npm run social       # re-render docs/social-preview.png, 1200x630 (after build; needs Chrome)
 ```
 
 ## Rules
