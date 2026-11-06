@@ -280,17 +280,35 @@ after(async () => {
 
 const share = (name, auto = false) => request(srv.port, "POST", "/api/share", { body: { file: FILE, name, auto } });
 
-/** Follow an invite link: the cookie the server sets, as a browser would send it back. */
+/** Follow an invite link as a browser would: the link shows a confirmation, and a same-origin POST from it sets the cookie. */
 async function accept(link) {
   const u = new URL(link);
-  const r = await request(srv.port, "GET", u.pathname + u.search);
-  assert.equal(r.status, 302);
+  const page = await request(srv.port, "GET", u.pathname + u.search);
+  assert.equal(page.status, 200);
+  const r = await join(new URLSearchParams({ invite: u.searchParams.get("invite") }).toString(), { origin: `http://127.0.0.1:${srv.port}` });
+  assert.equal(r.status, 303);
   assert.equal(r.headers.location, `/s/${id}`, "the token is gone from the URL");
   const set = [].concat(r.headers["set-cookie"])[0];
   assert.match(set, /HttpOnly/);
   assert.match(set, /SameSite=Lax/, "Lax, so the cookie comes back after a click in chat or email");
   assert.match(set, new RegExp(`Path=/s/${id}`));
   return { cookie: set.split(";")[0] };
+}
+
+/** The confirmation form's POST: urlencoded, not JSON. */
+function join(form, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const r = http.request(
+      { host: "127.0.0.1", port: srv.port, method: "POST", path: `/s/${id}/join`, headers: { host: `127.0.0.1:${srv.port}`, "content-type": "application/x-www-form-urlencoded", ...headers } },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => resolve({ status: res.statusCode, data, headers: res.headers }));
+      },
+    );
+    r.on("error", reject);
+    r.end(form);
+  });
 }
 
 const sendNote = (as, text, extra = {}) =>
@@ -367,6 +385,34 @@ test("an invalid or missing token is refused; a cookie for a revoked invite is n
   const bad = await request(srv.port, "GET", `/s/${id}`, { headers: { cookie: "austere_rv=forged" } });
   assert.equal(bad.status, 403, "a forged cookie does not fall back to the owner");
   assert.match([].concat(bad.headers["set-cookie"])[0], /Max-Age=0/);
+});
+
+test("an invite link only asks for confirmation; a cross-site GET plants no cookie", async () => {
+  const link = (await share("Dee")).data.link;
+  const u = new URL(link);
+  const token = u.searchParams.get("invite");
+  const page = await request(srv.port, "GET", u.pathname + u.search, { headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" } });
+  assert.equal(page.status, 200);
+  assert.equal(page.headers["set-cookie"], undefined, "the GET sets no cookie");
+  assert.match(page.data, /Continue as Dee/);
+  assert.match(page.data, new RegExp(`action="/s/${id}/join"`));
+  assert.equal(page.headers["cache-control"], "no-store");
+  assert.equal(page.headers["x-frame-options"], "DENY", "the confirmation cannot be framed");
+
+  // The join needs a same-origin Origin: a foreign or missing one is refused and sets nothing.
+  const form = new URLSearchParams({ invite: token }).toString();
+  for (const headers of [{ origin: "http://evil.example.test" }, { origin: "null" }, {}]) {
+    const r = await join(form, headers);
+    assert.equal(r.status, 403, JSON.stringify(headers));
+    assert.equal(r.headers["set-cookie"], undefined, JSON.stringify(headers));
+  }
+  // A same-origin POST with a bogus or missing token is refused too.
+  const origin = { origin: `http://127.0.0.1:${srv.port}` };
+  assert.equal((await join(new URLSearchParams({ invite: "nope" }).toString(), origin)).status, 403);
+  assert.equal((await join("", origin)).status, 403);
+  assert.equal((await join("invite=" + "a".repeat(10000), origin)).status, 413);
+  assert.equal((await join(form, origin)).status, 303);
+  await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Dee" } });
 });
 
 test("a held note waits: poll and feedback skip it until the owner sends it", async () => {

@@ -760,12 +760,32 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     const sub = m[2] || "";
     activity();
 
-    // An invite link: trade the token for a cookie scoped to this page, then drop it from the URL.
+    // An invite link: ask before trading the token for a cookie, so a cross-site navigation cannot
+    // switch a browser (e.g. the owner's) into a reviewer identity.
     const invite = url.searchParams.get("invite");
-    if (invite != null && (sub === "" || sub === "/")) {
+    if (invite != null && (sub === "" || sub === "/") && req.method === "GET") {
       const inv = invites.find(invite);
       if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
-      res.writeHead(302, {
+      return send(
+        res,
+        200,
+        `<!doctype html><meta charset="utf-8"><title>Join review</title><form method="post" action="/s/${s.id}/join"><input type="hidden" name="invite" value="${escapeHtml(inv.token)}"><button>Continue as ${escapeHtml(inv.name)}</button></form>`,
+        // "same-origin", not "no-referrer": Chrome and Firefox send `Origin: null` on a form POST under no-referrer, which the join check would refuse.
+        { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "same-origin", "x-frame-options": "DENY" },
+      );
+    }
+    if (sub === "/join" && req.method === "POST") {
+      // Require a same-origin browser POST: Origin must be present and equal Host (checkOrigin alone allows a missing Origin).
+      if (!req.headers.origin || !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+      // The form posts application/x-www-form-urlencoded; readBody() only parses JSON, so read the small body here.
+      let raw = "";
+      for await (const c of req) {
+        raw += c;
+        if (raw.length > 4096) return send(res, 413, "payload too large");
+      }
+      const inv = invites.find(new URLSearchParams(raw).get("invite") || "");
+      if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
+      res.writeHead(303, {
         location: `/s/${s.id}`,
         "set-cookie": `${COOKIE}=${inv.token}; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=2592000`,
         "cache-control": "no-store",
