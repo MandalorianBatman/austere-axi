@@ -6,9 +6,12 @@
 //   gallery/thumbs/     screenshots of those pages, taken by scripts/shot.mjs (which also fails on render errors)
 //   gallery/index.html  thumbnail, OpenUI Lang source and token count for each example
 //   assets/hero.png     the landing page's screenshot, unless site/assets/demo.gif exists
+//   play/play.js        site/play/*.js bundled (the parser, checker and editor), with play/data.json beside it:
+//                       spec, component catalog and a starter template per example
 //
 // Needs `npm run build` first, and Chrome or CHROME_PATH (same as `npm run shot`).
 // Nothing here is published to npm: package.json `files` lists neither site/ nor _site/.
+import * as esbuild from "esbuild";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -27,15 +30,15 @@ const THUMB = { width: 1280, height: 800 };
 const HERO_EXAMPLE = "session-migration";
 // Gallery order. Examples not listed follow, alphabetically.
 const ORDER = ["session-migration", "incident-postmortem", "api-design-review", "pr-summary", "sprint-plan", "code-review", "shadcn"];
-// Add { href: "play/", label: "Play" } here when the playground lands in site/play/.
 const NAV = [
+  { href: "play/", label: "Play" },
   { href: "gallery/", label: "Gallery" },
   { href: REPO, label: "GitHub" },
   { href: "https://www.npmjs.com/package/austere-axi", label: "npm" },
   { href: "https://skills.sh/mandalorianbatman/austere-axi", label: "skills.sh" },
 ];
 
-for (const f of ["austere.js", "mermaid.min.js", "spec.json"]) {
+for (const f of ["austere.js", "mermaid.min.js", "spec.json", "catalog.json"]) {
   if (!fs.existsSync(path.join(DIST, f))) {
     console.error(`dist/${f} is missing: run \`npm run build\` first`);
     process.exit(2);
@@ -206,7 +209,8 @@ const heroExample = examples.find((ex) => ex.id === HERO_EXAMPLE) || examples[0]
 
 // 2. Static files, runtime and live pages.
 fs.rmSync(OUT, { recursive: true, force: true });
-fs.cpSync(SITE, OUT, { recursive: true });
+// The playground's modules are bundled below; their sources stay out of the site.
+fs.cpSync(SITE, OUT, { recursive: true, filter: (src) => !/[\\/]play[\\/][^\\/]+\.js$/.test(src) });
 fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
 for (const f of ["austere.js", "mermaid.min.js"]) fs.copyFileSync(path.join(DIST, f), path.join(OUT, f));
 const packsDir = path.join(DIST, "packs");
@@ -217,6 +221,29 @@ for (const id of fs.existsSync(packsDir) ? fs.readdirSync(packsDir) : []) {
 fs.mkdirSync(path.join(OUT, "gallery", "thumbs"), { recursive: true });
 fs.mkdirSync(path.join(OUT, "assets"), { recursive: true });
 for (const ex of examples) fs.writeFileSync(path.join(OUT, "gallery", `${ex.id}.html`), ex.live);
+
+// The playground (site/play/): its modules are bundled into one file, and the data it needs
+// (the parser's schema, the component catalog, one template per example) sits beside it.
+await esbuild.build({
+  entryPoints: [path.join(SITE, "play", "play.js")],
+  outfile: path.join(OUT, "play", "play.js"),
+  bundle: true,
+  format: "esm",
+  target: "es2022",
+  minify: true,
+  legalComments: "none",
+  logLevel: "warning",
+});
+const readJson = (name) => JSON.parse(fs.readFileSync(path.join(DIST, name), "utf8"));
+fs.writeFileSync(
+  path.join(OUT, "play", "data.json"),
+  JSON.stringify({
+    version: pkg.version,
+    spec: readJson("spec.json"),
+    catalog: readJson("catalog.json"),
+    templates: examples.map(({ id, title, description, program }) => ({ id, title, description, program })),
+  }),
+);
 
 // 3. Screenshots, from the pages as deployed. shot.mjs fails on render errors.
 const jobs = examples.map((ex) => ({ ex, file: path.join(OUT, "gallery", `${ex.id}.html`), out: path.join(OUT, "gallery", "thumbs", `${ex.id}.png`) }));

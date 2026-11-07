@@ -25,7 +25,8 @@
       <h1>Review pages for coding agents.</h1>
       <p class="lede">The agent writes a short <a href="https://github.com/thesysdev/openui">OpenUI Lang</a> program, <strong>not HTML</strong>. You open it in the browser, click any part, and write a note. The agent gets each note with the name of the statement it points at, edits only those statements, and the page updates in place.</p>
       <div class="cta">
-        <a class="btn primary" href="{{root}}gallery/">See the gallery</a>
+        <a class="btn primary" href="{{root}}play/">Try it in your browser</a>
+        <a class="btn" href="{{root}}gallery/">See the gallery</a>
         <a class="btn" href="https://github.com/MandalorianBatman/austere-axi">GitHub</a>
         <a class="btn" href="https://www.npmjs.com/package/austere-axi">npm</a>
       </div>
@@ -67,7 +68,7 @@ options = Card([CardHeader("Rollout options"), optionTable])
 optionTable = Table([Col("Option", ["Big bang", "Dual-write"]), Col("Risk", [Tag("high", null, "sm", "danger"), Tag("low", null, "sm", "success")])])
 decide = Form("rollout", Buttons([Button("Send decision", @ToAssistant("Decision: rollout"), "primary")]), [strategyField])
 strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big bang", "", "bigbang"), RadioItem("Dual-write", "", "dualwrite")]))</code></pre>
-      <p class="note">The <a href="{{root}}gallery/">gallery</a> shows full pages next to their source and token count.</p>
+      <p class="note">The <a href="{{root}}gallery/">gallery</a> shows full pages next to their source and token count. In the <a href="{{root}}play/">playground</a> you edit one and watch it render.</p>
     </div>
   </section>
 
