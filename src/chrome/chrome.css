@@ -581,6 +581,82 @@ textarea.edit {
   display: none;
 }
 
+/* ── hosted mode: name prompt, report box, footer ── */
+.presence.hosted::before {
+  background: var(--accent);
+}
+.name-ask,
+.report-box {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.name-ask[hidden],
+.report-box[hidden] {
+  display: none;
+}
+.name-row,
+.report-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.name-ask input,
+.report-box textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: #0f0f12;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  resize: vertical;
+}
+.name-ask input:focus,
+.report-box textarea:focus {
+  border-color: rgba(143, 176, 255, 0.55);
+}
+.report-status {
+  margin-right: auto;
+  color: var(--red);
+}
+.hosted-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px 9px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.hosted-foot a,
+.link-btn {
+  color: var(--muted);
+  text-decoration: none;
+}
+.hosted-foot a:hover,
+.link-btn:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
 .dock {
   display: none;
 }
