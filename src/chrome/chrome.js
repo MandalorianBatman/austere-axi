@@ -45,6 +45,9 @@ const state = {
   presence: "idle",
   status: "open",
   endedBy: null,
+  closed: false,
+  unread: 0,
+  more: false,
   program: null,
   frameReady: false,
   scrollY: 0,
@@ -97,6 +100,8 @@ document.body.innerHTML = `
           <button type="button" data-cmd="reload">Reload artifact</button>
           <a data-cmd="export" href="/s/${SID}/export">Download standalone HTML</a>
           <button type="button" data-cmd="end" class="danger">End review</button>
+          <button type="button" data-cmd="close" class="danger">Close review</button>
+          <button type="button" data-cmd="reopen">Reopen review</button>
         </div>
       </div>
     </div>
@@ -131,7 +136,7 @@ document.body.innerHTML = `
 </div>`;
 
 if (!OWNER) {
-  for (const sel of ['[data-cmd="copy-path"]', '[data-cmd="copy-link"]', '[data-cmd="export"]', '[data-cmd="end"]', ".send-end"]) $(sel)?.remove();
+  for (const sel of ['[data-cmd="copy-path"]', '[data-cmd="copy-link"]', '[data-cmd="export"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"]) $(sel)?.remove();
   $(".composer-hint").textContent = VIEWER.auto
     ? `Posting as ${VIEWER.name} · Enter sends`
     : `Posting as ${VIEWER.name} · the owner sends your notes on · Enter sends`;
@@ -215,7 +220,7 @@ window.addEventListener("message", (e) => {
     case "hello":
       post({
         type: "init",
-        mode: state.status === "ended" ? "explore" : state.mode,
+        mode: state.closed ? "explore" : state.mode,
         state: SS.get(`austere:form:${SID}`),
         scrollY: state.scrollY,
       });
@@ -268,7 +273,7 @@ function saveQueue() {
 }
 
 function addToQueue(item) {
-  if (state.status === "ended") return;
+  if (state.closed) return;
   item.qid = `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   state.queue.push(item);
   saveQueue();
@@ -410,7 +415,7 @@ function receipt(entry) {
   if (!entry.seenAt) {
     row.append(
       h("em", {
-        text: state.presence === "listening" ? "" : state.presence === "working" ? "agent is busy; delivered on its next poll" : "no agent listening; delivered when one polls",
+        text: state.presence === "listening" ? "" : state.unread ? `waiting for the agent (${state.unread} unread)` : "waiting for the agent",
       }),
     );
   }
@@ -430,7 +435,7 @@ function renderLog(scrollToEnd = false) {
           "div",
           { class: "issue" },
           h("div", { class: "issue-text" }, err.statementId ? h("code", { text: err.statementId }) : null, " ", err.message),
-          state.status === "ended"
+          state.closed
             ? null
             : h("button", {
                 type: "button",
@@ -443,6 +448,9 @@ function renderLog(scrollToEnd = false) {
       );
     }
     log.append(box);
+  }
+  if (state.more) {
+    log.append(h("button", { type: "button", class: "btn tiny ghost load-earlier", text: "Load earlier messages", onclick: loadEarlier }));
   }
   if (!state.transcript.length && !state.queue.length) {
     log.append(
@@ -510,10 +518,11 @@ function renderLog(scrollToEnd = false) {
     }
     log.append(q);
   }
-  if (state.status === "ended") {
-    log.append(
-      h("div", { class: "ended-note", text: state.endedBy === "agent" ? "The agent ended this review." : OWNER ? "You ended this review." : "The owner ended this review." }),
-    );
+  if (state.closed) {
+    log.append(h("div", { class: "ended-note", text: OWNER ? "You closed this review." : "The owner closed this review." }));
+  } else if (state.status === "ended") {
+    const who = state.endedBy === "agent" ? "The agent ended this review." : OWNER ? "You ended this review." : "The owner ended this review.";
+    log.append(h("div", { class: "ended-note", text: `${who} Notes you send now reach the agent the next time it polls.` }));
   }
   const count = state.transcript.length + state.queue.length;
   if (scrollToEnd || atBottom || count !== lastLogCount) log.scrollTop = log.scrollHeight;
@@ -524,13 +533,13 @@ function renderLog(scrollToEnd = false) {
 // ── composer / sending ──
 
 function renderComposer() {
-  const ended = state.status === "ended";
+  const closed = state.closed;
   const n = state.queue.length;
-  textarea.disabled = ended || state.sending;
-  $(".send").disabled = ended || state.sending;
-  if ($(".send-end")) $(".send-end").disabled = ended || state.sending;
+  textarea.disabled = closed || state.sending;
+  $(".send").disabled = closed || state.sending;
+  if ($(".send-end")) $(".send-end").disabled = closed || state.sending;
   $(".send").textContent = state.sending ? "Sending…" : n ? `Send ${n}` : "Send";
-  textarea.placeholder = ended ? "Review ended" : n ? "Add a message (optional)…" : "Message the agent…";
+  textarea.placeholder = closed ? "Review closed" : n ? "Add a message (optional)…" : "Message the agent…";
 }
 
 function composerError(text) {
@@ -540,7 +549,7 @@ function composerError(text) {
 }
 
 async function sendAll(end = false) {
-  if (state.sending || state.status === "ended") return;
+  if (state.sending || state.closed) return;
   const text = textarea.value.trim();
   const items = state.queue.map(({ qid, ...rest }) => rest);
   if (text) items.push({ kind: "message", text });
@@ -549,7 +558,7 @@ async function sendAll(end = false) {
     return;
   }
   if (end && !OWNER) return;
-  if (end && !items.length && !confirm("End this review? The agent will stop listening.")) return;
+  if (end && !items.length && !confirm("End this review? The agent will stop listening; notes you send later still reach it.")) return;
   state.sending = true;
   composerError("");
   renderComposer();
@@ -592,7 +601,7 @@ function setMode(mode) {
   state.mode = mode === "explore" ? "explore" : "annotate";
   LS.set("austere:mode", state.mode);
   for (const b of document.querySelectorAll(".seg button")) b.classList.toggle("on", b.dataset.mode === state.mode);
-  post({ type: "mode", mode: state.status === "ended" ? "explore" : state.mode });
+  post({ type: "mode", mode: state.closed ? "explore" : state.mode });
 }
 for (const b of document.querySelectorAll(".seg button")) b.addEventListener("click", () => setMode(b.dataset.mode));
 document.addEventListener("keydown", (e) => {
@@ -606,16 +615,23 @@ function renderPresence() {
   const el = $(".presence");
   let label;
   let cls;
-  if (state.status === "ended") [label, cls] = ["Review ended", "ended"];
+  if (state.closed) [label, cls] = ["Review closed", "ended"];
   else if (!state.connected) [label, cls] = ["Reconnecting…", "off"];
   else if (state.presence === "listening") [label, cls] = ["Agent listening", "listening"];
   else if (state.presence === "working") [label, cls] = ["Agent working", "working"];
+  else if (state.status === "ended") [label, cls] = ["Agent stopped", "idle"];
   else [label, cls] = ["Agent not listening", "idle"];
+  if (cls === "idle" && state.unread) label += ` · ${state.unread} waiting`;
   el.className = `presence ${cls}`;
   el.textContent = label;
   el.title =
-    cls === "idle" ? "Your notes are kept and delivered the next time the agent polls." : cls === "working" ? "The agent has your last batch." : "";
-  document.documentElement.classList.toggle("is-ended", state.status === "ended");
+    cls === "idle" ? "Your notes are kept and reach the agent the next time it polls." : cls === "working" ? "The agent has your last batch." : "";
+  document.documentElement.classList.toggle("is-ended", state.closed);
+  if (OWNER) {
+    $('[data-cmd="end"]').hidden = state.status === "ended";
+    $('[data-cmd="close"]').hidden = state.closed;
+    $('[data-cmd="reopen"]').hidden = !state.closed && state.status !== "ended";
+  }
   renderDock();
 }
 
@@ -655,6 +671,11 @@ menuPop.addEventListener("click", async (e) => {
     if (!confirm("End this review? The agent will stop listening.")) return;
     await fetch(`/s/${SID}/end`, { method: "POST" }).catch(() => {});
   }
+  if (cmd === "close") {
+    if (!confirm("Close this review? No one can add notes until you reopen it.")) return;
+    await fetch(`/s/${SID}/close`, { method: "POST" }).catch(() => {});
+  }
+  if (cmd === "reopen") await fetch(`/s/${SID}/reopen`, { method: "POST" }).catch(() => {});
 });
 
 // ── mobile sheet ──
@@ -749,6 +770,25 @@ function mergeEntries(entries) {
   state.transcript.sort((a, b) => a.at - b.at);
 }
 
+/** The page starts with the latest entries; older ones load on request. */
+async function loadEarlier() {
+  const first = state.transcript[0];
+  if (!first) return;
+  try {
+    const r = await fetch(`/s/${SID}/transcript?before=${encodeURIComponent(first.id)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    const known = new Set(state.transcript.map((e) => e.id));
+    state.transcript = [...(d.entries || []).filter((e) => !e.discarded && !known.has(e.id)), ...state.transcript];
+    state.more = !!d.more;
+    const fromBottom = log.scrollHeight - log.scrollTop;
+    renderLog();
+    log.scrollTop = log.scrollHeight - fromBottom;
+  } catch (err) {
+    composerError(`Could not load earlier messages: ${err.message}`);
+  }
+}
+
 let es = null;
 let disconnectedAt = 0;
 function connect() {
@@ -777,6 +817,9 @@ function connect() {
     state.presence = d.presence;
     state.status = d.session.status;
     state.endedBy = d.session.endedBy;
+    state.closed = !!d.session.closed;
+    state.unread = d.session.unread || 0;
+    state.more = !!d.more;
     state.links = d.links;
     if (d.version && d.version !== BOOT.version) {
       showBanner("austere-axi was updated. This page is running the previous version.", [
@@ -803,6 +846,9 @@ function connect() {
     state.presence = d.presence;
     state.status = d.status;
     state.endedBy = d.endedBy;
+    state.closed = !!d.closed;
+    state.unread = d.unread || 0;
+    setMode(state.mode);
     renderPresence();
     renderLog();
   });
@@ -824,7 +870,10 @@ function connect() {
     const d = JSON.parse(e.data);
     state.status = "ended";
     state.endedBy = d.by;
-    post({ type: "mode", mode: "explore" });
+    if (d.closed) {
+      state.closed = true;
+      post({ type: "mode", mode: "explore" });
+    }
     renderPresence();
     renderLog();
   });

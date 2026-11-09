@@ -1,0 +1,310 @@
+// Durable notes: hub.db is the record, poll is a cursor read with at-least-once
+// delivery, ending a review stops the agent but not the reviewer, and only the
+// owner's close locks the review.
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { after, before, test } from "node:test";
+import { SessionStore, sessionId } from "../src/cli/sessions.js";
+import { Hub } from "../src/cli/hub.js";
+import { freePort } from "./port.js";
+
+const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
+const WORK = tmp("austere-durable-work-");
+const FILE = path.join(WORK, "plan.html");
+const BASE_ENV = { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" };
+
+function request(port, method, route, body, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const payload = body === undefined ? undefined : JSON.stringify(body);
+    const r = http.request(
+      { host: "127.0.0.1", port, method, path: route, headers: { host: `127.0.0.1:${port}`, ...(payload ? { "content-type": "application/json" } : {}), ...headers } },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => {
+          let parsed = data;
+          try {
+            parsed = JSON.parse(data);
+          } catch {}
+          resolve({ status: res.statusCode, data: parsed, headers: res.headers });
+        });
+      },
+    );
+    r.on("error", reject);
+    if (payload) r.write(payload);
+    r.end();
+  });
+}
+
+/** Run the server in the foreground; `out` collects what it prints. */
+function startServer(port, state, extraEnv = {}) {
+  const child = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(port)], {
+    env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, ...extraEnv },
+  });
+  const proc = { child, out: "", exited: new Promise((r) => child.once("exit", r)) };
+  child.stdout.on("data", (c) => (proc.out += c));
+  child.stderr.on("data", (c) => (proc.out += c));
+  return proc;
+}
+
+async function up(port) {
+  for (let i = 0; i < 200; i++) {
+    try {
+      if ((await request(port, "GET", "/api/health")).status === 200) return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error("server did not start");
+}
+
+async function kill(proc, signal = "SIGTERM") {
+  if (proc.child.exitCode === null && proc.child.signalCode === null) {
+    proc.child.kill(signal);
+    await proc.exited;
+  }
+}
+
+function cli(port, state, ...args) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ["src/cli/main.js", ...args], {
+      env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) },
+    });
+    let out = "";
+    child.stdout.on("data", (c) => (out += c));
+    child.stderr.on("data", (c) => (out += c));
+    child.on("close", (code) => resolve({ code, out }));
+  });
+}
+
+const page = (port) => ({ origin: `http://127.0.0.1:${port}` });
+const message = (text) => ({ items: [{ kind: "message", text }] });
+
+before(() => {
+  fs.writeFileSync(
+    FILE,
+    `<!doctype html><html><head><title>Plan</title><script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+<body><script type="text/openui">
+root = Stack([intro])
+intro = TextContent("hello")
+</script></body></html>`,
+  );
+});
+
+after(() => fs.rmSync(WORK, { recursive: true, force: true }));
+
+/** A server of its own for one test, with the plan open. */
+async function withServer(fn, extraEnv) {
+  const port = await freePort();
+  const state = tmp("austere-durable-state-");
+  const proc = startServer(port, state, extraEnv);
+  try {
+    await up(port);
+    const id = (await request(port, "POST", "/api/open", { file: FILE })).data.session.id;
+    await fn({ port, state, id, proc });
+  } finally {
+    await kill(proc);
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+}
+
+test("a note sent after the agent ended is kept, and the next poll returns it and reopens the review", () =>
+  withServer(async ({ port, id }) => {
+    assert.equal((await request(port, "POST", "/api/end", { file: FILE })).status, 200);
+    const sent = await request(port, "POST", `/s/${id}/send`, message("one more thing"), page(port));
+    assert.equal(sent.status, 200, "an ended review still takes notes");
+    const sessions = (await request(port, "GET", "/api/sessions")).data.sessions;
+    assert.equal(sessions.find((s) => s.id === id).pending, 1, "waiting for the agent");
+
+    const poll = await request(port, "POST", "/api/poll", { file: FILE });
+    assert.equal(poll.data.status, "feedback");
+    assert.equal(poll.data.items[0].text, "one more thing");
+    assert.equal(poll.data.ended, undefined, "not handed over as a final batch");
+    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id).status, "open");
+
+    // A batch sent with end stays final: delivered with ended, and the review stays ended.
+    await request(port, "POST", `/s/${id}/send`, { ...message("last words"), end: true }, page(port));
+    const last = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
+    assert.equal(last.data.status, "feedback");
+    assert.equal(last.data.ended, true);
+    const after = await request(port, "POST", "/api/poll", { file: FILE, cursor: last.data.cursor });
+    assert.equal(after.data.status, "ended");
+  }));
+
+test("a note survives the server being killed between send and poll", async () => {
+  const port = await freePort();
+  const state = tmp("austere-durable-crash-");
+  let proc = startServer(port, state);
+  try {
+    await up(port);
+    const id = (await request(port, "POST", "/api/open", { file: FILE })).data.session.id;
+    assert.equal((await request(port, "POST", `/s/${id}/send`, message("do not lose me"), page(port))).status, 200);
+    await kill(proc, "SIGKILL"); // no shutdown handler runs
+    proc = startServer(port, state); // the dead server's lock is stale
+    await up(port);
+    const poll = await request(port, "POST", "/api/poll", { file: FILE });
+    assert.equal(poll.data.status, "feedback");
+    assert.equal(poll.data.items[0].text, "do not lose me");
+  } finally {
+    await kill(proc);
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("feedback is unread until acknowledged: a poll without a cursor gets it again, a cursor or a reply acknowledges it", () =>
+  withServer(async ({ port, state, id }) => {
+    await request(port, "POST", `/s/${id}/send`, message("first"), page(port));
+    let r = await cli(port, state, "poll", FILE);
+    assert.match(r.out, /status: feedback/);
+    const cursor = Number(/cursor: (\d+)/.exec(r.out)[1]);
+    assert.match(r.out, new RegExp(`poll \\S+ --cursor ${cursor} --agent-reply`), "the next hint carries the cursor");
+
+    // The agent lost that answer (crashed, or its tool call timed out): it comes back.
+    r = await cli(port, state, "poll", FILE);
+    assert.match(r.out, /message: first/);
+    assert.match(r.out, new RegExp(`cursor: ${cursor}\\b`));
+
+    // Acknowledged with the cursor: gone, and the page shows it seen.
+    const ack = await request(port, "POST", "/api/poll", { file: FILE, cursor, timeoutMs: 200 });
+    assert.equal(ack.data.status, "timeout");
+    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id).pending, 0);
+
+    // --after replays what was acknowledged.
+    const replay = await request(port, "POST", "/api/poll", { file: FILE, after: cursor - 1 });
+    assert.equal(replay.data.items[0].text, "first");
+
+    // A reply without a cursor acknowledges what the last poll handed over.
+    await request(port, "POST", `/s/${id}/send`, message("second"), page(port));
+    const second = await request(port, "POST", "/api/poll", { file: FILE });
+    assert.equal(second.data.items[0].text, "second");
+    assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status, 200);
+    assert.equal((await request(port, "POST", "/api/poll", { file: FILE, timeoutMs: 200 })).data.status, "timeout");
+
+    assert.equal((await request(port, "POST", "/api/poll", { file: FILE, cursor: "x" })).status, 400);
+  }));
+
+test("a held note released after the cursor moved past its time still reaches the agent", () =>
+  withServer(async ({ port, id }) => {
+    const share = await request(port, "POST", "/api/share", { file: FILE, name: "Ana" });
+    assert.equal(share.status, 200, JSON.stringify(share.data));
+    const link = new URL(share.data.link);
+    const accepted = await request(port, "GET", link.pathname + link.search);
+    const invited = [].concat(accepted.headers["set-cookie"])[0].split(";")[0];
+    const held = await request(port, "POST", `/s/${id}/send`, message("held by the owner"), { ...page(port), cookie: invited });
+    assert.equal(held.data.entry.held, true);
+
+    // Later notes go through and are acknowledged.
+    await request(port, "POST", `/s/${id}/send`, message("later, from the owner"), page(port));
+    const got = await request(port, "POST", "/api/poll", { file: FILE });
+    assert.deepEqual(got.data.items.map((i) => i.text), ["later, from the owner"]);
+    await request(port, "POST", "/api/reply", { file: FILE, text: "ok", cursor: got.data.cursor });
+
+    // Released now: it gets a new seq after the cursor.
+    await request(port, "POST", `/s/${id}/release`, { all: true }, page(port));
+    const released = await request(port, "POST", "/api/poll", { file: FILE });
+    assert.equal(released.data.status, "feedback");
+    assert.equal(released.data.items[0].text, "held by the owner");
+    assert.equal(released.data.items[0].author, "Ana");
+    assert.ok(released.data.cursor > got.data.cursor);
+  }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
+
+test("ending keeps the composer open; only the owner's close refuses notes, until reopen", () =>
+  withServer(async ({ port, id }) => {
+    // Closing ends a listening poll.
+    const listening = request(port, "POST", "/api/poll", { file: FILE });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal((await request(port, "POST", "/api/close", { file: FILE })).status, 200);
+    const closed = await listening;
+    assert.equal(closed.data.status, "ended");
+    assert.equal(closed.data.closed, true);
+    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after close"), page(port))).status, 409);
+    assert.equal((await request(port, "POST", "/api/open", { file: FILE })).data.status, "refused");
+    assert.equal((await request(port, "POST", "/api/reopen", { file: FILE })).status, 200);
+
+    // Ending does not refuse notes.
+    await request(port, "POST", `/s/${id}/end`, {}, page(port));
+    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after end"), page(port))).status, 200);
+    await request(port, "POST", `/s/${id}/close`, {}, page(port));
+    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after close"), page(port))).status, 409);
+
+    // A note sent before the close still reaches the agent, as the last of the review.
+    const poll = await request(port, "POST", "/api/poll", { file: FILE });
+    assert.equal(poll.data.items[0].text, "after end");
+    assert.equal(poll.data.ended, true);
+    const next = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
+    assert.deepEqual([next.data.status, next.data.closed], ["ended", true]);
+
+    assert.equal((await request(port, "POST", `/s/${id}/reopen`, {}, page(port))).status, 200);
+    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after reopen"), page(port))).status, 200);
+  }));
+
+test("a second server on the same state dir refuses to start", () =>
+  withServer(async ({ state }) => {
+    const other = startServer(await freePort(), state);
+    const code = await other.exited;
+    assert.notEqual(code, 0);
+    assert.match(other.out, /another austere-axi server \(pid \d+\) is using/);
+  }));
+
+test("session files from before the database are imported once, every state intact", async () => {
+  const dir = tmp("austere-import-");
+  const file = path.join(dir, "plan.html");
+  const id = sessionId(file);
+  const items = (text) => [{ kind: "message", text, id: `${text}-item` }];
+  const legacy = {
+    id,
+    file,
+    title: "Plan",
+    createdAt: 1,
+    updatedAt: 9,
+    status: "ended",
+    endedBy: "agent",
+    endedAt: 8,
+    pending: ["u-pending"],
+    transcript: [
+      { id: "u-done", role: "user", at: 2, items: items("addressed"), seenAt: 3, doneAt: 4 },
+      { id: "a-1", role: "agent", at: 4, text: "did it" },
+      { id: "u-seen", role: "user", at: 5, items: items("received"), seenAt: 6, doneAt: null },
+      { id: "u-pending", role: "user", at: 6, items: items("open"), seenAt: null, doneAt: null },
+      { id: "u-held", role: "user", at: 7, items: items("held"), author: "Ana", held: true },
+      { id: "u-gone", role: "user", at: 7, items: items("discarded"), author: "Ana", held: false, discarded: true },
+    ],
+  };
+  const sessions = path.join(dir, "sessions");
+  fs.mkdirSync(sessions);
+  fs.writeFileSync(path.join(sessions, `${id}.json`), JSON.stringify(legacy));
+  try {
+    const check = (store) => {
+      const s = store.get(id);
+      assert.equal(s.status, "ended");
+      assert.equal(s.endedBy, "agent");
+      assert.deepEqual(store.unread(s).map((e) => e.id), ["u-pending"]);
+      assert.deepEqual(store.heldEntries(s).map((e) => e.id), ["u-held"]);
+      assert.deepEqual(
+        store.feedback(s, { all: true, peek: true }).entries.map((e) => [e.id, e.status]),
+        [["u-done", "addressed"], ["u-seen", "received"], ["u-pending", "open"]],
+      );
+      assert.deepEqual(s.transcript.map((e) => e.id), ["u-done", "a-1", "u-seen", "u-pending", "u-held", "u-gone"]);
+      const hub = new Hub(store.db);
+      assert.deepEqual(
+        Object.fromEntries(hub.db.prepare("SELECT entry_id, status FROM items").all().map((r) => [r.entry_id, r.status])),
+        { "u-done": "addressed", "u-seen": "received", "u-pending": "open", "u-held": "held", "u-gone": "discarded" },
+      );
+    };
+    let store = await SessionStore.open(dir);
+    check(store);
+    store.close();
+    assert.deepEqual(fs.readdirSync(sessions), [`${id}.json.imported`]);
+
+    // A rename that did not happen: importing again changes nothing.
+    fs.writeFileSync(path.join(sessions, `${id}.json`), JSON.stringify(legacy));
+    store = await SessionStore.open(dir);
+    check(store);
+    store.close();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

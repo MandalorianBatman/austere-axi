@@ -296,3 +296,28 @@ test("a page using an installed pack renders it, warns about third-party code, a
     await context.close();
   }
 });
+
+test("after the agent ends the review the reviewer can still send; only closing locks the composer", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "after-end.html");
+  fs.writeFileSync(file, htmlPage("After end", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  const { context, page, problems } = await openReview(file, VIEWPORTS[0]);
+  try {
+    await api("/api/end", { file });
+    await page.waitForSelector(".presence:has-text('Agent stopped')");
+    assert.equal(await page.locator(".composer textarea").isDisabled(), false);
+    await page.fill(".composer textarea", "one more thing");
+    await page.click(".composer .send");
+    await page.waitForSelector(".presence:has-text('1 waiting')");
+    const res = await api("/api/poll", { file, timeoutMs: 5000 });
+    assert.equal(res.status, "feedback");
+    assert.equal(res.items[0].text, "one more thing");
+
+    await api("/api/close", { file });
+    await page.waitForSelector(".presence:has-text('Review closed')");
+    assert.equal(await page.locator(".composer textarea").isDisabled(), true);
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});

@@ -1,6 +1,6 @@
 # Durable notes: SQLite as the source of truth
 
-Status: proposed. sid.kasat settled all decisions (Q1–Q21) in a grilling session on 2026-11-09. Nothing is implemented yet.
+Status: implemented in 0.5.0 (RLM-272). sid.kasat settled all decisions (Q1–Q21) in a grilling session on 2026-11-09. Where the implementation differs from the first draft, see [As built](#as-built).
 
 ## Problem
 
@@ -98,6 +98,18 @@ The server never moves `acked_seq` when a response finishes. Only the next reque
 - The presence label shows the unread count. The receipt hint becomes "waiting for the agent (N unread)".
 - There is an owner-only "Close review" and "Reopen" button. The existing "end review" button stays and means "the agent stopped".
 - The transcript is paged: `GET /s/:id/transcript?before=<seq>`.
+
+## As built
+
+These are the places where the implementation departs from the draft above.
+
+- **Tables.** Sessions are rows of the existing `artifacts` table, which gains `ended_at`, `closed_at` and `acked_seq`; `reviewed = 1` marks a review session. Replies use the existing `replies(id, artifact_id, at, text)`. `notes` is new: `id, artifact_id, seq, state, author, items, ends, at, released_at, seen_at, work_at, done_at`. The `items` table is kept as the hub index. Its `status` column is written in the same transaction as every note change, so the hub queries did not change.
+- **A reply acknowledges.** A `poll --agent-reply` or `reply` without `--cursor` acknowledges up to what the last poll handed over. A bare `poll` without a cursor still acknowledges nothing and replays. This keeps agents that follow the old loop (`poll`, edit, `poll --agent-reply`) from receiving the same feedback forever.
+- **`poll` payload.** It keeps `items`, flattened with `author`, and adds `cursor`. It does not add a separate `notes` array.
+- **Paging key.** `GET /s/:id/transcript?before=<entry id>` takes an entry id, not a `seq`, because replies and held notes have no `seq`.
+- **`feedback` without a server** opens `hub.db` read-write, so that it can acknowledge what it reads; `--peek` writes nothing.
+- **`seen_at`** is set when a poll answer goes out, so the page's "Seen" receipt still lights up at once. The cursor alone decides what is unread.
+- **Version.** The server reports 0.5.0, so an older server that still writes JSON is replaced by the CLI on the next command.
 
 ## Migration
 

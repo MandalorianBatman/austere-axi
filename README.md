@@ -103,19 +103,22 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 ```
 austere-axi                      sessions + usage
 austere-axi <file>               validate + open a review   [--no-open] [--reopen]
-austere-axi poll <file>          long-poll for feedback      [--agent-reply "..."] [--takeover]
-austere-axi reply <file>         post a reply without polling
-austere-axi end <file>           end the review as the agent
+austere-axi poll <file>          long-poll for feedback      [--cursor n] [--agent-reply "..."] [--after n] [--takeover]
+austere-axi reply <file>         post a reply without polling   [--cursor n]
+austere-axi end <file>           stop as the agent; the reviewer can still add notes
+austere-axi close <file>         close the review: no more notes until reopen
+austere-axi reopen <file>        reopen an ended or closed review
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix]
 austere-axi patch <file>         merge statements from stdin into the program
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi export <file>        one self-contained HTML file, works offline
-austere-axi hub on|off|status|list|notes|open   persistent server with an index of every page
+austere-axi hub on|off|status|list|notes|open   home page with every page and note
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
 austere-axi stop                 stop the background server
+austere-axi server --persist     run the server in the foreground and never idle out
 ```
 
 Output is compact YAML for agents. Each `poll` item has its statement and that statement's line, so the agent does not need to read the file again.
@@ -123,10 +126,14 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 Session rules:
 
 - One poll listens on a session at a time.
+- Every note is written to `~/.austere-axi/hub.db` before the page is told it was sent, so a note survives a crash or restart of the server.
 - Feedback sent while no agent listens waits for the next poll.
-- A review the user ended does not open again unless you pass `--reopen`.
-- If all review tabs stay closed, `poll` returns `browser_disconnected`: 10 s after a tab closes, or 5 min after a dropped connection (for example, a locked phone).
-- `feedback <file>` returns notes no agent has answered, also from earlier days. Reading them marks them received; `reply` marks them answered.
+- Feedback stays unread until the agent acknowledges it. `poll` prints a `cursor`. Passing it back (`--cursor n` on the next `poll` or `reply`), or replying at all, acknowledges everything up to it. A `poll` without either returns the same feedback again, so feedback lost on the way to the agent (a crash, a timed-out tool call) is delivered again. `--after n` replays from any point.
+- Ending a review (the agent's `end`, or **End review** in the page) means the agent stopped. The reviewer can still send notes. The next `poll` returns them and reopens the review.
+- Only the owner's **close** (`close <file>`, or **Close review** in the page) locks the composer. `reopen <file>` or **Reopen review** unlocks it.
+- A review the user ended or closed does not open again unless you pass `--reopen`.
+- If all review tabs stay closed, `poll` returns `browser_disconnected`: 10 s after a tab closes, or 5 min after a dropped connection (for example, a locked phone). The agent stops polling but does not end the review, so notes left later are picked up by the next `poll`.
+- `feedback <file>` returns notes no agent has answered, also from earlier days. Reading them acknowledges them; `reply` marks them answered.
 
 ## Components and packs
 
@@ -174,16 +181,38 @@ Each component uses `austereComponent` from `austere-axi/pack`: a PascalCase nam
 
 ## Hub
 
-The server starts when needed and stops after 30 idle minutes. `hub on` keeps it running and indexes every page you open or check:
+The server starts when needed and stops after 30 idle minutes. Every review is kept in `~/.austere-axi/hub.db` (SQLite) either way. `hub on` adds a home page over it and indexes every page you `check` or `patch`:
 
 ```sh
 austere-axi hub on      # http://127.0.0.1:4388/: pages by project and day, with search
 austere-axi hub list    # the same, for an agent: [words] [--project dir]
 austere-axi hub notes   # every note, same for an agent: [words] [--project dir] [--unanswered]
-austere-axi hub off     # back to on-demand; the index stays
+austere-axi hub off     # back to the plain session list; the database stays
 ```
 
-`/notes` lists every note on every page, newest first, with search, status and project filters. The home page shows which reviews are live and how much feedback the agent has answered. The index is SQLite (`~/.austere-axi/hub.db`), copied from the session files; the review loop does not need it.
+`/notes` lists every note on every page, newest first, with search, status and project filters. The home page shows which reviews are live and how much feedback the agent has answered.
+
+Session files from versions before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`. One server runs per state dir; a second one refuses to start (`server.lock`).
+
+### Always on, behind a reverse proxy
+
+To serve review pages at a public address, run the server under a supervisor with `--persist` so it never idles out, and point the proxy at it:
+
+```ini
+# ~/.config/systemd/user/austere-axi.service
+[Unit]
+Description=austere-axi review server
+
+[Service]
+ExecStart=/usr/bin/env npx -y austere-axi server --persist
+Environment=AUSTERE_AXI_LINK_URL=https://austere.example.com
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+`systemctl --user enable --now austere-axi`. Commands on the same machine use the running server. `AUSTERE_AXI_PERSIST=1` does the same as `--persist`. Read the reverse-proxy note in [Team review](#team-review) first: behind a proxy on the same machine every request looks local.
 
 ## Team review
 
@@ -220,7 +249,8 @@ Off loopback, a request without a valid invite or the owner key is refused. The 
 | `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS` |
 | `AUSTERE_AXI_ALLOWED_HOSTS` | | extra `Host` headers to accept (reverse proxy) |
 | `AUSTERE_AXI_DISCONNECT_GRACE_MS` | `300000` | how long a dropped connection can stay away before `poll` returns; `0` disables |
-| `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables (the hub never idles out) |
+| `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
+| `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs |
 
 ## Security

@@ -49,10 +49,62 @@ const MIME = {
 };
 
 const SHORT_GRACE_MS = 10_000;
+/** Whether AUSTERE_AXI_PERSIST asks the server to stay up with no one using it. */
+export function persistEnv() {
+  return /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_PERSIST || "");
+}
+
+/**
+ * One server per state dir: two would each hold a copy of the sessions and overwrite
+ * each other's. Returns the function that lets go of the lock.
+ */
+function lockStateDir(dir) {
+  const file = path.join(dir, "server.lock");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fs.writeFileSync(file, String(process.pid), { flag: "wx" });
+      let held = true;
+      return () => {
+        if (!held) return;
+        held = false;
+        try {
+          if (fs.readFileSync(file, "utf8") === String(process.pid)) fs.unlinkSync(file);
+        } catch {
+          // already gone
+        }
+      };
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      let pid = 0;
+      try {
+        pid = Number(fs.readFileSync(file, "utf8"));
+      } catch {
+        // removed meanwhile
+      }
+      if (pid && pid !== process.pid && processAlive(pid)) {
+        throw new Error(`another austere-axi server (pid ${pid}) is using ${dir}; stop it first (\`austere-axi stop\`), or delete ${file} if that process is not austere-axi`);
+      }
+      fs.rmSync(file, { force: true });
+    }
+  }
+  throw new Error(`could not lock ${dir} (${file})`);
+}
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+}
+
 const OWNER = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set(["annotation", "message"]);
+// Transcript entries a page gets at once; it asks for older ones as the reader scrolls back.
+const PAGE = 200;
 
-export async function runServer({ port, verbose = false, alsoListen = [] }) {
+export async function runServer({ port, verbose = false, alsoListen = [], persist = false }) {
   const log = (...a) => {
     const line = `${new Date().toISOString()} ${a.join(" ")}`;
     if (verbose) process.stderr.write(line + "\n");
@@ -63,28 +115,18 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
   };
 
-  // Hub mode (`austere-axi hub on`): mirror sessions into the index and stay up.
-  let hub = null;
-  // What this server was asked to be. The CLI compares it with the config, so a hub
-  // that cannot open its index does not make every command restart the server.
-  const hubWanted = hubEnabled();
-  if (hubWanted) {
-    try {
-      hub = await Hub.open();
-    } catch (err) {
-      log("hub-unavailable", String(err?.message || err));
-    }
+  // Notes commit to hub.db before any request that adds them is answered.
+  const releaseLock = lockStateDir(stateDir());
+  process.on("exit", releaseLock);
+  let store;
+  try {
+    store = await SessionStore.open(stateDir());
+  } catch (err) {
+    releaseLock();
+    throw err;
   }
-  const store = new SessionStore(stateDir(), { onFlush: hub ? (s) => hub.syncSession(s) : undefined });
-  if (hub) {
-    for (const s of store.list()) {
-      try {
-        hub.syncSession(s);
-      } catch (err) {
-        log("hub-sync", s.id, String(err?.message || err));
-      }
-    }
-  }
+  // The owner's pages over the same database, shown while `hub on`.
+  const hub = new Hub(store.db);
   const invites = new InviteStore(stateDir());
   const ownerToken = ownerKey(stateDir());
   const clients = new Map(); // id -> Set<{res, viewer}>
@@ -98,7 +140,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   const linkBase = linkUrl(); // throws on a bad AUSTERE_AXI_LINK_URL: better to stop here than print wrong links
   let lastActivity = Date.now();
   const longGraceMs = msEnv("AUSTERE_AXI_DISCONNECT_GRACE_MS", 5 * 60_000);
-  const idleMs = hub ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
+  const idleMs = persist || persistEnv() ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
 
   const activity = () => {
     lastActivity = Date.now();
@@ -216,7 +258,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   }
 
   function publicSession(s) {
-    return { id: s.id, file: s.file, title: s.title, status: s.status, endedBy: s.endedBy };
+    return { id: s.id, file: s.file, title: s.title, status: s.status, endedBy: s.endedBy, closed: Boolean(s.closedAt), unread: store.unread(s).length };
   }
 
   function broadcast(id, event, data) {
@@ -227,7 +269,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   }
 
   function broadcastPresence(s) {
-    broadcast(s.id, "presence", { presence: presence(s), status: s.status, endedBy: s.endedBy });
+    broadcast(s.id, "presence", { presence: presence(s), status: s.status, endedBy: s.endedBy, closed: Boolean(s.closedAt), unread: store.unread(s).length });
   }
 
   function broadcastTranscript(s, entries) {
@@ -292,16 +334,9 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     if (art.title) s.title = art.title;
     log("change", s.id, `rev=${s.revision}`, shellChanged ? "shell" : "program");
     // Receipts: work started on delivered-but-unanswered feedback.
-    const now = Date.now();
-    const touched = [];
-    for (const e of s.transcript) {
-      if (e.role === "user" && e.seenAt && !e.doneAt && !e.workAt) {
-        e.workAt = now;
-        touched.push(e);
-      }
-    }
+    const touched = s.transcript.filter((e) => e.role === "user" && e.seenAt && !e.doneAt && !e.workAt);
     if (touched.length) {
-      store.touch(s);
+      store.markWorking(s, touched);
       broadcastTranscript(s, touched);
     }
     broadcast(s.id, "changed", {
@@ -320,19 +355,22 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
 
   // ── polling ──
 
+  /** Answer `poll` with every note after its read point. The notes stay unread until the agent acknowledges them. */
   function deliver(s, poll) {
-    const entries = store.pendingEntries(s);
+    const entries = store.after(s, poll.from);
     const items = [];
     let end = false;
     for (const e of entries) {
       for (const it of e.items || []) items.push(e.author ? { ...it, author: e.author } : it);
       if (e.end) end = true;
     }
+    const ended = end || s.status === "ended";
     const body = {
       status: "feedback",
       items,
-      ended: end || s.status === "ended" || undefined,
-      endedBy: end || s.status === "ended" ? s.endedBy || "user" : undefined,
+      cursor: entries[entries.length - 1].seq,
+      ended: ended || undefined,
+      endedBy: ended ? s.endedBy || "user" : undefined,
     };
     finishPoll(s, poll, body, () => {
       store.markDelivered(s, entries);
@@ -340,6 +378,41 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       broadcastTranscript(s, entries);
       broadcastPresence(s);
     });
+  }
+
+  /** A listening poll gets new notes at once. */
+  function wake(s) {
+    const poll = polls.get(s.id);
+    if (poll && !poll.done && store.after(s, poll.from).length) deliver(s, poll);
+  }
+
+  /** The `cursor` or `after` of a poll or reply: a whole number, or null when absent. */
+  function seqParam(v) {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0) throw Object.assign(new Error("cursor and after are whole numbers from a poll"), { status: 400 });
+    return n;
+  }
+
+  /**
+   * The agent acknowledges what it got: up to `cursor`, or, when it replies without one,
+   * up to what the last poll handed it. A bare poll acknowledges nothing, so an agent
+   * that lost an answer gets it again.
+   */
+  function acknowledge(s, body, replying) {
+    const cursor = seqParam(body.cursor);
+    if (cursor != null) return store.ack(s, cursor);
+    return replying ? store.ack(s, s.deliveredSeq) : [];
+  }
+
+  /** The owner locks the review: the composer closes and a listening poll ends. */
+  function closeReview(s) {
+    store.closeReview(s);
+    s.workingSince = null;
+    const poll = polls.get(s.id);
+    if (poll && !poll.done) finishPoll(s, poll, { status: "ended", endedBy: s.endedBy, closed: true });
+    broadcast(s.id, "ended", { by: s.endedBy, closed: true });
+    broadcastPresence(s);
   }
 
   function finishPoll(s, poll, body, onDelivered) {
@@ -395,8 +468,8 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         listen: Array.from(listeners.keys()),
         tailnet: tailnet || undefined,
         remote: remoteBase() || undefined,
-        hub: Boolean(hub),
-        hubWanted,
+        hub: hubEnabled(),
+        persist: idleMs === 0,
       });
     }
     if (route === "sessions") {
@@ -405,7 +478,8 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
           ...publicSession(s),
           presence: presence(s),
           browsers: clientCount(s.id),
-          pending: s.pending.length,
+          pending: store.unread(s).length,
+          closed: Boolean(s.closedAt),
           held: store.heldEntries(s).length,
           links: links(s.id),
         })),
@@ -466,6 +540,9 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
       await ensureTailnetListener();
       const s = store.ensure(file);
+      if (s.closedAt && !body.reopen) {
+        return send(res, 200, { status: "refused", session: publicSession(s), links: links(s.id) });
+      }
       if (s.status === "ended") {
         if (s.endedBy === "user" && !body.reopen) {
           return send(res, 200, { status: "refused", session: publicSession(s), links: links(s.id) });
@@ -480,7 +557,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         session: publicSession(s),
         links: links(s.id),
         browsers: clientCount(s.id),
-        pending: s.pending.length,
+        pending: store.unread(s).length,
         held: store.heldEntries(s).length,
       });
     }
@@ -491,9 +568,10 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     if (route === "reply") {
       const text = String(body.text || "").trim();
       if (!text) return send(res, 400, { error: "reply text is empty" });
+      const acked = acknowledge(s, body, true);
       const entry = store.addAgentReply(s, text);
       s.workingSince = null;
-      broadcastTranscript(s, [entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at)]);
+      broadcastTranscript(s, [...acked, entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at && !acked.includes(e))]);
       broadcastPresence(s);
       return send(res, 200, { ok: true });
     }
@@ -519,11 +597,24 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       return send(res, 200, { ok: true });
     }
 
+    if (route === "close") {
+      closeReview(s);
+      return send(res, 200, { ok: true });
+    }
+
+    if (route === "reopen") {
+      store.reopen(s);
+      broadcastPresence(s);
+      return send(res, 200, { ok: true, session: publicSession(s) });
+    }
+
     if (route === "poll") {
+      const after = seqParam(body.after);
+      const acked = acknowledge(s, body, !!body.agentReply);
       if (body.agentReply) {
         const entry = store.addAgentReply(s, String(body.agentReply).trim());
-        broadcastTranscript(s, [entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at)]);
-      }
+        broadcastTranscript(s, [...acked, entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at && !acked.includes(e))]);
+      } else if (acked.length) broadcastTranscript(s, acked);
       s.workingSince = null;
       const existing = polls.get(s.id);
       if (existing && !existing.done) {
@@ -536,9 +627,15 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         }
         finishPoll(s, existing, { status: "replaced" });
       }
-      const poll = { res, owner: body.owner || null, startedAt: Date.now(), done: false };
-      if (s.pending.length) return deliver(s, poll);
-      if (s.status === "ended") return send(res, 200, { status: "ended", endedBy: s.endedBy });
+      const poll = { res, owner: body.owner || null, startedAt: Date.now(), done: false, from: after ?? s.ackedSeq };
+      const fresh = store.after(s, poll.from);
+      // A note written after the review ended reopens it: ending means the agent stopped, not that the reviewer is done.
+      if (s.status === "ended" && !s.closedAt && fresh.some((e) => !e.end && e.at > (s.endedAt || 0))) {
+        store.reopen(s);
+        log("reopen", s.id, "new notes");
+      }
+      if (fresh.length) return deliver(s, poll);
+      if (s.status === "ended") return send(res, 200, { status: "ended", endedBy: s.endedBy, closed: Boolean(s.closedAt) || undefined });
       polls.set(s.id, poll);
       res.on("close", () => {
         if (!poll.done) {
@@ -681,14 +778,12 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   }
 
   function hubHome(url) {
-    store.flushAll(); // writes (and so indexes) sessions changed in the last moments
     const q = (url.searchParams.get("q") || "").slice(0, 200);
     const project = (url.searchParams.get("project") || "").slice(0, 1000);
     return hubPage(hub.list({ q, project }), { version: VERSION, q, project, stats: hub.stats() });
   }
 
   function hubNotes(url) {
-    store.flushAll();
     const q = (url.searchParams.get("q") || "").slice(0, 200);
     const project = (url.searchParams.get("project") || "").slice(0, 1000);
     const st = url.searchParams.get("status");
@@ -747,10 +842,10 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
     if (ownerOnly && !isOwner(req)) return send(res, 403, "Only the owner can open this. Ask the owner for a link to the page.");
     if (url.pathname === "/") {
-      return send(res, 200, hub ? hubHome(url) : homePage(), { "content-type": "text/html; charset=utf-8" });
+      return send(res, 200, hubEnabled() ? hubHome(url) : homePage(), { "content-type": "text/html; charset=utf-8" });
     }
-    if (hub && url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
-    if (hub && url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
+    if (hubEnabled() && url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
+    if (hubEnabled() && url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
     if (url.pathname === "/favicon.ico") return send(res, 204, "");
 
     const m = /^\/s\/([a-f0-9]{12})(\/.*)?$/.exec(url.pathname);
@@ -782,7 +877,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
     // Reviewers read the page and the conversation and add notes. Everything else is the owner's.
     const reviewer = who.role === "reviewer";
-    if (reviewer && !(sub === "" || sub === "/" || sub.startsWith("/a/") || sub === "/events" || sub === "/send" || sub === "/bye")) {
+    if (reviewer && !(sub === "" || sub === "/" || sub.startsWith("/a/") || sub === "/events" || sub === "/transcript" || sub === "/send" || sub === "/bye")) {
       return send(res, 403, { error: "reviewers can only read the page and add notes" });
     }
 
@@ -791,6 +886,14 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       return send(res, 200, chromePage(s, who), { "content-type": "text/html; charset=utf-8" });
     }
     if (sub.startsWith("/a/")) return serveArtifact(req, res, s, sub.slice(3));
+
+    // Older entries, a page at a time, before the entry `before`.
+    if (sub === "/transcript") {
+      const visible = s.transcript.filter((e) => !e.discarded && canSee(e, who));
+      const before = url.searchParams.get("before");
+      const end = before == null ? visible.length : Math.max(0, visible.findIndex((e) => e.id === before));
+      return send(res, 200, { entries: visible.slice(Math.max(0, end - PAGE), end), more: end > PAGE });
+    }
 
     if (sub === "/events") {
       watch(s);
@@ -802,10 +905,12 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       });
       res.write("retry: 2000\n\n");
       const w = watchers.get(s.id);
+      const visible = s.transcript.filter((e) => !e.discarded && canSee(e, who));
       const snapshot = {
         session: reviewer ? { ...publicSession(s), file: "" } : publicSession(s),
         presence: presence(s),
-        transcript: s.transcript.filter((e) => !e.discarded && canSee(e, who)).slice(-200),
+        transcript: visible.slice(-PAGE),
+        more: visible.length > PAGE,
         revision: s.revision,
         program: w?.program ?? null,
         thirdPartyPacks: thirdPartyPacks(w?.html),
@@ -835,7 +940,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const end = !reviewer && !!body.end;
       let items = Array.isArray(body.items) ? body.items.filter((x) => x && typeof x === "object").slice(0, reviewer ? 50 : 200) : [];
       if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind));
-      if (s.status === "ended") return send(res, 409, { error: "session has ended" });
+      if (s.closedAt) return send(res, 409, { error: "the owner closed this review" });
       if (!items.length && !end) return send(res, 400, { error: "nothing to send" });
       // The server decides who wrote a note. A reviewer's own item id could overwrite another note in the hub.
       for (const it of items) {
@@ -850,11 +955,11 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         broadcast(s.id, "ended", { by: "user" });
       }
       if (entry) broadcastTranscript(s, [entry]);
-      const poll = polls.get(s.id);
-      if (poll && !poll.done) {
-        if (s.pending.length) deliver(s, poll);
-        else if (end) finishPoll(s, poll, { status: "ended", endedBy: "user" });
+      if (end) {
+        const poll = polls.get(s.id);
+        if (poll && !poll.done && !store.after(s, poll.from).length) finishPoll(s, poll, { status: "ended", endedBy: "user" });
       }
+      wake(s);
       broadcastPresence(s);
       return send(res, 200, { ok: true, entry });
     }
@@ -863,8 +968,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const ids = Array.isArray(body.ids) ? body.ids.map(String) : body.all ? null : [];
       const done = sub === "/release" ? store.release(s, ids) : store.discard(s, ids);
       if (done.length) broadcastTranscript(s, done);
-      const poll = polls.get(s.id);
-      if (sub === "/release" && poll && !poll.done && s.pending.length) deliver(s, poll);
+      if (sub === "/release") wake(s);
       broadcastPresence(s);
       return send(res, 200, { ok: true, count: done.length });
     }
@@ -873,10 +977,19 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         store.end(s, "user");
         broadcast(s.id, "ended", { by: "user" });
         const poll = polls.get(s.id);
-        if (poll && !poll.done) {
-          if (s.pending.length) deliver(s, poll);
-          else finishPoll(s, poll, { status: "ended", endedBy: "user" });
-        }
+        if (poll && !poll.done && !store.after(s, poll.from).length) finishPoll(s, poll, { status: "ended", endedBy: "user" });
+        wake(s);
+        broadcastPresence(s);
+      }
+      return send(res, 200, { ok: true });
+    }
+    if (sub === "/close" && req.method === "POST") {
+      if (!s.closedAt) closeReview(s);
+      return send(res, 200, { ok: true });
+    }
+    if (sub === "/reopen" && req.method === "POST") {
+      if (s.closedAt || s.status === "ended") {
+        store.reopen(s);
         broadcastPresence(s);
       }
       return send(res, 200, { ok: true });
@@ -940,7 +1053,11 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   }
 
   const ok = await listen("127.0.0.1");
-  if (!ok) throw new Error(`could not listen on 127.0.0.1:${port} (is another server using it? set AUSTERE_AXI_PORT)`);
+  if (!ok) {
+    store.close();
+    releaseLock();
+    throw new Error(`could not listen on 127.0.0.1:${port} (is another server using it? set AUSTERE_AXI_PORT)`);
+  }
   for (const h of alsoListen) await listen(h);
   await ensureTailnetListener();
 
@@ -961,9 +1078,13 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       if (s && !poll.done) finishPoll(s, poll, { status: "interrupted", reason });
     }
     for (const id of watchers.keys()) unwatch(id);
-    store.flushAll();
     for (const server of listeners.values()) server.close();
-    setTimeout(() => process.exit(0), 100).unref();
+    // Everything is already on disk; let a replacement server take the state dir at once.
+    releaseLock();
+    setTimeout(() => {
+      store.close();
+      process.exit(0);
+    }, 100).unref();
   }
 
   if (idleMs > 0) {

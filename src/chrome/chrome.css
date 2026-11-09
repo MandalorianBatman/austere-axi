@@ -498,6 +498,10 @@ textarea.edit {
 .issue-text {
   overflow-wrap: anywhere;
 }
+.load-earlier {
+  align-self: center;
+  margin: 0 auto 8px;
+}
 .ended-note {
   text-align: center;
   font-size: 12px;
