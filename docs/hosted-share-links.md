@@ -74,19 +74,22 @@ The Worker proxies `https://cdn.jsdelivr.net/npm/austere-axi@<version>/dist/<ass
 
 ### Hosted page
 
-`GET /p/:id` returns the same shell the local server builds (`src/cli/server.js`), loading `/rt/<v>/chrome/chrome.{js,css}`, with:
+`GET /p/:id` returns the same shell the local server builds (`src/cli/server.js`), loading `/rt/<v>/chrome/chrome.{js,css}`. The shell CSP forbids inline scripts, so the boot object is JSON in a non-executing script tag, which chrome reads when `window.__AUSTERE__` is absent:
 
-```js
-window.__AUSTERE__ = { id, viewer: { role: "reviewer", name: "" }, hosted: { base: "/p/<id>", report: "/p/<id>/report" } };
+```html
+<script type="application/json" id="austere-boot">{ "id": "<id>", "title": "<page title>", "viewer": { "role": "reviewer", "name": "" }, "hosted": { "base": "/p/<id>", "report": "/p/<id>/report" } }</script>
 ```
 
-Chrome hosted mode (an austere-axi change):
+Escape `<` as `\u003c` in the JSON, as the local server does. `artifactUrl` may be omitted; it defaults to `{base}/a/`.
+
+Chrome hosted mode (an austere-axi change, `src/chrome/chrome.js`):
 
 - All `/s/${SID}/…` URLs come from one `base`, which defaults to `/s/${SID}`.
-- With `hosted` set, chrome polls `GET {base}/conversation?after=<cursor>` every 30 s, and on focus, instead of opening `EventSource`.
-- It asks for the reviewer's name before the first send, stores it in localStorage under `austere:name`, and sends it with every batch.
-- It hides owner and local-only controls: end review, export, held-note release, and the `bye` beacon.
-- It renders the footer: "Made with austere-axi" (links to the GitHub repo) and "Report".
+- With `hosted` set, chrome polls `GET {base}/conversation` every 30 s, and on window focus, instead of opening `EventSource`. The first request has no `after`; later ones pass back the last `cursor`. A 404 or 410 stops polling and shows "This page is no longer available."
+- It shows "New version, reload" when `publishedAt` differs from the value of its first check.
+- It asks for the reviewer's name (40 characters at most) before the first send, stores it in localStorage under `austere:name`, and sends it as `name` with every batch. After a send it checks the conversation at once.
+- It hides owner and local-only controls: end review, export, copy path and link, held-note release, delivery receipts, and the `bye` beacon. Reviewer sends never carry `end`.
+- It renders the footer: "Made with austere-axi" (links to the GitHub repo) and "Report", which opens a reason box and POSTs `{ reason }` to `hosted.report`.
 
 Headers on `/p/:id`:
 
@@ -96,7 +99,7 @@ X-Robots-Tag: noindex, nofollow
 Referrer-Policy: no-referrer
 ```
 
-`GET /p/:id/a/` serves the artifact with `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'`. The frame cannot make network requests. Notes leave it only by `postMessage` to the chrome, which is how it already works locally (`src/runtime/index.jsx`).
+`GET /p/:id/a/` serves the artifact with `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'`. The runtime ships its font as a `data:` URL, hence `font-src data:`. The frame cannot make network requests. Notes leave it only by `postMessage` to the chrome, which is how it already works locally (`src/runtime/index.jsx`).
 
 ### Data model (D1)
 
@@ -133,9 +136,18 @@ Reviewer routes are same-origin from the hosted chrome, and a foreign `Origin` i
 | Route | Purpose |
 |---|---|
 | `GET /p/:id`, `GET /p/:id/a/` | Shell and artifact (above). Returns 404 when expired, deleted or taken down. |
-| `POST /p/:id/send` | `{ name, items, end? }`, the same `items` shape the chrome posts locally. `end` is ignored for reviewers. |
-| `GET /p/:id/conversation?after=<cursor>` | The reviewer's view: replies plus notes, with the page's `published_at` so chrome can offer "new version, reload". |
+| `POST /p/:id/send` | `{ name, items }`, the same `items` shape the chrome posts locally. Any `end` is ignored. Returns `{ ok: true }`; the note shows up on the chrome's next conversation check. |
+| `GET /p/:id/conversation?after=<cursor>` | The reviewer's view (shape below). Without `after`, everything so far. |
 | `POST /p/:id/report` | `{ reason }`. Inserts a report row and emails the admin. |
+
+`GET /p/:id/conversation` returns notes and replies after the cursor, the page's `published_at` (so chrome can offer "new version, reload"), and the third-party packs the page loads (for the same warning as locally). Times are epoch milliseconds. `cursor` is opaque to chrome; the service can encode both sequences in it, for example `"<noteSeq>.<replySeq>"`.
+
+```json
+{ "publishedAt": 1762671000000, "cursor": "12.3",
+  "notes": [{ "seq": 12, "author": "Ana", "items": [{ "kind": "message", "text": "…" }], "at": 1762671000000 }],
+  "replies": [{ "seq": 3, "text": "markdown", "at": 1762671000000 }],
+  "thirdPartyPacks": ["@acme/charts"] }
+```
 
 ### CLI side
 
