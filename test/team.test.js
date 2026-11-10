@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
@@ -470,9 +471,11 @@ test("a held note waits: poll and feedback skip it until the owner sends it", as
 test("releasing held notes needs explicit ids: a note the owner was never shown stays held", async () => {
   const origin = `http://127.0.0.1:${srv.port}`;
   const mal = await accept((await share("Mal")).data.link);
+  // Fillers come from a second reviewer: one reviewer can hold at most 200 notes.
+  const ned = await accept((await share("Ned")).data.link);
   try {
     const early = (await sendNote(mal, "UNSEEN-EARLY")).data.entry;
-    for (let n = 0; n < 200; n++) assert.equal((await sendNote(mal, `filler ${n}`)).status, 200);
+    for (let n = 0; n < 200; n++) assert.equal((await sendNote(ned, `filler ${n}`)).status, 200);
 
     // The owner's snapshot keeps only the last 200 entries, so the early note is not on screen.
     const owner = stream(srv.port, `/s/${id}/events`);
@@ -489,7 +492,7 @@ test("releasing held notes needs explicit ids: a note the owner was never shown 
     // The bulk shortcut and an empty body release nothing.
     assert.equal((await request(srv.port, "POST", `/s/${id}/release`, { body: { all: true }, headers: { origin } })).data.count, 0);
     assert.equal((await request(srv.port, "POST", `/s/${id}/release`, { body: {}, headers: { origin } })).data.count, 0);
-    const feedbackFromMal = async () => (await request(srv.port, "POST", "/api/feedback", { body: { file: FILE, all: true, peek: true } })).data.entries.filter((e) => e.author === "Mal");
+    const feedbackFromMal = async () => (await request(srv.port, "POST", "/api/feedback", { body: { file: FILE, all: true, peek: true } })).data.entries.filter((e) => e.author === "Mal" || e.author === "Ned");
     assert.equal((await feedbackFromMal()).length, 0);
 
     // Send all posts the rendered ids: only those are released.
@@ -503,6 +506,7 @@ test("releasing held notes needs explicit ids: a note the owner was never shown 
     await request(srv.port, "POST", "/api/reply", { body: { file: FILE, text: "done" } });
   } finally {
     await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Mal" } });
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ned" } });
     await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin } });
   }
 });
@@ -791,4 +795,129 @@ test("feedback shows the rest of a delivery when one item cannot be read", async
   assert.match(r.out, /OWNER-NOTE-2/);
   assert.match(r.out, /could not read this annotation item/);
   await request(srv.port, "POST", "/api/reply", { body: { file: FILE, text: "ok" } });
+});
+
+// ── event stream limits ──
+
+/** An event stream that is never read: its socket buffers fill and the server has to cope. Resolves with the HTTP status line. */
+function stalledStream(port, cookie) {
+  return new Promise((resolve, reject) => {
+    const sock = net.connect(port, "127.0.0.1", () => {
+      sock.write(`GET /s/${id}/events HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nCookie: ${cookie}\r\n\r\n`);
+    });
+    sock.once("data", (d) => {
+      sock.pause();
+      resolve({ sock, status: Number(/^HTTP\/1\.1 (\d+)/.exec(d.toString())?.[1]) });
+    });
+    sock.on("error", () => {});
+    sock.once("close", () => reject(new Error("closed before responding")));
+  });
+}
+
+const browsers = async () => (await request(srv.port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id).browsers;
+
+test("an event stream that never reads is dropped once its backlog passes the cap", async () => {
+  const eve = await accept((await share("Eve")).data.link);
+  const socks = [];
+  try {
+    for (let i = 0; i < 4; i++) {
+      const s = await stalledStream(srv.port, eve.cookie);
+      assert.equal(s.status, 200);
+      socks.push(s.sock);
+    }
+    assert.equal(await browsers(), 4);
+    const big = "x".repeat(3_000_000);
+    let posts = 0;
+    while ((await browsers()) > 0 && posts < 40) {
+      assert.equal((await sendNote(eve, big)).status, 200);
+      posts++;
+    }
+    assert.equal(await browsers(), 0, `all four stalled streams are dropped (after ${posts} posts)`);
+  } finally {
+    for (const s of socks) s.destroy();
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Eve" } });
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+  }
+});
+
+test("one event larger than the cap reaches a reading stream without dropping it", async () => {
+  const ivy = await accept((await share("Ivy")).data.link);
+  const { sock, status } = await stalledStream(srv.port, ivy.cookie);
+  try {
+    assert.equal(status, 200);
+    let got = 0;
+    const arrived = new Promise((resolve) => sock.on("data", (d) => (got += d.length) > 3_000_000 && resolve()));
+    sock.resume();
+    assert.equal((await sendNote(ivy, "x".repeat(3_000_000))).status, 200);
+    await arrived;
+    assert.equal(await browsers(), 1, "the healthy stream is still connected");
+  } finally {
+    sock.destroy();
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ivy" } });
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+  }
+});
+
+test("a reviewer can have only so many notes held at once", async () => {
+  const jo = await accept((await share("Jo")).data.link);
+  try {
+    for (let i = 0; i < 200; i++) assert.equal((await sendNote(jo, `n${i}`)).status, 200);
+    const over = await sendNote(jo, "one too many");
+    assert.equal(over.status, 429);
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+    assert.equal((await sendNote(jo, "after the owner cleared them")).status, 200);
+  } finally {
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Jo" } });
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+  }
+});
+
+test("a reviewer gets a few event streams, and the whole session a few more", async () => {
+  const fay = await accept((await share("Fay")).data.link);
+  const stalled = [];
+  try {
+    for (let i = 0; i < 4; i++) stalled.push((await stalledStream(srv.port, fay.cookie)).sock);
+    const fifth = await stalledStream(srv.port, fay.cookie).catch(() => null);
+    assert.equal(fifth?.status, 429, "a fifth stream for the same invite is refused");
+    fifth?.sock.destroy();
+
+    // Another reviewer is not affected by Fay's streams, but the session has its own ceiling.
+    const others = [];
+    for (let i = 0; i < 12; i++) {
+      const g = await accept((await share(`Guest${i}`)).data.link);
+      others.push(g);
+      for (let j = 0; j < 4; j++) {
+        const s = await stalledStream(srv.port, g.cookie).catch(() => null);
+        if (!s || s.status !== 200) {
+          s?.sock.destroy();
+          assert.ok(i >= 3, "the session ceiling is reached only after several reviewers");
+          return;
+        }
+        stalled.push(s.sock);
+      }
+    }
+    assert.fail("no session-wide limit on reviewer event streams");
+  } finally {
+    for (const s of stalled) s.destroy();
+    for (const n of ["Fay", ...Array.from({ length: 12 }, (_, i) => `Guest${i}`)]) await request(srv.port, "POST", "/api/share/revoke", { body: { key: n } });
+  }
+});
+
+test("the transcript is trimmed, keeping what is still waiting on the owner", () => {
+  const dir = tmp("austere-trim-");
+  try {
+    const store = new SessionStore(dir);
+    const s = store.ensure(path.join(dir, "plan.html"));
+    const held = store.addUserBatch(s, [{ kind: "message", text: "held", id: "h" }], { author: "Ana", hold: true });
+    const waiting = store.addUserBatch(s, [{ kind: "message", text: "waiting", id: "w" }]);
+    for (let i = 0; i < 1000; i++) store.addAgentReply(s, `reply ${i}`);
+    assert.ok(s.transcript.length < 600, `the transcript stays bounded (${s.transcript.length})`);
+    assert.equal(s.transcript.at(-1).text, "reply 999", "the newest entry stays");
+    assert.ok(s.transcript.includes(held) && s.transcript.includes(waiting), "held and pending notes are never trimmed away");
+    store.flush(s);
+    const saved = JSON.parse(fs.readFileSync(path.join(store.dir, `${s.id}.json`), "utf8")).transcript.map((e) => e.id);
+    assert.ok(saved.includes(held.id) && saved.includes(waiting.id), "the saved transcript keeps them too");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

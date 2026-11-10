@@ -62,6 +62,14 @@ const OWNER = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set(["annotation", "message"]);
 // Transcript entries a page gets at once; it asks for older ones as the reader scrolls back.
 const PAGE = 200;
+// A stalled event stream is dropped once more than SSE_MAX_BUFFER stays queued for it for SSE_STALL_MS, or at once past
+// SSE_HARD_MAX; reviewers get a few streams each.
+const SSE_MAX_BUFFER = 1 << 20;
+const SSE_STALL_MS = 5_000;
+const SSE_HARD_MAX = 32 << 20;
+const SSE_MAX_PER_REVIEWER = 4;
+const MAX_HELD_PER_REVIEWER = 200;
+const SSE_MAX_PER_SESSION = 16;
 
 export async function runServer({ port, verbose = false, alsoListen = [], persist = false }) {
   const log = (...a) => {
@@ -246,11 +254,29 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     return { id: s.id, file: s.file, title: s.title, status: s.status, endedBy: s.endedBy, closed: Boolean(s.closedAt), unread: store.unread(s).length };
   }
 
+  /**
+   * Write to an event stream, and drop the client once its socket stays backed up instead of buffering for it.
+   * A backlog over SSE_MAX_BUFFER is forgiven for SSE_STALL_MS (one large event, and the small ones right after it,
+   * must not cut off a viewer that is reading); past SSE_HARD_MAX the client is dropped at once.
+   */
+  function sseWrite(set, c, msg) {
+    const queued = c.res.writableLength;
+    if (queued > SSE_HARD_MAX || (queued > SSE_MAX_BUFFER && c.stalledSince && Date.now() - c.stalledSince > SSE_STALL_MS)) {
+      set.delete(c);
+      c.res.destroy();
+      return;
+    }
+    if (!c.res.write(msg) && !c.stalledSince && c.res.writableLength > SSE_MAX_BUFFER) {
+      c.stalledSince = Date.now();
+      c.res.once("drain", () => (c.stalledSince = 0));
+    }
+  }
+
   function broadcast(id, event, data) {
     const set = clients.get(id);
     if (!set) return;
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    for (const c of set) c.res.write(msg);
+    for (const c of Array.from(set)) sseWrite(set, c, msg);
   }
 
   function broadcastPresence(s) {
@@ -260,9 +286,9 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
   function broadcastTranscript(s, entries) {
     const set = clients.get(s.id);
     if (!set) return;
-    for (const c of set) {
+    for (const c of Array.from(set)) {
       const visible = entries.filter((e) => canSee(e, c.viewer));
-      if (visible.length) c.res.write(`event: transcript\ndata: ${JSON.stringify({ entries: visible })}\n\n`);
+      if (visible.length) sseWrite(set, c, `event: transcript\ndata: ${JSON.stringify({ entries: visible })}\n\n`);
     }
   }
 
@@ -955,6 +981,12 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     }
 
     if (sub === "/events") {
+      if (reviewer) {
+        const open = Array.from(clients.get(s.id) || []).filter((c) => c.viewer.role === "reviewer");
+        if (open.length >= SSE_MAX_PER_SESSION || open.filter((c) => c.viewer.token === who.token).length >= SSE_MAX_PER_REVIEWER) {
+          return send(res, 429, { error: "too many event streams" });
+        }
+      }
       watch(s);
       res.writeHead(200, {
         "content-type": "text/event-stream",
@@ -1007,6 +1039,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
         it.id = reviewer || !it.id ? newId("i") : it.id;
       }
       const hold = reviewer && !who.auto;
+      if (hold && items.length && store.heldEntries(s).filter((e) => e.author === who.name).length >= MAX_HELD_PER_REVIEWER) return send(res, 429, { error: "too many notes awaiting the owner; wait for them to be released" });
       let entry = null;
       if (items.length) entry = store.addUserBatch(s, items, { end, author: who.name, hold });
       if (end) {
