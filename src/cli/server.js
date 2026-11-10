@@ -778,11 +778,14 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       // Require a same-origin browser POST: Origin must be present and equal Host (checkOrigin alone allows a missing Origin).
       if (!req.headers.origin || !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
       // The form posts application/x-www-form-urlencoded; readBody() only parses JSON, so read the small body here.
-      let raw = "";
+      const chunks = [];
+      let size = 0;
       for await (const c of req) {
-        raw += c;
-        if (raw.length > 4096) return send(res, 413, "payload too large");
+        size += c.length;
+        if (size > 4096) return send(res, 413, "payload too large");
+        chunks.push(c);
       }
+      const raw = Buffer.concat(chunks).toString("utf8");
       const inv = invites.find(new URLSearchParams(raw).get("invite") || "");
       if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
       res.writeHead(303, {
