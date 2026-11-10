@@ -154,6 +154,7 @@ test("the owner's held view shows what the agent would receive, and a bad note c
   try {
     const guest = await guestCtx.newPage();
     await guest.goto(invite.link);
+    await guest.click("form[action$='/join'] button");
     await guest.waitForSelector(".composer textarea");
     const send = (items) =>
       guest.evaluate(
@@ -163,7 +164,7 @@ test("the owner's held view shows what the agent would receive, and a bad note c
     const long = "q".repeat(300) + " TAIL-PAST-CUT";
     assert.equal(
       await send([
-        { kind: "annotation", target: "intro", component: "TextContent", path: ["root", "HIDDEN-WITHIN", "intro"], selection: long, note: "n1" },
+        { kind: "annotation", target: "intro", component: "TextContent", path: ["root", "HiddenWithin", "intro"], selection: long, note: "n1" },
         { kind: "annotation", target: "intro", component: "TextContent", selection: { length: 999 }, note: "POISON" },
         { kind: "message", text: "LATER-NOTE" },
       ]),
@@ -173,7 +174,7 @@ test("the owner's held view shows what the agent would receive, and a bad note c
     await owner.goto(`http://127.0.0.1:${port}/s/${session.id}`);
     await owner.waitForSelector(".held-bar");
     const text = await owner.locator(".msg.user.held").innerText();
-    assert.match(text, /within HIDDEN-WITHIN/, "the path the agent sees");
+    assert.match(text, /within HiddenWithin/, "the path the agent sees");
     assert.match(text, /TAIL-PAST-CUT/, "the whole quote, not the first 260 characters");
     assert.match(text, /LATER-NOTE/, "a malformed field did not stop later notes rendering");
     await owner.click(".held-bar >> text=Discard all");
