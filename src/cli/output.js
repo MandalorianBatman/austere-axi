@@ -3,18 +3,25 @@
 
 const PLAIN = /^[A-Za-z0-9_./@:+-][A-Za-z0-9 _./@:+(),=<>*#%?!'-]*$/;
 
+/** JSON.stringify leaves NEL, LS and PS raw; YAML readers treat them as line breaks, so escape them. */
+const json = (v) => JSON.stringify(v).replace(/[\u0085\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+
 function scalar(v) {
   if (v === null || v === undefined) return "null";
   if (typeof v === "number" || typeof v === "boolean") return String(v);
   const s = String(v);
   if (s === "") return '""';
   if (PLAIN.test(s) && !/^(true|false|null|yes|no|-?\d[\d.]*)$/i.test(s) && !/: /.test(s) && !/\s$/.test(s)) return s;
-  return JSON.stringify(s);
+  return json(s);
 }
 
 function isPlainObject(v) {
   return v && typeof v === "object" && !Array.isArray(v);
 }
+
+const KEY = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
+/** Keys can come from reviewer data: anything that is not a simple identifier is quoted, so it cannot add structure. */
+const key = (k) => (KEY.test(k) ? k : json(k));
 
 function emit(value, indent, lines) {
   const pad = " ".repeat(indent);
@@ -29,7 +36,7 @@ function emit(value, indent, lines) {
           lines.push(...sub);
         } else lines.push(pad + "- {}");
       } else if (Array.isArray(item)) {
-        lines.push(pad + "- " + JSON.stringify(item));
+        lines.push(pad + "- " + json(item));
       } else {
         pushScalar(lines, pad + "- ", item, indent + 2);
       }
@@ -41,27 +48,28 @@ function emit(value, indent, lines) {
     if (Array.isArray(v)) {
       if (!v.length) continue;
       if (v.every((x) => !isPlainObject(x) && !Array.isArray(x)) && v.join(", ").length < 100) {
-        lines.push(`${pad}${k}: [${v.map(scalar).join(", ")}]`);
+        lines.push(`${pad}${key(k)}: [${v.map(scalar).join(", ")}]`);
       } else {
-        lines.push(`${pad}${k}:`);
+        lines.push(`${pad}${key(k)}:`);
         emit(v, indent + 2, lines);
       }
     } else if (isPlainObject(v)) {
-      const json = JSON.stringify(v);
-      if (json.length <= 100 && !Object.values(v).some((x) => typeof x === "object" && x)) {
-        lines.push(`${pad}${k}: ${json}`);
+      const inline = json(v);
+      if (inline.length <= 100 && !Object.values(v).some((x) => typeof x === "object" && x)) {
+        lines.push(`${pad}${key(k)}: ${inline}`);
       } else {
-        lines.push(`${pad}${k}:`);
+        lines.push(`${pad}${key(k)}:`);
         emit(v, indent + 2, lines);
       }
     } else {
-      pushScalar(lines, `${pad}${k}: `, v, indent + 2);
+      pushScalar(lines, `${pad}${key(k)}: `, v, indent + 2);
     }
   }
 }
 
 function pushScalar(lines, prefix, v, indent) {
-  if (typeof v === "string" && v.includes("\n")) {
+  // A block scalar holds only LF line breaks: a CR, VT, FF, NEL, LS or PS would start a line in a YAML parser or terminal.
+  if (typeof v === "string" && v.includes("\n") && !/[\r\u000b\u000c\u0085\u2028\u2029]/.test(v)) {
     lines.push(prefix + "|");
     const pad = " ".repeat(indent);
     for (const l of v.replace(/\n+$/, "").split("\n")) lines.push(pad + l);

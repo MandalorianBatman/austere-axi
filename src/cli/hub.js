@@ -101,6 +101,11 @@ export function itemStatus(entry, pending) {
   return "received";
 }
 
+/** A bindable SQLite text value from untrusted item data: strings pass, other shapes become JSON, empty is null. */
+function bindText(v) {
+  return v == null || v === "" ? null : typeof v === "string" ? v : JSON.stringify(v);
+}
+
 function itemText(it) {
   if (it.kind === "annotation") return it.note || it.selection || it.excerpt || "";
   if (it.kind === "action") return it.message || "";
@@ -163,8 +168,8 @@ export class Hub {
         if (e.role !== "user") continue;
         const status = itemStatus(e, pending.has(e.id));
         (e.items || []).forEach((it, i) => {
-          const id = it.id || `${e.id}.${i}`;
-          this.q.upsertItem.run(id, s.id, e.id, e.at, it.kind || "message", it.target || it.statement || null, itemText(it), status, JSON.stringify(it), e.author || "");
+          const id = String(it.id || `${e.id}.${i}`);
+          this.q.upsertItem.run(id, s.id, e.id, e.at, String(it.kind || "message"), bindText(it.target || it.statement), bindText(itemText(it)) ?? "", status, JSON.stringify(it), String(e.author || ""));
         });
       }
       this.db.exec("COMMIT");

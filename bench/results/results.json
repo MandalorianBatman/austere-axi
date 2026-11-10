@@ -1,0 +1,6212 @@
+{
+ "trials": [
+  {
+   "id": "claude-sonnet/architecture-decision/austere/1",
+   "model": "claude-sonnet",
+   "task": "architecture-decision",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:45:21.401Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2552,
+     "cacheRead": 11424,
+     "cacheWrite": 323,
+     "thinking": 912
+    },
+    "costUsd": 0.0279584,
+    "wallMs": 16446,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3689,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 217,
+     "cacheRead": 11747,
+     "cacheWrite": 2993,
+     "thinking": 0
+    },
+    "costUsd": 0.043283100000000005,
+    "wallMs": 3681,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "optionsTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/architecture-decision/austere/2",
+   "model": "claude-sonnet",
+   "task": "architecture-decision",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:49:31.589Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2741,
+     "cacheRead": 11424,
+     "cacheWrite": 324,
+     "thinking": 981
+    },
+    "costUsd": 0.0298524,
+    "wallMs": 17491,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3921,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 378,
+     "cacheRead": 11748,
+     "cacheWrite": 2993,
+     "thinking": 157
+    },
+    "costUsd": 0.0467872,
+    "wallMs": 4567,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "replayYesNats"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/architecture-decision/austere/3",
+   "model": "claude-sonnet",
+   "task": "architecture-decision",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:53:50.238Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 1486,
+     "cacheRead": 11424,
+     "cacheWrite": 325,
+     "thinking": 0
+    },
+    "costUsd": 0.017306399999999996,
+    "wallMs": 10270,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3356,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 199,
+     "cacheRead": 11424,
+     "cacheWrite": 2225,
+     "thinking": 0
+    },
+    "costUsd": 0.029346799999999996,
+    "wallMs": 14061,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "optionsTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/architecture-decision/lavish/1",
+   "model": "claude-sonnet",
+   "task": "architecture-decision",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:45:58.308Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 5689,
+     "cacheRead": 19055,
+     "cacheWrite": 324,
+     "thinking": 890
+    },
+    "costUsd": 0.06009549999999999,
+    "wallMs": 36171,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 11679,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 995,
+     "cacheRead": 19379,
+     "cacheWrite": 5977,
+     "thinking": 414
+    },
+    "costUsd": 0.0958994,
+    "wallMs": 7938,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table > tbody > tr#opt-nats > td.font-bold:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 5,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/architecture-decision/lavish/2",
+   "model": "claude-sonnet",
+   "task": "architecture-decision",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:50:15.607Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 6897,
+     "cacheRead": 19055,
+     "cacheWrite": 326,
+     "thinking": 1566
+    },
+    "costUsd": 0.07218350000000001,
+    "wallMs": 41184,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 13296,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 470,
+     "cacheRead": 19381,
+     "cacheWrite": 7173,
+     "thinking": 239
+    },
+    "costUsd": 0.10752160000000001,
+    "wallMs": 6772,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table > thead > tr > th:nth-of-type(3)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/architecture-decision/lavish/3",
+   "model": "claude-sonnet",
+   "task": "architecture-decision",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:54:22.255Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 5580,
+     "cacheRead": 19055,
+     "cacheWrite": 323,
+     "thinking": 507
+    },
+    "costUsd": 0.0590015,
+    "wallMs": 30717,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 12472,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 622,
+     "cacheRead": 19378,
+     "cacheWrite": 5853,
+     "thinking": 265
+    },
+    "costUsd": 0.0905793,
+    "wallMs": 10647,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table > tbody > tr#opt-nats > th"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 4,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/code-review/austere/1",
+   "model": "claude-sonnet",
+   "task": "code-review",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:44:56.546Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 1783,
+     "cacheRead": 11483,
+     "cacheWrite": 323,
+     "thinking": 819
+    },
+    "costUsd": 0.020274300000000006,
+    "wallMs": 17102,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 2206,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 1399,
+     "cacheRead": 11806,
+     "cacheWrite": 2052,
+     "thinking": 932
+    },
+    "costUsd": 0.0436609,
+    "wallMs": 10591,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "verdictCallout"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/code-review/austere/2",
+   "model": "claude-sonnet",
+   "task": "code-review",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:49:02.315Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2285,
+     "cacheRead": 11483,
+     "cacheWrite": 322,
+     "thinking": 985
+    },
+    "costUsd": 0.025290300000000005,
+    "wallMs": 16163,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 2913,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 1198,
+     "cacheRead": 11805,
+     "cacheWrite": 2565,
+     "thinking": 795
+    },
+    "costUsd": 0.04871880000000001,
+    "wallMs": 10266,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "sqlInjectionFinding"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/code-review/austere/3",
+   "model": "claude-sonnet",
+   "task": "code-review",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:53:23.629Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2516,
+     "cacheRead": 11483,
+     "cacheWrite": 322,
+     "thinking": 1220
+    },
+    "costUsd": 0.027600300000000005,
+    "wallMs": 19191,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 2906,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 953,
+     "cacheRead": 11805,
+     "cacheWrite": 2793,
+     "thinking": 563
+    },
+    "costUsd": 0.0494908,
+    "wallMs": 8131,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "findingSqlInjection"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/code-review/lavish/1",
+   "model": "claude-sonnet",
+   "task": "code-review",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:45:33.493Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 4268,
+     "cacheRead": 15709,
+     "cacheWrite": 324,
+     "thinking": 1229
+    },
+    "costUsd": 0.0455509,
+    "wallMs": 28731,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 7181,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 2207,
+     "cacheRead": 16033,
+     "cacheWrite": 4586,
+     "thinking": 1052
+    },
+    "costUsd": 0.08757619999999999,
+    "wallMs": 15719,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "main.mx-auto.max-w-6xl > header.space-y-3 > div.alert.alert-error:nth-of-type(2) > span"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 7,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/code-review/lavish/2",
+   "model": "claude-sonnet",
+   "task": "code-review",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:49:42.842Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 3911,
+     "cacheRead": 15709,
+     "cacheWrite": 324,
+     "thinking": 1230
+    },
+    "costUsd": 0.0419809,
+    "wallMs": 24955,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 6474,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 2308,
+     "cacheRead": 16033,
+     "cacheWrite": 4181,
+     "thinking": 1218
+    },
+    "costUsd": 0.0833962,
+    "wallMs": 18977,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "tbody > tr#f1 > td:nth-of-type(3) > strong"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 5,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/code-review/lavish/3",
+   "model": "claude-sonnet",
+   "task": "code-review",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:54:07.960Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 4518,
+     "cacheRead": 15709,
+     "cacheWrite": 324,
+     "thinking": 1371
+    },
+    "costUsd": 0.0480509,
+    "wallMs": 30129,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 7673,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 2382,
+     "cacheRead": 16033,
+     "cacheWrite": 4826,
+     "thinking": 1300
+    },
+    "costUsd": 0.09278620000000001,
+    "wallMs": 23865,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "section.mb-6.grid > div.alert.alert-error:nth-of-type(1) > div > p"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 7,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/comparison-table/austere/1",
+   "model": "claude-sonnet",
+   "task": "comparison-table",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:46:10.008Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2637,
+     "cacheRead": 11400,
+     "cacheWrite": 324,
+     "thinking": 983
+    },
+    "costUsd": 0.02881,
+    "wallMs": 18312,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3556,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 1432,
+     "cacheRead": 11724,
+     "cacheWrite": 2904,
+     "thinking": 400
+    },
+    "costUsd": 0.0559264,
+    "wallMs": 9913,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "milvusFit"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/comparison-table/austere/2",
+   "model": "claude-sonnet",
+   "task": "comparison-table",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:50:14.261Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2345,
+     "cacheRead": 11400,
+     "cacheWrite": 323,
+     "thinking": 573
+    },
+    "costUsd": 0.025886,
+    "wallMs": 14944,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3789,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 1293,
+     "cacheRead": 11723,
+     "cacheWrite": 2619,
+     "thinking": 341
+    },
+    "costUsd": 0.0504723,
+    "wallMs": 9246,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "latMilvus"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/comparison-table/austere/3",
+   "model": "claude-sonnet",
+   "task": "comparison-table",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:54:36.540Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 1932,
+     "cacheRead": 11400,
+     "cacheWrite": 323,
+     "thinking": 579
+    },
+    "costUsd": 0.021756,
+    "wallMs": 14451,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 2907,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 1008,
+     "cacheRead": 11723,
+     "cacheWrite": 2231,
+     "thinking": 312
+    },
+    "costUsd": 0.0419403,
+    "wallMs": 7003,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "milvusItem"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/comparison-table/lavish/1",
+   "model": "claude-sonnet",
+   "task": "comparison-table",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:47:05.335Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 6239,
+     "cacheRead": 14697,
+     "cacheWrite": 322,
+     "thinking": 1407
+    },
+    "costUsd": 0.06515169999999999,
+    "wallMs": 40718,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 11643,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 3308,
+     "cacheRead": 15019,
+     "cacheWrite": 6561,
+     "thinking": 1385
+    },
+    "costUsd": 0.12598559999999998,
+    "wallMs": 23728,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "label.opt.card:nth-of-type(4) > div.card-body.gap-2 > div.flex.items-center:nth-of-type(1) > h3.card-title"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 11,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/comparison-table/lavish/2",
+   "model": "claude-sonnet",
+   "task": "comparison-table",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:51:21.397Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 5850,
+     "cacheRead": 14697,
+     "cacheWrite": 323,
+     "thinking": 1034
+    },
+    "costUsd": 0.0612657,
+    "wallMs": 37922,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 11756,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 4597,
+     "cacheRead": 15020,
+     "cacheWrite": 6163,
+     "thinking": 2168
+    },
+    "costUsd": 0.1333977,
+    "wallMs": 28280,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "label.card.card-border:nth-of-type(4) > div.card-body.gap-2 > div.flex.items-center > h3.card-title"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 15,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/comparison-table/lavish/3",
+   "model": "claude-sonnet",
+   "task": "comparison-table",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:55:28.941Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 5902,
+     "cacheRead": 14697,
+     "cacheWrite": 325,
+     "thinking": 975
+    },
+    "costUsd": 0.0617937,
+    "wallMs": 35101,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 11626,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 3766,
+     "cacheRead": 15022,
+     "cacheWrite": 6226,
+     "thinking": 1498
+    },
+    "costUsd": 0.1258679,
+    "wallMs": 24531,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "div#bars > div.grid.gap-1:nth-of-type(3) > div.flex.justify-between:nth-of-type(1) > span:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 15,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/dashboard/austere/1",
+   "model": "claude-sonnet",
+   "task": "dashboard",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:46:45.662Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2495,
+     "cacheRead": 11441,
+     "cacheWrite": 324,
+     "thinking": 942
+    },
+    "costUsd": 0.027394099999999998,
+    "wallMs": 16962,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3218,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 629,
+     "cacheRead": 11765,
+     "cacheWrite": 2956,
+     "thinking": 359
+    },
+    "costUsd": 0.0466926,
+    "wallMs": 6257,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "incidentTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/dashboard/austere/2",
+   "model": "claude-sonnet",
+   "task": "dashboard",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:50:57.665Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2497,
+     "cacheRead": 11441,
+     "cacheWrite": 325,
+     "thinking": 870
+    },
+    "costUsd": 0.027418099999999997,
+    "wallMs": 17238,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3382,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 562,
+     "cacheRead": 11766,
+     "cacheWrite": 2759,
+     "thinking": 445
+    },
+    "costUsd": 0.0452587,
+    "wallMs": 7133,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "incIdCol"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/dashboard/austere/3",
+   "model": "claude-sonnet",
+   "task": "dashboard",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:55:07.959Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2662,
+     "cacheRead": 11441,
+     "cacheWrite": 324,
+     "thinking": 1028
+    },
+    "costUsd": 0.029064099999999995,
+    "wallMs": 17217,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3381,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 580,
+     "cacheRead": 11765,
+     "cacheWrite": 3123,
+     "thinking": 310
+    },
+    "costUsd": 0.048540599999999996,
+    "wallMs": 7071,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "incidentTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/dashboard/lavish/1",
+   "model": "claude-sonnet",
+   "task": "dashboard",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:47:30.271Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 5511,
+     "cacheRead": 15129,
+     "cacheWrite": 324,
+     "thinking": 1278
+    },
+    "costUsd": 0.0579229,
+    "wallMs": 35712,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 10209,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 567,
+     "cacheRead": 15453,
+     "cacheWrite": 5797,
+     "thinking": 352
+    },
+    "costUsd": 0.0883342,
+    "wallMs": 9176,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table > tbody > tr:nth-of-type(2) > td.font-mono:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/dashboard/lavish/2",
+   "model": "claude-sonnet",
+   "task": "dashboard",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:51:31.336Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 4994,
+     "cacheRead": 15129,
+     "cacheWrite": 324,
+     "thinking": 1247
+    },
+    "costUsd": 0.05275289999999999,
+    "wallMs": 29840,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 8545,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 860,
+     "cacheRead": 15453,
+     "cacheWrite": 5280,
+     "thinking": 567
+    },
+    "costUsd": 0.0840262,
+    "wallMs": 11367,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table > tbody > tr:nth-of-type(2) > td.font-mono:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/dashboard/lavish/3",
+   "model": "claude-sonnet",
+   "task": "dashboard",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:55:41.696Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 5684,
+     "cacheRead": 15129,
+     "cacheWrite": 324,
+     "thinking": 1447
+    },
+    "costUsd": 0.059652899999999995,
+    "wallMs": 34336,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 9961,
+    "valid": {
+     "ok": false,
+     "openWarnings": [],
+     "findings": [
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div > div:nth-of-type(2) > div > div:nth-of-type(3) > span"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div > div:nth-of-type(3) > div > div:nth-of-type(3) > span"
+      }
+     ],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 610,
+     "cacheRead": 15453,
+     "cacheWrite": 6008,
+     "thinking": 387
+    },
+    "costUsd": 0.0913382,
+    "wallMs": 8861,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "section.grid.gap-6:nth-of-type(2) > div.card.card-border:nth-of-type(2) > div.card-body > p.text-sm.opacity-80"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": false,
+     "openWarnings": [],
+     "findings": [
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div > div:nth-of-type(2) > div > div:nth-of-type(3) > span"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div > div:nth-of-type(3) > div > div:nth-of-type(3) > span"
+      }
+     ],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/migration-plan/austere/1",
+   "model": "claude-sonnet",
+   "task": "migration-plan",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:43:58.552Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 1847,
+     "cacheRead": 11434,
+     "cacheWrite": 324,
+     "thinking": 636
+    },
+    "costUsd": 0.0209134,
+    "wallMs": 14006,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 2842,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 124,
+     "cacheRead": 11758,
+     "cacheWrite": 2151,
+     "thinking": 0
+    },
+    "costUsd": 0.0319412,
+    "wallMs": 3651,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "riskTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/migration-plan/austere/2",
+   "model": "claude-sonnet",
+   "task": "migration-plan",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:48:09.627Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 1329,
+     "cacheRead": 11434,
+     "cacheWrite": 325,
+     "thinking": 0
+    },
+    "costUsd": 0.015737400000000002,
+    "wallMs": 9537,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3035,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 124,
+     "cacheRead": 11434,
+     "cacheWrite": 1957,
+     "thinking": 0
+    },
+    "costUsd": 0.025956800000000002,
+    "wallMs": 6962,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "riskTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/migration-plan/austere/3",
+   "model": "claude-sonnet",
+   "task": "migration-plan",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:52:16.709Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2057,
+     "cacheRead": 11434,
+     "cacheWrite": 324,
+     "thinking": 782
+    },
+    "costUsd": 0.023013399999999996,
+    "wallMs": 14404,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 2963,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 124,
+     "cacheRead": 11758,
+     "cacheWrite": 2361,
+     "thinking": 0
+    },
+    "costUsd": 0.034881199999999994,
+    "wallMs": 4727,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "riskTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/migration-plan/lavish/1",
+   "model": "claude-sonnet",
+   "task": "migration-plan",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:44:39.518Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 7451,
+     "cacheRead": 19128,
+     "cacheWrite": 325,
+     "thinking": 1446
+    },
+    "costUsd": 0.07772680000000001,
+    "wallMs": 42694,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 14770,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 188,
+     "cacheRead": 19453,
+     "cacheWrite": 7733,
+     "thinking": 0
+    },
+    "costUsd": 0.11249210000000001,
+    "wallMs": 5734,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table > tbody > tr#risk-bloat > td:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/migration-plan/lavish/2",
+   "model": "claude-sonnet",
+   "task": "migration-plan",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:48:52.707Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 5585,
+     "cacheRead": 19128,
+     "cacheWrite": 324,
+     "thinking": 853
+    },
+    "costUsd": 0.05906279999999999,
+    "wallMs": 31618,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 11645,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 272,
+     "cacheRead": 19452,
+     "cacheWrite": 5870,
+     "thinking": 110
+    },
+    "costUsd": 0.08721599999999999,
+    "wallMs": 4004,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table > tbody > tr:nth-of-type(2) > td:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/migration-plan/lavish/3",
+   "model": "claude-sonnet",
+   "task": "migration-plan",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:52:56.381Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 6120,
+     "cacheRead": 19128,
+     "cacheWrite": 322,
+     "thinking": 1288
+    },
+    "costUsd": 0.0644048,
+    "wallMs": 41073,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 11943,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 642,
+     "cacheRead": 19450,
+     "cacheWrite": 6414,
+     "thinking": 327
+    },
+    "costUsd": 0.0984338,
+    "wallMs": 5696,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "div.grid.gap-4 > div.card.card-border:nth-of-type(2) > div.card-body > h3.card-title"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/release-triage/austere/1",
+   "model": "claude-sonnet",
+   "task": "release-triage",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:47:39.464Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2322,
+     "cacheRead": 11373,
+     "cacheWrite": 324,
+     "thinking": 720
+    },
+    "costUsd": 0.025657299999999997,
+    "wallMs": 16743,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3444,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 897,
+     "cacheRead": 11697,
+     "cacheWrite": 2607,
+     "thinking": 182
+    },
+    "costUsd": 0.046232999999999996,
+    "wallMs": 10275,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "bugCol"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/release-triage/austere/2",
+   "model": "claude-sonnet",
+   "task": "release-triage",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:51:52.096Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2436,
+     "cacheRead": 11373,
+     "cacheWrite": 324,
+     "thinking": 568
+    },
+    "costUsd": 0.0267973,
+    "wallMs": 17110,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 3982,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 1023,
+     "cacheRead": 11697,
+     "cacheWrite": 2721,
+     "thinking": 268
+    },
+    "costUsd": 0.049088999999999994,
+    "wallMs": 7494,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "bugCol"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/release-triage/austere/3",
+   "model": "claude-sonnet",
+   "task": "release-triage",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:56:03.597Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 2643,
+     "cacheRead": 11373,
+     "cacheWrite": 324,
+     "thinking": 684
+    },
+    "costUsd": 0.0288673,
+    "wallMs": 18269,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 4092,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 1254,
+     "cacheRead": 11697,
+     "cacheWrite": 2932,
+     "thinking": 363
+    },
+    "costUsd": 0.054313,
+    "wallMs": 9240,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "bugIdCol"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/release-triage/lavish/1",
+   "model": "claude-sonnet",
+   "task": "release-triage",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:48:10.717Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 5054,
+     "cacheRead": 18085,
+     "cacheWrite": 324,
+     "thinking": 895
+    },
+    "costUsd": 0.053648499999999995,
+    "wallMs": 28847,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 10603,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 2263,
+     "cacheRead": 18409,
+     "cacheWrite": 5395,
+     "thinking": 827
+    },
+    "costUsd": 0.0997074,
+    "wallMs": 13571,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "main.mx-auto.max-w-6xl > section.mb-6.grid > div.alert.alert-soft:nth-of-type(3) > span"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 8,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/release-triage/lavish/2",
+   "model": "claude-sonnet",
+   "task": "release-triage",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:52:31.062Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 6042,
+     "cacheRead": 18085,
+     "cacheWrite": 324,
+     "thinking": 1038
+    },
+    "costUsd": 0.06352849999999999,
+    "wallMs": 37534,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 13155,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 1824,
+     "cacheRead": 18409,
+     "cacheWrite": 6435,
+     "thinking": 677
+    },
+    "costUsd": 0.1093574,
+    "wallMs": 14021,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "main.mx-auto.max-w-6xl > section.alert.alert-info:nth-of-type(2) > span"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 5,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "claude-sonnet/release-triage/lavish/3",
+   "model": "claude-sonnet",
+   "task": "release-triage",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:56:47.511Z",
+   "first": {
+    "usage": {
+     "input": 2,
+     "output": 6185,
+     "cacheRead": 18085,
+     "cacheWrite": 324,
+     "thinking": 851
+    },
+    "costUsd": 0.0649585,
+    "wallMs": 34880,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "bytes": 13163,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4,
+     "output": 1501,
+     "cacheRead": 18409,
+     "cacheWrite": 6506,
+     "thinking": 385
+    },
+    "costUsd": 0.1078414,
+    "wallMs": 13298,
+    "ttftMs": null,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "section.card.card-border > div.card-body.gap-3 > ul.grid.gap-2 > li:nth-of-type(2)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 5,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/architecture-decision/austere/1",
+   "model": "minimax-m3",
+   "task": "architecture-decision",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:44:54.089Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 752,
+     "cacheRead": 7430,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0013484999999999999,
+    "wallMs": 6494,
+    "ttftMs": 1992,
+    "stopReason": "end_turn",
+    "bytes": 3094,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 981,
+     "output": 156,
+     "cacheRead": 7507,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0009319199999999999,
+    "wallMs": 1606,
+    "ttftMs": 943,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "optionsTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/architecture-decision/austere/2",
+   "model": "minimax-m3",
+   "task": "architecture-decision",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:49:09.893Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 1092,
+     "cacheRead": 7430,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0017564999999999998,
+    "wallMs": 6878,
+    "ttftMs": 1019,
+    "stopReason": "end_turn",
+    "bytes": 4374,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 1227,
+     "output": 76,
+     "cacheRead": 7440,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0009057,
+    "wallMs": 1249,
+    "ttftMs": 979,
+    "stopReason": "end_turn",
+    "ok": true
+   },
+   "revision": {
+    "usage": {
+     "input": 363,
+     "output": 137,
+     "cacheRead": 8667,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0007933199999999999,
+    "wallMs": 1527,
+    "ttftMs": 1002,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "optionsTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/architecture-decision/austere/3",
+   "model": "minimax-m3",
+   "task": "architecture-decision",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:53:12.614Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 892,
+     "cacheRead": 7430,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0015164999999999996,
+    "wallMs": 5456,
+    "ttftMs": 839,
+    "stopReason": "end_turn",
+    "bytes": 3521,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 960,
+     "output": 47,
+     "cacheRead": 7507,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0007948199999999999,
+    "wallMs": 1481,
+    "ttftMs": 1277,
+    "stopReason": "end_turn",
+    "ok": true
+   },
+   "revision": {
+    "usage": {
+     "input": 333,
+     "output": 141,
+     "cacheRead": 8467,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00077712,
+    "wallMs": 1860,
+    "ttftMs": 1211,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "optionsTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/architecture-decision/lavish/1",
+   "model": "minimax-m3",
+   "task": "architecture-decision",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:45:34.503Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 4615,
+     "cacheRead": 12037,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00626052,
+    "wallMs": 31314,
+    "ttftMs": 2396,
+    "stopReason": "end_turn",
+    "bytes": 18921,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 5162,
+     "output": 582,
+     "cacheRead": 28958,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00398448,
+    "wallMs": 11475,
+    "ttftMs": 4364,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "article.option-card.card:nth-of-type(2) > div.card-body.gap-3 > div.flex.items-center > h2.card-title.text-lg"
+    },
+    "applied": {
+     "ok": false,
+     "detail": "edit 1: SEARCH text not found",
+     "attempts": 2
+    },
+    "valid": {
+     "ok": false
+    },
+    "expect": {
+     "found": 0,
+     "of": 2
+    },
+    "success": false
+   }
+  },
+  {
+   "id": "minimax-m3/architecture-decision/lavish/2",
+   "model": "minimax-m3",
+   "task": "architecture-decision",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:49:37.758Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 5623,
+     "cacheRead": 12037,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.007470119999999999,
+    "wallMs": 24243,
+    "ttftMs": 912,
+    "stopReason": "end_turn",
+    "bytes": 20639,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 5633,
+     "output": 391,
+     "cacheRead": 12225,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0028925999999999995,
+    "wallMs": 2364,
+    "ttftMs": 1378,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "article.option-card.rounded-box:nth-of-type(2) > div.flex.items-start > div > h3#nats-heading"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 3,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/architecture-decision/lavish/3",
+   "model": "minimax-m3",
+   "task": "architecture-decision",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:53:56.257Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 5565,
+     "cacheRead": 12037,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00740052,
+    "wallMs": 21801,
+    "ttftMs": 984,
+    "stopReason": "end_turn",
+    "bytes": 21377,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 5701,
+     "output": 1004,
+     "cacheRead": 12104,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00364134,
+    "wallMs": 4104,
+    "ttftMs": 1119,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "article.card.card-border:nth-of-type(2) > div.card-body.gap-4 > div.flex.items-start > h3.text-lg.font-bold"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 5,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/code-review/austere/1",
+   "model": "minimax-m3",
+   "task": "code-review",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:44:21.730Z",
+   "first": {
+    "usage": {
+     "input": 56,
+     "output": 1126,
+     "cacheRead": 7424,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0018134400000000001,
+    "wallMs": 13164,
+    "ttftMs": 1708,
+    "stopReason": "end_turn",
+    "bytes": 3941,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "unknown-component",
+      "unknown-component",
+      "unknown-component",
+      "unknown-component",
+      "orphaned"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 452,
+     "output": 238,
+     "cacheRead": 8576,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0009357599999999999,
+    "wallMs": 3808,
+    "ttftMs": 1470,
+    "stopReason": "end_turn",
+    "ok": true
+   },
+   "revision": {
+    "usage": {
+     "input": 241,
+     "output": 117,
+     "cacheRead": 9216,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00076566,
+    "wallMs": 2673,
+    "ttftMs": 1571,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "highFinding"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/code-review/austere/2",
+   "model": "minimax-m3",
+   "task": "code-review",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:48:28.745Z",
+   "first": {
+    "usage": {
+     "input": 56,
+     "output": 660,
+     "cacheRead": 7424,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00125424,
+    "wallMs": 10199,
+    "ttftMs": 895,
+    "stopReason": "end_turn",
+    "bytes": 2363,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 261,
+     "output": 66,
+     "cacheRead": 8064,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00064134,
+    "wallMs": 1784,
+    "ttftMs": 1121,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "sqlInjectionFinding"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/code-review/austere/3",
+   "model": "minimax-m3",
+   "task": "code-review",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:52:49.174Z",
+   "first": {
+    "usage": {
+     "input": 56,
+     "output": 1375,
+     "cacheRead": 7424,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00211224,
+    "wallMs": 23738,
+    "ttftMs": 1237,
+    "stopReason": "end_turn",
+    "bytes": 4826,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 200,
+     "output": 80,
+     "cacheRead": 8832,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0006859199999999999,
+    "wallMs": 1447,
+    "ttftMs": 807,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "findingOneHeading"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/code-review/lavish/1",
+   "model": "minimax-m3",
+   "task": "code-review",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:44:38.806Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 3680,
+     "cacheRead": 9978,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00501498,
+    "wallMs": 16779,
+    "ttftMs": 1395,
+    "stopReason": "end_turn",
+    "bytes": 13962,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 3880,
+     "output": 936,
+     "cacheRead": 9984,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00288624,
+    "wallMs": 5066,
+    "ttftMs": 1952,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "div.card-body.gap-5 > div.alert.alert-error:nth-of-type(3) > div > p"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 5,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/code-review/lavish/2",
+   "model": "minimax-m3",
+   "task": "code-review",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:48:53.231Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 5641,
+     "cacheRead": 9978,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.007368179999999999,
+    "wallMs": 23161,
+    "ttftMs": 834,
+    "stopReason": "end_turn",
+    "bytes": 20766,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 5783,
+     "output": 323,
+     "cacheRead": 10031,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00272436,
+    "wallMs": 1907,
+    "ttftMs": 914,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "div.flex.flex-col:nth-of-type(1) > div.flex.gap-3 > div > h3.finding-title.mt-3"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/code-review/lavish/3",
+   "model": "minimax-m3",
+   "task": "code-review",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:53:18.701Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 3559,
+     "cacheRead": 9978,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00486978,
+    "wallMs": 14724,
+    "ttftMs": 1075,
+    "stopReason": "end_turn",
+    "bytes": 13068,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 7,
+     "of": 7,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 3749,
+     "output": 1086,
+     "cacheRead": 9992,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0030274200000000003,
+    "wallMs": 13669,
+    "ttftMs": 10465,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "div.grid.gap-3 > div.card.card-border:nth-of-type(1) > div.card-body.p-4 > div.text-sm.text-base-content\\/65:nth-of-type(3)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 3,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/comparison-table/austere/1",
+   "model": "minimax-m3",
+   "task": "comparison-table",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:45:43.373Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 651,
+     "cacheRead": 7423,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0012268799999999999,
+    "wallMs": 9044,
+    "ttftMs": 2753,
+    "stopReason": "end_turn",
+    "bytes": 2340,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 797,
+     "output": 122,
+     "cacheRead": 7424,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0008309400000000001,
+    "wallMs": 2756,
+    "ttftMs": 2173,
+    "stopReason": "end_turn",
+    "ok": false
+   },
+   "revision": {
+    "usage": {
+     "input": 420,
+     "output": 140,
+     "cacheRead": 8221,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00078726,
+    "wallMs": 2707,
+    "ttftMs": 1373,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "shortlistField"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch"
+     ]
+    },
+    "expect": {
+     "found": 1,
+     "of": 2
+    },
+    "success": false
+   }
+  },
+  {
+   "id": "minimax-m3/comparison-table/austere/2",
+   "model": "minimax-m3",
+   "task": "comparison-table",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:49:57.241Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 910,
+     "cacheRead": 7423,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00153768,
+    "wallMs": 9696,
+    "ttftMs": 2184,
+    "stopReason": "end_turn",
+    "bytes": 3474,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "missing-required",
+      "type-mismatch",
+      "orphaned"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 1159,
+     "output": 227,
+     "cacheRead": 7433,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0010660799999999998,
+    "wallMs": 2454,
+    "ttftMs": 1677,
+    "stopReason": "end_turn",
+    "ok": false
+   },
+   "revision": {
+    "usage": {
+     "input": 456,
+     "output": 444,
+     "cacheRead": 8592,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00118512,
+    "wallMs": 6177,
+    "ttftMs": 3879,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "latencyCallout"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch"
+     ]
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/comparison-table/austere/3",
+   "model": "minimax-m3",
+   "task": "comparison-table",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:54:11.534Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 1094,
+     "cacheRead": 7423,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00175848,
+    "wallMs": 7057,
+    "ttftMs": 884,
+    "stopReason": "end_turn",
+    "bytes": 3908,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "missing-required",
+      "null-required",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "missing-required",
+      "null-required",
+      "missing-required",
+      "missing-required",
+      "missing-required",
+      "missing-required"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 2301,
+     "output": 301,
+     "cacheRead": 7424,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00149694,
+    "wallMs": 3073,
+    "ttftMs": 1384,
+    "stopReason": "end_turn",
+    "ok": true
+   },
+   "revision": {
+    "usage": {
+     "input": 491,
+     "output": 340,
+     "cacheRead": 9725,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0011388000000000001,
+    "wallMs": 3796,
+    "ttftMs": 884,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "milvusLatency"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/comparison-table/lavish/1",
+   "model": "minimax-m3",
+   "task": "comparison-table",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:46:27.835Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 4756,
+     "cacheRead": 9292,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00626502,
+    "wallMs": 21190,
+    "ttftMs": 1832,
+    "stopReason": "end_turn",
+    "bytes": 19156,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 6919,
+     "output": 3376,
+     "cacheRead": 23861,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.007558560000000001,
+    "wallMs": 15553,
+    "ttftMs": 814,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "thead > tr > th.bg-base-200:nth-of-type(5) > span.block.font-bold:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 3,
+     "attempts": 2
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/comparison-table/lavish/2",
+   "model": "minimax-m3",
+   "task": "comparison-table",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:50:26.135Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 5598,
+     "cacheRead": 9292,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0072754199999999995,
+    "wallMs": 21270,
+    "ttftMs": 935,
+    "stopReason": "end_turn",
+    "bytes": 20787,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 7064,
+     "output": 2515,
+     "cacheRead": 24428,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00660288,
+    "wallMs": 9223,
+    "ttftMs": 1055,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table > thead > tr > th:nth-of-type(5)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 8,
+     "attempts": 2
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/comparison-table/lavish/3",
+   "model": "minimax-m3",
+   "task": "comparison-table",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:54:31.941Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 3479,
+     "cacheRead": 9292,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00473262,
+    "wallMs": 16122,
+    "ttftMs": 1422,
+    "stopReason": "end_turn",
+    "bytes": 13947,
+    "valid": {
+     "ok": false,
+     "openWarnings": [],
+     "findings": [
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(1) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(1) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(1)"
+      }
+     ],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 3622,
+     "output": 313,
+     "cacheRead": 9344,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0020228399999999997,
+    "wallMs": 1836,
+    "ttftMs": 1129,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table.table-zebra > tbody > tr:nth-of-type(4) > th.text-base"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": false,
+     "openWarnings": [],
+     "findings": [
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(1) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(5) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(1) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(2) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(3) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(4) > td:nth-of-type(1)"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div:nth-of-type(2) > table > tbody > tr:nth-of-type(5) > td:nth-of-type(1)"
+      }
+     ],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/dashboard/austere/1",
+   "model": "minimax-m3",
+   "task": "dashboard",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:46:15.262Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 898,
+     "cacheRead": 7475,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0015263999999999998,
+    "wallMs": 5203,
+    "ttftMs": 888,
+    "stopReason": "end_turn",
+    "bytes": 2989,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 1696,
+     "output": 266,
+     "cacheRead": 7485,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0012771,
+    "wallMs": 2567,
+    "ttftMs": 1633,
+    "stopReason": "end_turn",
+    "ok": true
+   },
+   "revision": {
+    "usage": {
+     "input": 568,
+     "output": 158,
+     "cacheRead": 9181,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00091086,
+    "wallMs": 1786,
+    "ttftMs": 824,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "incidentTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/dashboard/austere/2",
+   "model": "minimax-m3",
+   "task": "dashboard",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:50:32.534Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 1198,
+     "cacheRead": 7475,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0018863999999999999,
+    "wallMs": 6693,
+    "ttftMs": 940,
+    "stopReason": "end_turn",
+    "bytes": 4119,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch",
+      "type-mismatch",
+      "missing-required",
+      "null-required",
+      "type-mismatch",
+      "type-mismatch",
+      "missing-required",
+      "null-required",
+      "type-mismatch",
+      "type-mismatch",
+      "missing-required",
+      "null-required",
+      "type-mismatch",
+      "type-mismatch",
+      "missing-required",
+      "null-required"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 2401,
+     "output": 184,
+     "cacheRead": 7488,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0013903799999999999,
+    "wallMs": 1700,
+    "ttftMs": 1120,
+    "stopReason": "end_turn",
+    "ok": true
+   },
+   "revision": {
+    "usage": {
+     "input": 492,
+     "output": 152,
+     "cacheRead": 9889,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00092334,
+    "wallMs": 2344,
+    "ttftMs": 1720,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "incidentTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/dashboard/austere/3",
+   "model": "minimax-m3",
+   "task": "dashboard",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:54:40.816Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 931,
+     "cacheRead": 7475,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0015660000000000001,
+    "wallMs": 5891,
+    "ttftMs": 893,
+    "stopReason": "end_turn",
+    "bytes": 3260,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch",
+      "type-mismatch"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 1718,
+     "output": 390,
+     "cacheRead": 7581,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0014382599999999998,
+    "wallMs": 2380,
+    "ttftMs": 972,
+    "stopReason": "end_turn",
+    "ok": true
+   },
+   "revision": {
+    "usage": {
+     "input": 692,
+     "output": 167,
+     "cacheRead": 9299,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00096594,
+    "wallMs": 2871,
+    "ttftMs": 2209,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "incidentTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/dashboard/lavish/1",
+   "model": "minimax-m3",
+   "task": "dashboard",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:47:10.347Z",
+   "first": {
+    "usage": {
+     "input": 5,
+     "output": 4182,
+     "cacheRead": 9600,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.005595899999999999,
+    "wallMs": 37378,
+    "ttftMs": 1903,
+    "stopReason": "end_turn",
+    "bytes": 14896,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 289,
+     "output": 298,
+     "cacheRead": 13696,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0012660599999999998,
+    "wallMs": 5139,
+    "ttftMs": 2043,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table > tbody > tr.incident-row:nth-of-type(2) > td.font-mono.font-semibold:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 2,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/dashboard/lavish/2",
+   "model": "minimax-m3",
+   "task": "dashboard",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:51:07.221Z",
+   "first": {
+    "usage": {
+     "input": 9456,
+     "output": 4715,
+     "cacheRead": 162,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00850452,
+    "wallMs": 30737,
+    "ttftMs": 2956,
+    "stopReason": "end_turn",
+    "bytes": 17298,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4911,
+     "output": 115,
+     "cacheRead": 9617,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00218832,
+    "wallMs": 2982,
+    "ttftMs": 2322,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table.table-zebra > tbody > tr:nth-of-type(2) > td.font-semibold:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/dashboard/lavish/3",
+   "model": "minimax-m3",
+   "task": "dashboard",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:55:57.317Z",
+   "first": {
+    "usage": {
+     "input": 5,
+     "output": 5636,
+     "cacheRead": 9600,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0073406999999999995,
+    "wallMs": 64906,
+    "ttftMs": 4690,
+    "stopReason": "end_turn",
+    "bytes": 20955,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 202,
+     "output": 176,
+     "cacheRead": 15232,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00118572,
+    "wallMs": 3151,
+    "ttftMs": 1689,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "div.flex.items-start > div > div.flex.flex-wrap > span.font-mono.text-sm:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 2,
+     "of": 2
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/migration-plan/austere/1",
+   "model": "minimax-m3",
+   "task": "migration-plan",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:43:54.596Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 852,
+     "cacheRead": 7447,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0014695199999999998,
+    "wallMs": 10227,
+    "ttftMs": 5128,
+    "stopReason": "end_turn",
+    "bytes": 3297,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch",
+      "unknown-component"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 1022,
+     "output": 158,
+     "cacheRead": 7473,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00094458,
+    "wallMs": 2224,
+    "ttftMs": 1562,
+    "stopReason": "end_turn",
+    "ok": true
+   },
+   "revision": {
+    "usage": {
+     "input": 365,
+     "output": 75,
+     "cacheRead": 8495,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0007092,
+    "wallMs": 1241,
+    "ttftMs": 807,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "riskTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/migration-plan/austere/2",
+   "model": "minimax-m3",
+   "task": "migration-plan",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:47:45.939Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 952,
+     "cacheRead": 7447,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0015895199999999996,
+    "wallMs": 5992,
+    "ttftMs": 1336,
+    "stopReason": "end_turn",
+    "bytes": 3794,
+    "valid": {
+     "ok": false,
+     "errors": [
+      "type-mismatch"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": {
+    "usage": {
+     "input": 1084,
+     "output": 29,
+     "cacheRead": 7478,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00080868,
+    "wallMs": 874,
+    "ttftMs": 717,
+    "stopReason": "end_turn",
+    "ok": true
+   },
+   "revision": {
+    "usage": {
+     "input": 237,
+     "output": 76,
+     "cacheRead": 8562,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00067602,
+    "wallMs": 1237,
+    "ttftMs": 896,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "risksTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/migration-plan/austere/3",
+   "model": "minimax-m3",
+   "task": "migration-plan",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:51:45.668Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 884,
+     "cacheRead": 7447,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0015079199999999998,
+    "wallMs": 5519,
+    "ttftMs": 1133,
+    "stopReason": "end_turn",
+    "bytes": 3470,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 1012,
+     "output": 76,
+     "cacheRead": 7528,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0008464799999999999,
+    "wallMs": 1320,
+    "ttftMs": 994,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "risksTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/migration-plan/lavish/1",
+   "model": "minimax-m3",
+   "task": "migration-plan",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:44:29.162Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 5036,
+     "cacheRead": 12103,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.006769679999999999,
+    "wallMs": 33084,
+    "ttftMs": 1646,
+    "stopReason": "end_turn",
+    "bytes": 19192,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 5225,
+     "output": 357,
+     "cacheRead": 12104,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00272214,
+    "wallMs": 4480,
+    "ttftMs": 2809,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "article.border-t.border-warning\\/20:nth-of-type(2) > div.flex.items-start > div > h3.font-bold"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/migration-plan/lavish/2",
+   "model": "minimax-m3",
+   "task": "migration-plan",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:48:39.265Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 4597,
+     "cacheRead": 12103,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.006242879999999999,
+    "wallMs": 38013,
+    "ttftMs": 7613,
+    "stopReason": "end_turn",
+    "bytes": 18853,
+    "valid": {
+     "ok": false,
+     "openWarnings": [],
+     "findings": [
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div > section:nth-of-type(3) > div > div:nth-of-type(3) > span"
+      }
+     ],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4741,
+     "output": 428,
+     "cacheRead": 12164,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0026657399999999998,
+    "wallMs": 4017,
+    "ttftMs": 1728,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "div.mt-6.grid:nth-of-type(2) > div.rounded-box.border:nth-of-type(2) > div.flex.items-center:nth-of-type(1) > h3.font-bold"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": false,
+     "openWarnings": [],
+     "findings": [
+      {
+       "viewport": "desktop",
+       "width": 1080,
+       "kind": "clipped-text",
+       "selector": "div > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > span"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div > section:nth-of-type(3) > div > div:nth-of-type(3) > span"
+      },
+      {
+       "viewport": "mobile",
+       "width": 390,
+       "kind": "clipped-text",
+       "selector": "div > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > span"
+      }
+     ],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/migration-plan/lavish/3",
+   "model": "minimax-m3",
+   "task": "migration-plan",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:52:56.204Z",
+   "first": {
+    "usage": {
+     "input": 3771,
+     "output": 4339,
+     "cacheRead": 8320,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0068373,
+    "wallMs": 46930,
+    "ttftMs": 1074,
+    "stopReason": "end_turn",
+    "bytes": 18092,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": false,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": true,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 229,
+     "output": 124,
+     "cacheRead": 16384,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00120054,
+    "wallMs": 5911,
+    "ttftMs": 1950,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "table.table > tbody > tr:nth-of-type(2) > td:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 1,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/release-triage/austere/1",
+   "model": "minimax-m3",
+   "task": "release-triage",
+   "tool": "austere",
+   "rep": 1,
+   "at": "2026-11-06T07:47:02.357Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 1123,
+     "cacheRead": 7411,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00179256,
+    "wallMs": 7233,
+    "ttftMs": 1548,
+    "stopReason": "end_turn",
+    "bytes": 4071,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 1323,
+     "output": 238,
+     "cacheRead": 7435,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0011286,
+    "wallMs": 2235,
+    "ttftMs": 1061,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "recommendationText"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/release-triage/austere/2",
+   "model": "minimax-m3",
+   "task": "release-triage",
+   "tool": "austere",
+   "rep": 2,
+   "at": "2026-11-06T07:51:20.034Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 982,
+     "cacheRead": 7411,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0016233599999999997,
+    "wallMs": 5946,
+    "ttftMs": 1403,
+    "stopReason": "end_turn",
+    "bytes": 3130,
+    "valid": {
+     "ok": true,
+     "errors": [
+      "orphaned"
+     ]
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 1200,
+     "output": 116,
+     "cacheRead": 7488,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00094848,
+    "wallMs": 9185,
+    "ttftMs": 8520,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "decision327"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 0,
+     "of": 1
+    },
+    "success": false
+   }
+  },
+  {
+   "id": "minimax-m3/release-triage/austere/3",
+   "model": "minimax-m3",
+   "task": "release-triage",
+   "tool": "austere",
+   "rep": 3,
+   "at": "2026-11-06T07:55:22.714Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 1093,
+     "cacheRead": 7411,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00175656,
+    "wallMs": 5785,
+    "ttftMs": 976,
+    "stopReason": "end_turn",
+    "bytes": 3760,
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 1320,
+     "output": 348,
+     "cacheRead": 7493,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00126318,
+    "wallMs": 1815,
+    "ttftMs": 814,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "statement": "suggestionTable"
+    },
+    "applied": {
+     "ok": true,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "errors": []
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/release-triage/lavish/1",
+   "model": "minimax-m3",
+   "task": "release-triage",
+   "tool": "lavish",
+   "rep": 1,
+   "at": "2026-11-06T07:47:59.112Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 6586,
+     "cacheRead": 11490,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.008592899999999999,
+    "wallMs": 28513,
+    "ttftMs": 4631,
+    "stopReason": "end_turn",
+    "bytes": 25664,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 6461,
+     "output": 3235,
+     "cacheRead": 11833,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00653028,
+    "wallMs": 10296,
+    "ttftMs": 922,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "div.flex.flex-col:nth-of-type(1) > div.min-w-0:nth-of-type(1) > div.flex.flex-wrap > span.bug-id.font-bold:nth-of-type(1)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 9,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/release-triage/lavish/2",
+   "model": "minimax-m3",
+   "task": "release-triage",
+   "tool": "lavish",
+   "rep": 2,
+   "at": "2026-11-06T07:51:50.017Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 5023,
+     "cacheRead": 11490,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.006717299999999999,
+    "wallMs": 18056,
+    "ttftMs": 847,
+    "stopReason": "end_turn",
+    "bytes": 19823,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": true,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 4945,
+     "output": 1501,
+     "cacheRead": 11791,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.00399216,
+    "wallMs": 6636,
+    "ttftMs": 907,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "section.mb-8 > div.grid.gap-4 > div.summary-tile.rounded-box:nth-of-type(3) > p.mt-1.text-sm:nth-of-type(3)"
+    },
+    "applied": {
+     "ok": true,
+     "edits": 8,
+     "attempts": 1
+    },
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "expect": {
+     "found": 1,
+     "of": 1
+    },
+    "success": true
+   }
+  },
+  {
+   "id": "minimax-m3/release-triage/lavish/3",
+   "model": "minimax-m3",
+   "task": "release-triage",
+   "tool": "lavish",
+   "rep": 3,
+   "at": "2026-11-06T07:56:15.682Z",
+   "first": {
+    "usage": {
+     "input": 1,
+     "output": 5259,
+     "cacheRead": 11490,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0070005,
+    "wallMs": 23619,
+    "ttftMs": 1490,
+    "stopReason": "end_turn",
+    "bytes": 19975,
+    "valid": {
+     "ok": true,
+     "openWarnings": [],
+     "findings": [],
+     "failures": [],
+     "incomplete": false
+    },
+    "render": {
+     "ok": false,
+     "desktop": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": false,
+      "renderErrors": []
+     },
+     "mobile": {
+      "pageErrors": [],
+      "consoleErrors": [],
+      "overflowX": true,
+      "renderErrors": []
+     }
+    },
+    "facts": {
+     "found": 9,
+     "of": 9,
+     "missing": []
+    }
+   },
+   "fix": null,
+   "revision": {
+    "usage": {
+     "input": 6352,
+     "output": 2165,
+     "cacheRead": 28556,
+     "cacheWrite": 0,
+     "thinking": null
+    },
+    "costUsd": 0.0062169600000000005,
+    "wallMs": 17465,
+    "ttftMs": 1239,
+    "stopReason": "end_turn",
+    "anchor": {
+     "found": true,
+     "selector": "main > header.masthead > div > p.intro:nth-of-type(2)"
+    },
+    "applied": {
+     "ok": false,
+     "detail": "edit 1: SEARCH text not found",
+     "attempts": 2
+    },
+    "valid": {
+     "ok": false
+    },
+    "expect": {
+     "found": 0,
+     "of": 1
+    },
+    "success": false
+   }
+  }
+ ],
+ "meta": {
+  "updated": "2026-11-06T07:43:33.319Z",
+  "node": "v22.23.1",
+  "platform": "linux x64",
+  "versions": {
+   "austere": "0.4.1",
+   "lavish": "0.1.96"
+  },
+  "models": {
+   "minimax-m3": {
+    "provider": "anthropic",
+    "model": "MiniMax-M3",
+    "pricing": {
+     "input": 0.3,
+     "output": 1.2,
+     "cacheRead": 0.06,
+     "source": "https://platform.minimax.io/docs/pricing/overview (standard tier, 2026-11-06)"
+    }
+   },
+   "claude-sonnet": {
+    "provider": "claude-cli",
+    "model": "sonnet",
+    "pricing": {
+     "source": "total_cost_usd reported by the claude CLI (list price)"
+    }
+   }
+  }
+ }
+}
