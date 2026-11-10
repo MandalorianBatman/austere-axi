@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en" data-theme="luxury" data-lavish-annotate="off">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-017 Review — Event Bus for Order Events</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+    :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+      min-width: 0;
+    }
+    :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+      overflow-wrap: anywhere;
+    }
+    :where(img, svg, video, canvas, iframe) {
+      max-width: 100%;
+      height: auto;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 15% 10%, color-mix(in oklab, var(--color-primary) 16%, transparent), transparent 34rem),
+        radial-gradient(circle at 90% 85%, color-mix(in oklab, var(--color-secondary) 13%, transparent), transparent 38rem),
+        var(--color-base-200);
+    }
+
+    .adr-card {
+      background: color-mix(in oklab, var(--color-base-100) 94%, transparent);
+      box-shadow: 0 24px 80px color-mix(in oklab, var(--color-base-content) 12%, transparent);
+      backdrop-filter: blur(16px);
+    }
+
+    .option-card {
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .option-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 34px color-mix(in oklab, var(--color-base-content) 9%, transparent);
+    }
+
+    .option-card:has(input:checked) {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 18%, transparent);
+    }
+
+    .decision-option:has(input:checked) .decision-indicator {
+      border-color: var(--color-primary);
+      background: var(--color-primary);
+      color: var(--color-primary-content);
+    }
+
+    .decision-option:has(input:checked) .decision-label {
+      color: var(--color-primary);
+    }
+
+    .flow-line {
+      stroke: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+      stroke-width: 2;
+      fill: none;
+      marker-end: url(#arrow);
+    }
+
+    .flow-node {
+      fill: var(--color-base-100);
+      stroke: color-mix(in oklab, var(--color-base-content) 20%, transparent);
+      stroke-width: 1.5;
+    }
+
+    .flow-label {
+      fill: var(--color-base-content);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .flow-subtitle {
+      fill: color-mix(in oklab, var(--color-base-content) 62%, transparent);
+      font-size: 11px;
+    }
+
+    .review-panel {
+      background: color-mix(in oklab, var(--color-primary) 8%, var(--color-base-100));
+      border: 1px solid color-mix(in oklab, var(--color-primary) 22%, transparent);
+    }
+
+    .status-dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 9999px;
+      background: var(--color-warning);
+      box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-warning) 18%, transparent);
+    }
+  </style>
+</head>
+<body class="min-h-screen text-base-content antialiased">
+  <main class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+    <header class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="min-w-0">
+        <div class="mb-2 flex flex-wrap items-center gap-2">
+          <span class="badge badge-primary badge-soft">Architecture decision</span>
+          <span class="badge badge-warning badge-soft">Proposed</span>
+        </div>
+        <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">ADR-017: Event bus for order events</h1>
+        <p class="mt-2 max-w-3xl text-sm text-base-content/65">
+          Review the proposed asynchronous event-bus decision for the Orders service.
+        </p>
+      </div>
+      <div class="flex shrink-0 items-center gap-2 text-sm text-base-content/65">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>Awaiting review</span>
+      </div>
+    </header>
+
+    <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div class="min-w-0 space-y-6">
+        <section class="adr-card card card-border overflow-hidden">
+          <div class="card-body gap-5">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Context</p>
+              <p class="mt-2 leading-7 text-base-content/85">
+                The Orders service calls Billing, Shipping and Notifications over HTTP in sequence.
+                One slow call blocks checkout; last quarter there were 3 incidents from this.
+              </p>
+            </div>
+
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Options considered</p>
+              <div class="mt-3 grid gap-4 md:grid-cols-3">
+                <article class="option-card card card-border bg-base-100">
+                  <div class="card-body gap-3 p-5">
+                    <div class="flex items-center justify-between gap-2">
+                      <h2 class="card-title text-lg">Kafka</h2>
+                      <span class="badge badge-error badge-soft">High ops cost</span>
+                    </div>
+                    <dl class="space-y-2 text-sm">
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Throughput</dt>
+                        <dd class="text-right font-semibold">1M msg/s</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Replay</dt>
+                        <dd class="text-right font-semibold">Yes</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Ops cost</dt>
+                        <dd class="text-right font-semibold">High</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Team experience</dt>
+                        <dd class="text-right font-semibold">None</dd>
+                      </div>
+                    </dl>
+                    <p class="text-xs text-base-content/55">We would run a 3-broker cluster.</p>
+                  </div>
+                </article>
+
+                <article class="option-card card card-border bg-base-100">
+                  <div class="card-body gap-3 p-5">
+                    <div class="flex items-center justify-between gap-2">
+                      <h2 class="card-title text-lg">NATS JetStream</h2>
+                      <span class="badge badge-warning badge-soft">Medium ops cost</span>
+                    </div>
+                    <dl class="space-y-2 text-sm">
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Throughput</dt>
+                        <dd class="text-right font-semibold">200k msg/s</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Replay</dt>
+                        <dd class="text-right font-semibold">Yes</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Ops cost</dt>
+                        <dd class="text-right font-semibold">Medium</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Team experience</dt>
+                        <dd class="text-right font-semibold">One engineer</dd>
+                      </div>
+                    </dl>
+                  </div>
+                </article>
+
+                <article class="option-card card card-border border-primary/40 bg-primary/5">
+                  <div class="card-body gap-3 p-5">
+                    <div class="flex items-center justify-between gap-2">
+                      <h2 class="card-title text-lg">Amazon SQS + SNS</h2>
+                      <span class="badge badge-success badge-soft">Proposed</span>
+                    </div>
+                    <dl class="space-y-2 text-sm">
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Throughput</dt>
+                        <dd class="text-right font-semibold">Effectively unlimited</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Replay</dt>
+                        <dd class="text-right font-semibold">No</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Retention</dt>
+                        <dd class="text-right font-semibold">14 days only</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Ops cost</dt>
+                        <dd class="text-right font-semibold">Low</dd>
+                      </div>
+                      <div class="flex justify-between gap-3">
+                        <dt class="text-base-content/55">Team experience</dt>
+                        <dd class="text-right font-semibold">High</dd>
+                      </div>
+                    </dl>
+                    <p class="text-xs text-base-content/55">Managed services.</p>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Proposed decision</p>
+              <div class="mt-3 rounded-box border border-base-content/10 bg-base-200/70 p-4">
+                <p class="font-semibold">Orders publishes <code class="rounded bg-base-300 px-1.5 py-0.5 text-sm">order.placed</code> to an SNS topic.</p>
+                <p class="mt-2 text-base-content/70">
+                  Billing, Shipping and Notifications each read from their own SQS queue.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Event flow</p>
+              <figure class="mt-3 overflow-x-auto rounded-box border border-base-content/10 bg-base-200/60 p-3" aria-labelledby="flow-title">
+                <figcaption id="flow-title" class="sr-only">Proposed order event flow</figcaption>
+                <svg viewBox="0 0 900 190" width="100%" role="img" aria-labelledby="svg-title svg-desc">
+                  <title id="svg-title">Proposed Amazon SQS and SNS event flow</title>
+                  <desc id="svg-desc">Orders publishes order.placed to an SNS topic. Billing, Shipping and Notifications each read from their own SQS queue.</desc>
+                  <defs>
+                    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+                      <path d="M0,0 L8,4 L0,8 Z" fill="context-stroke"></path>
+                    </marker>
+                  </defs>
+
+                  <rect class="flow-node" x="20" y="60" width="150" height="70" rx="14"></rect>
+                  <text class="flow-label" x="95" y="88" text-anchor="middle">Orders</text>
+                  <text class="flow-subtitle" x="95" y="109" text-anchor="middle">publishes order.placed</text>
+
+                  <path class="flow-line" d="M170 95 H245"></path>
+
+                  <rect class="flow-node" x="250" y="60" width="180" height="70" rx="14"></rect>
+                  <text class="flow-label" x="340" y="88" text-anchor="middle">SNS topic</text>
+                  <text class="flow-subtitle" x="340" y="109" text-anchor="middle">order.placed</text>
+
+                  <path class="flow-line" d="M430 95 H505 V35 H570"></path>
+                  <path class="flow-line" d="M430 95 H570"></path>
+                  <path class="flow-line" d="M430 95 H505 V155 H570"></path>
+
+                  <rect class="flow-node" x="575" y="15" width="150" height="48" rx="12"></rect>
+                  <text class="flow-label" x="650" y="44" text-anchor="middle">Billing queue</text>
+                  <rect class="flow-node" x="575" y="71" width="150" height="48" rx="12"></rect>
+                  <text class="flow-label" x="650" y="100" text-anchor="middle">Shipping queue</text>
+                  <rect class="flow-node" x="575" y="127" width="150" height="48" rx="12"></rect>
+                  <text class="flow-label" x="650" y="156" text-anchor="middle">Notifications queue</text>
+
+                  <path class="flow-line" d="M725 39 H790"></path>
+                  <path class="flow-line" d="M725 95 H790"></path>
+                  <path class="flow-line" d="M725 151 H790"></path>
+
+                  <text class="flow-label" x="800" y="44">Billing</text>
+                  <text class="flow-label" x="800" y="100">Shipping</text>
+                  <text class="flow-label" x="800" y="156">Notifications</text>
+                </svg>
+              </figure>
+            </div>
+          </div>
+        </section>
+
+        <section class="card card-border bg-base-100">
+          <div class="card-body gap-5">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Consequences</p>
+              <h2 class="mt-2 text-xl font-bold">Tradeoffs accepted by this proposal</h2>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <article class="rounded-box border border-warning/25 bg-warning/8 p-5">
+                <span class="badge badge-warning badge-soft">No event replay</span>
+                <p class="mt-3 font-semibold">Outbox table retained</p>
+                <p class="mt-1 text-sm leading-6 text-base-content/70">
+                  We keep an outbox table in the Orders database.
+                </p>
+              </article>
+
+              <article class="rounded-box border border-info/25 bg-info/8 p-5">
+                <span class="badge badge-info badge-soft">At-least-once delivery</span>
+                <p class="mt-3 font-semibold">Consumers must be idempotent</p>
+                <p class="mt-1 text-sm leading-6 text-base-content/70">
+                  Every consumer must handle duplicate delivery safely.
+                </p>
+              </article>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="min-w-0">
+        <form
+          class="review-panel card card-border lg:sticky lg:top-6"
+          data-lavish-question="adr-017-decision"
+          onsubmit="event.preventDefault(); const form = event.currentTarget; const decision = new FormData(form).get('decision'); if (!decision) { form.querySelector('[data-status]').textContent = 'Choose Accept or Reject before submitting.'; return; } const comment = new FormData(form).get('comment').trim(); const payload = { adr: 'ADR-017', decision, comment }; window.lavish.queuePrompt('ADR-017 review: ' + decision + (comment ? '\n\nComment: ' + comment : '\n\nNo comment provided.'), { tag: 'adr-review', text: 'Review ADR-017', element: form, data: payload }); form.querySelector('[data-status]').textContent = decision + ' selected. The answer is ready to send.'; form.querySelector('[data-submit]').textContent = 'Answer queued'; form.querySelector('[data-submit]').disabled = true; }"
+        >
+          <div class="card-body gap-5">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/50">Your decision</p>
+              <h2 class="mt-2 text-xl font-bold">Review ADR-017</h2>
+              <p class="mt-2 text-sm leading-6 text-base-content/65">
+                Accept the proposed SQS + SNS decision, or reject it. A comment is optional.
+              </p>
+            </div>
+
+            <fieldset>
+              <legend class="sr-only">Decision</legend>
+              <div class="space-y-3">
+                <label class="decision-option flex cursor-pointer items-center gap-3 rounded-box border border-base-content/15 bg-base-100 p-4 transition hover:border-primary/50">
+                  <input class="radio radio-primary" type="radio" name="decision" value="Accept" required>
+                  <span class="decision-indicator flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-base-content/20 text-lg font-bold">✓</span>
+                  <span>
+                    <span class="decision-label block font-bold">Accept</span>
+                    <span class="mt-0.5 block text-sm text-base-content/60">Approve the proposed decision.</span>
+                  </span>
+                </label>
+
+                <label class="decision-option flex cursor-pointer items-center gap-3 rounded-box border border-base-content/15 bg-base-100 p-4 transition hover:border-error/50">
+                  <input class="radio radio-error" type="radio" name="decision" value="Reject" required>
+                  <span class="decision-indicator flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-base-content/20 text-lg font-bold">×</span>
+                  <span>
+                    <span class="decision-label block font-bold">Reject</span>
+                    <span class="mt-0.5 block text-sm text-base-content/60">Do not approve the proposed decision.</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <label class="form-control w-full">
+              <span class="label pb-2">
+                <span class="label-text font-semibold">Comment <span class="font-normal text-base-content/50">(optional)</span></span>
+              </span>
+              <textarea
+                class="textarea textarea-bordered w-full"
+                name="comment"
+                rows="6"
+                placeholder="Add context for your decision"
+              ></textarea>
+            </label>
+
+            <button class="btn btn-primary btn-block" type="submit" data-submit>
+              Submit review
+            </button>
+
+            <p class="text-center text-xs leading-5 text-base-content/50" data-status role="status" aria-live="polite">
+              Your decision is ready to be queued for review.
+            </p>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

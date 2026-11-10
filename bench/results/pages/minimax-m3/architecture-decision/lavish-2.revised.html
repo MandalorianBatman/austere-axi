@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en" data-theme="luxury" data-lavish-annotate="off">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-017 Review — Event bus for order events</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+    :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+      min-width: 0;
+    }
+    :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+      overflow-wrap: anywhere;
+    }
+    :where(img, svg, video, canvas, iframe) {
+      max-width: 100%;
+      height: auto;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 8% 0%, color-mix(in oklab, var(--color-primary) 14%, transparent), transparent 28rem),
+        radial-gradient(circle at 92% 12%, color-mix(in oklab, var(--color-secondary) 12%, transparent), transparent 26rem),
+        var(--color-base-200);
+      color: var(--color-base-content);
+    }
+
+    .review-shell {
+      width: min(100% - 2rem, 78rem);
+      margin-inline: auto;
+      padding-block: 2rem 4rem;
+    }
+
+    .hero-panel {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+      background: color-mix(in oklab, var(--color-base-100) 92%, transparent);
+      box-shadow: 0 1.5rem 4rem color-mix(in oklab, var(--color-neutral) 18%, transparent);
+    }
+
+    .hero-panel::after {
+      content: "";
+      position: absolute;
+      width: 15rem;
+      height: 15rem;
+      right: -5rem;
+      top: -6rem;
+      border-radius: 9999px;
+      background: color-mix(in oklab, var(--color-primary) 16%, transparent);
+      pointer-events: none;
+    }
+
+    .section-card {
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+      background: color-mix(in oklab, var(--color-base-100) 94%, transparent);
+      box-shadow: 0 0.75rem 2rem color-mix(in oklab, var(--color-neutral) 10%, transparent);
+    }
+
+    .eyebrow {
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: .72rem;
+      font-weight: 800;
+    }
+
+    .option-card {
+      position: relative;
+      height: 100%;
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+      background: var(--color-base-100);
+      transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+
+    .option-card:hover {
+      transform: translateY(-2px);
+      border-color: color-mix(in oklab, var(--color-base-content) 24%, transparent);
+      box-shadow: 0 .8rem 1.8rem color-mix(in oklab, var(--color-neutral) 12%, transparent);
+    }
+
+    .option-card.proposed {
+      border-color: color-mix(in oklab, var(--color-primary) 68%, var(--color-base-content));
+      box-shadow: inset 0 4px 0 var(--color-primary);
+    }
+
+    .metric {
+      display: grid;
+      grid-template-columns: minmax(7.5rem, .85fr) minmax(0, 1.4fr);
+      gap: .75rem;
+      padding-block: .65rem;
+      border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 8%, transparent);
+    }
+
+    .metric:last-child {
+      border-bottom: 0;
+    }
+
+    .metric dt {
+      color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+      font-size: .82rem;
+    }
+
+    .metric dd {
+      margin: 0;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .flow-panel {
+      background:
+        linear-gradient(135deg,
+          color-mix(in oklab, var(--color-primary) 10%, var(--color-base-100)),
+          var(--color-base-100));
+    }
+
+    .diagram {
+      width: 100%;
+      height: auto;
+      color: var(--color-base-content);
+    }
+
+    .diagram .surface {
+      fill: color-mix(in oklab, var(--color-base-100) 96%, transparent);
+      stroke: color-mix(in oklab, var(--color-base-content) 22%, transparent);
+    }
+
+    .diagram .orders {
+      fill: color-mix(in oklab, var(--color-primary) 20%, var(--color-base-100));
+      stroke: var(--color-primary);
+      stroke-width: 2;
+    }
+
+    .diagram .topic {
+      fill: color-mix(in oklab, var(--color-secondary) 18%, var(--color-base-100));
+      stroke: var(--color-secondary);
+      stroke-width: 2;
+    }
+
+    .diagram .queue {
+      fill: color-mix(in oklab, var(--color-info) 13%, var(--color-base-100));
+      stroke: var(--color-info);
+      stroke-width: 1.7;
+    }
+
+    .diagram .edge {
+      fill: none;
+      stroke: color-mix(in oklab, var(--color-base-content) 48%, transparent);
+      stroke-width: 2;
+      marker-end: url(#arrow);
+    }
+
+    .diagram text {
+      fill: currentColor;
+      font-family: inherit;
+    }
+
+    .decision-card {
+      border: 2px solid color-mix(in oklab, var(--color-primary) 72%, var(--color-base-content));
+      background:
+        linear-gradient(135deg,
+          color-mix(in oklab, var(--color-primary) 13%, var(--color-base-100)),
+          var(--color-base-100) 64%);
+    }
+
+    .choice {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: .85rem;
+      align-items: start;
+      padding: 1rem;
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 14%, transparent);
+      border-radius: .9rem;
+      background: color-mix(in oklab, var(--color-base-100) 92%, transparent);
+      cursor: pointer;
+      transition: border-color .15s ease, background .15s ease;
+    }
+
+    .choice:hover {
+      border-color: color-mix(in oklab, var(--color-base-content) 30%, transparent);
+    }
+
+    .choice:has(input:checked) {
+      border-color: var(--color-primary);
+      background: color-mix(in oklab, var(--color-primary) 10%, var(--color-base-100));
+    }
+
+    .choice input {
+      margin-top: .22rem;
+      accent-color: var(--color-primary);
+    }
+
+    .choice-title {
+      font-weight: 800;
+      font-size: 1rem;
+    }
+
+    .choice-copy {
+      margin-top: .18rem;
+      color: color-mix(in oklab, var(--color-base-content) 67%, transparent);
+      font-size: .88rem;
+    }
+
+    .decision-status {
+      min-width: 7.5rem;
+    }
+
+    @media (max-width: 640px) {
+      .review-shell {
+        width: min(100% - 1rem, 78rem);
+        padding-top: 1rem;
+      }
+
+      .metric {
+        grid-template-columns: 1fr;
+        gap: .2rem;
+      }
+
+      .metric dd {
+        text-align: left;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .option-card {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="review-shell">
+    <header class="hero-panel rounded-box p-6 sm:p-8 lg:p-10">
+      <div class="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <div class="max-w-3xl">
+          <div class="mb-4 flex flex-wrap items-center gap-2">
+            <span class="badge badge-primary badge-soft">Architecture decision record</span>
+            <span class="badge badge-warning badge-soft badge-lg">Proposed</span>
+          </div>
+          <p class="eyebrow mb-2 text-primary">ADR-017</p>
+          <h1 class="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+            Event bus for order events
+          </h1>
+          <p class="mt-4 max-w-2xl text-base leading-relaxed text-base-content/70 sm:text-lg">
+            Review the proposed move from sequential HTTP calls to an event-driven order flow.
+          </p>
+        </div>
+
+        <div class="decision-status rounded-box border border-base-content/10 bg-base-100/80 p-4">
+          <p class="eyebrow text-base-content/55">Decision status</p>
+          <p class="mt-2 text-xl font-black">Proposed</p>
+          <p class="mt-1 text-sm text-base-content/60">Awaiting reviewer action</p>
+        </div>
+      </div>
+    </header>
+
+    <section class="section-card mt-6 rounded-box p-6 sm:p-8" aria-labelledby="context-heading">
+      <div class="grid gap-5 lg:grid-cols-[minmax(0, .7fr) minmax(0, 1.3fr)] lg:items-start">
+        <div>
+          <p class="eyebrow text-primary">Why this decision</p>
+          <h2 id="context-heading" class="mt-2 text-2xl font-black">Current context</h2>
+        </div>
+        <div>
+          <p class="text-lg leading-relaxed">
+            The Orders service calls Billing, Shipping and Notifications over HTTP in sequence.
+            One slow call blocks checkout.
+          </p>
+          <div class="alert alert-warning alert-soft mt-5" role="note">
+            <span><strong>3 incidents</strong> from this occurred last quarter.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card mt-6 rounded-box p-6 sm:p-8" aria-labelledby="options-heading">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p class="eyebrow text-primary">Alternatives</p>
+          <h2 id="options-heading" class="mt-2 text-2xl font-black">Options considered</h2>
+        </div>
+        <p class="text-sm text-base-content/55">The proposed option is highlighted.</p>
+      </div>
+
+      <div class="mt-6 grid gap-5 lg:grid-cols-3">
+        <article class="option-card rounded-box p-5" aria-labelledby="kafka-heading">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="eyebrow text-base-content/50">Option 1</p>
+              <h3 id="kafka-heading" class="mt-1 text-xl font-black">Kafka</h3>
+            </div>
+            <span class="badge badge-ghost">Not proposed</span>
+          </div>
+
+          <dl class="mt-5">
+            <div class="metric">
+              <dt>Throughput</dt>
+              <dd>1M msg/s</dd>
+            </div>
+            <div class="metric">
+              <dt>Replay</dt>
+              <dd>Yes</dd>
+            </div>
+            <div class="metric">
+              <dt>Operations cost</dt>
+              <dd>High</dd>
+            </div>
+            <div class="metric">
+              <dt>Operational model</dt>
+              <dd>3-broker cluster</dd>
+            </div>
+            <div class="metric">
+              <dt>Team experience</dt>
+              <dd>None</dd>
+            </div>
+            <div class="metric">
+              <dt>Monthly cost estimate</dt>
+              <dd>About $2,400</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="option-card rounded-box p-5" aria-labelledby="nats-heading">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="eyebrow text-base-content/50">Option 2</p>
+              <h3 id="nats-heading" class="mt-1 text-xl font-black">NATS JetStream</h3>
+            </div>
+            <span class="badge badge-ghost">Not proposed</span>
+          </div>
+
+          <dl class="mt-5">
+            <div class="metric">
+              <dt>Throughput</dt>
+              <dd>200k msg/s</dd>
+            </div>
+            <div class="metric">
+              <dt>Replay</dt>
+              <dd>Yes</dd>
+            </div>
+            <div class="metric">
+              <dt>Operations cost</dt>
+              <dd>Medium</dd>
+            </div>
+            <div class="metric">
+              <dt>Operational model</dt>
+              <dd>Not specified</dd>
+            </div>
+            <div class="metric">
+              <dt>Team experience</dt>
+              <dd>One engineer</dd>
+            </div>
+            <div class="metric">
+              <dt>Monthly cost estimate</dt>
+              <dd>About $900</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="option-card proposed rounded-box p-5" aria-labelledby="sqs-heading">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="eyebrow text-primary">Option 3</p>
+              <h3 id="sqs-heading" class="mt-1 text-xl font-black">Amazon SQS + SNS</h3>
+            </div>
+            <span class="badge badge-primary">Proposed</span>
+          </div>
+
+          <dl class="mt-5">
+            <div class="metric">
+              <dt>Throughput</dt>
+              <dd>Effectively unlimited</dd>
+            </div>
+            <div class="metric">
+              <dt>Replay</dt>
+              <dd>No</dd>
+            </div>
+            <div class="metric">
+              <dt>Operations cost</dt>
+              <dd>Low</dd>
+            </div>
+            <div class="metric">
+              <dt>Operational model</dt>
+              <dd>Managed</dd>
+            </div>
+            <div class="metric">
+              <dt>Team experience</dt>
+              <dd>High</dd>
+            </div>
+            <div class="metric">
+              <dt>Monthly cost estimate</dt>
+              <dd>About $310 at our volume</dd>
+            </div>
+          </dl>
+          <p class="mt-4 text-xs text-base-content/55">Retention: 14 days only.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section-card flow-panel mt-6 rounded-box p-6 sm:p-8" aria-labelledby="proposal-heading">
+      <div class="grid gap-7 lg:grid-cols-[minmax(0, .8fr) minmax(0, 1.2fr)] lg:items-center">
+        <div>
+          <p class="eyebrow text-primary">Proposed decision</p>
+          <h2 id="proposal-heading" class="mt-2 text-2xl font-black">SQS + SNS</h2>
+          <p class="mt-4 leading-relaxed text-base-content/75">
+            Orders publishes <code class="rounded bg-base-300 px-2 py-1 font-mono text-sm">order.placed</code>
+            to an SNS topic. Billing, Shipping and Notifications each read from their own SQS queue.
+          </p>
+        </div>
+
+        <div class="rounded-box border border-base-content/10 bg-base-100/75 p-4 sm:p-6">
+          <svg class="diagram" viewBox="0 0 640 340" role="img" aria-labelledby="flow-title flow-desc">
+            <title id="flow-title">Proposed order event flow</title>
+            <desc id="flow-desc">
+              Orders publishes the order.placed event to an SNS topic. Billing, Shipping, and Notifications each receive the event through their own SQS queue.
+            </desc>
+            <defs>
+              <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L8,4 L0,8 Z" fill="currentColor" opacity=".58"></path>
+              </marker>
+            </defs>
+
+            <rect id="orders-node" class="orders" x="32" y="128" width="130" height="72" rx="14"></rect>
+            <text x="97" y="158" text-anchor="middle" font-size="18" font-weight="800">Orders</text>
+            <text x="97" y="181" text-anchor="middle" font-size="13">service</text>
+
+            <rect id="topic-node" class="topic" x="245" y="128" width="150" height="72" rx="14"></rect>
+            <text x="320" y="157" text-anchor="middle" font-size="17" font-weight="800">SNS topic</text>
+            <text x="320" y="180" text-anchor="middle" font-size="13">order.placed</text>
+
+            <path id="orders-to-topic" class="edge" d="M162 164 H235"></path>
+
+            <path id="topic-to-billing" class="edge" d="M395 164 H454 C476 164 476 62 500 62 H548"></path>
+            <path id="topic-to-shipping" class="edge" d="M395 164 H548"></path>
+            <path id="topic-to-notifications" class="edge" d="M395 164 H454 C476 164 476 266 500 266 H548"></path>
+
+            <rect id="billing-node" class="queue" x="548" y="36" width="76" height="52" rx="12"></rect>
+            <text x="586" y="59" text-anchor="middle" font-size="13" font-weight="800">Billing</text>
+            <text x="586" y="76" text-anchor="middle" font-size="11">SQS queue</text>
+
+            <rect id="shipping-node" class="queue" x="548" y="138" width="76" height="52" rx="12"></rect>
+            <text x="586" y="161" text-anchor="middle" font-size="13" font-weight="800">Shipping</text>
+            <text x="586" y="178" text-anchor="middle" font-size="11">SQS queue</text>
+
+            <rect id="notifications-node" class="queue" x="548" y="240" width="76" height="52" rx="12"></rect>
+            <text x="586" y="263" text-anchor="middle" font-size="12" font-weight="800">Notifications</text>
+            <text x="586" y="280" text-anchor="middle" font-size="11">SQS queue</text>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card mt-6 rounded-box p-6 sm:p-8" aria-labelledby="consequences-heading">
+      <p class="eyebrow text-primary">Trade-offs</p>
+      <h2 id="consequences-heading" class="mt-2 text-2xl font-black">Consequences</h2>
+
+      <div class="mt-6 grid gap-5 md:grid-cols-2">
+        <article class="rounded-box border border-warning/35 bg-warning/8 p-5">
+          <span class="badge badge-warning badge-soft">No event replay</span>
+          <p class="mt-4 text-lg font-black">Keep an outbox table</p>
+          <p class="mt-2 leading-relaxed text-base-content/70">
+            The Orders database keeps an outbox table.
+          </p>
+        </article>
+
+        <article class="rounded-box border border-info/35 bg-info/8 p-5">
+          <span class="badge badge-info badge-soft">At-least-once delivery</span>
+          <p class="mt-4 text-lg font-black">Consumers must be idempotent</p>
+          <p class="mt-2 leading-relaxed text-base-content/70">
+            Every consumer must handle duplicate delivery idempotently.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="decision-card mt-6 rounded-box p-6 sm:p-8" aria-labelledby="review-heading">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p class="eyebrow text-primary">Review action</p>
+          <h2 id="review-heading" class="mt-2 text-2xl font-black">Accept or reject ADR-017</h2>
+          <p class="mt-2 text-base-content/65">Choose a decision and optionally add a comment.</p>
+        </div>
+        <span class="badge badge-warning badge-outline">Current status: proposed</span>
+      </div>
+
+      <form
+        class="mt-6"
+        data-lavish-question="adr-017-decision"
+        onsubmit="event.preventDefault(); const form = event.currentTarget; const decision = new FormData(form).get('decision'); const comment = form.elements.comment.value.trim(); if (!decision) { form.querySelector('[data-decision-error]').textContent = 'Choose Accept or Reject before submitting.'; return; } const action = decision === 'accept' ? 'Accept' : 'Reject'; const summary = comment ? `${action} ADR-017. Comment: ${comment}` : `${action} ADR-017 with no comment.`; window.lavish.queuePrompt(summary, { tag: 'adr-review', text: summary, element: form, data: { adr: 'ADR-017', decision, comment: comment || null } }); form.querySelector('[data-submit-status]').textContent = `${action} decision queued.`; form.querySelector('[data-submit-status]').className = 'mt-3 text-sm font-bold text-success';"
+      >
+        <fieldset>
+          <legend class="text-sm font-extrabold">Review decision</legend>
+          <div class="mt-3 grid gap-3 md:grid-cols-2">
+            <label class="choice">
+              <input type="radio" name="decision" value="accept">
+              <span>
+                <span class="choice-title">Accept ADR-017</span>
+                <span class="choice-copy">Approve the proposed SQS + SNS decision.</span>
+              </span>
+            </label>
+
+            <label class="choice">
+              <input type="radio" name="decision" value="reject">
+              <span>
+                <span class="choice-title">Reject ADR-017</span>
+                <span class="choice-copy">Do not approve the proposed decision.</span>
+              </span>
+            </label>
+          </div>
+          <p data-decision-error class="mt-2 min-h-5 text-sm font-bold text-error" role="alert"></p>
+        </fieldset>
+
+        <div class="mt-5">
+          <label class="label" for="review-comment">
+            Comment <span class="font-normal text-base-content/50">(optional)</span>
+          </label>
+          <textarea
+            id="review-comment"
+            name="comment"
+            class="textarea textarea-bordered w-full"
+            rows="4"
+            placeholder="Add context, concerns, or conditions for your decision."
+          ></textarea>
+        </div>
+
+        <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p data-submit-status class="mt-0 text-sm font-bold" role="status" aria-live="polite"></p>
+          <button type="submit" class="btn btn-primary btn-lg w-full sm:w-auto">
+            Queue review decision
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <footer class="px-2 py-8 text-center text-sm text-base-content/50">
+      Review surface for ADR-017 · Event bus for order events
+    </footer>
+  </main>
+</body>
+</html>

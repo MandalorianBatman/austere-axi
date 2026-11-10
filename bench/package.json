@@ -1,0 +1,9 @@
+{
+  "name": "austere-axi-bench",
+  "private": true,
+  "description": "Maintainer-only benchmark: austere-axi vs lavish-axi. Not published.",
+  "type": "module",
+  "dependencies": {
+    "lavish-axi": "0.1.96"
+  }
+}

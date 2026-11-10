@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PR #482 Review — Add user search endpoint</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([summary, verdict, findings, pullRequestDiff], "column", "l")
+summary = Card([CardHeader("PR #482 — Add user search endpoint", "src/routes/users.js · +9 -1 · 31 tests passed"), summaryFacts])
+summaryFacts = EntityList([{left: "Changed file", right: "src/routes/users.js"}, {left: "Tests", right: "31 passed"}], "default")
+verdict = Callout("error", "Verdict: request changes", "Four findings: 1 High, 2 Medium, 1 Low.")
+findings = Card([CardHeader("Findings", "Each finding is shown next to the code it refers to."), findingsStack])
+findingsStack = Stack([highFinding, mediumPaginationFinding, mediumEmailFinding, lowExportFinding], "column", "l")
+highFinding = Card([CardHeader("F1 · Blocker — SQL injection", "Line 18"), highDescription, highSeverity, highFix, highDiff])
+highSeverity = Tag("Blocker", null, "sm", "danger")
+highDiff = Diff("diff --git a/src/routes/users.js b/src/routes/users.js\n--- a/src/routes/users.js\n+++ b/src/routes/users.js\n@@ -15,7 +15,9 @@ router.get(\"/users\", async (req, res) => {\n   const q = req.query.q;\n   const rows = await db.query(\n     \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"\n   );", "Line 18")
+mediumPaginationFinding = Card([CardHeader("F2 · Medium — No pagination", "Search handler"), mediumPaginationDescription, mediumPaginationSeverity, paginationDiff])
+mediumPaginationSeverity = Tag("Medium", null, "sm", "warning")
+paginationDiff = Diff("diff --git a/src/routes/users.js b/src/routes/users.js\n--- a/src/routes/users.js\n+++ b/src/routes/users.js\n@@ -15,6 +15,10 @@ router.get(\"/users\", async (req, res) => {\n   const q = req.query.q;\n   const rows = await db.query(\n     \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"\n   );\n   res.json(rows);", "Search handler")
+mediumEmailFinding = Card([CardHeader("F3 · Medium — Email exposed to any logged-in user", "Line 18"), mediumEmailDescription, mediumEmailSeverity, emailDiff])
+mediumEmailSeverity = Tag("Medium", null, "sm", "warning")
+emailDiff = Diff("diff --git a/src/routes/users.js b/src/routes/users.js\n--- a/src/routes/users.js\n+++ b/src/routes/users.js\n@@ -17,4 +17,4 @@ router.get(\"/users\", async (req, res) => {\n   const rows = await db.query(\n     \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"\n   );", "Line 18")
+lowExportFinding = Card([CardHeader("F4 · Low — /users/export has no test", "Export route"), lowExportDescription, lowSeverity, exportDiff])
+lowSeverity = Tag("Low", null, "sm", "info")
+exportDiff = Diff("diff --git a/src/routes/users.js b/src/routes/users.js\n--- a/src/routes/users.js\n+++ b/src/routes/users.js\n@@ -21,6 +21,8 @@ router.get(\"/users\", async (req, res) => {\n   res.json(rows);\n });\n \n+router.get(\"/users/export\", exportUsers);\n+\n module.exports = router;", "Export route")
+pullRequestDiff = Card([CardHeader("Full pull request diff", "src/routes/users.js · +9 -1"), fullDiff])
+fullDiff = Diff("diff --git a/src/routes/users.js b/src/routes/users.js\n--- a/src/routes/users.js\n+++ b/src/routes/users.js\n@@ -12,7 +12,15 @@ router.get(\"/users/:id\", async (req, res) => {\n   res.json(user);\n });\n \n-router.get(\"/users\", listUsers);\n+router.get(\"/users\", async (req, res) => {\n+  const q = req.query.q;\n+  const rows = await db.query(\n+    \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"\n+  );\n+  res.json(rows);\n+});\n+\n+router.get(\"/users/export\", exportUsers);\n \n module.exports = router;")
+highDescription = MarkDownRenderer("The query concatenates `req.query.q` into the SQL string (line 18).")
+mediumPaginationDescription = MarkDownRenderer("The search returns every matching row; with 2.1M users this can time out.")
+mediumEmailDescription = MarkDownRenderer("The email column is returned to any logged-in user (line 18). Return only id and name.")
+lowExportDescription = MarkDownRenderer("The export route has no test.")
+highFix = Callout("info", "Fix", "Use a parameterized query: `WHERE name ILIKE $1` with the value `%${q}%`.")
+</script>
+</body>
+</html>

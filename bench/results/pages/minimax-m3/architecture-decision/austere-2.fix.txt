@@ -1,0 +1,3 @@
+```openui
+proposalArchitecture = Architecture([ordersService, snsTopic, billingQueue, shippingQueue, notificationsQueue, billingService, shippingService, notificationsService], [ordersToSns, snsToBillingQueue, snsToShippingQueue, snsToNotificationsQueue, billingQueueToBilling, shippingQueueToShipping, notificationsQueueToNotifications], [], "right")
+```

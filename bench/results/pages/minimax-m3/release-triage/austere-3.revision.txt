@@ -1,0 +1,5 @@
+```openui
+bug330Decision = FormControl("BUG-330 — Password reset email links expire after 5 minutes instead of 60", RadioGroup("bug_330_decision", [RadioItem("fix for 3.8", "High severity; affects all users who reset a password; estimated 1 hour", "fix_for_3_8"), RadioItem("defer to 3.9", "High severity; affects all users who reset a password; estimated 1 hour", "defer_to_3_9"), RadioItem("won't fix", "High severity; affects all users who reset a password; estimated 1 hour", "wont_fix")], "fix_for_3_8", {required: true}))
+bugDecisionForm = Form("release38BugDecisions", sendAllButton, [bug311Decision, bug318Decision, bug322Decision, bug327Decision, bug330Decision])
+suggestionTable = Table([Col("Bug", ["BUG-311", "BUG-318", "BUG-322", "BUG-327", "BUG-330"]), Col("Suggested decision", ["Fix for 3.8", "Fix for 3.8", "Defer to 3.9", "Defer to 3.9", "Fix for 3.8"]), Col("Basis", ["High severity; ~4% of carts; 0.5 day", "Low severity; Reports users; 1 hour", "Medium severity; 120 accounts; 2 days", "Medium severity; ~9% of Android; unknown", "High severity; all users who reset a password; 1 hour"])])
+```

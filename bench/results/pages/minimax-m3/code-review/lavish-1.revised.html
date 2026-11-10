@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PR #482 Review — Add user search endpoint</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+    :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+      min-width: 0;
+    }
+    :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+      overflow-wrap: anywhere;
+    }
+    :where(img, svg, video, canvas, iframe) {
+      max-width: 100%;
+      height: auto;
+    }
+    body {
+      background:
+        radial-gradient(circle at top left, color-mix(in oklab, var(--color-primary) 14%, transparent), transparent 32rem),
+        var(--color-base-200);
+    }
+    .review-shell {
+      max-width: 1440px;
+      margin-inline: auto;
+      padding: 2rem 1rem 4rem;
+    }
+    .severity-rail {
+      width: .3rem;
+      align-self: stretch;
+      border-radius: 999px;
+    }
+    .severity-high { background: var(--color-error); }
+    .severity-medium { background: var(--color-warning); }
+    .severity-low { background: var(--color-info); }
+    .finding-anchor {
+      scroll-margin-top: 1rem;
+    }
+    .code-context {
+      font-size: .82rem;
+      line-height: 1.65;
+    }
+    .file-path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (max-width: 767px) {
+      .review-shell { padding-inline: .75rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="review-shell space-y-8">
+    <header class="space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="badge badge-primary badge-lg">Pull request #482</span>
+          <span class="badge badge-error badge-outline badge-lg">Request changes</span>
+        </div>
+        <div class="text-sm opacity-70">31 tests passed</div>
+      </div>
+
+      <section class="card card-border bg-base-100 shadow-xl">
+        <div class="card-body gap-5">
+          <div>
+            <p class="mb-2 text-sm font-semibold uppercase tracking-wider opacity-60">Review summary</p>
+            <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Add user search endpoint</h1>
+          </div>
+
+          <div class="stats stats-vertical bg-base-200 shadow-sm sm:stats-horizontal">
+            <div class="stat">
+              <div class="stat-title">Findings</div>
+              <div class="stat-value">4</div>
+              <div class="stat-desc">1 blocker, 2 medium, 1 low</div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Changed file</div>
+              <div class="stat-value text-lg">src/routes/users.js</div>
+              <div class="stat-desc">+9 −1</div>
+            </div>
+            <div class="stat">
+              <div class="stat-title">Tests</div>
+              <div class="stat-value text-lg">31 passed</div>
+              <div class="stat-desc">Reported by the pull request</div>
+            </div>
+          </div>
+
+          <div role="alert" class="alert alert-error alert-soft">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
+            </svg>
+            <div>
+              <h2 class="font-bold">Verdict: request changes</h2>
+              <p>The endpoint contains a blocker-severity SQL injection and additional medium- and low-severity issues.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </header>
+
+    <section aria-labelledby="findings-heading" class="space-y-4">
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-wider opacity-60">Review findings</p>
+          <h2 id="findings-heading" class="text-2xl font-bold">Issues to address</h2>
+        </div>
+        <p class="text-sm opacity-70">Each finding is shown beside the relevant diff.</p>
+      </div>
+
+      <nav aria-label="Finding severity summary" class="flex flex-wrap gap-2">
+        <span class="badge badge-error">Blocker · 1</span>
+        <span class="badge badge-warning">Medium · 2</span>
+        <span class="badge badge-info">Low · 1</span>
+      </nav>
+
+      <div class="space-y-6">
+        <article id="finding-1" class="finding-anchor card card-border bg-base-100 shadow-lg">
+          <div class="card-body gap-5">
+            <div class="flex gap-4">
+              <div class="severity-rail severity-high" aria-hidden="true"></div>
+              <div class="min-w-0 flex-1 space-y-4">
+                <header class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="mb-2 flex flex-wrap items-center gap-2">
+                      <span class="badge badge-error">Blocker</span>
+                      <span class="text-sm font-semibold opacity-60">Finding 1</span>
+                    </div>
+                    <h3 class="text-xl font-bold">SQL injection</h3>
+                  </div>
+                  <a class="btn btn-ghost btn-sm" href="#diff-view">View diff</a>
+                </header>
+
+                <p>The query concatenates <code class="rounded bg-base-200 px-1.5 py-0.5">req.query.q</code> into the SQL string at line 18.</p>
+
+                <div class="rounded-box border border-error/30 bg-error/5 p-4">
+                  <p class="mb-2 text-sm font-bold uppercase tracking-wider text-error">Why it matters</p>
+                  <p>User-controlled input is inserted directly into the SQL statement.</p>
+                </div>
+
+                <div>
+                  <p class="mb-2 text-sm font-semibold opacity-70">Suggested fix</p>
+                  <div class="mockup-code overflow-hidden text-sm">
+                    <pre data-prefix="src/routes/users.js"><code class="code-context"><span class="text-success">+  const rows = await db.query(</span>
+<span class="text-success">+    "SELECT id, name FROM users WHERE name ILIKE $1",</span>
+<span class="text-success">+    [`%${q}%`]</span>
+<span class="text-success">+  );</span></code></pre>
+                  </div>
+                </div>
+
+                <div>
+                  <p class="mb-2 text-sm font-semibold opacity-70">Relevant diff</p>
+                  <div class="mockup-code overflow-hidden text-sm">
+                    <pre data-prefix="src/routes/users.js"><code class="code-context"><span class="text-success">+  const q = req.query.q;</span>
+<span class="text-success">+  const rows = await db.query(</span>
+<span class="text-success">+    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"</span>
+<span class="text-success">+  );</span></code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article id="finding-2" class="finding-anchor card card-border bg-base-100 shadow-lg">
+          <div class="card-body gap-5">
+            <div class="flex gap-4">
+              <div class="severity-rail severity-medium" aria-hidden="true"></div>
+              <div class="min-w-0 flex-1 space-y-4">
+                <header class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="mb-2 flex flex-wrap items-center gap-2">
+                      <span class="badge badge-warning">Medium</span>
+                      <span class="text-sm font-semibold opacity-60">Finding 2</span>
+                    </div>
+                    <h3 class="text-xl font-bold">No pagination</h3>
+                  </div>
+                  <a class="btn btn-ghost btn-sm" href="#diff-view">View diff</a>
+                </header>
+
+                <p>The search returns every matching row. With 2.1M users, this can time out.</p>
+
+                <div>
+                  <p class="mb-2 text-sm font-semibold opacity-70">Relevant diff</p>
+                  <div class="mockup-code overflow-hidden text-sm">
+                    <pre data-prefix="src/routes/users.js"><code class="code-context"><span class="text-success">+  const rows = await db.query(</span>
+<span class="text-success">+    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"</span>
+<span class="text-success">+  );</span>
+<span class="text-success">+  res.json(rows);</span></code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article id="finding-3" class="finding-anchor card card-border bg-base-100 shadow-lg">
+          <div class="card-body gap-5">
+            <div class="flex gap-4">
+              <div class="severity-rail severity-medium" aria-hidden="true"></div>
+              <div class="min-w-0 flex-1 space-y-4">
+                <header class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="mb-2 flex flex-wrap items-center gap-2">
+                      <span class="badge badge-warning">Medium</span>
+                      <span class="text-sm font-semibold opacity-60">Finding 3</span>
+                    </div>
+                    <h3 class="text-xl font-bold">Email exposed to any logged-in user</h3>
+                  </div>
+                  <a class="btn btn-ghost btn-sm" href="#diff-view">View diff</a>
+                </header>
+
+                <p>The <code class="rounded bg-base-200 px-1.5 py-0.5">email</code> column is returned to any logged-in user at line 18. Return only <code class="rounded bg-base-200 px-1.5 py-0.5">id</code> and <code class="rounded bg-base-200 px-1.5 py-0.5">name</code>.</p>
+
+                <div>
+                  <p class="mb-2 text-sm font-semibold opacity-70">Relevant diff</p>
+                  <div class="mockup-code overflow-hidden text-sm">
+                    <pre data-prefix="src/routes/users.js"><code class="code-context"><span class="text-success">+  const rows = await db.query(</span>
+<span class="text-success">+    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"</span>
+<span class="text-success">+  );</span>
+<span class="text-success">+  res.json(rows);</span></code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article id="finding-4" class="finding-anchor card card-border bg-base-100 shadow-lg">
+          <div class="card-body gap-5">
+            <div class="flex gap-4">
+              <div class="severity-rail severity-low" aria-hidden="true"></div>
+              <div class="min-w-0 flex-1 space-y-4">
+                <header class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="mb-2 flex flex-wrap items-center gap-2">
+                      <span class="badge badge-info">Low</span>
+                      <span class="text-sm font-semibold opacity-60">Finding 4</span>
+                    </div>
+                    <h3 class="text-xl font-bold">No test for <code class="font-mono">/users/export</code></h3>
+                  </div>
+                  <a class="btn btn-ghost btn-sm" href="#diff-view">View diff</a>
+                </header>
+
+                <p>The newly added <code class="rounded bg-base-200 px-1.5 py-0.5">/users/export</code> route has no test.</p>
+
+                <div>
+                  <p class="mb-2 text-sm font-semibold opacity-70">Relevant diff</p>
+                  <div class="mockup-code overflow-hidden text-sm">
+                    <pre data-prefix="src/routes/users.js"><code class="code-context"><span class="text-success">+router.get("/users/export", exportUsers);</span></code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="diff-view" aria-labelledby="diff-heading" class="card card-border bg-base-100 shadow-xl">
+      <div class="card-body gap-5">
+        <header class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-wider opacity-60">Complete change</p>
+            <h2 id="diff-heading" class="text-2xl font-bold">Diff for <span class="file-path text-xl">src/routes/users.js</span></h2>
+          </div>
+          <span class="badge badge-neutral badge-outline">+9 −1</span>
+        </header>
+
+        <div id="file"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { FileDiff } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+
+    const oldFile = {
+      name: "src/routes/users.js",
+      contents: `@@ -12,7 +12,15 @@ router.get("/users/:id", async (req, res) => {
+   res.json(user);
+ });
+ 
+-router.get("/users", listUsers);
++router.get("/users", async (req, res) => {
++  const q = req.query.q;
++  const rows = await db.query(
++    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"
++  );
++  res.json(rows);
++});
++
++router.get("/users/export", exportUsers);
+ 
+ module.exports = router;
+`,
+    };
+
+    const newFile = {
+      name: "src/routes/users.js",
+      contents: `@@ -12,7 +12,15 @@ router.get("/users/:id", async (req, res) => {
+   res.json(user);
+ });
+ 
+-router.get("/users", listUsers);
++router.get("/users", async (req, res) => {
++  const q = req.query.q;
++  const rows = await db.query(
++    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"
++  );
++  res.json(rows);
++});
++
++router.get("/users/export", exportUsers);
+ 
+ module.exports = router;
+`,
+    };
+
+    new FileDiff({
+      theme: { light: "github-light", dark: "github-dark" },
+      themeType: "dark",
+      overflow: "wrap",
+      diffStyle: "split",
+    }).render({
+      containerWrapper: document.querySelector("#file"),
+      oldFile,
+      newFile,
+    });
+  </script>
+</body>
+</html>
