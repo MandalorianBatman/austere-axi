@@ -99,6 +99,7 @@ function runCheck() {
   status.textContent = errors
     ? `${errors} error${errors > 1 ? "s" : ""}${warnings ? `, ${warnings} warning${warnings > 1 ? "s" : ""}` : ""} · the page renders what it can · ${facts}`
     : `Passes austere-axi check${warnings ? ` with ${warnings} warning${warnings > 1 ? "s" : ""}` : ""} · ${facts}`;
+  if (state.feedback.length) renderFeedback();
 }
 
 function problemLine(p) {
@@ -137,8 +138,10 @@ function renderProblems() {
 
 function loadFrame() {
   state.frameReady = false;
-  state.sent = state.program;
-  frame.srcdoc = pageHtml(state.program, `<script src="${RUNTIME_URL}"></script>`);
+  // A program containing `</script` would break out of the srcdoc script block; load empty and let pushSource deliver it via postMessage once the frame is ready.
+  const inline = /<\/script/i.test(state.program) ? "" : state.program;
+  state.sent = inline;
+  frame.srcdoc = pageHtml(inline, `<script src="${RUNTIME_URL}"></script>`);
 }
 
 function post(message) {
@@ -221,6 +224,7 @@ function renderFeedback() {
       button.disabled = !statementIndex.has(id);
       button.addEventListener("click", () => {
         const s = statementIndex.get(id);
+        if (!s) return;
         showView("source");
         editor.reveal(s.line, s.endLine);
         editor.focus();
