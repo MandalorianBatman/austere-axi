@@ -1,6 +1,6 @@
 # Hosted share links (austere-cloud): design
 
-Status: proposed for sid.kasat's approval. All twelve decisions (Q1–Q12) were settled with the owner on RLM-245 on 2026-11-09. Everything else below follows from them.
+Status: Approved by sid.kasat. All twelve decisions (Q1–Q12) were settled with the owner on RLM-245 on 2026-11-09. Everything else below follows from them.
 
 ## Goal
 
@@ -53,10 +53,10 @@ reviewer's browser ◄───────────────────�
 
 `publish` reuses `readArtifact` and `rewriteRuntime` (see `src/cli/export.js`):
 
-1. Replace the runtime `<script>` tag with `<script src="/rt/<cliVersion>/austere.js"></script>`. Add `/rt/<cliVersion>/mermaid.min.js` when the program uses `Mermaid(`. Add `/rt/<cliVersion>/packs/<name>.js` for each implicit `@austere-axi/*` pack.
+1. Replace the runtime `<script>` tag with `<script src="/rt/<cliVersion>/austere.js"></script>`. Add `/rt/<cliVersion>/mermaid.min.js` when the program uses `Mermaid(`. Bundled `@austere-axi/*` packs need no tag from the CLI: the runtime resolves them itself to `/rt/<cliVersion>/packs/<id>/pack.js` (`packSource` in `src/runtime/packs.js`).
 2. Each installed third-party pack is uploaded as a blob and referenced as `/pk/<sha256>.js`. A pack that is missing locally or doesn't match is an error, because the hosted page can't fetch it from a CDN.
 3. Relative-path images are inlined as `data:` URLs.
-4. Everything else in the file is byte-for-byte unchanged, which keeps the AGENTS.md rule that the served artifact equals the file except for runtime tags.
+4. Everything else in the file is byte-for-byte unchanged. Inlining relative images (step 3) is the one explicit exception beyond runtime tags: the hosted page has no file system to resolve them against. Otherwise this keeps the AGENTS.md rule that the served artifact equals the file except for runtime tags.
 
 Request body (`application/json`, gzip-encoded):
 
@@ -96,7 +96,7 @@ X-Robots-Tag: noindex, nofollow
 Referrer-Policy: no-referrer
 ```
 
-`GET /p/:id/a/` serves the artifact with `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'`. The frame cannot make network requests. Notes leave it only by `postMessage` to the chrome, which is how it already works locally (`src/runtime/index.jsx`).
+`GET /p/:id/a/` serves the artifact with `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'`. `font-src data:` is needed because the runtime injects Inter as a `data:font/woff2` URL. The frame cannot make network requests. Notes leave it only by `postMessage` to the chrome, which is how it already works locally (`src/runtime/index.jsx`).
 
 ### Data model (D1)
 
@@ -110,7 +110,10 @@ replies  (seq INTEGER PK AUTOINCREMENT, page_id TEXT, text TEXT, at INT)
 reports  (id INTEGER PK AUTOINCREMENT, page_id TEXT, reason TEXT, ip_hash TEXT, at INT)
 limits   (key TEXT PK, window_start INT, count INT)          -- fixed-window rate limits
 blocked_ids (page_id TEXT PK)                                -- takedown tombstones
+page_packs (page_id TEXT, sha TEXT, PRIMARY KEY (page_id, sha)) -- pack blob references
 ```
+
+Pack blobs in R2 are content-addressed (`packs/<sha>.js`) and shared by every page that uses the same pack, so `page_packs` counts references. Whenever a page is deleted, expires or is taken down, its `page_packs` rows are removed and a pack blob is deleted only when no row references its `sha` any more. Page blobs (`pages/<id>/`) are deleted directly.
 
 The token is 32 random bytes, base64url, and only its SHA-256 is stored. Page ids are 16 random bytes, base64url (22 characters). `ip_hash` is HMAC-SHA-256 of the IP under a Worker secret, used only for rate limits and abuse.
 
@@ -123,7 +126,7 @@ Owner routes need `Authorization: Bearer <token>`. They return JSON and are not 
 | `POST /api/owners` | Creates an owner and returns `{ token }`. Rate-limited per IP. |
 | `POST /api/pages` | Creates a page from the upload body and returns `{ id, url, expiresAt }`. |
 | `PUT /api/pages/:id` | Replaces the page (republish) and resets `expires_at`. Notes are kept. |
-| `DELETE /api/pages/:id` | Deletes the page, its blobs, notes and replies at once. |
+| `DELETE /api/pages/:id` | Deletes the page, its page blobs, notes and replies at once, and any pack blob no other page references (`page_packs`). |
 | `GET /api/pages` | Lists the owner's pages: `{ id, title, url, expiresAt, notes }`. |
 | `GET /api/pages/:id/notes?after=<seq>&wait=25` | Long-poll. Returns `{ notes: [{ seq, author, items, at }], cursor }` once there are notes after `seq`, or empty after `wait` seconds (D1 is re-checked every 2 s). |
 | `POST /api/pages/:id/replies` | `{ text }`, an agent reply shown in the hosted conversation. |
@@ -132,7 +135,7 @@ Reviewer routes are same-origin from the hosted chrome, and a foreign `Origin` i
 
 | Route | Purpose |
 |---|---|
-| `GET /p/:id`, `GET /p/:id/a/` | Shell and artifact (above). Returns 404 when expired, deleted or taken down. |
+| `GET /p/:id`, `GET /p/:id/a/` | Shell and artifact (above). Returns 404 when expired or deleted, and 410 Gone when taken down. |
 | `POST /p/:id/send` | `{ name, items, end? }`, the same `items` shape the chrome posts locally. `end` is ignored for reviewers. |
 | `GET /p/:id/conversation?after=<cursor>` | The reviewer's view: replies plus notes, with the page's `published_at` so chrome can offer "new version, reload". |
 | `POST /p/:id/report` | `{ reason }`. Inserts a report row and emails the admin. |
@@ -175,7 +178,7 @@ Sync into local sessions (Q8). This runs in the local server, which `poll` alrea
 | Notes per page per IP | 60 per hour | 429 |
 | Note batch size | 4 KB of JSON `items` | 413 |
 | Reviewer name | 40 characters, plain text | Truncated |
-| Retention | 30 days after the last publish | A daily cron deletes pages, blobs, notes and replies |
+| Retention | 30 days after the last publish | A daily cron deletes pages, page blobs, notes, replies and unreferenced pack blobs |
 
 All text is rendered with `textContent` in chrome, never as HTML. Rate limits use the D1 `limits` table with fixed windows. This is cheap and good enough at this scale. Cloudflare's rate-limiting binding can replace it later.
 
@@ -183,7 +186,7 @@ All text is rendered with `textContent` in chrome, never as HTML. Rate limits us
 
 - The footer on every page reads: "Made with austere-axi · Report".
 - `POST /p/:id/report` stores the report and sends one email per report to the admin address (`ADMIN_EMAIL` secret) through the Cloudflare Email Routing `send_email` binding. Reports are rate-limited at 5 per IP per day.
-- `npx austere-cloud-admin takedown <id> [--owner]` is a small script in the cloud repo that uses `ADMIN_TOKEN`. It sets `taken_down`, deletes the blobs, adds a `blocked_ids` tombstone, and with `--owner` blocks the owner token so every one of its pages returns 410.
+- `npx austere-cloud-admin takedown <id> [--owner]` is a small script in the cloud repo that uses `ADMIN_TOKEN`. It sets `taken_down` (the page then returns 410 Gone), deletes the page blobs and any unreferenced pack blobs, adds a `blocked_ids` tombstone, and with `--owner` blocks the owner token so every one of its pages returns 410 Gone.
 - `npx austere-cloud-admin reports` lists open reports.
 
 ## Threats
