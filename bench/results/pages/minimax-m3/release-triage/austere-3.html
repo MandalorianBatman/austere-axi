@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Release 3.8 Bug Triage</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([releaseContext, triageIntro, bugTriageCard, decisionSummary, sendDecisionCard], "column", "l")
+releaseContext = Card([CardHeader("Release 3.8 bug triage", "Decisions needed before code freeze"), releaseFacts])
+releaseFacts = EntityList([{left: "Release", right: "3.8 ships Thursday"}, {left: "Code freeze", right: "Wednesday 18:00"}])
+triageIntro = Callout("info", "How to review", "For each bug, choose one decision: fix for 3.8, defer to 3.9, or won't fix. Suggestions are based only on the supplied facts.")
+bugTriageCard = Card([CardHeader("Bug decisions", "Set one decision per bug"), bugDecisionForm])
+bugDecisionForm = Form("release38BugDecisions", sendAllButton, [bug311Decision, bug318Decision, bug322Decision, bug327Decision])
+bug311Decision = FormControl("BUG-311 — Checkout button disabled after coupon removal", RadioGroup("bug_311_decision", [RadioItem("fix for 3.8", "High severity; affects ~4% of carts; estimated 0.5 day", "fix_for_3_8"), RadioItem("defer to 3.9", "High severity; affects ~4% of carts; estimated 0.5 day", "defer_to_3_9"), RadioItem("won't fix", "High severity; affects ~4% of carts; estimated 0.5 day", "wont_fix")], "fix_for_3_8", {required: true}))
+bug318Decision = FormControl("BUG-318 — Dark mode: unreadable table headers in Reports", RadioGroup("bug_318_decision", [RadioItem("fix for 3.8", "Low severity; affects Reports users; estimated 1 hour", "fix_for_3_8"), RadioItem("defer to 3.9", "Low severity; affects Reports users; estimated 1 hour", "defer_to_3_9"), RadioItem("won't fix", "Low severity; affects Reports users; estimated 1 hour", "wont_fix")], "fix_for_3_8", {required: true}))
+bug322Decision = FormControl("BUG-322 — CSV export drops rows over 10,000", RadioGroup("bug_322_decision", [RadioItem("fix for 3.8", "Medium severity; affects 120 accounts; estimated 2 days", "fix_for_3_8"), RadioItem("defer to 3.9", "Medium severity; affects 120 accounts; estimated 2 days", "defer_to_3_9"), RadioItem("won't fix", "Medium severity; affects 120 accounts; estimated 2 days", "wont_fix")], "defer_to_3_9", {required: true}))
+bug327Decision = FormControl("BUG-327 — Push notification sent twice on Android 15", RadioGroup("bug_327_decision", [RadioItem("fix for 3.8", "Medium severity; affects ~9% of Android; estimate unknown", "fix_for_3_8"), RadioItem("defer to 3.9", "Medium severity; affects ~9% of Android; estimate unknown", "defer_to_3_9"), RadioItem("won't fix", "Medium severity; affects ~9% of Android; estimate unknown", "wont_fix")], "defer_to_3_9", {required: true}))
+decisionSummary = Card([CardHeader("Suggestion", "Initial recommendations for the four bugs"), suggestionTable])
+suggestionTable = Table([Col("Bug", ["BUG-311", "BUG-318", "BUG-322", "BUG-327"]), Col("Suggested decision", ["Fix for 3.8", "Fix for 3.8", "Defer to 3.9", "Defer to 3.9"]), Col("Basis", ["High severity; ~4% of carts; 0.5 day", "Low severity; Reports users; 1 hour", "Medium severity; 120 accounts; 2 days", "Medium severity; ~9% of Android; unknown"])])
+sendDecisionCard = Card([CardHeader("Send decisions", "Return every bug decision in one message"), sendExplanation, sendAllButton])
+sendExplanation = MarkDownRenderer("Review each required selection above, then send all four decisions together. You can adjust any selection before sending.")
+sendAllButton = Buttons([Button("Send all bug decisions", @ToAssistant("Release 3.8 bug triage decisions", "The selected release38BugDecisions form contains one decision for each bug."), "primary")])
+</script>
+</body>
+</html>

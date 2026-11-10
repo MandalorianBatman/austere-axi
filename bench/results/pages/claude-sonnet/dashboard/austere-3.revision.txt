@@ -1,0 +1,5 @@
+```openui
+incidentTable = Table([Col("ID", ["INC-1042", "INC-1047", "INC-1051"]), Col("Day", ["Tue", "Wed", "Sun"]), Col("Severity", [sevTwo, sevTwoB, sevThreeB]), Col("Duration", ["38 min", "47 min", "ongoing"]), Col("Summary", ["Payment provider timeouts", "Bad config push to the cart cache", "Elevated p95 from a slow inventory query"]), Col("Status", [statusResolvedA, statusResolvedB, statusInvestigating]), Col("Postmortem", ["-", "PM-1047", "-"])])
+sevTwoB = Tag("Sev2", null, "sm", "danger")
+sevThreeA = null
+```

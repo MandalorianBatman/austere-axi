@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Checkout Service Health — Week of 2026-10-26</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+<body><script type="text/openui">
+root = Stack([overviewCard, dailyPerformanceCard, incidentCard, actionItemCard], "column", "l")
+overviewCard = Card([CardHeader("Checkout service health", "Weekly review · Week of 2026-10-26"), overviewMetrics, overviewCallout], "column", "l")
+overviewMetrics = OverviewCardBlock([requestsMetric, errorRateMetric, latencyMetric, errorBudgetMetric], "grid", true)
+requestsMetric = OverviewCardItem("requests", Text("Requests", "48.2M", "up 6% week over week"))
+errorRateMetric = OverviewCardItem("error-rate", Text("Error rate", "0.21%", "SLO 0.5%"))
+latencyMetric = OverviewCardItem("latency", Text("p95 latency", "312 ms", "target 300 ms"))
+errorBudgetMetric = OverviewCardItem("error-budget", Text("Error budget left", "64%", "this month"))
+overviewCallout = Callout("warning", "Latency target breached", "p95 latency was 312 ms against a 300 ms target. The Sunday incident remains under investigation.")
+dailyPerformanceCard = Card([CardHeader("Daily performance", "Monday to Sunday"), dailyLatencyChart, dailyErrorChart, dailyPerformanceTable], "column", "l")
+dailyLatencyChart = LineChart(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], [dailyLatencySeries], "linear", "Day", "p95 latency (ms)", 280)
+dailyLatencySeries = Series("p95 latency", [288, 295, 340, 331, 305, 297, 330])
+dailyErrorChart = BarChart(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], [dailyErrorSeries], "grouped", "Day", "Errors", 240)
+dailyErrorSeries = Series("Errors", [9800, 10400, 15900, 12100, 9900, 8700, 9300])
+dailyPerformanceTable = Table([Col("Day", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]), Col("p95 latency (ms)", ["288", "295", "340", "331", "305", "297", "330"], "number"), Col("Errors", ["9,800", "10,400", "15,900", "12,100", "9,900", "8,700", "9,300"], "number")])
+incidentCard = Card([CardHeader("Incidents", "Three incidents during the review week"), incidentTable], "column", "l")
+incidentTable = Table([Col("ID", ["INC-1042", "INC-1047", "INC-1051"]), Col("Day", ["Tue", "Wed", "Sun"]), Col("Severity", ["Sev2", "Sev3", "Sev3"]), Col("Duration", ["38 min", "12 min", "ongoing"]), Col("Description", ["Payment provider timeouts", "Bad config push to the cart cache", "Elevated p95 from a slow inventory query"]), Col("Status", [resolvedTag, resolvedTag, investigatingTag])])
+resolvedTag = Tag("resolved", null, "sm", "success")
+investigatingTag = Tag("investigating", null, "sm", "warning")
+actionItemCard = Card([CardHeader("Action items", "Owners and due dates"), actionItemTable], "column", "l")
+actionItemTable = Table([Col("Action", ["Add an index on inventory(sku, warehouse_id)", "Add a timeout alert for the payment provider"]), Col("Owner", ["Priya", "Marco"]), Col("Due", ["Nov 4", "Nov 6"], "number")])
+</script></body></html>
