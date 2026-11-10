@@ -17,6 +17,7 @@ import { SessionStore, newId } from "./sessions.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
 import { Hub, hubEnabled } from "./hub.js";
 import { COOKIE, InviteStore, OWNER_COOKIE, inviteId, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
+import { reviewerItem } from "./items.js";
 import { hubPage, notesPage } from "./hub-page.js";
 import { splitSpec } from "../shared/packs-meta.js";
 import crypto from "node:crypto";
@@ -75,7 +76,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       log("hub-unavailable", String(err?.message || err));
     }
   }
-  const store = new SessionStore(stateDir(), { onFlush: hub ? (s) => hub.syncSession(s) : undefined });
+  const store = new SessionStore(stateDir(), { onFlush: hub ? (s) => hub.syncSession(s) : undefined, onFlushError: (s, err) => log("hub-sync", s.id, String(err?.message || err)) });
   if (hub) {
     for (const s of store.list()) {
       try {
@@ -834,7 +835,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const body = await readBody(req, 4 * 1024 * 1024);
       const end = !reviewer && !!body.end;
       let items = Array.isArray(body.items) ? body.items.filter((x) => x && typeof x === "object").slice(0, reviewer ? 50 : 200) : [];
-      if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind));
+      if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind)).map(reviewerItem);
       if (s.status === "ended") return send(res, 409, { error: "session has ended" });
       if (!items.length && !end) return send(res, 400, { error: "nothing to send" });
       // The server decides who wrote a note. A reviewer's own item id could overwrite another note in the hub.
