@@ -244,6 +244,7 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 
 - **A failing check fails the job.** The `check` output, with each error's statement and line, is in the log and in the job summary; pages that passed are still exported.
 - **Fork PRs** get a read-only token, so the comment is skipped with a warning. The job summary and the artifact still carry the report.
+- **Sticky comment:** the action updates only a marked comment posted by its own token's account (a bot account for `github.token`). A comment someone else writes with the same marker is left alone, and the action posts its own.
 - **Triggers:** use `pull_request`. Do not use `pull_request_target` to run pages from a fork.
 - **Artifact:** GitHub zips it and requires a login to download it. Unzip and open the HTML in a browser; it works offline. A Pages preview is not part of the action.
 - The action lives in this repository, under `action/`, so one ref pins the action and the CLI contract it calls. `version` still picks the CLI.

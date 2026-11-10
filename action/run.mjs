@@ -5,14 +5,14 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expandPages, pageTitle, parseCheck } from "./lib.mjs";
+import { expandPages, pageTitle, parseCheck, resolveCli } from "./lib.mjs";
 
 const cwd = process.cwd();
 const temp = process.env.RUNNER_TEMP || os.tmpdir();
 const outDir = path.join(temp, "austere-review");
 const resultsFile = path.join(temp, "austere-results.json");
-const cli = (process.env.INPUT_CLI || "").trim().split(/\s+/).filter(Boolean);
-if (!cli.length) cli.push("npx", "-y", `austere-axi@${(process.env.INPUT_VERSION || "latest").trim()}`);
+const input = (process.env.INPUT_CLI || "").trim().split(/\s+/).filter(Boolean);
+const cli = resolveCli(input.length ? input : ["npx", "-y", `austere-axi@${(process.env.INPUT_VERSION || "latest").trim()}`]);
 
 // check registers pages with the hub when it is on; never touch a user-level state dir on a runner.
 const env = {
@@ -27,7 +27,7 @@ function austere(args) {
     cwd,
     env,
     encoding: "utf8",
-    shell: process.platform === "win32",
+    shell: false,
     maxBuffer: 64 * 1024 * 1024,
   });
   return { code: r.status ?? 1, stdout: r.stdout || "", stderr: r.stderr || (r.error ? String(r.error.message) : "") };

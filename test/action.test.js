@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { escapeMd, expandPages, marker, parseCheck, renderComment, upsertComment } from "../action/lib.mjs";
+import { escapeMd, expandPages, marker, parseCheck, renderComment, resolveCli, upsertComment } from "../action/lib.mjs";
 
 const cli = (...args) => spawnSync(process.execPath, ["src/cli/main.js", ...args], { encoding: "utf8" }).stdout;
 
@@ -58,29 +58,58 @@ test("renderComment: a title cannot break out of the table", () => {
   assert.equal(c.split("\n").filter((l) => l.startsWith("| `a.html`")).length, 1);
 });
 
-function fakeGitHub(comments) {
+/** `login` set: a user token that may call GET /user. Unset: the workflow token, which gets a 403 there. */
+function fakeGitHub(comments, login) {
   const calls = [];
   const f = async (url, init) => {
     calls.push([init.method, url.replace("https://api.test", "")]);
     const json = (v) => ({ ok: true, status: 200, json: async () => v, text: async () => "" });
+    if (url.endsWith("/user")) return login ? json({ login }) : { ok: false, status: 403, text: async () => "Resource not accessible by integration" };
     if (init.method === "GET") return json(comments);
     return json({ html_url: "https://example.test/c", id: 7 });
   };
   return { f, calls };
 }
 
+const bot = { login: "github-actions[bot]", type: "Bot" };
+
 test("upsertComment: updates the comment that carries this tag's marker, else creates", async () => {
-  const mine = { id: 42, body: `${marker("t")}\nold` };
-  const other = { id: 43, body: `${marker("other")}\nold` };
+  const mine = { id: 42, body: `${marker("t")}\nold`, user: bot };
+  const other = { id: 43, body: `${marker("other")}\nold`, user: bot };
   const args = { api: "https://api.test", repo: "o/r", pr: 5, token: "x", body: `${marker("t")}\nnew`, tag: "t" };
 
   let gh = fakeGitHub([other, mine]);
   assert.equal((await upsertComment({ ...args, fetch: gh.f })).action, "updated");
   assert.deepEqual(gh.calls.at(-1), ["PATCH", "/repos/o/r/issues/comments/42"]);
 
-  gh = fakeGitHub([other, { id: 1, body: "unrelated" }]);
+  gh = fakeGitHub([other, { id: 1, body: "unrelated", user: bot }]);
   assert.equal((await upsertComment({ ...args, fetch: gh.f })).action, "created");
   assert.deepEqual(gh.calls.at(-1), ["POST", "/repos/o/r/issues/5/comments"]);
+});
+
+test("upsertComment: a marked comment by someone else is never taken over", async () => {
+  const args = { api: "https://api.test", repo: "o/r", pr: 5, token: "x", body: `${marker("t")}\nnew`, tag: "t" };
+  const human = { id: 50, body: `${marker("t")}\nplanted`, user: { login: "mallory", type: "User" } };
+
+  let gh = fakeGitHub([human]);
+  assert.equal((await upsertComment({ ...args, fetch: gh.f })).action, "created");
+  assert.deepEqual(gh.calls.at(-1), ["POST", "/repos/o/r/issues/5/comments"]);
+
+  // A user token updates its own account's comment, not a bot's or another user's.
+  const own = { id: 51, body: `${marker("t")}\nold`, user: { login: "alice", type: "User" } };
+  gh = fakeGitHub([human, { ...own, id: 52, user: bot }, own], "alice");
+  assert.equal((await upsertComment({ ...args, fetch: gh.f })).action, "updated");
+  assert.deepEqual(gh.calls.at(-1), ["PATCH", "/repos/o/r/issues/comments/51"]);
+});
+
+test("resolveCli: on Windows npx runs as node npx-cli.js, since a shell would re-parse PR-controlled paths", () => {
+  const execPath = "C:\\node\\node.exe";
+  const files = new Set(["C:\\npm\\npx.cmd", "C:\\npm\\node_modules\\npm\\bin\\npx-cli.js", "C:\\node\\node_modules\\npm\\bin\\npx-cli.js"]);
+  const o = { platform: "win32", execPath, exists: (p) => files.has(p) };
+  assert.deepEqual(resolveCli(["npx", "-y", "austere-axi@1"], { ...o, env: { PATH: "C:\\Windows;\"C:\\npm\"" } }), [execPath, "C:\\npm\\node_modules\\npm\\bin\\npx-cli.js", "-y", "austere-axi@1"]);
+  assert.deepEqual(resolveCli(["npx", "-y", "austere-axi@1"], { ...o, env: { PATH: "C:\\Windows" } }), [execPath, "C:\\node\\node_modules\\npm\\bin\\npx-cli.js", "-y", "austere-axi@1"]);
+  assert.deepEqual(resolveCli(["node", "dist/cli.mjs"], o), ["node", "dist/cli.mjs"]);
+  assert.deepEqual(resolveCli(["npx", "-y", "austere-axi@1"], { ...o, platform: "linux" }), ["npx", "-y", "austere-axi@1"]);
 });
 
 test("upsertComment: a 403 rejects with the status so the action can warn instead of fail", async () => {

@@ -142,7 +142,9 @@ export function renderComment(results, { tag, artifactUrl, runUrl }) {
 }
 
 /**
- * Create or update the one comment carrying `marker(tag)`.
+ * Create or update the one comment carrying `marker(tag)` that this token posted. Anyone can write a comment that
+ * starts with the marker, so only the token's own account counts: `GET /user` names it for a user token; the
+ * workflow's `github.token` and app tokens cannot call it and post as a bot.
  * @param {{ api: string, repo: string, pr: number, token: string, body: string, tag: string, fetch?: typeof fetch }} o
  * @returns {Promise<{ action: "created" | "updated", url: string }>}
  */
@@ -163,10 +165,16 @@ export async function upsertComment({ api, repo, pr, token, body, tag, fetch: f 
     return res.json();
   };
   const mark = marker(tag);
+  /** @type {string | null} */
+  let login = null;
+  try {
+    login = (await call("GET", `${api}/user`))?.login || null;
+  } catch {}
+  const ours = (c) => (login ? c.user?.login === login : c.user?.type === "Bot");
   let existing = null;
   for (let page = 1; !existing; page++) {
     const batch = await call("GET", `${api}/repos/${repo}/issues/${pr}/comments?per_page=100&page=${page}`);
-    existing = batch.find((c) => typeof c.body === "string" && c.body.startsWith(mark)) || null;
+    existing = batch.find((c) => typeof c.body === "string" && c.body.startsWith(mark) && ours(c)) || null;
     if (batch.length < 100) break;
   }
   if (existing) {
@@ -175,4 +183,20 @@ export async function upsertComment({ api, repo, pr, token, body, tag, fetch: f 
   }
   const c = await call("POST", `${api}/repos/${repo}/issues/${pr}/comments`, { body });
   return { action: "created", url: c.html_url };
+}
+
+/**
+ * `cli` as a program and arguments to spawn without a shell: a shell would re-parse the page paths, which the PR controls.
+ * On Windows `npx` is a `.cmd` shim that Node starts only through a shell, so it becomes this Node running npm's
+ * `npx-cli.js`, from the first `npx.cmd` on PATH (as the shell would pick it) or from next to this Node.
+ * @param {string[]} cli
+ * @param {{ platform?: string, env?: Record<string, string | undefined>, execPath?: string, exists?: (p: string) => boolean }} [o]
+ * @returns {string[]}
+ */
+export function resolveCli(cli, { platform = process.platform, env = process.env, execPath = process.execPath, exists = fs.existsSync } = {}) {
+  if (platform !== "win32" || cli[0] !== "npx") return cli;
+  const entry = (dir) => path.win32.join(dir, "node_modules", "npm", "bin", "npx-cli.js");
+  const onPath = String(env.PATH || "").split(";").map((d) => d.replace(/"/g, "").trim()).filter(Boolean);
+  const dir = onPath.find((d) => exists(path.win32.join(d, "npx.cmd")) && exists(entry(d))) ?? path.win32.dirname(execPath);
+  return exists(entry(dir)) ? [execPath, entry(dir), ...cli.slice(1)] : cli;
 }

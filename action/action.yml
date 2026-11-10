@@ -16,7 +16,7 @@ inputs:
     default: latest
   cli:
     description: >
-      Command that runs austere-axi, replacing the npm install (for example `node dist/cli.mjs`).
+      Command that runs austere-axi, replacing the npm install (for example `node dist/cli.mjs`). It runs without a shell.
       Used by this repository's own tests; leave empty otherwise.
     default: ''
   artifact-name:
