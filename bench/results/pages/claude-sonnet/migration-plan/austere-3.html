@@ -1,0 +1,31 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sessions migration: Redis to Postgres</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+<body><script type="text/openui">
+root = Stack([intro, why, flow, phases, risks, cost, decide], "column", "l")
+intro = Card([CardHeader("Move user sessions from Redis to Postgres", "Migration plan for review"), introText])
+introText = MarkDownRenderer("**Goal:** durable sessions with no forced logout, while auth p99 stays at or under 45 ms (today 41 ms).")
+why = Card([CardHeader("Why"), whyCallout, whyFacts])
+whyCallout = Callout("error", "Sessions are lost on failover", "Sessions live only in Redis. Last month a failover forced 38,214 users to log in again.")
+whyFacts = EntityList([{left: "Users forced to log in again last month", right: "38,214", rightVariant: "number"}, {left: "Auth p99 today", right: "41 ms"}, {left: "Auth p99 limit", right: "45 ms"}])
+flow = Card([CardHeader("Request path after the change", "Redis stays as a read-through cache in front of Postgres"), flowDiagram])
+flowDiagram = Architecture([client, api, pg, redis], [toApi, toPg, toRedis])
+client = Node("Client", "external")
+api = Node("API", "backend", "Node, port 8080")
+pg = Node("Postgres", "database", "sessions table", "new")
+redis = Node("Redis", "database", "read-through cache")
+toApi = Edge(client, api, null, "emphasis")
+toPg = Edge(api, pg, "sessions", "emphasis")
+toRedis = Edge(api, redis, "cache", "dashed")
+phases = Card([CardHeader("Phases"), phaseTable])
+phaseTable = Table([Col("#", ["1", "2", "3", "4"]), Col("Phase", ["Create the sessions table and dual-write", "Backfill existing sessions", "Switch reads to Postgres behind the sessions_pg flag", "Remove Redis writes"]), Col("Duration", ["1 week", "2 days", "1 week", "1 day"])])
+risks = Card([CardHeader("Risks and mitigations"), riskTable])
+riskTable = Table([Col("Risk", ["Write latency on login", "Table bloat from expired rows"]), Col("Mitigation", ["Async write with a 50 ms timeout", "Nightly partition drop"])])
+cost = Card([CardHeader("Extra cost"), costFacts])
+costFacts = EntityList([{left: "Additional monthly cost", right: "$140/month"}])
+decide = Card([CardHeader("Your decision", "Approve the plan and pick a rollout strategy"), decideForm])
+decideForm = Form("decision", decideButtons, [approvalField, strategyField])
+approvalField = FormControl("Plan", RadioGroup("approval", [RadioItem("Approve", "Go ahead with the migration plan", "approve"), RadioItem("Request changes", "Do not proceed yet", "changes")], null, {required: true}))
+strategyField = FormControl("Rollout strategy", RadioGroup("strategy", [RadioItem("Big bang", "One deploy, high risk", "bigbang"), RadioItem("Dual-write", "Gradual, low risk", "dualwrite")], null, {required: true}))
+decideButtons = Buttons([Button("Send decision", @ToAssistant("Decision: approval and rollout strategy"), "primary")])
+</script></body></html>

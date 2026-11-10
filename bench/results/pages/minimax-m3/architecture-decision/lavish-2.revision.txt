@@ -1,0 +1,59 @@
+<<<<<<< SEARCH
+            <div class="metric">
+              <dt>Team experience</dt>
+              <dd>None</dd>
+            </div>
+          </dl>
+        </article>
+=======
+            <div class="metric">
+              <dt>Team experience</dt>
+              <dd>None</dd>
+            </div>
+            <div class="metric">
+              <dt>Monthly cost estimate</dt>
+              <dd>About $2,400</dd>
+            </div>
+          </dl>
+        </article>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <div class="metric">
+              <dt>Team experience</dt>
+              <dd>One engineer</dd>
+            </div>
+          </dl>
+        </article>
+=======
+            <div class="metric">
+              <dt>Team experience</dt>
+              <dd>One engineer</dd>
+            </div>
+            <div class="metric">
+              <dt>Monthly cost estimate</dt>
+              <dd>About $900</dd>
+            </div>
+          </dl>
+        </article>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <div class="metric">
+              <dt>Team experience</dt>
+              <dd>High</dd>
+            </div>
+          </dl>
+          <p class="mt-4 text-xs text-base-content/55">Retention: 14 days only.</p>
+=======
+            <div class="metric">
+              <dt>Team experience</dt>
+              <dd>High</dd>
+            </div>
+            <div class="metric">
+              <dt>Monthly cost estimate</dt>
+              <dd>About $310 at our volume</dd>
+            </div>
+          </dl>
+          <p class="mt-4 text-xs text-base-content/55">Retention: 14 days only.</p>
+>>>>>>> REPLACE

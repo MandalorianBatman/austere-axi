@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en" data-theme="luxury" data-lavish-annotate="off">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-017: Event bus for order events - Review</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, td, th, .badge, .label) { overflow-wrap: anywhere; }
+  :where(img, svg, video, canvas, iframe) { max-width: 100%; height: auto; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+  .flow text { fill: currentColor; font-size: 13px; font-family: ui-monospace, monospace; }
+  .flow .node { fill: var(--color-base-200); stroke: currentColor; stroke-width: 1.5; }
+  .flow .hot { fill: var(--color-base-300); stroke: var(--color-primary); stroke-width: 2.5; }
+  .flow .edge { stroke: currentColor; stroke-width: 1.5; fill: none; }
+  .flow .dash { stroke-dasharray: 5 4; }
+</style>
+</head>
+<body>
+<main class="mx-auto max-w-5xl p-6 lg:p-10 flex flex-col gap-8">
+
+  <header class="flex flex-col gap-3">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="badge badge-outline font-mono">ADR-017</span>
+      <span class="badge badge-warning">Status: proposed</span>
+    </div>
+    <h1 class="text-3xl lg:text-4xl font-bold">Event bus for order events</h1>
+    <p class="text-lg">
+      <strong>Proposed decision:</strong> use <strong>Amazon SQS + SNS</strong>.
+      Orders publishes <code>order.placed</code> to an SNS topic; Billing, Shipping and Notifications each read from their own SQS queue.
+    </p>
+  </header>
+
+  <section class="card card-border bg-base-200" id="context">
+    <div class="card-body">
+      <h2 class="card-title">Context</h2>
+      <p>The Orders service calls Billing, Shipping and Notifications over HTTP in sequence. One slow call blocks checkout.</p>
+      <div class="stats stats-vertical sm:stats-horizontal bg-base-100 w-fit max-w-full">
+        <div class="stat">
+          <div class="stat-title">Incidents last quarter</div>
+          <div class="stat-value text-error">3</div>
+          <div class="stat-desc">caused by this pattern</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="flex flex-col gap-3" id="options">
+    <h2 class="text-2xl font-bold">Options compared</h2>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-100">
+      <table class="table">
+        <thead>
+          <tr><th>Option</th><th>Throughput</th><th>Replay</th><th>Ops cost</th><th>Team experience</th></tr>
+        </thead>
+        <tbody>
+          <tr id="opt-kafka">
+            <td class="font-bold">Kafka</td>
+            <td>1M msg/s</td>
+            <td><span class="badge badge-soft badge-success">Yes</span></td>
+            <td><span class="badge badge-soft badge-error">High</span> <span class="text-sm opacity-80">3-broker cluster to run</span></td>
+            <td><span class="badge badge-soft badge-error">None</span></td>
+          </tr>
+          <tr id="opt-nats">
+            <td class="font-bold">NATS JetStream</td>
+            <td>200k msg/s</td>
+            <td><span class="badge badge-soft badge-success">Yes</span></td>
+            <td><span class="badge badge-soft badge-warning">Medium</span></td>
+            <td><span class="badge badge-soft badge-warning">One engineer</span></td>
+          </tr>
+          <tr id="opt-sqs" class="bg-base-300">
+            <td class="font-bold">Amazon SQS + SNS <span class="badge badge-primary badge-sm ml-1">Proposed</span></td>
+            <td>Effectively unlimited</td>
+            <td><span class="badge badge-soft badge-error">No</span> <span class="text-sm opacity-80">14-day retention only</span></td>
+            <td><span class="badge badge-soft badge-success">Low</span> <span class="text-sm opacity-80">managed</span></td>
+            <td><span class="badge badge-soft badge-success">High</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="flex flex-col gap-3" id="design">
+    <h2 class="text-2xl font-bold">Proposed shape</h2>
+    <div class="card card-border bg-base-200">
+      <div class="card-body">
+        <svg class="flow w-full" viewBox="0 0 660 270" role="img" aria-labelledby="flow-t">
+          <title id="flow-t">Orders publishes order.placed to an SNS topic, which fans out to one SQS queue each for Billing, Shipping and Notifications. Orders also writes to an outbox table.</title>
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g id="n-orders"><title>Orders service</title><rect class="node" x="10" y="95" width="110" height="50" rx="8"/><text x="65" y="125" text-anchor="middle">Orders</text></g>
+          <g id="n-outbox"><title>Outbox table in the Orders database</title><rect class="node dash" x="10" y="200" width="110" height="46" rx="8"/><text x="65" y="220" text-anchor="middle">Outbox</text><text x="65" y="236" text-anchor="middle">(Orders DB)</text></g>
+          <g id="n-sns"><title>SNS topic</title><rect class="hot" x="190" y="95" width="110" height="50" rx="8"/><text x="245" y="125" text-anchor="middle">SNS topic</text></g>
+          <g id="n-q-billing"><title>Billing SQS queue</title><rect class="node" x="360" y="25" width="100" height="40" rx="8"/><text x="410" y="50" text-anchor="middle">SQS</text></g>
+          <g id="n-q-shipping"><title>Shipping SQS queue</title><rect class="node" x="360" y="100" width="100" height="40" rx="8"/><text x="410" y="125" text-anchor="middle">SQS</text></g>
+          <g id="n-q-notif"><title>Notifications SQS queue</title><rect class="node" x="360" y="175" width="100" height="40" rx="8"/><text x="410" y="200" text-anchor="middle">SQS</text></g>
+          <g id="n-billing"><title>Billing consumer</title><rect class="node" x="520" y="25" width="130" height="40" rx="8"/><text x="585" y="50" text-anchor="middle">Billing</text></g>
+          <g id="n-shipping"><title>Shipping consumer</title><rect class="node" x="520" y="100" width="130" height="40" rx="8"/><text x="585" y="125" text-anchor="middle">Shipping</text></g>
+          <g id="n-notif"><title>Notifications consumer</title><rect class="node" x="520" y="175" width="130" height="40" rx="8"/><text x="585" y="200" text-anchor="middle">Notifications</text></g>
+          <g id="e-publish"><title>Orders publishes order.placed</title><path class="edge" d="M120 120 H188" marker-end="url(#arr)"/><text x="154" y="86" text-anchor="middle">order.placed</text><path class="edge" d="M154 92 V116" stroke-width="0"/></g>
+          <g id="e-outbox"><title>Orders writes to outbox</title><path class="edge dash" d="M65 200 V147" marker-end="url(#arr)"/></g>
+          <g id="e-fan"><title>SNS fans out to three queues</title>
+            <path class="edge" d="M300 120 C330 120 330 45 358 45" marker-end="url(#arr)"/>
+            <path class="edge" d="M300 120 H358" marker-end="url(#arr)"/>
+            <path class="edge" d="M300 120 C330 120 330 195 358 195" marker-end="url(#arr)"/>
+          </g>
+          <g id="e-consume"><title>Each consumer reads its own queue</title>
+            <path class="edge" d="M460 45 H518" marker-end="url(#arr)"/>
+            <path class="edge" d="M460 120 H518" marker-end="url(#arr)"/>
+            <path class="edge" d="M460 195 H518" marker-end="url(#arr)"/>
+          </g>
+        </svg>
+        <p class="text-sm opacity-80">Each consumer has its own queue, so a slow consumer no longer sits in the checkout call path.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="flex flex-col gap-3" id="consequences">
+    <h2 class="text-2xl font-bold">Consequences</h2>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="alert alert-warning alert-vertical items-start" role="alert" id="cons-replay">
+        <div>
+          <h3 class="font-bold">No event replay</h3>
+          <p>SQS + SNS keeps messages for 14 days only, so we keep an outbox table in the Orders database.</p>
+        </div>
+      </div>
+      <div class="alert alert-warning alert-vertical items-start" role="alert" id="cons-idempotent">
+        <div>
+          <h3 class="font-bold">At-least-once delivery</h3>
+          <p>Every consumer must be idempotent.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card card-border bg-base-200" id="review">
+    <div class="card-body">
+      <h2 class="card-title">Your review</h2>
+      <form id="review-form" data-lavish-question="adr-017-decision" class="flex flex-col gap-4">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Decision on ADR-017</legend>
+          <div class="flex flex-col sm:flex-row gap-3">
+            <label class="label cursor-pointer gap-3 border border-base-content/20 rounded-box p-3 flex-1">
+              <input type="radio" name="decision" value="Accept" class="radio radio-success">
+              <span class="font-bold">Accept</span>
+            </label>
+            <label class="label cursor-pointer gap-3 border border-base-content/20 rounded-box p-3 flex-1">
+              <input type="radio" name="decision" value="Reject" class="radio radio-error">
+              <span class="font-bold">Reject</span>
+            </label>
+          </div>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Comment (optional)</legend>
+          <textarea name="comment" class="textarea w-full" rows="4" placeholder="Anything the author should know?"></textarea>
+        </fieldset>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="submit" class="btn btn-primary">Queue decision</button>
+          <span id="state" role="status" aria-live="polite" class="text-sm opacity-80">Nothing selected yet.</span>
+        </div>
+      </form>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  const form = document.getElementById('review-form');
+  const state = document.getElementById('state');
+  form.addEventListener('change', () => {
+    const d = new FormData(form).get('decision');
+    state.textContent = d ? 'Selected: ' + d + ' (not yet queued).' : 'Nothing selected yet.';
+  });
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const fd = new FormData(form);
+    const decision = fd.get('decision');
+    const comment = (fd.get('comment') || '').toString().trim();
+    if (!decision) {
+      state.textContent = 'Choose Accept or Reject first.';
+      return;
+    }
+    const message = 'ADR-017 (Event bus for order events, SQS + SNS): ' + decision.toString().toUpperCase() +
+      (comment ? '. Comment: ' + comment : '. No comment.');
+    if (window.lavish && window.lavish.queuePrompt) {
+      window.lavish.queuePrompt(message, {
+        tag: 'adr-decision',
+        text: 'ADR-017: ' + decision,
+        element: form,
+        queueKey: 'adr-017-decision',
+        data: { adr: 'ADR-017', decision: decision, comment: comment }
+      });
+      state.textContent = 'Queued: ' + decision + (comment ? ' with comment' : '') + '. Press Send to Agent to deliver.';
+    } else {
+      state.textContent = 'Lavish is not connected; decision not queued.';
+    }
+  });
+</script>
+</body>
+</html>

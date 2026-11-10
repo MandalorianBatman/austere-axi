@@ -10,6 +10,10 @@
 
 Review pages for coding agents. The agent writes a short [OpenUI Lang](https://github.com/thesysdev/openui) program, not HTML. You open it in the browser, click on any part, and write a note. The agent gets each note with the name of the statement it points at. It edits only those statements, and the page updates in place.
 
+![An agent writes a page, the reviewer clicks a table cell and a diagram node and sends two notes, and the page patches in place with the changed statements flashing](docs/demo.gif)
+
+<sub>The real loop, about 30 s: [MP4](docs/demo.mp4) · [WebM](docs/demo.webm).</sub>
+
 ```
 root = Stack([intro, flow, options, decide], "column", "l")
 intro = Card([CardHeader("Session storage migration", "Redis → Postgres"), introText])
@@ -36,12 +40,18 @@ The loop is the same as [lavish-axi](https://github.com/kunchenguid/lavish-axi).
 | | lavish-axi | austere-axi |
 |---|---|---|
 | Agent writes | Full HTML + CSS + SVG | OpenUI Lang statements |
-| After feedback | Writes the file again | Edits the named statements; the page patches in place |
+| After feedback | Edits the HTML; the page reloads | Edits the named statements; the page patches in place |
 | Feedback points at | CSS selector + text | Statement name and line, plus table cell, diff line, diagram node or selected text |
 | Validation | Layout audit in the browser | `austere-axi check`, in Node, no browser |
 | Look | Different for each agent | One dark design |
 
-Fewer output tokens means faster pages and lower cost.
+Fewer output tokens means faster pages and lower cost. From the [benchmark](docs/benchmark.md):
+
+<!-- bench:start -->
+Across 36 paired runs (6 review pages, 2 models), lavish-axi spent a median **3.2×** the output tokens of austere-axi to produce the same page, took **2.4×** as long and cost **2.5×** as much. Answering one reviewer note took **2.7×** the output tokens.
+<!-- bench:end -->
+
+The benchmark also shows where lavish-axi does better; read its caveats before quoting the numbers.
 
 ## Install
 
@@ -108,7 +118,7 @@ austere-axi reply <file>         post a reply without polling
 austere-axi end <file>           end the review as the agent
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix]
-austere-axi patch <file>         merge statements from stdin into the program
+austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi export <file>        one self-contained HTML file, works offline
@@ -203,7 +213,7 @@ Send the link to the teammate. The link needs Tailscale (or `AUSTERE_AXI_HOST`);
 - **Author:** `poll` and `feedback` show `from: <name>` on each teammate's note. Your own notes have no `from`. The hub Notes view shows the author and can filter on it.
 - **Reviewers can:** read the page and the conversation, and add notes. They cannot end the review, export, or send held notes.
 
-Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token; the browser keeps it in a cookie and the address bar drops it.
+Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token. Opening it shows a "Continue as <name>" button; pressing it (a same-origin POST) trades the token for a cookie and the address bar drops it. A link opened from another site therefore cannot switch your browser into a reviewer.
 
 Off loopback, a request without a valid invite or the owner key is refused. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links stop working, delete that file and restart the server. Behind a reverse proxy on the same machine, every request looks local, so it acts as you.
 
@@ -269,6 +279,8 @@ node dist/cli.mjs examples/session-migration.html
 Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/add-component`](.agents/skills/add-component/SKILL.md) to add a component, [`.agents/skills/review-change`](.agents/skills/review-change/SKILL.md) before you commit. Tests enforce the component rules: every component has a group, `spec` stays in its token budget, released prop orders are append-only (`npm run signatures`), and every example passes `check`.
 
 Visual checks: `npm run gallery`, `npm run shot`, and `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
+
+Benchmark against lavish-axi: `npm run bench` (needs model keys; see [docs/benchmark.md](docs/benchmark.md)). `npm run bench:report` rebuilds its tables from the committed results.
 
 **CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). **Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
 

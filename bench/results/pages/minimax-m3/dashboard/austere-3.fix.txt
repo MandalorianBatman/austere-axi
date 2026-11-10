@@ -1,0 +1,12 @@
+```openui
+overview = Card([CardHeader("Checkout service health", "Week of 2026-10-26 · Monday review"), statusCallout, keyMetrics], "card", "column", "l")
+keyMetrics = OverviewCardBlock([requestMetric, errorRateMetric, latencyMetric, errorBudgetMetric], "grid", true, null, "m")
+requestMetric = OverviewCardItem("requests", Text("text", "Requests", "text", "text", "sm"), MetricIndicatorInline("48.2M", "Up 6% week over week", {direction: "up", value: 6}))
+errorRateMetric = OverviewCardItem("error-rate", Text("text", "Error rate", "text", "text", "sm"), MetricIndicatorInline("0.21%", "SLO: 0.5%"))
+latencyMetric = OverviewCardItem("latency", Text("text", "p95 latency", "text", "text", "sm"), MetricIndicatorInline("312 ms", "Target: 300 ms · breached"))
+errorBudgetMetric = OverviewCardItem("error-budget", Text("text", "Error budget left", "text", "text", "sm"), MetricIndicatorInline("64%", "This month"))
+weeklyTrend = Card([CardHeader("Weekly trends", "Daily p95 latency and error counts"), latencyTrend, errorsTrend], "card", "column", "l")
+incidentSummary = Card([CardHeader("Incidents", "Three incidents during the week"), incidentTable], "card", "column", "l")
+actionItems = Card([CardHeader("Action items", "Current remediation work"), actionTable], "card", "column", "l")
+mondayFocus = Card([CardHeader("Monday review focus", "Carry-forward items from the week"), mondayChecklist], "card", "column", "l")
+```
