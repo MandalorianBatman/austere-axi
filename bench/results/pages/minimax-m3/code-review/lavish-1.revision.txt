@@ -1,0 +1,63 @@
+<<<<<<< SEARCH
+          <div role="alert" class="alert alert-error alert-soft">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
+            </svg>
+            <div>
+              <h2 class="font-bold">Verdict: request changes</h2>
+              <p>The endpoint contains a high-severity SQL injection and additional medium- and low-severity issues.</p>
+            </div>
+          </div>
+=======
+          <div role="alert" class="alert alert-error alert-soft">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
+            </svg>
+            <div>
+              <h2 class="font-bold">Verdict: request changes</h2>
+              <p>The endpoint contains a blocker-severity SQL injection and additional medium- and low-severity issues.</p>
+            </div>
+          </div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+        <span class="badge badge-error">High · 1</span>
+=======
+        <span class="badge badge-error">Blocker · 1</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+                      <span class="badge badge-error">High</span>
+=======
+                      <span class="badge badge-error">Blocker</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+                <div class="rounded-box border border-error/30 bg-error/5 p-4">
+                  <p class="mb-2 text-sm font-bold uppercase tracking-wider text-error">Why it matters</p>
+                  <p>User-controlled input is inserted directly into the SQL statement.</p>
+                </div>
+=======
+                <div class="rounded-box border border-error/30 bg-error/5 p-4">
+                  <p class="mb-2 text-sm font-bold uppercase tracking-wider text-error">Why it matters</p>
+                  <p>User-controlled input is inserted directly into the SQL statement.</p>
+                </div>
+
+                <div>
+                  <p class="mb-2 text-sm font-semibold opacity-70">Suggested fix</p>
+                  <div class="mockup-code overflow-hidden text-sm">
+                    <pre data-prefix="src/routes/users.js"><code class="code-context"><span class="text-success">+  const rows = await db.query(</span>
+<span class="text-success">+    "SELECT id, name FROM users WHERE name ILIKE $1",</span>
+<span class="text-success">+    [`%${q}%`]</span>
+<span class="text-success">+  );</span></code></pre>
+                  </div>
+                </div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <div class="stat-value">4</div>
+              <div class="stat-desc">1 high, 2 medium, 1 low</div>
+=======
+              <div class="stat-value">4</div>
+              <div class="stat-desc">1 blocker, 2 medium, 1 low</div>
+>>>>>>> REPLACE

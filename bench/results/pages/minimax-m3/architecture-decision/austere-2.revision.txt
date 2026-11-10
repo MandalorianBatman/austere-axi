@@ -1,0 +1,3 @@
+```openui
+optionsTable = Table([Col("Option", ["Kafka", "NATS JetStream", "Amazon SQS + SNS"]), Col("Throughput", ["1M msg/s", "200k msg/s", "Effectively unlimited"]), Col("Replay", ["Yes", "Yes", "No (14-day retention only)"]), Col("Ops cost", ["High\n3-broker cluster", "Medium", "Low\nManaged"]), Col("Monthly cost estimate", ["About $2,400", "About $900", "About $310"]), Col("Team experience", ["None", "One engineer", "High"])])
+```

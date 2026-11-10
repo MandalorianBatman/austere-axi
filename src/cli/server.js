@@ -17,6 +17,7 @@ import { SessionStore, newId } from "./sessions.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
 import { Hub, hubEnabled } from "./hub.js";
 import { COOKIE, InviteStore, OWNER_COOKIE, inviteId, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
+import { reviewerItem } from "./items.js";
 import { hubPage, notesPage } from "./hub-page.js";
 import { splitSpec } from "../shared/packs-meta.js";
 import crypto from "node:crypto";
@@ -75,7 +76,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       log("hub-unavailable", String(err?.message || err));
     }
   }
-  const store = new SessionStore(stateDir(), { onFlush: hub ? (s) => hub.syncSession(s) : undefined });
+  const store = new SessionStore(stateDir(), { onFlush: hub ? (s) => hub.syncSession(s) : undefined, onFlushError: (s, err) => log("hub-sync", s.id, String(err?.message || err)) });
   if (hub) {
     for (const s of store.list()) {
       try {
@@ -614,14 +615,32 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     if (!file.startsWith(ASSET_DIR + path.sep)) return send(res, 404, "not found");
     fs.stat(file, (err, st) => {
       if (err || !st.isFile()) return send(res, 404, "not found");
-      res.writeHead(200, {
+      streamFile(res, file, {
         "content-type": MIME[path.extname(file)] || "application/octet-stream",
         "content-length": st.size,
         "cache-control": "no-cache",
         "x-content-type-options": "nosniff",
       });
-      fs.createReadStream(file).pipe(res);
     });
+  }
+
+  /**
+   * Stream a file as a 200. Headers go out only once the file has opened, so an open failure
+   * (EACCES) is a 404 and a later read failure drops the connection. Without the error
+   * listener either one would be an unhandled 'error' event and exit the server.
+   */
+  function streamFile(res, file, headers) {
+    const rs = fs.createReadStream(file);
+    rs.once("open", () => {
+      res.writeHead(200, headers);
+      rs.pipe(res);
+    });
+    rs.once("error", (e) => {
+      log("error", "file stream", String(e?.message || e));
+      if (!res.headersSent) send(res, 404, "not found");
+      else res.destroy();
+    });
+    res.once("close", () => rs.destroy());
   }
 
   function serveArtifact(req, res, s, rest) {
@@ -639,19 +658,28 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     } catch {
       return send(res, 400, "bad path");
     }
+    if (decoded.includes("\0")) return send(res, 404, "not found");
     const file = path.resolve(dir, decoded);
     if (!file.startsWith(dir + path.sep) || decoded.split(/[/\\]/).some((p) => p.startsWith("."))) {
       return send(res, 404, "not found");
     }
-    fs.stat(file, (err, st) => {
-      if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
-      res.writeHead(200, {
-        "content-type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
-        "content-length": st.size,
-        "cache-control": "no-cache",
-        "x-content-type-options": "nosniff",
+    // The check above is lexical; a symlink inside the directory can still lead out of it.
+    fs.realpath(dir, (e1, realDir) => {
+      if (e1) return send(res, 404, "not found");
+      fs.realpath(file, (e2, real) => {
+        if (e2 || !real.startsWith(realDir + path.sep)) return send(res, 404, "not found");
+        // A link with an ordinary name can still point at a dotfile in the directory.
+        if (path.relative(realDir, real).split(path.sep).some((p) => p.startsWith("."))) return send(res, 404, "not found");
+        fs.stat(real, (err, st) => {
+          if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
+          streamFile(res, real, {
+            "content-type": MIME[path.extname(real).toLowerCase()] || "application/octet-stream",
+            "content-length": st.size,
+            "cache-control": "no-cache",
+            "x-content-type-options": "nosniff",
+          });
+        });
       });
-      fs.createReadStream(file).pipe(res);
     });
   }
 
@@ -857,7 +885,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const body = await readBody(req, 4 * 1024 * 1024);
       const end = !reviewer && !!body.end;
       let items = Array.isArray(body.items) ? body.items.filter((x) => x && typeof x === "object").slice(0, reviewer ? 50 : 200) : [];
-      if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind));
+      if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind)).map(reviewerItem);
       if (s.status === "ended") return send(res, 409, { error: "session has ended" });
       if (!items.length && !end) return send(res, 400, { error: "nothing to send" });
       // The server decides who wrote a note. A reviewer's own item id could overwrite another note in the hub.
@@ -933,7 +961,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const server = http.createServer((req, res) => {
         handle(req, res).catch((err) => {
           log("error", req.method, req.url.split("?")[0], String(err?.stack || err));
-          if (!res.headersSent) send(res, err.status || 500, { error: String(err.message || err) });
+          if (!res.headersSent) send(res, err.status || 500, { error: err.status ? String(err.message) : "internal error" });
           else res.end();
         });
       });

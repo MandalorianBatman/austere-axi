@@ -1,0 +1,229 @@
+<<<<<<< SEARCH
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+            <span class="badge badge-primary badge-sm">Release triage</span>
+            <span class="badge badge-outline badge-sm">4 open bugs</span>
+          </div>
+=======
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+            <span class="badge badge-primary badge-sm">Release triage</span>
+            <span class="badge badge-outline badge-sm">5 open bugs</span>
+          </div>
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Decisions selected</div>
+        <div id="selected-count" class="mt-1 text-2xl font-black decision-count">0 / 4</div>
+      </div>
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Suggested fixes</div>
+        <div class="mt-1 text-2xl font-black decision-count">2</div>
+      </div>
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Suggested deferrals</div>
+        <div class="mt-1 text-2xl font-black decision-count">2</div>
+      </div>
+=======
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Decisions selected</div>
+        <div id="selected-count" class="mt-1 text-2xl font-black decision-count">0 / 5</div>
+      </div>
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Suggested fixes</div>
+        <div class="mt-1 text-2xl font-black decision-count">3</div>
+      </div>
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Suggested deferrals</div>
+        <div class="mt-1 text-2xl font-black decision-count">2</div>
+      </div>
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+          <article class="bug-card rounded-box p-4 sm:p-6" data-bug-card="BUG-327">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="bug-id font-bold text-primary">BUG-327</span>
+                  <span class="badge badge-sm severity-medium">medium severity</span>
+                </div>
+                <h3 class="mt-2 text-xl font-bold">Push notification sent twice on Android 15</h3>
+              </div>
+              <div class="shrink-0 rounded-lg bg-primary/10 px-3 py-2 text-sm">
+                <span class="opacity-65">Suggestion:</span>
+                <span class="font-bold">Defer to 3.9</span>
+              </div>
+            </div>
+
+            <div class="fact-grid mt-5">
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Users affected</div>
+                <div class="mt-1 font-bold">~9% of Android</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Fix estimate</div>
+                <div class="mt-1 font-bold">Unknown</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Severity</div>
+                <div class="mt-1 font-bold">Medium</div>
+              </div>
+            </div>
+
+            <fieldset class="choice mt-5" aria-label="Decision for BUG-327">
+              <legend class="mb-2 font-semibold">Release decision</legend>
+              <div class="grid gap-2 sm:grid-cols-3">
+                <label><input type="radio" name="BUG-327" value="fix for 3.8" data-label="Push notification sent twice on Android 15"><span><strong>Fix for 3.8</strong><span class="block text-xs opacity-65">Include in this release</span></span></label>
+                <label><input type="radio" name="BUG-327" value="defer to 3.9" data-label="Push notification sent twice on Android 15"><span><strong>Defer to 3.9</strong><span class="block text-xs opacity-65">Move to the next release</span></span></label>
+                <label><input type="radio" name="BUG-327" value="won't fix" data-label="Push notification sent twice on Android 15"><span><strong>Won't fix</strong><span class="block text-xs opacity-65">Do not schedule a fix</span></span></label>
+              </div>
+            </fieldset>
+          </article>
+        </div>
+=======
+          <article class="bug-card rounded-box p-4 sm:p-6" data-bug-card="BUG-327">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="bug-id font-bold text-primary">BUG-327</span>
+                  <span class="badge badge-sm severity-medium">medium severity</span>
+                </div>
+                <h3 class="mt-2 text-xl font-bold">Push notification sent twice on Android 15</h3>
+              </div>
+              <div class="shrink-0 rounded-lg bg-primary/10 px-3 py-2 text-sm">
+                <span class="opacity-65">Suggestion:</span>
+                <span class="font-bold">Defer to 3.9</span>
+              </div>
+            </div>
+
+            <div class="fact-grid mt-5">
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Users affected</div>
+                <div class="mt-1 font-bold">~9% of Android</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Fix estimate</div>
+                <div class="mt-1 font-bold">Unknown</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Severity</div>
+                <div class="mt-1 font-bold">Medium</div>
+              </div>
+            </div>
+
+            <fieldset class="choice mt-5" aria-label="Decision for BUG-327">
+              <legend class="mb-2 font-semibold">Release decision</legend>
+              <div class="grid gap-2 sm:grid-cols-3">
+                <label><input type="radio" name="BUG-327" value="fix for 3.8" data-label="Push notification sent twice on Android 15"><span><strong>Fix for 3.8</strong><span class="block text-xs opacity-65">Include in this release</span></span></label>
+                <label><input type="radio" name="BUG-327" value="defer to 3.9" data-label="Push notification sent twice on Android 15"><span><strong>Defer to 3.9</strong><span class="block text-xs opacity-65">Move to the next release</span></span></label>
+                <label><input type="radio" name="BUG-327" value="won't fix" data-label="Push notification sent twice on Android 15"><span><strong>Won't fix</strong><span class="block text-xs opacity-65">Do not schedule a fix</span></span></label>
+              </div>
+            </fieldset>
+          </article>
+
+          <article class="bug-card rounded-box p-4 sm:p-6" data-bug-card="BUG-330">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="bug-id font-bold text-primary">BUG-330</span>
+                  <span class="badge badge-sm severity-high">high severity</span>
+                </div>
+                <h3 class="mt-2 text-xl font-bold">Password reset email links expire after 5 minutes instead of 60</h3>
+              </div>
+              <div class="shrink-0 rounded-lg bg-primary/10 px-3 py-2 text-sm">
+                <span class="opacity-65">Suggestion:</span>
+                <span class="font-bold">Fix for 3.8</span>
+              </div>
+            </div>
+
+            <div class="fact-grid mt-5">
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Users affected</div>
+                <div class="mt-1 font-bold">All users who reset a password</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Fix estimate</div>
+                <div class="mt-1 font-bold">1 hour</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Severity</div>
+                <div class="mt-1 font-bold">High</div>
+              </div>
+            </div>
+
+            <fieldset class="choice mt-5" aria-label="Decision for BUG-330">
+              <legend class="mb-2 font-semibold">Release decision</legend>
+              <div class="grid gap-2 sm:grid-cols-3">
+                <label><input type="radio" name="BUG-330" value="fix for 3.8" data-label="Password reset email links expire after 5 minutes instead of 60"><span><strong>Fix for 3.8</strong><span class="block text-xs opacity-65">Include in this release</span></span></label>
+                <label><input type="radio" name="BUG-330" value="defer to 3.9" data-label="Password reset email links expire after 5 minutes instead of 60"><span><strong>Defer to 3.9</strong><span class="block text-xs opacity-65">Move to the next release</span></span></label>
+                <label><input type="radio" name="BUG-330" value="won't fix" data-label="Password reset email links expire after 5 minutes instead of 60"><span><strong>Won't fix</strong><span class="block text-xs opacity-65">Do not schedule a fix</span></span></label>
+              </div>
+            </fieldset>
+          </article>
+        </div>
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+              <div id="selection-status" class="selection-status font-semibold" role="status" aria-live="polite">
+                Select a decision for all 4 bugs.
+              </div>
+              <div class="mt-1 text-sm opacity-65">Your batch will include every bug ID and its selected decision.</div>
+            </div>
+            <button id="queue-batch" type="submit" class="btn btn-primary btn-lg shrink-0" disabled>
+              Send all 4 decisions
+            </button>
+=======
+              <div id="selection-status" class="selection-status font-semibold" role="status" aria-live="polite">
+                Select a decision for all 5 bugs.
+              </div>
+              <div class="mt-1 text-sm opacity-65">Your batch will include every bug ID and its selected decision.</div>
+            </div>
+            <button id="queue-batch" type="submit" class="btn btn-primary btn-lg shrink-0" disabled>
+              Send all 5 decisions
+            </button>
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+      const bugIds = ['BUG-311', 'BUG-318', 'BUG-322', 'BUG-327'];
+=======
+      const bugIds = ['BUG-311', 'BUG-318', 'BUG-322', 'BUG-327', 'BUG-330'];
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+        count.textContent = `${selected.length} / ${bugIds.length}`;
+        submit.disabled = selected.length !== bugIds.length;
+
+        if (selected.length === 0) {
+          status.textContent = 'Select a decision for all 4 bugs.';
+        } else if (selected.length < bugIds.length) {
+=======
+        count.textContent = `${selected.length} / ${bugIds.length}`;
+        submit.disabled = selected.length !== bugIds.length;
+
+        if (selected.length === 0) {
+          status.textContent = 'Select a decision for all 5 bugs.';
+        } else if (selected.length < bugIds.length) {
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+        } else {
+          status.textContent = 'All 4 decisions selected. Ready to send the batch.';
+        }
+=======
+        } else {
+          status.textContent = 'All 5 decisions selected. Ready to send the batch.';
+        }
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+        const prompt = `Apply the release 3.8 triage decisions below and return a receipt covering every submitted bug ID. For each bug, state one outcome: addressed with concrete evidence, deferred with a reason, or rejected with a reason. Submitted decisions: ${summary}`;
+
+        if (window.lavish?.queuePrompt) {
+          window.lavish.queuePrompt(prompt, {
+            tag: 'tracked-batch',
+            text: 'Send all 4 release 3.8 bug decisions',
+=======
+        const prompt = `Apply the release 3.8 triage decisions below and return a receipt covering every submitted bug ID. For each bug, state one outcome: addressed with concrete evidence, deferred with a reason, or rejected with a reason. Submitted decisions: ${summary}`;
+
+        if (window.lavish?.queuePrompt) {
+          window.lavish.queuePrompt(prompt, {
+            tag: 'tracked-batch',
+            text: 'Send all 5 release 3.8 bug decisions',
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+          status.textContent = 'All 4 decisions queued. Use Send to Agent to deliver the batch.';
+=======
+          status.textContent = 'All 5 decisions queued. Use Send to Agent to deliver the batch.';
+>>>>>>> REPLACE

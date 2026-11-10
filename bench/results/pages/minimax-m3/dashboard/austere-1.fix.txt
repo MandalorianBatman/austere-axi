@@ -1,0 +1,10 @@
+```openui
+overviewCard = Card([CardHeader("Checkout service health", "Weekly review · Week of 2026-10-26"), overviewMetrics, overviewCallout], "card", "column", "l")
+dailyPerformanceCard = Card([CardHeader("Daily performance", "Monday to Sunday"), dailyLatencyChart, dailyErrorChart, dailyPerformanceTable], "card", "column", "l")
+incidentCard = Card([CardHeader("Incidents", "Three incidents during the review week"), incidentTable], "card", "column", "l")
+actionItemCard = Card([CardHeader("Action items", "Owners and due dates"), actionItemTable], "card", "column", "l")
+requestsMetric = OverviewCardItem("requests", Text("text", "48.2M", "Requests · up 6% week over week"))
+errorRateMetric = OverviewCardItem("error-rate", Text("text", "0.21%", "Error rate · SLO 0.5%"))
+latencyMetric = OverviewCardItem("latency", Text("text", "312 ms", "p95 latency · target 300 ms"))
+errorBudgetMetric = OverviewCardItem("error-budget", Text("text", "64%", "Error budget left this month"))
+```
