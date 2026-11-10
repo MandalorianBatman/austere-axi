@@ -7,7 +7,8 @@ import path from "node:path";
 import readline from "node:readline";
 import { CLI_ENTRY, VERSION } from "./paths.js";
 
-const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+// 2025-03-26 is left out: it requires JSON-RPC batches, which this server does not accept.
+const PROTOCOLS = ["2025-11-25", "2025-06-18", "2024-11-05"];
 
 /** Many MCP clients give up on a tool call after about a minute, so poll returns `timeout` before that. */
 const POLL_TIMEOUT_MS = 50_000;
@@ -167,7 +168,11 @@ export function runMcp() {
 
   async function handle(msg) {
     const { id, method, params = {} } = msg;
-    const isRequest = id !== undefined && id !== null;
+    // A notification (no id) never gets a response; the only one acted on is a cancellation.
+    if (id === undefined || id === null) {
+      if (method === "notifications/cancelled") inflight.get(params.requestId)?.abort();
+      return;
+    }
     switch (method) {
       case "initialize": {
         const asked = params.protocolVersion;
@@ -182,7 +187,7 @@ export function runMcp() {
         });
       }
       case "ping":
-        return isRequest && send({ id, result: {} });
+        return send({ id, result: {} });
       case "tools/list":
         return send({ id, result: { tools: listTools() } });
       case "tools/call": {
@@ -199,10 +204,8 @@ export function runMcp() {
         }
         return;
       }
-      case "notifications/cancelled":
-        return inflight.get(params.requestId)?.abort();
       default:
-        if (isRequest) error(id, -32601, `method not found: ${method}`);
+        error(id, -32601, `method not found: ${method}`);
     }
   }
 
@@ -215,7 +218,8 @@ export function runMcp() {
     } catch {
       return error(null, -32700, "parse error");
     }
-    if (!msg || typeof msg !== "object" || Array.isArray(msg) || typeof msg.method !== "string") {
+    if (Array.isArray(msg)) return error(null, -32600, "batch not supported");
+    if (!msg || typeof msg !== "object" || typeof msg.method !== "string") {
       if (msg && typeof msg === "object" && "id" in msg && !("result" in msg || "error" in msg)) error(msg.id ?? null, -32600, "invalid request");
       return;
     }

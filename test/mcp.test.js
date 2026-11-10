@@ -29,6 +29,8 @@ ${program}
 let mcp;
 let nextId = 1;
 const waiting = new Map();
+/** Lines no pending request was waiting for. */
+const unexpected = [];
 
 function rpc(method, params) {
   const id = nextId++;
@@ -58,7 +60,8 @@ before(() => {
   mcp = spawn(process.execPath, ["src/cli/main.js", "mcp"], { env: ENV, stdio: ["pipe", "pipe", "inherit"] });
   readline.createInterface({ input: mcp.stdout }).on("line", (line) => {
     const msg = JSON.parse(line);
-    waiting.get(msg.id)?.(msg);
+    if (!waiting.has(msg.id)) return unexpected.push(msg);
+    waiting.get(msg.id)(msg);
     waiting.delete(msg.id);
   });
 });
@@ -90,6 +93,20 @@ test("initializes and lists the review tools", async () => {
 
   const unknown = await rpc("tools/frobnicate", {});
   assert.equal(unknown.error.code, -32601);
+});
+
+test("answers no notification, rejects batches, and does not offer the batch protocol", async () => {
+  for (const method of ["tools/list", "ping", "tools/frobnicate", "notifications/cancelled"]) mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", method, params: {} }) + "\n");
+  await rpc("ping", {});
+  assert.deepEqual(unexpected, []);
+
+  const batch = new Promise((resolve) => waiting.set(null, resolve));
+  mcp.stdin.write(JSON.stringify([{ jsonrpc: "2.0", id: nextId++, method: "ping" }]) + "\n");
+  const rejected = await batch;
+  assert.equal(rejected.error.code, -32600);
+
+  const init = await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+  assert.equal(init.result.protocolVersion, "2025-11-25");
 });
 
 test("check reports errors as a tool error and passes a valid page", async () => {
