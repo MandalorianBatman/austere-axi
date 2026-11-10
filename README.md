@@ -118,7 +118,7 @@ austere-axi reply <file>         post a reply without polling
 austere-axi end <file>           end the review as the agent
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix]
-austere-axi patch <file>         merge statements from stdin into the program
+austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi export <file>        one self-contained HTML file, works offline

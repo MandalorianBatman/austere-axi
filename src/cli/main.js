@@ -6,6 +6,7 @@ import path from "node:path";
 import { mergeStatements } from "@openuidev/lang-core";
 import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.js";
 import { checkHtml, statementLines } from "./check.js";
+import { splitStatements } from "../shared/statements.js";
 import { ensureServer, openBrowser, request, serverIfRunning, wantHub } from "./client.js";
 import { Hub, hubDbFile, hubEnabled, registerWithHub, setHubEnabled } from "./hub.js";
 import { InviteStore, inviteId } from "./invites.js";
@@ -76,7 +77,8 @@ COMMANDS
                                    or in an earlier session)   [--all] [--peek]; answer with reply
   ${BIN} check <file>            validate the program (no browser)   [--fix: declare the packs it uses]
   ${BIN} patch <file>            merge statements from stdin into the program: same name
-                                   replaces, new name adds, \`name = null\` deletes
+                                   replaces, new name adds, \`name = null\` deletes;
+                                   reports added statements dropped as unreferenced
   ${BIN} spec [group|pack...]    component reference (groups: Layout Content Data Charts Forms Buttons)
   ${BIN} components [group]      every component, including ones spec leaves out
   ${BIN} components search <words> | show <Name...>
@@ -422,11 +424,17 @@ async function cmdPatch(file) {
   const art = readArtifact(html);
   if (art.program == null) return fail('no <script type="text/openui"> block to patch');
   const merged = mergeStatements(art.program.trim(), patch.trim(), "root");
+  // mergeStatements garbage-collects statements unreachable from root; report patched ones it dropped (`x = null` deletes are intended).
+  const kept = new Set(splitStatements(merged).map((s) => s.id));
+  const patched = new Set(splitStatements(patch).filter((s) => !/=\s*null\s*;?$/.test(s.text)).map((s) => s.id));
+  const dropped = [...patched].filter((id) => !kept.has(id));
   const next = replaceProgram(html, merged);
   fs.writeFileSync(abs, next);
   const result = checkHtml(next, { file: quote(file) });
   await registerWithHub(abs, result.title, sessionId(abs));
-  print({ status: "patched", file: abs, check: compactCheck(result) });
+  const out = { status: "patched", file: abs };
+  if (dropped.length) Object.assign(out, { dropped, warning: `unreferenced statement(s) dropped: ${dropped.join(", ")} (reference them from a parent to keep them on the page)` });
+  print({ ...out, check: compactCheck(result) });
 }
 
 /** A pack's part of the reference: its signatures and notes, as `spec` prints core groups. */
