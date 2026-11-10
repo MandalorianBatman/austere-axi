@@ -26,7 +26,7 @@ function req(method, route, body, headers = {}) {
           try {
             parsed = JSON.parse(data);
           } catch {}
-          resolve({ status: res.statusCode, data: parsed });
+          resolve({ status: res.statusCode, data: parsed, headers: res.headers });
         });
       },
     );
@@ -135,4 +135,17 @@ test("serves the artifact with a local runtime and confines sibling files", asyn
   assert.equal((await req("GET", `/s/${id}/a/shot.png`, undefined, host)).status, 200);
   assert.equal((await req("GET", `/s/${id}/a/..%2F..%2Fetc%2Fpasswd`, undefined, host)).status, 404);
   assert.equal((await req("GET", `/s/${id}/a/plan.html`, undefined, { host: "evil.example" })).status, 403);
+});
+
+test("artifact responses carry their own sandbox, so a top-level load gets an opaque origin", async () => {
+  const open = await req("POST", "/api/open", { file: FILE });
+  const id = open.data.session.id;
+  const host = { host: `127.0.0.1:${PORT}` };
+  for (const route of [`/s/${id}/a/plan.html`, `/s/${id}/a/`, `/s/${id}/a/shot.png`, `/s/${id}/export`]) {
+    const r = await req("GET", route, undefined, host);
+    assert.equal(r.status, 200, route);
+    const csp = r.headers["content-security-policy"] || "";
+    assert.match(csp, /(^|;)\s*sandbox\b/, `${route}: no CSP sandbox`);
+    assert.doesNotMatch(csp, /allow-same-origin|allow-top-navigation/, route);
+  }
 });

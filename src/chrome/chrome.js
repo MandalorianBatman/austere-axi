@@ -105,7 +105,7 @@ document.body.innerHTML = `
   <div class="notice" hidden></div>
   <div class="main">
     <section class="stage">
-      <iframe class="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms"></iframe>
+      <iframe class="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-forms"></iframe>
     </section>
     <div class="scrim"></div>
     <aside class="panel" aria-label="Conversation">
@@ -258,8 +258,24 @@ window.addEventListener("message", (e) => {
     case "toggle-mode":
       setMode(state.mode === "annotate" ? "explore" : "annotate");
       break;
+    case "open-url":
+      openExternal(d.url);
+      break;
   }
 });
+
+// Popups from the frame keep its sandbox, so external links are opened here
+// instead. Never this origin: artifact code must not get a window on it.
+function openExternal(url) {
+  let u;
+  try {
+    u = new URL(String(url));
+  } catch {
+    return;
+  }
+  if (!/^(https?|mailto):$/.test(u.protocol) || u.origin === location.origin) return;
+  window.open(u.href, "_blank", "noopener");
+}
 
 // ── queue ──
 

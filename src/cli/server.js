@@ -624,6 +624,13 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     });
   }
 
+  // Artifact responses carry their own sandbox, so the page and anything it
+  // loads get an opaque origin even when opened top-level (a popup, a pasted
+  // link) and never run with the owner's authority on this origin. Popups may
+  // drop that sandbox so external links work from a page opened on its own:
+  // in the review frame they still inherit the iframe's flags, and a popup on
+  // an artifact URL gets this header again.
+  const ARTIFACT_CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms";
   /**
    * Stream a file as a 200. Headers go out only once the file has opened, so an open failure
    * (EACCES) is a 404 and a later read failure drops the connection. Without the error
@@ -650,7 +657,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const html = readFileSafe(s.file);
       if (html == null) return send(res, 404, "artifact file is missing");
       const out = rewriteRuntime(html, `<script src="/__austere/austere.js?v=${VERSION}"></script>`);
-      return send(res, 200, out, { "content-type": "text/html; charset=utf-8" });
+      return send(res, 200, out, { "content-type": "text/html; charset=utf-8", "content-security-policy": ARTIFACT_CSP });
     }
     let decoded;
     try {
@@ -677,6 +684,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
             "content-length": st.size,
             "cache-control": "no-cache",
             "x-content-type-options": "nosniff",
+            "content-security-policy": ARTIFACT_CSP,
           });
         });
       });
@@ -945,6 +953,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         return send(res, 200, out.html, {
           "content-type": "text/html; charset=utf-8",
           "content-disposition": `attachment; filename="${name.replace(/"/g, "")}"`,
+          "content-security-policy": ARTIFACT_CSP,
         });
       } catch (err) {
         return send(res, 500, String(err.message || err));
