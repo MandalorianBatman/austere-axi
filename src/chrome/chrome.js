@@ -1,9 +1,17 @@
 // Review chrome: artifact frame + conversation panel. Plain DOM, no framework.
 
-const BOOT = window.__AUSTERE__;
+// The local server inlines the boot object as window.__AUSTERE__. The hosted
+// service's CSP forbids inline scripts, so it ships the same object as JSON in
+// <script type="application/json" id="austere-boot">.
+const BOOT = window.__AUSTERE__ ?? JSON.parse(document.getElementById("austere-boot")?.textContent || "{}");
 const SID = BOOT.id;
+// Hosted mode (austere-cloud, docs/hosted-share-links.md): a public reviewer
+// page that polls instead of streaming and has no owner controls.
+const HOSTED = BOOT.hosted || null;
+const BASE = BOOT.hosted?.base ?? `/s/${SID}`;
 const VIEWER = BOOT.viewer || { role: "owner", name: "" };
-const OWNER = VIEWER.role === "owner";
+const OWNER = !HOSTED && VIEWER.role === "owner";
+const NAME_MAX = 40;
 const LS = {
   get(key, fallback) {
     try {
@@ -37,6 +45,8 @@ const SS = {
     }
   },
 };
+// A hosted reviewer names themself once; the local server names invited reviewers.
+let viewerName = HOSTED ? String(LS.get("austere:name", "") || "").slice(0, NAME_MAX) : VIEWER.name;
 
 const state = {
   mode: LS.get("austere:mode", "annotate"),
@@ -98,7 +108,7 @@ document.body.innerHTML = `
           <button type="button" data-cmd="copy-path">Copy file path</button>
           <button type="button" data-cmd="copy-link">Copy review link</button>
           <button type="button" data-cmd="reload">Reload artifact</button>
-          <a data-cmd="export" href="/s/${SID}/export">Download standalone HTML</a>
+          <a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>
           <button type="button" data-cmd="end" class="danger">End review</button>
           <button type="button" data-cmd="close" class="danger">Close review</button>
           <button type="button" data-cmd="reopen">Reopen review</button>
@@ -137,9 +147,98 @@ document.body.innerHTML = `
 
 if (!OWNER) {
   for (const sel of ['[data-cmd="copy-path"]', '[data-cmd="copy-link"]', '[data-cmd="export"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"]) $(sel)?.remove();
-  $(".composer-hint").textContent = VIEWER.auto
-    ? `Posting as ${VIEWER.name} · Enter sends`
-    : `Posting as ${VIEWER.name} · the owner sends your notes on · Enter sends`;
+}
+
+function renderViewer() {
+  if (OWNER) return;
+  $(".file").textContent = viewerName ? `reviewing as ${viewerName}` : "";
+  const hint = HOSTED || VIEWER.auto ? "Enter sends" : "the owner sends your notes on · Enter sends";
+  $(".composer-hint").textContent = viewerName ? `Posting as ${viewerName} · ${hint}` : hint;
+}
+
+// Hosted: the name prompt shown before the first send, and the footer.
+const nameForm = HOSTED
+  ? h(
+      "form",
+      { class: "name-ask", hidden: true },
+      h("label", { for: "austere-name", text: "Your name, shown with your notes" }),
+      h(
+        "div",
+        { class: "name-row" },
+        h("input", { id: "austere-name", maxlength: String(NAME_MAX), autocomplete: "name", placeholder: "Name" }),
+        h("button", { type: "submit", class: "btn primary", text: "Continue" }),
+      ),
+    )
+  : null;
+if (nameForm) {
+  $(".composer").before(nameForm);
+  nameForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = $("input", nameForm);
+    const name = input.value.trim().slice(0, NAME_MAX);
+    if (!name) return input.focus();
+    viewerName = name;
+    LS.set("austere:name", name);
+    nameForm.hidden = true;
+    renderViewer();
+    sendAll(false);
+  });
+}
+
+const reportForm = HOSTED?.report
+  ? h(
+      "form",
+      { class: "report-box", hidden: true },
+      h("label", { for: "austere-report", text: "What is wrong with this page?" }),
+      h("textarea", { id: "austere-report", rows: "3", maxlength: "1000" }),
+      h(
+        "div",
+        { class: "report-row" },
+        h("span", { class: "report-status" }),
+        h("button", { type: "button", class: "btn tiny ghost", text: "Cancel", onclick: () => (reportForm.hidden = true) }),
+        h("button", { type: "submit", class: "btn tiny primary", text: "Send report" }),
+      ),
+    )
+  : null;
+if (HOSTED) {
+  const foot = h(
+    "footer",
+    { class: "hosted-foot" },
+    h("a", { href: "https://github.com/MandalorianBatman/austere-axi", target: "_blank", rel: "noopener noreferrer", text: "Made with austere-axi" }),
+  );
+  if (reportForm) {
+    foot.append(
+      h("span", { "aria-hidden": "true", text: "·" }),
+      h("button", {
+        type: "button",
+        class: "link-btn report-open",
+        text: "Report",
+        onclick: () => {
+          reportForm.hidden = false;
+          $(".report-status", reportForm).textContent = "";
+          $("textarea", reportForm).focus();
+        },
+      }),
+    );
+    $(".panel").append(reportForm);
+    reportForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const reason = $("textarea", reportForm).value.trim();
+      const status = $(".report-status", reportForm);
+      if (!reason) return $("textarea", reportForm).focus();
+      status.textContent = "Sending…";
+      try {
+        const r = await fetch(HOSTED.report, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason }) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        $("textarea", reportForm).value = "";
+        reportForm.hidden = true;
+        foot.querySelector(".report-open").replaceWith(h("span", { class: "report-done", text: "Reported. Thank you." }));
+      } catch (err) {
+        status.textContent = `Not sent: ${err.message}`;
+      }
+    });
+  }
+  $(".panel").append(foot);
 }
 
 const frame = $(".frame");
@@ -148,8 +247,9 @@ const textarea = $(".composer textarea");
 const banner = $(".banner");
 
 $(".title").textContent = BOOT.title;
-$(".file").textContent = OWNER ? BOOT.name : `reviewing as ${VIEWER.name}`;
-$(".file").title = BOOT.file;
+if (OWNER) $(".file").textContent = BOOT.name;
+renderViewer();
+$(".file").title = BOOT.file || "";
 document.title = `${BOOT.title} · austere`;
 
 // ── tiny markdown for agent replies ──
@@ -209,7 +309,7 @@ function post(msg) {
 
 function loadFrame() {
   state.frameReady = false;
-  frame.src = `${BOOT.artifactUrl}?r=${Date.now()}`;
+  frame.src = `${BOOT.artifactUrl ?? `${BASE}/a/`}?r=${Date.now()}`;
 }
 
 window.addEventListener("message", (e) => {
@@ -416,18 +516,20 @@ function fmtTime(ms) {
 /** "You" for the viewer's own notes, otherwise the author's name; the owner's notes read "Owner" to a reviewer. */
 function whoLabel(entry) {
   if (OWNER) return entry.author || "You";
-  return entry.author === VIEWER.name ? "You" : entry.author || "Owner";
+  return entry.author === viewerName ? "You" : entry.author || "Owner";
 }
 
 async function heldAction(kind, ids) {
   try {
-    await fetch(`/s/${SID}/${kind}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(ids ? { ids } : { all: true }) });
+    await fetch(`${BASE}/${kind}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(ids ? { ids } : { all: true }) });
   } catch {
     composerError("Could not reach the server. Try again.");
   }
 }
 
 function receipt(entry) {
+  // Hosted notes have no delivery receipts: the owner's agent sees them after a sync.
+  if (HOSTED) return entry.author === viewerName ? h("div", { class: "receipt" }, h("em", { text: "Sent to the page owner" })) : null;
   if (entry.held) {
     const row = h("div", { class: "receipt held" }, h("span", { class: "held-label", text: OWNER ? "Held · not sent to the agent" : "Waiting for the owner to send it on" }));
     if (OWNER) {
@@ -494,7 +596,7 @@ function renderLog(scrollToEnd = false) {
         { class: "empty" },
         h("p", { html: "<strong>Point at anything to comment on it.</strong>" }),
         h("p", {
-          text: "In Annotate mode, click a section, table cell, diagram node or diff line, or select text. Notes queue here; Send delivers them to the agent.",
+          text: `In Annotate mode, click a section, table cell, diagram node or diff line, or select text. Notes queue here; Send delivers them to the ${HOSTED ? "page owner" : "agent"}.`,
         }),
       ),
     );
@@ -512,7 +614,8 @@ function renderLog(scrollToEnd = false) {
     } else {
       const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${whoLabel(entry)} · ${fmtTime(entry.at)}${entry.end ? " · ended review" : ""}` }));
       for (const it of entry.items || []) bubble.append(itemBody(it, { held: !!entry.held }));
-      bubble.append(receipt(entry));
+      const r = receipt(entry);
+      if (r) bubble.append(r);
       log.append(bubble);
     }
   }
@@ -567,11 +670,14 @@ function renderLog(scrollToEnd = false) {
 
 // ── composer / sending ──
 
+// Hosted: set once the service answers 404/410 for this page; nothing more can be sent.
+let gone = false;
+
 function renderComposer() {
   const closed = state.closed;
   const n = state.queue.length;
-  textarea.disabled = closed || state.sending;
-  $(".send").disabled = closed || state.sending;
+  textarea.disabled = closed || gone || state.sending;
+  $(".send").disabled = closed || gone || state.sending;
   if ($(".send-end")) $(".send-end").disabled = closed || state.sending;
   $(".send").textContent = state.sending ? "Sending…" : n ? `Send ${n}` : "Send";
   textarea.placeholder = closed ? "Review closed" : n ? "Add a message (optional)…" : "Message the agent…";
@@ -594,14 +700,19 @@ async function sendAll(end = false) {
   }
   if (end && !OWNER) return;
   if (end && !items.length && !confirm("End this review? The agent will stop listening; notes you send later still reach it.")) return;
+  if (HOSTED && !viewerName) {
+    nameForm.hidden = false;
+    $("input", nameForm).focus();
+    return;
+  }
   state.sending = true;
   composerError("");
   renderComposer();
   try {
-    const r = await fetch(`/s/${SID}/send`, {
+    const r = await fetch(`${BASE}/send`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ items, end }),
+      body: JSON.stringify(HOSTED ? { name: viewerName, items } : { items, end }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
@@ -609,6 +720,7 @@ async function sendAll(end = false) {
     saveQueue();
     textarea.value = "";
     if (data.entry && !state.transcript.some((e) => e.id === data.entry.id)) state.transcript.push(data.entry);
+    if (HOSTED) pollConversation();
   } catch (err) {
     composerError(`Not sent: ${err.message}. Your notes are still queued.`);
   } finally {
@@ -651,7 +763,9 @@ function renderPresence() {
   let label;
   let cls;
   if (state.closed) [label, cls] = ["Review closed", "ended"];
+  else if (gone) [label, cls] = ["Page removed", "ended"];
   else if (!state.connected) [label, cls] = ["Reconnecting…", "off"];
+  else if (HOSTED) [label, cls] = ["Shared page", "hosted"];
   else if (state.presence === "listening") [label, cls] = ["Agent listening", "listening"];
   else if (state.presence === "working") [label, cls] = ["Agent working", "working"];
   else if (state.status === "ended") [label, cls] = ["Agent stopped", "idle"];
@@ -660,7 +774,13 @@ function renderPresence() {
   el.className = `presence ${cls}`;
   el.textContent = label;
   el.title =
-    cls === "idle" ? "Your notes are kept and reach the agent the next time it polls." : cls === "working" ? "The agent has your last batch." : "";
+    cls === "idle"
+      ? "Your notes are kept and reach the agent the next time it polls."
+      : cls === "working"
+        ? "The agent has your last batch."
+        : cls === "hosted"
+          ? "Notes go to the page owner. Replies show up within 30 seconds."
+          : "";
   document.documentElement.classList.toggle("is-ended", state.closed);
   if (OWNER) {
     $('[data-cmd="end"]').hidden = state.status === "ended";
@@ -704,13 +824,13 @@ menuPop.addEventListener("click", async (e) => {
   if (cmd === "end") {
     if (state.queue.length) return sendAll(true);
     if (!confirm("End this review? The agent will stop listening.")) return;
-    await fetch(`/s/${SID}/end`, { method: "POST" }).catch(() => {});
+    await fetch(`${BASE}/end`, { method: "POST" }).catch(() => {});
   }
   if (cmd === "close") {
     if (!confirm("Close this review? No one can add notes until you reopen it.")) return;
-    await fetch(`/s/${SID}/close`, { method: "POST" }).catch(() => {});
+    await fetch(`${BASE}/close`, { method: "POST" }).catch(() => {});
   }
-  if (cmd === "reopen") await fetch(`/s/${SID}/reopen`, { method: "POST" }).catch(() => {});
+  if (cmd === "reopen") await fetch(`${BASE}/reopen`, { method: "POST" }).catch(() => {});
 });
 
 // ── mobile sheet ──
@@ -810,7 +930,7 @@ async function loadEarlier() {
   const first = state.transcript[0];
   if (!first) return;
   try {
-    const r = await fetch(`/s/${SID}/transcript?before=${encodeURIComponent(first.id)}`);
+    const r = await fetch(`${BASE}/transcript?before=${encodeURIComponent(first.id)}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     const known = new Set(state.transcript.map((e) => e.id));
@@ -827,7 +947,7 @@ async function loadEarlier() {
 let es = null;
 let disconnectedAt = 0;
 function connect() {
-  es = new EventSource(`/s/${SID}/events`);
+  es = new EventSource(`${BASE}/events`);
   es.addEventListener("open", () => {
     state.connected = true;
     disconnectedAt = 0;
@@ -926,9 +1046,74 @@ function connect() {
   });
 }
 
-window.addEventListener("pagehide", (e) => {
-  if (!e.persisted) navigator.sendBeacon?.(`/s/${SID}/bye`);
-});
+// Hosted: no live stream. Check {base}/conversation every 30 s and on focus.
+const POLL_MS = 30_000;
+let cursor = null;
+let publishedAt = null;
+let polling = null;
+let pollAgain = false;
+
+/** Maps the service's notes and replies onto transcript entries. */
+function hostedEntries(d) {
+  const notes = (d.notes || []).map((n) => ({ id: `n${n.seq}`, role: "user", author: String(n.author || "").slice(0, NAME_MAX), items: Array.isArray(n.items) ? n.items.filter((x) => x && typeof x === "object") : [], at: n.at }));
+  const replies = (d.replies || []).map((r) => ({ id: `r${r.seq}`, role: "agent", text: String(r.text || ""), at: r.at }));
+  return [...notes, ...replies];
+}
+
+async function pollConversation() {
+  if (gone) return;
+  if (polling) {
+    pollAgain = true;
+    return polling;
+  }
+  polling = (async () => {
+    try {
+      const r = await fetch(`${BASE}/conversation${cursor == null ? "" : `?after=${encodeURIComponent(cursor)}`}`, { cache: "no-store" });
+      if (r.status === 404 || r.status === 410) {
+        gone = true;
+        state.connected = false;
+        showBanner("This page is no longer available.");
+        renderPresence();
+        renderComposer();
+        return;
+      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      state.connected = true;
+      if (publishedAt == null) publishedAt = d.publishedAt;
+      else if (d.publishedAt !== publishedAt) {
+        showBanner("New version, reload", [h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() })]);
+      }
+      if (d.cursor != null) cursor = d.cursor;
+      mergeEntries(hostedEntries(d));
+      showPackNotice(d.thirdPartyPacks);
+    } catch {
+      state.connected = false;
+    } finally {
+      polling = null;
+      renderPresence();
+      renderLog();
+      renderDock();
+    }
+    if (pollAgain) {
+      pollAgain = false;
+      await pollConversation();
+    }
+  })();
+  return polling;
+}
+
+function startPolling() {
+  pollConversation();
+  setInterval(pollConversation, POLL_MS);
+  window.addEventListener("focus", () => pollConversation());
+}
+
+if (!HOSTED) {
+  window.addEventListener("pagehide", (e) => {
+    if (!e.persisted) navigator.sendBeacon?.(`${BASE}/bye`);
+  });
+}
 
 // ── boot ──
 
@@ -938,4 +1123,5 @@ renderPresence();
 renderLog();
 renderDock();
 loadFrame();
-connect();
+if (HOSTED) startPolling();
+else connect();
