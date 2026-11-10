@@ -1,0 +1,65 @@
+<<<<<<< SEARCH
+      <div class="stat-desc">1 High, 2 Medium, 1 Low</div>
+=======
+      <div class="stat-desc">1 Blocker, 2 Medium, 1 Low</div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td><span class="badge badge-error">High</span></td>
+            <td><strong>SQL injection.</strong> The query concatenates <code>req.query.q</code> into the SQL string.</td>
+=======
+            <td><span class="badge badge-error">Blocker</span></td>
+            <td><strong>SQL injection.</strong> The query concatenates <code>req.query.q</code> into the SQL string. Fix: use a parameterized query (<a class="link" href="#fix">see the fix below</a>).</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    1: { sev: "High", cls: "alert-error", text: "SQL injection. The query concatenates req.query.q into the SQL string." },
+=======
+    1: { sev: "Blocker", cls: "alert-error", text: "SQL injection. The query concatenates req.query.q into the SQL string. Fix: use a parameterized query, WHERE name ILIKE $1 with the value %${q}% (see the fix below)." },
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+</main>
+
+<script type="module">
+  import { FileDiff, parsePatchFiles } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+=======
+  <section id="fix" class="space-y-3">
+    <h2 class="text-xl font-bold">Fix for finding 1 (Blocker)</h2>
+    <p class="text-sm opacity-80">
+      <span class="font-mono">src/routes/users.js</span>: replace the concatenated query with a parameterized one, <code>WHERE name ILIKE $1</code>, passing <code>%${q}%</code> as the value.
+    </p>
+    <div id="fix-code" class="rounded-box overflow-hidden border border-base-content/10"></div>
+  </section>
+
+</main>
+
+<script type="module">
+  import { File, FileDiff, parsePatchFiles } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      containerWrapper: document.querySelector("#diff"),
+    });
+  } catch (e) {
+=======
+      containerWrapper: document.querySelector("#diff"),
+    });
+
+    const fixContents = [
+      "const rows = await db.query(",
+      "  \"SELECT id, name, email FROM users WHERE name ILIKE $1\",",
+      "  [`%${q}%`]",
+      ");",
+      "",
+    ].join("\n");
+    new File({
+      theme: { light: "github-light", dark: "github-dark" },
+      themeType: "dark",
+      overflow: "wrap",
+    }).render({
+      containerWrapper: document.querySelector("#fix-code"),
+      file: { name: "src/routes/users.js", contents: fixContents },
+    });
+  } catch (e) {
+>>>>>>> REPLACE

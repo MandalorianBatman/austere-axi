@@ -1,0 +1,81 @@
+name: austere-axi review
+description: Check austere-axi review pages, export them as self-contained HTML, upload them as a workflow artifact, and post one sticky comment on the pull request.
+author: MandalorianBatman
+branding:
+  icon: eye
+  color: gray-dark
+
+inputs:
+  pages:
+    description: >
+      Page paths or globs, one per line, relative to the workspace (the pages the agent or the workflow committed).
+      Example: `reviews/*.html`.
+    required: true
+  version:
+    description: austere-axi version from npm. Pin it (for example `0.4.1`) for reproducible runs.
+    default: latest
+  cli:
+    description: >
+      Command that runs austere-axi, replacing the npm install (for example `node dist/cli.mjs`). It runs without a shell.
+      Used by this repository's own tests; leave empty otherwise.
+    default: ''
+  artifact-name:
+    description: Name of the workflow artifact that holds the exported pages.
+    default: austere-review
+  retention-days:
+    description: Artifact retention in days. 0 uses the repository default.
+    default: '0'
+  comment:
+    description: Post or update the sticky comment on the pull request. `false` leaves only the artifact and the job summary.
+    default: 'true'
+  comment-tag:
+    description: Names the sticky comment. Use a different tag for each use of the action in one pull request.
+    default: default
+  github-token:
+    description: "Token that posts the comment. Needs `pull-requests: write`."
+    default: ${{ github.token }}
+
+outputs:
+  ok:
+    description: '`true` when every page passed `check` and was exported.'
+    value: ${{ steps.austere.outputs.ok }}
+  artifact-url:
+    description: Download URL of the artifact (needs a GitHub login).
+    value: ${{ steps.upload.outputs.artifact-url }}
+
+runs:
+  using: composite
+  steps:
+    # austere-axi needs Node 22.18 or later; runner images do not all ship it.
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        package-manager-cache: false
+
+    - id: austere
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/run.mjs"
+      env:
+        INPUT_PAGES: ${{ inputs.pages }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_CLI: ${{ inputs.cli }}
+
+    # Runs after a failed check too, so the pages that did pass are still downloadable.
+    - id: upload
+      if: ${{ !cancelled() && steps.austere.outputs.exported != '' && steps.austere.outputs.exported != '0' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/austere-review
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: error
+        overwrite: true
+
+    - if: ${{ !cancelled() }}
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/report.mjs"
+      env:
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_COMMENT_TAG: ${{ inputs.comment-tag }}
+        INPUT_TOKEN: ${{ inputs.github-token }}
+        ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}

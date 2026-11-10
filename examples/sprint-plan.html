@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="description" content="Sprint plan with a Mermaid gantt chart, capacity by person, committed stories and risks.">
+<title>Sprint 24 plan</title>
+<script src="../dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([goal, schedule, capacity, scope, risks, decide], "column", "l")
+goal = Card([CardHeader("Sprint 24", "2 Nov – 13 Nov · 4 engineers"), goalText, goalKpis])
+goalText = MarkDownRenderer("**Goal:** ship team workspaces to 10% of accounts behind a flag, with billing seats correct on day one.
+
+Anything that does not serve that goal waits for sprint 25.")
+goalKpis = OverviewCardBlock([kpiPoints, kpiCarry, kpiBuffer])
+kpiPoints = OverviewCardItem("points", Text("text", "Planned"), MetricIndicatorInline("34 pts", "velocity avg 36"))
+kpiCarry = OverviewCardItem("carry", Text("text", "Carry-over"), MetricIndicatorInline("5 pts", "2 stories"))
+kpiBuffer = OverviewCardItem("buffer", Text("text", "Unplanned buffer"), MetricIndicatorInline("15%", "one day for bugs"))
+schedule = Card([CardHeader("Schedule"), ganttChart])
+ganttChart = Mermaid("gantt
+  dateFormat YYYY-MM-DD
+  axisFormat %d %b
+  todayMarker off
+  section Backend
+  Workspace schema + migration :done, db, 2026-11-02, 2d
+  Membership API :active, api, after db, 4d
+  Seat counting in billing :billing, after api, 3d
+  section Frontend
+  Workspace switcher :ui, 2026-11-04, 4d
+  Invite flow :invite, after ui, 3d
+  section Release
+  Flag + staged rollout :milestone, rollout, 2026-11-12, 1d
+  Bug buffer :buf, 2026-11-12, 2d", "Billing is the long pole: it cannot start before the membership API lands.")
+capacity = Card([CardHeader("Capacity by person"), capacityChart])
+capacityChart = BarChart(["Ana", "Ben", "Chi", "Dev"], [Series("Planned pts", [10, 9, 8, 7]), Series("Available pts", [11, 10, 8, 9])], "grouped", "Engineer", "pts")
+scope = Card([CardHeader("Committed stories"), storyTable])
+storyTable = Table([Col("Story", ["Workspace schema + migration", "Membership API", "Seat counting in billing", "Workspace switcher", "Invite flow", "Audit log for member changes"]), Col("Owner", ["Ben", "Ben", "Chi", "Ana", "Ana", "Dev"]), Col("Pts", ["5", "8", "8", "5", "5", "3"], "number"), Col("Status", [sDone, sProg, sNext, sProg, sNext, sCut])])
+sDone = Tag("done", null, "sm", "success")
+sProg = Tag("in progress", null, "sm", "info")
+sNext = Tag("not started", null, "sm", "neutral")
+sCut = Tag("at risk", null, "sm", "warning")
+risks = Card([CardHeader("Risks"), riskCallout, riskList])
+riskCallout = Callout("warning", "Billing depends on the membership API", "If the API slips past Friday 6 Nov, seat counting moves to sprint 25 and the rollout is flag-only.")
+riskList = Steps([StepsItem("Wed 4 Nov", "Checkpoint: membership API contract frozen."), StepsItem("Fri 6 Nov", "Checkpoint: billing starts or scope is cut."), StepsItem("Thu 12 Nov", "Flag on for the 10% cohort.")])
+decide = Card([CardHeader("Your call"), decideForm])
+decideForm = Form("scope", decideButtons, [auditField])
+auditField = FormControl("Audit log", RadioGroup("audit", [RadioItem("Keep in sprint", "3 pts, leaves 12% buffer", "keep"), RadioItem("Move to sprint 25", "Buffer back to 21%", "move")], "move"))
+decideButtons = Buttons([Button("Commit the sprint", @ToAssistant("Sprint 24 committed"), "primary"), Button("Rebalance Ana's load")])
+</script>
+</body>
+</html>

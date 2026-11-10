@@ -1,0 +1,17 @@
+```openui
+intro = Card([CardHeader("Release 3.8 bug triage", "5 open bugs to decide before code freeze"), introText])
+introText = MarkDownRenderer("Release 3.8 ships **Thursday**. Code freeze is **Wednesday 18:00**.\n\nFor each bug, choose **fix for 3.8**, **defer to 3.9** or **won't fix**, then send all five decisions back at once. The form is pre-filled with my suggestion: fix BUG-311, BUG-318 and BUG-330, defer BUG-322 and BUG-327.")
+bugIdCol = Col("Bug", ["BUG-311", "BUG-318", "BUG-322", "BUG-327", "BUG-330"])
+bugTitleCol = Col("Title", ["Checkout button disabled after coupon removal", "Dark mode: unreadable table headers in Reports", "CSV export drops rows over 10,000", "Push notification sent twice on Android 15", "Password reset email links expire after 5 minutes instead of 60"])
+bugSeverityCol = Col("Severity", [sevHigh, sevLow, sevMedium1, sevMedium2, sevHigh330])
+bugUsersCol = Col("Users affected", ["~4% of carts", "Reports users", "120 accounts", "~9% of Android", "All users who reset a password"])
+bugEstimateCol = Col("Fix estimate", ["0.5 day", "1 hour", "2 days", "unknown", "1 hour"])
+bugSuggestionCol = Col("My suggestion", ["Fix for 3.8", "Fix for 3.8", "Defer to 3.9", "Defer to 3.9", "Fix for 3.8"])
+sevHigh330 = Tag("high", null, "sm", "danger")
+triageForm = Form("triage", triageButtons, [bug311Field, bug318Field, bug322Field, bug327Field, bug330Field])
+bug330Field = FormControl("BUG-330: Password reset email links expire after 5 minutes instead of 60", bug330Choice, "high severity, all users who reset a password, 1 hour")
+bug330Choice = RadioGroup("BUG-330", [fixItem330, deferItem330, wontItem330], "fix-3.8")
+fixItem330 = RadioItem("Fix for 3.8", "Include in Thursday's release", "fix-3.8")
+deferItem330 = RadioItem("Defer to 3.9", "Move to the next release", "defer-3.9")
+wontItem330 = RadioItem("Won't fix", "Close without fixing", "wont-fix")
+```

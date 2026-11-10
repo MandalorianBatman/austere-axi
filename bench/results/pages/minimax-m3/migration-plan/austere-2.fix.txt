@@ -1,0 +1,3 @@
+```openui
+apiToPostgres = Edge(api, postgres, "Durable read / write", "solid", "success")
+```

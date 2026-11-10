@@ -1,0 +1,8 @@
+```openui
+intro = Card([CardHeader("Vector database shortlist", "Pick two of five for semantic search"), introText])
+latencyChart = BarChart(["Pinecone", "Weaviate", "Qdrant", "Milvus", "pgvector"], [Series("p95 (ms)", [38, 61, 44, 52, 95])], "grouped", "Database", "ms")
+latencyNote = Callout("info", "Against the 50 ms target", "Pinecone (38 ms) and Qdrant (44 ms) meet it. Milvus (52 ms), Weaviate (61 ms) and pgvector (95 ms) miss it.")
+comparisonTable = Table([Col("Criterion", ["Hosting", "p95 latency at 40M", "Est. monthly cost", "Hybrid (keyword + vector) search", "Metadata filtering", "License"]), Col("Pinecone", ["managed only", "38 ms", "$3,100", "yes", "good", "proprietary"]), Col("Weaviate", ["managed or self-host", "61 ms", "$1,900", "yes", "good", "BSD-3"]), Col("Qdrant", ["managed or self-host", "44 ms", "$1,250", "yes", "very good", "Apache-2.0"]), Col("Milvus", ["self-host (Zilliz for managed)", "52 ms", "$1,400 + ops time", "partial", "good", "Apache-2.0"]), Col("pgvector", ["self-host on our existing Postgres", "95 ms", "about $400", "yes (with tsvector)", "good", "PostgreSQL"])])
+shortlistField = FormControl("Shortlist (choose two)", CheckBoxGroup("picks", [pineconeItem, weaviateItem, qdrantItem, milvusItem, pgvectorItem]), "Pre-selected with our recommendation.")
+pgvectorItem = CheckBoxItem("pgvector", "95 ms, about $400/mo, self-host on existing Postgres", "pgvector", false)
+```

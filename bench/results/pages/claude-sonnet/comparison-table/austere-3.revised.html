@@ -1,0 +1,24 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Vector database shortlist</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+<body><script type="text/openui">
+root = Stack([intro, latencyCard, comparison, recommendation, decide], "column", "l")
+intro = Card([CardHeader("Vector database shortlist", "Pick two of five for semantic search"), introText])
+introText = MarkDownRenderer("**Use case:** semantic search over 40M document chunks, 768-dim embeddings.\n\n**Target:** p95 query latency of 50 ms.\n\nThe figures below come from our own test at 40M chunks.")
+latencyCard = Card([CardHeader("p95 latency at 40M", "Target is 50 ms"), latencyChart, latencyNote])
+latencyChart = BarChart(["Pinecone", "Weaviate", "Qdrant", "Milvus", "pgvector"], [Series("p95 (ms)", [38, 61, 44, 52, 95])], "grouped", "Database", "ms")
+latencyNote = Callout("info", "Against the 50 ms target", "Pinecone (38 ms) and Qdrant (44 ms) meet it. Milvus (52 ms), Weaviate (61 ms) and pgvector (95 ms) miss it.")
+comparison = Card([CardHeader("Side-by-side comparison"), comparisonTable])
+comparisonTable = Table([Col("Criterion", ["Hosting", "p95 latency at 40M", "Est. monthly cost", "Hybrid (keyword + vector) search", "Metadata filtering", "License"]), Col("Pinecone", ["managed only", "38 ms", "$3,100", "yes", "good", "proprietary"]), Col("Weaviate", ["managed or self-host", "61 ms", "$1,900", "yes", "good", "BSD-3"]), Col("Qdrant", ["managed or self-host", "44 ms", "$1,250", "yes", "very good", "Apache-2.0"]), Col("Milvus", ["self-host (Zilliz for managed)", "52 ms", "$1,400 + ops time", "partial", "good", "Apache-2.0"]), Col("pgvector", ["self-host on our existing Postgres", "95 ms", "about $400", "yes (with tsvector)", "good", "PostgreSQL"])])
+recommendation = Card([CardHeader("Our recommendation", "Shortlist Qdrant and Pinecone"), recText])
+recText = MarkDownRenderer("- **Qdrant:** best latency per dollar. It has the lowest cost ($1,250), meets the 50 ms target (44 ms), and has the best metadata filtering (very good).\n- **Pinecone:** lowest latency (38 ms) and no ops, since it is managed only. It is the most expensive option ($3,100).")
+decide = Card([CardHeader("Your shortlist", "Change the selection if you disagree, then send"), shortlistForm])
+shortlistForm = Form("shortlist", shortlistButtons, [shortlistField])
+shortlistField = FormControl("Shortlist (choose two)", CheckBoxGroup("picks", [pineconeItem, weaviateItem, qdrantItem, milvusItem, pgvectorItem]), "Pre-selected with our recommendation.")
+pineconeItem = CheckBoxItem("Pinecone", "38 ms, $3,100/mo, managed only", "pinecone", true)
+weaviateItem = CheckBoxItem("Weaviate", "61 ms, $1,900/mo, managed or self-host", "weaviate", false)
+qdrantItem = CheckBoxItem("Qdrant", "44 ms, $1,250/mo, managed or self-host", "qdrant", true)
+milvusItem = CheckBoxItem("Milvus", "52 ms, $1,400/mo + ops time, self-host", "milvus", false)
+shortlistButtons = Buttons([Button("Send shortlist", @ToAssistant("Shortlist: vector databases"), "primary")])
+pgvectorItem = CheckBoxItem("pgvector", "95 ms, about $400/mo, self-host on existing Postgres", "pgvector", false)
+</script></body></html>

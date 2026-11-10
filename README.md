@@ -10,6 +10,10 @@
 
 Review pages for coding agents. The agent writes a short [OpenUI Lang](https://github.com/thesysdev/openui) program, not HTML. You open it in the browser, click on any part, and write a note. The agent gets each note with the name of the statement it points at. It edits only those statements, and the page updates in place.
 
+![An agent writes a page, the reviewer clicks a table cell and a diagram node and sends two notes, and the page patches in place with the changed statements flashing](docs/demo.gif)
+
+<sub>The real loop, about 30 s: [MP4](docs/demo.mp4) · [WebM](docs/demo.webm).</sub>
+
 ```
 root = Stack([intro, flow, options, decide], "column", "l")
 intro = Card([CardHeader("Session storage migration", "Redis → Postgres"), introText])
@@ -29,6 +33,8 @@ strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big ba
 
 [`examples/session-migration.html`](examples/session-migration.html) is a full page (KPIs, diagram, table, chart, diff, decision form) in about 1,000 tokens.
 
+**Website:** [mandalorianbatman.github.io/austere-axi](https://mandalorianbatman.github.io/austere-axi/) has a [gallery](https://mandalorianbatman.github.io/austere-axi/gallery/) of example pages (postmortem, API review, PR summary, sprint plan) next to their source and token counts, and a [playground](https://mandalorianbatman.github.io/austere-axi/play/) where you edit OpenUI Lang and see the page with nothing installed.
+
 ## Why
 
 The loop is the same as [lavish-axi](https://github.com/kunchenguid/lavish-axi). The difference: the agent never writes HTML, CSS or layout.
@@ -36,12 +42,18 @@ The loop is the same as [lavish-axi](https://github.com/kunchenguid/lavish-axi).
 | | lavish-axi | austere-axi |
 |---|---|---|
 | Agent writes | Full HTML + CSS + SVG | OpenUI Lang statements |
-| After feedback | Writes the file again | Edits the named statements; the page patches in place |
+| After feedback | Edits the HTML; the page reloads | Edits the named statements; the page patches in place |
 | Feedback points at | CSS selector + text | Statement name and line, plus table cell, diff line, diagram node or selected text |
 | Validation | Layout audit in the browser | `austere-axi check`, in Node, no browser |
 | Look | Different for each agent | One dark design |
 
-Fewer output tokens means faster pages and lower cost.
+Fewer output tokens means faster pages and lower cost. From the [benchmark](docs/benchmark.md):
+
+<!-- bench:start -->
+Across 36 paired runs (6 review pages, 2 models), lavish-axi spent a median **3.2×** the output tokens of austere-axi to produce the same page, took **2.4×** as long and cost **2.5×** as much. Answering one reviewer note took **2.7×** the output tokens.
+<!-- bench:end -->
+
+The benchmark also shows where lavish-axi does better; read its caveats before quoting the numbers.
 
 ## Install
 
@@ -69,6 +81,44 @@ npx skills add MandalorianBatman/austere-axi --skill austere   # tells agents wh
 ```
 
 The `austere` skill is a stub that points at `--help` and `spec`, so it does not go out of date. A global install stays on its version until `npm update -g austere-axi`.
+
+## Install as a Claude Code plugin
+
+The plugin bundles the `austere` skill (and `/austere`), the `austere-setup` skill and the MCP server below:
+
+```sh
+claude plugin marketplace add MandalorianBatman/austere-axi
+claude plugin install austere@austere-axi
+```
+
+In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/plugin install austere@austere-axi`. The MCP server runs `npx -y austere-axi mcp`, so it needs Node 22.18 or later and npm access. `claude plugin update austere` picks up new skill text; the CLI comes from npm each time.
+
+## Use with MCP
+
+`austere-axi mcp` is an MCP server on stdio. Its tools are `spec`, `check`, `open` (validate and open the review), `poll`, `reply`, `patch` and `end`. Each runs the CLI command of the same name and returns its output, so the review loop is the same as on the command line. `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer tool calls; the agent polls again and nothing is lost. Pass `timeout_ms: 0` to wait until feedback arrives when your client allows long calls.
+
+**Claude Desktop** (`claude_desktop_config.json`) and **Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project):
+
+```json
+{
+  "mcpServers": {
+    "austere": {
+      "command": "npx",
+      "args": ["-y", "austere-axi", "mcp"]
+    }
+  }
+}
+```
+
+**Codex** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.austere]
+command = "npx"
+args = ["-y", "austere-axi", "mcp"]
+```
+
+Or `codex mcp add austere -- npx -y austere-axi mcp`. On a machine with no screen, add `AUSTERE_AXI_NO_OPEN=1` to the server's `env` so `open` prints the link instead of launching a browser. The other [environment variables](#environment) work the same way. Pass absolute file paths: the server resolves relative ones against its own working directory, which depends on the client.
 
 ## Quick start
 
@@ -108,9 +158,10 @@ austere-axi reply <file>         post a reply without polling   [--cursor n]
 austere-axi end <file>           stop as the agent; the reviewer can still add notes
 austere-axi close <file>         close the review: no more notes until reopen
 austere-axi reopen <file>        reopen an ended or closed review
+austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix]
-austere-axi patch <file>         merge statements from stdin into the program
+austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi export <file>        one self-contained HTML file, works offline
@@ -119,6 +170,7 @@ austere-axi share <file> --as "<name>"   invite link for a teammate on your tail
 austere-axi share list|revoke           see invites, cut one off
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out
+austere-axi mcp                  MCP server on stdio (see Use with MCP)
 ```
 
 Output is compact YAML for agents. Each `poll` item has its statement and that statement's line, so the agent does not need to read the file again.
@@ -169,7 +221,7 @@ A page names its packs in the head, so it renders wherever you open it:
 
 **Trust.** Pack code runs inside your review pages, where notes and button presses also come from. Packs under `@austere-axi/` on npm install directly. Other npm packs and any `.tgz` need `--trust`; read them first. A local folder counts as your own. A page with third-party packs shows a warning, and `poll` tells the agent.
 
-**Write a pack:**
+**Write a pack:** [Writing a pack](docs/writing-a-pack.md) walks through one from scaffold to `npm publish`, using [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt), a Gantt chart pack built outside this repo, as the example. The short version:
 
 ```sh
 austere-axi components new austere-pack-milestones
@@ -232,16 +284,58 @@ Send the link to the teammate. The link needs Tailscale (or `AUSTERE_AXI_HOST`);
 - **Author:** `poll` and `feedback` show `from: <name>` on each teammate's note. Your own notes have no `from`. The hub Notes view shows the author and can filter on it.
 - **Reviewers can:** read the page and the conversation, and add notes. They cannot end the review, export, or send held notes.
 
-Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token; the browser keeps it in a cookie and the address bar drops it.
+Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token. Opening it shows a "Continue as <name>" button; pressing it (a same-origin POST) trades the token for a cookie and the address bar drops it. A link opened from another site therefore cannot switch your browser into a reviewer.
 
-Off loopback, a request without a valid invite or the owner key is refused. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links stop working, delete that file and restart the server. Behind a reverse proxy on the same machine, every request looks local, so it acts as you.
+A request without a valid invite or the owner key is refused, on loopback too. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links and owner cookies stop working, delete that file and restart the server. A reverse proxy on the same machine gets no owner rights from looking local.
+
+## GitHub Action
+
+Post an austere review page on every pull request. The action runs `austere-axi check` on the pages you commit, exports each one as a self-contained HTML file with `austere-axi export`, uploads them as a workflow artifact, and posts or updates **one** comment on the PR with a summary and a download link.
+
+```yaml
+# .github/workflows/austere.yml
+name: austere review
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write   # to post the comment
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: MandalorianBatman/austere-axi/action@main   # pin a release tag or SHA once you settle
+        with:
+          pages: reviews/*.html
+```
+
+| Input | Default | |
+|---|---|---|
+| `pages` | required | paths or globs, one per line, relative to the workspace |
+| `version` | `latest` | austere-axi version from npm; pin it for reproducible runs |
+| `artifact-name` | `austere-review` | workflow artifact that holds the exported pages |
+| `retention-days` | repository default | artifact retention |
+| `comment` | `true` | `false` leaves only the artifact and the job summary |
+| `comment-tag` | `default` | names the sticky comment; use one per use of the action in the same PR |
+| `github-token` | `github.token` | needs `pull-requests: write` to comment |
+
+Outputs: `ok` (`true` when every page passed) and `artifact-url`.
+
+- **A failing check fails the job.** The `check` output, with each error's statement and line, is in the log and in the job summary; pages that passed are still exported.
+- **Fork PRs** get a read-only token, so the comment is skipped with a warning. The job summary and the artifact still carry the report.
+- **Sticky comment:** the action updates only a marked comment posted by its own token's account (a bot account for `github.token`). A comment someone else writes with the same marker is left alone, and the action posts its own.
+- **Triggers:** use `pull_request`. Do not use `pull_request_target` to run pages from a fork.
+- **Artifact:** GitHub zips it and requires a login to download it. Unzip and open the HTML in a browser; it works offline. A Pages preview is not part of the action.
+- The action lives in this repository, under `action/`, so one ref pins the action and the CLI contract it calls. `version` still picks the CLI.
 
 ## Environment
 
 | Variable | Default | |
 |---|---|---|
 | `AUSTERE_AXI_PORT` | `4388` | server port |
-| `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | sessions, server log |
+| `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | sessions, owner key, server log (mode 0700 on macOS and Linux) |
 | `AUSTERE_AXI_NO_OPEN` | | `1` = never open a browser |
 | `AUSTERE_AXI_HOST` | | extra bind address (never `0.0.0.0`) |
 | `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |
@@ -257,11 +351,16 @@ Off loopback, a request without a valid invite or the owner key is refused. The 
 
 The server binds to loopback, plus the Tailscale IP when Tailscale is up. It never binds to all interfaces.
 
-- `/api/*` answers only loopback callers and refuses browser requests.
+- Loopback is not the owner: other OS users on the machine can reach it too. The owner key in `owner.key` is.
+  - `/api/*` answers only loopback callers that send the owner key, and refuses browser requests. `/api/health` needs no key; it proves the server holds the key with an HMAC of its port and the CLI's nonce, so the CLI never talks to, or hands the key to, another program on its port.
+  - A browser signs in with a single-use login code: when the CLI opens your browser, it asks the server for a code and opens the page with it; the server swaps it for the owner cookie and drops it from the address bar. The key is never on a command line or in printed output. A code works once and for 60 seconds. Another local user who reads it from the process list in that time can use it first; your browser then shows "used already", and `austere-axi login` gives you a new one.
+  - A printed `url` works in a browser that already has the cookie. For any other browser (SSH with a forwarded port, `--no-open`, a second browser), run `austere-axi login [file]` and open the link it prints.
+  - The owner cookie is an HMAC of the key, not the key. Browsers share `127.0.0.1` cookies across ports, so any program listening on another local port that your browser visits can read it. With it, that program can open your pages and the hub as you in a browser, but not call `/api/*`, which needs the key.
+- On macOS and Linux the state dir is made mode 0700 on every run, and new files in it (`owner.key`, sessions, `server.log`, `hub.db`) are mode 0600. Files an older version created keep their old mode, behind the 0700 dir. On Windows, file modes do not apply: the state dir is protected only by your user profile's permissions.
 - `Host` headers must be on an allowlist (DNS-rebinding defense).
 - Browser routes that change state refuse a foreign `Origin`.
 - Invite tokens are random, compared in constant time, and kept out of the log. A reviewer link can only add notes to its own page. See [Team review](#team-review).
-- The page runs in a sandboxed iframe with no same-origin access. Packs run there too.
+- The page runs in a sandboxed iframe with no same-origin access. Packs run there too. Page files are also served with a `Content-Security-Policy: sandbox` header, so the page stays sandboxed when opened in a popup or its own tab. In review, links that open a new window are opened by the review page, and only if they are external `http(s):` or `mailto:` links. A popup the frame opens any other way stays sandboxed.
 - The server serves files only from the page's own directory, with no dotfiles.
 - Third-party packs need `--trust`. Installed packs must match their lockfile hash; CDN loads use Subresource Integrity.
 
@@ -282,25 +381,35 @@ npm run build     # dist/: runtime, packs, pack kit, Mermaid, spec, catalog, rev
 npm test
 npm run typecheck # tsc over src/cli, src/shared and the pack types
 node dist/cli.mjs examples/session-migration.html
+npm run site      # _site/: the website (needs Chrome or CHROME_PATH); see site/ and examples/
 ```
 
 | Path | Contents |
 |---|---|
 | `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `FileTree`), one file each |
 | `src/runtime/stock.js` | Which stock components ship, which stay out of `spec`, their groups |
+| `docs/` | [Writing a pack](docs/writing-a-pack.md) |
 | `packs/` | Packs bundled with austere-axi (`mermaid`, `shadcn`) |
 | `src/runtime/pack-api.js`, `src/pack-kit/` | `austere-axi/pack` and the `components build` pipeline |
 | `src/shared/catalog.js` | Component catalog and prompt tiers |
 | `src/runtime/` | Library, annotation layer, review bridge, styles |
 | `src/chrome/` | Review UI around the page iframe |
 | `src/cli/` | CLI, server, sessions, `check`, `export`, packs, hub |
+| `action/` | The [GitHub Action](#github-action) (not published to npm) |
 | `skills/` | Published skills: `austere`, `austere-setup` |
+| `.claude-plugin/` | Claude Code marketplace and plugin manifest (in git, not in the npm package) |
 
 Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/add-component`](.agents/skills/add-component/SKILL.md) to add a component, [`.agents/skills/review-change`](.agents/skills/review-change/SKILL.md) before you commit. Tests enforce the component rules: every component has a group, `spec` stays in its token budget, released prop orders are append-only (`npm run signatures`), and every example passes `check`.
 
 Visual checks: `npm run gallery`, `npm run shot`, and `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
 
-**CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). **Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
+Website: `site/` holds the hand-written pages and CSS, `examples/` feeds the gallery (add a file there and it appears with a generated thumbnail), `scripts/site.mjs` builds `_site/`, and `.github/workflows/pages.yml` deploys it to GitHub Pages on every push to `main`. Examples need a `<meta name="description">` for the gallery blurb. None of it is published to npm.
+
+Playground (`/play/`, source in `site/play/`): a textarea editor beside a sandboxed frame running `dist/austere.js`. It plays the part of the review chrome over the same `postMessage` bridge, so edits re-render in place and clicks arrive as the annotations `poll` prints. Problems come from `src/shared/check-program.js`, the same code as `austere-axi check`, bundled for the browser by `scripts/site.mjs` (with the spec, the component catalog and one template per example in `play/data.json`). The program travels in the URL hash (`#code=v1.<deflate-raw, base64url>`), so there is no server. `test/browser/play.browser.test.js` drives it in headless Chrome as part of `npm run test:browser`. Packs other than the bundled ones are not available there.
+
+Benchmark against lavish-axi: `npm run bench` (needs model keys; see [docs/benchmark.md](docs/benchmark.md)). `npm run bench:report` rebuilds its tables from the committed results.
+
+**CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). `action.yml` runs the GitHub Action on fixture pages (`test/fixtures/action/`). **Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
 
 ## License
 

@@ -10,6 +10,7 @@ import { after, before, test } from "node:test";
 import { SessionStore } from "../src/cli/sessions.js";
 import { Hub, projectOf } from "../src/cli/hub.js";
 import { notesPage } from "../src/cli/hub-page.js";
+import { ownerHeaders } from "./owner.js";
 import { freePort } from "./port.js";
 
 const PORT = await freePort();
@@ -42,11 +43,12 @@ function cliWith(env, ...args) {
   });
 }
 
+/** As the owner of STATE: other ports here are only asked for their health, which needs no key. */
 function req(method, route, body, port = PORT) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const r = http.request(
-      { host: "127.0.0.1", port, method, path: route, headers: { "content-type": "application/json", host: `127.0.0.1:${port}` } },
+      { host: "127.0.0.1", port, method, path: route, headers: { "content-type": "application/json", host: `127.0.0.1:${port}`, ...ownerHeaders(STATE) } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -256,6 +258,21 @@ test("notesPage escapes note text, target, title and filters", async () => {
     assert.ok(!html.includes("<b>"), "query escaped");
     assert.ok(html.includes("Plan &lt;A&gt;"));
     assert.ok(html.includes('href="/hub/open/aaaaaaaaaaaa"'));
+  } finally {
+    hub.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Hub.syncSession: an item field that is not a string does not stop later notes from being indexed", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-sync-"));
+  const hub = await Hub.open(path.join(dir, "hub.db"));
+  try {
+    const s = { id: "cccccccccccc", file: path.join(dir, "plan.html"), title: "Plan", createdAt: 1, updatedAt: 2, status: "open", pending: [], transcript: [] };
+    const entry = (n, items) => ({ id: `u${n}`, role: "user", at: n, items });
+    s.transcript.push(entry(1, [{ kind: "annotation", id: "bad", target: { x: 1 }, note: { y: 2 } }]), entry(2, [{ kind: "message", id: "good", text: "LATER-NOTE" }]));
+    hub.syncSession(s);
+    assert.deepEqual(hub.notes().map((n) => n.id).sort(), ["bad", "good"]);
   } finally {
     hub.close();
     fs.rmSync(dir, { recursive: true, force: true });

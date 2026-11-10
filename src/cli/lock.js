@@ -4,7 +4,7 @@
 // each other's.
 import fs from "node:fs";
 import path from "node:path";
-import { request } from "./client.js";
+import { health } from "./client.js";
 
 // A process that has held the lock for less than this may still be starting (a server
 // that does not answer on its port yet) or finishing (a command). Older and silent: it died.
@@ -96,13 +96,10 @@ async function lockHolder(text, dir) {
   return Date.now() - Number(lock.at) < STARTING_MS ? { pid, port, serving: false } : null;
 }
 
+/** Whether the server on `port` proves it holds this state dir's owner key (no key is sent) and is that pid on that dir. */
 async function serves(port, pid, dir) {
-  try {
-    const r = await request("GET", "/api/health", undefined, { timeoutMs: 2000, port });
-    return r.status === 200 && r.data?.name === "austere-axi" && r.data.pid === pid && r.data.stateDir === dir;
-  } catch {
-    return false;
-  }
+  const h = await health(port);
+  return Boolean(h && !h.foreign && h.pid === pid && h.stateDir === dir);
 }
 
 function processAlive(pid) {

@@ -6,13 +6,15 @@ import path from "node:path";
 import { mergeStatements } from "@openuidev/lang-core";
 import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.js";
 import { checkHtml, statementLines } from "./check.js";
-import { ensureServer, openBrowser, request, serverIfRunning } from "./client.js";
+import { splitStatements } from "../shared/statements.js";
+import { ensureServer, loginUrl, openBrowser, request, serverIfRunning, shutdownServer } from "./client.js";
 import { Hub, hubDbFile, hubEnabled, registerWithHub, setHubEnabled } from "./hub.js";
 import { InviteStore, inviteId } from "./invites.js";
 import { lockStateDir } from "./lock.js";
 import { SessionStore, sessionId } from "./sessions.js";
 import { exportHtml } from "./export.js";
 import { format, print } from "./output.js";
+import { describeItem, locator } from "../shared/feedback.js";
 import { VERSION, assetPath, canonicalFile, port, stateDir } from "./paths.js";
 import { listComponents, searchComponents, showComponents } from "./components.js";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.js";
@@ -37,7 +39,8 @@ WORKFLOW
      The CDN tag lets the file open on its own (needs network); review and \`export\` work offline.
   3. ${BIN} <file.html>          validate + open for review (fix any errors it lists).
                                    With --no-open the session still exists; it prints the url
-                                   (and a phone url when Tailscale is up) for the user.
+                                   (and a phone url when Tailscale is up) for the user. A browser
+                                   the CLI did not open signs in once with a link from \`${BIN} login\`.
   4. ${BIN} poll <file.html>     wait for feedback. Leave it running in the foreground;
                                    it returns when the reviewer presses Send. If your tool call
                                    times out first, run the same poll again: nothing is lost.
@@ -81,11 +84,14 @@ COMMANDS
   ${BIN} end <file>              stop as the agent; the reviewer can still add notes for later
   ${BIN} close <file>            close the review for the owner: no more notes until reopen
   ${BIN} reopen <file>           reopen an ended or closed review
+  ${BIN} login [file]            single-use link that signs a browser in as you (SSH, --no-open,
+                                   another browser), to the file's review or the session list
   ${BIN} feedback <file>         feedback no agent has answered yet (sent after polling stopped,
                                    or in an earlier session)   [--all] [--peek]; answer with reply
   ${BIN} check <file>            validate the program (no browser)   [--fix: declare the packs it uses]
   ${BIN} patch <file>            merge statements from stdin into the program: same name
-                                   replaces, new name adds, \`name = null\` deletes
+                                   replaces, new name adds, \`name = null\` deletes;
+                                   reports added statements dropped as unreferenced
   ${BIN} spec [group|pack...]    component reference (groups: Layout Content Data Charts Forms Buttons)
   ${BIN} components [group]      every component, including ones spec leaves out
   ${BIN} components search <words> | show <Name...>
@@ -101,6 +107,7 @@ COMMANDS
   ${BIN} stop                    stop the background server
   ${BIN} server [--persist]      run the server in the foreground; --persist: never idle out
                                    (behind a reverse proxy, under systemd)
+  ${BIN} mcp                     MCP server on stdio: spec check open poll reply patch end as tools
 
 ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
@@ -221,13 +228,14 @@ async function cmdOpen(file, flags) {
   let browser;
   if (d.browsers > 0) browser = `already open (${d.browsers} tab${d.browsers > 1 ? "s" : ""}); it live-updates`;
   else if (noOpen) browser = "not opened (--no-open)";
-  else browser = openBrowser(d.links.local) ? "opened" : "could not launch; open the url";
+  else browser = (await openBrowser(d.links.local)) ? "opened" : "could not launch";
   const out = {
     status: "open",
     file: abs,
     url: d.links.local,
     phone: d.links.remote,
     browser,
+    sign_in: browser === "opened" || d.browsers > 0 ? undefined : signInHint(file),
     check: compactCheck(check),
   };
   if (d.pending) out.queued_feedback = d.pending;
@@ -249,41 +257,20 @@ function describeItems(abs, items) {
   } catch {
     // file gone
   }
-  const at = (id) => {
-    const l = lines.get(id);
-    if (!l) return {};
-    const first = l.text.split("\n")[0];
-    return { line: l.line, source: first.length > 110 ? first.slice(0, 109) + "…" : first };
-  };
+  const at = locator(lines);
   return items.map((it) => {
-    const o = describeItem(it, at);
-    return it.author ? { from: it.author, ...o } : o;
+    /** @type {Record<string, any>} */
+    let o;
+    try {
+      o = describeItem(it, at);
+    } catch {
+      // one malformed item must not hide the rest of the delivery, which the server already marked received
+      o = { malformed: `could not read this ${typeof it?.kind === "string" ? it.kind : "feedback"} item` };
+    }
+    return it?.author ? { from: it.author, ...o } : o;
   });
 }
 
-function describeItem(it, at) {
-  if (it.kind === "annotation") {
-    /** @type {Record<string, any>} */
-    const o = { annotation: `${it.target} (${it.component})`, ...at(it.target) };
-    const within = (it.path || []).slice(0, -1).filter((p) => p !== "root");
-    if (within.length) o.within = within.join(" > ");
-    if (it.selection) o.selection = it.selection;
-    else if (it.excerpt) o.excerpt = it.excerpt;
-    if (it.detail) o.detail = it.detail;
-    o.note = it.note || "(no note: the selection itself is the point)";
-    return o;
-  }
-  if (it.kind === "action") {
-    const o = { action: it.message };
-    if (it.form) o.form = it.form;
-    if (it.context !== undefined) o.context = it.context;
-    return o;
-  }
-  if (it.kind === "render-error") {
-    return { render_error: it.statement || "(page)", ...at(it.statement), error: it.message, note: it.note };
-  }
-  return { message: it.text ?? it.note ?? "" };
-}
 
 function thirdPartyOf(abs) {
   try {
@@ -455,11 +442,17 @@ async function cmdPatch(file) {
   const art = readArtifact(html);
   if (art.program == null) return fail('no <script type="text/openui"> block to patch');
   const merged = mergeStatements(art.program.trim(), patch.trim(), "root");
+  // mergeStatements garbage-collects statements unreachable from root; report patched ones it dropped (`x = null` deletes are intended).
+  const kept = new Set(splitStatements(merged).map((s) => s.id));
+  const patched = new Set(splitStatements(patch).filter((s) => !/=\s*null\s*;?$/.test(s.text)).map((s) => s.id));
+  const dropped = [...patched].filter((id) => !kept.has(id));
   const next = replaceProgram(html, merged);
   fs.writeFileSync(abs, next);
   const result = checkHtml(next, { file: quote(file) });
   await registerWithHub(abs, result.title, sessionId(abs));
-  print({ status: "patched", file: abs, check: compactCheck(result) });
+  const out = { status: "patched", file: abs };
+  if (dropped.length) Object.assign(out, { dropped, warning: `unreferenced statement(s) dropped: ${dropped.join(", ")} (reference them from a parent to keep them on the page)` });
+  print({ ...out, check: compactCheck(result) });
 }
 
 /** A pack's part of the reference: its signatures and notes, as `spec` prints core groups. */
@@ -758,7 +751,8 @@ async function cmdHub(sub, args, flags) {
     case "open": {
       if (!hubEnabled()) return fail(`the hub is off: \`${BIN} hub on\``);
       await ensureServer();
-      return print({ status: openBrowser(url) ? "opened" : "open the url", url });
+      const opened = await openBrowser(url);
+      return print({ status: opened ? "opened" : "open the url", url, sign_in: opened ? undefined : signInHint() });
     }
     default:
       return fail(`unknown hub command: ${sub}. One of: on off status list notes open`);
@@ -830,10 +824,39 @@ async function cmdShare(args, flags) {
 }
 
 async function cmdStop() {
-  const h = await serverIfRunning();
+  // A server from before the health proof is stopped too (without the key).
+  const h = await serverIfRunning({ legacy: true });
   if (!h) return print({ status: "not running" });
-  await request("POST", "/api/shutdown", {}).catch(() => {});
+  await shutdownServer(h);
   print({ status: "stopped", port: port() });
+}
+
+/** The hint for a browser the CLI did not open: the plain url answers 403 until that browser signs in. */
+function signInHint(file) {
+  return `A browser that is not signed in gets 403 at the url: run \`${BIN} login${file ? ` ${quote(file)}` : ""}\` and open the single-use link it prints.`;
+}
+
+async function cmdLogin(file) {
+  let url = `http://127.0.0.1:${port()}/`;
+  let abs = null;
+  if (file) {
+    abs = needFile(file, "login");
+    if (!abs) return;
+  }
+  await ensureServer();
+  if (abs) {
+    const r = await request("GET", "/api/sessions");
+    if (r.status !== 200) return fail(r.data?.error || `login failed (${r.status})`);
+    const s = (r.data.sessions || []).find((x) => x.file === abs);
+    if (!s) return fail(`no review for ${abs} yet: \`${BIN} ${quote(file)} --no-open\` starts one`);
+    url = s.links.local;
+  }
+  const link = await loginUrl(url);
+  print({
+    url: link.url,
+    expires: `after one use, or in ${Math.round(link.ttlMs / 1000)}s`,
+    note: "Open it in the browser to sign that browser in as you; then every page's plain url works there. Do not forward it.",
+  });
 }
 
 async function cmdServer(flags) {
@@ -876,6 +899,8 @@ async function main() {
       return cmdLock(rest[0], "close");
     case "reopen":
       return cmdLock(rest[0], "reopen");
+    case "login":
+      return cmdLogin(rest[0]);
     case "check":
       return cmdCheck(rest[0], flags);
     case "components":
@@ -896,6 +921,10 @@ async function main() {
       return cmdStop();
     case "server":
       return cmdServer(flags);
+    case "mcp": {
+      const { runMcp } = await import("./mcp.js");
+      return runMcp();
+    }
     case "open":
       return cmdOpen(rest[0], flags);
     case "help":

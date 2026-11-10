@@ -17,7 +17,8 @@ import { SessionStore, newId } from "./sessions.js";
 import { lockStateDir } from "./lock.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
 import { Hub, hubEnabled } from "./hub.js";
-import { COOKIE, InviteStore, OWNER_COOKIE, inviteId, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
+import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
+import { reviewerItem } from "./items.js";
 import { hubPage, notesPage } from "./hub-page.js";
 import { splitSpec } from "../shared/packs-meta.js";
 import crypto from "node:crypto";
@@ -55,6 +56,8 @@ export function persistEnv() {
   return /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_PERSIST || "");
 }
 
+/** How long a login code from `austere-axi login` (or the CLI opening a browser) works. */
+const LOGIN_TTL_MS = 60_000;
 const OWNER = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set(["annotation", "message"]);
 // Transcript entries a page gets at once; it asks for older ones as the reader scrolls back.
@@ -65,7 +68,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     const line = `${new Date().toISOString()} ${a.join(" ")}`;
     if (verbose) process.stderr.write(line + "\n");
     try {
-      fs.appendFileSync(path.join(stateDir(), "server.log"), line + "\n");
+      fs.appendFileSync(path.join(stateDir(), "server.log"), line + "\n", { mode: 0o600 });
     } catch {
       // ignore
     }
@@ -86,6 +89,8 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
   const hub = new Hub(store.db);
   const invites = new InviteStore(stateDir());
   const ownerToken = ownerKey(stateDir());
+  const ownerCookieValue = ownerCookie(ownerToken);
+  const logins = new LoginCodes(LOGIN_TTL_MS);
   const clients = new Map(); // id -> Set<{res, viewer}>
   const polls = new Map(); // id -> poll
   const watchers = new Map(); // id -> { html, program, shell }
@@ -136,7 +141,10 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     return base ? `${base}/s/${id}` : null;
   }
 
-  /** The owner's links. The remote one carries the owner key, which the server swaps for a cookie. */
+  /**
+   * The owner's links. The remote one carries the owner key, which the server swaps for a cookie. The
+   * local one does not: the CLI opens it with a single-use login code (client.js loginUrl).
+   */
   function links(id) {
     const out = { local: `http://127.0.0.1:${port}/s/${id}` };
     const remote = remoteUrl(id);
@@ -149,19 +157,39 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     return `${remoteUrl(inv.sessionId)}?invite=${inv.token}`;
   }
 
-  /** Loopback is the owner. Off loopback (tailnet), only a request with the owner key cookie is. */
+  /**
+   * Only a request with the owner cookie is the owner, on loopback too: another OS user on this
+   * machine can reach 127.0.0.1 but cannot read owner.key (mode 0600). The cookie holds a value
+   * derived from the key, not the key (see ownerCookie).
+   */
   function isOwner(req) {
-    if (isLoopback(req.socket.remoteAddress)) return true;
-    const key = tokenFromCookie(req.headers.cookie, OWNER_COOKIE);
-    return key != null && safeEqual(key, ownerToken);
+    const value = tokenFromCookie(req.headers.cookie, OWNER_COOKIE);
+    return value != null && safeEqual(value, ownerCookieValue);
+  }
+
+  /** The 403 text for a request that is not the owner. On loopback it is most likely the owner in a browser without the cookie yet. */
+  function notOwner(req, text = "Only the owner can open this. Ask the owner for a link to the page.") {
+    if (!isLoopback(req.socket.remoteAddress)) return text;
+    return `${text}\nIf this is your page, sign this browser in: run \`austere-axi login\` (or \`austere-axi login <file>\`) and open the single-use link it prints.`;
+  }
+
+  /** Redirect to `url` without the sign-in parameter, setting the owner cookie. */
+  function signIn(res, url, param) {
+    url.searchParams.delete(param);
+    res.writeHead(302, {
+      location: url.pathname + url.search,
+      "set-cookie": `${OWNER_COOKIE}=${ownerCookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+      "cache-control": "no-store",
+    });
+    res.end();
   }
 
   // ── who is asking ──
 
   /**
-   * A team reviewer (a valid invite cookie for this session), else the owner (loopback, or the owner
-   * key cookie from the owner's own remote link), else nobody. A cookie that matches no invite is
-   * refused, never treated as the owner, so revoking cuts access.
+   * A team reviewer (a valid invite cookie for this session), else the owner (the owner key cookie, set
+   * from a link the CLI opened or the owner's own remote link), else nobody. A cookie that matches no
+   * invite is refused, never treated as the owner, so revoking cuts access.
    * @returns {{ role: "owner", name: string } | { role: "reviewer", name: string, auto: boolean, token: string } | null}
    */
   function identify(req, s) {
@@ -414,15 +442,25 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     // The CLI sends no Origin; a browser always does on POST. Any web page could
     // otherwise reach these routes on localhost.
     if (req.headers.origin || req.headers["sec-fetch-site"]) return send(res, 403, { error: "control routes are for the CLI" });
-    activity();
     const route = url.pathname.slice(5);
+    // Loopback is not a person: every other OS user on this machine can reach it. The CLI proves it
+    // is the owner with the key from owner.key (mode 0600). Health stays open so a CLI can find and
+    // check the server; it answers the CLI's nonce with an HMAC under the key instead of the key.
+    if (route !== "health") {
+      const key = req.headers["x-austere-key"];
+      if (typeof key !== "string" || !safeEqual(key, ownerToken)) return send(res, 403, { error: "owner key required" });
+    }
+    activity();
     if (route === "health") {
+      const nonce = url.searchParams.get("nonce");
       return send(res, 200, {
         name: "austere-axi",
         version: VERSION,
         pid: process.pid,
         port,
         stateDir: stateDir(),
+        // Bound to the port this server listens on: a listener elsewhere cannot relay it as its own.
+        proof: nonce ? crypto.createHmac("sha256", ownerToken).update(`${port}:${nonce}`).digest("base64url") : undefined,
         listen: Array.from(listeners.keys()),
         tailnet: tailnet || undefined,
         remote: remoteBase() || undefined,
@@ -448,6 +486,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
       setTimeout(() => shutdown("requested"), 50);
       return;
     }
+    if (route === "login" && req.method === "POST") return send(res, 200, { code: logins.issue(), ttlMs: LOGIN_TTL_MS });
     if (route === "share/list") {
       const withLinks = url.searchParams.get("links") === "1";
       return send(res, 200, {
@@ -673,14 +712,39 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     if (!file.startsWith(ASSET_DIR + path.sep)) return send(res, 404, "not found");
     fs.stat(file, (err, st) => {
       if (err || !st.isFile()) return send(res, 404, "not found");
-      res.writeHead(200, {
+      streamFile(res, file, {
         "content-type": MIME[path.extname(file)] || "application/octet-stream",
         "content-length": st.size,
         "cache-control": "no-cache",
         "x-content-type-options": "nosniff",
       });
-      fs.createReadStream(file).pipe(res);
     });
+  }
+
+  // Artifact responses carry their own sandbox, so the page and anything it
+  // loads get an opaque origin even when opened top-level (a popup, a pasted
+  // link) and never run with the owner's authority on this origin. Popups may
+  // drop that sandbox so external links work from a page opened on its own:
+  // in the review frame they still inherit the iframe's flags, and a popup on
+  // an artifact URL gets this header again.
+  const ARTIFACT_CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms";
+  /**
+   * Stream a file as a 200. Headers go out only once the file has opened, so an open failure
+   * (EACCES) is a 404 and a later read failure drops the connection. Without the error
+   * listener either one would be an unhandled 'error' event and exit the server.
+   */
+  function streamFile(res, file, headers) {
+    const rs = fs.createReadStream(file);
+    rs.once("open", () => {
+      res.writeHead(200, headers);
+      rs.pipe(res);
+    });
+    rs.once("error", (e) => {
+      log("error", "file stream", String(e?.message || e));
+      if (!res.headersSent) send(res, 404, "not found");
+      else res.destroy();
+    });
+    res.once("close", () => rs.destroy());
   }
 
   function serveArtifact(req, res, s, rest) {
@@ -690,7 +754,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
       const html = readFileSafe(s.file);
       if (html == null) return send(res, 404, "artifact file is missing");
       const out = rewriteRuntime(html, `<script src="/__austere/austere.js?v=${VERSION}"></script>`);
-      return send(res, 200, out, { "content-type": "text/html; charset=utf-8" });
+      return send(res, 200, out, { "content-type": "text/html; charset=utf-8", "content-security-policy": ARTIFACT_CSP });
     }
     let decoded;
     try {
@@ -698,19 +762,29 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     } catch {
       return send(res, 400, "bad path");
     }
+    if (decoded.includes("\0")) return send(res, 404, "not found");
     const file = path.resolve(dir, decoded);
     if (!file.startsWith(dir + path.sep) || decoded.split(/[/\\]/).some((p) => p.startsWith("."))) {
       return send(res, 404, "not found");
     }
-    fs.stat(file, (err, st) => {
-      if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
-      res.writeHead(200, {
-        "content-type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
-        "content-length": st.size,
-        "cache-control": "no-cache",
-        "x-content-type-options": "nosniff",
+    // The check above is lexical; a symlink inside the directory can still lead out of it.
+    fs.realpath(dir, (e1, realDir) => {
+      if (e1) return send(res, 404, "not found");
+      fs.realpath(file, (e2, real) => {
+        if (e2 || !real.startsWith(realDir + path.sep)) return send(res, 404, "not found");
+        // A link with an ordinary name can still point at a dotfile in the directory.
+        if (path.relative(realDir, real).split(path.sep).some((p) => p.startsWith("."))) return send(res, 404, "not found");
+        fs.stat(real, (err, st) => {
+          if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
+          streamFile(res, real, {
+            "content-type": MIME[path.extname(real).toLowerCase()] || "application/octet-stream",
+            "content-length": st.size,
+            "cache-control": "no-cache",
+            "x-content-type-options": "nosniff",
+            "content-security-policy": ARTIFACT_CSP,
+          });
+        });
       });
-      fs.createReadStream(file).pipe(res);
     });
   }
 
@@ -788,21 +862,21 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     }
     if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
     if (url.pathname.startsWith("/__austere/")) return serveAsset(res, url.pathname.slice("/__austere/".length), url);
-    // The owner's remote link: trade the key for a cookie, then drop it from the URL.
+    // The owner's remote link: trade the key for the owner cookie, then drop it from the URL.
     const key = url.searchParams.get("key");
     if (key != null) {
       if (!safeEqual(key, ownerToken)) return send(res, 403, "This link is not valid.");
-      url.searchParams.delete("key");
-      res.writeHead(302, {
-        location: url.pathname + url.search,
-        "set-cookie": `${OWNER_COOKIE}=${ownerToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
-        "cache-control": "no-store",
-      });
-      return res.end();
+      return signIn(res, url, "key");
+    }
+    // A link from the CLI: trade the single-use login code for the owner cookie, the same way.
+    const login = url.searchParams.get("login");
+    if (login != null) {
+      if (!logins.take(login)) return send(res, 403, "This sign-in link was used already or has expired. Run `austere-axi login` for a new one.");
+      return signIn(res, url, "login");
     }
     // The hub lists every page and every note: the owner's only.
     const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
-    if (ownerOnly && !isOwner(req)) return send(res, 403, "Only the owner can open this. Ask the owner for a link to the page.");
+    if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
     if (url.pathname === "/") {
       return send(res, 200, hubEnabled() ? hubHome(url) : homePage(), { "content-type": "text/html; charset=utf-8" });
     }
@@ -817,12 +891,35 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     const sub = m[2] || "";
     activity();
 
-    // An invite link: trade the token for a cookie scoped to this page, then drop it from the URL.
+    // An invite link: ask before trading the token for a cookie, so a cross-site navigation cannot
+    // switch a browser (e.g. the owner's) into a reviewer identity.
     const invite = url.searchParams.get("invite");
-    if (invite != null && (sub === "" || sub === "/")) {
+    if (invite != null && (sub === "" || sub === "/") && req.method === "GET") {
       const inv = invites.find(invite);
       if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
-      res.writeHead(302, {
+      return send(
+        res,
+        200,
+        `<!doctype html><meta charset="utf-8"><title>Join review</title><form method="post" action="/s/${s.id}/join"><input type="hidden" name="invite" value="${escapeHtml(inv.token)}"><button>Continue as ${escapeHtml(inv.name)}</button></form>`,
+        // "same-origin", not "no-referrer": Chrome and Firefox send `Origin: null` on a form POST under no-referrer, which the join check would refuse.
+        { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "same-origin", "x-frame-options": "DENY" },
+      );
+    }
+    if (sub === "/join" && req.method === "POST") {
+      // Require a same-origin browser POST: Origin must be present and equal Host (checkOrigin alone allows a missing Origin).
+      if (!req.headers.origin || !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+      // The form posts application/x-www-form-urlencoded; readBody() only parses JSON, so read the small body here.
+      const chunks = [];
+      let size = 0;
+      for await (const c of req) {
+        size += c.length;
+        if (size > 4096) return send(res, 413, "payload too large");
+        chunks.push(c);
+      }
+      const raw = Buffer.concat(chunks).toString("utf8");
+      const inv = invites.find(new URLSearchParams(raw).get("invite") || "");
+      if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
+      res.writeHead(303, {
         location: `/s/${s.id}`,
         "set-cookie": `${COOKIE}=${inv.token}; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=2592000`,
         "cache-control": "no-store",
@@ -832,7 +929,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
 
     const who = identify(req, s);
     if (!who) {
-      if (tokenFromCookie(req.headers.cookie) == null) return send(res, 403, "Ask the owner for a link to this page.");
+      if (tokenFromCookie(req.headers.cookie) == null) return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
       return send(res, 403, "This invite is no longer valid. Ask for a new link.", {
         "set-cookie": `${COOKIE}=; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=0`,
       });
@@ -901,7 +998,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
       const body = await readBody(req, 4 * 1024 * 1024);
       const end = !reviewer && !!body.end;
       let items = Array.isArray(body.items) ? body.items.filter((x) => x && typeof x === "object").slice(0, reviewer ? 50 : 200) : [];
-      if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind));
+      if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind)).map(reviewerItem);
       if (s.closedAt) return send(res, 409, { error: "the owner closed this review" });
       if (!items.length && !end) return send(res, 400, { error: "nothing to send" });
       // The server decides who wrote a note. A reviewer's own item id could overwrite another note in the hub.
@@ -927,7 +1024,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     }
     if ((sub === "/release" || sub === "/discard") && req.method === "POST") {
       const body = await readBody(req);
-      const ids = Array.isArray(body.ids) ? body.ids.map(String) : body.all ? null : [];
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : sub === "/discard" && body.all ? null : [];
       const done = sub === "/release" ? store.release(s, ids) : store.discard(s, ids);
       if (done.length) broadcastTranscript(s, done);
       if (sub === "/release") wake(s);
@@ -969,6 +1066,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
         return send(res, 200, out.html, {
           "content-type": "text/html; charset=utf-8",
           "content-disposition": `attachment; filename="${name.replace(/"/g, "")}"`,
+          "content-security-policy": ARTIFACT_CSP,
         });
       } catch (err) {
         return send(res, 500, String(err.message || err));
@@ -985,7 +1083,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
       const server = http.createServer((req, res) => {
         handle(req, res).catch((err) => {
           log("error", req.method, req.url.split("?")[0], String(err?.stack || err));
-          if (!res.headersSent) send(res, err.status || 500, { error: String(err.message || err) });
+          if (!res.headersSent) send(res, err.status || 500, { error: err.status ? String(err.message) : "internal error" });
           else res.end();
         });
       });

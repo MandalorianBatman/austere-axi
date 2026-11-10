@@ -21,7 +21,7 @@ export function hubEnabled() {
 }
 
 export function setHubEnabled(enabled) {
-  fs.writeFileSync(hubConfigFile(), JSON.stringify({ enabled, changedAt: new Date().toISOString() }) + "\n");
+  fs.writeFileSync(hubConfigFile(), JSON.stringify({ enabled, changedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
 }
 
 export function hubDbFile() {
@@ -59,6 +59,8 @@ export function projectOf(file) {
 /** Open hub.db with the schema in place. */
 export async function openDatabase(file = hubDbFile()) {
   const Database = await loadSqlite();
+  // Every note is in here: create it as the owner's only (SQLite gives its WAL the same mode).
+  if (file !== ":memory:") fs.closeSync(fs.openSync(file, "a", 0o600));
   const db = new Database(file);
   migrate(db);
   return db;
@@ -131,6 +133,11 @@ function migrate(db) {
   if (!has("artifacts", "closed_at")) db.exec("ALTER TABLE artifacts ADD COLUMN closed_at INTEGER");
   if (!has("artifacts", "acked_seq")) db.exec("ALTER TABLE artifacts ADD COLUMN acked_seq INTEGER NOT NULL DEFAULT 0");
   db.exec(NOTES);
+}
+
+/** A bindable SQLite text value from untrusted item data: strings pass, other shapes become JSON, empty is null. */
+export function bindText(v) {
+  return v == null || v === "" ? null : typeof v === "string" ? v : JSON.stringify(v);
 }
 
 /** The text the hub shows and searches for one item of a note. */

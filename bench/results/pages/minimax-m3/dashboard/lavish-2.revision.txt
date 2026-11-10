@@ -1,0 +1,9 @@
+<<<<<<< SEARCH
+              <td><span class="badge badge-info badge-soft">Sev3</span></td>
+              <td>12 min</td>
+              <td>Bad config push to the cart cache</td>
+=======
+              <td><span class="badge badge-warning badge-soft">Sev2</span></td>
+              <td>47 min</td>
+              <td>Bad config push to the cart cache · <span class="badge badge-ghost">PM-1047</span></td>
+>>>>>>> REPLACE

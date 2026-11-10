@@ -12,7 +12,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { itemText, openDatabase, projectOf } from "./hub.js";
+import { bindText, itemText, openDatabase, projectOf } from "./hub.js";
 
 export function sessionId(file) {
   return crypto.createHash("sha1").update(file).digest("hex").slice(0, 12);
@@ -154,7 +154,7 @@ export class SessionStore {
   indexNote(s, e) {
     const status = noteStatus(e, s.ackedSeq);
     (e.items || []).forEach((it, i) => {
-      this.q.indexItem.run(it.id || `${e.id}.${i}`, s.id, e.id, e.at, it.kind || "message", it.target || it.statement || null, itemText(it), status, JSON.stringify(it), e.author || "");
+      this.q.indexItem.run(String(it.id || `${e.id}.${i}`), s.id, e.id, e.at, String(it.kind || "message"), bindText(it.target || it.statement), bindText(itemText(it)) ?? "", status, JSON.stringify(it), String(e.author || ""));
     });
   }
 
@@ -205,13 +205,13 @@ export class SessionStore {
   }
 
   /**
-   * The owner sends held notes on to the agent (`ids` omitted: all of them). A released
-   * note gets the next seq, so it reaches the agent even if the cursor has moved past
-   * the time it was written. Returns the entries released.
+   * The owner sends the held notes named by `ids` on to the agent. A released note gets
+   * the next seq, so it reaches the agent even if the cursor has moved past the time it
+   * was written. Returns the entries released.
    */
   release(s, ids) {
-    const want = ids ? new Set(ids) : null;
-    const out = this.heldEntries(s).filter((e) => !want || want.has(e.id));
+    const want = new Set(ids);
+    const out = this.heldEntries(s).filter((e) => want.has(e.id));
     if (!out.length) return out;
     const now = Date.now();
     this.tx(() => {
