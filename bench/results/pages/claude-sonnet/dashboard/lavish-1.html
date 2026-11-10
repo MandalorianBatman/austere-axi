@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout service health – week of 2026-10-26</title>
+<!-- Design source: step 3 of the Lavish priority order. The user gave no design direction and no existing design system applies, so this uses the recommended Tailwind v4 + DaisyUI v5 CDN. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, dd, td, th, .badge) { overflow-wrap: anywhere; }
+  :where(img, svg, video, canvas, iframe) { max-width: 100%; height: auto; }
+  body { background: var(--color-base-200); color: var(--color-base-content); }
+</style>
+</head>
+<body>
+<main class="mx-auto max-w-6xl p-6 lg:p-10 space-y-8">
+
+  <header class="space-y-2">
+    <p class="text-sm uppercase tracking-widest opacity-60">Monday review · Week of 2026-10-26</p>
+    <h1 class="text-3xl lg:text-4xl font-bold">Checkout service health</h1>
+    <p class="text-lg max-w-3xl">
+      Errors are well within SLO, but <strong>p95 latency breached its 300 ms target (312 ms)</strong>, and
+      <strong>INC-1051</strong> (slow inventory query) is still being investigated.
+    </p>
+  </header>
+
+  <section aria-label="Key metrics" class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="card bg-base-100 border border-base-content/10">
+      <div class="card-body p-5">
+        <div class="text-sm opacity-70">Requests</div>
+        <div class="text-3xl font-bold">48.2M</div>
+        <div class="text-sm"><span class="badge badge-soft badge-info">▲ 6%</span> week over week</div>
+      </div>
+    </div>
+    <div class="card bg-base-100 border border-base-content/10">
+      <div class="card-body p-5">
+        <div class="text-sm opacity-70">Error rate</div>
+        <div class="text-3xl font-bold">0.21%</div>
+        <div class="text-sm"><span class="badge badge-soft badge-success">✓ Within SLO</span> SLO 0.5%</div>
+      </div>
+    </div>
+    <div class="card bg-base-100 border-2 border-error">
+      <div class="card-body p-5">
+        <div class="text-sm opacity-70">p95 latency</div>
+        <div class="text-3xl font-bold text-error">312 ms</div>
+        <div class="text-sm"><span class="badge badge-error">✗ Breached</span> target 300 ms</div>
+      </div>
+    </div>
+    <div class="card bg-base-100 border border-base-content/10">
+      <div class="card-body p-5">
+        <div class="text-sm opacity-70">Error budget left this month</div>
+        <div class="text-3xl font-bold">64%</div>
+        <progress class="progress progress-success w-full" value="64" max="100" aria-label="Error budget left 64 percent"></progress>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Daily trends" class="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+    <div class="card bg-base-100 border border-base-content/10">
+      <div class="card-body">
+        <h2 class="card-title">Daily p95 latency (ms)</h2>
+        <p class="text-sm opacity-70">Red bars are above the 300 ms target: Wed, Thu, Fri, Sun.</p>
+        <svg viewBox="0 0 420 210" role="img" aria-labelledby="lat-t lat-d" class="w-full">
+          <title id="lat-t">Daily p95 latency, Monday to Sunday</title>
+          <desc id="lat-d">288, 295, 340, 331, 305, 297, 330 milliseconds; target 300.</desc>
+          <line x1="40" y1="180" x2="410" y2="180" stroke="currentColor" opacity="0.3"/>
+          <!-- bars: height = ms * 0.45 -->
+          <g font-size="11" text-anchor="middle" fill="currentColor">
+            <rect x="50"  y="50.4"  width="36" height="129.6" class="text-base-content" opacity="0.35"/>
+            <text x="68"  y="44">288</text><text x="68" y="198">Mon</text>
+            <rect x="102" y="47.25" width="36" height="132.75" class="text-base-content" opacity="0.35"/>
+            <text x="120" y="41">295</text><text x="120" y="198">Tue</text>
+            <rect x="154" y="27"    width="36" height="153" class="text-error"/>
+            <text x="172" y="21" font-weight="bold">340</text><text x="172" y="198">Wed</text>
+            <rect x="206" y="31.05" width="36" height="148.95" class="text-error"/>
+            <text x="224" y="25" font-weight="bold">331</text><text x="224" y="198">Thu</text>
+            <rect x="258" y="42.75" width="36" height="137.25" class="text-error"/>
+            <text x="276" y="36" font-weight="bold">305</text><text x="276" y="198">Fri</text>
+            <rect x="310" y="46.35" width="36" height="133.65" class="text-base-content" opacity="0.35"/>
+            <text x="328" y="40">297</text><text x="328" y="198">Sat</text>
+            <rect x="362" y="31.5"  width="36" height="148.5" class="text-error"/>
+            <text x="380" y="25" font-weight="bold">330</text><text x="380" y="198">Sun</text>
+          </g>
+          <!-- target line at 300 ms -->
+          <line x1="40" y1="45" x2="410" y2="45" stroke="currentColor" class="text-warning" stroke-width="2" stroke-dasharray="6 4"/>
+          <text x="40" y="12" font-size="11" fill="currentColor" class="text-warning" font-weight="bold">Target 300 ms</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 border border-base-content/10">
+      <div class="card-body">
+        <h2 class="card-title">Daily errors</h2>
+        <p class="text-sm opacity-70">Peak on Wednesday at 15,900.</p>
+        <svg viewBox="0 0 420 210" role="img" aria-labelledby="err-t err-d" class="w-full">
+          <title id="err-t">Daily errors, Monday to Sunday</title>
+          <desc id="err-d">9,800; 10,400; 15,900; 12,100; 9,900; 8,700; 9,300.</desc>
+          <line x1="40" y1="180" x2="410" y2="180" stroke="currentColor" opacity="0.3"/>
+          <!-- bars: height = errors * 0.01 -->
+          <g font-size="11" text-anchor="middle" fill="currentColor">
+            <rect x="50"  y="82" width="36" height="98"  class="text-base-content" opacity="0.35"/>
+            <text x="68"  y="76">9,800</text><text x="68" y="198">Mon</text>
+            <rect x="102" y="76" width="36" height="104" class="text-base-content" opacity="0.35"/>
+            <text x="120" y="70">10,400</text><text x="120" y="198">Tue</text>
+            <rect x="154" y="21" width="36" height="159" class="text-warning"/>
+            <text x="172" y="15" font-weight="bold">15,900</text><text x="172" y="198">Wed</text>
+            <rect x="206" y="59" width="36" height="121" class="text-base-content" opacity="0.35"/>
+            <text x="224" y="53">12,100</text><text x="224" y="198">Thu</text>
+            <rect x="258" y="81" width="36" height="99"  class="text-base-content" opacity="0.35"/>
+            <text x="276" y="75">9,900</text><text x="276" y="198">Fri</text>
+            <rect x="310" y="93" width="36" height="87"  class="text-base-content" opacity="0.35"/>
+            <text x="328" y="87">8,700</text><text x="328" y="198">Sat</text>
+            <rect x="362" y="87" width="36" height="93"  class="text-base-content" opacity="0.35"/>
+            <text x="380" y="81">9,300</text><text x="380" y="198">Sun</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Incidents" class="card bg-base-100 border border-base-content/10">
+    <div class="card-body">
+      <h2 class="card-title">Incidents</h2>
+      <p class="text-sm opacity-70">Two resolved, one still open.</p>
+      <div class="overflow-x-auto">
+        <table class="table">
+          <thead>
+            <tr><th>ID</th><th>Day</th><th>Severity</th><th>Duration</th><th>Summary</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="font-mono">INC-1042</td><td>Tue</td>
+              <td><span class="badge badge-warning">Sev2</span></td>
+              <td>38 min</td><td>Payment provider timeouts</td>
+              <td><span class="badge badge-soft badge-success">✓ Resolved</span></td>
+            </tr>
+            <tr>
+              <td class="font-mono">INC-1047</td><td>Wed</td>
+              <td><span class="badge badge-info">Sev3</span></td>
+              <td>12 min</td><td>Bad config push to the cart cache</td>
+              <td><span class="badge badge-soft badge-success">✓ Resolved</span></td>
+            </tr>
+            <tr class="bg-error/10">
+              <td class="font-mono font-bold">INC-1051</td><td>Sun</td>
+              <td><span class="badge badge-info">Sev3</span></td>
+              <td>Ongoing</td><td>Elevated p95 from a slow inventory query</td>
+              <td><span class="badge badge-error">● Investigating</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Action items" class="card bg-base-100 border border-base-content/10">
+    <div class="card-body">
+      <h2 class="card-title">Action items</h2>
+      <div class="overflow-x-auto">
+        <table class="table">
+          <thead>
+            <tr><th>Action</th><th>Owner</th><th>Due</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Add an index on <code class="font-mono">inventory(sku, warehouse_id)</code></td>
+              <td>Priya</td><td>Nov 4</td>
+            </tr>
+            <tr>
+              <td>Add a timeout alert for the payment provider</td>
+              <td>Marco</td><td>Nov 6</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Open question" class="alert alert-soft alert-warning" role="note">
+    <div>
+      <h2 class="font-bold">Open question for review</h2>
+      <p class="text-sm">
+        The daily error counts sum to 76,100, which is about 0.16% of 48.2M requests, not the reported 0.21%.
+        Worth confirming how the error rate is calculated (the daily counts may cover a different set of errors).
+      </p>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>

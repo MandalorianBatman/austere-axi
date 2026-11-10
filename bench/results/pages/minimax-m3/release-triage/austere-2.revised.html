@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Release 3.8 Bug Triage</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([releaseHeader, instructions, bugTable, decisionForm, submitStatus], "column", "l")
+releaseHeader = Card([CardHeader("Release 3.8 bug triage", "Release ships Thursday · Code freeze Wednesday 18:00"), releaseSummary])
+releaseSummary = MarkDownRenderer("Set one decision for each open bug, then send all four decisions back together.")
+instructions = Callout("info", "Decisions required", "For each bug, choose exactly one: **fix for 3.8**, **defer to 3.9**, or **won't fix**. Suggestions are prefilled but remain editable.")
+bugTable = Card([CardHeader("Open bugs"), bugsTable])
+bugsTable = Table([Col("Bug", ["BUG-311", "BUG-318", "BUG-322", "BUG-327"]), Col("Title", ["Checkout button disabled after coupon removal", "Dark mode: unreadable table headers in Reports", "CSV export drops rows over 10,000", "Push notification sent twice on Android 15"]), Col("Severity", [severityHigh, severityLow, severityMedium, severityMedium]), Col("Users affected", ["~4% of carts", "Reports users", "120 accounts", "~9% of Android"]), Col("Fix estimate", ["0.5 day", "1 hour", "2 days", "unknown"])])
+severityHigh = Tag("high", null, "sm", "danger")
+severityLow = Tag("low", null, "sm", "neutral")
+severityMedium = Tag("medium", null, "sm", "warning")
+decisionForm = Card([CardHeader("Your decisions", "Suggested decisions are prefilled"), decisionsFields])
+decisionsFields = FormControl("BUG-311", RadioGroup("bug311", [RadioItem("fix for 3.8", "Fix in release 3.8", "fix_for_3_8"), RadioItem("defer to 3.9", "Defer to release 3.9", "defer_to_3_9"), RadioItem("won't fix", "Do not fix", "wont_fix")], "fix_for_3_8"), "Suggestion: fix for 3.8")
+submitStatus = Callout("neutral", "Ready to submit", "When all four decisions are set, send them back together using the button below.")
+</script>
+</body>
+</html>

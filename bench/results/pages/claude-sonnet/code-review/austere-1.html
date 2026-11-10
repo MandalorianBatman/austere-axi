@@ -1,0 +1,35 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>PR #482 review: Add user search endpoint</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+<body><script type="text/openui">
+root = Stack([summaryCard, verdictCallout, reviewRow], "column", "l")
+summaryCard = Card([CardHeader("PR #482: Add user search endpoint", "src/routes/users.js"), summaryFacts])
+summaryFacts = EntityList([{left: "File", right: "src/routes/users.js"}, {left: "Changes", right: "+9 -1"}, {left: "Tests", right: "31 passed"}, {left: "Findings", right: "1 high, 2 medium, 1 low"}])
+verdictCallout = Callout("error", "Verdict: request changes", "The high-severity SQL injection must be fixed before this can merge.")
+reviewRow = Stack([diffCard, findingsCard], "row", "m", "start", "start", true)
+diffCard = Card([CardHeader("The diff", "Finding 1 and finding 3 refer to line 18"), usersDiff])
+usersDiff = Diff("diff --git a/src/routes/users.js b/src/routes/users.js
+--- a/src/routes/users.js
++++ b/src/routes/users.js
+@@ -12,7 +12,15 @@ router.get(\"/users/:id\", async (req, res) => {
+   res.json(user);
+ });
+ 
+-router.get(\"/users\", listUsers);
++router.get(\"/users\", async (req, res) => {
++  const q = req.query.q;
++  const rows = await db.query(
++    \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"
++  );
++  res.json(rows);
++});
++
++router.get(\"/users/export\", exportUsers);
+ 
+ module.exports = router;", "src/routes/users.js")
+findingsCard = Card([CardHeader("Findings", "Ordered by severity"), sqlInjectionFinding, paginationFinding, emailExposureFinding, exportTestFinding])
+sqlInjectionFinding = Callout("error", "1. High: SQL injection (line 18)", "The query concatenates req.query.q into the SQL string.")
+paginationFinding = Callout("warning", "2. Medium: no pagination", "The search returns every matching row. With 2.1M users this can time out.")
+emailExposureFinding = Callout("warning", "3. Medium: email exposed (line 18)", "The email column is returned to any logged-in user. Return only id and name.")
+exportTestFinding = Callout("info", "4. Low: no test for /users/export", "The /users/export route has no test.")
+</script></body></html>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Vector DB shortlist</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+<body><script type="text/openui">
+root = Stack([intro, recommendation, comparison, latency, tradeoffs, decide], "column", "l")
+intro = Card([CardHeader("Vector database shortlist", "Pick two of four for semantic search"), introText])
+introText = MarkDownRenderer("**Use case:** semantic search over 40M document chunks, 768-dim embeddings, p95 query latency target of **50 ms**.\n\nCandidates: Pinecone, Weaviate, Qdrant, Milvus. Figures for latency come from our own test at 40M chunks.")
+recommendation = Callout("info", "Our recommendation", "Shortlist Qdrant (best latency per dollar) and Pinecone (lowest latency, no ops). You can change the shortlist in the form at the bottom.")
+comparison = Card([CardHeader("Side-by-side comparison"), comparisonTable])
+comparisonTable = Table([Col("", ["Hosting", "p95 latency at 40M (our test)", "Meets 50 ms target?", "Est. monthly cost", "Hybrid (keyword + vector) search", "Metadata filtering", "License"]), Col("Pinecone", ["managed only", "38 ms", pineconeFit, "$3,100", "yes", "good", "proprietary"]), Col("Weaviate", ["managed or self-host", "61 ms", weaviateFit, "$1,900", "yes", "good", "BSD-3"]), Col("Qdrant", ["managed or self-host", "44 ms", qdrantFit, "$1,250", "yes", "very good", "Apache-2.0"]), Col("Milvus", ["self-host (Zilliz for managed)", "52 ms", milvusFit, "$1,400 + ops time", "partial", "good", "Apache-2.0"])])
+pineconeFit = Tag("yes", null, "sm", "success")
+weaviateFit = Tag("no", null, "sm", "danger")
+qdrantFit = Tag("yes", null, "sm", "success")
+milvusFit = Tag("no", null, "sm", "danger")
+latency = Card([CardHeader("p95 latency at 40M chunks", "Target: 50 ms. Lower is better."), latencyChart])
+latencyChart = BarChart(["Pinecone", "Weaviate", "Qdrant", "Milvus"], [Series("p95 latency (ms)", [38, 61, 44, 52])], "grouped", "Database", "ms")
+tradeoffs = Card([CardHeader("Trade-offs"), tradeoffsText])
+tradeoffsText = MarkDownRenderer("- **Pinecone:** lowest latency (38 ms) and no ops, but the highest cost ($3,100) and proprietary license.\n- **Qdrant:** 44 ms, lowest cost ($1,250), very good metadata filtering, Apache-2.0, managed or self-host.\n- **Weaviate:** $1,900 and full hybrid search, but 61 ms misses the 50 ms target.\n- **Milvus:** 52 ms misses the target, hybrid search is only partial, and self-hosting adds ops time on top of $1,400.")
+decide = Card([CardHeader("Your shortlist", "Tick the two databases to take forward"), shortlistForm])
+shortlistForm = Form("shortlist", shortlistButtons, [shortlistField, shortlistNotes])
+shortlistField = FormControl("Shortlist", shortlistCards, "Pre-selected with our recommendation. Change it as you see fit.")
+shortlistCards = OptionCards("picks", "multiple", [pineconeCard, weaviateCard, qdrantCard, milvusCard], {required: true}, ["qdrant", "pinecone"])
+pineconeCard = OptionCard("pinecone", "Pinecone", "38 ms, $3,100/mo, managed only")
+weaviateCard = OptionCard("weaviate", "Weaviate", "61 ms, $1,900/mo, managed or self-host")
+qdrantCard = OptionCard("qdrant", "Qdrant", "44 ms, $1,250/mo, managed or self-host")
+milvusCard = OptionCard("milvus", "Milvus", "52 ms, $1,400/mo + ops time, self-host")
+shortlistNotes = FormControl("Notes", TextArea("notes", "Reasons for changing the shortlist, if any", 3))
+shortlistButtons = Buttons([Button("Send shortlist", @ToAssistant("Shortlist: vector databases"), "primary")])
+</script></body></html>

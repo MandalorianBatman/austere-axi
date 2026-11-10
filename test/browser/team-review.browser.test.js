@@ -106,6 +106,7 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
     // The teammate follows the link; the token leaves the address bar.
     const guest = await guestCtx.newPage();
     await guest.goto(invite.link);
+    await guest.click("form[action$='/join'] button");
     await guest.waitForSelector(".composer textarea");
     assert.ok(!guest.url().includes("invite="), "token dropped from the URL");
     assert.equal(await guest.locator('[data-cmd="end"]').count(), 0, "no End review for a reviewer");
@@ -141,5 +142,45 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
   } finally {
     await ownerCtx.close();
     await guestCtx.close();
+  }
+});
+
+test("the owner's held view shows what the agent would receive, and a bad note cannot break the panel", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { session } = await api("/api/open", { file: FILE });
+  const invite = await api("/api/share", { file: FILE, name: "Bo" });
+  const ownerCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const guest = await guestCtx.newPage();
+    await guest.goto(invite.link);
+    await guest.waitForSelector(".composer textarea");
+    const send = (items) =>
+      guest.evaluate(
+        ({ id, items }) => fetch(`/s/${id}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items }) }).then((r) => r.status),
+        { id: session.id, items },
+      );
+    const long = "q".repeat(300) + " TAIL-PAST-CUT";
+    assert.equal(
+      await send([
+        { kind: "annotation", target: "intro", component: "TextContent", path: ["root", "HIDDEN-WITHIN", "intro"], selection: long, note: "n1" },
+        { kind: "annotation", target: "intro", component: "TextContent", selection: { length: 999 }, note: "POISON" },
+        { kind: "message", text: "LATER-NOTE" },
+      ]),
+      200,
+    );
+    const owner = await ownerCtx.newPage();
+    await owner.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+    await owner.waitForSelector(".held-bar");
+    const text = await owner.locator(".msg.user.held").innerText();
+    assert.match(text, /within HIDDEN-WITHIN/, "the path the agent sees");
+    assert.match(text, /TAIL-PAST-CUT/, "the whole quote, not the first 260 characters");
+    assert.match(text, /LATER-NOTE/, "a malformed field did not stop later notes rendering");
+    await owner.click(".held-bar >> text=Discard all");
+    await owner.waitForSelector(".held-bar", { state: "detached" });
+  } finally {
+    await ownerCtx.close();
+    await guestCtx.close();
+    await api("/api/share/revoke", { key: "Bo" });
   }
 });

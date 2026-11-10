@@ -1,0 +1,12 @@
+```openui
+summaryFacts = EntityList([{left: "File", right: "src/routes/users.js"}, {left: "Changes", right: "+9 -1"}, {left: "Tests", right: "31 passed"}, {left: "Findings", right: "1 blocker, 2 medium, 1 low"}])
+verdictCallout = Callout("error", "Verdict: request changes", "The blocker, SQL injection, must be fixed before this can merge.")
+sqlInjectionFinding = Callout("error", "1. Blocker: SQL injection (line 18)", "The query concatenates req.query.q into the SQL string. Use a parameterized query, as shown below.")
+sqlInjectionFixHeader = InlineHeader("Suggested fix for finding 1", "Parameterized query. The SELECT list is unchanged here; see finding 3 for the email column.")
+sqlInjectionFix = CodeBlock("javascript", "const q = req.query.q;
+const rows = await db.query(
+  \"SELECT id, name, email FROM users WHERE name ILIKE $1\",
+  [`%${q}%`]
+);")
+findingsCard = Card([CardHeader("Findings", "Ordered by severity"), sqlInjectionFinding, sqlInjectionFixHeader, sqlInjectionFix, paginationFinding, emailExposureFinding, exportTestFinding])
+```
