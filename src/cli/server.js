@@ -667,6 +667,8 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       if (e1) return send(res, 404, "not found");
       fs.realpath(file, (e2, real) => {
         if (e2 || !real.startsWith(realDir + path.sep)) return send(res, 404, "not found");
+        // A link with an ordinary name can still point at a dotfile in the directory.
+        if (path.relative(realDir, real).split(path.sep).some((p) => p.startsWith("."))) return send(res, 404, "not found");
         fs.stat(real, (err, st) => {
           if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
           streamFile(res, real, {

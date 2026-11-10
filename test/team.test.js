@@ -489,6 +489,22 @@ test("a reviewer cannot read through a symlink out of the page's directory", asy
   }
 });
 
+test("a reviewer cannot read a dotfile through a symlink with an ordinary name", async () => {
+  const env = path.join(WORK, ".env");
+  const link = path.join(WORK, "notes.txt");
+  try {
+    fs.writeFileSync(env, "DUMMY-DOTFILE-SECRET");
+    fs.symlinkSync(env, link);
+    const ivo = await accept((await share("Ivo")).data.link);
+    const r = await request(srv.port, "GET", `/s/${id}/a/notes.txt`, { headers: { cookie: ivo.cookie } });
+    assert.equal(r.status, 404);
+    assert.ok(!String(r.data).includes("DUMMY-DOTFILE-SECRET"));
+  } finally {
+    for (const f of [link, env]) fs.rmSync(f, { force: true });
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ivo" } });
+  }
+});
+
 test("a NUL byte in a reviewer's artifact path is a 404 that does not reveal the owner's directory", async () => {
   const hal = await accept((await share("Hal")).data.link);
   const r = await request(srv.port, "GET", `/s/${id}/a/x%00`, { headers: { cookie: hal.cookie } });
@@ -498,7 +514,7 @@ test("a NUL byte in a reviewer's artifact path is a 404 that does not reveal the
   await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Hal" } });
 });
 
-test("an unreadable file in the page directory is a 404, not a server crash", { skip: process.getuid?.() === 0 }, async () => {
+test("an unreadable file in the page directory is a 404, not a server crash", { skip: process.platform === "win32" || process.getuid?.() === 0 }, async () => {
   const locked = path.join(WORK, "locked.pem");
   fs.writeFileSync(locked, "DUMMY-LOCKED");
   fs.chmodSync(locked, 0);
