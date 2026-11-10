@@ -1,0 +1,30 @@
+<<<<<<< SEARCH
+            <article class="border-t border-warning/20 pt-5">
+              <div class="flex items-start gap-3">
+                <span class="risk-marker mt-1.5" aria-hidden="true"></span>
+                <div>
+                  <h3 class="font-bold">Table bloat from expired rows</h3>
+                  <p class="mt-1 text-sm leading-relaxed text-base-content/70">Mitigation: nightly partition drop.</p>
+                </div>
+              </div>
+            </article>
+=======
+            <article class="border-t border-warning/20 pt-5">
+              <div class="flex items-start gap-3">
+                <span class="risk-marker mt-1.5" aria-hidden="true"></span>
+                <div>
+                  <h3 class="font-bold">Table bloat from expired rows</h3>
+                  <p class="mt-1 text-sm leading-relaxed text-base-content/70">Mitigation: nightly partition drop.</p>
+                </div>
+              </div>
+            </article>
+            <article class="border-t border-warning/20 pt-5">
+              <div class="flex items-start gap-3">
+                <span class="risk-marker mt-1.5" aria-hidden="true"></span>
+                <div>
+                  <h3 class="font-bold">Connection pool exhaustion during the dual-write phase</h3>
+                  <p class="mt-1 text-sm leading-relaxed text-base-content/70">Mitigation: put PgBouncer in transaction mode in front of Postgres.</p>
+                </div>
+              </div>
+            </article>
+>>>>>>> REPLACE

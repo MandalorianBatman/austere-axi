@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PR #482 Review — Add user search endpoint</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+    :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+      min-width: 0;
+    }
+    :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+      overflow-wrap: anywhere;
+    }
+    :where(img, svg, video, canvas, iframe) {
+      max-width: 100%;
+      height: auto;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 15% 0%, color-mix(in oklab, var(--color-primary) 16%, transparent), transparent 32rem),
+        radial-gradient(circle at 90% 12%, color-mix(in oklab, var(--color-secondary) 12%, transparent), transparent 28rem),
+        var(--color-base-200);
+    }
+
+    .review-shell {
+      width: min(1480px, calc(100% - 2rem));
+      margin-inline: auto;
+      padding-block: 2.5rem 5rem;
+    }
+
+    .review-hero {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 13%, transparent);
+      background:
+        linear-gradient(135deg, color-mix(in oklab, var(--color-base-100) 94%, var(--color-primary)),
+          color-mix(in oklab, var(--color-base-100) 98%, var(--color-secondary)));
+      box-shadow: 0 1.5rem 4rem color-mix(in oklab, #000 30%, transparent);
+    }
+
+    .review-hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -7rem -9rem auto;
+      width: 25rem;
+      height: 25rem;
+      border-radius: 999px;
+      background: color-mix(in oklab, var(--color-error) 13%, transparent);
+      filter: blur(1px);
+      pointer-events: none;
+    }
+
+    .hero-content-wrap {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      font-size: .72rem;
+      font-weight: 800;
+    }
+
+    .metric {
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+      background: color-mix(in oklab, var(--color-base-100) 78%, transparent);
+      backdrop-filter: blur(12px);
+    }
+
+    .metric-value {
+      font-variant-numeric: tabular-nums;
+      font-weight: 800;
+      letter-spacing: -.04em;
+    }
+
+    .verdict-card {
+      border: 1px solid color-mix(in oklab, var(--color-error) 38%, var(--color-base-content));
+      background:
+        linear-gradient(135deg,
+          color-mix(in oklab, var(--color-error) 14%, var(--color-base-100)),
+          color-mix(in oklab, var(--color-base-100) 92%, var(--color-error)));
+    }
+
+    .finding-card {
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 11%, transparent);
+      box-shadow: 0 1rem 2.5rem color-mix(in oklab, #000 17%, transparent);
+    }
+
+    .finding-card + .finding-card {
+      margin-top: 1.5rem;
+    }
+
+    .finding-index {
+      display: inline-grid;
+      place-items: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: .7rem;
+      font-weight: 900;
+      background: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+    }
+
+    .severity {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: .3rem .7rem;
+      font-size: .75rem;
+      font-weight: 850;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .severity::before {
+      content: "";
+      width: .5rem;
+      height: .5rem;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .severity-high { color: var(--color-error); }
+    .severity-medium { color: var(--color-warning); }
+    .severity-low { color: var(--color-info); }
+
+    .finding-title {
+      font-size: clamp(1.15rem, 2vw, 1.5rem);
+      line-height: 1.2;
+      letter-spacing: -.02em;
+    }
+
+    .finding-description {
+      color: color-mix(in oklab, var(--color-base-content) 74%, transparent);
+      line-height: 1.65;
+    }
+
+    .finding-diff {
+      overflow: hidden;
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
+      border-radius: .9rem;
+      background: color-mix(in oklab, var(--color-base-100) 70%, #05070a);
+    }
+
+    .diff-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: .65rem;
+      padding: .7rem .9rem;
+      border-bottom: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+      background: color-mix(in oklab, var(--color-base-300) 58%, transparent);
+    }
+
+    .diff-path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .8rem;
+      color: color-mix(in oklab, var(--color-base-content) 82%, transparent);
+    }
+
+    .diff-code {
+      margin: 0;
+      padding: 1rem 0;
+      overflow-x: auto;
+      background: transparent;
+      color: #d7dee8;
+      font: .82rem/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      tab-size: 2;
+    }
+
+    .diff-line {
+      display: grid;
+      grid-template-columns: 2.25rem minmax(max-content, 1fr);
+      min-width: max-content;
+    }
+
+    .diff-line.added {
+      background: color-mix(in oklab, var(--color-success) 17%, transparent);
+    }
+
+    .diff-line.removed {
+      background: color-mix(in oklab, var(--color-error) 16%, transparent);
+    }
+
+    .diff-line.context {
+      background: color-mix(in oklab, var(--color-base-content) 3%, transparent);
+    }
+
+    .diff-number {
+      padding-right: .75rem;
+      color: color-mix(in oklab, var(--color-base-content) 36%, transparent);
+      text-align: right;
+      user-select: none;
+    }
+
+    .diff-text {
+      padding-right: 1rem;
+      white-space: pre;
+    }
+
+    .added .diff-text { color: #b8f7c5; }
+    .removed .diff-text { color: #ffc1c1; }
+    .context .diff-text { color: #bac3cf; }
+
+    .file-summary {
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 11%, transparent);
+      background: color-mix(in oklab, var(--color-base-100) 72%, transparent);
+    }
+
+    .finding-location {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .78rem;
+      color: color-mix(in oklab, var(--color-base-content) 64%, transparent);
+    }
+
+    .footer-note {
+      color: color-mix(in oklab, var(--color-base-content) 52%, transparent);
+    }
+
+    @media (max-width: 640px) {
+      .review-shell {
+        width: min(100% - 1rem, 1480px);
+        padding-block: 1rem 3rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="review-shell">
+    <header class="review-hero rounded-box p-5 sm:p-8 lg:p-10">
+      <div class="hero-content-wrap grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
+        <div>
+          <p class="eyebrow text-primary mb-3">Pull request review</p>
+          <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight">
+            PR #482 <span class="text-base-content/55">·</span> Add user search endpoint
+          </h1>
+          <p class="mt-3 max-w-3xl text-base-content/70">
+            Review of <code class="font-mono text-base-content">src/routes/users.js</code>
+          </p>
+
+          <div class="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div class="metric rounded-box p-4">
+              <div class="metric-value text-2xl">+9</div>
+              <div class="text-xs text-base-content/60">lines added</div>
+            </div>
+            <div class="metric rounded-box p-4">
+              <div class="metric-value text-2xl">−1</div>
+              <div class="text-xs text-base-content/60">line removed</div>
+            </div>
+            <div class="metric rounded-box col-span-2 rounded-box p-4 sm:col-span-1">
+              <div class="metric-value text-2xl">31</div>
+              <div class="text-xs text-base-content/60">tests passed</div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="verdict-card rounded-box p-6" aria-label="Review verdict">
+          <p class="eyebrow text-error">Verdict</p>
+          <p class="mt-2 text-3xl font-black tracking-tight">Request changes</p>
+          <p class="mt-3 text-sm leading-relaxed text-base-content/68">
+            Four findings should be addressed before this pull request is approved.
+          </p>
+          <div class="mt-5 flex flex-wrap gap-2">
+            <span class="badge badge-error badge-soft">1 high</span>
+            <span class="badge badge-warning badge-soft">2 medium</span>
+            <span class="badge badge-info badge-soft">1 low</span>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="mt-6 grid gap-3 md:grid-cols-3" aria-label="Review summary">
+      <div class="file-summary rounded-box p-5">
+        <p class="eyebrow text-base-content/50">Reviewed file</p>
+        <p class="mt-2 font-mono text-sm">src/routes/users.js</p>
+      </div>
+      <div class="file-summary rounded-box p-5">
+        <p class="eyebrow text-base-content/50">Endpoint added</p>
+        <p class="mt-2 font-mono text-sm">GET /users</p>
+      </div>
+      <div class="file-summary rounded-box p-5">
+        <p class="eyebrow text-base-content/50">Route added</p>
+        <p class="mt-2 font-mono text-sm">GET /users/export</p>
+      </div>
+    </section>
+
+    <section class="mt-10" aria-labelledby="findings-title">
+      <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p class="eyebrow text-primary">Findings</p>
+          <h2 id="findings-title" class="mt-1 text-2xl font-black tracking-tight">Issues to address</h2>
+        </div>
+        <p class="text-sm text-base-content/55">Each finding is paired with the relevant diff.</p>
+      </div>
+
+      <article class="finding-card rounded-box bg-base-100 p-5 sm:p-7" data-finding="1">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div class="flex gap-3">
+            <span class="finding-index">1</span>
+            <div>
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="severity severity-high">High</span>
+                <span class="finding-location">src/routes/users.js · line 18</span>
+              </div>
+              <h3 class="finding-title mt-3 font-bold">SQL injection</h3>
+              <p class="finding-description mt-2 max-w-3xl">
+                The query concatenates <code class="font-mono">req.query.q</code> into the SQL string.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="finding-diff mt-6">
+          <div class="diff-header">
+            <span class="diff-path">src/routes/users.js</span>
+            <span class="badge badge-error badge-soft badge-sm">Finding 1</span>
+          </div>
+          <pre class="diff-code" aria-label="Diff showing SQL injection finding"><code><span class="diff-line context"><span class="diff-number">17</span><span class="diff-text">  const rows = await db.query(</span></span><span class="diff-line added"><span class="diff-number">18</span><span class="diff-text">    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"</span></span><span class="diff-line context"><span class="diff-number">19</span><span class="diff-text">  );</span></span></code></pre>
+        </div>
+      </article>
+
+      <article class="finding-card rounded-box bg-base-100 p-5 sm:p-7" data-finding="2">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div class="flex gap-3">
+            <span class="finding-index">2</span>
+            <div>
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="severity severity-medium">Medium</span>
+                <span class="finding-location">src/routes/users.js · search handler</span>
+              </div>
+              <h3 class="finding-title mt-3 font-bold">No pagination</h3>
+              <p class="finding-description mt-2 max-w-3xl">
+                The search returns every matching row; with 2.1M users this can time out.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="finding-diff mt-6">
+          <div class="diff-header">
+            <span class="diff-path">src/routes/users.js</span>
+            <span class="badge badge-warning badge-soft badge-sm">Finding 2</span>
+          </div>
+          <pre class="diff-code" aria-label="Diff showing unpaginated search finding"><code><span class="diff-line added"><span class="diff-number">15</span><span class="diff-text">router.get("/users", async (req, res) =&gt; {</span></span><span class="diff-line added"><span class="diff-number">16</span><span class="diff-text">  const q = req.query.q;</span></span><span class="diff-line added"><span class="diff-number">17</span><span class="diff-text">  const rows = await db.query(</span></span><span class="diff-line added"><span class="diff-number">18</span><span class="diff-text">    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"</span></span><span class="diff-line added"><span class="diff-number">19</span><span class="diff-text">  );</span></span><span class="diff-line added"><span class="diff-number">20</span><span class="diff-text">  res.json(rows);</span></span><span class="diff-line added"><span class="diff-number">21</span><span class="diff-text">});</span></span></code></pre>
+        </div>
+      </article>
+
+      <article class="finding-card rounded-box bg-base-100 p-5 sm:p-7" data-finding="3">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div class="flex gap-3">
+            <span class="finding-index">3</span>
+            <div>
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="severity severity-medium">Medium</span>
+                <span class="finding-location">src/routes/users.js · line 18</span>
+              </div>
+              <h3 class="finding-title mt-3 font-bold">Email exposed to any logged-in user</h3>
+              <p class="finding-description mt-2 max-w-3xl">
+                The email column is returned to any logged-in user. Return only id and name.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="finding-diff mt-6">
+          <div class="diff-header">
+            <span class="diff-path">src/routes/users.js</span>
+            <span class="badge badge-warning badge-soft badge-sm">Finding 3</span>
+          </div>
+          <pre class="diff-code" aria-label="Diff showing email column exposure finding"><code><span class="diff-line added"><span class="diff-number">17</span><span class="diff-text">  const rows = await db.query(</span></span><span class="diff-line added"><span class="diff-number">18</span><span class="diff-text">    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"</span></span><span class="diff-line context"><span class="diff-number">19</span><span class="diff-text">  );</span></span></code></pre>
+        </div>
+      </article>
+
+      <article class="finding-card rounded-box bg-base-100 p-5 sm:p-7" data-finding="4">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div class="flex gap-3">
+            <span class="finding-index">4</span>
+            <div>
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="severity severity-low">Low</span>
+                <span class="finding-location">src/routes/users.js · /users/export</span>
+              </div>
+              <h3 class="finding-title mt-3 font-bold">No test for /users/export</h3>
+              <p class="finding-description mt-2 max-w-3xl">
+                The newly added export route has no test.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="finding-diff mt-6">
+          <div class="diff-header">
+            <span class="diff-path">src/routes/users.js</span>
+            <span class="badge badge-info badge-soft badge-sm">Finding 4</span>
+          </div>
+          <pre class="diff-code" aria-label="Diff showing export route without a test"><code><span class="diff-line context"><span class="diff-number">20</span><span class="diff-text">  res.json(rows);</span></span><span class="diff-line context"><span class="diff-number">21</span><span class="diff-text">});</span></span><span class="diff-line context"><span class="diff-number">22</span><span class="diff-text"></span></span><span class="diff-line added"><span class="diff-number">23</span><span class="diff-text">router.get("/users/export", exportUsers);</span></span><span class="diff-line context"><span class="diff-number">24</span><span class="diff-text"></span></span><span class="diff-line context"><span class="diff-number">25</span><span class="diff-text">module.exports = router;</span></span></code></pre>
+        </div>
+      </article>
+    </section>
+
+    <section class="mt-8 rounded-box border border-base-content/10 bg-base-100/65 p-5 sm:p-6" aria-labelledby="full-diff-title">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="eyebrow text-base-content/50">Complete pull request diff</p>
+          <h2 id="full-diff-title" class="mt-1 text-xl font-bold">src/routes/users.js</h2>
+        </div>
+        <div class="flex gap-2">
+          <span class="badge badge-success badge-soft">+9</span>
+          <span class="badge badge-error badge-soft">−1</span>
+        </div>
+      </div>
+
+      <div class="finding-diff mt-4">
+        <div class="diff-header">
+          <span class="diff-path">src/routes/users.js</span>
+          <span class="text-xs text-base-content/55">31 tests passed</span>
+        </div>
+        <pre class="diff-code" aria-label="Complete pull request diff"><code><span class="diff-line context"><span class="diff-number">12</span><span class="diff-text">router.get("/users/:id", async (req, res) =&gt; {</span></span><span class="diff-line context"><span class="diff-number">13</span><span class="diff-text">  res.json(user);</span></span><span class="diff-line context"><span class="diff-number">14</span><span class="diff-text">});</span></span><span class="diff-line context"><span class="diff-number">15</span><span class="diff-text"></span></span><span class="diff-line removed"><span class="diff-number">16</span><span class="diff-text">-router.get("/users", listUsers);</span></span><span class="diff-line added"><span class="diff-number">16</span><span class="diff-text">+router.get("/users", async (req, res) =&gt; {</span></span><span class="diff-line added"><span class="diff-number">17</span><span class="diff-text">+  const q = req.query.q;</span></span><span class="diff-line added"><span class="diff-number">18</span><span class="diff-text">+  const rows = await db.query(</span></span><span class="diff-line added"><span class="diff-number">19</span><span class="diff-text">+    "SELECT id, name, email FROM users WHERE name LIKE '%" + q + "%'"</span></span><span class="diff-line added"><span class="diff-number">20</span><span class="diff-text">+  );</span></span><span class="diff-line added"><span class="diff-number">21</span><span class="diff-text">+  res.json(rows);</span></span><span class="diff-line added"><span class="diff-number">22</span><span class="diff-text">+});</span></span><span class="diff-line added"><span class="diff-number">23</span><span class="diff-text"></span></span><span class="diff-line added"><span class="diff-number">24</span><span class="diff-text">+router.get("/users/export", exportUsers);</span></span><span class="diff-line context"><span class="diff-number">25</span><span class="diff-text"></span></span><span class="diff-line context"><span class="diff-number">26</span><span class="diff-text">module.exports = router;</span></span></code></pre>
+      </div>
+    </section>
+
+    <footer class="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-base-content/10 pt-5 text-sm footer-note">
+      <span>PR #482 · Add user search endpoint</span>
+      <span class="font-semibold">Verdict: Request changes</span>
+    </footer>
+  </main>
+</body>
+</html>

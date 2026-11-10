@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en" data-theme="luxury" data-lavish-annotate="off">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release 3.8 bug triage</title>
+<!-- Design source: step 3 of the Lavish priority order. The user gave no look and no existing design system applies (standalone review page), so this uses the Lavish-recommended Tailwind v4 + DaisyUI v5 CDN fallback. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, dd, td, th, .badge, .label) { overflow-wrap: anywhere; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+</style>
+</head>
+<body class="bg-base-100 text-base-content">
+<main class="mx-auto max-w-4xl p-4 sm:p-8 space-y-6">
+
+  <header class="space-y-3">
+    <p class="text-sm uppercase tracking-widest opacity-70">Release 3.8 · bug triage</p>
+    <h1 class="text-3xl sm:text-4xl font-bold">Decide each open bug, then send all five back at once</h1>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <div class="alert alert-warning alert-soft" role="note">
+        <span><strong>Code freeze:</strong> Wednesday 18:00</span>
+      </div>
+      <div class="alert alert-info alert-soft" role="note">
+        <span><strong>Release 3.8 ships:</strong> Thursday</span>
+      </div>
+    </div>
+  </header>
+
+  <section aria-label="Suggestion" class="card card-border bg-base-200">
+    <div class="card-body gap-3">
+      <h2 class="card-title">Suggested triage</h2>
+      <ul class="grid gap-2 sm:grid-cols-2">
+        <li><span class="badge badge-success">fix for 3.8</span> BUG-311, BUG-318, BUG-330</li>
+        <li><span class="badge badge-warning">defer to 3.9</span> BUG-322, BUG-327</li>
+      </ul>
+      <div class="card-actions">
+        <button type="button" class="btn btn-sm btn-outline" id="apply-suggestion">Fill in the suggestion (you can still change it)</button>
+      </div>
+    </div>
+  </section>
+
+  <form id="triage" data-lavish-question="release-3.8-triage" class="space-y-4" novalidate>
+
+    <article class="card card-border bg-base-200" data-bug="BUG-311" data-title="Checkout button disabled after coupon removal" data-suggest="fix">
+      <div class="card-body gap-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono font-bold">BUG-311</span>
+          <span class="badge badge-error">Severity: high</span>
+        </div>
+        <h2 class="card-title text-lg">Checkout button disabled after coupon removal</h2>
+        <dl class="grid gap-2 sm:grid-cols-2 text-sm">
+          <div><dt class="opacity-70">Users affected</dt><dd class="font-semibold">~4% of carts</dd></div>
+          <div><dt class="opacity-70">Fix estimate</dt><dd class="font-semibold">0.5 day</dd></div>
+        </dl>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Decision for BUG-311</legend>
+          <div class="grid gap-2 sm:grid-cols-3">
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-311" value="fix for 3.8"> fix for 3.8 <span class="badge badge-ghost badge-sm">suggested</span></label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-311" value="defer to 3.9"> defer to 3.9</label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-311" value="won't fix"> won't fix</label>
+          </div>
+        </fieldset>
+      </div>
+    </article>
+
+    <article class="card card-border bg-base-200" data-bug="BUG-318" data-title="Dark mode: unreadable table headers in Reports" data-suggest="fix">
+      <div class="card-body gap-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono font-bold">BUG-318</span>
+          <span class="badge badge-info">Severity: low</span>
+        </div>
+        <h2 class="card-title text-lg">Dark mode: unreadable table headers in Reports</h2>
+        <dl class="grid gap-2 sm:grid-cols-2 text-sm">
+          <div><dt class="opacity-70">Users affected</dt><dd class="font-semibold">Reports users</dd></div>
+          <div><dt class="opacity-70">Fix estimate</dt><dd class="font-semibold">1 hour</dd></div>
+        </dl>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Decision for BUG-318</legend>
+          <div class="grid gap-2 sm:grid-cols-3">
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-318" value="fix for 3.8"> fix for 3.8 <span class="badge badge-ghost badge-sm">suggested</span></label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-318" value="defer to 3.9"> defer to 3.9</label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-318" value="won't fix"> won't fix</label>
+          </div>
+        </fieldset>
+      </div>
+    </article>
+
+    <article class="card card-border bg-base-200" data-bug="BUG-322" data-title="CSV export drops rows over 10,000" data-suggest="defer">
+      <div class="card-body gap-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono font-bold">BUG-322</span>
+          <span class="badge badge-warning">Severity: medium</span>
+        </div>
+        <h2 class="card-title text-lg">CSV export drops rows over 10,000</h2>
+        <dl class="grid gap-2 sm:grid-cols-2 text-sm">
+          <div><dt class="opacity-70">Users affected</dt><dd class="font-semibold">120 accounts</dd></div>
+          <div><dt class="opacity-70">Fix estimate</dt><dd class="font-semibold">2 days</dd></div>
+        </dl>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Decision for BUG-322</legend>
+          <div class="grid gap-2 sm:grid-cols-3">
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-322" value="fix for 3.8"> fix for 3.8</label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-322" value="defer to 3.9"> defer to 3.9 <span class="badge badge-ghost badge-sm">suggested</span></label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-322" value="won't fix"> won't fix</label>
+          </div>
+        </fieldset>
+      </div>
+    </article>
+
+    <article class="card card-border bg-base-200" data-bug="BUG-327" data-title="Push notification sent twice on Android 15" data-suggest="defer">
+      <div class="card-body gap-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono font-bold">BUG-327</span>
+          <span class="badge badge-warning">Severity: medium</span>
+        </div>
+        <h2 class="card-title text-lg">Push notification sent twice on Android 15</h2>
+        <dl class="grid gap-2 sm:grid-cols-2 text-sm">
+          <div><dt class="opacity-70">Users affected</dt><dd class="font-semibold">~9% of Android</dd></div>
+          <div><dt class="opacity-70">Fix estimate</dt><dd class="font-semibold">unknown</dd></div>
+        </dl>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Decision for BUG-327</legend>
+          <div class="grid gap-2 sm:grid-cols-3">
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-327" value="fix for 3.8"> fix for 3.8</label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-327" value="defer to 3.9"> defer to 3.9 <span class="badge badge-ghost badge-sm">suggested</span></label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-327" value="won't fix"> won't fix</label>
+          </div>
+        </fieldset>
+      </div>
+    </article>
+
+    <article class="card card-border bg-base-200" data-bug="BUG-330" data-title="Password reset email links expire after 5 minutes instead of 60" data-suggest="fix">
+      <div class="card-body gap-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono font-bold">BUG-330</span>
+          <span class="badge badge-error">Severity: high</span>
+        </div>
+        <h2 class="card-title text-lg">Password reset email links expire after 5 minutes instead of 60</h2>
+        <dl class="grid gap-2 sm:grid-cols-2 text-sm">
+          <div><dt class="opacity-70">Users affected</dt><dd class="font-semibold">All users who reset a password</dd></div>
+          <div><dt class="opacity-70">Fix estimate</dt><dd class="font-semibold">1 hour</dd></div>
+        </dl>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Decision for BUG-330</legend>
+          <div class="grid gap-2 sm:grid-cols-3">
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-330" value="fix for 3.8"> fix for 3.8 <span class="badge badge-ghost badge-sm">suggested</span></label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-330" value="defer to 3.9"> defer to 3.9</label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-330" value="won't fix"> won't fix</label>
+          </div>
+        </fieldset>
+      </div>
+    </article>
+
+    <section class="card card-border bg-base-200" aria-label="Submit decisions">
+      <div class="card-body gap-3">
+        <h2 class="card-title">Your selections (not yet sent)</h2>
+        <div class="flex flex-wrap gap-2" id="tally" aria-live="polite">
+          <span class="badge badge-outline">fix for 3.8: 0</span>
+          <span class="badge badge-outline">defer to 3.9: 0</span>
+          <span class="badge badge-outline">won't fix: 0</span>
+          <span class="badge badge-outline">undecided: 5</span>
+        </div>
+        <p id="msg" class="text-sm min-h-5" role="status" aria-live="polite"></p>
+        <div class="card-actions items-center">
+          <button type="submit" class="btn btn-primary">Queue all 5 decisions</button>
+          <span id="state" class="badge badge-ghost">Not queued</span>
+        </div>
+        <p class="text-sm opacity-70">Selecting options only changes this page. Nothing goes to the agent until you queue, then use Send to Agent.</p>
+      </div>
+    </section>
+  </form>
+</main>
+
+<script>
+  const form = document.getElementById('triage');
+  const msg = document.getElementById('msg');
+  const state = document.getElementById('state');
+  const tally = document.getElementById('tally');
+  const cards = [...form.querySelectorAll('[data-bug]')];
+  let queuedSignature = null;
+
+  function read() {
+    return cards.map((c) => {
+      const id = c.dataset.bug;
+      const picked = form.querySelector('input[name="' + id + '"]:checked');
+      return { id, label: c.dataset.title, disposition: picked ? picked.value : null };
+    });
+  }
+  function signature(items) { return items.map((i) => i.id + '=' + i.disposition).join('|'); }
+
+  function refresh() {
+    const items = read();
+    const count = (d) => items.filter((i) => i.disposition === d).length;
+    const undecided = items.filter((i) => !i.disposition).length;
+    tally.innerHTML = '';
+    [['fix for 3.8', count('fix for 3.8')], ['defer to 3.9', count('defer to 3.9')], ["won't fix", count("won't fix")], ['undecided', undecided]].forEach(([n, v]) => {
+      const b = document.createElement('span');
+      b.className = 'badge ' + (n === 'undecided' && v ? 'badge-warning' : 'badge-outline');
+      b.textContent = n + ': ' + v;
+      tally.append(b);
+    });
+    if (queuedSignature === null) {
+      state.className = 'badge badge-ghost'; state.textContent = 'Not queued';
+    } else if (queuedSignature === signature(items)) {
+      state.className = 'badge badge-success'; state.textContent = 'Queued: press Send to Agent';
+    } else {
+      state.className = 'badge badge-warning'; state.textContent = 'Changed since queued: queue again to replace';
+    }
+  }
+
+  form.addEventListener('change', () => { msg.textContent = ''; refresh(); });
+
+  document.getElementById('apply-suggestion').addEventListener('click', () => {
+    cards.forEach((c) => {
+      const value = c.dataset.suggest === 'fix' ? 'fix for 3.8' : 'defer to 3.9';
+      const r = [...form.querySelectorAll('input[name="' + c.dataset.bug + '"]')].find((x) => x.value === value);
+      if (r) r.checked = true;
+    });
+    msg.textContent = '';
+    refresh();
+  });
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const items = read();
+    const missing = items.filter((i) => !i.disposition).map((i) => i.id);
+    if (missing.length) {
+      msg.className = 'text-sm text-error';
+      msg.textContent = 'Still undecided: ' + missing.join(', ') + '. Pick one option for each bug before queueing.';
+      return;
+    }
+    if (!window.lavish || typeof window.lavish.queuePrompt !== 'function') {
+      msg.className = 'text-sm text-warning';
+      msg.textContent = 'Lavish is not connected, so nothing was queued. Open this page through lavish-axi to send decisions.';
+      return;
+    }
+    const summary = items.map((i) => i.id + ': ' + i.disposition).join('; ');
+    window.lavish.queuePrompt(
+      'Record these release 3.8 triage decisions for all ' + items.length + ' bugs and act on them. Account for every submitted ID (' + items.map((i) => i.id).join(', ') + ') in your reply before reporting completion. Decisions: ' + summary + '.',
+      {
+        tag: 'tracked-batch',
+        text: 'Release 3.8 triage: ' + summary,
+        element: form,
+        queueKey: 'release-3.8-triage',
+        data: { question: 'release-3.8-triage', items }
+      }
+    );
+    queuedSignature = signature(items);
+    msg.className = 'text-sm text-success';
+    msg.textContent = 'All ' + items.length + ' decisions queued as one prompt. Press Send to Agent to deliver them.';
+    refresh();
+  });
+
+  refresh();
+</script>
+</body>
+</html>

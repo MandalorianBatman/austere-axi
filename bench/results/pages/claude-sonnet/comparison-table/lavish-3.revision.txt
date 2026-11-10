@@ -1,0 +1,98 @@
+<<<<<<< SEARCH
+    { name: "Weaviate", ms: 61 }
+=======
+    { name: "Weaviate", ms: 61 },
+    { name: "pgvector", ms: 95 }
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+  const SCALE = 70, TARGET = 50;
+=======
+  const SCALE = 100, TARGET = 50;
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+Only Pinecone and Qdrant meet it; Milvus misses by 2 ms and Weaviate by 11 ms.
+=======
+Only Pinecone and Qdrant meet it; Milvus misses by 2 ms, Weaviate by 11 ms, and pgvector by 45 ms.
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+<p><strong>Qdrant</strong> has the best latency per dollar (44 ms at $1,250/mo).
+=======
+<p><strong>Qdrant</strong> has the best latency per dollar among the options that meet the 50 ms target (44 ms at $1,250/mo).
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+<table class="table min-w-[44rem]">
+=======
+<table class="table min-w-[54rem]">
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <th data-col="milvus"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" class="checkbox checkbox-primary checkbox-sm pick" value="Milvus"> Milvus</label></th>
+=======
+            <th data-col="milvus"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" class="checkbox checkbox-primary checkbox-sm pick" value="Milvus"> Milvus</label></th>
+            <th data-col="pgvector"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" class="checkbox checkbox-primary checkbox-sm pick" value="pgvector"> pgvector</label></th>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="milvus">Self-host (Zilliz for managed)</td>
+=======
+            <td data-col="milvus">Self-host (Zilliz for managed)</td>
+            <td data-col="pgvector">Self-host on our existing Postgres</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="milvus"><strong>52 ms</strong> <span class="badge badge-soft badge-error badge-sm">Misses by 2 ms</span></td>
+=======
+            <td data-col="milvus"><strong>52 ms</strong> <span class="badge badge-soft badge-error badge-sm">Misses by 2 ms</span></td>
+            <td data-col="pgvector"><strong>95 ms</strong> <span class="badge badge-soft badge-error badge-sm">Misses by 45 ms</span></td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="qdrant"><strong>$1,250</strong> <span class="block text-xs opacity-70">Lowest</span></td>
+=======
+            <td data-col="qdrant"><strong>$1,250</strong> <span class="block text-xs opacity-70">Lowest among options meeting target</span></td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="milvus"><strong>$1,400</strong> + ops time <span class="block text-xs opacity-70">Ops cost not priced</span></td>
+=======
+            <td data-col="milvus"><strong>$1,400</strong> + ops time <span class="block text-xs opacity-70">Ops cost not priced</span></td>
+            <td data-col="pgvector"><strong>~$400</strong> <span class="block text-xs opacity-70">Lowest overall (approx.)</span></td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="milvus"><span class="badge badge-soft badge-warning badge-sm">Partial</span></td>
+=======
+            <td data-col="milvus"><span class="badge badge-soft badge-warning badge-sm">Partial</span></td>
+            <td data-col="pgvector">Yes (with tsvector)</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="milvus">Good</td>
+=======
+            <td data-col="milvus">Good</td>
+            <td data-col="pgvector">Good</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td data-col="milvus">Apache-2.0</td>
+=======
+            <td data-col="milvus">Apache-2.0</td>
+            <td data-col="pgvector">PostgreSQL</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+<p><strong>Win:</strong> lowest cost ($1,250/mo), 44 ms, very good filtering, Apache-2.0.</p>
+=======
+<p><strong>Win:</strong> lowest cost among options meeting the target ($1,250/mo), 44 ms, very good filtering, Apache-2.0.</p>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      <div class="card card-border bg-base-200"><div class="card-body"><h3 class="card-title">Milvus</h3><p><strong>Win:</strong> Apache-2.0, low sticker price ($1,400/mo).</p><p><strong>Cost:</strong> 52 ms misses target, partial hybrid search, self-host means added ops time.</p></div></div>
+=======
+      <div class="card card-border bg-base-200"><div class="card-body"><h3 class="card-title">Milvus</h3><p><strong>Win:</strong> Apache-2.0, low sticker price ($1,400/mo).</p><p><strong>Cost:</strong> 52 ms misses target, partial hybrid search, self-host means added ops time.</p></div></div>
+      <div class="card card-border bg-base-200"><div class="card-body"><h3 class="card-title">pgvector</h3><p><strong>Win:</strong> runs on our existing Postgres, about $400/mo, hybrid search via tsvector, good filtering, PostgreSQL license.</p><p><strong>Cost:</strong> 95 ms misses the 50 ms target by 45 ms.</p></div></div>
+>>>>>>> REPLACE

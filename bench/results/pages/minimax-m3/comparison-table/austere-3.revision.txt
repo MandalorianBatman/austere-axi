@@ -1,0 +1,6 @@
+```openui
+comparisonTable = Table([Col("Vector database", ["Pinecone", "Weaviate", "Qdrant", "Milvus", "pgvector"]), Col("Hosting", ["managed only", "managed or self-host", "managed or self-host", "self-host (Zilliz for managed)", "self-host on our existing Postgres"]), Col("p95 latency at 40M", [pineconeLatency, weaviateLatency, qdrantLatency, milvusLatency, pgvectorLatency], "number"), Col("Est. monthly cost", ["$3,100", "$1,900", "$1,250", "$1,400 + ops time", "about $400/month"]), Col("Hybrid search", ["yes", "yes", "yes", "partial", "yes (with tsvector)"]), Col("Metadata filtering", ["good", "good", "very good", "good", "good"]), Col("License", ["proprietary", "BSD-3", "Apache-2.0", "Apache-2.0", "PostgreSQL"])])
+pgvectorLatency = Text("number", "95 ms", "above target")
+shortlistField = FormControl("Shortlist", CheckBoxGroup("selectedDatabases", [pineconeChoice, weaviateChoice, qdrantChoice, milvusChoice, pgvectorChoice]), "Select two options")
+pgvectorChoice = CheckBoxItem("pgvector", "95 ms p95, about $400/month, self-host on our existing Postgres, PostgreSQL license", "pgvector")
+```

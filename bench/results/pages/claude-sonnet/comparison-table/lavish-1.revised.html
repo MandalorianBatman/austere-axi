@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vector database shortlist</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, li, dd, td, th, .badge) { overflow-wrap: anywhere; }
+  :where(img, svg) { max-width: 100%; height: auto; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+  .sel { background: color-mix(in oklab, var(--color-primary) 14%, transparent); }
+  th.sel { box-shadow: inset 0 3px 0 var(--color-primary); }
+  .opt.picked { outline: 2px solid var(--color-primary); }
+</style>
+<!--
+  Note: the checkbox state is summarised below and can be copied with the button.
+  The Lavish prompt-queue API was not used here because its call signature was not confirmed.
+-->
+</head>
+<body>
+<main class="mx-auto max-w-6xl p-6 lg:p-10 grid gap-8" style="grid-template-columns: minmax(0, 1fr);">
+
+  <header class="grid gap-3">
+    <span class="badge badge-soft badge-primary">Decision: shortlist two</span>
+    <h1 class="text-3xl lg:text-4xl font-bold">Which two vector databases should we take forward?</h1>
+    <p class="opacity-80">Semantic search over <strong>40M document chunks</strong>, <strong>768-dim</strong> embeddings, p95 query latency target <strong>50 ms</strong>.</p>
+  </header>
+
+  <section class="alert alert-info alert-soft" role="alert">
+    <div>
+      <p class="font-semibold">Our recommendation: Qdrant + Pinecone</p>
+      <p class="text-sm">Qdrant has the best latency per dollar: it meets the 50 ms target at the lowest estimated monthly cost of the four. Pinecone has the lowest latency and needs no ops work, at the highest cost. Change the shortlist below if you disagree.</p>
+    </div>
+  </section>
+
+  <section class="grid gap-4">
+    <h2 class="text-xl font-bold">Pick your shortlist</h2>
+    <div class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));">
+
+      <label class="opt card card-border bg-base-200 cursor-pointer" data-opt="Pinecone">
+        <div class="card-body gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="card-title">Pinecone</h3>
+            <input type="checkbox" class="checkbox checkbox-primary" value="Pinecone" checked aria-label="Shortlist Pinecone">
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <span class="badge badge-soft badge-success">Meets target: 38 ms</span>
+            <span class="badge badge-soft badge-info">Recommended</span>
+          </div>
+          <p class="text-sm opacity-80">Lowest latency, managed only, no ops. Highest cost at $3,100/mo. Proprietary.</p>
+        </div>
+      </label>
+
+      <label class="opt card card-border bg-base-200 cursor-pointer" data-opt="Weaviate">
+        <div class="card-body gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="card-title">Weaviate</h3>
+            <input type="checkbox" class="checkbox checkbox-primary" value="Weaviate" aria-label="Shortlist Weaviate">
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <span class="badge badge-soft badge-error">Misses target: 61 ms</span>
+          </div>
+          <p class="text-sm opacity-80">Managed or self-host, hybrid search, BSD-3. Slowest in our test. $1,900/mo.</p>
+        </div>
+      </label>
+
+      <label class="opt card card-border bg-base-200 cursor-pointer" data-opt="Qdrant">
+        <div class="card-body gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="card-title">Qdrant</h3>
+            <input type="checkbox" class="checkbox checkbox-primary" value="Qdrant" checked aria-label="Shortlist Qdrant">
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <span class="badge badge-soft badge-success">Meets target: 44 ms</span>
+            <span class="badge badge-soft badge-info">Recommended</span>
+          </div>
+          <p class="text-sm opacity-80">Lowest cost at $1,250/mo, very good metadata filtering, managed or self-host, Apache-2.0.</p>
+        </div>
+      </label>
+
+      <label class="opt card card-border bg-base-200 cursor-pointer" data-opt="Milvus">
+        <div class="card-body gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="card-title">Milvus</h3>
+            <input type="checkbox" class="checkbox checkbox-primary" value="Milvus" aria-label="Shortlist Milvus">
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <span class="badge badge-soft badge-error">Misses target: 52 ms</span>
+            <span class="badge badge-soft badge-warning">Ops time</span>
+          </div>
+          <p class="text-sm opacity-80">Self-host (Zilliz for managed), partial hybrid search, Apache-2.0. $1,400/mo plus ops time.</p>
+        </div>
+      </label>
+
+      <label class="opt card card-border bg-base-200 cursor-pointer" data-opt="pgvector">
+        <div class="card-body gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="card-title">pgvector</h3>
+            <input type="checkbox" class="checkbox checkbox-primary" value="pgvector" aria-label="Shortlist pgvector">
+          </div>
+          <div class="flex flex-wrap gap-1">
+            <span class="badge badge-soft badge-error">Misses target: 95 ms</span>
+          </div>
+          <p class="text-sm opacity-80">Self-host on our existing Postgres, hybrid search via tsvector, good metadata filtering, PostgreSQL license. About $400/mo.</p>
+        </div>
+      </label>
+
+    </div>
+  </section>
+
+  <section class="grid gap-4">
+    <h2 class="text-xl font-bold">p95 latency at 40M vs the 50 ms target</h2>
+    <div class="rounded-box border border-base-content/10 bg-base-200 p-4">
+      <svg viewBox="0 0 780 235" role="img" aria-label="Bar chart of p95 latency: Pinecone 38 ms, Qdrant 44 ms, Milvus 52 ms, Weaviate 61 ms, pgvector 95 ms, with a 50 ms target line">
+        <g font-size="13" fill="currentColor">
+          <text x="0" y="33">Pinecone</text>
+          <rect x="90" y="16" width="228" height="26" rx="4" style="fill: var(--color-success)"/>
+          <text x="326" y="34" font-weight="700">38 ms</text>
+
+          <text x="0" y="73">Qdrant</text>
+          <rect x="90" y="56" width="264" height="26" rx="4" style="fill: var(--color-success)"/>
+          <text x="362" y="74" font-weight="700">44 ms</text>
+
+          <text x="0" y="113">Milvus</text>
+          <rect x="90" y="96" width="312" height="26" rx="4" style="fill: var(--color-error)"/>
+          <text x="410" y="114" font-weight="700">52 ms</text>
+
+          <text x="0" y="153">Weaviate</text>
+          <rect x="90" y="136" width="366" height="26" rx="4" style="fill: var(--color-error)"/>
+          <text x="464" y="154" font-weight="700">61 ms</text>
+
+          <text x="0" y="193">pgvector</text>
+          <rect x="90" y="176" width="570" height="26" rx="4" style="fill: var(--color-error)"/>
+          <text x="668" y="194" font-weight="700">95 ms</text>
+        </g>
+        <line x1="390" y1="8" x2="390" y2="210" stroke="currentColor" stroke-width="2" stroke-dasharray="5 4"/>
+        <text x="390" y="226" font-size="12" text-anchor="middle" fill="currentColor">Target 50 ms</text>
+      </svg>
+      <p class="text-sm opacity-70 mt-2">Green bars meet the target, red bars miss it. Pinecone and Qdrant pass; Milvus, Weaviate and pgvector do not.</p>
+    </div>
+  </section>
+
+  <section class="grid gap-4">
+    <h2 class="text-xl font-bold">Side by side</h2>
+    <p class="text-sm opacity-70">Shortlisted columns are highlighted.</p>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
+      <table class="table">
+        <thead>
+          <tr>
+            <th></th>
+            <th data-col="Pinecone">Pinecone</th>
+            <th data-col="Weaviate">Weaviate</th>
+            <th data-col="Qdrant">Qdrant</th>
+            <th data-col="Milvus">Milvus</th>
+            <th data-col="pgvector">pgvector</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Hosting</th>
+            <td data-col="Pinecone">Managed only</td>
+            <td data-col="Weaviate">Managed or self-host</td>
+            <td data-col="Qdrant">Managed or self-host</td>
+            <td data-col="Milvus">Self-host (Zilliz for managed)</td>
+            <td data-col="pgvector">Self-host on our existing Postgres</td>
+          </tr>
+          <tr>
+            <th scope="row">p95 latency at 40M (our test)</th>
+            <td data-col="Pinecone"><strong>38 ms</strong> (meets)</td>
+            <td data-col="Weaviate"><strong>61 ms</strong> (misses)</td>
+            <td data-col="Qdrant"><strong>44 ms</strong> (meets)</td>
+            <td data-col="Milvus"><strong>52 ms</strong> (misses)</td>
+            <td data-col="pgvector"><strong>95 ms</strong> (misses)</td>
+          </tr>
+          <tr>
+            <th scope="row">Est. monthly cost</th>
+            <td data-col="Pinecone"><strong>$3,100</strong></td>
+            <td data-col="Weaviate"><strong>$1,900</strong></td>
+            <td data-col="Qdrant"><strong>$1,250</strong></td>
+            <td data-col="Milvus"><strong>$1,400</strong> + ops time</td>
+            <td data-col="pgvector"><strong>About $400</strong></td>
+          </tr>
+          <tr>
+            <th scope="row">Hybrid (keyword + vector) search</th>
+            <td data-col="Pinecone">Yes</td>
+            <td data-col="Weaviate">Yes</td>
+            <td data-col="Qdrant">Yes</td>
+            <td data-col="Milvus">Partial</td>
+            <td data-col="pgvector">Yes (with tsvector)</td>
+          </tr>
+          <tr>
+            <th scope="row">Metadata filtering</th>
+            <td data-col="Pinecone">Good</td>
+            <td data-col="Weaviate">Good</td>
+            <td data-col="Qdrant">Very good</td>
+            <td data-col="Milvus">Good</td>
+            <td data-col="pgvector">Good</td>
+          </tr>
+          <tr>
+            <th scope="row">License</th>
+            <td data-col="Pinecone">Proprietary</td>
+            <td data-col="Weaviate">BSD-3</td>
+            <td data-col="Qdrant">Apache-2.0</td>
+            <td data-col="Milvus">Apache-2.0</td>
+            <td data-col="pgvector">PostgreSQL</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card card-border bg-base-200">
+    <div class="card-body gap-3">
+      <h2 class="card-title">Your shortlist</h2>
+      <p id="summary" class="text-lg font-semibold" aria-live="polite"></p>
+      <p id="warn" class="text-sm text-warning" role="status"></p>
+      <label class="fieldset">
+        <span class="fieldset-legend">Rationale (optional)</span>
+        <textarea id="why" class="textarea w-full" rows="2" placeholder="Why this shortlist?"></textarea>
+      </label>
+      <div class="card-actions items-center">
+        <button id="send" class="btn btn-primary" type="button">Copy shortlist to send</button>
+        <span id="status" class="text-sm opacity-80" role="status"></span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  const boxes = [...document.querySelectorAll('input[type=checkbox][value]')];
+  const summary = document.getElementById('summary');
+  const warn = document.getElementById('warn');
+  const why = document.getElementById('why');
+  const status = document.getElementById('status');
+
+  function picked() { return boxes.filter(b => b.checked).map(b => b.value); }
+
+  function update() {
+    const p = picked();
+    summary.textContent = p.length ? 'Shortlist: ' + p.join(' + ') : 'Shortlist: (none selected)';
+    warn.textContent = p.length === 2 ? '' : 'You have selected ' + p.length + '. The goal is exactly two.';
+    document.querySelectorAll('[data-col]').forEach(el => el.classList.toggle('sel', p.includes(el.dataset.col)));
+    document.querySelectorAll('.opt').forEach(el => el.classList.toggle('picked', p.includes(el.dataset.opt)));
+    status.textContent = '';
+  }
+
+  function message() {
+    const p = picked();
+    return 'Vector DB shortlist: ' + (p.join(', ') || 'none') +
+      (why.value.trim() ? '. Rationale: ' + why.value.trim() : '');
+  }
+
+  boxes.forEach(b => b.addEventListener('change', update));
+  document.getElementById('send').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(message());
+      status.textContent = 'Copied. Paste it into the Lavish prompt queue and send.';
+    } catch (e) {
+      status.textContent = message();
+    }
+  });
+  update();
+</script>
+</body>
+</html>
