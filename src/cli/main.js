@@ -13,6 +13,7 @@ import { InviteStore, inviteId } from "./invites.js";
 import { SessionStore, sessionId } from "./sessions.js";
 import { exportHtml } from "./export.js";
 import { format, print } from "./output.js";
+import { describeItem, locator } from "../shared/feedback.js";
 import { VERSION, assetPath, canonicalFile, port, stateDir } from "./paths.js";
 import { listComponents, searchComponents, showComponents } from "./components.js";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.js";
@@ -240,12 +241,7 @@ function describeItems(abs, items) {
   } catch {
     // file gone
   }
-  const at = (id) => {
-    const l = lines.get(id);
-    if (!l) return {};
-    const first = l.text.split("\n")[0];
-    return { line: l.line, source: first.length > 110 ? first.slice(0, 109) + "…" : first };
-  };
+  const at = locator(lines);
   return items.map((it) => {
     /** @type {Record<string, any>} */
     let o;
@@ -259,29 +255,6 @@ function describeItems(abs, items) {
   });
 }
 
-function describeItem(it, at) {
-  if (it.kind === "annotation") {
-    /** @type {Record<string, any>} */
-    const o = { annotation: `${it.target} (${it.component})`, ...at(it.target) };
-    const within = (Array.isArray(it.path) ? it.path : []).slice(0, -1).filter((p) => typeof p === "string" && p !== "root");
-    if (within.length) o.within = within.join(" > ");
-    if (it.selection) o.selection = it.selection;
-    else if (it.excerpt) o.excerpt = it.excerpt;
-    if (it.detail) o.detail = it.detail;
-    o.note = it.note || "(no note: the selection itself is the point)";
-    return o;
-  }
-  if (it.kind === "action") {
-    const o = { action: it.message };
-    if (it.form) o.form = it.form;
-    if (it.context !== undefined) o.context = it.context;
-    return o;
-  }
-  if (it.kind === "render-error") {
-    return { render_error: it.statement || "(page)", ...at(it.statement), error: it.message, note: it.note };
-  }
-  return { message: it.text ?? it.note ?? "" };
-}
 
 function thirdPartyOf(abs) {
   try {

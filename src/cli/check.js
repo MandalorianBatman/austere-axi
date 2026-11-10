@@ -7,7 +7,7 @@ import { readArtifact } from "./artifact.js";
 import { assetPath } from "./paths.js";
 import { mergePackSchemas, packDefining, pagePacks } from "./packs.js";
 import { splitStatements } from "../shared/statements.js";
-import { architectureNotes } from "../runtime/components/_architecture-model.js";
+import { checkProgram } from "../shared/check-program.js";
 
 let coreSpec = null;
 const packParsers = new Map();
@@ -64,21 +64,6 @@ export function statementLines(html) {
   return out;
 }
 
-/** Every rendered element of a component, found by walking from the root. */
-function elementsOf(root, typeName) {
-  const out = [];
-  const seen = new Set();
-  const stack = [root];
-  while (stack.length) {
-    const v = stack.pop();
-    if (!v || typeof v !== "object" || seen.has(v)) continue;
-    seen.add(v);
-    if (v.typeName === typeName && v.props) out.push(v);
-    for (const child of Array.isArray(v) ? v : Object.values(v.props || {})) stack.push(child);
-  }
-  return out;
-}
-
 /**
  * @param {string} html
  * @param {{ schema?: object, file?: string }} [options]
@@ -121,76 +106,14 @@ export function checkHtml(html, { schema, file = "<file>" } = {}) {
     });
   }
   const lines = statementLines(html);
-  const lineOf = (id) => (id && lines.get(id)?.line) || undefined;
-
-  let parsed;
-  try {
-    parsed = getParser(schema, packs.installed).parse(art.program);
-  } catch (err) {
-    result.ok = false;
-    result.errors.push({ code: "parse-failed", message: String(err?.message || err) });
-    return result;
-  }
-  result.statements = parsed.meta.statementCount;
-  // The parser reports a bad statement once per reference to it; say it once.
-  const seen = new Set();
-  for (const e of parsed.meta.errors) {
-    const key = `${e.severity}\0${e.code}\0${e.statementId}\0${e.message}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    let entry = {
-      code: e.code,
-      statement: e.statementId,
-      line: lineOf(e.statementId),
-      component: e.component || undefined,
-      path: e.path || undefined,
-      message: e.message,
-    };
-    if (e.code === "unknown-component") entry = unknownComponent(entry, packs, file);
-    if (e.severity === "warning") result.warnings.push(entry);
-    else result.errors.push(entry);
-  }
-  if (!parsed.root) {
-    result.errors.push({
-      code: "no-root",
-      message: "Nothing to render: define root = Stack([...]) and reference every section from it.",
-    });
-  }
-  for (const id of parsed.meta.unresolved) {
-    result.errors.push({ code: "unresolved", statement: id, message: `${id} is referenced but never defined, so it renders as nothing.` });
-  }
-  if (parsed.root && parsed.meta.orphaned.length) {
-    const ids = parsed.meta.orphaned;
-    result.warnings.push({
-      code: "orphaned",
-      statements: ids,
-      message: `Defined but not reachable from root, so not rendered: ${ids.join(", ")}. Reference them from a parent or delete them.`,
-    });
-  }
-  if (parsed.meta.incomplete) {
-    result.errors.push({ code: "incomplete", message: "The program ends mid-statement (an unclosed string or bracket)." });
-  }
-  // Diagrams: what the layout will do, which the parser cannot see.
-  const diagrams = new Set();
-  for (const el of elementsOf(parsed.root, "Architecture")) {
-    // A diagram shown in two places is one statement: warn once.
-    if (el.statementId && diagrams.has(el.statementId)) continue;
-    diagrams.add(el.statementId);
-    try {
-      for (const note of architectureNotes(el.props)) {
-        result.warnings.push({ code: note.code, statement: el.statementId, line: lineOf(el.statementId), message: note.message });
-      }
-    } catch {
-      // A layout bug must never fail check; the page reports it when it renders.
-    }
-  }
-  const dupes = new Map();
-  for (const s of splitStatements(art.program)) dupes.set(s.id, (dupes.get(s.id) || 0) + 1);
-  for (const [id, n] of dupes) {
-    if (n > 1) {
-      result.warnings.push({ code: "duplicate", statement: id, message: `${id} is defined ${n} times; the last one wins.` });
-    }
-  }
+  const core = checkProgram(art.program, {
+    parser: () => getParser(schema, packs.installed),
+    lineOf: (id) => (id && lines.get(id)?.line) || undefined,
+    decorate: (entry) => (entry.code === "unknown-component" ? unknownComponent(entry, packs, file) : entry),
+  });
+  result.statements = core.statements;
+  result.errors.push(...core.errors);
+  result.warnings.push(...core.warnings);
   result.ok = result.errors.length === 0;
   return result;
 }
