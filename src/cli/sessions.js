@@ -127,10 +127,10 @@ export class SessionStore {
     return s.transcript.filter((e) => e.role === "user" && e.held);
   }
 
-  /** The owner sends held notes on to the agent (`ids` omitted: all of them). Returns the entries released. */
+  /** The owner sends the held notes named by `ids` on to the agent. Returns the entries released. */
   release(s, ids) {
-    const want = ids ? new Set(ids) : null;
-    const out = this.heldEntries(s).filter((e) => !want || want.has(e.id));
+    const want = new Set(ids);
+    const out = this.heldEntries(s).filter((e) => want.has(e.id));
     for (const e of out) {
       e.held = false;
       s.pending.push(e.id);
