@@ -1,0 +1,16 @@
+{
+  "name": "austere",
+  "displayName": "austere-axi",
+  "description": "Turn plans, comparisons, decisions, code reviews and reports into pages the user annotates in the browser; the feedback comes back addressed by statement name.",
+  "author": { "name": "MandalorianBatman" },
+  "homepage": "https://github.com/MandalorianBatman/austere-axi",
+  "repository": "https://github.com/MandalorianBatman/austere-axi",
+  "license": "MIT",
+  "keywords": ["review", "artifacts", "openui", "annotations", "mcp"],
+  "mcpServers": {
+    "austere": {
+      "command": "npx",
+      "args": ["-y", "austere-axi", "mcp"]
+    }
+  }
+}

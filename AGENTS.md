@@ -7,6 +7,7 @@ austere-axi is a CLI, a local review server, and a browser runtime for agent rev
 - **User-facing contract:** `README.md`.
 - **What agents are told while using the tool:** CLI output: `--help` (`src/cli/main.js`), and `spec` (generated from `src/runtime/prompt.js`, the component files and `src/runtime/stock.js`).
 - **Shipped skills:** `skills/austere/SKILL.md` stays a stub that points at the CLI, so don't copy CLI guidance into it. `skills/austere-setup/SKILL.md` walks an agent through setup; keep its commands in step with the CLI.
+- **MCP server and Claude Code plugin:** `austere-axi mcp` (`src/cli/mcp.js`) runs the CLI as a child process for each tool call and returns its output; keep logic in the CLI commands, not there. A new tool argument maps to an existing CLI flag. `.claude-plugin/` holds the marketplace and plugin manifests; it lives in git, not in the npm package.
 - **Adding or changing a component:** follow `.agents/skills/add-component/SKILL.md`.
 - **Reviewing a change before committing:** follow `.agents/skills/review-change/SKILL.md`. It runs the checks and the agents in `.agents/agents/` (change-reviewer, visual-qa, cold-start-author).
 
@@ -19,7 +20,10 @@ npm run test:browser # real review loop in headless Chrome: render checks + ever
 npm run signatures   # record new component signatures (refuses breaking changes)
 npm run gallery      # .dev/gallery.html with every custom component's example
 npm run shot -- <page> [--width 390] [--full] [--parts]   # needs Chrome or CHROME_PATH
-npm run site        # _site/: landing page + example gallery for GitHub Pages; needs Chrome or CHROME_PATH
+npm run site         # _site/: landing page + example gallery for GitHub Pages; needs Chrome or CHROME_PATH
+npm run bench        # austere-axi vs lavish-axi benchmark (model keys from env); see docs/benchmark.md
+npm run demo         # re-record docs/demo.{gif,mp4,webm} (after build; needs Chrome and ffmpeg)
+npm run social       # re-render docs/social-preview.png, 1200x630 (after build; needs Chrome)
 ```
 
 ## Rules
@@ -34,5 +38,5 @@ npm run site        # _site/: landing page + example gallery for GitHub Pages; n
   - Artifact files are served from the artifact's own directory only, with no dotfiles.
 - Tests that start the server, or read packs or the hub, set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.
 - Nothing an installed pack ships runs in the CLI or the server; its code runs only in the sandboxed artifact frame. (`components build` does load the pack being built, in Node, to read its components.)
-- Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `scripts/` and `test/` are maintainer-only.
+- Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `bench/`, `docs/`, `scripts/` and `test/` are maintainer-only.
 - The website lives in `site/` (hand-written) and `examples/` (gallery source), built to `_site/` by `scripts/site.mjs` and deployed by `.github/workflows/pages.yml`. Keep links relative (the site is served under `/austere-axi/`), keep `site/` out of `package.json` `files`, and leave room for `site/play/` (the playground).

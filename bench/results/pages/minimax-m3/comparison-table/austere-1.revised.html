@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Vector database shortlist</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([intro, recommendation, comparison, shortlistCard], "column", "l")
+intro = Card([CardHeader("Vector database shortlist", "Semantic search over 40M document chunks"), introText])
+introText = MarkDownRenderer("**Workload:** 40M document chunks with 768-dimensional embeddings. **Target:** p95 query latency of 50 ms. Select exactly two databases to shortlist.")
+recommendation = Card([CardHeader("Recommended starting point", "Qdrant and Pinecone"), recommendationText])
+recommendationText = MarkDownRenderer("- **Qdrant:** best latency per dollar — 44 ms p95 at an estimated **$1,250/month**.\n- **Pinecone:** lowest tested latency at **38 ms p95**, with **no operations burden** because hosting is managed only.\n\nThese are the recommended two, but the shortlist below is editable.")
+comparison = Card([CardHeader("Comparison", "Only the supplied test results and product facts"), comparisonTable])
+comparisonTable = Table([Col("Database", ["Pinecone", "Weaviate", "Qdrant", "Milvus"]), Col("Hosting", ["Managed only", "Managed or self-host", "Managed or self-host", "Self-host (Zilliz for managed)"]), Col("p95 latency at 40M", ["38 ms", "61 ms", "44 ms", "52 ms"]), Col("Est. monthly cost", ["$3,100", "$1,900", "$1,250", "$1,400 + ops time"]), Col("Hybrid search", ["Yes", "Yes", "Yes", "Partial"]), Col("Metadata filtering", ["Good", "Good", "Very good", "Good"]), Col("License", ["Proprietary", "BSD-3", "Apache-2.0", "Apache-2.0"])])
+shortlistCard = Card([CardHeader("Choose two", "Recommended: Qdrant and Pinecone"), shortlistForm])
+shortlistForm = Form("shortlist", shortlistButtons, [shortlistField])
+shortlistField = FormControl("Shortlist", CheckBoxGroup("databases", [CheckBoxItem("Pinecone", "Lowest latency; no ops", "pinecone"), CheckBoxItem("Weaviate", "Managed or self-host", "weaviate"), CheckBoxItem("Qdrant", "Best latency per dollar", "qdrant"), CheckBoxItem("Milvus", "Self-host; managed via Zilliz", "milvus"), CheckBoxItem("pgvector", "Self-host on existing Postgres", "pgvector")], {min: 2, max: 2}, "pinecone,qdrant"))
+shortlistButtons = Buttons([Button("Send shortlist", @ToAssistant("Selected vector database shortlist"), "primary")])
+</script>
+</body>
+</html>

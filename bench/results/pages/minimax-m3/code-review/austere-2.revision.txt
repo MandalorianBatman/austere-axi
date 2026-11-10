@@ -1,0 +1,4 @@
+```openui
+severityHigh = Tag("Blocker", null, "sm", "danger")
+sqlInjectionFinding = TextContent("SQL injection: the query concatenates req.query.q into the SQL string. Use a parameterized query: WHERE name ILIKE $1, with the value %${q}%.")
+```
