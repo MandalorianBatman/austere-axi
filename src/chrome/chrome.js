@@ -626,11 +626,14 @@ function renderLog(scrollToEnd = false) {
 
 // ── composer / sending ──
 
+// Hosted: set once the service answers 404/410 for this page; nothing more can be sent.
+let gone = false;
+
 function renderComposer() {
   const ended = state.status === "ended";
   const n = state.queue.length;
-  textarea.disabled = ended || state.sending;
-  $(".send").disabled = ended || state.sending;
+  textarea.disabled = ended || gone || state.sending;
+  $(".send").disabled = ended || gone || state.sending;
   if ($(".send-end")) $(".send-end").disabled = ended || state.sending;
   $(".send").textContent = state.sending ? "Sending…" : n ? `Send ${n}` : "Send";
   textarea.placeholder = ended ? "Review ended" : n ? "Add a message (optional)…" : "Message the agent…";
@@ -716,6 +719,7 @@ function renderPresence() {
   let label;
   let cls;
   if (state.status === "ended") [label, cls] = ["Review ended", "ended"];
+  else if (gone) [label, cls] = ["Page removed", "ended"];
   else if (!state.connected) [label, cls] = ["Reconnecting…", "off"];
   else if (HOSTED) [label, cls] = ["Shared page", "hosted"];
   else if (state.presence === "listening") [label, cls] = ["Agent listening", "listening"];
@@ -964,11 +968,10 @@ let cursor = null;
 let publishedAt = null;
 let polling = null;
 let pollAgain = false;
-let gone = false;
 
 /** Maps the service's notes and replies onto transcript entries. */
 function hostedEntries(d) {
-  const notes = (d.notes || []).map((n) => ({ id: `n${n.seq}`, role: "user", author: String(n.author || "").slice(0, NAME_MAX), items: n.items || [], at: n.at }));
+  const notes = (d.notes || []).map((n) => ({ id: `n${n.seq}`, role: "user", author: String(n.author || "").slice(0, NAME_MAX), items: Array.isArray(n.items) ? n.items.filter((x) => x && typeof x === "object") : [], at: n.at }));
   const replies = (d.replies || []).map((r) => ({ id: `r${r.seq}`, role: "agent", text: String(r.text || ""), at: r.at }));
   return [...notes, ...replies];
 }
@@ -986,6 +989,8 @@ async function pollConversation() {
         gone = true;
         state.connected = false;
         showBanner("This page is no longer available.");
+        renderPresence();
+        renderComposer();
         return;
       }
       if (!r.ok) throw new Error(`HTTP ${r.status}`);

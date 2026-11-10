@@ -18,7 +18,7 @@ const FRAME_CSP =
   "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'";
 
 // What the stub service has seen and holds.
-const svc = { requests: [], sends: [], reports: [], notes: [], replies: [], publishedAt: 1_000 };
+const svc = { requests: [], sends: [], reports: [], notes: [], replies: [], publishedAt: 1_000, gone: false };
 let stub;
 let origin;
 let browser;
@@ -71,6 +71,7 @@ async function handle(req, res) {
     return res.end(fs.readFileSync(asset));
   }
   if (url.pathname === `${BASE}/conversation` && req.method === "GET") {
+    if (svc.gone) return json(res, 410, { error: "gone" });
     const [n, r] = (url.searchParams.get("after") || "0.0").split(".").map(Number);
     return json(res, 200, {
       publishedAt: svc.publishedAt,
@@ -181,6 +182,20 @@ test("hosted chrome: name prompt, named send, polled reply, new version, footer 
 
     // No local-server traffic: no event stream, no bye beacon, nothing under /s/.
     assert.ok(!svc.requests.some((r) => /\/events|\/bye|\/s\//.test(r)), svc.requests.join("\n"));
+
+    // Malformed note items from the service are dropped, not fatal.
+    svc.notes.push({ seq: svc.notes.length + 1, author: "Bo", items: [null, 7, { kind: "message", text: "ok from Bo" }], at: Date.now() });
+    svc.notes.push({ seq: svc.notes.length + 1, author: "Cy", items: "nope", at: Date.now() });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.waitForSelector("text=ok from Bo");
+
+    // The page is removed (410): presence says so and the composer locks.
+    svc.gone = true;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.waitForSelector(".presence.ended");
+    assert.match(await page.locator(".presence").innerText(), /Page removed/);
+    assert.ok(await page.locator(".composer textarea").isDisabled());
+    assert.ok(await page.locator(".composer .send").isDisabled());
     assert.deepEqual(cspErrors, []);
   } finally {
     await ctx.close();
