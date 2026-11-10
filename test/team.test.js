@@ -604,6 +604,38 @@ test("an event stream that never reads is dropped once its backlog passes the ca
   }
 });
 
+test("one event larger than the cap reaches a reading stream without dropping it", async () => {
+  const ivy = await accept((await share("Ivy")).data.link);
+  const { sock, status } = await stalledStream(srv.port, ivy.cookie);
+  try {
+    assert.equal(status, 200);
+    let got = 0;
+    const arrived = new Promise((resolve) => sock.on("data", (d) => (got += d.length) > 3_000_000 && resolve()));
+    sock.resume();
+    assert.equal((await sendNote(ivy, "x".repeat(3_000_000))).status, 200);
+    await arrived;
+    assert.equal(await browsers(), 1, "the healthy stream is still connected");
+  } finally {
+    sock.destroy();
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ivy" } });
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+  }
+});
+
+test("a reviewer can have only so many notes held at once", async () => {
+  const jo = await accept((await share("Jo")).data.link);
+  try {
+    for (let i = 0; i < 200; i++) assert.equal((await sendNote(jo, `n${i}`)).status, 200);
+    const over = await sendNote(jo, "one too many");
+    assert.equal(over.status, 429);
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+    assert.equal((await sendNote(jo, "after the owner cleared them")).status, 200);
+  } finally {
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Jo" } });
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+  }
+});
+
 test("a reviewer gets a few event streams, and the whole session a few more", async () => {
   const fay = await accept((await share("Fay")).data.link);
   const stalled = [];
@@ -646,6 +678,9 @@ test("the transcript is trimmed, keeping what is still waiting on the owner", ()
     assert.ok(s.transcript.length < 600, `the transcript stays bounded (${s.transcript.length})`);
     assert.equal(s.transcript.at(-1).text, "reply 999", "the newest entry stays");
     assert.ok(s.transcript.includes(held) && s.transcript.includes(waiting), "held and pending notes are never trimmed away");
+    store.flush(s);
+    const saved = JSON.parse(fs.readFileSync(path.join(store.dir, `${s.id}.json`), "utf8")).transcript.map((e) => e.id);
+    assert.ok(saved.includes(held.id) && saved.includes(waiting.id), "the saved transcript keeps them too");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

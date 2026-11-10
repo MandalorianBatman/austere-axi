@@ -198,7 +198,7 @@ austere-axi share revoke Ana                     # name or id; takes effect at o
 
 Send the link to the teammate. The link needs Tailscale (or `AUSTERE_AXI_HOST`); without one, `share` stops with an error.
 
-- **Hold (default):** a teammate's note waits in your side panel. Press **Send** on one note, or **Send all**. **Discard** removes it. Held notes are not in `poll` or `feedback`, so the agent does not see them until you send them.
+- **Hold (default):** a teammate's note waits in your side panel. Press **Send** on one note, or **Send all**. **Discard** removes it. Held notes are not in `poll` or `feedback`, so the agent does not see them until you send them. Each teammate can have up to 200 notes held at once; more are refused until you send or discard some.
 - **Auto:** the note goes to the agent without your approval.
 - **Author:** `poll` and `feedback` show `from: <name>` on each teammate's note. Your own notes have no `from`. The hub Notes view shows the author and can filter on it.
 - **Reviewers can:** read the page and the conversation, and add notes. They cannot end the review, export, or send held notes.

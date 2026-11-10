@@ -82,7 +82,7 @@ export class SessionStore {
       endedBy: s.endedBy,
       endedAt: s.endedAt,
       pending: s.pending,
-      transcript: s.transcript.slice(-MAX_TRANSCRIPT),
+      transcript: s.transcript,
     };
     const file = path.join(this.dir, `${s.id}.json`);
     const tmp = `${file}.${process.pid}.tmp`;

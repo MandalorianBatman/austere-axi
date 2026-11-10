@@ -51,9 +51,13 @@ const MIME = {
 const SHORT_GRACE_MS = 10_000;
 const OWNER = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set(["annotation", "message"]);
-// A stalled event stream is dropped once this much is queued for it; reviewers get a few streams each.
+// A stalled event stream is dropped once more than SSE_MAX_BUFFER stays queued for it for SSE_STALL_MS, or at once past
+// SSE_HARD_MAX; reviewers get a few streams each.
 const SSE_MAX_BUFFER = 1 << 20;
+const SSE_STALL_MS = 5_000;
+const SSE_HARD_MAX = 32 << 20;
 const SSE_MAX_PER_REVIEWER = 4;
+const MAX_HELD_PER_REVIEWER = 200;
 const SSE_MAX_PER_SESSION = 16;
 
 export async function runServer({ port, verbose = false, alsoListen = [] }) {
@@ -223,11 +227,21 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return { id: s.id, file: s.file, title: s.title, status: s.status, endedBy: s.endedBy };
   }
 
-  /** Write to an event stream, and drop the client when its socket backs up instead of buffering for it. */
+  /**
+   * Write to an event stream, and drop the client once its socket stays backed up instead of buffering for it.
+   * A backlog over SSE_MAX_BUFFER is forgiven for SSE_STALL_MS (one large event, and the small ones right after it,
+   * must not cut off a viewer that is reading); past SSE_HARD_MAX the client is dropped at once.
+   */
   function sseWrite(set, c, msg) {
-    if (c.res.writableLength > SSE_MAX_BUFFER || (!c.res.write(msg) && c.res.writableLength > SSE_MAX_BUFFER)) {
+    const queued = c.res.writableLength;
+    if (queued > SSE_HARD_MAX || (queued > SSE_MAX_BUFFER && c.stalledSince && Date.now() - c.stalledSince > SSE_STALL_MS)) {
       set.delete(c);
       c.res.destroy();
+      return;
+    }
+    if (!c.res.write(msg) && !c.stalledSince && c.res.writableLength > SSE_MAX_BUFFER) {
+      c.stalledSince = Date.now();
+      c.res.once("drain", () => (c.stalledSince = 0));
     }
   }
 
@@ -861,6 +875,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
         it.id = reviewer || !it.id ? newId("i") : it.id;
       }
       const hold = reviewer && !who.auto;
+      if (hold && items.length && store.heldEntries(s).filter((e) => e.author === who.name).length >= MAX_HELD_PER_REVIEWER) return send(res, 429, { error: "too many notes awaiting the owner; wait for them to be released" });
       let entry = null;
       if (items.length) entry = store.addUserBatch(s, items, { end, author: who.name, hold });
       if (end) {
