@@ -95,7 +95,7 @@ In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/pl
 
 ## Use with MCP
 
-`austere-axi mcp` is an MCP server on stdio. Its tools are `spec`, `check`, `open` (validate and open the review), `poll`, `reply`, `patch` and `end`. Each runs the CLI command of the same name and returns its output, so the review loop is the same as on the command line. `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer tool calls; the agent polls again and nothing is lost. Pass `timeout_ms: 0` to wait until feedback arrives when your client allows long calls.
+`austere-axi mcp` is an MCP server on stdio. Its tools are `spec`, `check`, `open` (validate and open the review), `poll`, `reply`, `patch` and `end`. Each runs the CLI command of the same name and returns its output, so the review loop is the same as on the command line. `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer tool calls; the agent polls again and nothing is lost. Pass `timeout_ms: 0` to wait until feedback arrives when your client allows long calls. `poll` and `reply` take the `cursor` a poll returned, as `--cursor` does.
 
 **Claude Desktop** (`claude_desktop_config.json`) and **Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project):
 
@@ -153,9 +153,11 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 ```
 austere-axi                      sessions + usage
 austere-axi <file>               validate + open a review   [--no-open] [--reopen]
-austere-axi poll <file>          long-poll for feedback      [--agent-reply "..."] [--takeover]
-austere-axi reply <file>         post a reply without polling
-austere-axi end <file>           end the review as the agent
+austere-axi poll <file>          long-poll for feedback      [--cursor n] [--agent-reply "..."] [--after n] [--takeover]
+austere-axi reply <file>         post a reply without polling   [--cursor n]
+austere-axi end <file>           stop as the agent; the reviewer can still add notes
+austere-axi close <file>         close the review: no more notes until reopen
+austere-axi reopen <file>        reopen an ended or closed review
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix]
@@ -163,10 +165,11 @@ austere-axi patch <file>         merge statements from stdin into the program (r
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi export <file>        one self-contained HTML file, works offline
-austere-axi hub on|off|status|list|notes|open   persistent server with an index of every page
+austere-axi hub on|off|status|list|notes|open   home page with every page and note
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
 austere-axi stop                 stop the background server
+austere-axi server --persist     run the server in the foreground and never idle out
 austere-axi mcp                  MCP server on stdio (see Use with MCP)
 ```
 
@@ -175,10 +178,14 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 Session rules:
 
 - One poll listens on a session at a time.
+- Every note is written to `~/.austere-axi/hub.db` before the page is told it was sent, so a note survives a crash or restart of the server.
 - Feedback sent while no agent listens waits for the next poll.
-- A review the user ended does not open again unless you pass `--reopen`.
-- If all review tabs stay closed, `poll` returns `browser_disconnected`: 10 s after a tab closes, or 5 min after a dropped connection (for example, a locked phone).
-- `feedback <file>` returns notes no agent has answered, also from earlier days. Reading them marks them received; `reply` marks them answered.
+- Feedback stays unread until the agent acknowledges it. `poll` prints a `cursor`. Passing it back (`--cursor n` on the next `poll` or `reply`), or replying at all, acknowledges everything up to it. A `poll` without either returns the same feedback again, so feedback lost on the way to the agent (a crash, a timed-out tool call) is delivered again. `--after n` replays from any point.
+- Ending a review (the agent's `end`, or **End review** in the page) means the agent stopped. The reviewer can still send notes. The next `poll` returns every note the agent has not acknowledged, including ones sent before the end or released from hold after it, and reopens the review. A batch the reviewer sent with end stays final.
+- Only the owner's **close** (`close <file>`, or **Close review** in the page) locks the composer. `reopen <file>` or **Reopen review** unlocks it.
+- A review the user ended or closed does not open again unless you pass `--reopen`.
+- If all review tabs stay closed, `poll` returns `browser_disconnected`: 10 s after a tab closes, or 5 min after a dropped connection (for example, a locked phone). The agent stops polling but does not end the review, so notes left later are picked up by the next `poll`.
+- `feedback <file>` returns notes no agent has answered, also from earlier days. Reading them acknowledges them; `reply` marks them answered.
 
 ## Components and packs
 
@@ -226,16 +233,38 @@ Each component uses `austereComponent` from `austere-axi/pack`: a PascalCase nam
 
 ## Hub
 
-The server starts when needed and stops after 30 idle minutes. `hub on` keeps it running and indexes every page you open or check:
+The server starts when needed and stops after 30 idle minutes. Every review is kept in `~/.austere-axi/hub.db` (SQLite) either way. `hub on` adds a home page over it and indexes every page you `check` or `patch`:
 
 ```sh
 austere-axi hub on      # http://127.0.0.1:4388/: pages by project and day, with search
 austere-axi hub list    # the same, for an agent: [words] [--project dir]
 austere-axi hub notes   # every note, same for an agent: [words] [--project dir] [--unanswered]
-austere-axi hub off     # back to on-demand; the index stays
+austere-axi hub off     # back to the plain session list; the database stays
 ```
 
-`/notes` lists every note on every page, newest first, with search, status and project filters. The home page shows which reviews are live and how much feedback the agent has answered. The index is SQLite (`~/.austere-axi/hub.db`), copied from the session files; the review loop does not need it.
+`/notes` lists every note on every page, newest first, with search, status and project filters. The home page shows which reviews are live and how much feedback the agent has answered.
+
+Session files from versions before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`. One server runs per state dir; a second one refuses to start. `server.lock` names the running server's pid and port; a lock whose server no longer answers on that port is stale and is taken over.
+
+### Always on, behind a reverse proxy
+
+To serve review pages at a public address, run the server under a supervisor with `--persist` so it never idles out, and point the proxy at it:
+
+```ini
+# ~/.config/systemd/user/austere-axi.service
+[Unit]
+Description=austere-axi review server
+
+[Service]
+ExecStart=/usr/bin/env npx -y austere-axi server --persist
+Environment=AUSTERE_AXI_LINK_URL=https://austere.example.com
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+`systemctl --user enable --now austere-axi`. Commands on the same machine use the running server; a newer CLI that replaces an older server starts the new one with `--persist` too. `AUSTERE_AXI_PERSIST=1` does the same as `--persist`. Read the reverse-proxy note in [Team review](#team-review) first: behind a proxy on the same machine every request looks local.
 
 ## Team review
 
@@ -314,7 +343,8 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 | `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS` |
 | `AUSTERE_AXI_ALLOWED_HOSTS` | | extra `Host` headers to accept (reverse proxy) |
 | `AUSTERE_AXI_DISCONNECT_GRACE_MS` | `300000` | how long a dropped connection can stay away before `poll` returns; `0` disables |
-| `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables (the hub never idles out) |
+| `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
+| `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs |
 
 ## Security
@@ -326,7 +356,7 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. It nev
   - A browser signs in with a single-use login code: when the CLI opens your browser, it asks the server for a code and opens the page with it; the server swaps it for the owner cookie and drops it from the address bar. The key is never on a command line or in printed output. A code works once and for 60 seconds. Another local user who reads it from the process list in that time can use it first; your browser then shows "used already", and `austere-axi login` gives you a new one.
   - A printed `url` works in a browser that already has the cookie. For any other browser (SSH with a forwarded port, `--no-open`, a second browser), run `austere-axi login [file]` and open the link it prints.
   - The owner cookie is an HMAC of the key, not the key. Browsers share `127.0.0.1` cookies across ports, so any program listening on another local port that your browser visits can read it. With it, that program can open your pages and the hub as you in a browser, but not call `/api/*`, which needs the key.
-- On macOS and Linux the state dir is made mode 0700 on every run, and new files in it (`owner.key`, sessions, `server.log`, `hub.db`) are mode 0600. Files an older version created keep their old mode, behind the 0700 dir. On Windows, file modes do not apply: the state dir is protected only by your user profile's permissions.
+- On macOS and Linux the state dir is made mode 0700 on every run, and new files in it (`owner.key`, `server.log`, and `hub.db`, which holds every note) are mode 0600. Files an older version created keep their old mode, behind the 0700 dir. On Windows, file modes do not apply: the state dir is protected only by your user profile's permissions.
 - `Host` headers must be on an allowlist (DNS-rebinding defense).
 - Browser routes that change state refuse a foreign `Origin`.
 - Invite tokens are random, compared in constant time, and kept out of the log. A reviewer link can only add notes to its own page. See [Team review](#team-review).

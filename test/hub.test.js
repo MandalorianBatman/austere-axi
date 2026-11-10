@@ -25,6 +25,7 @@ const ENV = {
   AUSTERE_AXI_NO_TAILSCALE: "1",
   AUSTERE_AXI_NO_OPEN: "1",
   AUSTERE_AXI_IDLE_TIMEOUT_MS: "300",
+  AUSTERE_AXI_PERSIST: "1",
   OPENUI_TELEMETRY_DISABLED: "1",
 };
 
@@ -79,26 +80,27 @@ after(async () => {
   fs.rmSync(WORK, { recursive: true, force: true });
 });
 
-test("feedback: what no agent has answered; reading it counts as received", () => {
+test("feedback: what no agent has acknowledged or answered; reading it acknowledges it", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-fb-"));
+  const store = await SessionStore.open(dir);
   try {
-    const store = new SessionStore(dir);
     const s = store.ensure("/x/plan.html");
     const first = store.addUserBatch(s, [{ kind: "message", text: "one" }]);
-    store.markDelivered(s, [first]);
+    store.ack(s, first.seq);
     store.addAgentReply(s, "done");
     store.addUserBatch(s, [{ kind: "message", text: "two" }]);
     const peek = store.feedback(s, { peek: true });
     assert.deepEqual(peek.entries.map((e) => [e.items[0].text, e.status]), [["two", "open"]]);
-    assert.equal(s.pending.length, 1, "peek leaves it pending");
+    assert.equal(store.unread(s).length, 1, "peek leaves it unread");
     const read = store.feedback(s);
     assert.equal(read.fresh.length, 1);
-    assert.equal(s.pending.length, 0);
+    assert.equal(store.unread(s).length, 0);
     assert.deepEqual(store.feedback(s).entries.map((e) => e.status), ["received"]);
     assert.deepEqual(store.feedback(s, { all: true }).entries.map((e) => e.status), ["addressed", "received"]);
     store.addAgentReply(s, "did two");
     assert.deepEqual(store.feedback(s).entries, []);
   } finally {
+    store.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -108,15 +110,11 @@ test("projectOf is the nearest git root, else the file's folder", () => {
   assert.equal(projectOf(path.join(os.tmpdir(), "loose.html")), os.tmpdir());
 });
 
-test("hub: stays up, indexes checked and reviewed artifacts by project, hands feedback to a later session", async () => {
+test("hub: indexes checked and reviewed artifacts by project, hands feedback to a later session", async () => {
   let r = await cli("hub", "on");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /status: on/);
-
-  // No idle shutdown in hub mode (the idle timeout here is 300 ms).
-  await new Promise((res) => setTimeout(res, 1200));
-  const health = JSON.parse((await req("GET", "/api/health")).data);
-  assert.equal(health.hub, true);
+  assert.equal(JSON.parse((await req("GET", "/api/health")).data).hub, true);
 
   // check registers the artifact without a review.
   r = await cli("check", FILE);
@@ -166,9 +164,10 @@ test("hub: stays up, indexes checked and reviewed artifacts by project, hands fe
   r = await cli("hub", "list", "nothing-like-this");
   assert.match(r.out, /artifacts: none/);
 
-  // Off: the server goes; the index stays and feedback still works without a server.
+  // Off, and no server: the index stays and feedback still works.
   r = await cli("hub", "off");
   assert.match(r.out, /status: off/);
+  await cli("stop");
   await new Promise((res) => setTimeout(res, 300));
   r = await cli("feedback", FILE, "--all");
   assert.match(r.out, /status: addressed/);
@@ -177,42 +176,36 @@ test("hub: stays up, indexes checked and reviewed artifacts by project, hands fe
   assert.match(r.out, /artifacts: 1/);
 });
 
-test("hub on/off switches the server's mode; a hub whose index will not open does not restart it on every command", async () => {
+test("the server idles out unless it persists; hub on/off does not restart it", async () => {
   const port = await freePort();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-mode-"));
   const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
   const health = async () => JSON.parse((await req("GET", "/api/health", undefined, port)).data);
+  const up = async () => (await req("GET", "/api/health", undefined, port).catch(() => null))?.status === 200;
   try {
-    // An index that cannot be opened: the server runs without the hub, and stays up.
-    fs.mkdirSync(path.join(state, "hub.db"));
-    let r = await cliWith(env, "hub", "on");
-    assert.match(r.out, /status: unavailable/);
-    let h = await health();
-    assert.equal(h.hub, false);
-    assert.equal(h.hubWanted, true);
-    const pid = h.pid;
+    // Persisting (as behind a proxy): no idle exit, and hub on/off only changes the home page.
     await cliWith(env, FILE);
-    await cliWith(env, "reply", FILE, "--agent-reply", "x");
-    assert.equal((await health()).pid, pid, "no restart per command");
-    assert.match((await cliWith(env, "hub", "status")).out, /hub could not start/);
-    // Fixed, then on again: it retries.
-    fs.rmSync(path.join(state, "hub.db"), { recursive: true });
-    r = await cliWith(env, "hub", "on");
-    assert.match(r.out, /status: on/);
-    assert.equal((await health()).hub, true);
-
-    // Off, then a plain command: an ordinary server.
-    await cliWith(env, "hub", "off");
-    await cliWith(env, FILE);
-    h = await health();
-    assert.equal(h.hub, false);
-    assert.equal(h.hubWanted, false);
-    const plain = h.pid;
-    // On again: the CLI replaces it with a hub.
+    const h = await health();
+    assert.equal(h.persist, true);
     await cliWith(env, "hub", "on");
-    h = await health();
-    assert.equal(h.hub, true);
-    assert.notEqual(h.pid, plain);
+    assert.equal((await health()).hub, true);
+    await cliWith(env, "hub", "off");
+    assert.equal((await health()).hub, false);
+    await new Promise((res) => setTimeout(res, 1000)); // the idle timeout here is 300 ms
+    assert.equal((await health()).pid, h.pid, "still the same server");
+    await cliWith(env, "stop");
+    const gone = async () => {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && (await up())) await new Promise((res) => setTimeout(res, 100));
+      return !(await up());
+    };
+    assert.ok(await gone());
+
+    // Without it, an unused server exits, hub or not.
+    await cliWith({ ...env, AUSTERE_AXI_PERSIST: "" }, "hub", "on");
+    assert.equal((await health()).persist, false);
+    await new Promise((res) => setTimeout(res, 2000)); // health checks count as use, so wait without them
+    assert.equal(await up(), false, "idled out");
   } finally {
     await cliWith(env, "hub", "off");
     await cliWith(env, "stop");
@@ -271,17 +264,16 @@ test("notesPage escapes note text, target, title and filters", async () => {
   }
 });
 
-test("Hub.syncSession: an item field that is not a string does not stop later notes from being indexed", async () => {
+test("hub index: an item field that is not a string does not stop later notes from being indexed", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-sync-"));
-  const hub = await Hub.open(path.join(dir, "hub.db"));
+  const store = await SessionStore.open(dir);
   try {
-    const s = { id: "cccccccccccc", file: path.join(dir, "plan.html"), title: "Plan", createdAt: 1, updatedAt: 2, status: "open", pending: [], transcript: [] };
-    const entry = (n, items) => ({ id: `u${n}`, role: "user", at: n, items });
-    s.transcript.push(entry(1, [{ kind: "annotation", id: "bad", target: { x: 1 }, note: { y: 2 } }]), entry(2, [{ kind: "message", id: "good", text: "LATER-NOTE" }]));
-    hub.syncSession(s);
-    assert.deepEqual(hub.notes().map((n) => n.id).sort(), ["bad", "good"]);
+    const s = store.ensure(path.join(dir, "plan.html"));
+    store.addUserBatch(s, [{ kind: "annotation", id: "bad", target: { x: 1 }, note: { y: 2 } }]);
+    store.addUserBatch(s, [{ kind: "message", id: "good", text: "LATER-NOTE" }]);
+    assert.deepEqual(new Hub(store.db).notes().map((n) => n.id).sort(), ["bad", "good"]);
   } finally {
-    hub.close();
+    store.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -58,18 +58,17 @@ test("the cookie header yields the token", () => {
 
 // ── the hold queue ──
 
-test("held notes stay out of pending, poll and feedback until the owner sends them", () => {
+test("held notes stay out of the agent's queue and feedback until the owner sends them", async () => {
   const dir = tmp("austere-hold-");
+  const store = await SessionStore.open(dir);
   try {
-    const store = new SessionStore(dir);
     const s = store.ensure(path.join(dir, "plan.html"));
     const note = (text) => [{ kind: "message", text, id: text }];
     const mine = store.addUserBatch(s, note("owner note"));
     const held = store.addUserBatch(s, note("held note"), { author: "Ana", hold: true });
     const auto = store.addUserBatch(s, note("auto note"), { author: "Bo" });
 
-    assert.deepEqual(s.pending, [mine.id, auto.id], "the held entry is not pending");
-    assert.deepEqual(store.pendingEntries(s).map((e) => e.id), [mine.id, auto.id], "so a poll does not deliver it");
+    assert.deepEqual(store.unread(s).map((e) => e.id), [mine.id, auto.id], "a poll does not deliver the held entry");
     assert.deepEqual(store.heldEntries(s).map((e) => e.id), [held.id]);
 
     const peek = store.feedback(s, { peek: true });
@@ -80,22 +79,28 @@ test("held notes stay out of pending, poll and feedback until the owner sends th
     const out = store.release(s, [held.id]);
     assert.equal(out.length, 1);
     assert.equal(held.held, false);
-    assert.ok(s.pending.includes(held.id), "released notes are pending");
+    assert.ok(store.unread(s).includes(held), "released notes are unread");
     assert.deepEqual(store.release(s, [held.id]), [], "releasing twice does nothing");
 
     const dropped = store.addUserBatch(s, note("drop me"), { author: "Ana", hold: true });
     store.discard(s, [dropped.id]);
     assert.equal(dropped.discarded, true);
-    assert.ok(!s.pending.includes(dropped.id));
+    assert.ok(!store.unread(s).includes(dropped));
     assert.ok(!store.feedback(s, { all: true, peek: true }).entries.some((e) => e.id === dropped.id), "discarded notes never come back");
 
     // A restart keeps held notes held.
     const again = store.addUserBatch(s, note("still held"), { author: "Ana", hold: true });
-    store.flush(s);
-    const reloaded = new SessionStore(dir).get(s.id);
-    assert.equal(reloaded.transcript.find((e) => e.id === again.id).held, true);
-    assert.ok(!reloaded.pending.includes(again.id));
+    const reopened = await SessionStore.open(dir);
+    try {
+      const reloaded = reopened.get(s.id);
+      assert.equal(reloaded.transcript.find((e) => e.id === again.id).held, true);
+      assert.ok(!reopened.unread(reloaded).some((e) => e.id === again.id));
+      assert.equal(reloaded.transcript.find((e) => e.id === dropped.id).discarded, true);
+    } finally {
+      reopened.close();
+    }
   } finally {
+    store.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -104,16 +109,15 @@ test("held notes stay out of pending, poll and feedback until the owner sends th
 
 test("the hub records the author and held status, and filters on the author", async () => {
   const dir = tmp("austere-hubauthor-");
-  const hub = await Hub.open(path.join(dir, "hub.db"));
+  const store = await SessionStore.open(dir);
+  const hub = new Hub(store.db);
   try {
-    const store = new SessionStore(dir);
     const s = store.ensure(path.join(dir, "plan.html"));
     store.addUserBatch(s, [{ kind: "message", text: "from the owner", id: "i1" }]);
     const held = store.addUserBatch(s, [{ kind: "message", text: "from Ana, held", id: "i2" }], { author: "Ana", hold: true });
     store.addUserBatch(s, [{ kind: "annotation", target: "intro", note: "from Bo", id: "i3" }], { author: "Bo" });
     const dropped = store.addUserBatch(s, [{ kind: "message", text: "from Ana, dropped", id: "i4" }], { author: "Ana", hold: true });
     store.discard(s, [dropped.id]);
-    hub.syncSession(s);
 
     const all = hub.notes();
     assert.deepEqual(all.map((n) => n.id).sort(), ["i1", "i2", "i3"], "discarded notes are left out");
@@ -126,10 +130,9 @@ test("the hub records the author and held status, and filters on the author", as
     assert.equal(hub.stats().unanswered, 3, "held notes count as unanswered");
 
     store.release(s, [held.id]);
-    hub.syncSession(s);
     assert.equal(hub.notes({ author: "Ana" })[0].status, "open", "sent on, now open");
   } finally {
-    hub.close();
+    store.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -900,20 +903,22 @@ test("a reviewer gets a few event streams, and the whole session a few more", as
   }
 });
 
-test("the transcript is trimmed, keeping what is still waiting on the owner", () => {
+test("a long transcript loses nothing: every entry, held and waiting notes too, is on record after a restart", async () => {
   const dir = tmp("austere-trim-");
   try {
-    const store = new SessionStore(dir);
-    const s = store.ensure(path.join(dir, "plan.html"));
+    let store = await SessionStore.open(dir);
+    let s = store.ensure(path.join(dir, "plan.html"));
     const held = store.addUserBatch(s, [{ kind: "message", text: "held", id: "h" }], { author: "Ana", hold: true });
     const waiting = store.addUserBatch(s, [{ kind: "message", text: "waiting", id: "w" }]);
     for (let i = 0; i < 1000; i++) store.addAgentReply(s, `reply ${i}`);
-    assert.ok(s.transcript.length < 600, `the transcript stays bounded (${s.transcript.length})`);
+    store.close();
+    store = await SessionStore.open(dir);
+    s = store.get(s.id);
+    assert.equal(s.transcript.length, 1002);
     assert.equal(s.transcript.at(-1).text, "reply 999", "the newest entry stays");
-    assert.ok(s.transcript.includes(held) && s.transcript.includes(waiting), "held and pending notes are never trimmed away");
-    store.flush(s);
-    const saved = JSON.parse(fs.readFileSync(path.join(store.dir, `${s.id}.json`), "utf8")).transcript.map((e) => e.id);
-    assert.ok(saved.includes(held.id) && saved.includes(waiting.id), "the saved transcript keeps them too");
+    assert.deepEqual(store.heldEntries(s).map((e) => e.id), [held.id]);
+    assert.deepEqual(store.unread(s).map((e) => e.id), [waiting.id]);
+    store.close();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

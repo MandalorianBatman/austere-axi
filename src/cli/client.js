@@ -6,13 +6,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.js";
-import { hubEnabled } from "./hub.js";
 import { ownerKey } from "./invites.js";
-
-/** Whether the server should run as the hub (`austere-axi hub on`). */
-export function wantHub() {
-  return hubEnabled();
-}
 
 /**
  * Call a control route. `auth` sends the owner key, which the server requires on every route but
@@ -65,7 +59,7 @@ export function request(method, route, body, { timeoutMs = 0, port = configuredP
  * listener on another port cannot relay our server's answer. A server from before the proof comes
  * back with `legacy: true`: it is only ever asked to stop, without the key (shutdownServer).
  */
-async function health(port) {
+export async function health(port) {
   const nonce = crypto.randomBytes(16).toString("base64url");
   let r;
   try {
@@ -84,10 +78,11 @@ async function health(port) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Start a detached server. Returns a probe that tells whether the process has already exited. */
-function spawnServer(port, alsoListen = []) {
+function spawnServer(port, { alsoListen = [], persist = false } = {}) {
   const log = fs.openSync(path.join(stateDir(), "server.log"), "a", 0o600);
   const args = [CLI_ENTRY, "server", "--port", String(port)];
   for (const h of alsoListen) args.push("--also-listen", h);
+  if (persist) args.push("--persist");
   const child = spawn(process.execPath, args, {
     detached: true,
     stdio: ["ignore", log, log],
@@ -114,14 +109,14 @@ export async function ensureServer() {
   if (h && h.stateDir !== stateDir()) {
     throw new Error(`port ${port} is served by an austere-axi with another state dir (${h.stateDir}); set AUSTERE_AXI_PORT`);
   }
-  if (h && (h.legacy || versionGt(VERSION, h.version) || (VERSION === h.version && Boolean(h.hubWanted ?? h.hub) !== hubEnabled()))) {
-    // A newer CLI replaces an older server, and `hub on|off` switches its mode;
-    // sessions persist on disk.
+  if (h && (h.legacy || versionGt(VERSION, h.version))) {
+    // A newer CLI replaces an older server; sessions are on disk. The new one listens where the old one did and keeps --persist.
     const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!h.tailnet || x !== h.tailnet.ip));
+    const persist = !!h.persist;
     await shutdownServer(h, port);
     for (let i = 0; i < 40 && (await health(port)); i++) await sleep(100);
     h = null;
-    exited = spawnServer(port, keep);
+    exited = spawnServer(port, { alsoListen: keep, persist });
   } else if (!h) {
     exited = spawnServer(port);
   }
