@@ -1,0 +1,5 @@
+```openui
+incIdCol = Col("ID", ["INC-1042", "INC-1047 (PM-1047)", "INC-1051"])
+incSevCol = Col("Severity", ["Sev2", "Sev2", "Sev3"])
+incDurCol = Col("Duration", ["38 min", "47 min", "ongoing"])
+```

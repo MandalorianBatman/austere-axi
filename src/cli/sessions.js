@@ -19,10 +19,11 @@ export function newId(prefix) {
 export class SessionStore {
   /**
    * @param {string} dir
-   * @param {{ onFlush?: (session) => void }} [options] onFlush runs after a session is written (the hub mirrors it)
+   * @param {{ onFlush?: (session) => void, onFlushError?: (session, err) => void }} [options] onFlush runs after a session is written (the hub mirrors it); onFlushError hears when it throws
    */
-  constructor(dir, { onFlush } = {}) {
+  constructor(dir, { onFlush, onFlushError } = {}) {
     this.onFlush = onFlush || null;
+    this.onFlushError = onFlushError || null;
     this.dir = path.join(dir, "sessions");
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.sessions = new Map();
@@ -95,8 +96,9 @@ export class SessionStore {
     if (this.onFlush) {
       try {
         this.onFlush(s);
-      } catch {
+      } catch (err) {
         // the hub index is a convenience; the session file is the record
+        this.onFlushError?.(s, err);
       }
     }
   }
@@ -127,10 +129,10 @@ export class SessionStore {
     return s.transcript.filter((e) => e.role === "user" && e.held);
   }
 
-  /** The owner sends held notes on to the agent (`ids` omitted: all of them). Returns the entries released. */
+  /** The owner sends the held notes named by `ids` on to the agent. Returns the entries released. */
   release(s, ids) {
-    const want = ids ? new Set(ids) : null;
-    const out = this.heldEntries(s).filter((e) => !want || want.has(e.id));
+    const want = new Set(ids);
+    const out = this.heldEntries(s).filter((e) => want.has(e.id));
     for (const e of out) {
       e.held = false;
       s.pending.push(e.id);

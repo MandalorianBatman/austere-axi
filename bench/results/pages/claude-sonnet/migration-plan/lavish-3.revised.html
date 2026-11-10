@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review: Move user sessions from Redis to Postgres</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, dd, td, th, .badge, .label) { overflow-wrap: anywhere; }
+  :where(img, svg, video, canvas, iframe) { max-width: 100%; height: auto; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+  .fig text { fill: currentColor; font-size: 14px; font-family: inherit; }
+  .fig .sub { font-size: 11px; opacity: .7; }
+  .fig .box { fill: var(--color-base-200); stroke: currentColor; stroke-width: 1.5; }
+  .fig .new { stroke: var(--color-primary); stroke-width: 2.5; }
+  .fig .edge { stroke: currentColor; stroke-width: 1.8; fill: none; }
+</style>
+</head>
+<body>
+<main class="mx-auto max-w-5xl p-6 lg:p-10 space-y-8">
+
+  <header class="space-y-3">
+    <div class="flex flex-wrap gap-2">
+      <span class="badge badge-primary">Migration plan</span>
+      <span class="badge badge-outline">Awaiting decision</span>
+    </div>
+    <h1 class="text-3xl lg:text-4xl font-bold">Move user sessions from Redis to Postgres</h1>
+    <p class="opacity-80">Review the plan below, then approve it and pick a rollout strategy at the bottom of the page.</p>
+  </header>
+
+  <section class="space-y-4" id="why">
+    <h2 class="text-2xl font-semibold">Why now</h2>
+    <div class="alert alert-warning" role="alert">
+      <span>Sessions live only in Redis and are lost on failover. Last month that forced <strong>38,214 users</strong> to log in again.</span>
+    </div>
+    <div class="stats stats-vertical lg:stats-horizontal shadow w-full bg-base-200">
+      <div class="stat">
+        <div class="stat-title">Users forced to re-login last month</div>
+        <div class="stat-value">38,214</div>
+        <div class="stat-desc">Redis failover</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Auth p99 today</div>
+        <div class="stat-value">41 ms</div>
+        <div class="stat-desc">Must stay at or under 45 ms</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Extra cost</div>
+        <div class="stat-value">$140</div>
+        <div class="stat-desc">per month</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="space-y-4" id="goal">
+    <h2 class="text-2xl font-semibold">Goal</h2>
+    <div class="grid gap-4 md:grid-cols-3">
+      <div class="card card-border bg-base-200"><div class="card-body"><h3 class="card-title">Durable sessions</h3><p>Sessions survive a Redis failover.</p></div></div>
+      <div class="card card-border bg-base-200"><div class="card-body"><h3 class="card-title">No forced logout</h3><p>Users stay signed in through the migration.</p></div></div>
+      <div class="card card-border bg-base-200"><div class="card-body"><h3 class="card-title">Auth p99 ≤ 45 ms</h3><p>Today it is 41 ms.</p></div></div>
+    </div>
+  </section>
+
+  <section class="space-y-4" id="path">
+    <h2 class="text-2xl font-semibold">Request path after the change</h2>
+    <p class="opacity-80">Postgres becomes the source of truth in a new <code>sessions</code> table. Redis stays as a read-through cache in front of it.</p>
+    <div class="rounded-box border border-base-content/10 bg-base-200 p-4">
+      <svg class="fig w-full" viewBox="0 0 760 130" role="img" aria-labelledby="fig-t" style="color: var(--color-base-content)">
+        <title id="fig-t">Client calls the API, which reads through the Redis cache to Postgres</title>
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g id="node-client"><title>Client</title>
+          <rect class="box" x="10" y="35" width="140" height="60" rx="8"/>
+          <text x="80" y="70" text-anchor="middle">Client</text>
+        </g>
+        <g id="node-api"><title>API (Node, port 8080)</title>
+          <rect class="box" x="210" y="35" width="150" height="60" rx="8"/>
+          <text x="285" y="62" text-anchor="middle">API</text>
+          <text class="sub" x="285" y="80" text-anchor="middle">Node, port 8080</text>
+        </g>
+        <g id="node-redis"><title>Redis, read-through cache</title>
+          <rect class="box" x="420" y="35" width="140" height="60" rx="8" stroke-dasharray="5 4"/>
+          <text x="490" y="62" text-anchor="middle">Redis</text>
+          <text class="sub" x="490" y="80" text-anchor="middle">read-through cache</text>
+        </g>
+        <g id="node-pg"><title>Postgres, new sessions table</title>
+          <rect class="box new" x="610" y="35" width="140" height="60" rx="8"/>
+          <text x="680" y="62" text-anchor="middle">Postgres</text>
+          <text class="sub" x="680" y="80" text-anchor="middle">new "sessions" table</text>
+        </g>
+        <path id="edge-1" class="edge" d="M150 65 H208" marker-end="url(#arr)"><title>Client to API</title></path>
+        <path id="edge-2" class="edge" d="M360 65 H418" marker-end="url(#arr)"><title>API to Redis cache</title></path>
+        <path id="edge-3" class="edge" d="M560 65 H608" marker-end="url(#arr)"><title>Redis cache to Postgres</title></path>
+      </svg>
+    </div>
+  </section>
+
+  <section class="space-y-4" id="phases">
+    <h2 class="text-2xl font-semibold">Phases</h2>
+    <ul class="steps steps-vertical lg:steps-horizontal w-full">
+      <li class="step step-primary">1. Table + dual-write</li>
+      <li class="step step-primary">2. Backfill</li>
+      <li class="step step-primary">3. Switch reads</li>
+      <li class="step step-primary">4. Remove Redis writes</li>
+    </ul>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
+      <table class="table">
+        <thead><tr><th>#</th><th>Phase</th><th>Duration</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Create the sessions table and dual-write</td><td>1 week</td></tr>
+          <tr><td>2</td><td>Backfill existing sessions</td><td>2 days</td></tr>
+          <tr><td>3</td><td>Switch reads to Postgres behind the <code>sessions_pg</code> flag</td><td>1 week</td></tr>
+          <tr><td>4</td><td>Remove Redis writes</td><td>1 day</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm opacity-70">Run back to back, the phases add up to 2 weeks and 3 days.</p>
+  </section>
+
+  <section class="space-y-4" id="risks">
+    <h2 class="text-2xl font-semibold">Risks and mitigations</h2>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="card card-border bg-base-200"><div class="card-body">
+        <span class="badge badge-soft badge-warning">Risk</span>
+        <h3 class="card-title">Write latency on login</h3>
+        <p><strong>Mitigation:</strong> async write with a 50 ms timeout.</p>
+      </div></div>
+      <div class="card card-border bg-base-200"><div class="card-body">
+        <span class="badge badge-soft badge-warning">Risk</span>
+        <h3 class="card-title">Table bloat from expired rows</h3>
+        <p><strong>Mitigation:</strong> nightly partition drop.</p>
+      </div></div>
+      <div class="card card-border bg-base-200 md:col-span-2"><div class="card-body">
+        <span class="badge badge-soft badge-warning">Risk</span>
+        <h3 class="card-title">Connection pool exhaustion during the dual-write phase</h3>
+        <p><strong>Mitigation:</strong> put PgBouncer in transaction mode in front of Postgres.</p>
+      </div></div>
+    </div>
+  </section>
+
+  <section id="decision" class="space-y-4">
+    <h2 class="text-2xl font-semibold">Your decision</h2>
+    <form id="decision-form" data-lavish-question="migration-decision" class="card card-border bg-base-200">
+      <div class="card-body space-y-6">
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">1. Verdict on the plan</legend>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="radio" name="verdict" value="Approved" class="radio radio-primary"> Approve the plan
+          </label>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="radio" name="verdict" value="Not approved" class="radio"> Do not approve yet
+          </label>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">2. Rollout strategy</legend>
+          <div class="grid gap-4 md:grid-cols-2">
+            <label class="card card-border bg-base-100 cursor-pointer">
+              <div class="card-body">
+                <div class="flex items-center gap-3">
+                  <input type="radio" name="strategy" value="Big bang" class="radio radio-primary">
+                  <span class="card-title">Big bang</span>
+                </div>
+                <p>One deploy.</p>
+                <span class="badge badge-soft badge-error w-fit">High risk</span>
+              </div>
+            </label>
+            <label class="card card-border bg-base-100 cursor-pointer">
+              <div class="card-body">
+                <div class="flex items-center gap-3">
+                  <input type="radio" name="strategy" value="Dual-write" class="radio radio-primary">
+                  <span class="card-title">Dual-write</span>
+                </div>
+                <p>Gradual rollout.</p>
+                <span class="badge badge-soft badge-success w-fit">Low risk</span>
+              </div>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">3. Notes (optional)</legend>
+          <textarea name="notes" class="textarea w-full" rows="3" placeholder="Anything the agent should know"></textarea>
+        </fieldset>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="submit" class="btn btn-primary">Queue decision for agent</button>
+          <span id="decision-status" role="status" aria-live="polite" class="text-sm opacity-80">Nothing queued yet. Choose a verdict and a strategy.</span>
+        </div>
+        <p class="text-sm opacity-70">Queuing adds one prompt to the Conversation panel. Press Send to Agent there to deliver it.</p>
+      </div>
+    </form>
+  </section>
+
+  <footer class="text-xs opacity-60 pt-4 border-t border-base-content/10">
+    Design source: no user-specified look and no subject-project design system applied, so this page uses the Lavish-recommended Tailwind CSS v4 + DaisyUI v5 (luxury theme).
+  </footer>
+</main>
+
+<script>
+  document.getElementById('decision-form').addEventListener('submit', function (event) {
+    event.preventDefault();
+    var form = event.currentTarget;
+    var status = document.getElementById('decision-status');
+    var data = new FormData(form);
+    var verdict = data.get('verdict');
+    var strategy = data.get('strategy');
+    var notes = (data.get('notes') || '').toString().trim();
+    if (!verdict || !strategy) {
+      status.textContent = 'Pick both a verdict and a rollout strategy first.';
+      return;
+    }
+    var prompt = 'Migration plan (Redis to Postgres sessions): ' + verdict + '. Rollout strategy: ' + strategy + '.' + (notes ? ' Notes: ' + notes : '');
+    if (window.lavish && typeof window.lavish.queuePrompt === 'function') {
+      window.lavish.queuePrompt(prompt, {
+        tag: 'decision',
+        text: verdict + ' / ' + strategy,
+        element: form,
+        queueKey: 'migration-decision',
+        data: { question: 'migration-decision', verdict: verdict, strategy: strategy, notes: notes }
+      });
+      status.textContent = 'Queued: ' + verdict + ', ' + strategy + '. Press Send to Agent to deliver it.';
+    } else {
+      status.textContent = 'Not connected to Lavish, so nothing was queued. Selection: ' + verdict + ', ' + strategy + '.';
+    }
+  });
+</script>
+</body>
+</html>

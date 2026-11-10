@@ -6,12 +6,14 @@ import path from "node:path";
 import { mergeStatements } from "@openuidev/lang-core";
 import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.js";
 import { checkHtml, statementLines } from "./check.js";
+import { splitStatements } from "../shared/statements.js";
 import { ensureServer, loginUrl, openBrowser, request, serverIfRunning, shutdownServer, wantHub } from "./client.js";
 import { Hub, hubDbFile, hubEnabled, registerWithHub, setHubEnabled } from "./hub.js";
 import { InviteStore, inviteId } from "./invites.js";
 import { SessionStore, sessionId } from "./sessions.js";
 import { exportHtml } from "./export.js";
 import { format, print } from "./output.js";
+import { describeItem, locator } from "../shared/feedback.js";
 import { VERSION, assetPath, canonicalFile, port, stateDir } from "./paths.js";
 import { listComponents, searchComponents, showComponents } from "./components.js";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.js";
@@ -79,7 +81,8 @@ COMMANDS
                                    or in an earlier session)   [--all] [--peek]; answer with reply
   ${BIN} check <file>            validate the program (no browser)   [--fix: declare the packs it uses]
   ${BIN} patch <file>            merge statements from stdin into the program: same name
-                                   replaces, new name adds, \`name = null\` deletes
+                                   replaces, new name adds, \`name = null\` deletes;
+                                   reports added statements dropped as unreferenced
   ${BIN} spec [group|pack...]    component reference (groups: Layout Content Data Charts Forms Buttons)
   ${BIN} components [group]      every component, including ones spec leaves out
   ${BIN} components search <words> | show <Name...>
@@ -93,6 +96,7 @@ COMMANDS
                                    wait for the owner to send them on; --auto skips the wait
   ${BIN} share list [--links] | revoke <name|id>
   ${BIN} stop                    stop the background server
+  ${BIN} mcp                     MCP server on stdio: spec check open poll reply patch end as tools
 
 ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
@@ -241,41 +245,20 @@ function describeItems(abs, items) {
   } catch {
     // file gone
   }
-  const at = (id) => {
-    const l = lines.get(id);
-    if (!l) return {};
-    const first = l.text.split("\n")[0];
-    return { line: l.line, source: first.length > 110 ? first.slice(0, 109) + "…" : first };
-  };
+  const at = locator(lines);
   return items.map((it) => {
-    const o = describeItem(it, at);
-    return it.author ? { from: it.author, ...o } : o;
+    /** @type {Record<string, any>} */
+    let o;
+    try {
+      o = describeItem(it, at);
+    } catch {
+      // one malformed item must not hide the rest of the delivery, which the server already marked received
+      o = { malformed: `could not read this ${typeof it?.kind === "string" ? it.kind : "feedback"} item` };
+    }
+    return it?.author ? { from: it.author, ...o } : o;
   });
 }
 
-function describeItem(it, at) {
-  if (it.kind === "annotation") {
-    /** @type {Record<string, any>} */
-    const o = { annotation: `${it.target} (${it.component})`, ...at(it.target) };
-    const within = (it.path || []).slice(0, -1).filter((p) => p !== "root");
-    if (within.length) o.within = within.join(" > ");
-    if (it.selection) o.selection = it.selection;
-    else if (it.excerpt) o.excerpt = it.excerpt;
-    if (it.detail) o.detail = it.detail;
-    o.note = it.note || "(no note: the selection itself is the point)";
-    return o;
-  }
-  if (it.kind === "action") {
-    const o = { action: it.message };
-    if (it.form) o.form = it.form;
-    if (it.context !== undefined) o.context = it.context;
-    return o;
-  }
-  if (it.kind === "render-error") {
-    return { render_error: it.statement || "(page)", ...at(it.statement), error: it.message, note: it.note };
-  }
-  return { message: it.text ?? it.note ?? "" };
-}
 
 function thirdPartyOf(abs) {
   try {
@@ -426,11 +409,17 @@ async function cmdPatch(file) {
   const art = readArtifact(html);
   if (art.program == null) return fail('no <script type="text/openui"> block to patch');
   const merged = mergeStatements(art.program.trim(), patch.trim(), "root");
+  // mergeStatements garbage-collects statements unreachable from root; report patched ones it dropped (`x = null` deletes are intended).
+  const kept = new Set(splitStatements(merged).map((s) => s.id));
+  const patched = new Set(splitStatements(patch).filter((s) => !/=\s*null\s*;?$/.test(s.text)).map((s) => s.id));
+  const dropped = [...patched].filter((id) => !kept.has(id));
   const next = replaceProgram(html, merged);
   fs.writeFileSync(abs, next);
   const result = checkHtml(next, { file: quote(file) });
   await registerWithHub(abs, result.title, sessionId(abs));
-  print({ status: "patched", file: abs, check: compactCheck(result) });
+  const out = { status: "patched", file: abs };
+  if (dropped.length) Object.assign(out, { dropped, warning: `unreferenced statement(s) dropped: ${dropped.join(", ")} (reference them from a parent to keep them on the page)` });
+  print({ ...out, check: compactCheck(result) });
 }
 
 /** A pack's part of the reference: its signatures and notes, as `spec` prints core groups. */
@@ -915,6 +904,10 @@ async function main() {
       return cmdStop();
     case "server":
       return cmdServer(flags);
+    case "mcp": {
+      const { runMcp } = await import("./mcp.js");
+      return runMcp();
+    }
     case "open":
       return cmdOpen(rest[0], flags);
     case "help":

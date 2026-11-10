@@ -1,5 +1,6 @@
 node_modules/
 dist/
+_site/
 scratch/
 *.export.html
 .DS_Store

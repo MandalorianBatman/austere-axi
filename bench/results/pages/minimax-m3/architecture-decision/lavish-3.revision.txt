@@ -1,0 +1,83 @@
+<<<<<<< SEARCH
+              <div class="flex items-start justify-between gap-4 border-b border-base-content/10 pb-2">
+                <dt class="text-base-content/60">Ops cost</dt>
+                <dd class="text-right font-semibold">High</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <dt class="text-base-content/60">Team experience</dt>
+                <dd class="text-right font-semibold">None</dd>
+              </div>
+=======
+              <div class="flex items-start justify-between gap-4 border-b border-base-content/10 pb-2">
+                <dt class="text-base-content/60">Ops cost</dt>
+                <dd class="text-right font-semibold">High</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4 border-b border-base-content/10 pb-2">
+                <dt class="text-base-content/60">Monthly cost estimate</dt>
+                <dd class="metric text-right font-semibold">About $2,400</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <dt class="text-base-content/60">Team experience</dt>
+                <dd class="text-right font-semibold">None</dd>
+              </div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <div class="flex items-start justify-between gap-4 border-b border-base-content/10 pb-2">
+                <dt class="text-base-content/60">Ops cost</dt>
+                <dd class="text-right font-semibold">Medium</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <dt class="text-base-content/60">Team experience</dt>
+                <dd class="text-right font-semibold">One engineer</dd>
+              </div>
+=======
+              <div class="flex items-start justify-between gap-4 border-b border-base-content/10 pb-2">
+                <dt class="text-base-content/60">Ops cost</dt>
+                <dd class="text-right font-semibold">Medium</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4 border-b border-base-content/10 pb-2">
+                <dt class="text-base-content/60">Monthly cost estimate</dt>
+                <dd class="metric text-right font-semibold">About $900</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <dt class="text-base-content/60">Team experience</dt>
+                <dd class="text-right font-semibold">One engineer</dd>
+              </div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <div class="flex items-start justify-between gap-4 border-b border-base-content/10 pb-2">
+                <dt class="text-base-content/60">Ops cost</dt>
+                <dd class="text-right font-semibold">Low</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <dt class="text-base-content/60">Team experience</dt>
+                <dd class="text-right font-semibold">High</dd>
+              </div>
+=======
+              <div class="flex items-start justify-between gap-4 border-b border-base-content/10 pb-2">
+                <dt class="text-base-content/60">Ops cost</dt>
+                <dd class="text-right font-semibold">Low</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4 border-b border-base-content/10 pb-2">
+                <dt class="text-base-content/60">Monthly cost estimate</dt>
+                <dd class="metric text-right font-semibold">About $310</dd>
+              </div>
+              <div class="flex items-start justify-between gap-4">
+                <dt class="text-base-content/60">Team experience</dt>
+                <dd class="text-right font-semibold">High</dd>
+              </div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <p class="text-sm text-base-content/60">We would run a 3-broker cluster.</p>
+=======
+            <p class="text-sm text-base-content/60">At our volume. We would run a 3-broker cluster.</p>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <p class="text-sm text-base-content/60">Retention only: 14 days. Managed service.</p>
+=======
+            <p class="text-sm text-base-content/60">At our volume. Retention only: 14 days. Managed service.</p>
+>>>>>>> REPLACE

@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Checkout Service Health — Week of 2026-10-26</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+    :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+      min-width: 0;
+    }
+    :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+      overflow-wrap: anywhere;
+    }
+    :where(img, svg, video, canvas, iframe) { max-width: 100%; height: auto; }
+    body { background: var(--color-base-200); }
+    .metric-value { font-variant-numeric: tabular-nums; }
+    .chart-label { font-size: 0.72rem; }
+    .chart-bar { transition: opacity 150ms ease; }
+    .chart-bar:hover { opacity: 0.78; }
+  </style>
+</head>
+<body class="min-h-screen bg-base-200 text-base-content">
+  <main class="mx-auto max-w-7xl space-y-8 p-4 sm:p-6 lg:p-10">
+    <header class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+          <span class="badge badge-primary badge-soft">Checkout service</span>
+          <span class="badge badge-warning badge-soft">p95 target breached</span>
+        </div>
+        <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Weekly service health</h1>
+        <p class="mt-2 text-base-content/65">Monday review · Week of 2026-10-26</p>
+      </div>
+      <div class="stats stats-vertical border border-base-content/10 bg-base-100 shadow-sm sm:stats-horizontal">
+        <div class="stat px-5 py-4">
+          <div class="stat-title">Requests</div>
+          <div class="stat-value metric-value text-2xl">48.2M</div>
+          <div class="stat-desc text-success">↑ 6% week over week</div>
+        </div>
+      </div>
+    </header>
+
+    <section aria-labelledby="overview-heading">
+      <h2 id="overview-heading" class="sr-only">Weekly overview</h2>
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <article class="card card-border bg-base-100 shadow-sm">
+          <div class="card-body">
+            <div class="flex items-start justify-between gap-3">
+              <h3 class="card-title text-base">Requests</h3>
+              <span class="badge badge-success badge-soft">+6% WoW</span>
+            </div>
+            <p class="metric-value text-4xl font-bold">48.2M</p>
+            <p class="text-sm text-base-content/60">Up 6% week over week</p>
+          </div>
+        </article>
+
+        <article class="card card-border bg-base-100 shadow-sm">
+          <div class="card-body">
+            <div class="flex items-start justify-between gap-3">
+              <h3 class="card-title text-base">Error rate</h3>
+              <span class="badge badge-success badge-soft">Within SLO</span>
+            </div>
+            <p class="metric-value text-4xl font-bold">0.21%</p>
+            <p class="text-sm text-base-content/60">SLO 0.5%</p>
+          </div>
+        </article>
+
+        <article class="card card-border bg-base-100 shadow-sm">
+          <div class="card-body">
+            <div class="flex items-start justify-between gap-3">
+              <h3 class="card-title text-base">p95 latency</h3>
+              <span class="badge badge-error badge-soft">Breached</span>
+            </div>
+            <p class="metric-value text-4xl font-bold">312 ms</p>
+            <p class="text-sm text-base-content/60">Target 300 ms</p>
+          </div>
+        </article>
+
+        <article class="card card-border bg-base-100 shadow-sm">
+          <div class="card-body">
+            <div class="flex items-start justify-between gap-3">
+              <h3 class="card-title text-base">Error budget left</h3>
+              <span class="badge badge-info badge-soft">This month</span>
+            </div>
+            <p class="metric-value text-4xl font-bold">64%</p>
+            <p class="text-sm text-base-content/60">Remaining this month</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="grid gap-6 xl:grid-cols-2" aria-label="Daily service trends">
+      <article class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 class="card-title">Daily p95 latency</h2>
+              <p class="mt-1 text-sm text-base-content/60">Target: 300 ms</p>
+            </div>
+            <span class="badge badge-error badge-soft">Tuesday peak: 340 ms</span>
+          </div>
+
+          <div class="mt-5" role="img" aria-label="Daily p95 latency from Monday to Sunday: 288, 295, 340, 331, 305, 297, and 330 milliseconds. Target is 300 milliseconds.">
+            <div class="flex h-64 items-end gap-3 border-b border-base-content/15 px-1 pt-6 sm:gap-5">
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end">
+                <div class="relative flex h-full items-end justify-center">
+                  <div class="absolute bottom-[82%] left-0 right-0 border-t border-dashed border-error/60"><span class="sr-only">300 millisecond target</span></div>
+                  <div class="chart-bar relative w-full max-w-14 rounded-t bg-info" style="height: 76.8%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">288</span></div>
+                </div>
+                <span class="chart-label mt-2 text-center text-base-content/60">Mon</span>
+              </div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end">
+                <div class="relative flex h-full items-end justify-center">
+                  <div class="absolute bottom-[82%] left-0 right-0 border-t border-dashed border-error/60"><span class="sr-only">300 millisecond target</span></div>
+                  <div class="chart-bar relative w-full max-w-14 rounded-t bg-info" style="height: 78.7%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">295</span></div>
+                </div>
+                <span class="chart-label mt-2 text-center text-base-content/60">Tue</span>
+              </div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end">
+                <div class="relative flex h-full items-end justify-center">
+                  <div class="absolute bottom-[82%] left-0 right-0 border-t border-dashed border-error/60"><span class="sr-only">300 millisecond target</span></div>
+                  <div class="chart-bar relative w-full max-w-14 rounded-t bg-error" style="height: 90.7%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">340</span></div>
+                </div>
+                <span class="chart-label mt-2 text-center text-base-content/60">Wed</span>
+              </div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end">
+                <div class="relative flex h-full items-end justify-center">
+                  <div class="absolute bottom-[82%] left-0 right-0 border-t border-dashed border-error/60"><span class="sr-only">300 millisecond target</span></div>
+                  <div class="chart-bar relative w-full max-w-14 rounded-t bg-error" style="height: 88.3%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">331</span></div>
+                </div>
+                <span class="chart-label mt-2 text-center text-base-content/60">Thu</span>
+              </div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end">
+                <div class="relative flex h-full items-end justify-center">
+                  <div class="absolute bottom-[82%] left-0 right-0 border-t border-dashed border-error/60"><span class="sr-only">300 millisecond target</span></div>
+                  <div class="chart-bar relative w-full max-w-14 rounded-t bg-warning" style="height: 81.3%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">305</span></div>
+                </div>
+                <span class="chart-label mt-2 text-center text-base-content/60">Fri</span>
+              </div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end">
+                <div class="relative flex h-full items-end justify-center">
+                  <div class="absolute bottom-[82%] left-0 right-0 border-t border-dashed border-error/60"><span class="sr-only">300 millisecond target</span></div>
+                  <div class="chart-bar relative w-full max-w-14 rounded-t bg-info" style="height: 79.2%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">297</span></div>
+                </div>
+                <span class="chart-label mt-2 text-center text-base-content/60">Sat</span>
+              </div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end">
+                <div class="relative flex h-full items-end justify-center">
+                  <div class="absolute bottom-[82%] left-0 right-0 border-t border-dashed border-error/60"><span class="sr-only">300 millisecond target</span></div>
+                  <div class="chart-bar relative w-full max-w-14 rounded-t bg-error" style="height: 88%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">330</span></div>
+                </div>
+                <span class="chart-label mt-2 text-center text-base-content/60">Sun</span>
+              </div>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-4 text-xs text-base-content/60">
+              <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-info"></span>Within target</span>
+              <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-warning"></span>Above target</span>
+              <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-error"></span>Breached</span>
+              <span class="inline-flex items-center gap-2"><span class="w-5 border-t border-dashed border-error"></span>300 ms target</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card card-border bg-base-100 shadow-sm">
+        <div class="card-body">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 class="card-title">Daily errors</h2>
+              <p class="mt-1 text-sm text-base-content/60">Monday through Sunday</p>
+            </div>
+            <span class="badge badge-warning badge-soft">Wednesday peak: 15,900</span>
+          </div>
+
+          <div class="mt-5" role="img" aria-label="Daily errors from Monday to Sunday: 9,800; 10,400; 15,900; 12,100; 9,900; 8,700; and 9,300.">
+            <div class="flex h-64 items-end gap-3 border-b border-base-content/15 px-1 pt-6 sm:gap-5">
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end"><div class="chart-bar relative w-full max-w-14 rounded-t bg-info" style="height: 61.6%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">9,800</span></div><span class="chart-label mt-2 text-center text-base-content/60">Mon</span></div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end"><div class="chart-bar relative w-full max-w-14 rounded-t bg-info" style="height: 65.4%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">10,400</span></div><span class="chart-label mt-2 text-center text-base-content/60">Tue</span></div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end"><div class="chart-bar relative w-full max-w-14 rounded-t bg-error" style="height: 100%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">15,900</span></div><span class="chart-label mt-2 text-center text-base-content/60">Wed</span></div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end"><div class="chart-bar relative w-full max-w-14 rounded-t bg-warning" style="height: 76.1%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">12,100</span></div><span class="chart-label mt-2 text-center text-base-content/60">Thu</span></div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end"><div class="chart-bar relative w-full max-w-14 rounded-t bg-info" style="height: 62.3%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">9,900</span></div><span class="chart-label mt-2 text-center text-base-content/60">Fri</span></div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end"><div class="chart-bar relative w-full max-w-14 rounded-t bg-info" style="height: 54.7%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">8,700</span></div><span class="chart-label mt-2 text-center text-base-content/60">Sat</span></div>
+              <div class="flex h-full min-w-0 flex-1 flex-col justify-end"><div class="chart-bar relative w-full max-w-14 rounded-t bg-info" style="height: 58.5%"><span class="absolute -top-7 left-1/2 -translate-x-1/2 text-sm font-semibold">9,300</span></div><span class="chart-label mt-2 text-center text-base-content/60">Sun</span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section aria-labelledby="incidents-heading">
+      <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 id="incidents-heading" class="text-2xl font-bold">Incidents</h2>
+          <p class="mt-1 text-sm text-base-content/60">Two resolved incidents and one ongoing investigation.</p>
+        </div>
+        <span class="badge badge-warning badge-soft">1 investigating</span>
+      </div>
+
+      <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-100 shadow-sm">
+        <table class="table table-zebra">
+          <thead>
+            <tr>
+              <th>Incident</th>
+              <th>Day</th>
+              <th>Severity</th>
+              <th>Duration</th>
+              <th>Cause</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="font-semibold">INC-1042</td>
+              <td>Tue</td>
+              <td><span class="badge badge-warning badge-soft">Sev2</span></td>
+              <td>38 min</td>
+              <td>Payment provider timeouts</td>
+              <td><span class="badge badge-success badge-soft">Resolved</span></td>
+            </tr>
+            <tr>
+              <td class="font-semibold">INC-1047</td>
+              <td>Wed</td>
+              <td><span class="badge badge-warning badge-soft">Sev2</span></td>
+              <td>47 min</td>
+              <td>Bad config push to the cart cache · <span class="badge badge-ghost">PM-1047</span></td>
+              <td><span class="badge badge-success badge-soft">Resolved</span></td>
+            </tr>
+            <tr>
+              <td class="font-semibold">INC-1051</td>
+              <td>Sun</td>
+              <td><span class="badge badge-info badge-soft">Sev3</span></td>
+              <td>Ongoing</td>
+              <td>Elevated p95 from a slow inventory query</td>
+              <td><span class="badge badge-warning badge-soft">Investigating</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section aria-labelledby="actions-heading">
+      <div class="mb-4">
+        <h2 id="actions-heading" class="text-2xl font-bold">Action items</h2>
+        <p class="mt-1 text-sm text-base-content/60">Two actions are assigned for follow-up.</p>
+      </div>
+
+      <div class="grid gap-4 lg:grid-cols-2">
+        <article class="card card-border bg-base-100 shadow-sm">
+          <div class="card-body">
+            <div class="flex items-start justify-between gap-3">
+              <span class="badge badge-primary badge-soft">Priya</span>
+              <span class="badge badge-ghost">Due Nov 4</span>
+            </div>
+            <h3 class="card-title mt-2 text-lg leading-snug">Add an index on <code class="rounded bg-base-200 px-1.5 py-0.5 text-base">inventory(sku, warehouse_id)</code></h3>
+          </div>
+        </article>
+
+        <article class="card card-border bg-base-100 shadow-sm">
+          <div class="card-body">
+            <div class="flex items-start justify-between gap-3">
+              <span class="badge badge-secondary badge-soft">Marco</span>
+              <span class="badge badge-ghost">Due Nov 6</span>
+            </div>
+            <h3 class="card-title mt-2 text-lg leading-snug">Add a timeout alert for the payment provider</h3>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <footer class="border-t border-base-content/10 pt-5 text-sm text-base-content/55">
+      Checkout service health review · Week of 2026-10-26
+    </footer>
+  </main>
+</body>
+</html>

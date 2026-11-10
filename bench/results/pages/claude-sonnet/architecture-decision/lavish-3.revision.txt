@@ -1,0 +1,27 @@
+<<<<<<< SEARCH
+            <th>Team experience</th>
+=======
+            <th>Team experience</th>
+            <th>Monthly cost estimate</th>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td><span class="badge badge-soft badge-error">None</span></td>
+=======
+            <td><span class="badge badge-soft badge-error">None</span></td>
+            <td>about $2,400</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td><span class="badge badge-soft badge-warning">One engineer</span></td>
+=======
+            <td><span class="badge badge-soft badge-warning">One engineer</span></td>
+            <td>about $900</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td><span class="badge badge-soft badge-success">High</span></td>
+=======
+            <td><span class="badge badge-soft badge-success">High</span></td>
+            <td>about $310</td>
+>>>>>>> REPLACE

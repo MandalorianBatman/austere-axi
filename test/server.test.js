@@ -415,3 +415,16 @@ test("session files are the owner's only", { skip: !posix }, async () => {
   assert.equal(mode(path.join(STATE, "sessions")), 0o700);
   assert.equal(mode(f), 0o600);
 });
+
+test("artifact responses carry their own sandbox, so a top-level load gets an opaque origin", async () => {
+  const open = await req("POST", "/api/open", { file: FILE });
+  const id = open.data.session.id;
+  const host = { host: `127.0.0.1:${PORT}` };
+  for (const route of [`/s/${id}/a/plan.html`, `/s/${id}/a/`, `/s/${id}/a/shot.png`, `/s/${id}/export`]) {
+    const r = await req("GET", route, undefined, host);
+    assert.equal(r.status, 200, route);
+    const csp = r.headers["content-security-policy"] || "";
+    assert.match(csp, /(^|;)\s*sandbox\b/, `${route}: no CSP sandbox`);
+    assert.doesNotMatch(csp, /allow-same-origin|allow-top-navigation/, route);
+  }
+});

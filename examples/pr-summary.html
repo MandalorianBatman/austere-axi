@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="description" content="Summary of a rate-limiter pull request: where it sits, the core diff, test results and files touched.">
+<title>PR #482: rate limiter for the public API</title>
+<script src="../dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([summary, flow, change, tests, files, followUps], "column", "l")
+summary = Card([CardHeader("PR #482: token-bucket rate limiter", "5 files, +96 -12"), facts, why])
+facts = EntityList([{left: "Author", right: "dana"}, {left: "Tests", right: "212 passed, 6 new"}, {left: "Risk", right: "Medium: sits on every request"}, {left: "Flag", right: "RATE_LIMIT_V2, off by default"}])
+why = MarkDownRenderer("The fixed-window limiter let a client burst **2x** the limit across a window boundary. This swaps it for a token bucket per API key, kept in Redis, and returns `Retry-After` on 429.")
+flow = Card([CardHeader("Where it sits"), flowDiagram])
+flowDiagram = Architecture([client, gateway, limiter, redis, api], [toGateway, toLimiter, toRedis, toApi])
+client = Node("Client", "external")
+gateway = Node("Gateway", "cloud", "auth + routing")
+limiter = Node("Rate limiter", "security", "middleware", "new")
+redis = Node("Redis", "database", "bucket per key")
+api = Node("API", "backend")
+toGateway = Edge(client, gateway, "HTTPS", "emphasis")
+toLimiter = Edge(gateway, limiter)
+toRedis = Edge(limiter, redis, "EVALSHA", "dashed")
+toApi = Edge(limiter, api, "allowed", "solid", "success")
+change = Card([CardHeader("Core change", "src/middleware/rate-limit.ts"), limiterPatch])
+limiterPatch = Diff("diff --git a/src/middleware/rate-limit.ts b/src/middleware/rate-limit.ts
+--- a/src/middleware/rate-limit.ts
++++ b/src/middleware/rate-limit.ts
+@@ -1,18 +1,31 @@
+-export async function rateLimit(req, res, next) {
+-  const key = `rl:${req.apiKey}:${Math.floor(Date.now() / 60000)}`;
+-  const n = await redis.incr(key);
+-  if (n === 1) await redis.expire(key, 60);
+-  if (n > LIMIT) return res.status(429).end();
+-  next();
+-}
++const BUCKET = { capacity: 100, refillPerSec: 10 };
++
++export async function rateLimit(req, res, next) {
++  const key = `rl:${req.apiKey}`;
++  const [allowed, retryMs] = await redis.evalsha(TAKE_TOKEN, 1, key, BUCKET.capacity, BUCKET.refillPerSec, Date.now());
++  if (!allowed) {
++    res.set('Retry-After', String(Math.ceil(retryMs / 1000)));
++    return res.status(429).json({ error: 'rate_limited' });
++  }
++  next();
++}
+@@ -40,3 +53,4 @@ export const config = {
+   limit: 100,
++  failOpen: true,
+ };", "rate-limit.ts")
+tests = Card([CardHeader("Tests"), testTable])
+testTable = Table([Col("Case", ["Burst across a window boundary", "Refill after idle", "Redis unavailable", "Concurrent requests, one key"]), Col("Result", [ok, ok, ok, warn]), Col("Note", ["Now capped at capacity", "Matches refillPerSec", "Fails open, logs once a minute", "Passes, but 3 of 50 runs flaked locally"])])
+ok = Tag("pass", null, "sm", "success")
+warn = Tag("flaky", null, "sm", "warning")
+files = Card([CardHeader("Files touched"), changedFiles])
+changedFiles = FileTree(["M src/middleware/rate-limit.ts # token bucket", "A src/middleware/take-token.lua", "M src/config.ts # failOpen", "A test/rate-limit.test.ts", "M docs/api/errors.md # Retry-After"])
+followUps = Buttons([Button("Approve", @ToAssistant("Approve PR #482"), "primary"), Button("Fix the flaky test first", @ToAssistant("Fix the flaky concurrent-request test before merging"), "secondary"), Button("Should it fail open?", null, "tertiary")])
+</script>
+</body>
+</html>

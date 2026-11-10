@@ -270,3 +270,18 @@ test("notesPage escapes note text, target, title and filters", async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("Hub.syncSession: an item field that is not a string does not stop later notes from being indexed", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-sync-"));
+  const hub = await Hub.open(path.join(dir, "hub.db"));
+  try {
+    const s = { id: "cccccccccccc", file: path.join(dir, "plan.html"), title: "Plan", createdAt: 1, updatedAt: 2, status: "open", pending: [], transcript: [] };
+    const entry = (n, items) => ({ id: `u${n}`, role: "user", at: n, items });
+    s.transcript.push(entry(1, [{ kind: "annotation", id: "bad", target: { x: 1 }, note: { y: 2 } }]), entry(2, [{ kind: "message", id: "good", text: "LATER-NOTE" }]));
+    hub.syncSession(s);
+    assert.deepEqual(hub.notes().map((n) => n.id).sort(), ["bad", "good"]);
+  } finally {
+    hub.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

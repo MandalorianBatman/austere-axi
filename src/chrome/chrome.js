@@ -105,7 +105,7 @@ document.body.innerHTML = `
   <div class="notice" hidden></div>
   <div class="main">
     <section class="stage">
-      <iframe class="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms"></iframe>
+      <iframe class="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-forms"></iframe>
     </section>
     <div class="scrim"></div>
     <aside class="panel" aria-label="Conversation">
@@ -258,8 +258,24 @@ window.addEventListener("message", (e) => {
     case "toggle-mode":
       setMode(state.mode === "annotate" ? "explore" : "annotate");
       break;
+    case "open-url":
+      openExternal(d.url);
+      break;
   }
 });
+
+// Popups from the frame keep its sandbox, so external links are opened here
+// instead. Never this origin: artifact code must not get a window on it.
+function openExternal(url) {
+  let u;
+  try {
+    u = new URL(String(url));
+  } catch {
+    return;
+  }
+  if (!/^(https?|mailto):$/.test(u.protocol) || u.origin === location.origin) return;
+  window.open(u.href, "_blank", "noopener");
+}
 
 // ── queue ──
 
@@ -268,7 +284,9 @@ function saveQueue() {
 }
 
 function addToQueue(item) {
-  if (state.status === "ended") return;
+  if (state.status === "ended" || !item || typeof item !== "object" || typeof item.kind !== "string") return;
+  // Frame code is untrusted: the item is rendered here and saved to localStorage, so its text fields must be strings.
+  for (const k of ["target", "component", "note", "text", "selection", "excerpt", "message", "statement"]) if (k in item) item[k] = str(item[k]);
   item.qid = `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   state.queue.push(item);
   saveQueue();
@@ -299,6 +317,8 @@ function flatForm(obj, prefix = "") {
   return parts;
 }
 
+const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
+
 function itemQuote(item) {
   if (item.selection) return item.selection;
   if (item.detail?.part) return item.excerpt ? `${item.detail.part}  ${item.excerpt}` : item.detail.part;
@@ -311,7 +331,16 @@ function itemQuote(item) {
   return item.excerpt || "";
 }
 
-function itemBody(item, { queued } = {}) {
+/** One bad item shows a marker instead of aborting the whole panel render. */
+function itemBody(item, opts = {}) {
+  try {
+    return renderItem(item, opts);
+  } catch {
+    return h("div", { class: "item" }, h("div", { class: "note", text: "This note could not be displayed." }));
+  }
+}
+
+function renderItem(item, { queued, held } = {}) {
   const a = anchorLabel(item);
   const wrap = h("div", { class: `item kind-${item.kind}` });
   if (a.text) {
@@ -334,8 +363,14 @@ function itemBody(item, { queued } = {}) {
     );
     wrap.append(anchor);
   }
-  const quote = itemQuote(item);
-  if (quote) wrap.append(h("blockquote", { text: quote.length > 260 ? quote.slice(0, 259) + "…" : quote }));
+  // What the agent receives on release: within the path above the leaf, the whole detail, the whole quote.
+  if (held && item.kind === "annotation") {
+    const within = (Array.isArray(item.path) ? item.path : []).slice(0, -1).filter((p) => typeof p === "string" && p !== "root");
+    if (within.length) wrap.append(h("div", { class: "anchor-sub", text: `within ${within.join(" > ")}` }));
+    if (item.detail && typeof item.detail === "object") wrap.append(h("div", { class: "anchor-sub", text: flatForm(item.detail).join(" · ") }));
+  }
+  const quote = str(itemQuote(item));
+  if (quote) wrap.append(h("blockquote", { text: held || quote.length <= 260 ? quote : quote.slice(0, 259) + "…" }));
   const noteText = item.kind === "message" ? item.text : item.note;
   if (queued && state.editing === item.qid) {
     const ta = h("textarea", { class: "edit", rows: "2" });
@@ -468,7 +503,7 @@ function renderLog(scrollToEnd = false) {
       );
     } else {
       const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${whoLabel(entry)} · ${fmtTime(entry.at)}${entry.end ? " · ended review" : ""}` }));
-      for (const it of entry.items || []) bubble.append(itemBody(it));
+      for (const it of entry.items || []) bubble.append(itemBody(it, { held: !!entry.held }));
       bubble.append(receipt(entry));
       log.append(bubble);
     }
@@ -480,7 +515,7 @@ function renderLog(scrollToEnd = false) {
         "div",
         { class: "held-bar" },
         h("span", { text: `${heldCount} held from teammates` }),
-        h("button", { type: "button", class: "btn tiny primary", text: "Send all", onclick: () => heldAction("release") }),
+        h("button", { type: "button", class: "btn tiny primary", text: "Send all", onclick: () => heldAction("release", state.transcript.filter((e) => e.held).map((e) => e.id)) }),
         h("button", { type: "button", class: "btn tiny ghost", text: "Discard all", onclick: () => heldAction("discard") }),
       ),
     );
