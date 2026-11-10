@@ -10,6 +10,8 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { launchBrowser } from "../../scripts/lib/browser.mjs";
+import { ownerKey } from "../../src/cli/invites.js";
+import { ownerHeaders } from "../owner.js";
 import { freePort } from "../port.js";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
@@ -53,7 +55,7 @@ const ORIGIN_PAGE = { status: 200, contentType: "text/html", body: "<script>docu
 function api(route, body) {
   return new Promise((resolve, reject) => {
     const r = http.request(
-      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json" } },
+      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", ...ownerHeaders(STATE) } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -117,7 +119,7 @@ test("a popup opened by artifact code keeps the sandbox and cannot act as the ow
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${ownerKey(STATE)}`);
     const frame = await (await page.waitForSelector("iframe.frame")).contentFrame();
     await frame.waitForSelector("#target");
     const popupP = context.waitForEvent("page", { timeout: 5000 });
@@ -141,7 +143,7 @@ test("the chrome opens external links for the frame, never its own origin", asyn
   await context.route("https://example.com/**", (r) => r.fulfill({ status: 200, body: "ok" }));
   try {
     const page = await context.newPage();
-    await page.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${ownerKey(STATE)}`);
     const frame = await (await page.waitForSelector("iframe.frame")).contentFrame();
     await frame.waitForSelector("#target");
     const opened = [];
@@ -167,7 +169,7 @@ test("a new-window link in the frame opens through the chrome, outside the sandb
   await context.route("https://example.com/**", (r) => r.fulfill(ORIGIN_PAGE));
   try {
     const page = await context.newPage();
-    await page.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${ownerKey(STATE)}`);
     const frame = await (await page.waitForSelector("iframe.frame")).contentFrame();
     await frame.waitForSelector("#ext");
     await page.click('.seg button[data-mode="explore"]');
@@ -189,6 +191,7 @@ test("a page opened on its own lets external popups escape, but its own URL stay
   await context.route("https://example.com/**", (r) => r.fulfill(ORIGIN_PAGE));
   try {
     const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${ownerKey(STATE)}`);
     await page.goto(`http://127.0.0.1:${port}/s/${session.id}/a/links.html`);
     await page.waitForSelector("#self");
     let popupP = context.waitForEvent("page", { timeout: 5000 });
