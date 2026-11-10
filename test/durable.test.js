@@ -349,7 +349,8 @@ test("a newer CLI that replaces an older server keeps --persist", async () => {
   } finally {
     old.close();
     await cli(port, state, "stop");
-    fs.rmSync(state, { recursive: true, force: true });
+    // The stopped server may still hold hub.db for a moment; Windows refuses to remove it until it exits.
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 

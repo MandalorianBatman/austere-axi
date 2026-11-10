@@ -280,7 +280,8 @@ test("a server from before the proof is replaced, without sending it the key", a
     } finally {
       await cli(env, "stop");
       await fake.close();
-      fs.rmSync(state, { recursive: true, force: true });
+      // The replacement server may still hold hub.db for a moment; Windows refuses to remove it until it exits.
+      fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     }
   }
 });
