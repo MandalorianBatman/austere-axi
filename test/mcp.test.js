@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { after, before, test } from "node:test";
+import { ownerHeaders } from "./owner.js";
 import { freePort } from "./port.js";
 
 const PORT = await freePort();
@@ -43,7 +44,7 @@ const call = (name, args) => rpc("tools/call", { name, arguments: args }).then((
 function api(method, route, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
-    const r = http.request({ host: "127.0.0.1", port: PORT, method, path: route, headers: { "content-type": "application/json", ...headers } }, (res) => {
+    const r = http.request({ host: "127.0.0.1", port: PORT, method, path: route, headers: { "content-type": "application/json", ...ownerHeaders(STATE), ...headers } }, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
       res.on("end", () => resolve({ status: res.statusCode, data: data ? JSON.parse(data) : null }));

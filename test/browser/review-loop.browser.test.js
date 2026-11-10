@@ -14,6 +14,7 @@ import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { launchBrowser } from "../../scripts/lib/browser.mjs";
 import { CDN_RUNTIME_URL } from "../../src/cli/artifact.js";
+import { ownerKey } from "../../src/cli/invites.js";
 import { ROOT, examplePage, htmlPage, loadLibrary } from "../../scripts/lib/plugins.mjs";
 
 const VIEWPORTS = [
@@ -29,6 +30,7 @@ let skipReason;
 let lib;
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-browser-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-browser-work-"));
+const KEY = ownerKey(STATE);
 
 function freePort() {
   return new Promise((resolve) => {
@@ -44,7 +46,7 @@ function api(route, body) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const r = http.request(
-      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json" } },
+      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -84,7 +86,9 @@ async function openReview(file, viewport) {
   page.on("console", (m) => {
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
   });
-  await page.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+  // As the CLI does when it opens a browser: a single-use login code signs it in as the owner.
+  const { code } = await api("/api/login", {});
+  await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
   const frameEl = await page.waitForSelector("iframe.frame");
   const frame = await frameEl.contentFrame();
   await frame.waitForSelector("[data-oui-id]", { timeout: 15_000 });

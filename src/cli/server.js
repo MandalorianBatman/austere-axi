@@ -16,7 +16,7 @@ import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.js";
 import { SessionStore, newId } from "./sessions.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
 import { Hub, hubEnabled } from "./hub.js";
-import { COOKIE, InviteStore, OWNER_COOKIE, inviteId, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
+import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
 import { reviewerItem } from "./items.js";
 import { hubPage, notesPage } from "./hub-page.js";
 import { splitSpec } from "../shared/packs-meta.js";
@@ -50,6 +50,8 @@ const MIME = {
 };
 
 const SHORT_GRACE_MS = 10_000;
+/** How long a login code from `austere-axi login` (or the CLI opening a browser) works. */
+const LOGIN_TTL_MS = 60_000;
 const OWNER = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set(["annotation", "message"]);
 
@@ -58,7 +60,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     const line = `${new Date().toISOString()} ${a.join(" ")}`;
     if (verbose) process.stderr.write(line + "\n");
     try {
-      fs.appendFileSync(path.join(stateDir(), "server.log"), line + "\n");
+      fs.appendFileSync(path.join(stateDir(), "server.log"), line + "\n", { mode: 0o600 });
     } catch {
       // ignore
     }
@@ -88,6 +90,8 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   }
   const invites = new InviteStore(stateDir());
   const ownerToken = ownerKey(stateDir());
+  const ownerCookieValue = ownerCookie(ownerToken);
+  const logins = new LoginCodes(LOGIN_TTL_MS);
   const clients = new Map(); // id -> Set<{res, viewer}>
   const polls = new Map(); // id -> poll
   const watchers = new Map(); // id -> { html, program, shell }
@@ -138,7 +142,10 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return base ? `${base}/s/${id}` : null;
   }
 
-  /** The owner's links. The remote one carries the owner key, which the server swaps for a cookie. */
+  /**
+   * The owner's links. The remote one carries the owner key, which the server swaps for a cookie. The
+   * local one does not: the CLI opens it with a single-use login code (client.js loginUrl).
+   */
   function links(id) {
     const out = { local: `http://127.0.0.1:${port}/s/${id}` };
     const remote = remoteUrl(id);
@@ -151,19 +158,39 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     return `${remoteUrl(inv.sessionId)}?invite=${inv.token}`;
   }
 
-  /** Loopback is the owner. Off loopback (tailnet), only a request with the owner key cookie is. */
+  /**
+   * Only a request with the owner cookie is the owner, on loopback too: another OS user on this
+   * machine can reach 127.0.0.1 but cannot read owner.key (mode 0600). The cookie holds a value
+   * derived from the key, not the key (see ownerCookie).
+   */
   function isOwner(req) {
-    if (isLoopback(req.socket.remoteAddress)) return true;
-    const key = tokenFromCookie(req.headers.cookie, OWNER_COOKIE);
-    return key != null && safeEqual(key, ownerToken);
+    const value = tokenFromCookie(req.headers.cookie, OWNER_COOKIE);
+    return value != null && safeEqual(value, ownerCookieValue);
+  }
+
+  /** The 403 text for a request that is not the owner. On loopback it is most likely the owner in a browser without the cookie yet. */
+  function notOwner(req, text = "Only the owner can open this. Ask the owner for a link to the page.") {
+    if (!isLoopback(req.socket.remoteAddress)) return text;
+    return `${text}\nIf this is your page, sign this browser in: run \`austere-axi login\` (or \`austere-axi login <file>\`) and open the single-use link it prints.`;
+  }
+
+  /** Redirect to `url` without the sign-in parameter, setting the owner cookie. */
+  function signIn(res, url, param) {
+    url.searchParams.delete(param);
+    res.writeHead(302, {
+      location: url.pathname + url.search,
+      "set-cookie": `${OWNER_COOKIE}=${ownerCookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+      "cache-control": "no-store",
+    });
+    res.end();
   }
 
   // ── who is asking ──
 
   /**
-   * A team reviewer (a valid invite cookie for this session), else the owner (loopback, or the owner
-   * key cookie from the owner's own remote link), else nobody. A cookie that matches no invite is
-   * refused, never treated as the owner, so revoking cuts access.
+   * A team reviewer (a valid invite cookie for this session), else the owner (the owner key cookie, set
+   * from a link the CLI opened or the owner's own remote link), else nobody. A cookie that matches no
+   * invite is refused, never treated as the owner, so revoking cuts access.
    * @returns {{ role: "owner", name: string } | { role: "reviewer", name: string, auto: boolean, token: string } | null}
    */
   function identify(req, s) {
@@ -384,15 +411,25 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     // The CLI sends no Origin; a browser always does on POST. Any web page could
     // otherwise reach these routes on localhost.
     if (req.headers.origin || req.headers["sec-fetch-site"]) return send(res, 403, { error: "control routes are for the CLI" });
-    activity();
     const route = url.pathname.slice(5);
+    // Loopback is not a person: every other OS user on this machine can reach it. The CLI proves it
+    // is the owner with the key from owner.key (mode 0600). Health stays open so a CLI can find and
+    // check the server; it answers the CLI's nonce with an HMAC under the key instead of the key.
+    if (route !== "health") {
+      const key = req.headers["x-austere-key"];
+      if (typeof key !== "string" || !safeEqual(key, ownerToken)) return send(res, 403, { error: "owner key required" });
+    }
+    activity();
     if (route === "health") {
+      const nonce = url.searchParams.get("nonce");
       return send(res, 200, {
         name: "austere-axi",
         version: VERSION,
         pid: process.pid,
         port,
         stateDir: stateDir(),
+        // Bound to the port this server listens on: a listener elsewhere cannot relay it as its own.
+        proof: nonce ? crypto.createHmac("sha256", ownerToken).update(`${port}:${nonce}`).digest("base64url") : undefined,
         listen: Array.from(listeners.keys()),
         tailnet: tailnet || undefined,
         remote: remoteBase() || undefined,
@@ -417,6 +454,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       setTimeout(() => shutdown("requested"), 50);
       return;
     }
+    if (route === "login" && req.method === "POST") return send(res, 200, { code: logins.issue(), ttlMs: LOGIN_TTL_MS });
     if (route === "share/list") {
       const withLinks = url.searchParams.get("links") === "1";
       return send(res, 200, {
@@ -767,21 +805,21 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
     if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
     if (url.pathname.startsWith("/__austere/")) return serveAsset(res, url.pathname.slice("/__austere/".length), url);
-    // The owner's remote link: trade the key for a cookie, then drop it from the URL.
+    // The owner's remote link: trade the key for the owner cookie, then drop it from the URL.
     const key = url.searchParams.get("key");
     if (key != null) {
       if (!safeEqual(key, ownerToken)) return send(res, 403, "This link is not valid.");
-      url.searchParams.delete("key");
-      res.writeHead(302, {
-        location: url.pathname + url.search,
-        "set-cookie": `${OWNER_COOKIE}=${ownerToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
-        "cache-control": "no-store",
-      });
-      return res.end();
+      return signIn(res, url, "key");
+    }
+    // A link from the CLI: trade the single-use login code for the owner cookie, the same way.
+    const login = url.searchParams.get("login");
+    if (login != null) {
+      if (!logins.take(login)) return send(res, 403, "This sign-in link was used already or has expired. Run `austere-axi login` for a new one.");
+      return signIn(res, url, "login");
     }
     // The hub lists every page and every note: the owner's only.
     const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
-    if (ownerOnly && !isOwner(req)) return send(res, 403, "Only the owner can open this. Ask the owner for a link to the page.");
+    if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
     if (url.pathname === "/") {
       return send(res, 200, hub ? hubHome(url) : homePage(), { "content-type": "text/html; charset=utf-8" });
     }
@@ -834,7 +872,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
 
     const who = identify(req, s);
     if (!who) {
-      if (tokenFromCookie(req.headers.cookie) == null) return send(res, 403, "Ask the owner for a link to this page.");
+      if (tokenFromCookie(req.headers.cookie) == null) return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
       return send(res, 403, "This invite is no longer valid. Ask for a new link.", {
         "set-cookie": `${COOKIE}=; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=0`,
       });

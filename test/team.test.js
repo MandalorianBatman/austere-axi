@@ -9,6 +9,7 @@ import { after, before, test } from "node:test";
 import { InviteStore, cleanName, inviteId, tokenFromCookie } from "../src/cli/invites.js";
 import { SessionStore } from "../src/cli/sessions.js";
 import { Hub } from "../src/cli/hub.js";
+import { ownerHeaders } from "./owner.js";
 import { freePort } from "./port.js";
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
@@ -164,19 +165,28 @@ test("an index made before team review gains the author column", async () => {
 async function startServer(extraEnv) {
   const port = await freePort();
   const state = tmp("austere-team-state-");
+  const owner = ownerHeaders(state);
+  owners.set(port, owner);
   const child = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(port)], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1", ...extraEnv },
     stdio: "ignore",
   });
-  return { port, state, child };
+  return { port, state, child, owner };
 }
 
-/** `remote`: send from 127.0.0.2, which the server does not count as loopback, like a tailnet peer. */
+/** The owner's key and cookie for the server on `port`, or none. */
+const owners = new Map();
+
+/**
+ * `remote`: send from 127.0.0.2, which the server does not count as loopback, like a tailnet peer.
+ * A local request with no cookie of its own comes from the owner (the CLI, or the owner's browser).
+ */
 function request(port, method, route, { body, headers = {}, remote = false } = {}) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
+    const owner = !remote && !headers.cookie ? owners.get(port) || {} : {};
     const r = http.request(
-      { host: "127.0.0.1", port, method, path: route, ...(remote ? { localAddress: "127.0.0.2" } : {}), headers: { host: `127.0.0.1:${port}`, ...(payload ? { "content-type": "application/json" } : {}), ...headers } },
+      { host: "127.0.0.1", port, method, path: route, ...(remote ? { localAddress: "127.0.0.2" } : {}), headers: { host: `127.0.0.1:${port}`, ...(payload ? { "content-type": "application/json" } : {}), ...owner, ...headers } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -199,7 +209,8 @@ function request(port, method, route, { body, headers = {}, remote = false } = {
 function stream(port, route, headers = {}) {
   const events = [];
   let ended = false;
-  const r = http.request({ host: "127.0.0.1", port, path: route, headers: { host: `127.0.0.1:${port}`, ...headers } });
+  const owner = !headers.cookie ? owners.get(port) || {} : {};
+  const r = http.request({ host: "127.0.0.1", port, path: route, headers: { host: `127.0.0.1:${port}`, ...owner, ...headers } });
   const done = new Promise((resolve) => {
     r.on("response", (res) => {
       let buf = "";

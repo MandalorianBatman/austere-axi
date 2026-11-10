@@ -10,6 +10,7 @@ import { after, before, test } from "node:test";
 import { SessionStore } from "../src/cli/sessions.js";
 import { Hub, projectOf } from "../src/cli/hub.js";
 import { notesPage } from "../src/cli/hub-page.js";
+import { ownerHeaders } from "./owner.js";
 import { freePort } from "./port.js";
 
 const PORT = await freePort();
@@ -41,11 +42,12 @@ function cliWith(env, ...args) {
   });
 }
 
+/** As the owner of STATE: other ports here are only asked for their health, which needs no key. */
 function req(method, route, body, port = PORT) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const r = http.request(
-      { host: "127.0.0.1", port, method, path: route, headers: { "content-type": "application/json", host: `127.0.0.1:${port}` } },
+      { host: "127.0.0.1", port, method, path: route, headers: { "content-type": "application/json", host: `127.0.0.1:${port}`, ...ownerHeaders(STATE) } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));

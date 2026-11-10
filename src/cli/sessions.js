@@ -25,7 +25,7 @@ export class SessionStore {
     this.onFlush = onFlush || null;
     this.onFlushError = onFlushError || null;
     this.dir = path.join(dir, "sessions");
-    fs.mkdirSync(this.dir, { recursive: true });
+    fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.sessions = new Map();
     this.timers = new Map();
     for (const f of fs.readdirSync(this.dir)) {
@@ -88,7 +88,7 @@ export class SessionStore {
     const file = path.join(this.dir, `${s.id}.json`);
     const tmp = `${file}.${process.pid}.tmp`;
     try {
-      fs.writeFileSync(tmp, JSON.stringify(data));
+      fs.writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 });
       fs.renameSync(tmp, file);
     } catch {
       // best effort; state is also in memory

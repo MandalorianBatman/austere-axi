@@ -156,6 +156,7 @@ austere-axi <file>               validate + open a review   [--no-open] [--reope
 austere-axi poll <file>          long-poll for feedback      [--agent-reply "..."] [--takeover]
 austere-axi reply <file>         post a reply without polling
 austere-axi end <file>           end the review as the agent
+austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix]
 austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
@@ -256,7 +257,7 @@ Send the link to the teammate. The link needs Tailscale (or `AUSTERE_AXI_HOST`);
 
 Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token. Opening it shows a "Continue as <name>" button; pressing it (a same-origin POST) trades the token for a cookie and the address bar drops it. A link opened from another site therefore cannot switch your browser into a reviewer.
 
-Off loopback, a request without a valid invite or the owner key is refused. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links stop working, delete that file and restart the server. Behind a reverse proxy on the same machine, every request looks local, so it acts as you.
+A request without a valid invite or the owner key is refused, on loopback too. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links and owner cookies stop working, delete that file and restart the server. A reverse proxy on the same machine gets no owner rights from looking local.
 
 ## GitHub Action
 
@@ -305,7 +306,7 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 | Variable | Default | |
 |---|---|---|
 | `AUSTERE_AXI_PORT` | `4388` | server port |
-| `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | sessions, server log |
+| `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | sessions, owner key, server log (mode 0700 on macOS and Linux) |
 | `AUSTERE_AXI_NO_OPEN` | | `1` = never open a browser |
 | `AUSTERE_AXI_HOST` | | extra bind address (never `0.0.0.0`) |
 | `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |
@@ -320,7 +321,12 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 
 The server binds to loopback, plus the Tailscale IP when Tailscale is up. It never binds to all interfaces.
 
-- `/api/*` answers only loopback callers and refuses browser requests.
+- Loopback is not the owner: other OS users on the machine can reach it too. The owner key in `owner.key` is.
+  - `/api/*` answers only loopback callers that send the owner key, and refuses browser requests. `/api/health` needs no key; it proves the server holds the key with an HMAC of its port and the CLI's nonce, so the CLI never talks to, or hands the key to, another program on its port.
+  - A browser signs in with a single-use login code: when the CLI opens your browser, it asks the server for a code and opens the page with it; the server swaps it for the owner cookie and drops it from the address bar. The key is never on a command line or in printed output. A code works once and for 60 seconds. Another local user who reads it from the process list in that time can use it first; your browser then shows "used already", and `austere-axi login` gives you a new one.
+  - A printed `url` works in a browser that already has the cookie. For any other browser (SSH with a forwarded port, `--no-open`, a second browser), run `austere-axi login [file]` and open the link it prints.
+  - The owner cookie is an HMAC of the key, not the key. Browsers share `127.0.0.1` cookies across ports, so any program listening on another local port that your browser visits can read it. With it, that program can open your pages and the hub as you in a browser, but not call `/api/*`, which needs the key.
+- On macOS and Linux the state dir is made mode 0700 on every run, and new files in it (`owner.key`, sessions, `server.log`, `hub.db`) are mode 0600. Files an older version created keep their old mode, behind the 0700 dir. On Windows, file modes do not apply: the state dir is protected only by your user profile's permissions.
 - `Host` headers must be on an allowlist (DNS-rebinding defense).
 - Browser routes that change state refuse a foreign `Origin`.
 - Invite tokens are random, compared in constant time, and kept out of the log. A reviewer link can only add notes to its own page. See [Team review](#team-review).
