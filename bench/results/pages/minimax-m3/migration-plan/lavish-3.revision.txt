@@ -1,0 +1,17 @@
+<<<<<<< SEARCH
+                  <tr>
+                    <td>Table bloat from expired rows</td>
+                    <td>Nightly partition drop</td>
+                  </tr>
+                </tbody>
+=======
+                  <tr>
+                    <td>Table bloat from expired rows</td>
+                    <td>Nightly partition drop</td>
+                  </tr>
+                  <tr>
+                    <td>Connection pool exhaustion during the dual-write phase</td>
+                    <td>Put PgBouncer in transaction mode in front of Postgres</td>
+                  </tr>
+                </tbody>
+>>>>>>> REPLACE

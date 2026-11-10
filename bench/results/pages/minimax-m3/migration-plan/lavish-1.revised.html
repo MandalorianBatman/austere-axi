@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en" data-theme="luxury" data-lavish-annotate="off">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Session Migration Plan Review</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+    :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+      min-width: 0;
+    }
+    :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+      overflow-wrap: anywhere;
+    }
+    :where(img, svg, video, canvas, iframe) {
+      max-width: 100%;
+      height: auto;
+    }
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 12% 8%, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent 32rem),
+        radial-gradient(circle at 88% 18%, color-mix(in oklab, var(--color-secondary) 14%, transparent), transparent 30rem),
+        var(--color-base-200);
+    }
+    .review-card {
+      background: color-mix(in oklab, var(--color-base-100) 94%, transparent);
+      box-shadow: 0 1.5rem 4rem color-mix(in oklab, var(--color-base-content) 12%, transparent);
+      backdrop-filter: blur(18px);
+    }
+    .eyebrow {
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .metric {
+      background: color-mix(in oklab, var(--color-base-200) 72%, transparent);
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 9%, transparent);
+    }
+    .flow-node {
+      position: relative;
+      border: 1px solid color-mix(in oklab, var(--color-primary) 36%, var(--color-base-content) 8%);
+      background: color-mix(in oklab, var(--color-primary) 8%, var(--color-base-100));
+    }
+    .flow-node.cache {
+      border-color: color-mix(in oklab, var(--color-secondary) 40%, var(--color-base-content) 8%);
+      background: color-mix(in oklab, var(--color-secondary) 8%, var(--color-base-100));
+    }
+    .flow-node.store {
+      border-color: color-mix(in oklab, var(--color-success) 42%, var(--color-base-content) 8%);
+      background: color-mix(in oklab, var(--color-success) 9%, var(--color-base-100));
+    }
+    .flow-arrow {
+      color: color-mix(in oklab, var(--color-base-content) 54%, transparent);
+      font-size: 1.45rem;
+      line-height: 1;
+    }
+    .phase-line {
+      position: absolute;
+      left: 1rem;
+      top: 1.45rem;
+      bottom: -1.15rem;
+      width: 2px;
+      background: color-mix(in oklab, var(--color-primary) 28%, transparent);
+    }
+    .phase:last-child .phase-line { display: none; }
+    .phase-dot {
+      position: relative;
+      z-index: 1;
+      flex: none;
+      width: 2rem;
+      height: 2rem;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      color: var(--color-primary-content);
+      background: var(--color-primary);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .option {
+      position: relative;
+      border: 2px solid color-mix(in oklab, var(--color-base-content) 13%, transparent);
+      background: color-mix(in oklab, var(--color-base-100) 80%, transparent);
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+    .option:hover {
+      transform: translateY(-2px);
+      border-color: color-mix(in oklab, var(--color-primary) 52%, transparent);
+    }
+    .option:has(input:checked) {
+      border-color: var(--color-primary);
+      background: color-mix(in oklab, var(--color-primary) 10%, var(--color-base-100));
+      box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 14%, transparent);
+    }
+    .option:has(input:focus-visible) {
+      outline: 3px solid color-mix(in oklab, var(--color-primary) 35%, transparent);
+      outline-offset: 3px;
+    }
+    .risk-marker {
+      width: 0.65rem;
+      height: 0.65rem;
+      border-radius: 999px;
+      background: var(--color-warning);
+      box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-warning) 16%, transparent);
+    }
+    .decision-button {
+      min-height: 3rem;
+      box-shadow: 0 0.6rem 1.5rem color-mix(in oklab, var(--color-primary) 20%, transparent);
+    }
+    .status-dot {
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 999px;
+      background: var(--color-success);
+    }
+    @media (max-width: 640px) {
+      .flow-arrow { transform: rotate(90deg); }
+    }
+  </style>
+</head>
+<body class="text-base-content">
+  <main class="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+    <header class="mb-8 flex flex-col gap-5 lg:mb-10 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <div class="mb-3 flex items-center gap-2">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="eyebrow text-xs font-bold text-primary">Architecture review</span>
+        </div>
+        <h1 class="max-w-3xl text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+          Move user sessions from Redis to Postgres
+        </h1>
+        <p class="mt-4 max-w-2xl text-base leading-relaxed text-base-content/70 sm:text-lg">
+          Review the migration plan, approve it, and choose how the rollout should proceed.
+        </p>
+      </div>
+      <div class="badge badge-lg badge-soft badge-warning gap-2 self-start px-4 py-4 font-semibold lg:self-auto">
+        Decision required
+      </div>
+    </header>
+
+    <div class="review-card rounded-3xl border border-base-content/10 p-4 sm:p-7 lg:p-9">
+      <section aria-labelledby="summary-heading">
+        <div class="flex items-start gap-3">
+          <div class="rounded-xl bg-primary/10 p-3 text-primary" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 7h16M4 12h16M4 17h10"/>
+              <circle cx="19" cy="17" r="2.5"/>
+            </svg>
+          </div>
+          <div>
+            <p class="eyebrow text-xs font-bold text-base-content/50">Executive summary</p>
+            <h2 id="summary-heading" class="mt-1 text-2xl font-bold">Durable sessions without forced logout</h2>
+            <p class="mt-3 max-w-4xl leading-relaxed text-base-content/75">
+              Sessions currently live only in Redis and are lost on failover. Last month, that forced
+              <strong class="text-base-content">38,214 users</strong> to log in again. The migration adds Postgres as the durable store while Redis remains a read-through cache.
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <article class="metric rounded-2xl p-4">
+            <p class="text-xs font-bold uppercase tracking-wide text-base-content/55">Users affected</p>
+            <p class="mt-2 text-3xl font-black">38,214</p>
+            <p class="mt-1 text-sm text-base-content/65">forced to log in again last month</p>
+          </article>
+          <article class="metric rounded-2xl p-4">
+            <p class="text-xs font-bold uppercase tracking-wide text-base-content/55">Auth p99 target</p>
+            <p class="mt-2 text-3xl font-black">≤ 45 ms</p>
+            <p class="mt-1 text-sm text-base-content/65">today: 41 ms</p>
+          </article>
+          <article class="metric rounded-2xl p-4">
+            <p class="text-xs font-bold uppercase tracking-wide text-base-content/55">Extra cost</p>
+            <p class="mt-2 text-3xl font-black">$140<span class="text-lg">/mo</span></p>
+            <p class="mt-1 text-sm text-base-content/65">incremental monthly cost</p>
+          </article>
+        </div>
+      </section>
+
+      <div class="divider my-8"></div>
+
+      <section aria-labelledby="architecture-heading">
+        <p class="eyebrow text-xs font-bold text-primary">Request path</p>
+        <h2 id="architecture-heading" class="mt-1 text-2xl font-bold">Read-through session flow</h2>
+
+        <div class="mt-6 grid items-stretch gap-3 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.2fr)_auto_minmax(0,1.2fr)]">
+          <article class="flow-node rounded-2xl p-4">
+            <p class="text-xs font-bold uppercase tracking-wide text-base-content/50">Client</p>
+            <p class="mt-2 font-semibold">Session request</p>
+          </article>
+          <div class="flow-arrow grid place-items-center" aria-hidden="true">→</div>
+          <article class="flow-node rounded-2xl p-4">
+            <p class="text-xs font-bold uppercase tracking-wide text-base-content/50">API</p>
+            <p class="mt-2 font-semibold">Node · port 8080</p>
+          </article>
+          <div class="flow-arrow grid place-items-center" aria-hidden="true">→</div>
+          <article class="flow-node store rounded-2xl p-4">
+            <p class="text-xs font-bold uppercase tracking-wide text-base-content/50">Postgres</p>
+            <p class="mt-2 font-semibold">New <code class="rounded bg-base-200 px-1.5 py-0.5">sessions</code> table</p>
+          </article>
+        </div>
+
+        <div class="mt-4 flex items-start gap-3 rounded-2xl border border-secondary/20 bg-secondary/8 p-4">
+          <span class="mt-0.5 text-secondary" aria-hidden="true">↳</span>
+          <p class="leading-relaxed">
+            <strong>Redis stays as a read-through cache in front of Postgres.</strong>
+          </p>
+        </div>
+      </section>
+
+      <div class="divider my-8"></div>
+
+      <div class="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-10">
+        <section aria-labelledby="phases-heading">
+          <p class="eyebrow text-xs font-bold text-primary">Phased implementation</p>
+          <h2 id="phases-heading" class="mt-1 text-2xl font-bold">Four migration phases</h2>
+
+          <ol class="mt-6 space-y-5">
+            <li class="phase relative flex gap-4">
+              <span class="phase-line" aria-hidden="true"></span>
+              <span class="phase-dot">1</span>
+              <div class="pb-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="font-bold">Create sessions table and dual-write</h3>
+                  <span class="badge badge-sm badge-ghost">1 week</span>
+                </div>
+                <p class="mt-1 text-sm leading-relaxed text-base-content/65">Add durable session storage while writes also continue to Redis.</p>
+              </div>
+            </li>
+            <li class="phase relative flex gap-4">
+              <span class="phase-line" aria-hidden="true"></span>
+              <span class="phase-dot">2</span>
+              <div class="pb-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="font-bold">Backfill existing sessions</h3>
+                  <span class="badge badge-sm badge-ghost">2 days</span>
+                </div>
+                <p class="mt-1 text-sm leading-relaxed text-base-content/65">Move current session data into the new store.</p>
+              </div>
+            </li>
+            <li class="phase relative flex gap-4">
+              <span class="phase-line" aria-hidden="true"></span>
+              <span class="phase-dot">3</span>
+              <div class="pb-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="font-bold">Switch reads to Postgres</h3>
+                  <span class="badge badge-sm badge-ghost">1 week</span>
+                </div>
+                <p class="mt-1 text-sm leading-relaxed text-base-content/65">Use the <code class="rounded bg-base-200 px-1.5 py-0.5">sessions_pg</code> flag to control the transition.</p>
+              </div>
+            </li>
+            <li class="phase relative flex gap-4">
+              <span class="phase-dot">4</span>
+              <div class="pb-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="font-bold">Remove Redis writes</h3>
+                  <span class="badge badge-sm badge-ghost">1 day</span>
+                </div>
+                <p class="mt-1 text-sm leading-relaxed text-base-content/65">End Redis writes while retaining Redis as a read-through cache.</p>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <aside aria-labelledby="risks-heading" class="rounded-2xl border border-warning/20 bg-warning/8 p-5 sm:p-6">
+          <p class="eyebrow text-xs font-bold text-warning-content/65">Risk controls</p>
+          <h2 id="risks-heading" class="mt-1 text-xl font-bold">Two identified risks</h2>
+
+          <div class="mt-5 space-y-5">
+            <article>
+              <div class="flex items-start gap-3">
+                <span class="risk-marker mt-1.5" aria-hidden="true"></span>
+                <div>
+                  <h3 class="font-bold">Login write latency</h3>
+                  <p class="mt-1 text-sm leading-relaxed text-base-content/70">Mitigation: async write with a 50 ms timeout.</p>
+                </div>
+              </div>
+            </article>
+            <article class="border-t border-warning/20 pt-5">
+              <div class="flex items-start gap-3">
+                <span class="risk-marker mt-1.5" aria-hidden="true"></span>
+                <div>
+                  <h3 class="font-bold">Table bloat from expired rows</h3>
+                  <p class="mt-1 text-sm leading-relaxed text-base-content/70">Mitigation: nightly partition drop.</p>
+                </div>
+              </div>
+            </article>
+            <article class="border-t border-warning/20 pt-5">
+              <div class="flex items-start gap-3">
+                <span class="risk-marker mt-1.5" aria-hidden="true"></span>
+                <div>
+                  <h3 class="font-bold">Connection pool exhaustion during the dual-write phase</h3>
+                  <p class="mt-1 text-sm leading-relaxed text-base-content/70">Mitigation: put PgBouncer in transaction mode in front of Postgres.</p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </aside>
+      </div>
+
+      <div class="divider my-8"></div>
+
+      <form id="rollout-form" data-lavish-question="rollout-strategy" onsubmit="event.preventDefault(); submitDecision(event.currentTarget);">
+        <section aria-labelledby="decision-heading">
+          <p class="eyebrow text-xs font-bold text-primary">Reviewer decision</p>
+          <h2 id="decision-heading" class="mt-1 text-2xl font-bold">Choose the rollout strategy</h2>
+          <p class="mt-2 max-w-3xl leading-relaxed text-base-content/70">
+            Select one strategy. You can also approve the plan before sending the decision.
+          </p>
+
+          <fieldset class="mt-6">
+            <legend class="sr-only">Rollout strategy</legend>
+            <div class="grid gap-4 md:grid-cols-2">
+              <label class="option block rounded-2xl p-5" for="strategy-big-bang">
+                <div class="flex items-start justify-between gap-4">
+                  <div class="flex items-start gap-3">
+                    <input class="radio radio-primary mt-0.5" type="radio" name="strategy" id="strategy-big-bang" value="Big bang">
+                    <span>
+                      <span class="block text-lg font-bold">Big bang</span>
+                      <span class="mt-1 block text-sm leading-relaxed text-base-content/65">One deploy, high risk.</span>
+                    </span>
+                  </div>
+                  <span class="badge badge-warning badge-soft shrink-0">High risk</span>
+                </div>
+              </label>
+
+              <label class="option block rounded-2xl p-5" for="strategy-dual-write">
+                <div class="flex items-start justify-between gap-4">
+                  <div class="flex items-start gap-3">
+                    <input class="radio radio-primary mt-0.5" type="radio" name="strategy" id="strategy-dual-write" value="Dual-write">
+                    <span>
+                      <span class="block text-lg font-bold">Dual-write</span>
+                      <span class="mt-1 block text-sm leading-relaxed text-base-content/65">Gradual, low risk.</span>
+                    </span>
+                  </div>
+                  <span class="badge badge-success badge-soft shrink-0">Low risk</span>
+                </div>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="mt-6 rounded-2xl border border-base-content/10 bg-base-200/60 p-4">
+            <label class="flex cursor-pointer items-start gap-3" for="approve-plan">
+              <input class="checkbox checkbox-success mt-0.5" type="checkbox" name="approved" id="approve-plan" value="Approved">
+              <span>
+                <span class="block font-bold">Approve the migration plan</span>
+                <span class="mt-1 block text-sm leading-relaxed text-base-content/65">Confirms the stated goal, phases, risks, mitigations, and $140/month extra cost.</span>
+              </span>
+            </label>
+          </div>
+
+          <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button class="btn btn-primary decision-button px-7" type="submit" id="send-decision">
+              Send decision
+              <span aria-hidden="true">→</span>
+            </button>
+            <p id="decision-status" class="text-sm font-medium text-base-content/60" role="status" aria-live="polite">
+              Select a rollout strategy before sending.
+            </p>
+          </div>
+        </section>
+      </form>
+    </div>
+
+    <footer class="mt-6 flex flex-col gap-2 px-1 text-sm text-base-content/55 sm:flex-row sm:items-center sm:justify-between">
+      <p>Decision: rollout strategy and plan approval.</p>
+      <p>Extra cost: $140/month.</p>
+    </footer>
+  </main>
+
+  <script>
+    function submitDecision(form) {
+      const strategy = form.querySelector('input[name="strategy"]:checked');
+      const approved = form.querySelector('input[name="approved"]').checked;
+      const status = document.getElementById('decision-status');
+
+      if (!strategy) {
+        status.textContent = 'Select a rollout strategy before sending.';
+        status.classList.remove('text-success');
+        status.classList.add('text-error');
+        form.querySelector('input[name="strategy"]').focus();
+        return;
+      }
+
+      const approvalText = approved
+        ? 'Plan approved.'
+        : 'Plan approval not selected.';
+      const decisionText = 'Rollout strategy: ' + strategy.value + '.';
+
+      if (window.lavish && typeof window.lavish.queuePrompt === 'function') {
+        window.lavish.queuePrompt(
+          decisionText + ' ' + approvalText,
+          {
+            tag: 'choice',
+            text: decisionText + ' ' + approvalText,
+            element: form,
+            data: {
+              question: 'rollout-strategy',
+              strategy: strategy.value,
+              approved: approved
+            }
+          }
+        );
+        status.textContent = decisionText + ' ' + approvalText + ' Ready to send.';
+        status.classList.remove('text-error');
+        status.classList.add('text-success');
+      } else {
+        status.textContent = decisionText + ' ' + approvalText + ' Open this page in Lavish to send it to the agent.';
+        status.classList.remove('text-error');
+        status.classList.add('text-success');
+      }
+    }
+  </script>
+</body>
+</html>

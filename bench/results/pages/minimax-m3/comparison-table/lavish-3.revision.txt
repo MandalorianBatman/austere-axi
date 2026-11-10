@@ -1,0 +1,28 @@
+<<<<<<< SEARCH
+              <td>Apache-2.0</td>
+            </tr>
+          </tbody>
+=======
+              <td>Apache-2.0</td>
+            </tr>
+            <tr>
+              <td>
+                <label class="flex cursor-pointer items-center gap-3">
+                  <input class="checkbox checkbox-primary" type="checkbox" name="shortlist" value="pgvector" aria-label="Shortlist pgvector">
+                  <span class="badge badge-ghost">Not selected</span>
+                </label>
+              </td>
+              <th scope="row" class="text-base">pgvector</th>
+              <td>self-host on existing Postgres</td>
+              <td>
+                <div class="font-semibold metric-over">95 ms</div>
+                <div class="latency-track mt-2" aria-hidden="true"><div class="latency-fill over" style="width:100%"></div></div>
+                <div class="mt-1 text-xs text-base-content/60">45 ms over target</div>
+              </td>
+              <td class="font-semibold">about $400/month</td>
+              <td><span class="badge badge-success badge-soft">yes (with tsvector)</span></td>
+              <td><span class="badge badge-success badge-soft">good</span></td>
+              <td>PostgreSQL</td>
+            </tr>
+          </tbody>
+>>>>>>> REPLACE

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vector Database Shortlist Review</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :where(.grid, .flex) > * { min-width: 0; }
+    :where(p, h1, h2, h3, h4, li, td, th, .badge) { overflow-wrap: anywhere; }
+    :where(img, svg) { max-width: 100%; height: auto; }
+    body { background: var(--color-base-200); }
+    .decision-panel { border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent); }
+    .metric-good { color: var(--color-success); }
+    .metric-near { color: var(--color-warning); }
+    .metric-over { color: var(--color-error); }
+    .latency-track {
+      position: relative;
+      height: 0.55rem;
+      overflow: hidden;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--color-base-content) 10%, transparent);
+    }
+    .latency-fill { height: 100%; border-radius: inherit; }
+    .latency-fill.under { background: var(--color-success); }
+    .latency-fill.over { background: var(--color-error); }
+    .card:has(input:checked) {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+    input[type="checkbox"] { width: 1.15rem; height: 1.15rem; }
+    .stale { opacity: 0.65; }
+    @media print {
+      .review-controls { display: none !important; }
+    }
+  </style>
+</head>
+<body class="text-base-content">
+  <main class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-10 lg:py-12">
+    <header class="mb-8">
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <span class="badge badge-primary badge-soft">Decision review</span>
+        <span class="badge badge-outline">40M chunks</span>
+        <span class="badge badge-outline">768 dimensions</span>
+        <span class="badge badge-outline">p95 target: 50 ms</span>
+      </div>
+      <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Shortlist two vector databases</h1>
+      <p class="mt-3 max-w-3xl text-base-content/70">
+        Compare the supplied test results, cost, operating model, search capabilities, and licensing.
+        Select exactly two products for the shortlist, then send the selection.
+      </p>
+    </header>
+
+    <section class="decision-panel card mb-8 bg-base-100 shadow-sm" aria-labelledby="recommendation-title">
+      <div class="card-body gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div class="max-w-2xl">
+          <h2 id="recommendation-title" class="card-title">Recommended shortlist</h2>
+          <p class="text-base-content/70">
+            <strong>Qdrant</strong> offers the best latency per dollar in the supplied results.
+            <strong>Pinecone</strong> has the lowest measured p95 latency and requires no operations.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <span class="badge badge-success badge-lg badge-soft">Qdrant · best latency per dollar</span>
+          <span class="badge badge-info badge-lg badge-soft">Pinecone · lowest latency, no ops</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-8" aria-labelledby="comparison-title">
+      <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 id="comparison-title" class="text-2xl font-bold">Evidence comparison</h2>
+          <p class="mt-1 text-sm text-base-content/65">Measured p95 latency is from the provided test at 40M chunks.</p>
+        </div>
+        <div class="flex gap-4 text-sm text-base-content/70" aria-label="Latency legend">
+          <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-success"></span>Within 50 ms target</span>
+          <span class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-error"></span>Over target</span>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-100">
+        <table class="table table-zebra">
+          <thead>
+            <tr>
+              <th scope="col">Decision</th>
+              <th scope="col">Product</th>
+              <th scope="col">Hosting</th>
+              <th scope="col">p95 latency at 40M</th>
+              <th scope="col">Estimated monthly cost</th>
+              <th scope="col">Hybrid search</th>
+              <th scope="col">Metadata filtering</th>
+              <th scope="col">License</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <label class="flex cursor-pointer items-center gap-3">
+                  <input class="checkbox checkbox-primary" type="checkbox" name="shortlist" value="Qdrant" checked aria-label="Shortlist Qdrant">
+                  <span class="badge badge-success badge-soft">Selected</span>
+                </label>
+              </td>
+              <th scope="row" class="text-base">Qdrant</th>
+              <td>managed or self-host</td>
+              <td>
+                <div class="font-semibold metric-good">44 ms</div>
+                <div class="latency-track mt-2" aria-hidden="true"><div class="latency-fill under" style="width:88%"></div></div>
+                <div class="mt-1 text-xs text-base-content/60">6 ms under target</div>
+              </td>
+              <td class="font-semibold">$1,250</td>
+              <td><span class="badge badge-success badge-soft">yes</span></td>
+              <td><span class="badge badge-success badge-soft">very good</span></td>
+              <td>Apache-2.0</td>
+            </tr>
+            <tr>
+              <td>
+                <label class="flex cursor-pointer items-center gap-3">
+                  <input class="checkbox checkbox-primary" type="checkbox" name="shortlist" value="Pinecone" checked aria-label="Shortlist Pinecone">
+                  <span class="badge badge-success badge-soft">Selected</span>
+                </label>
+              </td>
+              <th scope="row" class="text-base">Pinecone</th>
+              <td>managed only</td>
+              <td>
+                <div class="font-semibold metric-good">38 ms</div>
+                <div class="latency-track mt-2" aria-hidden="true"><div class="latency-fill under" style="width:76%"></div></div>
+                <div class="mt-1 text-xs text-base-content/60">12 ms under target</div>
+              </td>
+              <td class="font-semibold">$3,100</td>
+              <td><span class="badge badge-success badge-soft">yes</span></td>
+              <td><span class="badge badge-success badge-soft">good</span></td>
+              <td>proprietary</td>
+            </tr>
+            <tr>
+              <td>
+                <label class="flex cursor-pointer items-center gap-3">
+                  <input class="checkbox checkbox-primary" type="checkbox" name="shortlist" value="Weaviate" aria-label="Shortlist Weaviate">
+                  <span class="badge badge-ghost">Not selected</span>
+                </label>
+              </td>
+              <th scope="row" class="text-base">Weaviate</th>
+              <td>managed or self-host</td>
+              <td>
+                <div class="font-semibold metric-over">61 ms</div>
+                <div class="latency-track mt-2" aria-hidden="true"><div class="latency-fill over" style="width:100%"></div></div>
+                <div class="mt-1 text-xs text-base-content/60">11 ms over target</div>
+              </td>
+              <td class="font-semibold">$1,900</td>
+              <td><span class="badge badge-success badge-soft">yes</span></td>
+              <td><span class="badge badge-success badge-soft">good</span></td>
+              <td>BSD-3</td>
+            </tr>
+            <tr>
+              <td>
+                <label class="flex cursor-pointer items-center gap-3">
+                  <input class="checkbox checkbox-primary" type="checkbox" name="shortlist" value="Milvus" aria-label="Shortlist Milvus">
+                  <span class="badge badge-ghost">Not selected</span>
+                </label>
+              </td>
+              <th scope="row" class="text-base">Milvus</th>
+              <td>self-host (Zilliz for managed)</td>
+              <td>
+                <div class="font-semibold metric-over">52 ms</div>
+                <div class="latency-track mt-2" aria-hidden="true"><div class="latency-fill over" style="width:100%"></div></div>
+                <div class="mt-1 text-xs text-base-content/60">2 ms over target</div>
+              </td>
+              <td class="font-semibold">$1,400 + ops time</td>
+              <td><span class="badge badge-warning badge-soft">partial</span></td>
+              <td><span class="badge badge-success badge-soft">good</span></td>
+              <td>Apache-2.0</td>
+            </tr>
+            <tr>
+              <td>
+                <label class="flex cursor-pointer items-center gap-3">
+                  <input class="checkbox checkbox-primary" type="checkbox" name="shortlist" value="pgvector" aria-label="Shortlist pgvector">
+                  <span class="badge badge-ghost">Not selected</span>
+                </label>
+              </td>
+              <th scope="row" class="text-base">pgvector</th>
+              <td>self-host on existing Postgres</td>
+              <td>
+                <div class="font-semibold metric-over">95 ms</div>
+                <div class="latency-track mt-2" aria-hidden="true"><div class="latency-fill over" style="width:100%"></div></div>
+                <div class="mt-1 text-xs text-base-content/60">45 ms over target</div>
+              </td>
+              <td class="font-semibold">about $400/month</td>
+              <td><span class="badge badge-success badge-soft">yes (with tsvector)</span></td>
+              <td><span class="badge badge-success badge-soft">good</span></td>
+              <td>PostgreSQL</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="review-controls card mb-8 bg-base-100 shadow-sm" aria-labelledby="selection-title">
+      <div class="card-body gap-5">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 id="selection-title" class="card-title">Your shortlist</h2>
+            <p id="selection-help" class="mt-1 text-sm text-base-content/65">Choose exactly two products.</p>
+          </div>
+          <span id="selection-count" class="badge badge-primary badge-lg">2 of 2 selected</span>
+        </div>
+
+        <div id="selected-products" class="flex flex-wrap gap-3" aria-live="polite"></div>
+
+        <div id="validation-message" class="alert alert-success" role="status">
+          <span>The current selection matches the recommendation: Qdrant and Pinecone.</span>
+        </div>
+
+        <div class="card-actions flex flex-wrap items-center justify-between gap-3">
+          <button id="reset-button" type="button" class="btn btn-ghost">Reset to recommendation</button>
+          <button id="send-button" type="button" class="btn btn-primary">Send shortlist</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-sm text-base-content/55">
+      Review inputs are limited to the supplied facts. Cost figures are monthly estimates; Milvus additionally includes operations time.
+    </footer>
+  </main>
+
+  <dialog id="send-dialog" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Shortlist ready to send</h3>
+      <p class="py-4">Selected products: <strong id="dialog-selection"></strong></p>
+      <div class="modal-action">
+        <form method="dialog">
+          <button class="btn">Close</button>
+        </form>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
+  <script>
+    const recommendation = ["Qdrant", "Pinecone"];
+    const checkboxes = [...document.querySelectorAll('input[name="shortlist"]')];
+    const selectedProducts = document.getElementById("selected-products");
+    const selectionCount = document.getElementById("selection-count");
+    const validationMessage = document.getElementById("validation-message");
+    const resetButton = document.getElementById("reset-button");
+    const sendButton = document.getElementById("send-button");
+    const sendDialog = document.getElementById("send-dialog");
+
+    function selectedValues() {
+      return checkboxes.filter(box => box.checked).map(box => box.value);
+    }
+
+    function updateRowLabels() {
+      checkboxes.forEach(box => {
+        const badge = box.closest("label").querySelector(".badge");
+        badge.textContent = box.checked ? "Selected" : "Not selected";
+        badge.className = box.checked
+          ? "badge badge-success badge-soft"
+          : "badge badge-ghost";
+      });
+    }
+
+    function renderSelection() {
+      const selected = selectedValues();
+      selectedProducts.replaceChildren();
+
+      selected.forEach(product => {
+        const badge = document.createElement("span");
+        badge.className = "badge badge-lg badge-primary badge-soft";
+        badge.textContent = product;
+        selectedProducts.appendChild(badge);
+      });
+
+      selectionCount.textContent = `${selected.length} of 2 selected`;
+      updateRowLabels();
+
+      if (selected.length === 2) {
+        validationMessage.className = "alert alert-success";
+        validationMessage.querySelector("span").textContent = recommendation.every(product => selected.includes(product))
+          ? "The current selection matches the recommendation: Qdrant and Pinecone."
+          : `Selection changed to ${selected.join(" and ")}.`;
+        sendButton.disabled = false;
+      } else {
+        validationMessage.className = "alert alert-warning";
+        validationMessage.querySelector("span").textContent = selected.length < 2
+          ? `Select ${2 - selected.length} more product${2 - selected.length === 1 ? "" : "s"} before sending.`
+          : "Select exactly two products before sending.";
+        sendButton.disabled = true;
+      }
+    }
+
+    checkboxes.forEach(box => box.addEventListener("change", renderSelection));
+
+    resetButton.addEventListener("click", () => {
+      checkboxes.forEach(box => {
+        box.checked = recommendation.includes(box.value);
+      });
+      renderSelection();
+    });
+
+    sendButton.addEventListener("click", () => {
+      const selected = selectedValues();
+      if (selected.length !== 2) return;
+      document.getElementById("dialog-selection").textContent = selected.join(" and ");
+      sendDialog.showModal();
+
+      const prompt = `Shortlist vector databases: ${selected.join(" and ")}`;
+      if (window.lavish?.queuePrompt) {
+        window.lavish.queuePrompt(prompt);
+      }
+    });
+
+    renderSelection();
+  </script>
+</body>
+</html>

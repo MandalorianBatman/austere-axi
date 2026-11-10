@@ -1,0 +1,6 @@
+```openui
+requestsMetric = OverviewCardItem("requests", IconText(Icon("arrow-up-right"), "neutral", "m", "Requests"), MetricIndicatorInline("48.2M", "Up 6% week over week"))
+errorRateMetric = OverviewCardItem("error-rate", IconText(Icon("circle-check"), "success", "m", "Error rate"), MetricIndicatorInline("0.21%", "SLO 0.5%"))
+latencyMetric = OverviewCardItem("latency", IconText(Icon("triangle-alert"), "warning", "m", "p95 latency"), MetricIndicatorInline("312 ms", "Target 300 ms · breached"))
+errorBudgetMetric = OverviewCardItem("error-budget", IconText(Icon("circle-dollar-sign"), "info", "m", "Error budget left this month"), MetricIndicatorInline("64%", null))
+```
