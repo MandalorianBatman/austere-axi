@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review: Move user sessions from Redis to Postgres</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, dd, td, th, .badge, .label) { overflow-wrap: anywhere; }
+  :where(img, svg, video, canvas, iframe) { max-width: 100%; height: auto; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+  svg text { font-family: inherit; fill: currentColor; }
+</style>
+</head>
+<body>
+<main class="mx-auto max-w-5xl p-6 lg:p-10 space-y-10">
+
+  <header class="space-y-3">
+    <span class="badge badge-soft badge-warning">Migration plan · needs your decision</span>
+    <h1 class="text-3xl lg:text-4xl font-bold">Move user sessions from Redis to Postgres</h1>
+    <p class="text-lg opacity-80">Approve the plan and pick a rollout strategy at the bottom of the page.</p>
+  </header>
+
+  <section id="why" class="space-y-4">
+    <h2 class="text-2xl font-semibold">Why now</h2>
+    <p>Sessions live only in Redis and are lost on failover. Last month that forced <strong>38,214 users</strong> to log in again.</p>
+    <div class="stats stats-vertical lg:stats-horizontal shadow w-full bg-base-200">
+      <div class="stat">
+        <div class="stat-title">Users forced to re-login last month</div>
+        <div class="stat-value text-error">38,214</div>
+        <div class="stat-desc">Redis failover</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Auth p99 (budget ≤ 45 ms)</div>
+        <div class="stat-value">41 ms</div>
+        <div class="stat-desc">Today; must stay at or under 45 ms</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Extra cost</div>
+        <div class="stat-value">$140</div>
+        <div class="stat-desc">per month</div>
+      </div>
+    </div>
+    <div role="alert" class="alert alert-soft alert-info">
+      <span><strong>Goal:</strong> durable sessions, no forced logout, auth p99 at or under 45 ms.</span>
+    </div>
+  </section>
+
+  <section id="path" class="space-y-4">
+    <h2 class="text-2xl font-semibold">Request path after the change</h2>
+    <p>Redis stays as a read-through cache in front of Postgres. Sessions are stored durably in a new <code>sessions</code> table.</p>
+    <div class="rounded-box border border-base-content/10 bg-base-200 p-4">
+      <svg id="fig-path" viewBox="0 0 760 170" width="100%" role="img" aria-labelledby="fig-path-t">
+        <title id="fig-path-t">Client calls API on port 8080, which reads through a Redis cache in front of the Postgres sessions table</title>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"></path>
+          </marker>
+        </defs>
+        <g id="node-client">
+          <title>Client</title>
+          <rect x="10" y="50" width="130" height="70" rx="10" fill="none" stroke="currentColor" stroke-width="2"></rect>
+          <text x="75" y="91" text-anchor="middle" font-size="16" font-weight="600">Client</text>
+        </g>
+        <g id="node-api">
+          <title>API (Node, port 8080)</title>
+          <rect x="210" y="50" width="140" height="70" rx="10" fill="none" stroke="currentColor" stroke-width="2"></rect>
+          <text x="280" y="82" text-anchor="middle" font-size="16" font-weight="600">API</text>
+          <text x="280" y="102" text-anchor="middle" font-size="13" opacity="0.8">Node · :8080</text>
+        </g>
+        <g id="node-redis">
+          <title>Redis, read-through cache</title>
+          <rect x="420" y="50" width="140" height="70" rx="10" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="6 4"></rect>
+          <text x="490" y="82" text-anchor="middle" font-size="16" font-weight="600">Redis</text>
+          <text x="490" y="102" text-anchor="middle" font-size="13" opacity="0.8">read-through cache</text>
+        </g>
+        <g id="node-pg">
+          <title>Postgres, new sessions table</title>
+          <rect x="620" y="50" width="130" height="70" rx="10" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="3"></rect>
+          <text x="685" y="82" text-anchor="middle" font-size="16" font-weight="600">Postgres</text>
+          <text x="685" y="102" text-anchor="middle" font-size="13" opacity="0.8">"sessions" table</text>
+        </g>
+        <g stroke="currentColor" stroke-width="2" fill="none">
+          <path id="edge-client-api" d="M140 85 H208" marker-end="url(#arrow)"><title>Client to API</title></path>
+          <path id="edge-api-redis" d="M350 85 H418" marker-end="url(#arrow)"><title>API to Redis cache</title></path>
+          <path id="edge-redis-pg" d="M560 85 H618" marker-end="url(#arrow)"><title>Redis cache to Postgres</title></path>
+        </g>
+        <text x="490" y="150" text-anchor="middle" font-size="13" opacity="0.8">cache sits in front of Postgres</text>
+      </svg>
+    </div>
+  </section>
+
+  <section id="phases" class="space-y-4">
+    <h2 class="text-2xl font-semibold">Phases</h2>
+    <p>Durations are proportional in the bar below. Run back to back they add up to 17 days (1 week + 2 days + 1 week + 1 day).</p>
+    <div class="rounded-box border border-base-content/10 bg-base-200 p-4">
+      <svg id="fig-timeline" viewBox="0 0 680 60" width="100%" role="img" aria-labelledby="fig-tl-t">
+        <title id="fig-tl-t">Phase durations: 7 days, 2 days, 7 days, 1 day</title>
+        <g id="bar-p1"><title>Phase 1: 1 week</title><rect x="0" y="10" width="278" height="40" rx="6" fill="currentColor" fill-opacity="0.35" stroke="currentColor"></rect><text x="139" y="36" text-anchor="middle" font-size="15" font-weight="600">1 · 1 week</text></g>
+        <g id="bar-p2"><title>Phase 2: 2 days</title><rect x="282" y="10" width="78" height="40" rx="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor"></rect><text x="321" y="36" text-anchor="middle" font-size="15" font-weight="600">2 · 2d</text></g>
+        <g id="bar-p3"><title>Phase 3: 1 week</title><rect x="364" y="10" width="278" height="40" rx="6" fill="currentColor" fill-opacity="0.35" stroke="currentColor"></rect><text x="503" y="36" text-anchor="middle" font-size="15" font-weight="600">3 · 1 week</text></g>
+        <g id="bar-p4"><title>Phase 4: 1 day</title><rect x="646" y="10" width="34" height="40" rx="6" fill="currentColor" fill-opacity="0.2" stroke="currentColor"></rect><text x="663" y="36" text-anchor="middle" font-size="15" font-weight="600">4</text></g>
+      </svg>
+    </div>
+    <ol class="grid gap-4 md:grid-cols-2">
+      <li class="card card-border bg-base-200"><div class="card-body">
+        <div class="flex items-center justify-between gap-2"><h3 class="card-title">1 · Table and dual-write</h3><span class="badge badge-soft">1 week</span></div>
+        <p>Create the <code>sessions</code> table and dual-write.</p>
+      </div></li>
+      <li class="card card-border bg-base-200"><div class="card-body">
+        <div class="flex items-center justify-between gap-2"><h3 class="card-title">2 · Backfill</h3><span class="badge badge-soft">2 days</span></div>
+        <p>Backfill existing sessions.</p>
+      </div></li>
+      <li class="card card-border bg-base-200"><div class="card-body">
+        <div class="flex items-center justify-between gap-2"><h3 class="card-title">3 · Switch reads</h3><span class="badge badge-soft">1 week</span></div>
+        <p>Switch reads to Postgres behind the <code>sessions_pg</code> flag.</p>
+      </div></li>
+      <li class="card card-border bg-base-200"><div class="card-body">
+        <div class="flex items-center justify-between gap-2"><h3 class="card-title">4 · Remove Redis writes</h3><span class="badge badge-soft">1 day</span></div>
+        <p>Stop writing sessions to Redis.</p>
+      </div></li>
+    </ol>
+  </section>
+
+  <section id="risks" class="space-y-4">
+    <h2 class="text-2xl font-semibold">Risks and mitigations</h2>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
+      <table class="table">
+        <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+        <tbody>
+          <tr id="risk-latency"><td>Write latency on login</td><td>Async write with a 50 ms timeout</td></tr>
+          <tr id="risk-bloat"><td>Table bloat from expired rows</td><td>Nightly partition drop</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="decision" class="space-y-4">
+    <h2 class="text-2xl font-semibold">Your decision</h2>
+    <p>Compare the two rollout strategies, then approve and choose below. Nothing is sent until you press the submit button.</p>
+
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
+      <table class="table">
+        <thead><tr><th>Strategy</th><th>Approach</th><th>Risk</th></tr></thead>
+        <tbody>
+          <tr><td class="font-semibold">Big bang</td><td>One deploy</td><td><span class="badge badge-soft badge-error">High</span></td></tr>
+          <tr><td class="font-semibold">Dual-write</td><td>Gradual</td><td><span class="badge badge-soft badge-success">Low</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm opacity-80">Note: Phase 1 above already describes dual-write.</p>
+
+    <form id="decision-form" data-lavish-question="migration-review" class="card card-border bg-base-200">
+      <div class="card-body space-y-6">
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend text-base">1. Approval</legend>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label class="flex items-center gap-3 rounded-box border border-base-content/20 p-4 cursor-pointer has-[:checked]:border-success has-[:checked]:bg-success/10">
+              <input type="radio" name="approval" value="Approved" class="radio radio-success">
+              <span class="font-semibold">Approve the plan</span>
+            </label>
+            <label class="flex items-center gap-3 rounded-box border border-base-content/20 p-4 cursor-pointer has-[:checked]:border-warning has-[:checked]:bg-warning/10">
+              <input type="radio" name="approval" value="Changes requested" class="radio radio-warning">
+              <span class="font-semibold">Request changes</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend text-base">2. Rollout strategy</legend>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label class="flex items-start gap-3 rounded-box border border-base-content/20 p-4 cursor-pointer has-[:checked]:border-primary has-[:checked]:bg-primary/10">
+              <input type="radio" name="strategy" value="Big bang" class="radio radio-primary mt-1">
+              <span><span class="block font-semibold">Big bang</span><span class="block text-sm opacity-80">One deploy · high risk</span></span>
+            </label>
+            <label class="flex items-start gap-3 rounded-box border border-base-content/20 p-4 cursor-pointer has-[:checked]:border-primary has-[:checked]:bg-primary/10">
+              <input type="radio" name="strategy" value="Dual-write" class="radio radio-primary mt-1">
+              <span><span class="block font-semibold">Dual-write</span><span class="block text-sm opacity-80">Gradual · low risk</span></span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend text-base">3. Comments (optional)</legend>
+          <textarea name="comment" class="textarea w-full" rows="3" placeholder="Anything the agent should know"></textarea>
+        </fieldset>
+
+        <div class="space-y-3">
+          <p class="text-sm"><span class="font-semibold">Selected (not sent yet):</span> <span id="selected-state">nothing selected</span></p>
+          <div class="flex flex-wrap items-center gap-3">
+            <button type="submit" class="btn btn-primary">Queue decision</button>
+            <span id="queued-state" role="status" aria-live="polite" class="text-sm"></span>
+          </div>
+          <p class="text-sm opacity-70">After queueing, press Send to Agent in Lavish to deliver it.</p>
+        </div>
+      </div>
+    </form>
+  </section>
+</main>
+
+<script>
+  (function () {
+    var form = document.getElementById('decision-form');
+    var selectedEl = document.getElementById('selected-state');
+    var queuedEl = document.getElementById('queued-state');
+
+    function values() {
+      var fd = new FormData(form);
+      return {
+        approval: fd.get('approval'),
+        strategy: fd.get('strategy'),
+        comment: String(fd.get('comment') || '').trim()
+      };
+    }
+
+    function refresh() {
+      var v = values();
+      var parts = [];
+      if (v.approval) parts.push(v.approval);
+      if (v.strategy) parts.push('strategy: ' + v.strategy);
+      selectedEl.textContent = parts.length ? parts.join(' · ') : 'nothing selected';
+      queuedEl.textContent = '';
+    }
+
+    form.addEventListener('change', refresh);
+    form.addEventListener('input', function (e) {
+      if (e.target.name === 'comment') queuedEl.textContent = '';
+    });
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var v = values();
+      if (!v.approval || !v.strategy) {
+        queuedEl.textContent = 'Choose an approval and a rollout strategy first.';
+        return;
+      }
+      var summary = 'Migration plan (Redis to Postgres sessions): ' + v.approval +
+        '. Rollout strategy: ' + v.strategy + '.' +
+        (v.comment ? ' Comment: ' + v.comment : '');
+      if (window.lavish && typeof window.lavish.queuePrompt === 'function') {
+        window.lavish.queuePrompt(summary, {
+          tag: 'decision',
+          text: v.approval + ' / ' + v.strategy,
+          element: form,
+          queueKey: 'migration-review',
+          data: { question: 'migration-review', approval: v.approval, strategy: v.strategy, comment: v.comment }
+        });
+        queuedEl.textContent = 'Queued: ' + v.approval + ' / ' + v.strategy + '. Press Send to Agent to deliver.';
+      } else {
+        queuedEl.textContent = 'Lavish is not connected, so nothing was queued.';
+      }
+    });
+  })();
+</script>
+</body>
+</html>

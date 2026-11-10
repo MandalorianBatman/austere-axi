@@ -1,0 +1,6 @@
+```openui
+highFinding = Card([CardHeader("F1 · Blocker — SQL injection", "Line 18"), highDescription, highSeverity, highFix, highDiff])
+highDescription = MarkDownRenderer("The query concatenates `req.query.q` into the SQL string (line 18).")
+highSeverity = Tag("Blocker", null, "sm", "danger")
+highFix = Callout("info", "Fix", "Use a parameterized query: `WHERE name ILIKE $1` with the value `%${q}%`.")
+```

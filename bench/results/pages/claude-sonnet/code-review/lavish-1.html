@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review: PR #482 Add user search endpoint</title>
+<!-- Design source: none supplied by the user and no project design system applies (standalone review page), so the Lavish fallback Tailwind v4 + DaisyUI v5 CDN is used. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, li, td, th, .badge) { overflow-wrap: anywhere; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+  .ann { margin: 6px 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid #555; border-left-width: 5px; background: #1c1f26; color: #e6e6e6; font: 13px/1.45 system-ui, sans-serif; white-space: normal; }
+  .ann.high { border-left-color: #f87171; }
+  .ann.medium { border-left-color: #fbbf24; }
+  .ann.low { border-left-color: #60a5fa; }
+  .ann b { font-weight: 700; }
+  .ann .sev { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-right: 6px; border: 1px solid currentColor; text-transform: uppercase; }
+  .ann.high .sev { color: #f87171; }
+  .ann.medium .sev { color: #fbbf24; }
+  .ann.low .sev { color: #60a5fa; }
+</style>
+</head>
+<body>
+<main class="mx-auto max-w-6xl p-6 lg:p-10 space-y-8">
+
+  <header class="space-y-3">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="badge badge-neutral">PR #482</span>
+      <span class="badge badge-outline font-mono">src/routes/users.js</span>
+    </div>
+    <h1 class="text-3xl font-bold">Add user search endpoint</h1>
+    <div role="alert" class="alert alert-error alert-soft">
+      <span><strong>Verdict: request changes.</strong> One high-severity SQL injection and two medium issues need fixing before merge.</span>
+    </div>
+  </header>
+
+  <section class="stats stats-vertical sm:stats-horizontal shadow bg-base-200 w-full">
+    <div class="stat"><div class="stat-title">Diff</div><div class="stat-value text-2xl">+9 −1</div><div class="stat-desc">src/routes/users.js</div></div>
+    <div class="stat"><div class="stat-title">Tests</div><div class="stat-value text-2xl">31 passed</div><div class="stat-desc">/users/export has none</div></div>
+    <div class="stat"><div class="stat-title">Findings</div><div class="stat-value text-2xl">4</div><div class="stat-desc">1 high · 2 medium · 1 low</div></div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-xl font-bold">Findings</h2>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
+      <table class="table">
+        <thead><tr><th>#</th><th>Severity</th><th>Finding</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr id="row-1"><td>1</td><td><span class="badge badge-error">High</span></td><td><strong>SQL injection.</strong> The query concatenates <code>req.query.q</code> into the SQL string.</td><td class="font-mono">line 18</td></tr>
+          <tr id="row-2"><td>2</td><td><span class="badge badge-warning">Medium</span></td><td><strong>No pagination.</strong> The search returns every matching row; with 2.1M users this can time out.</td><td>search handler</td></tr>
+          <tr id="row-3"><td>3</td><td><span class="badge badge-warning">Medium</span></td><td><strong>Email exposed.</strong> The email column is returned to any logged-in user. Return only id and name.</td><td class="font-mono">line 18</td></tr>
+          <tr id="row-4"><td>4</td><td><span class="badge badge-info">Low</span></td><td><strong>Missing test.</strong> <code>/users/export</code> has no test.</td><td class="font-mono">/users/export</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-xl font-bold">Diff with findings</h2>
+    <p class="text-sm opacity-80"><span class="font-mono">src/routes/users.js</span> — each finding is attached to the line it refers to. Select lines or text to annotate for the author.</p>
+    <div id="diff" class="rounded-box overflow-hidden border border-base-content/10"></div>
+    <p id="diff-error" class="alert alert-warning hidden"></p>
+  </section>
+
+</main>
+
+<script type="module">
+  import { FileDiff, parsePatchFiles } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+
+  const patch = [
+    "diff --git a/src/routes/users.js b/src/routes/users.js",
+    "--- a/src/routes/users.js",
+    "+++ b/src/routes/users.js",
+    "@@ -12,7 +12,15 @@ router.get(\"/users/:id\", async (req, res) => {",
+    "   res.json(user);",
+    " });",
+    " ",
+    "-router.get(\"/users\", listUsers);",
+    "+router.get(\"/users\", async (req, res) => {",
+    "+  const q = req.query.q;",
+    "+  const rows = await db.query(",
+    "+    \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"",
+    "+  );",
+    "+  res.json(rows);",
+    "+});",
+    "+",
+    "+router.get(\"/users/export\", exportUsers);",
+    " ",
+    " module.exports = router;",
+    ""
+  ].join("\n");
+
+  const findings = {
+    18: [
+      { sev: "high", label: "High", n: 1, text: "SQL injection. The query concatenates req.query.q into the SQL string." },
+      { sev: "medium", label: "Medium", n: 3, text: "The email column is returned to any logged-in user. Return only id and name." }
+    ],
+    20: [
+      { sev: "medium", label: "Medium", n: 2, text: "No pagination. The search returns every matching row; with 2.1M users this can time out." }
+    ],
+    23: [
+      { sev: "low", label: "Low", n: 4, text: "/users/export has no test." }
+    ]
+  };
+
+  const lineAnnotations = Object.entries(findings).map(([line, items]) => ({
+    side: "additions",
+    lineNumber: Number(line),
+    metadata: items
+  }));
+
+  function renderAnnotation(annotation) {
+    const wrap = document.createElement("div");
+    for (const f of annotation.metadata) {
+      const box = document.createElement("div");
+      box.className = "ann " + f.sev;
+      const sev = document.createElement("span");
+      sev.className = "sev";
+      sev.textContent = f.label;
+      const head = document.createElement("b");
+      head.textContent = "Finding " + f.n + ": ";
+      box.append(sev, head, document.createTextNode(f.text));
+      wrap.append(box);
+    }
+    return wrap;
+  }
+
+  try {
+    const patches = parsePatchFiles(patch);
+    const fileDiff = patches[0].files[0];
+    new FileDiff({
+      theme: { light: "github-light", dark: "github-dark" },
+      themeType: "dark",
+      overflow: "wrap",
+      diffStyle: "unified",
+      renderAnnotation
+    }).render({
+      containerWrapper: document.querySelector("#diff"),
+      fileDiff,
+      lineAnnotations
+    });
+  } catch (err) {
+    const el = document.querySelector("#diff-error");
+    el.textContent = "Could not render the diff: " + err.message;
+    el.classList.remove("hidden");
+  }
+</script>
+</body>
+</html>

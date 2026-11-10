@@ -1,0 +1,111 @@
+<<<<<<< SEARCH
+        <div class="summary-tile rounded-box p-5">
+          <p class="text-sm font-medium opacity-60">Suggested fix</p>
+          <p class="mt-2 text-3xl font-bold">2</p>
+          <p class="mt-1 text-sm opacity-70">BUG-311 and BUG-318</p>
+        </div>
+        <div class="summary-tile rounded-box p-5">
+          <p class="text-sm font-medium opacity-60">Suggested defer</p>
+          <p class="mt-2 text-3xl font-bold">2</p>
+          <p class="mt-1 text-sm opacity-70">BUG-322 and BUG-327</p>
+        </div>
+=======
+        <div class="summary-tile rounded-box p-5">
+          <p class="text-sm font-medium opacity-60">Suggested fix</p>
+          <p class="mt-2 text-3xl font-bold">3</p>
+          <p class="mt-1 text-sm opacity-70">BUG-311, BUG-318, and BUG-330</p>
+        </div>
+        <div class="summary-tile rounded-box p-5">
+          <p class="text-sm font-medium opacity-60">Suggested defer</p>
+          <p class="mt-2 text-3xl font-bold">2</p>
+          <p class="mt-1 text-sm opacity-70">BUG-322 and BUG-327</p>
+        </div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <p class="mt-2 text-3xl font-bold"><span data-complete-count>0</span> / 4</p>
+          <p class="mt-1 text-sm opacity-70">Choose a disposition for each bug.</p>
+=======
+          <p class="mt-2 text-3xl font-bold"><span data-complete-count>0</span> / 5</p>
+          <p class="mt-1 text-sm opacity-70">Choose a disposition for each bug.</p>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+        <div class="divide-y divide-base-content/10">
+          <article class="p-4 sm:p-6" data-bug-id="BUG-311">
+=======
+        <div class="divide-y divide-base-content/10">
+          <article class="p-4 sm:p-6" data-bug-id="BUG-330">
+            <div class="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,1.25fr)]">
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-mono text-sm font-bold">BUG-330</span>
+                  <span class="badge badge-error badge-soft">high severity</span>
+                </div>
+                <h3 class="mt-3 text-lg font-bold">Password reset email links expire after 5 minutes instead of 60</h3>
+                <dl class="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
+                  <div>
+                    <dt class="font-medium opacity-55">Users affected</dt>
+                    <dd class="mt-0.5">all users who reset a password</dd>
+                  </div>
+                  <div>
+                    <dt class="font-medium opacity-55">Fix estimate</dt>
+                    <dd class="mt-0.5">1 hour</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <fieldset>
+                <legend class="sr-only">Decision for BUG-330</legend>
+                <div class="grid gap-2 sm:grid-cols-3">
+                  <label class="decision-option flex cursor-pointer items-start gap-3 rounded-box border border-base-content/15 bg-base-100 p-3 transition-colors">
+                    <input class="radio radio-primary radio-sm mt-0.5" type="radio" name="BUG-330" value="fix for 3.8">
+                    <span><span class="block font-semibold">Fix for 3.8</span><span class="mt-1 block text-xs opacity-60">Suggested</span></span>
+                  </label>
+                  <label class="decision-option flex cursor-pointer items-start gap-3 rounded-box border border-base-content/15 bg-base-100 p-3 transition-colors">
+                    <input class="radio radio-primary radio-sm mt-0.5" type="radio" name="BUG-330" value="defer to 3.9">
+                    <span class="font-semibold">Defer to 3.9</span>
+                  </label>
+                  <label class="decision-option flex cursor-pointer items-start gap-3 rounded-box border border-base-content/15 bg-base-100 p-3 transition-colors">
+                    <input class="radio radio-primary radio-sm mt-0.5" type="radio" name="BUG-330" value="won't fix">
+                    <span class="font-semibold">Won't fix</span>
+                  </label>
+                </div>
+              </fieldset>
+            </div>
+          </article>
+
+          <article class="p-4 sm:p-6" data-bug-id="BUG-311">
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <p id="submit-status" class="mt-1 text-sm opacity-70" role="status" aria-live="polite">Choose a decision for all 4 bugs before sending.</p>
+=======
+            <p id="submit-status" class="mt-1 text-sm opacity-70" role="status" aria-live="polite">Choose a decision for all 5 bugs before sending.</p>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      const bugIds = ['BUG-311', 'BUG-318', 'BUG-322', 'BUG-327'];
+=======
+      const bugIds = ['BUG-330', 'BUG-311', 'BUG-318', 'BUG-322', 'BUG-327'];
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          submitStatus.textContent = 'All 4 bugs have a decision. Ready to send.';
+          readyCopy.textContent = 'All decisions selected.';
+=======
+          submitStatus.textContent = 'All 5 bugs have a decision. Ready to send.';
+          readyCopy.textContent = 'All decisions selected.';
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+        const prompt = 'Apply the complete Release 3.8 bug triage decisions below. Return an item-by-item receipt with exactly one outcome for every submitted bug ID.';
+=======
+        const prompt = 'Apply the complete Release 3.8 bug triage decisions below. Return an item-by-item receipt with exactly one outcome for every submitted bug ID.';
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          text: 'Release 3.8 bug triage: all 4 decisions',
+=======
+          text: 'Release 3.8 bug triage: all 5 decisions',
+>>>>>>> REPLACE

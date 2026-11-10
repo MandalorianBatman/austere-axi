@@ -1,0 +1,4 @@
+```openui
+incidentTable = Table([Col("Incident", ["INC-1042", "INC-1047", "INC-1051"]), Col("Day", ["Tue", "Wed", "Sun"]), Col("Severity", ["Sev2", "Sev2", "Sev3"]), Col("Duration", ["38 min", "47 min", "Ongoing"]), Col("Summary", ["Payment provider timeouts", "Bad config push to the cart cache", "Elevated p95 from a slow inventory query"]), Col("Postmortem", ["", postmortemLink, ""]), Col("Status", [resolvedIncident, resolvedIncident, investigatingIncident])])
+postmortemLink = Text("text", "PM-1047", "text", "text", "sm")
+```

@@ -1,0 +1,3 @@
+```openui
+shortlistField = FormControl("Shortlist", CheckBoxGroup("databases", [CheckBoxItem("Pinecone", "Lowest latency; no ops", "pinecone"), CheckBoxItem("Weaviate", "Managed or self-host", "weaviate"), CheckBoxItem("Qdrant", "Best latency per dollar", "qdrant"), CheckBoxItem("Milvus", "Self-host; managed via Zilliz", "milvus"), CheckBoxItem("pgvector", "Self-host on existing Postgres", "pgvector")], {min: 2, max: 2}, "pinecone,qdrant"))
+```
