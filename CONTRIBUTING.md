@@ -29,7 +29,7 @@ npm test
 [`AGENTS.md`](AGENTS.md) lists the commands and the rules that apply to almost every change: which file owns what, how component props evolve, what the server may bind to, and what gets published. Read it first; it is short. It applies to people too.
 
 - **A new component** in core: follow `.agents/skills/add-component/SKILL.md`. Released props are positional and append-only, and the component reference has a token budget, so most new components belong in a pack instead.
-- **A new pack:** you do not need a PR here. Build it in your own repo against `austere-axi/pack` (see [`docs/writing-a-pack.md`](docs/writing-a-pack.md) once it lands, and [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as a worked example), publish it to npm, then open an issue so we can link it.
+- **A new pack:** you do not need a PR here. Build it in your own repo against `austere-axi/pack` (see [`docs/writing-a-pack.md`](docs/writing-a-pack.md), and [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as a worked example), publish it to npm, then open an issue so we can link it.
 - **User-facing behaviour** (CLI output, flags, the review page): update `README.md` in the same PR. Agents read `--help` and `spec`, so change those in `src/cli/main.js` and `src/runtime/prompt.js` when the workflow changes.
 
 Before you open the PR:
