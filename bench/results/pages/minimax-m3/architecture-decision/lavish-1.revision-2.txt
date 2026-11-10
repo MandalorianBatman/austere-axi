@@ -1,0 +1,23 @@
+<<<<<<< SEARCH
+                    </dl>
+                  </div>
+                </article>
+
+                <article class="option-card card card-border bg-base-100">
+                  <div class="card-body gap-3 p-5">
+                    <div class="flex items-center justify-between gap-2">
+                      <h2 class="card-title text-lg">NATS JetStream</h2>
+=======
+                    </dl>
+                    <div class="flex justify-between gap-3 border-t border-base-content/10 pt-2 text-sm">
+                      <dt class="text-base-content/55">Monthly cost estimate</dt>
+                      <dd class="text-right font-semibold">About $900</dd>
+                    </div>
+                  </div>
+                </article>
+
+                <article class="option-card card card-border bg-base-100">
+                  <div class="card-body gap-3 p-5">
+                    <div class="flex items-center justify-between gap-2">
+                      <h2 class="card-title text-lg">NATS JetStream</h2>
+>>>>>>> REPLACE

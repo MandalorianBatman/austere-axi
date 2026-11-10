@@ -1,0 +1,8 @@
+```openui
+requestPathDiagram = Architecture([client, api, redis, postgres], [clientToApi, apiToRedis, apiToPostgres], null, "right")
+rolloutPhases = Steps([StepOne, StepTwo, StepThree, StepFour])
+StepOne = StepsItem("Create table and dual-write", "Create the sessions table and dual-write. Duration: 1 week.")
+StepTwo = StepsItem("Backfill existing sessions", "Backfill existing sessions. Duration: 2 days.")
+StepThree = StepsItem("Switch reads to Postgres", "Switch reads to Postgres behind the sessions_pg flag. Duration: 1 week.")
+StepFour = StepsItem("Remove Redis writes", "Remove Redis writes. Duration: 1 day.")
+```

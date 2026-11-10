@@ -27,9 +27,21 @@ export function assetPath(name) {
   return path.join(ASSET_DIR, name);
 }
 
+let securedDir = null;
+
 export function stateDir() {
   const dir = process.env.AUSTERE_AXI_STATE_DIR || path.join(os.homedir(), ".austere-axi");
-  fs.mkdirSync(dir, { recursive: true });
+  // Sessions, invites, the owner key and logs live here: the owner's only. mkdir's mode only applies to
+  // a new dir, so tighten one made by an older version too (POSIX; Windows ignores modes).
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (securedDir !== dir && process.platform !== "win32") {
+    try {
+      fs.chmodSync(dir, 0o700);
+    } catch {
+      // not ours to change (a shared AUSTERE_AXI_STATE_DIR); its owner decides
+    }
+    securedDir = dir;
+  }
   return dir;
 }
 

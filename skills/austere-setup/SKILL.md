@@ -26,6 +26,8 @@ Run `npx -y austere-axi --help`. It must print the `WORKFLOW` section. If npm ca
 
 This skill tells agents when to make a page, and adds the `/austere` command.
 
+If the `austere` skill is already available (for example from the austere Claude Code plugin), skip this step.
+
 Ask: install it for all projects (global), or only this project? Default: global.
 
 ```sh
@@ -40,10 +42,10 @@ If the `skills` tool asks which agents to install for, pick the agent the user w
 Ask the user about each item. Default: no.
 
 - **Global command.** `npm install -g austere-axi`. Then `austere-axi` works without `npx -y`. Update it later with `npm update -g austere-axi`.
-- **Hub.** `npx -y austere-axi hub on`. It keeps the server running and lists every page at `http://127.0.0.1:4388/`.
+- **Hub.** `npx -y austere-axi hub on`. It keeps the server running and lists every page at `http://127.0.0.1:4388/`. `npx -y austere-axi hub open` opens it signed in; for another browser, `npx -y austere-axi login` prints a single-use sign-in link to it.
 - **Phone review.** If Tailscale is running, the server also listens on the tailnet, and `open` prints a phone link. Nothing to install. Run `tailscale status` to check.
 
-On a machine with no screen (SSH, CI, container), tell the user to set `AUSTERE_AXI_NO_OPEN=1`, so the CLI prints links and does not try to open a browser.
+On a machine with no screen (SSH, CI, container), tell the user to set `AUSTERE_AXI_NO_OPEN=1`, so the CLI prints links and does not try to open a browser. A browser the CLI did not open gets "403" at a printed link until it signs in: run `npx -y austere-axi login <file>` and give the user the link it prints. It works once, within 60 seconds.
 
 ## 5. Prove it works
 
@@ -64,7 +66,7 @@ buttons = Buttons([Button("It works")])
 Then:
 
 1. `npx -y austere-axi check austere-setup-test.html` must report no errors.
-2. `npx -y austere-axi austere-setup-test.html` opens the review. Give the user the printed link.
+2. `npx -y austere-axi austere-setup-test.html` opens the review. Give the user the printed link. If it did not open a browser (`browser: not opened`), run `npx -y austere-axi login austere-setup-test.html` and give the user that link instead.
 3. `npx -y austere-axi poll austere-setup-test.html` waits for the user. Ask them to press **It works**. The poll returns an item for the button.
 4. `npx -y austere-axi end austere-setup-test.html`, then delete the file.
 

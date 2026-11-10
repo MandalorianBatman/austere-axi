@@ -13,6 +13,7 @@ import { catalogFromSpec, promptSpec, searchCatalog } from "../src/shared/catalo
 import { formatPacksMeta, parsePacksMeta, splitSpec } from "../src/shared/packs-meta.js";
 import { mergePackSchemas, setPacksMeta } from "../src/cli/packs.js";
 import { looksLikePath, pickVersion, untar } from "../src/cli/install.js";
+import { ownerHeaders } from "./owner.js";
 import { freePort } from "./port.js";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-state-"));
@@ -426,7 +427,7 @@ test("the server serves an installed pack only at its locked version and hash", 
     await new Promise((resolve, reject) => {
       const body = JSON.stringify({ items: [{ kind: "message", text: "ship it" }] });
       const r = http.request(
-        { host: "127.0.0.1", port, method: "POST", path: `/s/${sid}/send`, headers: { "content-type": "application/json", host: `127.0.0.1:${port}` } },
+        { host: "127.0.0.1", port, method: "POST", path: `/s/${sid}/send`, headers: { "content-type": "application/json", host: `127.0.0.1:${port}`, ...ownerHeaders(STATE) } },
         (res) => res.resume().on("end", resolve),
       );
       r.on("error", reject);

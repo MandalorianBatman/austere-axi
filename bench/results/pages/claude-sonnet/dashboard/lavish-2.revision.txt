@@ -1,0 +1,5 @@
+<<<<<<< SEARCH
+          <tr><td class="font-mono">INC-1047</td><td>Wed</td><td><span class="badge badge-soft badge-warning">Sev3</span></td><td>12 min</td><td>Bad config push to the cart cache</td><td><span class="badge badge-soft badge-success">✔ Resolved</span></td></tr>
+=======
+          <tr><td class="font-mono">INC-1047</td><td>Wed</td><td><span class="badge badge-soft badge-error">Sev2</span></td><td>47 min</td><td>Bad config push to the cart cache <a class="link link-primary font-mono text-sm whitespace-nowrap" href="#">PM-1047</a></td><td><span class="badge badge-soft badge-success">✔ Resolved</span></td></tr>
+>>>>>>> REPLACE

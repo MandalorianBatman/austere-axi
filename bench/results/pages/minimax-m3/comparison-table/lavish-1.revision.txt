@@ -1,0 +1,187 @@
+<<<<<<< SEARCH
+          <div class="grid gap-4 md:grid-cols-2">
+        <article class="shortlist-card card card-border bg-base-100 is-selected" data-option="Qdrant">
+=======
+          <div class="grid gap-4 md:grid-cols-2">
+        <article class="shortlist-card card card-border bg-base-100 is-selected" data-option="Qdrant">
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="comparison-wrap">
+          <table class="table table-zebra comparison-table">
+            <thead>
+              <tr>
+                <th scope="col" class="table-title bg-base-200 font-bold">Capability</th>
+                <th scope="col" class="bg-base-200">
+                  <span class="block font-bold">Pinecone</span>
+                  <span class="mt-1 block text-xs font-normal text-base-content/55">Managed only</span>
+                </th>
+                <th scope="col" class="bg-base-200">
+                  <span class="block font-bold">Weaviate</span>
+                  <span class="mt-1 block text-xs font-normal text-base-content/55">Managed or self-host</span>
+                </th>
+                <th scope="col" class="bg-base-200">
+                  <span class="block font-bold">Qdrant</span>
+                  <span class="mt-1 block text-xs font-normal text-base-content/55">Managed or self-host</span>
+                </th>
+                <th scope="col" class="bg-base-200">
+                  <span class="block font-bold">Milvus</span>
+                  <span class="mt-1 block text-xs font-normal text-base-content/55">Self-host; Zilliz for managed</span>
+                </th>
+              </tr>
+            </thead>
+=======
+      <div class="card card-border bg-base-100 shadow-sm">
+        <div class="comparison-wrap">
+          <table class="table table-zebra comparison-table">
+            <thead>
+              <tr>
+                <th scope="col" class="table-title bg-base-200 font-bold">Capability</th>
+                <th scope="col" class="bg-base-200">
+                  <span class="block font-bold">Pinecone</span>
+                  <span class="mt-1 block text-xs font-normal text-base-content/55">Managed only</span>
+                </th>
+                <th scope="col" class="bg-base-200">
+                  <span class="block font-bold">Weaviate</span>
+                  <span class="mt-1 block text-xs font-normal text-base-content/55">Managed or self-host</span>
+                </th>
+                <th scope="col" class="bg-base-200">
+                  <span class="block font-bold">Qdrant</span>
+                  <span class="mt-1 block text-xs font-normal text-base-content/55">Managed or self-host</span>
+                </th>
+                <th scope="col" class="bg-base-200">
+                  <span class="block font-bold">Milvus</span>
+                  <span class="mt-1 block text-xs font-normal text-base-content/55">Self-host; Zilliz for managed</span>
+                </th>
+                <th scope="col" class="bg-base-200">
+                  <span class="block font-bold">pgvector</span>
+                  <span class="mt-1 block text-xs font-normal text-base-content/55">Self-host on existing Postgres</span>
+                </th>
+              </tr>
+            </thead>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <tr>
+                <th scope="row" class="font-semibold">p95 latency at 40M</th>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold metric-number">38 ms</span>
+                    <span class="badge badge-success badge-soft badge-sm">Target met</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold metric-number">61 ms</span>
+                    <span class="badge badge-error badge-soft badge-sm">Over target</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold metric-number">44 ms</span>
+                    <span class="badge badge-success badge-soft badge-sm">Target met</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold metric-number">52 ms</span>
+                    <span class="badge badge-warning badge-soft badge-sm">Over target</span>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row" class="font-semibold">Est. monthly cost</th>
+                <td class="font-semibold metric-number">$3,100</td>
+                <td class="font-semibold metric-number">$1,900</td>
+                <td class="font-semibold metric-number">$1,250</td>
+                <td class="font-semibold metric-number">$1,400 + ops time</td>
+              </tr>
+              <tr>
+                <th scope="row" class="font-semibold">Hybrid search</th>
+                <td><span class="badge badge-success badge-soft">Yes</span></td>
+                <td><span class="badge badge-success badge-soft">Yes</span></td>
+                <td><span class="badge badge-success badge-soft">Yes</span></td>
+                <td><span class="badge badge-warning badge-soft">Partial</span></td>
+              </tr>
+              <tr>
+                <th scope="row" class="font-semibold">Metadata filtering</th>
+                <td><span class="badge badge-neutral badge-soft">Good</span></td>
+                <td><span class="badge badge-neutral badge-soft">Good</span></td>
+                <td><span class="badge badge-primary badge-soft">Very good</span></td>
+                <td><span class="badge badge-neutral badge-soft">Good</span></td>
+              </tr>
+              <tr>
+                <th scope="row" class="font-semibold">License</th>
+                <td>Proprietary</td>
+                <td>BSD-3</td>
+                <td>Apache-2.0</td>
+                <td>Apache-2.0</td>
+              </tr>
+=======
+              <tr>
+                <th scope="row" class="font-semibold">p95 latency at 40M</th>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold metric-number">38 ms</span>
+                    <span class="badge badge-success badge-soft badge-sm">Target met</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold metric-number">61 ms</span>
+                    <span class="badge badge-error badge-soft badge-sm">Over target</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold metric-number">44 ms</span>
+                    <span class="badge badge-success badge-soft badge-sm">Target met</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold metric-number">52 ms</span>
+                    <span class="badge badge-warning badge-soft badge-sm">Over target</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold metric-number">95 ms</span>
+                    <span class="badge badge-error badge-soft badge-sm">Over target</span>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row" class="font-semibold">Est. monthly cost</th>
+                <td class="font-semibold metric-number">$3,100</td>
+                <td class="font-semibold metric-number">$1,900</td>
+                <td class="font-semibold metric-number">$1,250</td>
+                <td class="font-semibold metric-number">$1,400 + ops time</td>
+                <td class="font-semibold metric-number">About $400</td>
+              </tr>
+              <tr>
+                <th scope="row" class="font-semibold">Hybrid search</th>
+                <td><span class="badge badge-success badge-soft">Yes</span></td>
+                <td><span class="badge badge-success badge-soft">Yes</span></td>
+                <td><span class="badge badge-success badge-soft">Yes</span></td>
+                <td><span class="badge badge-warning badge-soft">Partial</span></td>
+                <td><span class="badge badge-success badge-soft">Yes</span> <span class="text-xs text-base-content/55">with tsvector</span></td>
+              </tr>
+              <tr>
+                <th scope="row" class="font-semibold">Metadata filtering</th>
+                <td><span class="badge badge-neutral badge-soft">Good</span></td>
+                <td><span class="badge badge-neutral badge-soft">Good</span></td>
+                <td><span class="badge badge-primary badge-soft">Very good</span></td>
+                <td><span class="badge badge-neutral badge-soft">Good</span></td>
+                <td><span class="badge badge-neutral badge-soft">Good</span></td>
+              </tr>
+              <tr>
+                <th scope="row" class="font-semibold">License</th>
+                <td>Proprietary</td>
+                <td>BSD-3</td>
+                <td>Apache-2.0</td>
+                <td>Apache-2.0</td>
+                <td>PostgreSQL</td>
+              </tr>
+>>>>>>> REPLACE

@@ -21,7 +21,7 @@ export function hubEnabled() {
 }
 
 export function setHubEnabled(enabled) {
-  fs.writeFileSync(hubConfigFile(), JSON.stringify({ enabled, changedAt: new Date().toISOString() }) + "\n");
+  fs.writeFileSync(hubConfigFile(), JSON.stringify({ enabled, changedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
 }
 
 export function hubDbFile() {
@@ -101,6 +101,11 @@ export function itemStatus(entry, pending) {
   return "received";
 }
 
+/** A bindable SQLite text value from untrusted item data: strings pass, other shapes become JSON, empty is null. */
+function bindText(v) {
+  return v == null || v === "" ? null : typeof v === "string" ? v : JSON.stringify(v);
+}
+
 function itemText(it) {
   if (it.kind === "annotation") return it.note || it.selection || it.excerpt || "";
   if (it.kind === "action") return it.message || "";
@@ -111,6 +116,8 @@ function itemText(it) {
 export class Hub {
   static async open(file = hubDbFile()) {
     const Database = await loadSqlite();
+    // Every note is in here: create it as the owner's only (SQLite gives its WAL the same mode).
+    if (file !== ":memory:") fs.closeSync(fs.openSync(file, "a", 0o600));
     return new Hub(new Database(file));
   }
 
@@ -163,8 +170,8 @@ export class Hub {
         if (e.role !== "user") continue;
         const status = itemStatus(e, pending.has(e.id));
         (e.items || []).forEach((it, i) => {
-          const id = it.id || `${e.id}.${i}`;
-          this.q.upsertItem.run(id, s.id, e.id, e.at, it.kind || "message", it.target || it.statement || null, itemText(it), status, JSON.stringify(it), e.author || "");
+          const id = String(it.id || `${e.id}.${i}`);
+          this.q.upsertItem.run(id, s.id, e.id, e.at, String(it.kind || "message"), bindText(it.target || it.statement), bindText(itemText(it)) ?? "", status, JSON.stringify(it), String(e.author || ""));
         });
       }
       this.db.exec("COMMIT");

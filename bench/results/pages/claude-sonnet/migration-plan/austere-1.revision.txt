@@ -1,0 +1,3 @@
+```openui
+riskTable = Table([Col("Risk", ["Write latency on login", "Table bloat from expired rows", "Connection pool exhaustion during the dual-write phase"]), Col("Mitigation", ["Async write with a 50 ms timeout", "Nightly partition drop", "PgBouncer in transaction mode in front of Postgres"])])
+```

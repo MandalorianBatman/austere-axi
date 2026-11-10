@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-017 Review</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([header, contextCard, optionsCard, proposalCard, consequencesCard, decisionCard], "column", "l")
+header = Card([CardHeader("ADR-017: Event bus for order events", "Architecture decision review"), headerSummary], "card", "column", "l")
+headerSummary = EntityList([{left: "Status", right: "Proposed"}, {left: "Decision", right: "SQS + SNS"}, {left: "Reviewers", right: "Accept or reject with an optional comment"}])
+contextCard = Card([CardHeader("Context", "Why this decision is needed"), contextText], "card", "column", "l")
+contextText = MarkDownRenderer("The Orders service calls Billing, Shipping and Notifications over HTTP in sequence. One slow call blocks checkout. Last quarter there were 3 incidents from this.")
+optionsCard = Card([CardHeader("Options", "Event bus choices considered"), optionsTable], "card", "column", "l")
+optionsTable = Table([Col("Option", ["Kafka", "NATS JetStream", "Amazon SQS + SNS"]), Col("Throughput", ["1M msg/s", "200k msg/s", "Effectively unlimited"]), Col("Replay", ["Yes", "Yes", "No (14-day retention only)"]), Col("Ops cost", ["High\n3-broker cluster", "Medium", "Low\nManaged"]), Col("Team experience", ["None", "One engineer", "High"])])
+proposalCard = Card([CardHeader("Proposed decision", "Amazon SQS + SNS"), proposalText, proposalArchitecture], "card", "column", "l")
+proposalText = MarkDownRenderer("Orders publishes `order.placed` to an SNS topic. Billing, Shipping and Notifications each read from their own SQS queue.")
+proposalArchitecture = Architecture([ordersService, snsTopic, billingQueue, shippingQueue, notificationsQueue, billingService, shippingService, notificationsService], [ordersToSns, snsToBillingQueue, snsToShippingQueue, snsToNotificationsQueue, billingQueueToBilling, shippingQueueToShipping, notificationsQueueToNotifications], "right")
+ordersService = Node("Orders", "backend", "Publishes order.placed", "publisher")
+snsTopic = Node("SNS topic", "messagebus", "order.placed", "proposed")
+billingQueue = Node("Billing queue", "messagebus", "SQS", "consumer queue")
+shippingQueue = Node("Shipping queue", "messagebus", "SQS", "consumer queue")
+notificationsQueue = Node("Notifications queue", "messagebus", "SQS", "consumer queue")
+billingService = Node("Billing", "backend", "Reads its queue", "consumer")
+shippingService = Node("Shipping", "backend", "Reads its queue", "consumer")
+notificationsService = Node("Notifications", "backend", "Reads its queue", "consumer")
+ordersToSns = Edge(ordersService, snsTopic, "publishes", "emphasis")
+snsToBillingQueue = Edge(snsTopic, billingQueue, "fan-out", "solid")
+snsToShippingQueue = Edge(snsTopic, shippingQueue, "fan-out", "solid")
+snsToNotificationsQueue = Edge(snsTopic, notificationsQueue, "fan-out", "solid")
+billingQueueToBilling = Edge(billingQueue, billingService, "consume", "dashed")
+shippingQueueToShipping = Edge(shippingQueue, shippingService, "consume", "dashed")
+notificationsQueueToNotifications = Edge(notificationsQueue, notificationsService, "consume", "dashed")
+consequencesCard = Card([CardHeader("Consequences", "Trade-offs and required safeguards"), consequencesText], "card", "column", "l")
+consequencesText = MarkDownRenderer("- **No event replay:** keep an outbox table in the Orders database.\n- **At-least-once delivery:** every consumer must be idempotent.")
+decisionCard = Card([CardHeader("Review decision", "Accept or reject the proposed decision"), decisionForm], "card", "column", "l")
+decisionForm = Form("adr017_review", decisionButtons, [decisionField, commentField])
+decisionField = FormControl("Decision", RadioGroup("decision", [RadioItem("Accept", "Accept SQS + SNS as the proposed decision.", "accept"), RadioItem("Reject", "Reject SQS + SNS as the proposed decision.", "reject")], null, {required: true}))
+commentField = FormControl("Comment (optional)", TextArea("comment", "Add any context for your decision.", 4))
+decisionButtons = Buttons([Button("Submit review", @ToAssistant("ADR-017 review decision submitted", {decision: "$decision", comment: "$comment"}), "primary")])
+</script>
+</body>
+</html>

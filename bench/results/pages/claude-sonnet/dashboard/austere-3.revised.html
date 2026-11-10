@@ -1,0 +1,31 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Checkout service health, week of 2026-10-26</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+<body><script type="text/openui">
+root = Stack([headerCard, kpiCard, latencyCard, errorsCard, incidentsCard, actionsCard], "column", "l")
+headerCard = Card([CardHeader("Checkout service health", "Weekly review, week of 2026-10-26"), headerText, latencyCallout])
+headerText = MarkDownRenderer("Error rate and error budget are healthy. **p95 latency breached its target** this week, and INC-1051 is still under investigation.")
+latencyCallout = Callout("warning", "p95 latency target breached", "Weekly p95 was 312 ms against a 300 ms target. INC-1051 (slow inventory query) is ongoing.")
+kpiCard = Card([CardHeader("Headline numbers"), kpiBlock])
+kpiBlock = OverviewCardBlock([kpiRequests, kpiErrors, kpiLatency, kpiBudget], "grid")
+kpiRequests = OverviewCardItem("requests", Text("text", "Requests"), MetricIndicatorInline("48.2M", "week over week", {direction: "up", value: 6}))
+kpiErrors = OverviewCardItem("errorRate", Text("text", "Error rate"), MetricIndicatorInline("0.21%", "SLO 0.5%"))
+kpiLatency = OverviewCardItem("p95", Text("text", "p95 latency"), MetricIndicatorInline("312 ms", "target 300 ms: breached"))
+kpiBudget = OverviewCardItem("budget", Text("text", "Error budget left"), MetricIndicatorInline("64%", "this month"))
+latencyCard = Card([CardHeader("Daily p95 latency", "Milliseconds, Mon to Sun, against the 300 ms target"), latencyChart, latencyNote])
+latencyChart = LineChart(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], [Series("p95 (ms)", [288, 295, 340, 331, 305, 297, 330]), Series("Target (ms)", [300, 300, 300, 300, 300, 300, 300])], "linear", "Day", "ms")
+latencyNote = MarkDownRenderer("p95 was above 300 ms on Wed (340), Thu (331), Fri (305) and Sun (330). Wed was the worst day.")
+errorsCard = Card([CardHeader("Daily errors", "Count, Mon to Sun"), errorsChart, errorsNote])
+errorsChart = BarChart(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], [Series("Errors", [9800, 10400, 15900, 12100, 9900, 8700, 9300])], "grouped", "Day", "errors")
+errorsNote = MarkDownRenderer("Errors peaked on Wed at 15,900 and were lowest on Sat at 8,700.")
+incidentsCard = Card([CardHeader("Incidents", "3 this week, 1 still open"), incidentTable])
+incidentTable = Table([Col("ID", ["INC-1042", "INC-1047", "INC-1051"]), Col("Day", ["Tue", "Wed", "Sun"]), Col("Severity", [sevTwo, sevTwoB, sevThreeB]), Col("Duration", ["38 min", "47 min", "ongoing"]), Col("Summary", ["Payment provider timeouts", "Bad config push to the cart cache", "Elevated p95 from a slow inventory query"]), Col("Status", [statusResolvedA, statusResolvedB, statusInvestigating]), Col("Postmortem", ["-", "PM-1047", "-"])])
+sevTwo = Tag("Sev2", null, "sm", "danger")
+sevThreeB = Tag("Sev3", null, "sm", "warning")
+statusResolvedA = Tag("resolved", null, "sm", "success")
+statusResolvedB = Tag("resolved", null, "sm", "success")
+statusInvestigating = Tag("investigating", null, "sm", "warning")
+actionsCard = Card([CardHeader("Action items"), actionTable])
+actionTable = Table([Col("Action", ["Add an index on inventory(sku, warehouse_id)", "Add a timeout alert for the payment provider"]), Col("Owner", ["Priya", "Marco"]), Col("Due", ["Nov 4", "Nov 6"])])
+sevTwoB = Tag("Sev2", null, "sm", "danger")
+</script></body></html>

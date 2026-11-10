@@ -1,0 +1,37 @@
+<<<<<<< SEARCH
+                    <p class="text-xs text-base-content/55">We would run a 3-broker cluster.</p>
+=======
+                    <p class="text-xs text-base-content/55">We would run a 3-broker cluster.</p>
+                    <div class="flex justify-between gap-3 border-t border-base-content/10 pt-2 text-sm">
+                      <dt class="text-base-content/55">Monthly cost estimate</dt>
+                      <dd class="text-right font-semibold">About $2,400</dd>
+                    </div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+                    </dl>
+                  </div>
+                </article>
+
+                <article class="option-card card card-border bg-base-100">
+=======
+                    </dl>
+                    <div class="flex justify-between gap-3 border-t border-base-content/10 pt-2 text-sm">
+                      <dt class="text-base-content/55">Monthly cost estimate</dt>
+                      <dd class="text-right font-semibold">About $900</dd>
+                    </div>
+                  </div>
+                </article>
+
+                <article class="option-card card card-border bg-base-100">
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+                    <p class="text-xs text-base-content/55">Managed services.</p>
+=======
+                    <p class="text-xs text-base-content/55">Managed services.</p>
+                    <div class="flex justify-between gap-3 border-t border-base-content/10 pt-2 text-sm">
+                      <dt class="text-base-content/55">Monthly cost estimate</dt>
+                      <dd class="text-right font-semibold">About $310</dd>
+                    </div>
+>>>>>>> REPLACE
