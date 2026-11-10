@@ -129,7 +129,7 @@ Session rules:
 - Every note is written to `~/.austere-axi/hub.db` before the page is told it was sent, so a note survives a crash or restart of the server.
 - Feedback sent while no agent listens waits for the next poll.
 - Feedback stays unread until the agent acknowledges it. `poll` prints a `cursor`. Passing it back (`--cursor n` on the next `poll` or `reply`), or replying at all, acknowledges everything up to it. A `poll` without either returns the same feedback again, so feedback lost on the way to the agent (a crash, a timed-out tool call) is delivered again. `--after n` replays from any point.
-- Ending a review (the agent's `end`, or **End review** in the page) means the agent stopped. The reviewer can still send notes. The next `poll` returns them and reopens the review.
+- Ending a review (the agent's `end`, or **End review** in the page) means the agent stopped. The reviewer can still send notes. The next `poll` returns every note the agent has not acknowledged, including ones sent before the end or released from hold after it, and reopens the review. A batch the reviewer sent with end stays final.
 - Only the owner's **close** (`close <file>`, or **Close review** in the page) locks the composer. `reopen <file>` or **Reopen review** unlocks it.
 - A review the user ended or closed does not open again unless you pass `--reopen`.
 - If all review tabs stay closed, `poll` returns `browser_disconnected`: 10 s after a tab closes, or 5 min after a dropped connection (for example, a locked phone). The agent stops polling but does not end the review, so notes left later are picked up by the next `poll`.
@@ -192,7 +192,7 @@ austere-axi hub off     # back to the plain session list; the database stays
 
 `/notes` lists every note on every page, newest first, with search, status and project filters. The home page shows which reviews are live and how much feedback the agent has answered.
 
-Session files from versions before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`. One server runs per state dir; a second one refuses to start (`server.lock`).
+Session files from versions before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`. One server runs per state dir; a second one refuses to start. `server.lock` names the running server's pid and port; a lock whose server no longer answers on that port is stale and is taken over.
 
 ### Always on, behind a reverse proxy
 
@@ -212,7 +212,7 @@ Restart=on-failure
 WantedBy=default.target
 ```
 
-`systemctl --user enable --now austere-axi`. Commands on the same machine use the running server. `AUSTERE_AXI_PERSIST=1` does the same as `--persist`. Read the reverse-proxy note in [Team review](#team-review) first: behind a proxy on the same machine every request looks local.
+`systemctl --user enable --now austere-axi`. Commands on the same machine use the running server; a newer CLI that replaces an older server starts the new one with `--persist` too. `AUSTERE_AXI_PERSIST=1` does the same as `--persist`. Read the reverse-proxy note in [Team review](#team-review) first: behind a proxy on the same machine every request looks local.
 
 ## Team review
 

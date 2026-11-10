@@ -62,6 +62,7 @@ export class SessionStore {
         WHERE id = ?`),
       notes: db.prepare(`SELECT * FROM notes ORDER BY at, rowid`),
       note: db.prepare(`SELECT 1 FROM notes WHERE id = ?`),
+      hasNotes: db.prepare(`SELECT 1 FROM notes WHERE artifact_id = ? LIMIT 1`),
       saveNote: db.prepare(`
         INSERT INTO notes (id, artifact_id, seq, state, author, items, ends, at, released_at, seen_at, work_at, done_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -378,15 +379,20 @@ export class SessionStore {
 
   importSession(d) {
     const now = Date.now();
+    // Notes on record mean an earlier import (whose rename failed) or a server has used this
+    // session since: its status in the database is newer than the file's.
+    const known = !!this.q.hasNotes.get(d.id);
     this.q.ensure.run(d.id, d.file, projectOf(d.file), d.title || path.basename(d.file), d.createdAt || now, d.updatedAt || now);
     const s = hydrate(this.q.session.get(d.id));
-    Object.assign(s, {
-      title: d.title || s.title,
-      updatedAt: Math.max(s.updatedAt, d.updatedAt || 0),
-      status: d.status || "open",
-      endedBy: d.endedBy || null,
-      endedAt: d.endedAt || null,
-    });
+    if (!known) {
+      Object.assign(s, {
+        title: d.title || s.title,
+        updatedAt: Math.max(s.updatedAt, d.updatedAt || 0),
+        status: d.status || "open",
+        endedBy: d.endedBy || null,
+        endedAt: d.endedAt || null,
+      });
+    }
     const transcript = Array.isArray(d.transcript) ? d.transcript : [];
     const pending = new Set(Array.isArray(d.pending) ? d.pending : []);
     const users = transcript.filter((e) => e && e.role === "user" && e.id && !this.q.note.get(e.id));

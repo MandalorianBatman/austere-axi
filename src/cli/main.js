@@ -9,6 +9,7 @@ import { checkHtml, statementLines } from "./check.js";
 import { ensureServer, openBrowser, request, serverIfRunning } from "./client.js";
 import { Hub, hubDbFile, hubEnabled, registerWithHub, setHubEnabled } from "./hub.js";
 import { InviteStore, inviteId } from "./invites.js";
+import { lockStateDir } from "./lock.js";
 import { SessionStore, sessionId } from "./sessions.js";
 import { exportHtml } from "./export.js";
 import { format, print } from "./output.js";
@@ -615,16 +616,21 @@ async function cmdFeedback(file, flags) {
       status = r.data.session.status;
     } else if (r.status !== 404) return fail(r.data?.error || `feedback failed (${r.status})`);
   } else {
-    // No server: read hub.db directly (a server started meanwhile reads it fresh).
-    const store = await SessionStore.open(stateDir());
+    // No server: read hub.db directly, holding the state dir's lock so a server cannot start on it meanwhile.
+    const release = await lockStateDir(stateDir(), { wait: 5000 });
     try {
-      const s = store.byFile(abs);
-      if (s) {
-        ({ entries } = store.feedback(s, opts));
-        status = s.status;
+      const store = await SessionStore.open(stateDir());
+      try {
+        const s = store.byFile(abs);
+        if (s) {
+          ({ entries } = store.feedback(s, opts));
+          status = s.status;
+        }
+      } finally {
+        store.close();
       }
     } finally {
-      store.close();
+      release();
     }
   }
   if (!entries) {

@@ -211,6 +211,39 @@ test("a held note released after the cursor moved past its time still reaches th
     assert.ok(released.data.cursor > got.data.cursor);
   }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
 
+test("unread notes reopen an ended review even when they are older than the end: held and released after it", () =>
+  withServer(async ({ port, id }) => {
+    const share = await request(port, "POST", "/api/share", { file: FILE, name: "Ana" });
+    const link = new URL(share.data.link);
+    const invited = [].concat((await request(port, "GET", link.pathname + link.search)).headers["set-cookie"])[0].split(";")[0];
+    const session = async () => (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id);
+
+    // The agent ends, then the owner releases a note held from before.
+    await request(port, "POST", `/s/${id}/send`, message("held before the agent ended"), { ...page(port), cookie: invited });
+    await request(port, "POST", "/api/end", { file: FILE });
+    await request(port, "POST", `/s/${id}/release`, { all: true }, page(port));
+    const poll = await request(port, "POST", "/api/poll", { file: FILE });
+    assert.equal(poll.data.status, "feedback");
+    assert.equal(poll.data.items[0].text, "held before the agent ended");
+    assert.equal(poll.data.ended, undefined);
+    assert.equal((await session()).status, "open");
+
+    // The same when the reviewer ended it from the page.
+    await request(port, "POST", `/s/${id}/send`, message("held before the reviewer ended"), { ...page(port), cookie: invited });
+    await request(port, "POST", `/s/${id}/end`, {}, page(port));
+    await request(port, "POST", `/s/${id}/release`, { all: true }, page(port));
+    const again = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
+    assert.equal(again.data.items[0].text, "held before the reviewer ended");
+    assert.equal(again.data.ended, undefined);
+    assert.equal((await session()).status, "open");
+
+    // A replay of acknowledged notes does not reopen an ended review.
+    await request(port, "POST", "/api/end", { file: FILE });
+    const replay = await request(port, "POST", "/api/poll", { file: FILE, cursor: again.data.cursor, after: 0 });
+    assert.equal(replay.data.status, "feedback");
+    assert.equal((await session()).status, "ended");
+  }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
+
 test("ending keeps the composer open; only the owner's close refuses notes, until reopen", () =>
   withServer(async ({ port, id }) => {
     // Closing ends a listening poll.
@@ -242,12 +275,57 @@ test("ending keeps the composer open; only the owner's close refuses notes, unti
   }));
 
 test("a second server on the same state dir refuses to start", () =>
-  withServer(async ({ state }) => {
+  withServer(async ({ port, state }) => {
     const other = startServer(await freePort(), state);
     const code = await other.exited;
     assert.notEqual(code, 0);
-    assert.match(other.out, /another austere-axi server \(pid \d+\) is using/);
+    assert.match(other.out, new RegExp(`another austere-axi server \\(pid \\d+, port ${port}\\) is using`));
   }));
+
+test("a lock left by a dead server does not block a start when its pid now belongs to another process", async () => {
+  const port = await freePort();
+  const state = tmp("austere-durable-lock-");
+  // This test's own pid is alive but serves nothing on the port the lock names.
+  fs.writeFileSync(path.join(state, "server.lock"), JSON.stringify({ pid: process.pid, port: await freePort(), at: Date.now() - 10 * 60_000 }));
+  const proc = startServer(port, state);
+  try {
+    await up(port);
+    const lock = JSON.parse(fs.readFileSync(path.join(state, "server.lock"), "utf8"));
+    assert.deepEqual([lock.pid, lock.port], [(await request(port, "GET", "/api/health")).data.pid, port]);
+  } finally {
+    await kill(proc);
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("a newer CLI that replaces an older server keeps --persist", async () => {
+  const port = await freePort();
+  const state = tmp("austere-durable-replace-");
+  // An older server that runs with --persist; it exits when asked to.
+  const old = http.createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/api/health") return res.end(JSON.stringify({ name: "austere-axi", version: "0.0.1", pid: 1, port, stateDir: state, listen: ["127.0.0.1"], persist: true }));
+    if (req.url === "/api/shutdown") {
+      res.on("finish", () => {
+        old.close();
+        old.closeAllConnections();
+      });
+    }
+    res.end("{}");
+  });
+  await new Promise((r) => old.listen(port, "127.0.0.1", r));
+  try {
+    const r = await cli(port, state, FILE, "--no-open");
+    assert.match(r.out, /status: open/);
+    const h = (await request(port, "GET", "/api/health")).data;
+    assert.notEqual(h.version, "0.0.1", "replaced");
+    assert.equal(h.persist, true);
+  } finally {
+    old.close();
+    await cli(port, state, "stop");
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
 
 test("session files from before the database are imported once, every state intact", async () => {
   const dir = tmp("austere-import-");
@@ -277,10 +355,10 @@ test("session files from before the database are imported once, every state inta
   fs.mkdirSync(sessions);
   fs.writeFileSync(path.join(sessions, `${id}.json`), JSON.stringify(legacy));
   try {
-    const check = (store) => {
+    const check = (store, status = "ended") => {
       const s = store.get(id);
-      assert.equal(s.status, "ended");
-      assert.equal(s.endedBy, "agent");
+      assert.equal(s.status, status);
+      assert.equal(s.endedBy, status === "ended" ? "agent" : null);
       assert.deepEqual(store.unread(s).map((e) => e.id), ["u-pending"]);
       assert.deepEqual(store.heldEntries(s).map((e) => e.id), ["u-held"]);
       assert.deepEqual(
@@ -296,13 +374,15 @@ test("session files from before the database are imported once, every state inta
     };
     let store = await SessionStore.open(dir);
     check(store);
+    // The server reopens the review after the import.
+    store.reopen(store.get(id));
     store.close();
     assert.deepEqual(fs.readdirSync(sessions), [`${id}.json.imported`]);
 
-    // A rename that did not happen: importing again changes nothing.
+    // A rename that did not happen: importing again changes nothing, not even the status.
     fs.writeFileSync(path.join(sessions, `${id}.json`), JSON.stringify(legacy));
     store = await SessionStore.open(dir);
-    check(store);
+    check(store, "open");
     store.close();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

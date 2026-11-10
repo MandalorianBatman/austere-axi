@@ -58,10 +58,11 @@ async function health(port) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Start a detached server. Returns a probe that tells whether the process has already exited. */
-function spawnServer(port, alsoListen = []) {
+function spawnServer(port, { alsoListen = [], persist = false } = {}) {
   const log = fs.openSync(path.join(stateDir(), "server.log"), "a");
   const args = [CLI_ENTRY, "server", "--port", String(port)];
   for (const h of alsoListen) args.push("--also-listen", h);
+  if (persist) args.push("--persist");
   const child = spawn(process.execPath, args, {
     detached: true,
     stdio: ["ignore", log, log],
@@ -89,12 +90,13 @@ export async function ensureServer() {
     throw new Error(`port ${port} is served by an austere-axi with another state dir (${h.stateDir}); set AUSTERE_AXI_PORT`);
   }
   if (h && versionGt(VERSION, h.version)) {
-    // A newer CLI replaces an older server; sessions are on disk.
+    // A newer CLI replaces an older server; sessions are on disk. The new one listens where the old one did and keeps --persist.
     const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!h.tailnet || x !== h.tailnet.ip));
+    const persist = !!h.persist;
     await request("POST", "/api/shutdown", {}, { timeoutMs: 2000, port }).catch(() => {});
     for (let i = 0; i < 40 && (await health(port)); i++) await sleep(100);
     h = null;
-    exited = spawnServer(port, keep);
+    exited = spawnServer(port, { alsoListen: keep, persist });
   } else if (!h) {
     exited = spawnServer(port);
   }

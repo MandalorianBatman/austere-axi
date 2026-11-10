@@ -14,6 +14,7 @@ import { exportHtml } from "./export.js";
 import { allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.js";
 import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.js";
 import { SessionStore, newId } from "./sessions.js";
+import { lockStateDir } from "./lock.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
 import { Hub, hubEnabled } from "./hub.js";
 import { COOKIE, InviteStore, OWNER_COOKIE, inviteId, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
@@ -54,51 +55,6 @@ export function persistEnv() {
   return /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_PERSIST || "");
 }
 
-/**
- * One server per state dir: two would each hold a copy of the sessions and overwrite
- * each other's. Returns the function that lets go of the lock.
- */
-function lockStateDir(dir) {
-  const file = path.join(dir, "server.lock");
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      fs.writeFileSync(file, String(process.pid), { flag: "wx" });
-      let held = true;
-      return () => {
-        if (!held) return;
-        held = false;
-        try {
-          if (fs.readFileSync(file, "utf8") === String(process.pid)) fs.unlinkSync(file);
-        } catch {
-          // already gone
-        }
-      };
-    } catch (err) {
-      if (err.code !== "EEXIST") throw err;
-      let pid = 0;
-      try {
-        pid = Number(fs.readFileSync(file, "utf8"));
-      } catch {
-        // removed meanwhile
-      }
-      if (pid && pid !== process.pid && processAlive(pid)) {
-        throw new Error(`another austere-axi server (pid ${pid}) is using ${dir}; stop it first (\`austere-axi stop\`), or delete ${file} if that process is not austere-axi`);
-      }
-      fs.rmSync(file, { force: true });
-    }
-  }
-  throw new Error(`could not lock ${dir} (${file})`);
-}
-
-function processAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === "EPERM";
-  }
-}
-
 const OWNER = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set(["annotation", "message"]);
 // Transcript entries a page gets at once; it asks for older ones as the reader scrolls back.
@@ -115,8 +71,9 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
     }
   };
 
-  // Notes commit to hub.db before any request that adds them is answered.
-  const releaseLock = lockStateDir(stateDir());
+  // Notes commit to hub.db before any request that adds them is answered. The lock names
+  // the port, so a later process can tell this server from an unrelated one with its pid.
+  const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000 });
   process.on("exit", releaseLock);
   let store;
   try {
@@ -364,7 +321,8 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
       for (const it of e.items || []) items.push(e.author ? { ...it, author: e.author } : it);
       if (e.end) end = true;
     }
-    const ended = end || s.status === "ended";
+    // Ended only if it still is: a reviewer's end batch, the reviewer's end, or the owner's close. A replay to an agent that ended is not final.
+    const ended = s.status === "ended" && (s.endedBy === "user" || Boolean(s.closedAt) || end);
     const body = {
       status: "feedback",
       items,
@@ -629,10 +587,14 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
       }
       const poll = { res, owner: body.owner || null, startedAt: Date.now(), done: false, from: after ?? s.ackedSeq };
       const fresh = store.after(s, poll.from);
-      // A note written after the review ended reopens it: ending means the agent stopped, not that the reviewer is done.
-      if (s.status === "ended" && !s.closedAt && fresh.some((e) => !e.end && e.at > (s.endedAt || 0))) {
+      // An unread note reopens an ended review (ending means the agent stopped, not that the reviewer is done):
+      // one sent before the end but never acknowledged, or held and released after it. A batch sent with end
+      // stays final, so only notes after the last one count; --after replays of acknowledged notes do not.
+      const unread = fresh.filter((e) => e.seq > s.ackedSeq);
+      const lastEnd = unread.reduce((n, e) => (e.end ? e.seq : n), 0);
+      if (s.status === "ended" && !s.closedAt && unread.some((e) => !e.end && e.seq > lastEnd)) {
         store.reopen(s);
-        log("reopen", s.id, "new notes");
+        log("reopen", s.id, "unread notes");
       }
       if (fresh.length) return deliver(s, poll);
       if (s.status === "ended") return send(res, 200, { status: "ended", endedBy: s.endedBy, closed: Boolean(s.closedAt) || undefined });
