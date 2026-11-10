@@ -1,0 +1,126 @@
+<<<<<<< SEARCH
+              <th scope="col">Qdrant</th>
+              <th scope="col">Milvus</th>
+            </tr>
+=======
+              <th scope="col">Qdrant</th>
+              <th scope="col">Milvus</th>
+              <th scope="col">pgvector</th>
+            </tr>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <td>Managed or self-host</td>
+              <td>Self-host<br><span class="note">Zilliz for managed</span></td>
+            </tr>
+=======
+              <td>Managed or self-host</td>
+              <td>Self-host<br><span class="note">Zilliz for managed</span></td>
+              <td>Self-host on existing Postgres</td>
+            </tr>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <td><span class="latency meets">44 ms</span></td>
+              <td><span class="latency misses">52 ms</span></td>
+            </tr>
+=======
+              <td><span class="latency meets">44 ms</span></td>
+              <td><span class="latency misses">52 ms</span></td>
+              <td><span class="latency misses">95 ms</span></td>
+            </tr>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <td><strong>$1,250</strong></td>
+              <td>$1,400 + ops time</td>
+            </tr>
+=======
+              <td><strong>$1,250</strong></td>
+              <td>$1,400 + ops time</td>
+              <td>About $400/month</td>
+            </tr>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <td><span class="status good">Yes</span></td>
+              <td><span class="status partial">Partial</span></td>
+            </tr>
+=======
+              <td><span class="status good">Yes</span></td>
+              <td><span class="status partial">Partial</span></td>
+              <td><span class="status good">Yes</span><br><span class="note">with tsvector</span></td>
+            </tr>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <td><span class="status good">Very good</span></td>
+              <td><span class="status good">Good</span></td>
+            </tr>
+=======
+              <td><span class="status good">Very good</span></td>
+              <td><span class="status good">Good</span></td>
+              <td><span class="status good">Good</span></td>
+            </tr>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <td>Apache-2.0</td>
+            </tr>
+          </tbody>
+=======
+              <td>Apache-2.0</td>
+              <td>PostgreSQL</td>
+            </tr>
+          </tbody>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <label class="option-card" for="milvus">
+            <input id="milvus" name="database" value="Milvus" type="checkbox">
+            <div>
+              <div class="option-name">
+                <h3>Milvus</h3>
+              </div>
+              <p>Self-hosted option with partial hybrid search; estimated cost also includes operations time.</p>
+              <div class="option-facts">
+                <div><span>Latency</span><strong>52 ms</strong></div>
+                <div><span>Est. monthly</span><strong>$1,400 + ops time</strong></div>
+                <div><span>Hosting</span><strong>Self-host</strong></div>
+                <div><span>License</span><strong>Apache-2.0</strong></div>
+              </div>
+            </div>
+          </label>
+=======
+          <label class="option-card" for="milvus">
+            <input id="milvus" name="database" value="Milvus" type="checkbox">
+            <div>
+              <div class="option-name">
+                <h3>Milvus</h3>
+              </div>
+              <p>Self-hosted option with partial hybrid search; estimated cost also includes operations time.</p>
+              <div class="option-facts">
+                <div><span>Latency</span><strong>52 ms</strong></div>
+                <div><span>Est. monthly</span><strong>$1,400 + ops time</strong></div>
+                <div><span>Hosting</span><strong>Self-host</strong></div>
+                <div><span>License</span><strong>Apache-2.0</strong></div>
+              </div>
+            </div>
+          </label>
+
+          <label class="option-card" for="pgvector">
+            <input id="pgvector" name="database" value="pgvector" type="checkbox">
+            <div>
+              <div class="option-name">
+                <h3>pgvector</h3>
+              </div>
+              <p>Self-hosted on existing Postgres, with hybrid search enabled through tsvector and good metadata filtering.</p>
+              <div class="option-facts">
+                <div><span>Latency</span><strong>95 ms</strong></div>
+                <div><span>Est. monthly</span><strong>About $400/month</strong></div>
+                <div><span>Hosting</span><strong>Self-host on existing Postgres</strong></div>
+                <div><span>License</span><strong>PostgreSQL</strong></div>
+              </div>
+            </div>
+          </label>
+>>>>>>> REPLACE

@@ -1,0 +1,26 @@
+<<<<<<< SEARCH
+                <span class="severity severity-high">High</span>
+                <span class="finding-location">src/routes/users.js · line 18</span>
+              </div>
+              <h3 class="finding-title mt-3 font-bold">SQL injection</h3>
+              <p class="finding-description mt-2 max-w-3xl">
+                The query concatenates <code class="font-mono">req.query.q</code> into the SQL string.
+              </p>
+=======
+                <span class="severity severity-error">Blocker</span>
+                <span class="finding-location">src/routes/users.js · line 18</span>
+              </div>
+              <h3 class="finding-title mt-3 font-bold">SQL injection</h3>
+              <p class="finding-description mt-2 max-w-3xl">
+                The query concatenates <code class="font-mono">req.query.q</code> into the SQL string.
+              </p>
+              <div class="mt-4 rounded-box border border-success/25 bg-success/8 p-4">
+                <p class="eyebrow text-success">Suggested fix</p>
+                <p class="mt-2 text-sm leading-relaxed">
+                  Use a parameterized query with
+                  <code class="font-mono">WHERE name ILIKE $1</code>
+                  and the value
+                  <code class="font-mono">%${q}%</code>.
+                </p>
+              </div>
+>>>>>>> REPLACE

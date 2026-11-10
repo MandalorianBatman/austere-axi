@@ -1,0 +1,4 @@
+```openui
+incidentTable = Table([Col("ID", ["INC-1042", "INC-1047", "INC-1051"]), Col("Day", ["Tue", "Wed", "Sun"]), Col("Severity", ["Sev2", "Sev2", "Sev3"]), Col("Duration", ["38 min", "47 min", "ongoing"]), Col("Description", ["Payment provider timeouts", "Bad config push to the cart cache", "Elevated p95 from a slow inventory query"]), Col("Status", [resolvedTag, resolvedTag, investigatingTag]), Col("Postmortem", ["", pm1047Label, ""])])
+pm1047Label = Text("text", "PM-1047")
+```

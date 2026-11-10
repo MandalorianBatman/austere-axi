@@ -1,0 +1,75 @@
+<<<<<<< SEARCH
+    <h1 class="text-3xl font-bold lg:text-4xl">Decide each open bug, then send all four at once</h1>
+=======
+    <h1 class="text-3xl font-bold lg:text-4xl">Decide each open bug, then send all five at once</h1>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      <span><strong>Suggested:</strong> fix BUG-311 and BUG-318; defer BUG-322 and BUG-327</span>
+=======
+      <span><strong>Suggested:</strong> fix BUG-311, BUG-318 and BUG-330; defer BUG-322 and BUG-327</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-327" value="won't fix"> won't fix</label>
+                </fieldset>
+              </td>
+            </tr>
+          </tbody>
+=======
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-327" value="won't fix"> won't fix</label>
+                </fieldset>
+              </td>
+            </tr>
+            <tr data-bug="BUG-330" data-title="Password reset email links expire after 5 minutes instead of 60" data-suggest="fix for 3.8">
+              <td class="font-mono font-bold whitespace-nowrap">BUG-330</td>
+              <td class="min-w-48">Password reset email links expire after 5 minutes instead of 60</td>
+              <td><span class="badge badge-error">High</span></td>
+              <td>All users who reset a password</td>
+              <td>1 hour</td>
+              <td><span class="badge badge-soft badge-success">fix for 3.8</span></td>
+              <td>
+                <fieldset class="flex flex-col gap-1 min-w-40">
+                  <legend class="sr-only">Decision for BUG-330</legend>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-330" value="fix for 3.8"> fix for 3.8</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-330" value="defer to 3.9"> defer to 3.9</label>
+                  <label class="flex items-center gap-2"><input type="radio" class="radio radio-sm" name="BUG-330" value="won't fix"> won't fix</label>
+                </fieldset>
+              </td>
+            </tr>
+          </tbody>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <span id="count" class="badge badge-outline">0 of 4 decided</span>
+=======
+          <span id="count" class="badge badge-outline">0 of 5 decided</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+        <button type="submit" class="btn btn-primary">Queue all 4 decisions</button>
+=======
+        <button type="submit" class="btn btn-primary">Queue all 5 decisions</button>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    count.textContent = n + ' of 4 decided';
+    count.className = 'badge ' + (n === 4 ? 'badge-success' : 'badge-outline');
+=======
+    count.textContent = n + ' of 5 decided';
+    count.className = 'badge ' + (n === 5 ? 'badge-success' : 'badge-outline');
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    } else if (n === 4) {
+      status.textContent = 'All 4 selected locally. Not queued yet.';
+=======
+    } else if (n === 5) {
+      status.textContent = 'All 5 selected locally. Not queued yet.';
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    status.textContent = 'Queued all 4 decisions. Press Send to Agent to deliver them.';
+=======
+    status.textContent = 'Queued all 5 decisions. Press Send to Agent to deliver them.';
+>>>>>>> REPLACE

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout service health, week of 2026-10-26</title>
+<!-- Design source: no user direction and no existing design system applies (standalone page), so the Lavish fallback Tailwind v4 + DaisyUI v5 via CDN is used. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, td, th, .badge) { overflow-wrap: anywhere; }
+  :where(img, svg) { max-width: 100%; height: auto; }
+  body { background: var(--color-base-100); color: var(--color-base-content); }
+  svg text { font-family: inherit; fill: var(--color-base-content); }
+</style>
+</head>
+<body class="bg-base-100 text-base-content">
+<main class="mx-auto max-w-6xl p-6 lg:p-10 space-y-8">
+
+  <header class="space-y-2">
+    <p class="text-sm uppercase tracking-widest opacity-70">Monday review · Week of 2026-10-26</p>
+    <h1 class="text-3xl lg:text-4xl font-bold">Checkout service health</h1>
+    <div role="alert" class="alert alert-warning alert-soft">
+      <span><strong>Bottom line:</strong> p95 latency breached its target (312 ms vs 300 ms) and incident INC-1051 is still being investigated. Error rate (0.21% vs 0.5% SLO) and error budget (64% left) are healthy.</span>
+    </div>
+  </header>
+
+  <section aria-label="Key metrics">
+    <div class="grid gap-4 grid-cols-[repeat(auto-fit,minmax(0,1fr))] sm:grid-cols-2 lg:grid-cols-4">
+      <div class="card card-border bg-base-200">
+        <div class="card-body">
+          <div class="text-sm opacity-70">Requests</div>
+          <div class="text-3xl font-bold">48.2M</div>
+          <div class="text-sm">Up 6% week over week</div>
+        </div>
+      </div>
+      <div class="card card-border bg-base-200">
+        <div class="card-body">
+          <div class="text-sm opacity-70">Error rate</div>
+          <div class="text-3xl font-bold">0.21%</div>
+          <div class="text-sm"><span class="badge badge-soft badge-success">Within SLO</span> SLO 0.5%</div>
+        </div>
+      </div>
+      <div class="card card-border bg-base-200 border-error">
+        <div class="card-body">
+          <div class="text-sm opacity-70">p95 latency</div>
+          <div class="text-3xl font-bold">312 ms</div>
+          <div class="text-sm"><span class="badge badge-soft badge-error">Breached</span> Target 300 ms</div>
+        </div>
+      </div>
+      <div class="card card-border bg-base-200">
+        <div class="card-body">
+          <div class="text-sm opacity-70">Error budget left this month</div>
+          <div class="text-3xl font-bold">64%</div>
+          <progress class="progress progress-success" value="64" max="100" aria-label="Error budget left, 64%"></progress>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid gap-6 lg:grid-cols-2">
+    <div class="card card-border bg-base-200">
+      <div class="card-body">
+        <h2 class="card-title">Daily p95 latency (ms)</h2>
+        <p class="text-sm opacity-80">Over target on Wed, Thu, Fri and Sun (4 of 7 days). Dashed line is the 300 ms target.</p>
+        <svg viewBox="0 0 560 235" role="img" aria-label="Bar chart of daily p95 latency in milliseconds, Monday to Sunday: 288, 295, 340, 331, 305, 297, 330. Target 300.">
+          <line x1="40" y1="200" x2="550" y2="200" stroke="currentColor" opacity="0.4"/>
+          <!-- bars: y = 200 - v/2 -->
+          <rect x="52"  y="56"  width="44" height="144" style="fill:var(--color-primary)"/>
+          <rect x="122" y="52.5" width="44" height="147.5" style="fill:var(--color-primary)"/>
+          <rect x="192" y="30"  width="44" height="170" style="fill:var(--color-error)"/>
+          <rect x="262" y="34.5" width="44" height="165.5" style="fill:var(--color-error)"/>
+          <rect x="332" y="47.5" width="44" height="152.5" style="fill:var(--color-error)"/>
+          <rect x="402" y="51.5" width="44" height="148.5" style="fill:var(--color-primary)"/>
+          <rect x="472" y="35"  width="44" height="165" style="fill:var(--color-error)"/>
+          <line x1="40" y1="50" x2="550" y2="50" stroke="currentColor" stroke-width="1.5" stroke-dasharray="6 4"/>
+          <text x="548" y="44" font-size="11" text-anchor="end">Target 300</text>
+          <g font-size="12" text-anchor="middle">
+            <text x="74"  y="50">288</text>
+            <text x="144" y="46" opacity="0">295</text>
+            <text x="214" y="24">340</text>
+            <text x="284" y="28">331</text>
+            <text x="354" y="41" opacity="0">305</text>
+            <text x="424" y="45" opacity="0">297</text>
+            <text x="494" y="29">330</text>
+          </g>
+          <g font-size="12" text-anchor="middle">
+            <text x="74" y="218">Mon</text><text x="144" y="218">Tue</text><text x="214" y="218">Wed</text><text x="284" y="218">Thu</text><text x="354" y="218">Fri</text><text x="424" y="218">Sat</text><text x="494" y="218">Sun</text>
+          </g>
+        </svg>
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead><tr><th>Day</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th></tr></thead>
+            <tbody><tr><th>p95 (ms)</th><td>288</td><td>295</td><td>340</td><td>331</td><td>305</td><td>297</td><td>330</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-border bg-base-200">
+      <div class="card-body">
+        <h2 class="card-title">Daily errors</h2>
+        <p class="text-sm opacity-80">Peak on Wednesday at 15,900, the same day as INC-1047.</p>
+        <svg viewBox="0 0 560 235" role="img" aria-label="Bar chart of daily errors, Monday to Sunday: 9,800; 10,400; 15,900; 12,100; 9,900; 8,700; 9,300.">
+          <line x1="40" y1="200" x2="550" y2="200" stroke="currentColor" opacity="0.4"/>
+          <!-- bars: height = v/100 -->
+          <rect x="52"  y="102" width="44" height="98"  style="fill:var(--color-secondary)"/>
+          <rect x="122" y="96"  width="44" height="104" style="fill:var(--color-secondary)"/>
+          <rect x="192" y="41"  width="44" height="159" style="fill:var(--color-warning)"/>
+          <rect x="262" y="79"  width="44" height="121" style="fill:var(--color-secondary)"/>
+          <rect x="332" y="101" width="44" height="99"  style="fill:var(--color-secondary)"/>
+          <rect x="402" y="113" width="44" height="87"  style="fill:var(--color-secondary)"/>
+          <rect x="472" y="107" width="44" height="93"  style="fill:var(--color-secondary)"/>
+          <g font-size="12" text-anchor="middle">
+            <text x="74"  y="96">9,800</text>
+            <text x="144" y="90">10,400</text>
+            <text x="214" y="35">15,900</text>
+            <text x="284" y="73">12,100</text>
+            <text x="354" y="95">9,900</text>
+            <text x="424" y="107">8,700</text>
+            <text x="494" y="101">9,300</text>
+          </g>
+          <g font-size="12" text-anchor="middle">
+            <text x="74" y="218">Mon</text><text x="144" y="218">Tue</text><text x="214" y="218">Wed</text><text x="284" y="218">Thu</text><text x="354" y="218">Fri</text><text x="424" y="218">Sat</text><text x="494" y="218">Sun</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-2xl font-bold">Incidents</h2>
+    <p class="text-sm opacity-80">Three incidents this week; two resolved, one still open.</p>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
+      <table class="table">
+        <thead><tr><th>ID</th><th>Day</th><th>Severity</th><th>Duration</th><th>Summary</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="font-mono">INC-1042</td><td>Tue</td>
+            <td><span class="badge badge-soft badge-warning">Sev2</span></td>
+            <td>38 min</td><td>Payment provider timeouts</td>
+            <td><span class="badge badge-soft badge-success">✓ Resolved</span></td>
+          </tr>
+          <tr>
+            <td class="font-mono">INC-1047</td><td>Wed</td>
+            <td><span class="badge badge-soft badge-warning">Sev2</span></td>
+            <td>47 min</td><td>Bad config push to the cart cache · <a href="#" class="link link-primary font-mono">PM-1047</a></td>
+            <td><span class="badge badge-soft badge-success">✓ Resolved</span></td>
+          </tr>
+          <tr class="bg-error/10">
+            <td class="font-mono">INC-1051</td><td>Sun</td>
+            <td><span class="badge badge-soft badge-info">Sev3</span></td>
+            <td>Ongoing</td><td>Elevated p95 from a slow inventory query</td>
+            <td><span class="badge badge-soft badge-error">● Investigating</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="space-y-3">
+    <h2 class="text-2xl font-bold">Action items</h2>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-200">
+      <table class="table">
+        <thead><tr><th>Action</th><th>Owner</th><th>Due</th></tr></thead>
+        <tbody>
+          <tr><td>Add an index on <code class="font-mono">inventory(sku, warehouse_id)</code></td><td>Priya</td><td>Nov 4</td></tr>
+          <tr><td>Add a timeout alert for the payment provider</td><td>Marco</td><td>Nov 6</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm opacity-80">Open question for the review: INC-1051 is attributed to a slow inventory query, and the first action item targets the inventory table. Whether the index resolves INC-1051 is not confirmed here.</p>
+  </section>
+
+</main>
+</body>
+</html>

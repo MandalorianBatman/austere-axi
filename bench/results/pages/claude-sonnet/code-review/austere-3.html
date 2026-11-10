@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>PR #482 review: Add user search endpoint</title>
+<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+<body><script type="text/openui">
+root = Stack([summary, verdict, reviewRow], "column", "l")
+summary = Card([CardHeader("PR #482: Add user search endpoint", "src/routes/users.js"), summaryFacts])
+summaryFacts = EntityList([{left: "File", right: "src/routes/users.js"}, {left: "Change", right: "+9 -1"}, {left: "Tests", right: "31 passed"}, {left: "Findings", right: "4 (1 high, 2 medium, 1 low)"}])
+verdict = Callout("error", "Verdict: request changes", "One high-severity finding (SQL injection) and two medium findings need to be addressed. One low finding concerns a missing test.")
+reviewRow = Stack([diffCard, findingsColumn], "row", "m", "start", "start", true)
+diffCard = Card([CardHeader("The diff", "Line numbers below are new-file lines"), usersDiff])
+usersDiff = Diff("diff --git a/src/routes/users.js b/src/routes/users.js
+--- a/src/routes/users.js
++++ b/src/routes/users.js
+@@ -12,7 +12,15 @@ router.get(\"/users/:id\", async (req, res) => {
+   res.json(user);
+ });
+ 
+-router.get(\"/users\", listUsers);
++router.get(\"/users\", async (req, res) => {
++  const q = req.query.q;
++  const rows = await db.query(
++    \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"
++  );
++  res.json(rows);
++});
++
++router.get(\"/users/export\", exportUsers);
+ 
+ module.exports = router;", "src/routes/users.js")
+findingsColumn = Stack([findingSqlInjection, findingPagination, findingEmailExposure, findingExportTest], "column", "m")
+findingSqlInjection = Card([CardHeader("1. SQL injection", "Line 18"), sqlInjectionSeverity, sqlInjectionBody])
+sqlInjectionSeverity = Stack([sqlInjectionTag], "row")
+sqlInjectionTag = Tag("High", null, "sm", "danger")
+sqlInjectionBody = MarkDownRenderer("The query concatenates `req.query.q` into the SQL string (line 18).")
+findingPagination = Card([CardHeader("2. No pagination", "Search handler"), paginationSeverity, paginationBody])
+paginationSeverity = Stack([paginationTag], "row")
+paginationTag = Tag("Medium", null, "sm", "warning")
+paginationBody = MarkDownRenderer("The search returns every matching row. With 2.1M users this can time out.")
+findingEmailExposure = Card([CardHeader("3. Email exposed to any logged-in user", "Line 18"), emailSeverity, emailBody])
+emailSeverity = Stack([emailTag], "row")
+emailTag = Tag("Medium", null, "sm", "warning")
+emailBody = MarkDownRenderer("The `email` column is returned to any logged-in user (line 18). Return only `id` and `name`.")
+findingExportTest = Card([CardHeader("4. Missing test", "/users/export"), exportSeverity, exportBody])
+exportSeverity = Stack([exportTag], "row")
+exportTag = Tag("Low", null, "sm", "info")
+exportBody = MarkDownRenderer("`/users/export` has no test.")
+</script></body></html>
