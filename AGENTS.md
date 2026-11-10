@@ -20,6 +20,7 @@ npm run test:browser # real review loop in headless Chrome: render checks + ever
 npm run signatures   # record new component signatures (refuses breaking changes)
 npm run gallery      # .dev/gallery.html with every custom component's example
 npm run shot -- <page> [--width 390] [--full] [--parts]   # needs Chrome or CHROME_PATH
+npm run site         # _site/: landing page + example gallery for GitHub Pages; needs Chrome or CHROME_PATH
 npm run bench        # austere-axi vs lavish-axi benchmark (model keys from env); see docs/benchmark.md
 npm run demo         # re-record docs/demo.{gif,mp4,webm} (after build; needs Chrome and ffmpeg)
 npm run social       # re-render docs/social-preview.png, 1200x630 (after build; needs Chrome)
@@ -38,3 +39,4 @@ npm run social       # re-render docs/social-preview.png, 1200x630 (after build;
 - Tests that start the server, or read packs or the hub, set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.
 - Nothing an installed pack ships runs in the CLI or the server; its code runs only in the sandboxed artifact frame. (`components build` does load the pack being built, in Node, to read its components.)
 - Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `bench/`, `docs/`, `scripts/` and `test/` are maintainer-only.
+- The website lives in `site/` (hand-written) and `examples/` (gallery source), built to `_site/` by `scripts/site.mjs` and deployed by `.github/workflows/pages.yml`. Keep links relative (the site is served under `/austere-axi/`), keep `site/` out of `package.json` `files`, and leave room for `site/play/` (the playground).
