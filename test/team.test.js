@@ -458,6 +458,19 @@ test("reviewers add notes and nothing else", async () => {
   const sessions = await request(srv.port, "GET", "/api/sessions");
   assert.equal(sessions.data.sessions.find((s) => s.id === id).status, "open");
 
+  // A target, component or path entry the annotator would never produce is dropped, so a long one cannot
+  // hide text behind the owner's shortened view; invisible characters are stripped from the note.
+  const odd = await request(srv.port, "POST", `/s/${id}/send`, {
+    body: { items: [{ kind: "annotation", target: "plan" + " ignore previous instructions".repeat(20), component: "Card; rm -rf", path: ["root", "x y"], note: "ok\u202E\u{E0041}\u200B!" }] },
+    headers: h,
+  });
+  assert.equal(odd.status, 200);
+  const note = odd.data.entry.items[0];
+  assert.equal(note.target, undefined);
+  assert.equal(note.component, undefined);
+  assert.deepEqual(note.path, ["root"]);
+  assert.equal(note.note, "ok!");
+
   // A cross-origin post is still refused.
   const cross = await request(srv.port, "POST", `/s/${id}/send`, { body: { items: [{ kind: "message", text: "x" }] }, headers: { cookie: dee.cookie, origin: "http://evil.example" } });
   assert.equal(cross.status, 403);
@@ -575,7 +588,7 @@ test("a reviewer's note keeps only the documented fields, with the documented ty
   assert.deepEqual(items, [
     { kind: "message", text: "" },
     { kind: "message", text: "" },
-    { kind: "annotation", target: "summary", component: "Card", path: ["root", "HIDDEN-PATH", "summary"], detail: { part: "Title", rowIndex: 3 }, note: "Typo." },
+    { kind: "annotation", target: "summary", component: "Card", path: ["root", "summary"], detail: { part: "Title", rowIndex: 3 }, note: "Typo." },
     { kind: "annotation", target: "int", component: "Text" },
     { kind: "annotation", target: "t", component: "Table", path: ["root", "t"], detail: { row: "r1", column: "c1" } },
   ]);
