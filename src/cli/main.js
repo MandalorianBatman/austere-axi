@@ -6,7 +6,7 @@ import path from "node:path";
 import { mergeStatements } from "@openuidev/lang-core";
 import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.js";
 import { checkHtml, statementLines } from "./check.js";
-import { ensureServer, openBrowser, request, serverIfRunning, wantHub } from "./client.js";
+import { ensureServer, loginUrl, openBrowser, request, serverIfRunning, shutdownServer, wantHub } from "./client.js";
 import { Hub, hubDbFile, hubEnabled, registerWithHub, setHubEnabled } from "./hub.js";
 import { InviteStore, inviteId } from "./invites.js";
 import { SessionStore, sessionId } from "./sessions.js";
@@ -36,7 +36,8 @@ WORKFLOW
      The CDN tag lets the file open on its own (needs network); review and \`export\` work offline.
   3. ${BIN} <file.html>          validate + open for review (fix any errors it lists).
                                    With --no-open the session still exists; it prints the url
-                                   (and a phone url when Tailscale is up) for the user.
+                                   (and a phone url when Tailscale is up) for the user. A browser
+                                   the CLI did not open signs in once with a link from \`${BIN} login\`.
   4. ${BIN} poll <file.html>     wait for feedback. Leave it running in the foreground;
                                    it returns when the reviewer presses Send. If your tool call
                                    times out first, run the same poll again: nothing is lost.
@@ -72,6 +73,8 @@ COMMANDS
                                    one poll per session; --takeover replaces a stuck one
   ${BIN} reply <file>            post a reply without polling  --agent-reply "..." | --agent-reply-file f|-
   ${BIN} end <file>              end the review as the agent
+  ${BIN} login [file]            single-use link that signs a browser in as you (SSH, --no-open,
+                                   another browser), to the file's review or the session list
   ${BIN} feedback <file>         feedback no agent has answered yet (sent after polling stopped,
                                    or in an earlier session)   [--all] [--peek]; answer with reply
   ${BIN} check <file>            validate the program (no browser)   [--fix: declare the packs it uses]
@@ -209,13 +212,14 @@ async function cmdOpen(file, flags) {
   let browser;
   if (d.browsers > 0) browser = `already open (${d.browsers} tab${d.browsers > 1 ? "s" : ""}); it live-updates`;
   else if (noOpen) browser = "not opened (--no-open)";
-  else browser = openBrowser(d.links.local) ? "opened" : "could not launch; open the url";
+  else browser = (await openBrowser(d.links.local)) ? "opened" : "could not launch";
   const out = {
     status: "open",
     file: abs,
     url: d.links.local,
     phone: d.links.remote,
     browser,
+    sign_in: browser === "opened" || d.browsers > 0 ? undefined : signInHint(file),
     check: compactCheck(check),
   };
   if (d.pending) out.queued_feedback = d.pending;
@@ -638,7 +642,7 @@ async function cmdHub(sub, args, flags) {
       let h = await ensureServer();
       if (h.hubWanted && !h.hub) {
         // Asked for the hub before but it could not open its index: try again once.
-        await request("POST", "/api/shutdown", {}).catch(() => {});
+        await shutdownServer(h);
         for (let i = 0; i < 40 && (await serverIfRunning()); i++) await new Promise((r) => setTimeout(r, 100));
         h = await ensureServer();
       }
@@ -660,8 +664,8 @@ async function cmdHub(sub, args, flags) {
     }
     case "off": {
       setHubEnabled(false);
-      const h = await serverIfRunning();
-      if (h && (h.hub || h.hubWanted)) await request("POST", "/api/shutdown", {}).catch(() => {});
+      const h = await serverIfRunning({ legacy: true });
+      if (h && (h.hub || h.hubWanted)) await shutdownServer(h);
       return print({ status: "off", note: `The index stays in ${hubDbFile()}; \`${BIN} hub on\` picks it up again. Reviews work as before.` });
     }
     case undefined:
@@ -745,7 +749,8 @@ async function cmdHub(sub, args, flags) {
     case "open": {
       if (!wantHub()) return fail(`the hub is off: \`${BIN} hub on\``);
       await ensureServer();
-      return print({ status: openBrowser(url) ? "opened" : "open the url", url });
+      const opened = await openBrowser(url);
+      return print({ status: opened ? "opened" : "open the url", url, sign_in: opened ? undefined : signInHint() });
     }
     default:
       return fail(`unknown hub command: ${sub}. One of: on off status list notes open`);
@@ -817,10 +822,39 @@ async function cmdShare(args, flags) {
 }
 
 async function cmdStop() {
-  const h = await serverIfRunning();
+  // A server from before the health proof is stopped too (without the key).
+  const h = await serverIfRunning({ legacy: true });
   if (!h) return print({ status: "not running" });
-  await request("POST", "/api/shutdown", {}).catch(() => {});
+  await shutdownServer(h);
   print({ status: "stopped", port: port() });
+}
+
+/** The hint for a browser the CLI did not open: the plain url answers 403 until that browser signs in. */
+function signInHint(file) {
+  return `A browser that is not signed in gets 403 at the url: run \`${BIN} login${file ? ` ${quote(file)}` : ""}\` and open the single-use link it prints.`;
+}
+
+async function cmdLogin(file) {
+  let url = `http://127.0.0.1:${port()}/`;
+  let abs = null;
+  if (file) {
+    abs = needFile(file, "login");
+    if (!abs) return;
+  }
+  await ensureServer();
+  if (abs) {
+    const r = await request("GET", "/api/sessions");
+    if (r.status !== 200) return fail(r.data?.error || `login failed (${r.status})`);
+    const s = (r.data.sessions || []).find((x) => x.file === abs);
+    if (!s) return fail(`no review for ${abs} yet: \`${BIN} ${quote(file)} --no-open\` starts one`);
+    url = s.links.local;
+  }
+  const link = await loginUrl(url);
+  print({
+    url: link.url,
+    expires: `after one use, or in ${Math.round(link.ttlMs / 1000)}s`,
+    note: "Open it in the browser to sign that browser in as you; then every page's plain url works there. Do not forward it.",
+  });
 }
 
 async function cmdServer(flags) {
@@ -859,6 +893,8 @@ async function main() {
       return cmdReply(rest[0], flags);
     case "end":
       return cmdEnd(rest[0]);
+    case "login":
+      return cmdLogin(rest[0]);
     case "check":
       return cmdCheck(rest[0], flags);
     case "components":

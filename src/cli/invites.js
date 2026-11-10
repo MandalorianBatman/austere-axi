@@ -109,8 +109,54 @@ export class InviteStore {
 export const OWNER_COOKIE = "austere_owner";
 
 /**
- * The owner's key: a random token in the state dir (owner.key), made on first use. Off loopback,
- * only a request with this key (as a cookie, set from the owner's own remote link) acts as the owner.
+ * The owner cookie's value: derived from the key, never the key itself. Browsers share 127.0.0.1
+ * cookies across ports, so any local listener a page visits can read it; the derived value lets
+ * that listener act as the owner in a browser, but not on /api/*, which wants the key.
+ * @param {string} key the owner key
+ */
+export function ownerCookie(key) {
+  return crypto.createHmac("sha256", key).update("austere-axi owner cookie").digest("base64url");
+}
+
+/**
+ * Single-use sign-in codes: the CLI asks the server for one (with the owner key) and opens
+ * `<page>?login=<code>`; the server swaps it for the owner cookie. A code works once, and only
+ * for `ttlMs`, so seeing it later (on a command line, in a terminal) is no use.
+ */
+export class LoginCodes {
+  /** @param {number} ttlMs @param {() => number} [now] */
+  constructor(ttlMs, now = Date.now) {
+    this.ttlMs = ttlMs;
+    this.now = now;
+    /** @type {Map<string, number>} sha256(code) -> expiry */
+    this.codes = new Map();
+  }
+
+  /** A fresh code. */
+  issue() {
+    const t = this.now();
+    for (const [h, exp] of this.codes) if (exp <= t) this.codes.delete(h);
+    const code = crypto.randomBytes(16).toString("base64url");
+    this.codes.set(hashCode(code), t + this.ttlMs);
+    return code;
+  }
+
+  /** Whether `code` is a live code; it is used up either way. */
+  take(code) {
+    const h = hashCode(code);
+    const exp = this.codes.get(h);
+    this.codes.delete(h);
+    return exp != null && exp > this.now();
+  }
+}
+
+// Looked up by hash, so the lookup's timing says nothing about a live code.
+const hashCode = (code) => crypto.createHash("sha256").update(String(code)).digest("base64url");
+
+/**
+ * The owner's key: a random token in the state dir (owner.key), made on first use. The CLI sends it
+ * on /api/*; a browser gets the cookie derived from it (ownerCookie), from the owner's own remote
+ * link or a login code.
  * @param {string} dir state dir
  */
 export function ownerKey(dir) {

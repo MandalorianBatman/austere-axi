@@ -11,7 +11,6 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { launchBrowser } from "../../scripts/lib/browser.mjs";
 import { ownerKey } from "../../src/cli/invites.js";
-import { launcherFile } from "../../src/cli/client.js";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-team-browser-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-team-browser-work-"));
@@ -147,23 +146,23 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
   }
 });
 
-test("the CLI's launcher file signs the browser in as the owner", async (t) => {
+test("a login code from the CLI signs the browser in as the owner, once", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const { session } = await api("/api/open", { file: FILE });
+  const { code } = await api("/api/login", {});
   const ctx = await browser.newContext();
-  const saved = process.env.AUSTERE_AXI_STATE_DIR;
-  process.env.AUSTERE_AXI_STATE_DIR = STATE;
+  const other = await browser.newContext();
   try {
-    const launcher = launcherFile(`http://127.0.0.1:${port}/s/${session.id}`);
     const page = await ctx.newPage();
-    await page.goto(`file://${launcher}`);
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
     await page.waitForURL(`http://127.0.0.1:${port}/s/${session.id}`);
     await page.waitForSelector(".composer textarea");
-    assert.ok(!page.url().includes("key="), "the key leaves the address bar");
-    assert.ok((await ctx.cookies()).some((c) => c.name === "austere_owner"));
+    const cookie = (await ctx.cookies()).find((c) => c.name === "austere_owner");
+    assert.ok(cookie && cookie.value !== KEY, "the browser holds a cookie derived from the key, not the key");
+    const again = await (await other.newPage()).goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
+    assert.equal(again?.status(), 403, "the code is used up");
   } finally {
-    if (saved === undefined) delete process.env.AUSTERE_AXI_STATE_DIR;
-    else process.env.AUSTERE_AXI_STATE_DIR = saved;
     await ctx.close();
+    await other.close();
   }
 });

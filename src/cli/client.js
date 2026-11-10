@@ -61,8 +61,9 @@ export function request(method, route, body, { timeoutMs = 0, port = configuredP
 /**
  * The server's health, or `{ foreign: true }` when the listener cannot prove it holds our owner key
  * (another program, or another OS user squatting the port), or null when nothing listens. The proof
- * is an HMAC of a fresh nonce, so the key never goes to an unchecked listener. A server from before
- * the proof, older than this CLI, comes back with `legacy: true`: ensureServer replaces it.
+ * is an HMAC of the port and a fresh nonce, so the key never goes to an unchecked listener, and a
+ * listener on another port cannot relay our server's answer. A server from before the proof comes
+ * back with `legacy: true`: it is only ever asked to stop, without the key (shutdownServer).
  */
 async function health(port) {
   const nonce = crypto.randomBytes(16).toString("base64url");
@@ -73,9 +74,9 @@ async function health(port) {
     return null;
   }
   if (r.status !== 200 || !r.data || r.data.name !== "austere-axi") return { foreign: true };
-  if (r.data.proof == null && versionGt(VERSION, r.data.version)) return { ...r.data, legacy: true };
-  const want = crypto.createHmac("sha256", ownerKey(stateDir())).update(nonce).digest();
-  const got = Buffer.from(String(r.data.proof || ""), "base64url");
+  if (r.data.proof == null) return { ...r.data, legacy: true };
+  const want = crypto.createHmac("sha256", ownerKey(stateDir())).update(`${port}:${nonce}`).digest();
+  const got = Buffer.from(String(r.data.proof), "base64url");
   if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return { foreign: true };
   return r.data;
 }
@@ -117,8 +118,7 @@ export async function ensureServer() {
     // A newer CLI replaces an older server, and `hub on|off` switches its mode;
     // sessions persist on disk.
     const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!h.tailnet || x !== h.tailnet.ip));
-    // A legacy server asks for no key; do not hand one to a listener that has not proven itself.
-    await request("POST", "/api/shutdown", {}, { timeoutMs: 2000, port, auth: !h.legacy }).catch(() => {});
+    await shutdownServer(h, port);
     for (let i = 0; i < 40 && (await health(port)); i++) await sleep(100);
     h = null;
     exited = spawnServer(port, keep);
@@ -143,41 +143,39 @@ export async function ensureServer() {
   return h;
 }
 
-export async function serverIfRunning() {
+/**
+ * The running server's health, or null. `legacy` also returns a server from before the health proof,
+ * which is good for nothing but shutdownServer.
+ */
+export async function serverIfRunning({ legacy = false } = {}) {
   const h = await health(configuredPort());
-  return h && !h.foreign && !h.legacy ? h : null;
+  return h && !h.foreign && (legacy || !h.legacy) ? h : null;
 }
 
-const LAUNCHER_TTL_MS = 10 * 60_000;
+/** Ask the server `h` to stop. A legacy server asks for no key; do not hand one to a listener that has not proven itself. */
+export function shutdownServer(h, port = configuredPort()) {
+  return request("POST", "/api/shutdown", {}, { timeoutMs: 2000, port, auth: !h.legacy }).catch(() => {});
+}
 
 /**
- * A 0600 page in the state dir that sends the browser to `url` with the owner key, which the server
- * swaps for the owner cookie. The key stays off command lines, where other users could read it.
+ * `url` (a page on the local server) with a fresh single-use login code, which the server swaps for
+ * the owner cookie. The code works once and only for `ttlMs`, so a copy seen later (in a process
+ * list, a terminal, browser history) is no use; the key itself never leaves the CLI.
+ * @returns {Promise<{ url: string, ttlMs: number }>}
  */
-export function launcherFile(url) {
-  const target = new URL(url);
-  target.searchParams.set("key", ownerKey(stateDir()));
-  const dir = path.join(stateDir(), "launch");
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  for (const f of fs.readdirSync(dir)) {
-    const p = path.join(dir, f);
-    try {
-      if (Date.now() - fs.statSync(p).mtimeMs > LAUNCHER_TTL_MS) fs.rmSync(p, { force: true });
-    } catch {
-      // gone already
-    }
-  }
-  const file = path.join(dir, `${crypto.randomBytes(8).toString("hex")}.html`);
-  const href = target.href.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-  fs.writeFileSync(file, `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${href}"><title>austere-axi</title>\n`, { mode: 0o600 });
-  return file;
+export async function loginUrl(url) {
+  const r = await request("POST", "/api/login", {}, { timeoutMs: 5000 });
+  if (r.status !== 200 || typeof r.data?.code !== "string") throw new Error(r.data?.error || `login failed (${r.status})`);
+  const u = new URL(url);
+  u.searchParams.set("login", r.data.code);
+  return { url: u.href, ttlMs: r.data.ttlMs };
 }
 
 /** Open `url` (a page on the local server) in the browser, signed in as the owner. */
-export function openBrowser(url) {
-  let file;
+export async function openBrowser(url) {
+  let target;
   try {
-    file = launcherFile(url);
+    target = (await loginUrl(url)).url;
   } catch {
     return false;
   }
@@ -186,13 +184,13 @@ export function openBrowser(url) {
   let args;
   if (platform === "darwin") {
     cmd = "open";
-    args = [file];
+    args = [target];
   } else if (platform === "win32") {
     cmd = "cmd";
-    args = ["/c", "start", "", file];
+    args = ["/c", "start", "", target];
   } else {
     cmd = "xdg-open";
-    args = [file];
+    args = [target];
   }
   try {
     const child = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true });

@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import crypto from "node:crypto";
+import { LoginCodes, OWNER_COOKIE } from "../src/cli/invites.js";
+import { VERSION } from "../src/cli/paths.js";
 import { ownerHeaders } from "./owner.js";
 import { freePort } from "./port.js";
 
@@ -185,7 +187,7 @@ test("another local process without the owner key cannot read files, sessions or
     assert.equal(r.status, 403, `${p} is refused without the owner cookie`);
     assert.doesNotMatch(String(r.data), /DUMMY/);
   }
-  assert.match((await bare("GET", `/s/${id}`, undefined, host)).data, /open it with the austere-axi CLI/, "the owner is told how to get in");
+  assert.match((await bare("GET", `/s/${id}`, undefined, host)).data, /austere-axi login/, "the owner is told how to get in");
   assert.match((await req("GET", `/s/${id}/a/credentials`, undefined, host)).data, /DUMMY-SECRET/, "the owner still can");
   assert.equal((await req("GET", "/api/sessions")).status, 200);
   await req("POST", "/api/end", { file: secret });
@@ -195,19 +197,22 @@ test("health proves the server holds the owner key without giving it away", asyn
   const key = OWNER["x-austere-key"];
   const r = await bare("GET", "/api/health?nonce=abc123");
   assert.equal(r.status, 200);
-  assert.equal(r.data.proof, crypto.createHmac("sha256", key).update("abc123").digest("base64url"));
+  assert.equal(r.data.proof, crypto.createHmac("sha256", key).update(`${PORT}:abc123`).digest("base64url"), "bound to the server's port");
   assert.ok(!JSON.stringify(r.data).includes(key));
   assert.equal((await bare("GET", "/api/health")).data.proof, undefined);
 });
 
-/** A listener on a free port that answers health like austere-axi, and records every request. */
+/**
+ * A listener on a free port that answers health like austere-axi, and records every request.
+ * `healthBody` may be a function of the request URL, for a listener that relays another server.
+ */
 async function fakeServer(healthBody, { stays = false } = {}) {
   const port = await freePort();
   const seen = [];
-  const fake = http.createServer((rq, rs) => {
+  const fake = http.createServer(async (rq, rs) => {
     seen.push({ method: rq.method, url: rq.url, key: rq.headers["x-austere-key"] });
     rs.setHeader("content-type", "application/json");
-    if (rq.url.startsWith("/api/health")) return rs.end(JSON.stringify(healthBody));
+    if (rq.url.startsWith("/api/health")) return rs.end(JSON.stringify(typeof healthBody === "function" ? await healthBody(rq.url) : healthBody));
     if (rq.url === "/api/shutdown" && !stays) {
       rs.end(JSON.stringify({ ok: true }));
       fake.close();
@@ -223,7 +228,7 @@ async function fakeServer(healthBody, { stays = false } = {}) {
 test("the CLI refuses a port squatter that cannot prove it holds the owner key", async () => {
   const state = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "austere-squat-")), "state");
   try {
-    for (const proof of [undefined, "AAAA", crypto.randomBytes(32).toString("base64url")]) {
+    for (const proof of ["AAAA", crypto.randomBytes(32).toString("base64url")]) {
       const fake = await fakeServer({ name: "austere-axi", version: "999.0.0", stateDir: state, proof, listen: ["127.0.0.1"], hub: false, hubWanted: false });
       try {
         const env = { AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(fake.port), AUSTERE_AXI_NO_OPEN: "1" };
@@ -248,18 +253,61 @@ test("the CLI refuses a port squatter that cannot prove it holds the owner key",
   }
 });
 
-test("a server from before the proof is replaced, without sending it the key", async () => {
-  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-legacy-"));
-  const fake = await fakeServer({ name: "austere-axi", version: "0.0.1", stateDir: state, listen: ["127.0.0.1"], hub: false, hubWanted: false });
-  const env = { AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(fake.port), AUSTERE_AXI_NO_OPEN: "1" };
+test("a squatter that relays the real server's health proof is still refused", async () => {
+  // Same state dir, so the same key: only the port in the proof tells the relay from the server.
+  const fake = await fakeServer(async (url) => (await bare("GET", url)).data);
   try {
+    const env = { AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_PORT: String(fake.port), AUSTERE_AXI_NO_OPEN: "1" };
     const r = await cli(env, FILE);
-    assert.match(r.out, /status: open/, r.out);
-    assert.ok(fake.seen.some((x) => x.url === "/api/shutdown"), "the old server was asked to stop");
-    assert.ok(fake.seen.every((x) => x.key === undefined), "with no key");
+    assert.match(r.out, /not austere-axi/, r.out);
+    assert.ok(fake.seen.every((x) => x.url.startsWith("/api/health?nonce=") && x.key === undefined), JSON.stringify(fake.seen));
   } finally {
-    await cli(env, "stop");
     await fake.close();
+  }
+});
+
+test("a server from before the proof is replaced, without sending it the key", async () => {
+  // Older, or the same version (a pre-proof build): no proof means legacy either way.
+  for (const version of ["0.0.1", VERSION]) {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-legacy-"));
+    const fake = await fakeServer({ name: "austere-axi", version, stateDir: state, listen: ["127.0.0.1"], hub: false, hubWanted: false });
+    const env = { AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(fake.port), AUSTERE_AXI_NO_OPEN: "1" };
+    try {
+      const r = await cli(env, FILE);
+      assert.match(r.out, /status: open/, `${version}: ${r.out}`);
+      assert.ok(fake.seen.some((x) => x.url === "/api/shutdown"), "the old server was asked to stop");
+      assert.ok(fake.seen.every((x) => x.key === undefined), "with no key");
+    } finally {
+      await cli(env, "stop");
+      await fake.close();
+      fs.rmSync(state, { recursive: true, force: true });
+    }
+  }
+});
+
+test("stop stops a server from before the proof, without the key", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-legacy-stop-"));
+  const fake = await fakeServer({ name: "austere-axi", version: "0.0.1", stateDir: state, listen: ["127.0.0.1"], hub: false, hubWanted: false });
+  try {
+    const r = await cli({ AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(fake.port) }, "stop");
+    assert.match(r.out, /status: stopped/, r.out);
+    assert.deepEqual(
+      fake.seen.filter((x) => !x.url.startsWith("/api/health")),
+      [{ method: "POST", url: "/api/shutdown", key: undefined }],
+    );
+  } finally {
+    await fake.close();
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("a state dir from an older version is made the owner's only", { skip: !posix }, async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-oldstate-"));
+  try {
+    fs.chmodSync(state, 0o755);
+    await cli({ AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(await freePort()) }, "stop");
+    assert.equal(mode(state), 0o700);
+  } finally {
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -280,7 +328,7 @@ test("a squatter that claims to be an old server and will not stop never gets th
   }
 });
 
-test("the CLI opens the browser through a 0600 launcher file, never with the key on the command line", { skip: process.platform !== "linux" }, async () => {
+test("the CLI opens the browser with a single-use login code, never with the key", { skip: process.platform !== "linux" }, async () => {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "austere-bin-"));
   const argvFile = path.join(bin, "argv");
   fs.writeFileSync(path.join(bin, "xdg-open"), `#!/bin/sh\nprintf '%s\\n' "$@" > "${argvFile}"\n`, { mode: 0o755 });
@@ -290,25 +338,74 @@ test("the CLI opens the browser through a 0600 launcher file, never with the key
     const env = { AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_PORT: String(PORT), AUSTERE_AXI_NO_OPEN: "", PATH: `${bin}:${process.env.PATH}` };
     const r = await cli(env, file);
     assert.match(r.out, /browser: opened/, r.out);
+    assert.doesNotMatch(r.out, /sign_in/, "a browser the CLI opened needs no hint");
     const key = OWNER["x-austere-key"];
     assert.ok(!r.out.includes(key), "the printed output carries no key");
     for (let i = 0; i < 100 && !fs.existsSync(argvFile); i++) await new Promise((res) => setTimeout(res, 20));
     const argv = fs.readFileSync(argvFile, "utf8").trim().split("\n");
     assert.equal(argv.length, 1);
     assert.ok(!argv[0].includes(key), "the key is not on the command line");
-    assert.equal(path.dirname(argv[0]), path.join(STATE, "launch"));
-    assert.equal(mode(argv[0]), 0o600);
-    assert.equal(mode(path.dirname(argv[0])), 0o700);
-    const target = /url=([^"]+)"/.exec(fs.readFileSync(argv[0], "utf8"))[1].replace(/&amp;/g, "&");
-    const u = new URL(target);
-    assert.equal(u.searchParams.get("key"), key);
-    // Following it signs the browser in as the owner.
+    const u = new URL(argv[0]);
+    assert.match(u.pathname, /^\/s\/[a-f0-9]{12}$/);
+    assert.match(u.searchParams.get("login") ?? "", /^[A-Za-z0-9_-]{22}$/);
     const signIn = await bare("GET", u.pathname + u.search, undefined, { host: u.host });
     assert.equal(signIn.status, 302);
-    assert.match(String(signIn.headers?.["set-cookie"] ?? ""), /austere_owner=/);
+    assert.equal(signIn.headers.location, u.pathname, "the code leaves the address bar");
+    assert.equal(String(signIn.headers["set-cookie"]), `${OWNER_COOKIE}=${/austere_owner=([^;]+)/.exec(OWNER.cookie)[1]}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
   } finally {
     fs.rmSync(bin, { recursive: true, force: true });
   }
+});
+
+test("login prints a link that signs a browser in once", async () => {
+  const env = { AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_PORT: String(PORT), AUSTERE_AXI_NO_OPEN: "1" };
+  const opened = await cli(env, FILE);
+  assert.match(opened.out, /sign_in: .*austere-axi login/, "--no-open points at login");
+  const r = await cli(env, "login", FILE);
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!r.out.includes(OWNER["x-austere-key"]), "the printed link carries no key");
+  const u = new URL(/url: (\S+)/.exec(r.out)[1]);
+  const id = (await req("POST", "/api/open", { file: FILE })).data.session.id;
+  assert.equal(u.pathname, `/s/${id}`, "the link goes to the file's review");
+  const host = { host: u.host };
+  const first = await bare("GET", u.pathname + u.search, undefined, host);
+  assert.equal(first.status, 302);
+  const cookie = String(first.headers["set-cookie"]).split(";")[0];
+  assert.equal((await bare("GET", u.pathname, undefined, { ...host, cookie })).status, 200, "the cookie opens the page");
+  assert.equal((await bare("GET", "/", undefined, { ...host, cookie })).status, 200, "and the session list");
+  const again = await bare("GET", u.pathname + u.search, undefined, host);
+  assert.equal(again.status, 403, "a code works once");
+  assert.match(String(again.data), /austere-axi login/);
+  assert.equal((await bare("GET", `/?login=${crypto.randomBytes(16).toString("base64url")}`, undefined, host)).status, 403, "a made-up code is refused");
+  assert.equal((await bare("POST", "/api/login", {})).status, 403, "only the CLI, with the key, gets a code");
+  assert.match((await cli(env, "login")).out, new RegExp(`url: http://127\\.0\\.0\\.1:${PORT}/\\?login=`), "without a file: the session list");
+});
+
+test("a login code expires", () => {
+  let now = 1000;
+  const codes = new LoginCodes(60_000, () => now);
+  const late = codes.issue();
+  const soon = codes.issue();
+  now += 59_999;
+  assert.equal(codes.take(soon), true);
+  assert.equal(codes.take(soon), false, "used up");
+  now += 1;
+  assert.equal(codes.take(late), false, "expired");
+});
+
+test("the owner cookie is not the owner key, and neither stands in for the other", async () => {
+  const id = (await req("POST", "/api/open", { file: FILE })).data.session.id;
+  const key = OWNER["x-austere-key"];
+  const value = /austere_owner=([^;]+)/.exec(OWNER.cookie)[1];
+  assert.notEqual(value, key);
+  const host = { host: `127.0.0.1:${PORT}` };
+  // The owner's remote link sets the derived value too.
+  const swapped = await bare("GET", `/s/${id}?key=${key}`, undefined, host);
+  assert.equal(swapped.status, 302);
+  assert.ok(!String(swapped.headers["set-cookie"]).includes(key), "the key is never a cookie");
+  assert.equal((await bare("GET", `/s/${id}`, undefined, { ...host, cookie: `${OWNER_COOKIE}=${key}` })).status, 403, "a cookie holding the raw key is refused");
+  // A local listener that read the cookie (127.0.0.1 cookies are shared across ports) gets no control routes.
+  assert.equal((await bare("GET", "/api/sessions", undefined, { "x-austere-key": value })).status, 403);
 });
 
 test("session files are the owner's only", { skip: !posix }, async () => {

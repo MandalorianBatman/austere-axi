@@ -86,8 +86,9 @@ async function openReview(file, viewport) {
   page.on("console", (m) => {
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
   });
-  // As the CLI's launcher file does: the key signs the browser in as the owner.
-  await page.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${KEY}`);
+  // As the CLI does when it opens a browser: a single-use login code signs it in as the owner.
+  const { code } = await api("/api/login", {});
+  await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
   const frameEl = await page.waitForSelector("iframe.frame");
   const frame = await frameEl.contentFrame();
   await frame.waitForSelector("[data-oui-id]", { timeout: 15_000 });
