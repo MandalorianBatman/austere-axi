@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Checkout Service Health — Week of 2026-10-26</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([overview, weeklyTrend, incidentSummary, actionItems, mondayFocus], "column", "l")
+
+overview = Card([CardHeader("Checkout service health", "Week of 2026-10-26 · Monday review"), statusCallout, keyMetrics], "column", "l")
+statusCallout = Callout("warning", "Attention required", "p95 latency breached the 300 ms target. INC-1051 remains ongoing and is under investigation.")
+keyMetrics = OverviewCardBlock([requestMetric, errorRateMetric, latencyMetric, errorBudgetMetric], "grid", true, null, "m")
+requestMetric = OverviewCardItem("requests", "Requests", MetricIndicatorInline("48.2M", "Up 6% week over week", {direction: "up", value: 6}))
+errorRateMetric = OverviewCardItem("error-rate", "Error rate", MetricIndicatorInline("0.21%", "SLO: 0.5%"))
+latencyMetric = OverviewCardItem("latency", "p95 latency", MetricIndicatorInline("312 ms", "Target: 300 ms · breached"))
+errorBudgetMetric = OverviewCardItem("error-budget", "Error budget left", MetricIndicatorInline("64%", "This month"))
+
+weeklyTrend = Card([CardHeader("Weekly trends", "Daily p95 latency and error counts"), latencyTrend, errorsTrend], "column", "l")
+latencyTrend = LineChart(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], [Series("p95 latency (ms)", [288, 295, 340, 331, 305, 297, 330])], "linear", "Day", "ms", 260)
+errorsTrend = BarChart(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], [Series("Errors", [9800, 10400, 15900, 12100, 9900, 8700, 9300])], "grouped", "Day", "Errors", 260)
+
+incidentSummary = Card([CardHeader("Incidents", "Three incidents during the week"), incidentTable], "column", "l")
+incidentTable = Table([Col("Incident", ["INC-1042", "INC-1047", "INC-1051"]), Col("Day", ["Tue", "Wed", "Sun"]), Col("Severity", ["Sev2", "Sev3", "Sev3"]), Col("Duration", ["38 min", "12 min", "Ongoing"]), Col("Summary", ["Payment provider timeouts", "Bad config push to the cart cache", "Elevated p95 from a slow inventory query"]), Col("Status", [resolvedIncident, resolvedIncident, investigatingIncident])])
+resolvedIncident = Tag("Resolved", null, "sm", "success")
+investigatingIncident = Tag("Investigating", null, "sm", "warning")
+
+actionItems = Card([CardHeader("Action items", "Current remediation work"), actionTable], "column", "l")
+actionTable = Table([Col("Action", ["Add an index on inventory(sku, warehouse_id)", "Add a timeout alert for the payment provider"]), Col("Owner", ["Priya", "Marco"]), Col("Due", ["Nov 4", "Nov 6"])])
+
+mondayFocus = Card([CardHeader("Monday review focus", "Carry-forward items from the week"), mondayChecklist], "column", "l")
+mondayChecklist = MarkDownRenderer("- Continue investigation of **INC-1051**, the ongoing slow inventory query incident.\n- Confirm completion of the **inventory(sku, warehouse_id)** index by **Nov 4**.\n- Confirm the **payment provider timeout alert** by **Nov 6**.\n- Review p95 latency against the **300 ms target**; the week closed at **312 ms**.")
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Session storage migration review</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([summaryCard, requestPathCard, rolloutPhasesCard, risksCard, decisionCard], "column", "l")
+summaryCard = Card([CardHeader("Session storage migration", "Move user sessions from Redis to Postgres"), summaryText, summaryFacts])
+summaryText = MarkDownRenderer("Sessions currently live only in Redis and are lost on failover. Last month, **38,214 users** were forced to log in again.")
+summaryFacts = EntityList([{left: "Goal", right: "Durable sessions with no forced logout"}, {left: "Auth p99 goal", right: "At or under 45 ms"}, {left: "Auth p99 today", right: "41 ms"}, {left: "Extra cost", right: "$140/month"}])
+requestPathCard = Card([CardHeader("Request path after the change", "Postgres becomes the source of truth; Redis remains a read-through cache"), requestPathDiagram, requestPathDetails])
+requestPathDiagram = Architecture([client, api, redis, postgres], [clientToApi, apiToRedis, apiToPostgres], null, "right")
+client = Node("Client", "external")
+api = Node("API", "backend", "Node\nport 8080", "main path", "strong", 1)
+redis = Node("Redis", "database", "read-through cache", null, "info", 1)
+postgres = Node("Postgres", "database", "new sessions table", "durable source", "success", 1)
+clientToApi = Edge(client, api, "request", "emphasis", "info")
+apiToRedis = Edge(api, redis, "read-through cache", "dashed", "info")
+apiToPostgres = Edge(api, postgres, "read / write", "emphasis", "success")
+requestPathDetails = MarkDownRenderer("**After the change:** Client → API (Node, port 8080) → Postgres (`sessions` table). Redis stays as a read-through cache in front of Postgres.")
+rolloutPhasesCard = Card([CardHeader("Rollout phases", "Staged migration from Redis to Postgres"), rolloutPhases])
+rolloutPhases = Steps([StepOne, StepTwo, StepThree, StepFour])
+risksCard = Card([CardHeader("Risks and mitigations", "Known risks in the migration"), riskTable])
+riskTable = Table([Col("Risk", ["Write latency on login", "Table bloat from expired rows", "Connection pool exhaustion during the dual-write phase"]), Col("Mitigation", ["Async write with a 50 ms timeout", "Nightly partition drop", "Put PgBouncer in transaction mode in front of Postgres"])])
+decisionCard = Card([CardHeader("Decision needed", "Choose the rollout strategy"), decisionText, decisionForm])
+decisionText = MarkDownRenderer("Select **Big bang** for one deploy with high risk, or **Dual-write** for a gradual rollout with low risk.")
+decisionForm = Form("rolloutDecision", decisionButtons, [strategyField])
+strategyField = FormControl("Rollout strategy", RadioGroup("strategy", [RadioItem("Big bang", "One deploy, high risk", "big_bang"), RadioItem("Dual-write", "Gradual, low risk", "dual_write")], "big_bang", {required: true}))
+decisionButtons = Buttons([Button("Send decision", @ToAssistant("Decision: rollout strategy"), "primary")])
+StepOne = StepsItem("Create table and dual-write", "Create the sessions table and dual-write. Duration: 1 week.")
+StepTwo = StepsItem("Backfill existing sessions", "Backfill existing sessions. Duration: 2 days.")
+StepThree = StepsItem("Switch reads to Postgres", "Switch reads to Postgres behind the sessions_pg flag. Duration: 1 week.")
+StepFour = StepsItem("Remove Redis writes", "Remove Redis writes. Duration: 1 day.")
+</script>
+</body>
+</html>
