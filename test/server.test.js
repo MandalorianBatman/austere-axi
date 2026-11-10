@@ -408,12 +408,9 @@ test("the owner cookie is not the owner key, and neither stands in for the other
   assert.equal((await bare("GET", "/api/sessions", undefined, { "x-austere-key": value })).status, 403);
 });
 
-test("session files are the owner's only", { skip: !posix }, async () => {
-  const open = await req("POST", "/api/open", { file: FILE });
-  const f = path.join(STATE, "sessions", `${open.data.session.id}.json`);
-  for (let i = 0; i < 100 && !fs.existsSync(f); i++) await new Promise((r) => setTimeout(r, 20));
-  assert.equal(mode(path.join(STATE, "sessions")), 0o700);
-  assert.equal(mode(f), 0o600);
+test("hub.db, which holds every note, is the owner's only", { skip: !posix }, async () => {
+  await req("POST", "/api/open", { file: FILE });
+  assert.equal(mode(path.join(STATE, "hub.db")), 0o600);
 });
 
 test("artifact responses carry their own sandbox, so a top-level load gets an opaque origin", async () => {

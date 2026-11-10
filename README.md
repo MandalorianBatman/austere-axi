@@ -95,7 +95,7 @@ In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/pl
 
 ## Use with MCP
 
-`austere-axi mcp` is an MCP server on stdio. Its tools are `spec`, `check`, `open` (validate and open the review), `poll`, `reply`, `patch` and `end`. Each runs the CLI command of the same name and returns its output, so the review loop is the same as on the command line. `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer tool calls; the agent polls again and nothing is lost. Pass `timeout_ms: 0` to wait until feedback arrives when your client allows long calls.
+`austere-axi mcp` is an MCP server on stdio. Its tools are `spec`, `check`, `open` (validate and open the review), `poll`, `reply`, `patch` and `end`. Each runs the CLI command of the same name and returns its output, so the review loop is the same as on the command line. `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer tool calls; the agent polls again and nothing is lost. Pass `timeout_ms: 0` to wait until feedback arrives when your client allows long calls. `poll` and `reply` take the `cursor` a poll returned, as `--cursor` does.
 
 **Claude Desktop** (`claude_desktop_config.json`) and **Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project):
 
@@ -356,7 +356,7 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. It nev
   - A browser signs in with a single-use login code: when the CLI opens your browser, it asks the server for a code and opens the page with it; the server swaps it for the owner cookie and drops it from the address bar. The key is never on a command line or in printed output. A code works once and for 60 seconds. Another local user who reads it from the process list in that time can use it first; your browser then shows "used already", and `austere-axi login` gives you a new one.
   - A printed `url` works in a browser that already has the cookie. For any other browser (SSH with a forwarded port, `--no-open`, a second browser), run `austere-axi login [file]` and open the link it prints.
   - The owner cookie is an HMAC of the key, not the key. Browsers share `127.0.0.1` cookies across ports, so any program listening on another local port that your browser visits can read it. With it, that program can open your pages and the hub as you in a browser, but not call `/api/*`, which needs the key.
-- On macOS and Linux the state dir is made mode 0700 on every run, and new files in it (`owner.key`, sessions, `server.log`, `hub.db`) are mode 0600. Files an older version created keep their old mode, behind the 0700 dir. On Windows, file modes do not apply: the state dir is protected only by your user profile's permissions.
+- On macOS and Linux the state dir is made mode 0700 on every run, and new files in it (`owner.key`, `server.log`, and `hub.db`, which holds every note) are mode 0600. Files an older version created keep their old mode, behind the 0700 dir. On Windows, file modes do not apply: the state dir is protected only by your user profile's permissions.
 - `Host` headers must be on an allowlist (DNS-rebinding defense).
 - Browser routes that change state refuse a foreign `Origin`.
 - Invite tokens are random, compared in constant time, and kept out of the log. A reviewer link can only add notes to its own page. See [Team review](#team-review).

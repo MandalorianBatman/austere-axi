@@ -903,20 +903,22 @@ test("a reviewer gets a few event streams, and the whole session a few more", as
   }
 });
 
-test("the transcript is trimmed, keeping what is still waiting on the owner", () => {
+test("a long transcript loses nothing: every entry, held and waiting notes too, is on record after a restart", async () => {
   const dir = tmp("austere-trim-");
   try {
-    const store = new SessionStore(dir);
-    const s = store.ensure(path.join(dir, "plan.html"));
+    let store = await SessionStore.open(dir);
+    let s = store.ensure(path.join(dir, "plan.html"));
     const held = store.addUserBatch(s, [{ kind: "message", text: "held", id: "h" }], { author: "Ana", hold: true });
     const waiting = store.addUserBatch(s, [{ kind: "message", text: "waiting", id: "w" }]);
     for (let i = 0; i < 1000; i++) store.addAgentReply(s, `reply ${i}`);
-    assert.ok(s.transcript.length < 600, `the transcript stays bounded (${s.transcript.length})`);
+    store.close();
+    store = await SessionStore.open(dir);
+    s = store.get(s.id);
+    assert.equal(s.transcript.length, 1002);
     assert.equal(s.transcript.at(-1).text, "reply 999", "the newest entry stays");
-    assert.ok(s.transcript.includes(held) && s.transcript.includes(waiting), "held and pending notes are never trimmed away");
-    store.flush(s);
-    const saved = JSON.parse(fs.readFileSync(path.join(store.dir, `${s.id}.json`), "utf8")).transcript.map((e) => e.id);
-    assert.ok(saved.includes(held.id) && saved.includes(waiting.id), "the saved transcript keeps them too");
+    assert.deepEqual(store.heldEntries(s).map((e) => e.id), [held.id]);
+    assert.deepEqual(store.unread(s).map((e) => e.id), [waiting.id]);
+    store.close();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

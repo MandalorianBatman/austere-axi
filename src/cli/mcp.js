@@ -51,10 +51,11 @@ const TOOLS = {
   },
   poll: {
     title: "Wait for feedback",
-    description: `Wait for the reviewer's feedback on an open review. Returns status feedback (items addressed by statement name), ended, browser_disconnected, replaced, interrupted, or timeout (call poll again: nothing is lost). After applying feedback, pass agent_reply.`,
+    description: `Wait for the reviewer's feedback on an open review. Returns status feedback (items addressed by statement name), ended, browser_disconnected, replaced, interrupted, or timeout (call poll again: nothing is lost). Feedback comes back on every poll until acknowledged: after applying it, pass agent_reply, or pass the cursor it returned.`,
     properties: {
       file,
       agent_reply: { type: "string", description: "One line for the reviewer: what you changed." },
+      cursor: { type: "integer", minimum: 0, description: "The cursor the last poll returned: acknowledges that feedback, so it is not returned again. A reply acknowledges it too." },
       takeover: { type: "boolean", description: "Replace a poll that is stuck listening on this session." },
       timeout_ms: { type: "integer", minimum: 0, description: `Return status timeout after this long (default ${POLL_TIMEOUT_MS}). 0 waits until feedback arrives; use it only if your client allows long tool calls.` },
     },
@@ -62,6 +63,7 @@ const TOOLS = {
     run: (a) => {
       const args = ["poll", "--timeout-ms", String(a.timeout_ms ?? POLL_TIMEOUT_MS)];
       if (a.takeover) args.push("--takeover");
+      if (Number.isInteger(a.cursor)) args.push("--cursor", String(a.cursor));
       if (typeof a.agent_reply === "string") return [{ args: [...args, "--agent-reply-file", "-", "--", a.file], stdin: a.agent_reply }];
       return [{ args: [...args, "--", a.file] }];
     },
@@ -69,9 +71,13 @@ const TOOLS = {
   reply: {
     title: "Reply without polling",
     description: "Post a short reply to the reviewer without waiting for feedback; marks earlier feedback answered.",
-    properties: { file, text: { type: "string", description: "A line or two; a small Markdown subset renders." } },
+    properties: {
+      file,
+      text: { type: "string", description: "A line or two; a small Markdown subset renders." },
+      cursor: { type: "integer", minimum: 0, description: "The cursor the last poll returned; without it the reply acknowledges what that poll handed over." },
+    },
     required: ["file", "text"],
-    run: (a) => [{ args: ["reply", "--agent-reply-file", "-", "--", a.file], stdin: a.text }],
+    run: (a) => [{ args: ["reply", ...(Number.isInteger(a.cursor) ? ["--cursor", String(a.cursor)] : []), "--agent-reply-file", "-", "--", a.file], stdin: a.text }],
   },
   patch: {
     title: "Merge statements into a page",

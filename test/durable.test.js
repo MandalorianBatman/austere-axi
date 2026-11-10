@@ -3,6 +3,7 @@
 // owner's close locks the review.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -11,17 +12,23 @@ import { after, before, test } from "node:test";
 import { SessionStore, sessionId } from "../src/cli/sessions.js";
 import { Hub } from "../src/cli/hub.js";
 import { freePort } from "./port.js";
+import { ownerKey } from "../src/cli/invites.js";
+import { ownerHeaders } from "./owner.js";
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const WORK = tmp("austere-durable-work-");
 const FILE = path.join(WORK, "plan.html");
 const BASE_ENV = { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" };
 
+// The state dir of the server on each port: requests go as its owner, unless they bring a reviewer's cookie.
+const stateOf = new Map();
+
 function request(port, method, route, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
+    const owner = stateOf.has(port) ? ownerHeaders(stateOf.get(port)) : {};
     const r = http.request(
-      { host: "127.0.0.1", port, method, path: route, headers: { host: `127.0.0.1:${port}`, ...(payload ? { "content-type": "application/json" } : {}), ...headers } },
+      { host: "127.0.0.1", port, method, path: route, headers: { host: `127.0.0.1:${port}`, ...(payload ? { "content-type": "application/json" } : {}), ...owner, ...headers } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -42,6 +49,7 @@ function request(port, method, route, body, headers = {}) {
 
 /** Run the server in the foreground; `out` collects what it prints. */
 function startServer(port, state, extraEnv = {}) {
+  stateOf.set(port, state);
   const child = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(port)], {
     env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, ...extraEnv },
   });
@@ -82,6 +90,25 @@ function cli(port, state, ...args) {
 
 const page = (port) => ({ origin: `http://127.0.0.1:${port}` });
 const message = (text) => ({ items: [{ kind: "message", text }] });
+
+/** Share the plan with a reviewer and join as them, through the invite form; returns their cookie header. */
+async function invite(port, id, name) {
+  const share = await request(port, "POST", "/api/share", { file: FILE, name });
+  assert.equal(share.status, 200, JSON.stringify(share.data));
+  const token = new URL(share.data.link).searchParams.get("invite");
+  const set = await new Promise((resolve, reject) => {
+    const r = http.request(
+      { host: "127.0.0.1", port, method: "POST", path: `/s/${id}/join`, headers: { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/x-www-form-urlencoded" } },
+      (res) => {
+        res.resume();
+        res.on("end", () => resolve(res.headers["set-cookie"]));
+      },
+    );
+    r.on("error", reject);
+    r.end(new URLSearchParams({ invite: token }).toString());
+  });
+  return [].concat(set)[0].split(";")[0];
+}
 
 before(() => {
   fs.writeFileSync(
@@ -188,11 +215,7 @@ test("feedback is unread until acknowledged: a poll without a cursor gets it aga
 
 test("a held note released after the cursor moved past its time still reaches the agent", () =>
   withServer(async ({ port, id }) => {
-    const share = await request(port, "POST", "/api/share", { file: FILE, name: "Ana" });
-    assert.equal(share.status, 200, JSON.stringify(share.data));
-    const link = new URL(share.data.link);
-    const accepted = await request(port, "GET", link.pathname + link.search);
-    const invited = [].concat(accepted.headers["set-cookie"])[0].split(";")[0];
+    const invited = await invite(port, id, "Ana");
     const held = await request(port, "POST", `/s/${id}/send`, message("held by the owner"), { ...page(port), cookie: invited });
     assert.equal(held.data.entry.held, true);
 
@@ -203,7 +226,7 @@ test("a held note released after the cursor moved past its time still reaches th
     await request(port, "POST", "/api/reply", { file: FILE, text: "ok", cursor: got.data.cursor });
 
     // Released now: it gets a new seq after the cursor.
-    await request(port, "POST", `/s/${id}/release`, { all: true }, page(port));
+    await request(port, "POST", `/s/${id}/release`, { ids: [held.data.entry.id] }, page(port));
     const released = await request(port, "POST", "/api/poll", { file: FILE });
     assert.equal(released.data.status, "feedback");
     assert.equal(released.data.items[0].text, "held by the owner");
@@ -213,15 +236,13 @@ test("a held note released after the cursor moved past its time still reaches th
 
 test("unread notes reopen an ended review even when they are older than the end: held and released after it", () =>
   withServer(async ({ port, id }) => {
-    const share = await request(port, "POST", "/api/share", { file: FILE, name: "Ana" });
-    const link = new URL(share.data.link);
-    const invited = [].concat((await request(port, "GET", link.pathname + link.search)).headers["set-cookie"])[0].split(";")[0];
+    const invited = await invite(port, id, "Ana");
     const session = async () => (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id);
 
     // The agent ends, then the owner releases a note held from before.
-    await request(port, "POST", `/s/${id}/send`, message("held before the agent ended"), { ...page(port), cookie: invited });
+    const first = await request(port, "POST", `/s/${id}/send`, message("held before the agent ended"), { ...page(port), cookie: invited });
     await request(port, "POST", "/api/end", { file: FILE });
-    await request(port, "POST", `/s/${id}/release`, { all: true }, page(port));
+    await request(port, "POST", `/s/${id}/release`, { ids: [first.data.entry.id] }, page(port));
     const poll = await request(port, "POST", "/api/poll", { file: FILE });
     assert.equal(poll.data.status, "feedback");
     assert.equal(poll.data.items[0].text, "held before the agent ended");
@@ -229,9 +250,9 @@ test("unread notes reopen an ended review even when they are older than the end:
     assert.equal((await session()).status, "open");
 
     // The same when the reviewer ended it from the page.
-    await request(port, "POST", `/s/${id}/send`, message("held before the reviewer ended"), { ...page(port), cookie: invited });
+    const second = await request(port, "POST", `/s/${id}/send`, message("held before the reviewer ended"), { ...page(port), cookie: invited });
     await request(port, "POST", `/s/${id}/end`, {}, page(port));
-    await request(port, "POST", `/s/${id}/release`, { all: true }, page(port));
+    await request(port, "POST", `/s/${id}/release`, { ids: [second.data.entry.id] }, page(port));
     const again = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
     assert.equal(again.data.items[0].text, "held before the reviewer ended");
     assert.equal(again.data.ended, undefined);
@@ -301,11 +322,15 @@ test("a lock left by a dead server does not block a start when its pid now belon
 test("a newer CLI that replaces an older server keeps --persist", async () => {
   const port = await freePort();
   const state = tmp("austere-durable-replace-");
-  // An older server that runs with --persist; it exits when asked to.
+  // An older server that runs with --persist and proves it holds the owner key; it exits when asked to.
   const old = http.createServer((req, res) => {
     res.setHeader("content-type", "application/json");
-    if (req.url === "/api/health") return res.end(JSON.stringify({ name: "austere-axi", version: "0.0.1", pid: 1, port, stateDir: state, listen: ["127.0.0.1"], persist: true }));
-    if (req.url === "/api/shutdown") {
+    const url = new URL(req.url, "http://x");
+    if (url.pathname === "/api/health") {
+      const proof = crypto.createHmac("sha256", ownerKey(state)).update(`${port}:${url.searchParams.get("nonce")}`).digest("base64url");
+      return res.end(JSON.stringify({ name: "austere-axi", version: "0.0.1", pid: 1, port, stateDir: state, proof, listen: ["127.0.0.1"], persist: true }));
+    }
+    if (url.pathname === "/api/shutdown") {
       res.on("finish", () => {
         old.close();
         old.closeAllConnections();
@@ -314,6 +339,7 @@ test("a newer CLI that replaces an older server keeps --persist", async () => {
     res.end("{}");
   });
   await new Promise((r) => old.listen(port, "127.0.0.1", r));
+  stateOf.set(port, state);
   try {
     const r = await cli(port, state, FILE, "--no-open");
     assert.match(r.out, /status: open/);
