@@ -1,0 +1,86 @@
+name: Action
+
+# Tests the composite action in ./action against fixture pages.
+# On a pull request, the passing job also posts the sticky comment: that comment is the demo.
+
+on:
+  push:
+    branches: [main]
+    paths: ['action/**', 'test/fixtures/action/**', '.github/workflows/action.yml']
+  pull_request:
+    paths: ['action/**', 'test/fixtures/action/**', '.github/workflows/action.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    name: passing page
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - id: review
+        uses: ./action
+        with:
+          pages: test/fixtures/action/ok.html
+          cli: node dist/cli.mjs
+      - name: Outputs are set
+        shell: bash
+        env:
+          OK: ${{ steps.review.outputs.ok }}
+          URL: ${{ steps.review.outputs.artifact-url }}
+        run: |
+          test "$OK" = true
+          test -n "$URL"
+      - name: The artifact holds the self-contained page
+        uses: actions/download-artifact@v7
+        with:
+          name: austere-review
+          path: downloaded
+      - shell: bash
+        run: |
+          test -s downloaded/ok.html
+          # The runtime is inlined: no CDN script tag is left.
+          ! grep -q 'cdn.jsdelivr.net/npm/austere-axi' downloaded/ok.html
+
+  failing-check:
+    name: failing check fails the job
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - id: review
+        uses: ./action
+        continue-on-error: true
+        with:
+          pages: test/fixtures/action/*.html
+          cli: node dist/cli.mjs
+          comment: 'false'
+          artifact-name: austere-review-failing
+      - name: The action step failed and still exported the page that passed
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.review.outcome }}
+          OK: ${{ steps.review.outputs.ok }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$OK" = false
