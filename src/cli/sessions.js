@@ -83,7 +83,7 @@ export class SessionStore {
       endedBy: s.endedBy,
       endedAt: s.endedAt,
       pending: s.pending,
-      transcript: s.transcript.slice(-MAX_TRANSCRIPT),
+      transcript: s.transcript,
     };
     const file = path.join(this.dir, `${s.id}.json`);
     const tmp = `${file}.${process.pid}.tmp`;
@@ -120,6 +120,7 @@ export class SessionStore {
     if (hold) entry.held = true;
     s.transcript.push(entry);
     if (!hold) s.pending.push(entry.id);
+    this.trim(s);
     this.touch(s);
     return entry;
   }
@@ -158,8 +159,17 @@ export class SessionStore {
     for (const e of s.transcript) if (e.role === "user" && e.seenAt && !e.doneAt) e.doneAt = now;
     const entry = { id: newId("a"), role: "agent", at: now, text };
     s.transcript.push(entry);
+    this.trim(s);
     this.touch(s);
     return entry;
+  }
+
+  /** Keep the in-memory transcript near MAX_TRANSCRIPT: drop the oldest entries, except notes still held or pending. */
+  trim(s) {
+    let excess = s.transcript.length - MAX_TRANSCRIPT;
+    if (excess <= 0) return;
+    const pending = new Set(s.pending);
+    s.transcript = s.transcript.filter((e) => excess <= 0 || e.held || pending.has(e.id) || (excess--, false));
   }
 
   /**
