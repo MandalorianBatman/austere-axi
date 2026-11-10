@@ -478,6 +478,70 @@ test("reviewers add notes and nothing else", async () => {
   await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
 });
 
+test("a reviewer cannot read through a symlink out of the page's directory", async () => {
+  const outside = tmp("austere-team-outside-");
+  const links = [path.join(WORK, "notes.txt"), path.join(WORK, "shared")];
+  try {
+    fs.writeFileSync(path.join(outside, "private.txt"), "DUMMY-OUTSIDE-SECRET");
+    fs.writeFileSync(path.join(WORK, "inside.txt"), "DUMMY-INSIDE");
+    fs.symlinkSync(path.join(outside, "private.txt"), links[0]);
+    fs.symlinkSync(outside, links[1]);
+    const gal = await accept((await share("Gal")).data.link);
+    const get = (p) => request(srv.port, "GET", `/s/${id}/a/${p}`, { headers: { cookie: gal.cookie } });
+    assert.equal((await get("inside.txt")).status, 200, "a real file in the directory is served");
+    const file = await get("notes.txt");
+    assert.equal(file.status, 404, "a file link that points outside");
+    assert.ok(!String(file.data).includes("DUMMY-OUTSIDE-SECRET"));
+    const dir = await get("shared/private.txt");
+    assert.equal(dir.status, 404, "a directory link that points outside");
+    assert.ok(!String(dir.data).includes("DUMMY-OUTSIDE-SECRET"));
+  } finally {
+    for (const l of [...links, path.join(WORK, "inside.txt")]) fs.rmSync(l, { force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Gal" } });
+  }
+});
+
+test("a reviewer cannot read a dotfile through a symlink with an ordinary name", async () => {
+  const env = path.join(WORK, ".env");
+  const link = path.join(WORK, "notes.txt");
+  try {
+    fs.writeFileSync(env, "DUMMY-DOTFILE-SECRET");
+    fs.symlinkSync(env, link);
+    const ivo = await accept((await share("Ivo")).data.link);
+    const r = await request(srv.port, "GET", `/s/${id}/a/notes.txt`, { headers: { cookie: ivo.cookie } });
+    assert.equal(r.status, 404);
+    assert.ok(!String(r.data).includes("DUMMY-DOTFILE-SECRET"));
+  } finally {
+    for (const f of [link, env]) fs.rmSync(f, { force: true });
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ivo" } });
+  }
+});
+
+test("a NUL byte in a reviewer's artifact path is a 404 that does not reveal the owner's directory", async () => {
+  const hal = await accept((await share("Hal")).data.link);
+  const r = await request(srv.port, "GET", `/s/${id}/a/x%00`, { headers: { cookie: hal.cookie } });
+  assert.equal(r.status, 404);
+  assert.ok(!JSON.stringify(r.data).includes(WORK), "the owner's path is not in the response");
+  assert.equal((await request(srv.port, "GET", `/s/${id}/a/plan.html`, { headers: { cookie: hal.cookie } })).status, 200, "the server keeps serving");
+  await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Hal" } });
+});
+
+test("an unreadable file in the page directory is a 404, not a server crash", { skip: process.platform === "win32" || process.getuid?.() === 0 }, async () => {
+  const locked = path.join(WORK, "locked.pem");
+  fs.writeFileSync(locked, "DUMMY-LOCKED");
+  fs.chmodSync(locked, 0);
+  try {
+    const ian = await accept((await share("Ian")).data.link);
+    const r = await request(srv.port, "GET", `/s/${id}/a/locked.pem`, { headers: { cookie: ian.cookie } });
+    assert.equal(r.status, 404);
+    assert.equal((await request(srv.port, "GET", "/api/health")).status, 200, "the server is still up");
+  } finally {
+    fs.rmSync(locked, { force: true });
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ian" } });
+  }
+});
+
 test("reviewers see their own held notes but not another reviewer's", async () => {
   const eve = await accept((await share("Eve")).data.link);
   const fay = await accept((await share("Fay")).data.link);
