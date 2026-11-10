@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playground · austere-axi</title>
+<meta name="description" content="Write OpenUI Lang on the left and see the page on the right. Click a part of the page to see what your agent would receive. No install.">
+<meta property="og:title" content="austere-axi playground">
+<meta property="og:description" content="Write OpenUI Lang, see the page, click a part to see the note your agent would get. No install.">
+<link rel="stylesheet" href="{{root}}site.css">
+<link rel="stylesheet" href="play.css">
+<link rel="icon" href="{{root}}favicon.svg" type="image/svg+xml">
+</head>
+<body class="play">
+<header class="site-header">
+  <div class="wrap wide">
+    <a class="brand" href="{{root}}">austere-axi</a>
+    {{nav}}
+  </div>
+</header>
+
+<main class="wrap wide" id="app" data-view="source">
+  <div class="toolbar" role="toolbar" aria-label="Playground">
+    <label class="field">
+      <span>Start from</span>
+      <select id="template"></select>
+    </label>
+    <div class="spacer"></div>
+    <button type="button" class="btn" id="copy-link">Copy link</button>
+    <button type="button" class="btn" id="download">Download .html</button>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="Panels">
+    <button type="button" role="tab" id="tab-source" aria-controls="pane-source" aria-selected="true" data-view="source">Source</button>
+    <button type="button" role="tab" id="tab-preview" aria-controls="pane-preview" aria-selected="false" data-view="preview">Preview</button>
+    <button type="button" role="tab" id="tab-ref" aria-controls="pane-ref" aria-selected="false" data-view="ref">Components</button>
+  </div>
+
+  <div class="panes">
+    <section class="pane" id="pane-source" role="tabpanel" aria-labelledby="tab-source">
+      <div class="editor" id="editor">
+        <div class="gutter" aria-hidden="true"><div class="gutter-inner"></div></div>
+        <div class="code">
+          <div class="marks" aria-hidden="true"></div>
+          <pre class="hl" aria-hidden="true"></pre>
+          <textarea id="source" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" aria-label="OpenUI Lang source" aria-describedby="status"></textarea>
+        </div>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+      <ul class="diag" id="diag" aria-label="Problems"></ul>
+    </section>
+
+    <section class="pane" id="pane-ref" role="tabpanel" aria-labelledby="tab-ref">
+      <div class="ref-head">
+        <input type="search" id="ref-filter" placeholder="Filter components" aria-label="Filter components" autocomplete="off">
+      </div>
+      <div class="ref" id="ref"></div>
+    </section>
+
+    <section class="pane" id="pane-preview" role="tabpanel" aria-labelledby="tab-preview">
+      <div class="preview-bar">
+        <div class="seg" role="group" aria-label="Click behaviour">
+          <button type="button" id="mode-annotate" aria-pressed="true">Annotate</button>
+          <button type="button" id="mode-explore" aria-pressed="false">Explore</button>
+        </div>
+        <span class="hint" id="mode-hint"></span>
+      </div>
+      <iframe id="frame" title="Rendered page" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms"></iframe>
+      <details class="feedback" id="feedback" open>
+        <summary>What your agent receives <span class="count" id="fb-count"></span></summary>
+        <p class="fb-empty" id="fb-empty">Click any part of the page, write a note, press Queue. The agent gets the note with the <strong>statement name</strong> of the part you clicked, so it edits that line and nothing else.</p>
+        <div class="fb-body" id="fb-body" hidden>
+          <pre id="fb-text" tabindex="0"></pre>
+          <div class="fb-actions">
+            <span id="fb-jump"></span>
+            <button type="button" class="btn small" id="fb-clear">Clear</button>
+          </div>
+        </div>
+      </details>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</main>
+
+<noscript><p class="wrap">The playground needs JavaScript.</p></noscript>
+<footer class="site-footer">
+  <div class="wrap wide">
+    <span>austere-axi v{{version}} · MIT license · your page stays in this browser tab and in the link you copy</span>
+    <span><a href="https://github.com/MandalorianBatman/austere-axi">Source on GitHub</a></span>
+  </div>
+</footer>
+<script type="module" src="play.js"></script>
+</body>
+</html>

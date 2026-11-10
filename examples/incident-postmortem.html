@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="description" content="Postmortem of a 47-minute checkout outage: impact, timeline, failure path and action items.">
+<title>Postmortem: checkout outage, 14 Oct</title>
+<script src="../dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([summary, impact, timeline, cause, actions, decide], "column", "l")
+summary = Card([CardHeader("Checkout outage, 14 Oct", "SEV-1 · 47 minutes · resolved"), summaryText, resolvedNote])
+summaryText = MarkDownRenderer("A config push changed the payments client timeout from **8 s** to **800 ms**: one zero dropped. Every card payment that needed a 3-D Secure round trip timed out, and the retry loop turned each failure into three requests.
+
+**Root cause:** nothing rejected a timeout shorter than the processor's normal 3-D Secure latency.")
+resolvedNote = Callout("success", "Resolved", "Rolled back at 15:09 UTC. Error rate back under 0.5% by 15:14.")
+impact = Card([CardHeader("Impact"), impactKpis, errorChart])
+impactKpis = OverviewCardBlock([kpiOrders, kpiRevenue, kpiTickets])
+kpiOrders = OverviewCardItem("orders", Text("text", "Failed orders"), MetricIndicatorInline("2,340", "of 6,100 attempts"))
+kpiRevenue = OverviewCardItem("revenue", Text("text", "Revenue deferred"), MetricIndicatorInline("$118k", "~71% recovered by retry email"))
+kpiTickets = OverviewCardItem("tickets", Text("text", "Support tickets"), MetricIndicatorInline("412", "peak 9/min", {direction: "up", value: 340}))
+errorChart = LineChart(["14:15", "14:25", "14:35", "14:45", "14:55", "15:05", "15:15"], [Series("Checkout error rate %", [0.4, 61, 74, 72, 70, 66, 0.5])], "linear", "UTC", "%")
+timeline = Card([CardHeader("Timeline", "all times UTC"), timelineList])
+timelineList = Timeline([tPush, tAlert, tPage, tWrong, tRollback, tRecover])
+tPush = TimelineItem("Config push", "14:22", "payments-client timeout: 8000 → 800 ms (dropped zero).")
+tAlert = TimelineItem("First alert", "14:25", "Checkout error rate above 5% for 3 minutes.")
+tPage = TimelineItem("Incident declared", "14:31", "On-call pages payments; SEV-1 opened.")
+tWrong = TimelineItem("Wrong hypothesis", "14:38", "Blamed the card processor; status page showed green. 24 minutes lost.")
+tRollback = TimelineItem("Rollback", "15:09", "Config reverted by hand.", "current")
+tRecover = TimelineItem("Recovered", "15:14", "Error rate under 0.5%.")
+cause = Card([CardHeader("What failed"), causeDiagram])
+causeDiagram = Architecture([shopper, checkout, payments, processor, config], [toCheckout, toPayments, toProcessor, fromConfig], [platform])
+shopper = Node("Shopper", "external", "browser / app")
+checkout = Node("Checkout API", "backend", "retries x3")
+payments = Node("payments-client", "backend", "timeout 800 ms", null, "danger")
+processor = Node("Card processor", "external", "3-D Secure ~2 s")
+config = Node("Config service", "cloud", "push at 14:22", "changed")
+toCheckout = Edge(shopper, checkout, "HTTPS", "emphasis")
+toPayments = Edge(checkout, payments, "x3 on error", "dashed", "danger")
+toProcessor = Edge(payments, processor, "times out", "solid", "danger")
+fromConfig = Edge(config, payments, "bad value", "security", "danger")
+platform = Group("Platform", [checkout, payments, config])
+actions = Card([CardHeader("Action items"), actionTable])
+actionTable = Table([Col("Action", ["Reject sub-second timeouts for the processor client", "Canary config pushes to 5% of pods for 10 minutes", "Alert on timeout-rate, not only on error rate", "Runbook: check config changes before blaming a vendor"]), Col("Owner", ["Priya", "Platform", "Sam", "Incident lead"]), Col("Due", ["21 Oct", "4 Nov", "28 Oct", "21 Oct"]), Col("Priority", [pHigh, pHigh, pMed, pMed])])
+pHigh = Tag("P1", null, "sm", "danger")
+pMed = Tag("P2", null, "sm", "warning")
+decide = Card([CardHeader("Review"), decideForm])
+decideForm = Form("signoff", decideButtons, [followField])
+followField = FormControl("Missing from the action items?", TextArea("missing", "Anything we should add or change", 3))
+decideButtons = Buttons([Button("Approve postmortem", @ToAssistant("Postmortem approved"), "primary"), Button("Request changes")])
+</script>
+</body>
+</html>

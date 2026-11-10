@@ -14,6 +14,7 @@ import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { launchBrowser } from "../../scripts/lib/browser.mjs";
 import { CDN_RUNTIME_URL } from "../../src/cli/artifact.js";
+import { ownerKey } from "../../src/cli/invites.js";
 import { ROOT, examplePage, htmlPage, loadLibrary } from "../../scripts/lib/plugins.mjs";
 
 const VIEWPORTS = [
@@ -29,6 +30,7 @@ let skipReason;
 let lib;
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-browser-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-browser-work-"));
+const KEY = ownerKey(STATE);
 
 function freePort() {
   return new Promise((resolve) => {
@@ -44,7 +46,7 @@ function api(route, body) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const r = http.request(
-      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json" } },
+      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -84,7 +86,9 @@ async function openReview(file, viewport) {
   page.on("console", (m) => {
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
   });
-  await page.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+  // As the CLI does when it opens a browser: a single-use login code signs it in as the owner.
+  const { code } = await api("/api/login", {});
+  await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
   const frameEl = await page.waitForSelector("iframe.frame");
   const frame = await frameEl.contentFrame();
   await frame.waitForSelector("[data-oui-id]", { timeout: 15_000 });
@@ -291,6 +295,31 @@ test("a page using an installed pack renders it, warns about third-party code, a
     const hit = res.items?.find((i) => i.note === "move GA");
     assert.equal(hit?.target, "launch");
     assert.equal(hit?.detail?.part, "GA");
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});
+
+test("after the agent ends the review the reviewer can still send; only closing locks the composer", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "after-end.html");
+  fs.writeFileSync(file, htmlPage("After end", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  const { context, page, problems } = await openReview(file, VIEWPORTS[0]);
+  try {
+    await api("/api/end", { file });
+    await page.waitForSelector(".presence:has-text('Agent stopped')");
+    assert.equal(await page.locator(".composer textarea").isDisabled(), false);
+    await page.fill(".composer textarea", "one more thing");
+    await page.click(".composer .send");
+    await page.waitForSelector(".presence:has-text('1 waiting')");
+    const res = await api("/api/poll", { file, timeoutMs: 5000 });
+    assert.equal(res.status, "feedback");
+    assert.equal(res.items[0].text, "one more thing");
+
+    await api("/api/close", { file });
+    await page.waitForSelector(".presence:has-text('Review closed')");
+    assert.equal(await page.locator(".composer textarea").isDisabled(), true);
     assert.deepEqual(problems, [], "browser errors");
   } finally {
     await context.close();

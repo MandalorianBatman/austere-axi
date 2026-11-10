@@ -1,0 +1,58 @@
+<<<<<<< SEARCH
+        <p>One high-severity SQL injection must be fixed before this can merge. Two medium and one low finding are also listed below.</p>
+=======
+        <p>One blocker, the SQL injection, must be fixed before this can merge. Two medium and one low finding are also listed below.</p>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      <div class="stat"><div class="stat-title">Findings</div><div class="stat-value text-2xl">4</div><div class="stat-desc">1 high, 2 medium, 1 low</div></div>
+=======
+      <div class="stat"><div class="stat-title">Findings</div><div class="stat-value text-2xl">4</div><div class="stat-desc">1 blocker, 2 medium, 1 low</div></div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+              <span class="badge badge-error">HIGH</span>
+=======
+              <span class="badge badge-error">BLOCKER</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <p>The query concatenates <code>req.query.q</code> into the SQL string (line 18).</p>
+=======
+            <p>The query concatenates <code>req.query.q</code> into the SQL string (line 18).</p>
+            <p class="text-sm font-semibold">Fix: parameterized query</p>
+            <p class="text-sm">Use <code>WHERE name ILIKE $1</code> and pass the value <code>%${q}%</code> as a parameter.</p>
+            <div id="fix" class="overflow-x-auto rounded-box border border-base-content/10"></div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    const { FileDiff, parsePatchFiles } = await import("https://esm.sh/@pierre/diffs@1.2.10?bundle");
+=======
+    const { File, FileDiff, parsePatchFiles } = await import("https://esm.sh/@pierre/diffs@1.2.10?bundle");
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      lineAnnotations: notes.map((n) => ({ side: "additions", lineNumber: n.lineNumber, metadata: n })),
+    });
+=======
+      lineAnnotations: notes.map((n) => ({ side: "additions", lineNumber: n.lineNumber, metadata: n })),
+    });
+
+    new File({
+      theme: { light: "github-light", dark: "github-dark" },
+      themeType: "dark",
+      overflow: "wrap",
+    }).render({
+      containerWrapper: document.querySelector("#fix"),
+      file: {
+        name: "src/routes/users.js",
+        contents: "const q = req.query.q;\nconst rows = await db.query(\n  \"SELECT id, name, email FROM users WHERE name ILIKE $1\",\n  [`%${q}%`]\n);\n",
+      },
+    });
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+label: "HIGH - Finding 1"
+=======
+label: "BLOCKER - Finding 1"
+>>>>>>> REPLACE

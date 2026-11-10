@@ -1,9 +1,9 @@
 // @ts-check
-// The hub (opt-in, `austere-axi hub on`): the review server stays up and keeps
-// an index of every artifact reviewed or checked on this machine, by project
-// (git root) and date, with each piece of feedback and whether the agent has
-// addressed it. The index is SQLite (node:sqlite), next to the
-// session files it mirrors; the review loop itself does not depend on it.
+// hub.db (SQLite, node:sqlite): the record of every review session (its notes,
+// replies and the agent's cursor; see sessions.js), plus an index of every
+// artifact reviewed or checked on this machine, by project (git root) and date.
+// The hub (`austere-axi hub on`) is the owner's view of it: the home page lists
+// every artifact, /notes every note.
 import fs from "node:fs";
 import path from "node:path";
 import { stateDir } from "./paths.js";
@@ -21,7 +21,7 @@ export function hubEnabled() {
 }
 
 export function setHubEnabled(enabled) {
-  fs.writeFileSync(hubConfigFile(), JSON.stringify({ enabled, changedAt: new Date().toISOString() }) + "\n");
+  fs.writeFileSync(hubConfigFile(), JSON.stringify({ enabled, changedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
 }
 
 export function hubDbFile() {
@@ -54,6 +54,16 @@ export function projectOf(file) {
     if (up === dir) return path.dirname(file);
     dir = up;
   }
+}
+
+/** Open hub.db with the schema in place. */
+export async function openDatabase(file = hubDbFile()) {
+  const Database = await loadSqlite();
+  // Every note is in here: create it as the owner's only (SQLite gives its WAL the same mode).
+  if (file !== ":memory:") fs.closeSync(fs.openSync(file, "a", 0o600));
+  const db = new Database(file);
+  migrate(db);
+  return db;
 }
 
 const SCHEMA = `
@@ -92,16 +102,46 @@ CREATE TABLE IF NOT EXISTS replies (
 );
 `;
 
-/** Where a piece of feedback stands: held (waiting for the owner), discarded, open (not yet received by an agent), received, addressed (replied to). */
-export function itemStatus(entry, pending) {
-  if (entry.discarded) return "discarded";
-  if (entry.held) return "held";
-  if (pending) return "open";
-  if (entry.doneAt) return "addressed";
-  return "received";
+// Notes: one row per batch the reviewer sends. `seq` orders what reaches the agent and is
+// NULL while a note is held (or after it is discarded); `acked_seq` on the artifact is how
+// far the agent has acknowledged. `items` above indexes each piece of a note for the hub.
+const NOTES = `
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  artifact_id TEXT NOT NULL,
+  seq INTEGER UNIQUE,
+  state TEXT NOT NULL,
+  author TEXT NOT NULL DEFAULT '',
+  items TEXT NOT NULL,
+  ends INTEGER NOT NULL DEFAULT 0,
+  at INTEGER NOT NULL,
+  released_at INTEGER,
+  seen_at INTEGER,
+  work_at INTEGER,
+  done_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS notes_artifact ON notes(artifact_id, at);
+`;
+
+function migrate(db) {
+  db.exec(SCHEMA);
+  const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  // Indexes made before team review have no author column.
+  if (!has("items", "author")) db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
+  // Before sessions moved into the database, artifacts had no review state of their own.
+  if (!has("artifacts", "ended_at")) db.exec("ALTER TABLE artifacts ADD COLUMN ended_at INTEGER");
+  if (!has("artifacts", "closed_at")) db.exec("ALTER TABLE artifacts ADD COLUMN closed_at INTEGER");
+  if (!has("artifacts", "acked_seq")) db.exec("ALTER TABLE artifacts ADD COLUMN acked_seq INTEGER NOT NULL DEFAULT 0");
+  db.exec(NOTES);
 }
 
-function itemText(it) {
+/** A bindable SQLite text value from untrusted item data: strings pass, other shapes become JSON, empty is null. */
+export function bindText(v) {
+  return v == null || v === "" ? null : typeof v === "string" ? v : JSON.stringify(v);
+}
+
+/** The text the hub shows and searches for one item of a note. */
+export function itemText(it) {
   if (it.kind === "annotation") return it.note || it.selection || it.excerpt || "";
   if (it.kind === "action") return it.message || "";
   if (it.kind === "render-error") return it.message || "";
@@ -110,17 +150,12 @@ function itemText(it) {
 
 export class Hub {
   static async open(file = hubDbFile()) {
-    const Database = await loadSqlite();
-    return new Hub(new Database(file));
+    return new Hub(await openDatabase(file));
   }
 
+  /** @param {any} db an open hub.db (openDatabase) */
   constructor(db) {
     this.db = db;
-    db.exec(SCHEMA);
-    // Indexes made before team review have no author column.
-    if (!db.prepare("PRAGMA table_info(items)").all().some((c) => c.name === "author")) {
-      db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
-    }
     this.q = {
       upsertArtifact: db.prepare(`
         INSERT INTO artifacts (id, file, project, title, created_at, updated_at, reviewed, status, ended_by)
@@ -131,11 +166,6 @@ export class Hub {
           reviewed = MAX(artifacts.reviewed, excluded.reviewed),
           status = COALESCE(excluded.status, artifacts.status),
           ended_by = CASE WHEN excluded.status IS NULL THEN artifacts.ended_by ELSE excluded.ended_by END`),
-      upsertItem: db.prepare(`
-        INSERT INTO items (id, artifact_id, entry_id, at, kind, target, text, status, data, author)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET status = excluded.status, text = excluded.text, data = excluded.data, author = excluded.author`),
-      upsertReply: db.prepare(`INSERT INTO replies (id, artifact_id, at, text) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`),
       artifact: db.prepare(`SELECT * FROM artifacts WHERE id = ?`),
     };
   }
@@ -147,31 +177,6 @@ export class Hub {
   /** An artifact `check` or `patch` saw (not necessarily reviewed). */
   register({ id, file, title, at = Date.now() }) {
     this.q.upsertArtifact.run(id, file, projectOf(file), title || null, at, at, 0, null, null);
-  }
-
-  /** Mirror a review session: the artifact row, every feedback item and every agent reply. */
-  syncSession(s) {
-    const pending = new Set(s.pending);
-    this.db.exec("BEGIN");
-    try {
-      this.q.upsertArtifact.run(s.id, s.file, projectOf(s.file), s.title || null, s.createdAt, s.updatedAt, 1, s.status, s.endedBy || null);
-      for (const e of s.transcript) {
-        if (e.role === "agent") {
-          this.q.upsertReply.run(e.id, s.id, e.at, String(e.text || ""));
-          continue;
-        }
-        if (e.role !== "user") continue;
-        const status = itemStatus(e, pending.has(e.id));
-        (e.items || []).forEach((it, i) => {
-          const id = it.id || `${e.id}.${i}`;
-          this.q.upsertItem.run(id, s.id, e.id, e.at, it.kind || "message", it.target || it.statement || null, itemText(it), status, JSON.stringify(it), e.author || "");
-        });
-      }
-      this.db.exec("COMMIT");
-    } catch (err) {
-      this.db.exec("ROLLBACK");
-      throw err;
-    }
   }
 
   artifact(id) {

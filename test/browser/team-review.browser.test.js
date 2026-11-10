@@ -10,10 +10,12 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { launchBrowser } from "../../scripts/lib/browser.mjs";
+import { ownerKey } from "../../src/cli/invites.js";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-team-browser-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-team-browser-work-"));
 const FILE = path.join(WORK, "plan.html");
+const KEY = ownerKey(STATE);
 let port;
 let server;
 let browser;
@@ -32,7 +34,7 @@ function freePort() {
 function api(route, body, timeoutMs = 0) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
-    const r = http.request({ host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json" } }, (res) => {
+    const r = http.request({ host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } }, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
       res.on("end", () => resolve(JSON.parse(data)));
@@ -100,12 +102,13 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
   const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   try {
     const owner = await ownerCtx.newPage();
-    await owner.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+    await owner.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${KEY}`);
     await owner.waitForSelector(".composer textarea");
 
     // The teammate follows the link; the token leaves the address bar.
     const guest = await guestCtx.newPage();
     await guest.goto(invite.link);
+    await guest.click("form[action$='/join'] button");
     await guest.waitForSelector(".composer textarea");
     assert.ok(!guest.url().includes("invite="), "token dropped from the URL");
     assert.equal(await guest.locator('[data-cmd="end"]').count(), 0, "no End review for a reviewer");
@@ -141,5 +144,67 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
   } finally {
     await ownerCtx.close();
     await guestCtx.close();
+  }
+});
+
+test("a login code from the CLI signs the browser in as the owner, once", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { session } = await api("/api/open", { file: FILE });
+  const { code } = await api("/api/login", {});
+  const ctx = await browser.newContext();
+  const other = await browser.newContext();
+  try {
+    const page = await ctx.newPage();
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
+    await page.waitForURL(`http://127.0.0.1:${port}/s/${session.id}`);
+    await page.waitForSelector(".composer textarea");
+    const cookie = (await ctx.cookies()).find((c) => c.name === "austere_owner");
+    assert.ok(cookie && cookie.value !== KEY, "the browser holds a cookie derived from the key, not the key");
+    const again = await (await other.newPage()).goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
+    assert.equal(again?.status(), 403, "the code is used up");
+  } finally {
+    await ctx.close();
+    await other.close();
+  }
+});
+
+test("the owner's held view shows what the agent would receive, and a bad note cannot break the panel", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { session } = await api("/api/open", { file: FILE });
+  const invite = await api("/api/share", { file: FILE, name: "Bo" });
+  const ownerCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const guest = await guestCtx.newPage();
+    await guest.goto(invite.link);
+    await guest.click("form[action$='/join'] button");
+    await guest.waitForSelector(".composer textarea");
+    const send = (items) =>
+      guest.evaluate(
+        ({ id, items }) => fetch(`/s/${id}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items }) }).then((r) => r.status),
+        { id: session.id, items },
+      );
+    const long = "q".repeat(300) + " TAIL-PAST-CUT";
+    assert.equal(
+      await send([
+        { kind: "annotation", target: "intro", component: "TextContent", path: ["root", "HiddenWithin", "intro"], selection: long, note: "n1" },
+        { kind: "annotation", target: "intro", component: "TextContent", selection: { length: 999 }, note: "POISON" },
+        { kind: "message", text: "LATER-NOTE" },
+      ]),
+      200,
+    );
+    const owner = await ownerCtx.newPage();
+    await owner.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${KEY}`);
+    await owner.waitForSelector(".held-bar");
+    const text = await owner.locator(".msg.user.held").innerText();
+    assert.match(text, /within HiddenWithin/, "the path the agent sees");
+    assert.match(text, /TAIL-PAST-CUT/, "the whole quote, not the first 260 characters");
+    assert.match(text, /LATER-NOTE/, "a malformed field did not stop later notes rendering");
+    await owner.click(".held-bar >> text=Discard all");
+    await owner.waitForSelector(".held-bar", { state: "detached" });
+  } finally {
+    await ownerCtx.close();
+    await guestCtx.close();
+    await api("/api/share/revoke", { key: "Bo" });
   }
 });

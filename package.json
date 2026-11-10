@@ -1,7 +1,8 @@
 {
   "name": "austere-axi",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Agent-authored review artifacts in OpenUI Lang: a few hundred tokens instead of a whole HTML page, with statement-level annotations fed back to the agent.",
+  "mcpName": "io.github.MandalorianBatman/austere-axi",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -36,9 +37,14 @@
     "test:browser": "node scripts/build.mjs packs runtime mermaid spec chrome && node --test test/browser/*.test.js",
     "signatures": "node scripts/signatures.mjs",
     "gallery": "node scripts/gallery.mjs",
+    "site": "node scripts/site.mjs",
     "shot": "node scripts/shot.mjs",
+    "demo": "node scripts/demo.mjs",
+    "social": "node scripts/social.mjs",
     "prepublishOnly": "npm run build && npm test",
-    "typecheck": "tsc --noEmit -p jsconfig.json"
+    "typecheck": "tsc --noEmit -p jsconfig.json",
+    "bench": "node scripts/build.mjs && npm --prefix bench ci --no-audit --no-fund && node bench/run.mjs",
+    "bench:report": "node bench/report.mjs"
   },
   "keywords": [
     "axi",

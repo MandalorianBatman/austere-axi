@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PR #482 Review</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([summary, findingsOverview, findingsAndDiff, verdictCard], "column", "l")
+summary = Card([CardHeader("PR #482 — Add user search endpoint", "src/routes/users.js · +9 -1 · 31 tests passed"), summaryDetails])
+summaryDetails = EntityList([{left: "Changed file", right: "src/routes/users.js"}, {left: "Diff size", right: "+9 -1"}, {left: "Tests", right: "31 passed"}, {left: "Verdict", right: "Request changes"}])
+findingsOverview = Card([CardHeader("Findings", "4 findings: 1 high, 2 medium, 1 low"), findingsTable])
+findingsTable = Table([Col("Severity", [severityHigh, severityMedium, severityMedium, severityLow]), Col("Finding", ["SQL injection in the search query", "No pagination on search results", "Email exposed to any logged-in user", "/users/export has no test"]), Col("Location", ["src/routes/users.js:18", "Search results", "src/routes/users.js:18", "/users/export"])])
+severityHigh = Tag("High", null, "sm", "danger")
+severityMedium = Tag("Medium", null, "sm", "warning")
+severityLow = Tag("Low", null, "sm", "neutral")
+findingsAndDiff = Card([CardHeader("Findings with referenced diff", "Each finding is followed by the relevant code"), findingOne, findingTwo, findingThree, findingFour, referencedDiff])
+findingOne = Stack([findingOneHeading, findingOneDetails, findingOneDiff], "column", "s")
+findingOneHeading = InlineHeader("1. High — SQL injection")
+findingOneDetails = TextContent("The query concatenates `req.query.q` into the SQL string (line 18).")
+findingOneDiff = Diff("@@ -12,7 +12,15 @@ router.get(\"/users/:id\", async (req, res) => {\n   res.json(user);\n });\n \n+router.get(\"/users\", async (req, res) => {\n+  const q = req.query.q;\n+  const rows = await db.query(\n+    \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"\n+  );\n+  res.json(rows);\n+});\n+\n+router.get(\"/users/export\", exportUsers);\n+\n module.exports = router;", "src/routes/users.js — finding 1")
+findingTwo = Stack([findingTwoHeading, findingTwoDetails], "column", "s")
+findingTwoHeading = InlineHeader("2. Medium — No pagination")
+findingTwoDetails = TextContent("The search returns every matching row; with 2.1M users this can time out.")
+findingThree = Stack([findingThreeHeading, findingThreeDetails, findingThreeDiff], "column", "s")
+findingThreeHeading = InlineHeader("3. Medium — Email column exposed")
+findingThreeDetails = TextContent("The email column is returned to any logged-in user (line 18). Return only id and name.")
+findingThreeDiff = Diff("@@ -12,7 +12,15 @@ router.get(\"/users/:id\", async (req, res) => {\n   res.json(user);\n });\n \n+router.get(\"/users\", async (req, res) => {\n+  const q = req.query.q;\n+  const rows = await db.query(\n+    \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"\n+  );\n+  res.json(rows);\n+});\n+\n+router.get(\"/users/export\", exportUsers);\n+\n module.exports = router;", "src/routes/users.js — finding 3")
+findingFour = Stack([findingFourHeading, findingFourDetails, findingFourDiff], "column", "s")
+findingFourHeading = InlineHeader("4. Low — Missing test for /users/export")
+findingFourDetails = TextContent("/users/export has no test.")
+findingFourDiff = Diff("@@ -12,7 +12,15 @@ router.get(\"/users/:id\", async (req, res) => {\n   res.json(user);\n });\n \n+router.get(\"/users\", async (req, res) => {\n+  const q = req.query.q;\n+  const rows = await db.query(\n+    \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"\n+  );\n+  res.json(rows);\n+});\n+\n+router.get(\"/users/export\", exportUsers);\n+\n module.exports = router;", "src/routes/users.js — finding 4")
+referencedDiff = Stack([referencedDiffHeading, fullDiff], "column", "s")
+referencedDiffHeading = InlineHeader("Full pull request diff")
+fullDiff = Diff("diff --git a/src/routes/users.js b/src/routes/users.js\n--- a/src/routes/users.js\n+++ b/src/routes/users.js\n@@ -12,7 +12,15 @@ router.get(\"/users/:id\", async (req, res) => {\n   res.json(user);\n });\n \n-router.get(\"/users\", listUsers);\n+router.get(\"/users\", async (req, res) => {\n+  const q = req.query.q;\n+  const rows = await db.query(\n+    \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"\n+  );\n+  res.json(rows);\n+});\n+\n+router.get(\"/users/export\", exportUsers);\n \n module.exports = router;", "src/routes/users.js")
+verdictCard = Card([CardHeader("Verdict"), verdictCallout])
+verdictCallout = Callout("error", "Request changes", "The pull request has one high-severity SQL injection finding, two medium-severity findings, and one low-severity finding.")
+</script>
+</body>
+</html>
