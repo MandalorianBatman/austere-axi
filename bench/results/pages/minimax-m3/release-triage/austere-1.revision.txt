@@ -1,0 +1,6 @@
+```openui
+recommendationText = MarkDownRenderer("- **Fix for 3.8:** BUG-311, BUG-318, BUG-330\n- **Defer to 3.9:** BUG-322, BUG-327")
+bug330Card = Card([CardHeader("BUG-330 — Password reset email links expire after 5 minutes instead of 60", "High severity · All users who reset a password · 1 hour estimate"), bug330Details, bug330Decision])
+bug330Details = MarkDownRenderer("Password reset email links expire after 5 minutes instead of 60 minutes.")
+bug330Decision = FormControl("Decision for BUG-330", RadioGroup("bug330_decision", [RadioItem("Fix for 3.8", "Include the fix in release 3.8.", "fix"), RadioItem("Defer to 3.9", "Move the fix to release 3.9.", "defer"), RadioItem("Won't fix", "Do not fix this bug.", "wontfix")], "fix", {required: true}), "Select one release decision.")
+```

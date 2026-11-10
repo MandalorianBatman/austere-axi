@@ -17,6 +17,7 @@ import { SessionStore, newId } from "./sessions.js";
 import { installedPackFile, pagePacks, readLock } from "./packs.js";
 import { Hub, hubEnabled } from "./hub.js";
 import { COOKIE, InviteStore, OWNER_COOKIE, inviteId, ownerKey, safeEqual, tokenFromCookie } from "./invites.js";
+import { reviewerItem } from "./items.js";
 import { hubPage, notesPage } from "./hub-page.js";
 import { splitSpec } from "../shared/packs-meta.js";
 import crypto from "node:crypto";
@@ -75,7 +76,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       log("hub-unavailable", String(err?.message || err));
     }
   }
-  const store = new SessionStore(stateDir(), { onFlush: hub ? (s) => hub.syncSession(s) : undefined });
+  const store = new SessionStore(stateDir(), { onFlush: hub ? (s) => hub.syncSession(s) : undefined, onFlushError: (s, err) => log("hub-sync", s.id, String(err?.message || err)) });
   if (hub) {
     for (const s of store.list()) {
       try {
@@ -614,13 +615,12 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     if (!file.startsWith(ASSET_DIR + path.sep)) return send(res, 404, "not found");
     fs.stat(file, (err, st) => {
       if (err || !st.isFile()) return send(res, 404, "not found");
-      res.writeHead(200, {
+      streamFile(res, file, {
         "content-type": MIME[path.extname(file)] || "application/octet-stream",
         "content-length": st.size,
         "cache-control": "no-cache",
         "x-content-type-options": "nosniff",
       });
-      fs.createReadStream(file).pipe(res);
     });
   }
 
@@ -631,6 +631,24 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
   // in the review frame they still inherit the iframe's flags, and a popup on
   // an artifact URL gets this header again.
   const ARTIFACT_CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms";
+  /**
+   * Stream a file as a 200. Headers go out only once the file has opened, so an open failure
+   * (EACCES) is a 404 and a later read failure drops the connection. Without the error
+   * listener either one would be an unhandled 'error' event and exit the server.
+   */
+  function streamFile(res, file, headers) {
+    const rs = fs.createReadStream(file);
+    rs.once("open", () => {
+      res.writeHead(200, headers);
+      rs.pipe(res);
+    });
+    rs.once("error", (e) => {
+      log("error", "file stream", String(e?.message || e));
+      if (!res.headersSent) send(res, 404, "not found");
+      else res.destroy();
+    });
+    res.once("close", () => rs.destroy());
+  }
 
   function serveArtifact(req, res, s, rest) {
     const dir = path.dirname(s.file);
@@ -647,20 +665,29 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     } catch {
       return send(res, 400, "bad path");
     }
+    if (decoded.includes("\0")) return send(res, 404, "not found");
     const file = path.resolve(dir, decoded);
     if (!file.startsWith(dir + path.sep) || decoded.split(/[/\\]/).some((p) => p.startsWith("."))) {
       return send(res, 404, "not found");
     }
-    fs.stat(file, (err, st) => {
-      if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
-      res.writeHead(200, {
-        "content-type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
-        "content-length": st.size,
-        "cache-control": "no-cache",
-        "x-content-type-options": "nosniff",
-        "content-security-policy": ARTIFACT_CSP,
+    // The check above is lexical; a symlink inside the directory can still lead out of it.
+    fs.realpath(dir, (e1, realDir) => {
+      if (e1) return send(res, 404, "not found");
+      fs.realpath(file, (e2, real) => {
+        if (e2 || !real.startsWith(realDir + path.sep)) return send(res, 404, "not found");
+        // A link with an ordinary name can still point at a dotfile in the directory.
+        if (path.relative(realDir, real).split(path.sep).some((p) => p.startsWith("."))) return send(res, 404, "not found");
+        fs.stat(real, (err, st) => {
+          if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
+          streamFile(res, real, {
+            "content-type": MIME[path.extname(real).toLowerCase()] || "application/octet-stream",
+            "content-length": st.size,
+            "cache-control": "no-cache",
+            "x-content-type-options": "nosniff",
+            "content-security-policy": ARTIFACT_CSP,
+          });
+        });
       });
-      fs.createReadStream(file).pipe(res);
     });
   }
 
@@ -769,12 +796,35 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     const sub = m[2] || "";
     activity();
 
-    // An invite link: trade the token for a cookie scoped to this page, then drop it from the URL.
+    // An invite link: ask before trading the token for a cookie, so a cross-site navigation cannot
+    // switch a browser (e.g. the owner's) into a reviewer identity.
     const invite = url.searchParams.get("invite");
-    if (invite != null && (sub === "" || sub === "/")) {
+    if (invite != null && (sub === "" || sub === "/") && req.method === "GET") {
       const inv = invites.find(invite);
       if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
-      res.writeHead(302, {
+      return send(
+        res,
+        200,
+        `<!doctype html><meta charset="utf-8"><title>Join review</title><form method="post" action="/s/${s.id}/join"><input type="hidden" name="invite" value="${escapeHtml(inv.token)}"><button>Continue as ${escapeHtml(inv.name)}</button></form>`,
+        // "same-origin", not "no-referrer": Chrome and Firefox send `Origin: null` on a form POST under no-referrer, which the join check would refuse.
+        { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "same-origin", "x-frame-options": "DENY" },
+      );
+    }
+    if (sub === "/join" && req.method === "POST") {
+      // Require a same-origin browser POST: Origin must be present and equal Host (checkOrigin alone allows a missing Origin).
+      if (!req.headers.origin || !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+      // The form posts application/x-www-form-urlencoded; readBody() only parses JSON, so read the small body here.
+      const chunks = [];
+      let size = 0;
+      for await (const c of req) {
+        size += c.length;
+        if (size > 4096) return send(res, 413, "payload too large");
+        chunks.push(c);
+      }
+      const raw = Buffer.concat(chunks).toString("utf8");
+      const inv = invites.find(new URLSearchParams(raw).get("invite") || "");
+      if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
+      res.writeHead(303, {
         location: `/s/${s.id}`,
         "set-cookie": `${COOKIE}=${inv.token}; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=2592000`,
         "cache-control": "no-store",
@@ -843,7 +893,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const body = await readBody(req, 4 * 1024 * 1024);
       const end = !reviewer && !!body.end;
       let items = Array.isArray(body.items) ? body.items.filter((x) => x && typeof x === "object").slice(0, reviewer ? 50 : 200) : [];
-      if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind));
+      if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind)).map(reviewerItem);
       if (s.status === "ended") return send(res, 409, { error: "session has ended" });
       if (!items.length && !end) return send(res, 400, { error: "nothing to send" });
       // The server decides who wrote a note. A reviewer's own item id could overwrite another note in the hub.
@@ -869,7 +919,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
     }
     if ((sub === "/release" || sub === "/discard") && req.method === "POST") {
       const body = await readBody(req);
-      const ids = Array.isArray(body.ids) ? body.ids.map(String) : body.all ? null : [];
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : sub === "/discard" && body.all ? null : [];
       const done = sub === "/release" ? store.release(s, ids) : store.discard(s, ids);
       if (done.length) broadcastTranscript(s, done);
       const poll = polls.get(s.id);
@@ -920,7 +970,7 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
       const server = http.createServer((req, res) => {
         handle(req, res).catch((err) => {
           log("error", req.method, req.url.split("?")[0], String(err?.stack || err));
-          if (!res.headersSent) send(res, err.status || 500, { error: String(err.message || err) });
+          if (!res.headersSent) send(res, err.status || 500, { error: err.status ? String(err.message) : "internal error" });
           else res.end();
         });
       });

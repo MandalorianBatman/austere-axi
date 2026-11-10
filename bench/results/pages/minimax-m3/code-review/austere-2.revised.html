@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PR #482 Review</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([summary, findings, pullRequestDiff], "column", "l")
+summary = Card([CardHeader("PR #482 — Add user search endpoint", "Request changes"), summaryFacts, verdictCallout])
+summaryFacts = EntityList([{left: "Files changed", right: "src/routes/users.js (+9 -1)"}, {left: "Tests", right: "31 passed"}], "default", {left: "Summary", right: "Details"})
+verdictCallout = Callout("error", "Verdict: request changes", "The pull request has one high-severity finding and two medium-severity findings.")
+findings = Card([CardHeader("Findings", "4 findings · 1 high, 2 medium, 1 low"), findingsTable])
+findingsTable = Table([Col("Severity", [severityHigh, severityMedium, severityMedium, severityLow]), Col("Finding", [sqlInjectionFinding, noPaginationFinding, emailExposureFinding, exportTestFinding]), Col("Location", ["Line 18", "Endpoint", "Line 18", "Endpoint"])])
+severityHigh = Tag("Blocker", null, "sm", "danger")
+severityMedium = Tag("Medium", null, "sm", "warning")
+severityLow = Tag("Low", null, "sm", "neutral")
+sqlInjectionFinding = TextContent("SQL injection: the query concatenates req.query.q into the SQL string. Use a parameterized query: WHERE name ILIKE $1, with the value %${q}%.")
+noPaginationFinding = TextContent("No pagination: the search returns every matching row; with 2.1M users this can time out")
+emailExposureFinding = TextContent("The email column is returned to any logged-in user; return only id and name")
+exportTestFinding = TextContent("/users/export has no test")
+pullRequestDiff = Card([CardHeader("Pull request diff", "src/routes/users.js · +9 -1"), usersRouteDiff])
+usersRouteDiff = Diff("diff --git a/src/routes/users.js b/src/routes/users.js\n--- a/src/routes/users.js\n+++ b/src/routes/users.js\n@@ -12,7 +12,15 @@ router.get(\"/users/:id\", async (req, res) => {\n   res.json(user);\n });\n \n-router.get(\"/users\", listUsers);\n+router.get(\"/users\", async (req, res) => {\n+  const q = req.query.q;\n+  const rows = await db.query(\n+    \"SELECT id, name, email FROM users WHERE name LIKE '%\" + q + \"%'\"\n+  );\n+  res.json(rows);\n+});\n+\n+router.get(\"/users/export\", exportUsers);\n \n module.exports = router;", "src/routes/users.js")
+</script>
+</body>
+</html>

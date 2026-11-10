@@ -1,0 +1,106 @@
+<<<<<<< SEARCH
+      <section class="summary" aria-label="Triage summary">
+        <div class="stat">
+          <span class="stat-label">Open bugs</span>
+          <span class="stat-value">4</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Suggested fixes</span>
+          <span class="stat-value">2</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Suggested deferrals</span>
+          <span class="stat-value">2</span>
+        </div>
+      </section>
+=======
+      <section class="summary" aria-label="Triage summary">
+        <div class="stat">
+          <span class="stat-label">Open bugs</span>
+          <span class="stat-value">5</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Suggested fixes</span>
+          <span class="stat-value">3</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Suggested deferrals</span>
+          <span class="stat-value">2</span>
+        </div>
+      </section>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            </tbody>
+          </table>
+        </div>
+      </section>
+=======
+              <tr>
+                <td>
+                  <span class="bug-id">BUG-330</span>
+                </td>
+                <td>
+                  <span class="title">Password reset email links expire after 5 minutes instead of 60</span>
+                </td>
+                <td>
+                  <span class="severity severity-high">high</span>
+                </td>
+                <td>All users who reset a password</td>
+                <td class="estimate">1 hour</td>
+                <td>
+                  <fieldset>
+                    <legend>Decision for BUG-330</legend>
+                    <div class="choices">
+                      <label class="choice">
+                        <input type="radio" name="BUG-330" value="fix for 3.8" checked>
+                        <span>fix for 3.8</span>
+                      </label>
+                      <label class="choice">
+                        <input type="radio" name="BUG-330" value="defer to 3.9">
+                        <span>defer to 3.9</span>
+                      </label>
+                      <label class="choice">
+                        <input type="radio" name="BUG-330" value="won't fix">
+                        <span>won't fix</span>
+                      </label>
+                    </div>
+                    <span class="suggestion">Suggested: fix for 3.8</span>
+                  </fieldset>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <span>Every bug will be included in one batch for release triage.</span>
+=======
+          <span>Every bug will be included in one batch for release triage.</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+        status.textContent = "All four decisions have been queued for the agent.";
+=======
+        status.textContent = "All five decisions have been queued for the agent.";
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    const EXPECTED_BUGS = ["BUG-311", "BUG-318", "BUG-322", "BUG-327"];
+=======
+    const EXPECTED_BUGS = ["BUG-311", "BUG-318", "BUG-322", "BUG-327", "BUG-330"];
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          "Account for every submitted bug ID exactly once. Use only the provided decisions; " +
+=======
+          "Account for every submitted bug ID exactly once. Use only the provided decisions; " +
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+        "Decisions are ready to copy below. Open this page through Lavish to send them to the agent.";
+=======
+        "Decisions are ready to copy below. Open this page through Lavish to send them to the agent.";
+>>>>>>> REPLACE

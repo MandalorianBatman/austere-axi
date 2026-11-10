@@ -1,0 +1,5 @@
+```openui
+latencyCallout = Callout("info", "Latency target", "Pinecone and Qdrant are below the 50 ms p95 target in our test. Weaviate is above it, and Milvus is above it before accounting for any operational considerations.")
+comparison = Card([CardHeader("Full comparison", "Measured p95 latency, estimated cost, operational model, and product capabilities"), comparisonTable, latencyCallout])
+shortlistControl = FormControl("Select two vector databases", CheckBoxGroup("databases", [CheckBoxItem("Pinecone", "Lowest p95 latency; managed only; no ops", "pinecone"), CheckBoxItem("Weaviate", "Managed or self-host; BSD-3 license", "weaviate"), CheckBoxItem("Qdrant", "Best latency per dollar; managed or self-host", "qdrant"), CheckBoxItem("Milvus", "Self-host; Zilliz offers managed hosting", "milvus")], {required: true}, ["qdrant", "pinecone"]))
+```

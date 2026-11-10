@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="austere-packs" content="">
+  <title>Release 3.8 Bug Triage</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([releaseHeader, instructions, recommendation, bug311Card, bug318Card, bug322Card, bug327Card, submissionCard], "column", "l")
+releaseHeader = Card([CardHeader("Release 3.8 bug triage", "Set a release decision for each open bug, then send all decisions at once."), releaseFacts])
+releaseFacts = EntityList([{left: "Release date", right: "Thursday"}, {left: "Code freeze", right: "Wednesday 18:00"}], "default")
+instructions = MarkDownRenderer("Choose **fix for 3.8**, **defer to 3.9**, or **won't fix** for every bug. Each option includes a decision and an optional note so the complete triage can be reviewed before submission.")
+recommendation = Card([CardHeader("Suggested triage", "Recommendations based on the provided facts"), recommendationText])
+recommendationText = MarkDownRenderer("- **Fix for 3.8:** BUG-311, BUG-318\n- **Defer to 3.9:** BUG-322, BUG-327")
+bug311Card = Card([CardHeader("BUG-311 — Checkout button disabled after coupon removal", "High severity · ~4% of carts · 0.5 day estimate"), bug311Details, bug311Decision])
+bug311Details = MarkDownRenderer("The checkout button is disabled after a coupon is removed.")
+bug311Decision = FormControl("Decision for BUG-311", RadioGroup("bug311_decision", [RadioItem("Fix for 3.8", "Include the fix in release 3.8.", "fix"), RadioItem("Defer to 3.9", "Move the fix to release 3.9.", "defer"), RadioItem("Won't fix", "Do not fix this bug.", "wontfix")], "fix", {required: true}), "Select one release decision.")
+bug318Card = Card([CardHeader("BUG-318 — Dark mode: unreadable table headers in Reports", "Low severity · Reports users · 1 hour estimate"), bug318Details, bug318Decision])
+bug318Details = MarkDownRenderer("Table headers in Reports are unreadable in dark mode.")
+bug318Decision = FormControl("Decision for BUG-318", RadioGroup("bug318_decision", [RadioItem("Fix for 3.8", "Include the fix in release 3.8.", "fix"), RadioItem("Defer to 3.9", "Move the fix to release 3.9.", "defer"), RadioItem("Won't fix", "Do not fix this bug.", "wontfix")], "fix", {required: true}), "Select one release decision.")
+bug322Card = Card([CardHeader("BUG-322 — CSV export drops rows over 10,000", "Medium severity · 120 accounts · 2 days estimate"), bug322Details, bug322Decision])
+bug322Details = MarkDownRenderer("CSV exports omit rows when the export contains more than 10,000 rows.")
+bug322Decision = FormControl("Decision for BUG-322", RadioGroup("bug322_decision", [RadioItem("Fix for 3.8", "Include the fix in release 3.8.", "fix"), RadioItem("Defer to 3.9", "Move the fix to release 3.9.", "defer"), RadioItem("Won't fix", "Do not fix this bug.", "wontfix")], "defer", {required: true}), "Select one release decision.")
+bug327Card = Card([CardHeader("BUG-327 — Push notification sent twice on Android 15", "Medium severity · ~9% of Android · Unknown estimate"), bug327Details, bug327Decision])
+bug327Details = MarkDownRenderer("Push notifications are sent twice on Android 15.")
+bug327Decision = FormControl("Decision for BUG-327", RadioGroup("bug327_decision", [RadioItem("Fix for 3.8", "Include the fix in release 3.8.", "fix"), RadioItem("Defer to 3.9", "Move the fix to release 3.9.", "defer"), RadioItem("Won't fix", "Do not fix this bug.", "wontfix")], "defer", {required: true}), "Select one release decision.")
+submissionCard = Card([CardHeader("Submit triage", "Send all four bug decisions together"), submissionNotes, submissionForm])
+submissionNotes = FormControl("Overall notes", TextArea("overall_notes", "Optional notes about the release triage", 4))
+submissionForm = Form("release_3_8_bug_triage", submissionButtons, [submissionNotes])
+submissionButtons = Buttons([Button("Send all decisions", @ToAssistant("Release 3.8 bug triage decisions submitted."), "primary")], "row")
+</script>
+</body>
+</html>

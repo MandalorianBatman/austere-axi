@@ -1,0 +1,39 @@
+<<<<<<< SEARCH
+          <tr><th>Option</th><th>Throughput</th><th>Replay</th><th>Ops cost</th><th>Team experience</th></tr>
+=======
+          <tr><th>Option</th><th>Throughput</th><th>Replay</th><th>Ops cost</th><th>Team experience</th><th>Est. monthly cost</th></tr>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td><span class="badge badge-soft badge-error">None</span></td>
+=======
+            <td><span class="badge badge-soft badge-error">None</span></td>
+            <td class="font-mono">~$2,400</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td><span class="badge badge-soft badge-warning">One engineer</span></td>
+=======
+            <td><span class="badge badge-soft badge-warning">One engineer</span></td>
+            <td class="font-mono">~$900</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+            <td><span class="badge badge-soft badge-success">High</span></td>
+=======
+            <td><span class="badge badge-soft badge-success">High</span></td>
+            <td class="font-mono">~$310</td>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    </div>
+  </section>
+
+  <section class="flex flex-col gap-3" id="design">
+=======
+    </div>
+    <p class="text-sm opacity-80">Monthly cost figures are approximate estimates at our volume.</p>
+  </section>
+
+  <section class="flex flex-col gap-3" id="design">
+>>>>>>> REPLACE

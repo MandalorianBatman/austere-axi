@@ -1,0 +1,49 @@
+<<<<<<< SEARCH
+      <h1 class="text-3xl lg:text-4xl font-bold">Decide each open bug, then send all four at once</h1>
+=======
+      <h1 class="text-3xl lg:text-4xl font-bold">Decide each open bug, then send all five at once</h1>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+        <div class="stat-value text-2xl">4</div>
+        <div class="stat-desc">1 high · 2 medium · 1 low</div>
+=======
+        <div class="stat-value text-2xl">5</div>
+        <div class="stat-desc">2 high · 2 medium · 1 low</div>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+      <span><strong>Suggested split:</strong> fix BUG-311 and BUG-318 for 3.8 (about 0.5 day and 1 hour); defer BUG-322 and BUG-327 to 3.9. BUG-327 has an unknown fix estimate, which is hard to plan against a Wednesday freeze.</span>
+=======
+      <span><strong>Suggested split:</strong> fix BUG-311, BUG-318 and BUG-330 for 3.8 (about 0.5 day, 1 hour and 1 hour); defer BUG-322 and BUG-327 to 3.9. BUG-327 has an unknown fix estimate, which is hard to plan against a Wednesday freeze.</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          </tbody>
+=======
+            <tr data-bug="BUG-330" data-title="Password reset email links expire after 5 minutes instead of 60" data-suggest="fix for 3.8">
+              <td class="font-mono font-bold whitespace-nowrap">BUG-330</td>
+              <td class="min-w-48">Password reset email links expire after 5 minutes instead of 60</td>
+              <td><span class="badge badge-error badge-soft">▲ high</span></td>
+              <td>All users who reset a password</td>
+              <td class="whitespace-nowrap">1 hour</td>
+              <td><span class="badge badge-success badge-outline whitespace-nowrap">fix for 3.8</span></td>
+              <td>
+                <fieldset>
+                  <legend class="sr-only">Decision for BUG-330</legend>
+                  <div class="flex flex-col gap-1">
+                    <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-sm radio-primary" name="BUG-330" value="fix for 3.8"> fix for 3.8</label>
+                    <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-sm radio-primary" name="BUG-330" value="defer to 3.9"> defer to 3.9</label>
+                    <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-sm radio-primary" name="BUG-330" value="won't fix"> won't fix</label>
+                  </div>
+                </fieldset>
+              </td>
+            </tr>
+          </tbody>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+>0 of 4 bugs decided</p>
+=======
+>0 of 5 bugs decided</p>
+>>>>>>> REPLACE
