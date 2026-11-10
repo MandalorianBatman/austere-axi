@@ -1,0 +1,12 @@
+<<<<<<< SEARCH
+                      <span class="badge badge-warning badge-soft badge-sm">Sev3</span>
+                    </div>
+                    <p class="mt-2 font-semibold">Bad config push to the cart cache</p>
+                    <p class="mt-1 text-sm text-base-content/60">Wednesday · 12 min</p>
+=======
+                      <span class="badge badge-error badge-soft badge-sm">Sev2</span>
+                    </div>
+                    <p class="mt-2 font-semibold">Bad config push to the cart cache</p>
+                    <p class="mt-1 text-sm text-base-content/60">Wednesday · 47 min</p>
+                    <p class="mt-2 text-sm"><span class="font-mono">PM-1047</span></p>
+>>>>>>> REPLACE

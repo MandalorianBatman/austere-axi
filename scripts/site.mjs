@@ -5,7 +5,8 @@
 //   gallery/<id>.html   each file in examples/, with its runtime tag pointed at ../austere.js
 //   gallery/thumbs/     screenshots of those pages, taken by scripts/shot.mjs (which also fails on render errors)
 //   gallery/index.html  thumbnail, OpenUI Lang source and token count for each example
-//   assets/hero.png     the landing page's screenshot, unless site/assets/demo.gif exists
+//   assets/hero.png     the landing page's screenshot, unless docs/demo.gif exists (copied to assets/demo.gif)
+//   assets/social-preview.png  og:image, copied from docs/social-preview.png when present (else hero.png)
 //   play/play.js        site/play/*.js bundled (the parser, checker and editor), with play/data.json beside it:
 //                       spec, component catalog and a starter template per example
 //
@@ -23,6 +24,8 @@ const SITE = path.join(ROOT, "site");
 const DIST = path.join(ROOT, "dist");
 const EXAMPLES = path.join(ROOT, "examples");
 const OUT = path.join(ROOT, "_site");
+const DEMO_GIF = path.join(ROOT, "docs", "demo.gif");
+const SOCIAL = path.join(ROOT, "docs", "social-preview.png");
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
 
 const REPO = "https://github.com/MandalorianBatman/austere-axi";
@@ -186,7 +189,7 @@ ${entries.join("\n")}
 }
 
 function heroHtml(example) {
-  const gif = fs.existsSync(path.join(SITE, "assets", "demo.gif"));
+  const gif = fs.existsSync(DEMO_GIF);
   const src = gif ? "assets/demo.gif" : "assets/hero.png";
   const alt = gif ? "Demo: an agent writes a page, the reviewer clicks a part and sends a note." : `The ${example.title} page, rendered by austere-axi.`;
   const caption = gif
@@ -244,7 +247,6 @@ fs.writeFileSync(
     templates: examples.map(({ id, title, description, program }) => ({ id, title, description, program })),
   }),
 );
-
 // 3. Screenshots, from the pages as deployed. shot.mjs fails on render errors.
 const jobs = examples.map((ex) => ({ ex, file: path.join(OUT, "gallery", `${ex.id}.html`), out: path.join(OUT, "gallery", "thumbs", `${ex.id}.png`) }));
 const shots = await pool(jobs, 4, async (job) => ({ job, ...(await shot(job.file, job.out, THUMB)) }));
@@ -252,13 +254,16 @@ const broken = shots.filter((s) => s.code !== 0);
 for (const s of broken) console.error(`gallery/${s.job.ex.id}.html did not render cleanly (exit ${s.code}):\n${s.output}`);
 if (broken.length) process.exit(1);
 fs.copyFileSync(path.join(OUT, "gallery", "thumbs", `${heroExample.id}.png`), path.join(OUT, "assets", "hero.png"));
+if (fs.existsSync(DEMO_GIF)) fs.copyFileSync(DEMO_GIF, path.join(OUT, "assets", "demo.gif"));
+const social = fs.existsSync(SOCIAL);
+if (social) fs.copyFileSync(SOCIAL, path.join(OUT, "assets", "social-preview.png"));
 
 // 4. Pages: the site's own, then the generated gallery.
 fs.writeFileSync(path.join(OUT, "gallery", "index.html"), galleryPage(examples));
 for (const file of htmlFiles(OUT)) {
   const rel = path.relative(OUT, file).split(path.sep).join("/");
   if (rel.startsWith("gallery/") && rel !== "gallery/index.html") continue; // live examples are artifacts, not site pages
-  fs.writeFileSync(file, render(fs.readFileSync(file, "utf8"), rel, { hero: heroHtml(heroExample) }));
+  fs.writeFileSync(file, render(fs.readFileSync(file, "utf8"), rel, { hero: heroHtml(heroExample), ogImage: social ? "social-preview.png" : "hero.png" }));
 }
 
 console.log(`site: ${path.relative(ROOT, OUT)}/ (${examples.length} examples)`);

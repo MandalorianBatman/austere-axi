@@ -1,0 +1,13 @@
+{
+  "name": "austere-axi",
+  "description": "austere-axi: agent-authored review pages with statement-level feedback.",
+  "owner": { "name": "MandalorianBatman" },
+  "plugins": [
+    {
+      "name": "austere",
+      "source": "./",
+      "description": "Review pages the user annotates in the browser: the austere skills plus the austere-axi MCP server.",
+      "category": "productivity"
+    }
+  ]
+}

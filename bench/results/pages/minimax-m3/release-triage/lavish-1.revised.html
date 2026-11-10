@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en" data-theme="luxury" data-lavish-annotate="off">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Release 3.8 Bug Triage</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+    :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+      min-width: 0;
+    }
+    :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+      overflow-wrap: anywhere;
+    }
+    :where(img, svg, video, canvas, iframe) {
+      max-width: 100%;
+      height: auto;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 15% 0%, color-mix(in oklab, var(--color-primary) 12%, transparent), transparent 30rem),
+        radial-gradient(circle at 90% 15%, color-mix(in oklab, var(--color-secondary) 9%, transparent), transparent 24rem),
+        var(--color-base-200);
+    }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+      gap: 0.75rem;
+    }
+
+    .summary-card {
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+      background: color-mix(in oklab, var(--color-base-100) 90%, transparent);
+      box-shadow: 0 12px 35px color-mix(in oklab, var(--color-base-content) 6%, transparent);
+    }
+
+    .release-banner {
+      border: 1px solid color-mix(in oklab, var(--color-primary) 28%, var(--color-base-content) 8%);
+      background:
+        linear-gradient(120deg, color-mix(in oklab, var(--color-primary) 12%, var(--color-base-100)), var(--color-base-100));
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      top: 1.3rem;
+      height: 2px;
+      background: color-mix(in oklab, var(--color-base-content) 14%, transparent);
+      z-index: 0;
+    }
+
+    .timeline-point {
+      position: relative;
+      z-index: 1;
+    }
+
+    .timeline-dot {
+      width: 2.65rem;
+      height: 2.65rem;
+      display: grid;
+      place-items: center;
+      border-radius: 9999px;
+      border: 3px solid var(--color-base-100);
+      box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-base-content) 12%, transparent);
+    }
+
+    .bug-card {
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+      background: var(--color-base-100);
+      box-shadow: 0 16px 45px color-mix(in oklab, var(--color-base-content) 5%, transparent);
+    }
+
+    .bug-id {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.04em;
+    }
+
+    .fact-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.65rem;
+    }
+
+    .fact {
+      min-width: 0;
+      border-radius: 0.75rem;
+      padding: 0.7rem 0.8rem;
+      background: color-mix(in oklab, var(--color-base-200) 78%, transparent);
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 7%, transparent);
+    }
+
+    .severity-high {
+      color: var(--color-error-content);
+      background: var(--color-error);
+      border-color: color-mix(in oklab, var(--color-error) 70%, var(--color-base-content));
+    }
+
+    .severity-medium {
+      color: var(--color-warning-content);
+      background: var(--color-warning);
+      border-color: color-mix(in oklab, var(--color-warning) 70%, var(--color-base-content));
+    }
+
+    .severity-low {
+      color: var(--color-info-content);
+      background: var(--color-info);
+      border-color: color-mix(in oklab, var(--color-info) 70%, var(--color-base-content));
+    }
+
+    .choice label {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 0.65rem;
+      align-items: start;
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 11%, transparent);
+      border-radius: 0.8rem;
+      padding: 0.75rem;
+      cursor: pointer;
+      transition: border-color 150ms ease, background-color 150ms ease;
+      min-width: 0;
+    }
+
+    .choice label:hover {
+      border-color: color-mix(in oklab, var(--color-primary) 45%, transparent);
+      background: color-mix(in oklab, var(--color-primary) 4%, transparent);
+    }
+
+    .choice label:has(input:checked) {
+      border-color: var(--color-primary);
+      background: color-mix(in oklab, var(--color-primary) 9%, transparent);
+    }
+
+    .choice input {
+      margin-top: 0.15rem;
+      accent-color: var(--color-primary);
+    }
+
+    .suggestion {
+      border-left: 3px solid var(--color-primary);
+      padding-left: 0.7rem;
+    }
+
+    .selection-status {
+      min-height: 1.5rem;
+    }
+
+    .sticky-submit {
+      position: sticky;
+      bottom: 1rem;
+      z-index: 5;
+      border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+      background: color-mix(in oklab, var(--color-base-100) 92%, transparent);
+      box-shadow: 0 18px 50px color-mix(in oklab, var(--color-base-content) 16%, transparent);
+      backdrop-filter: blur(14px);
+    }
+
+    .decision-count {
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 760px) {
+      .timeline {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline::before {
+        left: 1.3rem;
+        right: auto;
+        top: 1rem;
+        bottom: 1rem;
+        width: 2px;
+        height: auto;
+      }
+
+      .timeline-point {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.75rem;
+      }
+
+      .fact-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen text-base-content">
+  <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10 lg:px-10">
+    <header class="release-banner rounded-box p-5 shadow-xl sm:p-7">
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div class="mb-3 flex flex-wrap items-center gap-2">
+            <span class="badge badge-primary badge-sm">Release triage</span>
+            <span class="badge badge-outline badge-sm">5 open bugs</span>
+          </div>
+          <h1 class="text-3xl font-black tracking-tight sm:text-4xl">Release 3.8 bug triage</h1>
+          <p class="mt-2 max-w-3xl text-base opacity-80">
+            Choose one release decision for every bug, then send all four decisions back together.
+          </p>
+        </div>
+        <div class="rounded-box border border-base-content/10 bg-base-100/70 px-4 py-3">
+          <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Release schedule</div>
+          <div class="mt-1 font-bold">Ships Thursday</div>
+          <div class="text-sm opacity-75">Code freeze Wednesday 18:00</div>
+        </div>
+      </div>
+
+      <div class="relative mt-7">
+        <div class="timeline">
+          <div class="timeline-point flex flex-col items-center text-center">
+            <div class="timeline-dot bg-warning text-warning-content">
+              <span aria-hidden="true" class="text-lg">❄</span>
+            </div>
+            <div class="mt-2 font-bold">Code freeze</div>
+            <div class="text-sm opacity-70">Wednesday 18:00</div>
+          </div>
+          <div class="hidden text-center opacity-50 sm:block" aria-hidden="true">→</div>
+          <div class="timeline-point flex flex-col items-center text-center">
+            <div class="timeline-dot bg-primary text-primary-content">
+              <span aria-hidden="true" class="text-lg">▲</span>
+            </div>
+            <div class="mt-2 font-bold">Release 3.8</div>
+            <div class="text-sm opacity-70">Ships Thursday</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section class="summary-strip mt-6" aria-label="Triage summary">
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Decisions selected</div>
+        <div id="selected-count" class="mt-1 text-2xl font-black decision-count">0 / 5</div>
+      </div>
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Suggested fixes</div>
+        <div class="mt-1 text-2xl font-black decision-count">3</div>
+      </div>
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Suggested deferrals</div>
+        <div class="mt-1 text-2xl font-black decision-count">2</div>
+      </div>
+      <div class="summary-card rounded-box p-4">
+        <div class="text-xs font-semibold uppercase tracking-wider opacity-60">Unknown estimate</div>
+        <div class="mt-1 text-2xl font-black decision-count">1</div>
+      </div>
+    </section>
+
+    <section class="mt-8" aria-labelledby="triage-heading">
+      <div class="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 id="triage-heading" class="text-2xl font-bold">Bug decisions</h2>
+          <p class="mt-1 opacity-70">Selections stay local until you queue the final batch.</p>
+        </div>
+        <div class="text-sm opacity-70">Required for every bug</div>
+      </div>
+
+      <form id="triage-form" data-lavish-question="release-3.8-bug-triage">
+        <div class="space-y-5">
+          <article class="bug-card rounded-box p-4 sm:p-6" data-bug-card="BUG-311">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="bug-id font-bold text-primary">BUG-311</span>
+                  <span class="badge badge-sm severity-high">high severity</span>
+                </div>
+                <h3 class="mt-2 text-xl font-bold">Checkout button disabled after coupon removal</h3>
+              </div>
+              <div class="shrink-0 rounded-lg bg-primary/10 px-3 py-2 text-sm">
+                <span class="opacity-65">Suggestion:</span>
+                <span class="font-bold">Fix for 3.8</span>
+              </div>
+            </div>
+
+            <div class="fact-grid mt-5">
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Users affected</div>
+                <div class="mt-1 font-bold">~4% of carts</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Fix estimate</div>
+                <div class="mt-1 font-bold">0.5 day</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Severity</div>
+                <div class="mt-1 font-bold">High</div>
+              </div>
+            </div>
+
+            <fieldset class="choice mt-5" aria-label="Decision for BUG-311">
+              <legend class="mb-2 font-semibold">Release decision</legend>
+              <div class="grid gap-2 sm:grid-cols-3">
+                <label><input type="radio" name="BUG-311" value="fix for 3.8" data-label="Checkout button disabled after coupon removal"><span><strong>Fix for 3.8</strong><span class="block text-xs opacity-65">Include in this release</span></span></label>
+                <label><input type="radio" name="BUG-311" value="defer to 3.9" data-label="Checkout button disabled after coupon removal"><span><strong>Defer to 3.9</strong><span class="block text-xs opacity-65">Move to the next release</span></span></label>
+                <label><input type="radio" name="BUG-311" value="won't fix" data-label="Checkout button disabled after coupon removal"><span><strong>Won't fix</strong><span class="block text-xs opacity-65">Do not schedule a fix</span></span></label>
+              </div>
+            </fieldset>
+          </article>
+
+          <article class="bug-card rounded-box p-4 sm:p-6" data-bug-card="BUG-318">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="bug-id font-bold text-primary">BUG-318</span>
+                  <span class="badge badge-sm severity-low">low severity</span>
+                </div>
+                <h3 class="mt-2 text-xl font-bold">Dark mode: unreadable table headers in Reports</h3>
+              </div>
+              <div class="shrink-0 rounded-lg bg-primary/10 px-3 py-2 text-sm">
+                <span class="opacity-65">Suggestion:</span>
+                <span class="font-bold">Fix for 3.8</span>
+              </div>
+            </div>
+
+            <div class="fact-grid mt-5">
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Users affected</div>
+                <div class="mt-1 font-bold">Reports users</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Fix estimate</div>
+                <div class="mt-1 font-bold">1 hour</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Severity</div>
+                <div class="mt-1 font-bold">Low</div>
+              </div>
+            </div>
+
+            <fieldset class="choice mt-5" aria-label="Decision for BUG-318">
+              <legend class="mb-2 font-semibold">Release decision</legend>
+              <div class="grid gap-2 sm:grid-cols-3">
+                <label><input type="radio" name="BUG-318" value="fix for 3.8" data-label="Dark mode: unreadable table headers in Reports"><span><strong>Fix for 3.8</strong><span class="block text-xs opacity-65">Include in this release</span></span></label>
+                <label><input type="radio" name="BUG-318" value="defer to 3.9" data-label="Dark mode: unreadable table headers in Reports"><span><strong>Defer to 3.9</strong><span class="block text-xs opacity-65">Move to the next release</span></span></label>
+                <label><input type="radio" name="BUG-318" value="won't fix" data-label="Dark mode: unreadable table headers in Reports"><span><strong>Won't fix</strong><span class="block text-xs opacity-65">Do not schedule a fix</span></span></label>
+              </div>
+            </fieldset>
+          </article>
+
+          <article class="bug-card rounded-box p-4 sm:p-6" data-bug-card="BUG-322">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="bug-id font-bold text-primary">BUG-322</span>
+                  <span class="badge badge-sm severity-medium">medium severity</span>
+                </div>
+                <h3 class="mt-2 text-xl font-bold">CSV export drops rows over 10,000</h3>
+              </div>
+              <div class="shrink-0 rounded-lg bg-primary/10 px-3 py-2 text-sm">
+                <span class="opacity-65">Suggestion:</span>
+                <span class="font-bold">Defer to 3.9</span>
+              </div>
+            </div>
+
+            <div class="fact-grid mt-5">
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Users affected</div>
+                <div class="mt-1 font-bold">120 accounts</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Fix estimate</div>
+                <div class="mt-1 font-bold">2 days</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Severity</div>
+                <div class="mt-1 font-bold">Medium</div>
+              </div>
+            </div>
+
+            <fieldset class="choice mt-5" aria-label="Decision for BUG-322">
+              <legend class="mb-2 font-semibold">Release decision</legend>
+              <div class="grid gap-2 sm:grid-cols-3">
+                <label><input type="radio" name="BUG-322" value="fix for 3.8" data-label="CSV export drops rows over 10,000"><span><strong>Fix for 3.8</strong><span class="block text-xs opacity-65">Include in this release</span></span></label>
+                <label><input type="radio" name="BUG-322" value="defer to 3.9" data-label="CSV export drops rows over 10,000"><span><strong>Defer to 3.9</strong><span class="block text-xs opacity-65">Move to the next release</span></span></label>
+                <label><input type="radio" name="BUG-322" value="won't fix" data-label="CSV export drops rows over 10,000"><span><strong>Won't fix</strong><span class="block text-xs opacity-65">Do not schedule a fix</span></span></label>
+              </div>
+            </fieldset>
+          </article>
+
+          <article class="bug-card rounded-box p-4 sm:p-6" data-bug-card="BUG-327">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="bug-id font-bold text-primary">BUG-327</span>
+                  <span class="badge badge-sm severity-medium">medium severity</span>
+                </div>
+                <h3 class="mt-2 text-xl font-bold">Push notification sent twice on Android 15</h3>
+              </div>
+              <div class="shrink-0 rounded-lg bg-primary/10 px-3 py-2 text-sm">
+                <span class="opacity-65">Suggestion:</span>
+                <span class="font-bold">Defer to 3.9</span>
+              </div>
+            </div>
+
+            <div class="fact-grid mt-5">
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Users affected</div>
+                <div class="mt-1 font-bold">~9% of Android</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Fix estimate</div>
+                <div class="mt-1 font-bold">Unknown</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Severity</div>
+                <div class="mt-1 font-bold">Medium</div>
+              </div>
+            </div>
+
+            <fieldset class="choice mt-5" aria-label="Decision for BUG-327">
+              <legend class="mb-2 font-semibold">Release decision</legend>
+              <div class="grid gap-2 sm:grid-cols-3">
+                <label><input type="radio" name="BUG-327" value="fix for 3.8" data-label="Push notification sent twice on Android 15"><span><strong>Fix for 3.8</strong><span class="block text-xs opacity-65">Include in this release</span></span></label>
+                <label><input type="radio" name="BUG-327" value="defer to 3.9" data-label="Push notification sent twice on Android 15"><span><strong>Defer to 3.9</strong><span class="block text-xs opacity-65">Move to the next release</span></span></label>
+                <label><input type="radio" name="BUG-327" value="won't fix" data-label="Push notification sent twice on Android 15"><span><strong>Won't fix</strong><span class="block text-xs opacity-65">Do not schedule a fix</span></span></label>
+              </div>
+            </fieldset>
+          </article>
+
+          <article class="bug-card rounded-box p-4 sm:p-6" data-bug-card="BUG-330">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="bug-id font-bold text-primary">BUG-330</span>
+                  <span class="badge badge-sm severity-high">high severity</span>
+                </div>
+                <h3 class="mt-2 text-xl font-bold">Password reset email links expire after 5 minutes instead of 60</h3>
+              </div>
+              <div class="shrink-0 rounded-lg bg-primary/10 px-3 py-2 text-sm">
+                <span class="opacity-65">Suggestion:</span>
+                <span class="font-bold">Fix for 3.8</span>
+              </div>
+            </div>
+
+            <div class="fact-grid mt-5">
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Users affected</div>
+                <div class="mt-1 font-bold">All users who reset a password</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Fix estimate</div>
+                <div class="mt-1 font-bold">1 hour</div>
+              </div>
+              <div class="fact">
+                <div class="text-xs font-semibold uppercase tracking-wide opacity-60">Severity</div>
+                <div class="mt-1 font-bold">High</div>
+              </div>
+            </div>
+
+            <fieldset class="choice mt-5" aria-label="Decision for BUG-330">
+              <legend class="mb-2 font-semibold">Release decision</legend>
+              <div class="grid gap-2 sm:grid-cols-3">
+                <label><input type="radio" name="BUG-330" value="fix for 3.8" data-label="Password reset email links expire after 5 minutes instead of 60"><span><strong>Fix for 3.8</strong><span class="block text-xs opacity-65">Include in this release</span></span></label>
+                <label><input type="radio" name="BUG-330" value="defer to 3.9" data-label="Password reset email links expire after 5 minutes instead of 60"><span><strong>Defer to 3.9</strong><span class="block text-xs opacity-65">Move to the next release</span></span></label>
+                <label><input type="radio" name="BUG-330" value="won't fix" data-label="Password reset email links expire after 5 minutes instead of 60"><span><strong>Won't fix</strong><span class="block text-xs opacity-65">Do not schedule a fix</span></span></label>
+              </div>
+            </fieldset>
+          </article>
+        </div>
+
+        <div class="sticky-submit mt-6 rounded-box p-4">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="min-w-0">
+              <div id="selection-status" class="selection-status font-semibold" role="status" aria-live="polite">
+                Select a decision for all 5 bugs.
+              </div>
+              <div class="mt-1 text-sm opacity-65">Your batch will include every bug ID and its selected decision.</div>
+            </div>
+            <button id="queue-batch" type="submit" class="btn btn-primary btn-lg shrink-0" disabled>
+              Send all 5 decisions
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <div class="mt-6 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <button id="copy-answers" type="button" class="btn btn-outline btn-sm">Copy all answers</button>
+          <span id="copy-status" class="ml-2 text-sm opacity-70" role="status" aria-live="polite"></span>
+        </div>
+        <div class="text-sm opacity-65">The review uses only the supplied bug facts.</div>
+      </div>
+      <textarea id="manual-copy" class="textarea textarea-bordered mt-2 hidden w-full" rows="10" aria-label="Answers to copy manually" readonly></textarea>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const form = document.getElementById('triage-form');
+      const count = document.getElementById('selected-count');
+      const status = document.getElementById('selection-status');
+      const submit = document.getElementById('queue-batch');
+      const bugIds = ['BUG-311', 'BUG-318', 'BUG-322', 'BUG-327', 'BUG-330'];
+
+      function selectedDecisions() {
+        return bugIds.map((id) => {
+          const input = form.querySelector(`input[name="${id}"]:checked`);
+          return input ? { id, label: input.dataset.label, disposition: input.value } : null;
+        });
+      }
+
+      function updateState() {
+        const decisions = selectedDecisions();
+        const selected = decisions.filter(Boolean);
+        count.textContent = `${selected.length} / ${bugIds.length}`;
+        submit.disabled = selected.length !== bugIds.length;
+
+        if (selected.length === 0) {
+          status.textContent = 'Select a decision for all 5 bugs.';
+        } else if (selected.length < bugIds.length) {
+          const missing = bugIds.filter((id) => !selected.some((item) => item.id === id));
+          status.textContent = `${selected.length} of 4 selected. Still need a decision for ${missing.join(', ')}.`;
+        } else {
+          status.textContent = 'All 5 decisions selected. Ready to send the batch.';
+        }
+      }
+
+      form.addEventListener('change', updateState);
+      updateState();
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const decisions = selectedDecisions();
+
+        if (decisions.some((item) => item === null)) {
+          status.textContent = 'Select a decision for every bug before sending.';
+          return;
+        }
+
+        const summary = decisions.map((item) => `${item.id}: ${item.disposition}`).join('; ');
+        const prompt = `Apply the release 3.8 triage decisions below and return a receipt covering every submitted bug ID. For each bug, state one outcome: addressed with concrete evidence, deferred with a reason, or rejected with a reason. Submitted decisions: ${summary}`;
+
+        if (window.lavish?.queuePrompt) {
+          window.lavish.queuePrompt(prompt, {
+            tag: 'tracked-batch',
+            text: 'Send all 5 release 3.8 bug decisions',
+            element: form,
+            queueKey: 'release-3.8-bug-triage',
+            data: {
+              question: 'release-3.8-bug-triage',
+              items: decisions.map((item) => ({
+                id: item.id,
+                label: item.label,
+                disposition: item.disposition
+              }))
+            }
+          });
+          status.textContent = 'All 5 decisions queued. Use Send to Agent to deliver the batch.';
+          submit.disabled = true;
+          return;
+        }
+
+        const output = decisions.map((item) => `${item.id}: ${item.disposition}`).join('\n');
+        const manual = document.getElementById('manual-copy');
+        manual.value = output;
+        manual.classList.remove('hidden');
+        manual.focus();
+        manual.select();
+        status.textContent = 'Decisions ready. Copy the batch below and send it to the agent.';
+      });
+
+      document.getElementById('copy-answers').addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const copyStatus = document.getElementById('copy-status');
+        const manual = document.getElementById('manual-copy');
+        const decisions = selectedDecisions().filter(Boolean);
+        const text = decisions.map((item) => `${item.id}: ${item.disposition}`).join('\n');
+
+        if (!text) {
+          copyStatus.textContent = 'No answers to copy yet.';
+          return;
+        }
+
+        try {
+          if (typeof navigator.clipboard?.writeText !== 'function') throw new Error('Clipboard unavailable');
+          await navigator.clipboard.writeText(text);
+          copyStatus.textContent = 'Answers copied.';
+          manual.classList.add('hidden');
+          return;
+        } catch {}
+
+        manual.value = text;
+        manual.classList.remove('hidden');
+        manual.focus();
+        manual.select();
+        copyStatus.textContent = 'Clipboard unavailable. Copy the answers below manually.';
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+```openui
+findingOneHeading = InlineHeader("1. Blocker — SQL injection")
+findingOneFix = TextContent("Fix: use a parameterized query, `WHERE name ILIKE $1` with the value `%${q}%`.")
+findingOne = Stack([findingOneHeading, findingOneDetails, findingOneFix, findingOneDiff], "column", "s")
+```

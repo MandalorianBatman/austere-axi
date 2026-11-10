@@ -1,0 +1,51 @@
+<<<<<<< SEARCH
+    <h1 class="text-3xl sm:text-4xl font-bold">Decide each open bug, then send all four back at once</h1>
+=======
+    <h1 class="text-3xl sm:text-4xl font-bold">Decide each open bug, then send all five back at once</h1>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+        <li><span class="badge badge-success">fix for 3.8</span> BUG-311, BUG-318</li>
+=======
+        <li><span class="badge badge-success">fix for 3.8</span> BUG-311, BUG-318, BUG-330</li>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+    <section class="card card-border bg-base-200" aria-label="Submit decisions">
+=======
+    <article class="card card-border bg-base-200" data-bug="BUG-330" data-title="Password reset email links expire after 5 minutes instead of 60" data-suggest="fix">
+      <div class="card-body gap-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono font-bold">BUG-330</span>
+          <span class="badge badge-error">Severity: high</span>
+        </div>
+        <h2 class="card-title text-lg">Password reset email links expire after 5 minutes instead of 60</h2>
+        <dl class="grid gap-2 sm:grid-cols-2 text-sm">
+          <div><dt class="opacity-70">Users affected</dt><dd class="font-semibold">All users who reset a password</dd></div>
+          <div><dt class="opacity-70">Fix estimate</dt><dd class="font-semibold">1 hour</dd></div>
+        </dl>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Decision for BUG-330</legend>
+          <div class="grid gap-2 sm:grid-cols-3">
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-330" value="fix for 3.8"> fix for 3.8 <span class="badge badge-ghost badge-sm">suggested</span></label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-330" value="defer to 3.9"> defer to 3.9</label>
+            <label class="label cursor-pointer justify-start gap-2"><input type="radio" class="radio radio-primary" name="BUG-330" value="won't fix"> won't fix</label>
+          </div>
+        </fieldset>
+      </div>
+    </article>
+
+    <section class="card card-border bg-base-200" aria-label="Submit decisions">
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <span class="badge badge-outline">undecided: 4</span>
+=======
+          <span class="badge badge-outline">undecided: 5</span>
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+          <button type="submit" class="btn btn-primary">Queue all 4 decisions</button>
+=======
+          <button type="submit" class="btn btn-primary">Queue all 5 decisions</button>
+>>>>>>> REPLACE

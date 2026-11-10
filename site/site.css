@@ -65,7 +65,7 @@ pre { margin: 0 0 16px; padding: 14px 16px; overflow: auto; background: var(--pa
 .cmd button:hover { color: var(--text); }
 .hero .cmd { max-width: 640px; }
 
-/* Hero image: a browser frame around a generated screenshot. Replace with a demo GIF by adding site/assets/demo.gif. */
+/* Hero image: a browser frame around a generated screenshot. Replace with a demo GIF by adding docs/demo.gif. */
 .shot { display: block; margin: 36px 0 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--panel); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6); }
 .shot:hover { text-decoration: none; border-color: #3a3a42; }
 .shot-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: 0.8rem; }

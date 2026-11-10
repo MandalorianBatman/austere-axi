@@ -1,0 +1,12 @@
+```openui
+sqlInjectionFinding = Card([CardHeader("1. SQL injection", "Line 18"), sqlInjectionSeverity, sqlInjectionText, sqlInjectionFixHeader, sqlInjectionFix])
+sqlInjectionTag = Tag("Blocker", null, "md", "danger")
+sqlInjectionFixHeader = InlineHeader("Fix", "Pass the value as a bound parameter instead of concatenating it")
+sqlInjectionFix = CodeBlock("javascript", "const q = req.query.q;
+const rows = await db.query(
+  \"SELECT id, name, email FROM users WHERE name ILIKE $1\",
+  [`%${q}%`]
+);")
+summaryFacts = EntityList([{left: "File", right: "src/routes/users.js"}, {left: "Change", right: "+9 -1"}, {left: "Tests", right: "31 passed"}, {left: "Findings", right: "4 (1 blocker, 2 medium, 1 low)"}])
+verdictCallout = Callout("error", "Verdict: request changes", "One blocker (SQL injection) and two medium findings need to be addressed.")
+```

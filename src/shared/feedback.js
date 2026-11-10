@@ -24,7 +24,7 @@ export function describeItem(it, at) {
   if (it.kind === "annotation") {
     /** @type {Record<string, any>} */
     const o = { annotation: `${it.target} (${it.component})`, ...at(it.target) };
-    const within = (it.path || []).slice(0, -1).filter((p) => p !== "root");
+    const within = (Array.isArray(it.path) ? it.path : []).slice(0, -1).filter((p) => typeof p === "string" && p !== "root");
     if (within.length) o.within = within.join(" > ");
     if (it.selection) o.selection = it.selection;
     else if (it.excerpt) o.excerpt = it.excerpt;

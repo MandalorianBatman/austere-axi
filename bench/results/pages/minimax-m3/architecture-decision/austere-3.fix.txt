@@ -1,0 +1,3 @@
+```openui
+proposalFlow = Architecture([orders, sns, billingQueue, shippingQueue, notificationsQueue], [ordersToSns, snsToBilling, snsToShipping, snsToNotifications], [], "right")
+```

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { readArtifact, replaceProgram, rewriteRuntime } from "../src/cli/artifact.js";
 import { checkHtml, statementLines } from "../src/cli/check.js";
@@ -114,4 +117,28 @@ test("check suggests auto only when auto fits, and warns once for a diagram show
   // One diagram in two tabs: one warning.
   const twice = checkHtml(page(`root = Stack([tabs])\ntabs = Tabs([t1, t2])\nt1 = TabItem("a", "A", [d])\nt2 = TabItem("b", "B", [d])\n${diagram(9, "Step", "right")}`));
   assert.equal(twice.warnings.filter((w) => w.code === "architecture-layout").length, 1);
+});
+
+test("patch reports added statements dropped as unreferenced, not deletions", () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-patch-state-"));
+  const env = { ...process.env, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" };
+  const file = path.join(state, "page.html");
+  fs.writeFileSync(file, `<!doctype html><html><head><meta charset="utf-8"><title>Patch</title><script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head><body><script type="text/openui">
+root = Stack([a, b])
+a = TextContent("a")
+b = TextContent("b")
+</script></body></html>`);
+  const patch = (input) => spawnSync(process.execPath, ["src/cli/main.js", "patch", file], { env, input, encoding: "utf8" });
+  const orphan = patch('extra = TextContent("lost")\n');
+  assert.equal(orphan.status, 0, orphan.stderr);
+  assert.match(orphan.stdout, /dropped.*extra/);
+  assert.match(orphan.stdout, /warning: "unreferenced statement\(s\) dropped: extra/);
+  const referenced = patch('root = Stack([a, b, c])\nc = TextContent("c")\n');
+  assert.equal(referenced.status, 0, referenced.stderr);
+  assert.doesNotMatch(referenced.stdout, /^(dropped|warning):/m);
+  const deleted = patch("root = Stack([a, c])\nb = null\n");
+  assert.equal(deleted.status, 0, deleted.stderr);
+  assert.doesNotMatch(deleted.stdout, /^(dropped|warning):/m);
+  assert.doesNotMatch(fs.readFileSync(file, "utf8"), /^b = /m);
+  fs.rmSync(state, { recursive: true, force: true });
 });

@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Vector database shortlist</title>
+  <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([useCaseCard, recommendationCard, comparisonCard, shortlistCard], "column", "l")
+useCaseCard = Card([CardHeader("Evaluation context", "Semantic search over 40M document chunks with 768-dim embeddings"), useCaseFacts, useCaseNote])
+useCaseFacts = EntityList([{left: "Dataset size", right: "40M document chunks"}, {left: "Embedding dimensions", right: "768"}, {left: "p95 query latency target", right: "50 ms"}])
+useCaseNote = MarkDownRenderer("Latency values below are from **our test at 40M**. Cost estimates and capabilities are used exactly as provided.")
+recommendationCard = Card([CardHeader("Recommended shortlist", "Qdrant offers the best latency per dollar; Pinecone has the lowest latency and no operations burden"), recommendationCards, recommendationNote])
+recommendationCards = OverviewCardBlock([qdrantOverview, pineconeOverview], "grid", true)
+qdrantOverview = OverviewCardItem("qdrant", IconText("Qdrant", "circle-gauge", "info"), MetricIndicatorInline("44 ms p95", "$1,250 estimated monthly cost", {direction: "up", value: 0}))
+pineconeOverview = OverviewCardItem("pinecone", IconText("Pinecone", "zap", "success"), MetricIndicatorInline("38 ms p95", "$3,100 estimated monthly cost", {direction: "up", value: 0}))
+recommendationNote = Callout("info", "Why these two", "Qdrant has the lowest estimated monthly cost and is the only option below the 50 ms p95 target that is also open source and self-hostable. Pinecone is the fastest option and is managed only, so it avoids operations work.")
+comparisonCard = Card([CardHeader("Comparison", "Measured latency, estimated cost, and operational trade-offs"), comparisonTable, comparisonLegend])
+comparisonTable = Table([Col("Vector database", ["Pinecone", "Weaviate", "Qdrant", "Milvus"]), Col("Hosting", ["managed only", "managed or self-host", "managed or self-host", "self-host (Zilliz for managed)"]), Col("p95 latency at 40M", [pineconeLatency, weaviateLatency, qdrantLatency, milvusLatency], "number"), Col("Est. monthly cost", ["$3,100", "$1,900", "$1,250", "$1,400 + ops time"]), Col("Hybrid search", ["yes", "yes", "yes", "partial"]), Col("Metadata filtering", ["good", "good", "very good", "good"]), Col("License", ["proprietary", "BSD-3", "Apache-2.0", "Apache-2.0"])])
+pineconeLatency = Text("number", "38 ms", "meets target")
+weaviateLatency = Text("number", "61 ms", "above target")
+qdrantLatency = Text("number", "44 ms", "meets target")
+milvusLatency = Text("number", "52 ms", "above target")
+comparisonLegend = MarkDownRenderer("**Target:** p95 latency below 50 ms. The target is met by **Pinecone** and **Qdrant** in our test.")
+shortlistCard = Card([CardHeader("Select two to shortlist", "Choose exactly two databases, then send the shortlist for review"), shortlistForm])
+shortlistForm = Form("shortlist", shortlistButtons, [shortlistField, reviewerNotesField])
+shortlistField = FormControl("Shortlist", CheckBoxGroup("selectedDatabases", [pineconeChoice, weaviateChoice, qdrantChoice, milvusChoice]), "Select two options")
+pineconeChoice = CheckBoxItem("pinecone", "Pinecone — 38 ms p95, $3,100, managed only, proprietary")
+weaviateChoice = CheckBoxItem("weaviate", "Weaviate — 61 ms p95, $1,900, managed or self-host, BSD-3")
+qdrantChoice = CheckBoxItem("qdrant", "Qdrant — 44 ms p95, $1,250, managed or self-host, Apache-2.0")
+milvusChoice = CheckBoxItem("milvus", "Milvus — 52 ms p95, $1,400 plus ops time, self-host, Apache-2.0")
+reviewerNotesField = FormControl("Notes", TextArea("notes", "Optional notes about the shortlist", 3))
+shortlistButtons = Buttons([Button("Send shortlist", @ToAssistant("Vector database shortlist decision"), "primary")])
+</script>
+</body>
+</html>
