@@ -146,6 +146,6 @@ test("artifact responses carry their own sandbox, so a top-level load gets an op
     assert.equal(r.status, 200, route);
     const csp = r.headers["content-security-policy"] || "";
     assert.match(csp, /(^|;)\s*sandbox\b/, `${route}: no CSP sandbox`);
-    assert.doesNotMatch(csp, /allow-same-origin|allow-popups-to-escape-sandbox/, route);
+    assert.doesNotMatch(csp, /allow-same-origin|allow-top-navigation/, route);
   }
 });

@@ -626,8 +626,11 @@ export async function runServer({ port, verbose = false, alsoListen = [] }) {
 
   // Artifact responses carry their own sandbox, so the page and anything it
   // loads get an opaque origin even when opened top-level (a popup, a pasted
-  // link) and never run with the owner's authority on this origin.
-  const ARTIFACT_CSP = "sandbox allow-scripts allow-popups allow-forms";
+  // link) and never run with the owner's authority on this origin. Popups may
+  // drop that sandbox so external links work from a page opened on its own:
+  // in the review frame they still inherit the iframe's flags, and a popup on
+  // an artifact URL gets this header again.
+  const ARTIFACT_CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms";
 
   function serveArtifact(req, res, s, rest) {
     const dir = path.dirname(s.file);

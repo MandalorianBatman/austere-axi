@@ -16,6 +16,7 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-sandbox-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-sandbox-work-"));
 const FILE = path.join(WORK, "escape.html");
+const LINKS_FILE = path.join(WORK, "links.html");
 let port;
 let server;
 let browser;
@@ -37,6 +38,17 @@ if (window.parent === window) {
   addEventListener("pointerdown", () => window.open(location.pathname), true);
 }
 </script></body></html>`;
+
+// A new-window link (as Markdown and URL cells render) and a popup on the
+// page's own URL. A popup reports its origin in its title.
+const LINKS = `<!doctype html><html><head><title>Links</title></head><body>
+<a id="ext" href="https://example.com/x" target="_blank">external</a>
+<button id="self">self</button>
+<script>
+if (window.opener) document.title = "origin:" + self.origin;
+document.getElementById("self").addEventListener("click", () => window.open(location.pathname));
+</script></body></html>`;
+const ORIGIN_PAGE = { status: 200, contentType: "text/html", body: "<script>document.title = self.origin</script>" };
 
 function api(route, body) {
   return new Promise((resolve, reject) => {
@@ -65,6 +77,7 @@ before(async () => {
   }
   browser = launched.browser;
   fs.writeFileSync(FILE, ARTIFACT);
+  fs.writeFileSync(LINKS_FILE, LINKS);
   port = await freePort();
   server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.js"), "server", "--port", String(port)], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" },
@@ -142,6 +155,53 @@ test("the chrome opens external links for the frame, never its own origin", asyn
     await send("https://example.com/docs");
     const popup = await popupP;
     await popup.waitForURL("https://example.com/docs");
+  } finally {
+    await context.close();
+  }
+});
+
+test("a new-window link in the frame opens through the chrome, outside the sandbox", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { session } = await api("/api/open", { file: LINKS_FILE });
+  const context = await browser.newContext();
+  await context.route("https://example.com/**", (r) => r.fulfill(ORIGIN_PAGE));
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+    const frame = await (await page.waitForSelector("iframe.frame")).contentFrame();
+    await frame.waitForSelector("#ext");
+    await page.click('.seg button[data-mode="explore"]');
+    const popupP = context.waitForEvent("page", { timeout: 5000 });
+    await frame.click("#ext");
+    const popup = await popupP;
+    await popup.waitForURL("https://example.com/x");
+    await popup.waitForFunction(() => document.title !== "", null, { timeout: 5000 });
+    assert.equal(await popup.title(), "https://example.com", "the link opened in a sandboxed popup");
+  } finally {
+    await context.close();
+  }
+});
+
+test("a page opened on its own lets external popups escape, but its own URL stays sandboxed", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { session } = await api("/api/open", { file: LINKS_FILE });
+  const context = await browser.newContext();
+  await context.route("https://example.com/**", (r) => r.fulfill(ORIGIN_PAGE));
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}/a/links.html`);
+    await page.waitForSelector("#self");
+    let popupP = context.waitForEvent("page", { timeout: 5000 });
+    await page.click("#self");
+    let popup = await popupP;
+    await popup.waitForFunction(() => /^origin:/.test(document.title), null, { timeout: 5000 });
+    assert.equal(await popup.title(), "origin:null", "a popup on the artifact URL left the sandbox");
+    popupP = context.waitForEvent("page", { timeout: 5000 });
+    await page.click("#ext");
+    popup = await popupP;
+    await popup.waitForURL("https://example.com/x");
+    await popup.waitForFunction(() => document.title !== "", null, { timeout: 5000 });
+    assert.equal(await popup.title(), "https://example.com", "an external link opened sandboxed");
   } finally {
     await context.close();
   }

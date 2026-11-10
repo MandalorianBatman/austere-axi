@@ -231,7 +231,7 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. It nev
 - `Host` headers must be on an allowlist (DNS-rebinding defense).
 - Browser routes that change state refuse a foreign `Origin`.
 - Invite tokens are random, compared in constant time, and kept out of the log. A reviewer link can only add notes to its own page. See [Team review](#team-review).
-- The page runs in a sandboxed iframe with no same-origin access. Packs run there too. Page files are also served with a `Content-Security-Policy: sandbox` header, so the page stays sandboxed when opened in a popup or its own tab. Links the page opens go through the review page.
+- The page runs in a sandboxed iframe with no same-origin access. Packs run there too. Page files are also served with a `Content-Security-Policy: sandbox` header, so the page stays sandboxed when opened in a popup or its own tab. In review, links that open a new window are opened by the review page, and only if they are external `http(s):` or `mailto:` links. A popup the frame opens any other way stays sandboxed.
 - The server serves files only from the page's own directory, with no dotfiles.
 - Third-party packs need `--trust`. Installed packs must match their lockfile hash; CDN loads use Subresource Integrity.
 

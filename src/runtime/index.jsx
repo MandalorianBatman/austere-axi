@@ -281,6 +281,18 @@ function boot() {
   }
 
   annotator = createAnnotator({ post: (msg) => bridge.send(msg) });
+  // Links that would open a new window (markdown, URL cells) would get a
+  // sandboxed popup that breaks most sites, so the chrome opens them instead.
+  // The chrome refuses this server's own URLs; those keep the sandboxed popup.
+  document.addEventListener("click", (e) => {
+    if (e.defaultPrevented || e.button !== 0) return;
+    const a = e.target.closest?.("a[href]");
+    if (!a || !/^(https?|mailto):/i.test(a.href) || (a.protocol === location.protocol && a.host === location.host)) return;
+    const target = (a.getAttribute("target") || "").toLowerCase();
+    if (!target || target === "_self") return;
+    e.preventDefault();
+    openExternal(bridge, a.href);
+  });
   onRuntimeError((err) => bridge.send({ type: "runtime-error", error: err }));
   bridge.on("init", async (d) => {
     bridge.connected = true;
