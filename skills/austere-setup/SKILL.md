@@ -26,6 +26,8 @@ Run `npx -y austere-axi --help`. It must print the `WORKFLOW` section. If npm ca
 
 This skill tells agents when to make a page, and adds the `/austere` command.
 
+If the `austere` skill is already available (for example from the austere Claude Code plugin), skip this step.
+
 Ask: install it for all projects (global), or only this project? Default: global.
 
 ```sh

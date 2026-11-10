@@ -92,6 +92,7 @@ COMMANDS
                                    wait for the owner to send them on; --auto skips the wait
   ${BIN} share list [--links] | revoke <name|id>
   ${BIN} stop                    stop the background server
+  ${BIN} mcp                     MCP server on stdio: spec check open poll reply patch end as tools
 
 ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
@@ -894,6 +895,10 @@ async function main() {
       return cmdStop();
     case "server":
       return cmdServer(flags);
+    case "mcp": {
+      const { runMcp } = await import("./mcp.js");
+      return runMcp();
+    }
     case "open":
       return cmdOpen(rest[0], flags);
     case "help":
