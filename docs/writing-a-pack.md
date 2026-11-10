@@ -162,7 +162,7 @@ Pin `austere-axi` as a dev dependency (`^0.4.1`) and publish only `dist`, `READM
 npm publish
 ```
 
-Users install it with `austere-axi components add austere-pack-gantt --trust`. `--trust` is required for any pack outside `@austere-axi/`: its code runs inside the review page, so tell users what it does and keep it small enough to read. The README of the Gantt pack is a template for that.
+Once it is published, users install it with `austere-axi components add austere-pack-gantt --trust`. The Gantt pack is not on npm yet, so until then use `austere-axi components add <path-to-clone> --trust` or the `.tgz` from step 5. `--trust` is required for any pack outside `@austere-axi/`: its code runs inside the review page, so tell users what it does and keep it small enough to read. The README of the Gantt pack is a template for that.
 
 A GitHub Release can publish through npm trusted publishing instead of a token. Copy [`publish.yml`](https://github.com/MandalorianBatman/austere-pack-gantt/blob/main/.github/workflows/publish.yml) and set the trusted publisher once on npmjs.com.
 
