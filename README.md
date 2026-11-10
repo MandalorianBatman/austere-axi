@@ -213,7 +213,7 @@ Send the link to the teammate. The link needs Tailscale (or `AUSTERE_AXI_HOST`);
 - **Author:** `poll` and `feedback` show `from: <name>` on each teammate's note. Your own notes have no `from`. The hub Notes view shows the author and can filter on it.
 - **Reviewers can:** read the page and the conversation, and add notes. They cannot end the review, export, or send held notes.
 
-Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token; the browser keeps it in a cookie and the address bar drops it.
+Trust model: anyone who has the link, and can reach your machine on the tailnet, can post notes under that name until you revoke it. Share links only with people you trust, and revoke when the review is done. The link holds a random 192-bit token. Opening it shows a "Continue as <name>" button; pressing it (a same-origin POST) trades the token for a cookie and the address bar drops it. A link opened from another site therefore cannot switch your browser into a reviewer.
 
 Off loopback, a request without a valid invite or the owner key is refused. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links stop working, delete that file and restart the server. Behind a reverse proxy on the same machine, every request looks local, so it acts as you.
 
