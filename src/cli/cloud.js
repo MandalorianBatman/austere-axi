@@ -82,28 +82,35 @@ const IMAGE_TYPES = {
   ".avif": "image/avif",
 };
 
-// A relative image path inside a string or a Markdown link: "a/b.png", 'x.svg', ](shot.jpg).
-// No scheme (http:, data:), no leading / or #, no quotes, parentheses or whitespace.
-const REL_IMAGE_RE = /(?<=["'(])(?![A-Za-z][A-Za-z0-9+.-]*:|[/#\\])[^"'()\s]+?\.(?:png|jpe?g|gif|webp|svg|avif)(?=["')])/gi;
+// A relative image path: no scheme (http:, data:), no leading / or #, no quotes, parentheses or whitespace.
+const REL_PATH = String.raw`(?![A-Za-z][A-Za-z0-9+.-]*:|[/#\\])[^"'()\s]+?\.(?:png|jpe?g|gif|webp|svg|avif)`;
+const STRING = String.raw`(?:"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')`;
+// Only where the page expects an image: the src of `Image(alt, src)`, and Markdown `![alt](src)`.
+// Other strings that look like paths (FileTree entries, code) stay text.
+const IMAGE_SRC_RE = new RegExp(String.raw`(\bImage\s*\(\s*${STRING}\s*,\s*(["']))(${REL_PATH})(?=\2)`, "gi");
+const MD_IMAGE_RE = new RegExp(String.raw`(!\[[^\]\n]*\]\()(${REL_PATH})(?=\))`, "gi");
 
 function sha256(text) {
   return crypto.createHash("sha256").update(text, "utf8").digest("hex");
 }
 
-/** The data: URL for an image beside the page, held to the rule the local server serves by: the page's own directory, no dotfiles. */
+const outside = (rel) => rel === "" || rel.startsWith("..") || path.isAbsolute(rel) || rel.split(/[\\/]/).some((seg) => seg.startsWith("."));
+
+/** The data: URL for an image beside the page, under the rule the local server serves files by: the page's own directory, no dotfiles, after symlinks. */
 function imageDataUrl(dir, rel) {
+  const refuse = () => new CloudError(`image ${rel} is outside the page's folder (or a dotfile); publish inlines only images beside the page`);
   const target = path.resolve(dir, rel);
-  const inside = path.relative(dir, target);
-  if (!inside || inside.startsWith("..") || path.isAbsolute(inside) || inside.split(/[\\/]/).some((seg) => seg.startsWith("."))) {
-    throw new CloudError(`image ${rel} is outside the page's folder (or a dotfile); publish inlines only images beside the page`);
-  }
-  let data;
+  if (outside(path.relative(dir, target))) throw refuse();
+  let real;
   try {
-    data = fs.readFileSync(target);
+    real = fs.realpathSync(target);
   } catch {
     throw new CloudError(`image ${rel} not found next to the page (${target})`);
   }
-  return `data:${IMAGE_TYPES[path.extname(target).toLowerCase()]};base64,${data.toString("base64")}`;
+  // The check above is lexical; a symlink inside the folder can still lead out of it, or to a dotfile.
+  if (outside(path.relative(fs.realpathSync(dir), real))) throw refuse();
+  if (!fs.statSync(real).isFile()) throw new CloudError(`image ${rel} is not a file`);
+  return `data:${IMAGE_TYPES[path.extname(target).toLowerCase()]};base64,${fs.readFileSync(real).toString("base64")}`;
 }
 
 /**
@@ -131,10 +138,13 @@ export function bundlePage(abs, html, version = VERSION) {
   // Images first: only inside the program, so offsets are the ones readArtifact found.
   const dir = path.dirname(abs);
   const urls = new Map();
-  const program = art.program.replace(REL_IMAGE_RE, (rel) => {
+  const inline = (rel) => {
     if (!urls.has(rel)) urls.set(rel, imageDataUrl(dir, rel));
     return urls.get(rel);
-  });
+  };
+  const program = art.program
+    .replace(IMAGE_SRC_RE, (_, before, _q, rel) => before + inline(rel))
+    .replace(MD_IMAGE_RE, (_, before, rel) => before + inline(rel));
   const withImages = html.slice(0, art.programStart) + program + html.slice(art.programEnd);
 
   // Same order as export: Mermaid, the runtime, then packs (they register with the runtime).

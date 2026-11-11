@@ -107,7 +107,8 @@ COMMANDS
   ${BIN} publish <file>          hosted share link (austere.kasat.xyz): anyone with the link can
                                    view the page and add notes. Uploads the page, its installed packs
                                    and images beside it. Again on the same file: same link, updated.
-                                   [--auto] reviewers' notes skip your hold   [--new] a fresh link
+                                   [--new] a fresh link   [--auto] record reviewers' notes as auto, not held
+                                   Hosted notes do not reach poll or feedback yet; publish list counts them.
   ${BIN} publish list | rm <file|id>   your hosted pages (expiry, notes) | delete one now
                                    The only command that contacts the service.
   ${BIN} stop                    stop the background server
@@ -856,12 +857,12 @@ async function cmdPublish(args, flags) {
       status: r.updated ? "updated" : "published",
       file: abs,
       url: r.url,
-      mode: r.auto ? "auto: reviewers' notes go straight to the agent" : "hold: reviewers' notes wait until you send them on",
+      mode: r.auto ? "auto" : "hold",
       expires: shortDate(r.expiresAt),
       packs: r.packs || undefined,
       images: r.images || undefined,
-      note: "Anyone with the link can view the page and add notes. It expires 30 days after the last publish.",
-      next: `${BIN} publish ${quote(sub)} again updates this link; publish rm deletes it.`,
+      note: "Anyone with the link can view the page and add notes. Those notes do not reach poll or feedback yet; publish list shows how many there are. The page expires 30 days after the last publish.",
+      next: `${BIN} publish ${quote(sub)}${r.auto ? " --auto" : ""} again updates this link; ${BIN} publish rm ${quote(sub)} deletes it.`,
     });
   } catch (err) {
     fail(String(err?.message || err), err?.status ? { http: err.status } : {});

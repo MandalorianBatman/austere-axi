@@ -305,7 +305,7 @@ austere-axi publish rm plan.html       # or the page id; the link stops working 
 
 - **What is uploaded:** the file, with the runtime tag pointed at the service's pinned copy of this CLI version, the installed packs it declares, and images beside it inlined as `data:` URLs. A declared pack that is not installed at that version is an error. The upload limit is 1 MB after gzip.
 - **Who can see it:** anyone with the link (an unguessable id, `noindex`). Reviewers type a name before their first note. The page runs in the same opaque-origin sandbox as in local review and cannot make network requests.
-- **Hold:** reviewers' notes wait for you by default; `--auto` on a publish sends them straight to the agent.
+- **Notes:** reviewers' notes are kept on the service, and `publish list` counts them. They do not reach `poll` or `feedback` yet (see [Not in v1](#not-in-v1)). They will be held for you by default; `--auto` on a publish records that they should go straight to the agent.
 - **Expiry:** 30 days after the last publish.
 - **Owner token:** created on the first `publish`, stored in `~/.austere-axi/cloud.json` (mode 0600). It only controls your pages; deleting the file loses control of them until they expire.
 

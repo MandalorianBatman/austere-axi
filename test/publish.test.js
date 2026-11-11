@@ -237,6 +237,21 @@ test("bundling: Mermaid and bundled packs get /rt/ tags after the runtime; relat
   assert.throws(() => bundlePage(abs, page('root = Image("x", "../outside.png")')), /outside the page's folder/);
   assert.throws(() => bundlePage(abs, page('root = Image("x", "img/.hidden.png")')), /dotfile/);
   assert.throws(() => bundlePage(abs, page('root = Image("x", "img/none.png")')), /not found/);
+
+  // Path-like text that is not an image reference stays text.
+  const text = 'root = Stack([t, c])\nt = FileTree(["img/shot.png", "src/missing.png"])\nc = CodeBlock("js", "import logo from \'./logo.svg\'")';
+  assert.equal(bundlePage(abs, page(text)).images, 0);
+
+  // A symlink beside the page that leads out of its folder is refused, as the local server refuses to serve it.
+  if (process.platform !== "win32") {
+    fs.writeFileSync(path.join(WORK, "..", "austere-publish-secret.txt"), "SECRET");
+    fs.symlinkSync(path.join(WORK, "..", "austere-publish-secret.txt"), path.join(WORK, "img", "leak.png"));
+    try {
+      assert.throws(() => bundlePage(abs, page('root = Image("x", "img/leak.png")')), /outside the page's folder/);
+    } finally {
+      fs.rmSync(path.join(WORK, "..", "austere-publish-secret.txt"), { force: true });
+    }
+  }
 });
 
 test("bundling: installed packs upload by SHA-256 as /pk/ blobs; missing or mismatched packs are errors", () => {
