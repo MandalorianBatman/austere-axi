@@ -174,6 +174,15 @@ function App({ initialProgram, initialLibrary, bridge, annotator, initialState }
     [bridge, annotator],
   );
 
+  useEffect(
+    () =>
+      bridge.on("highlight", ({ ids, scroll }) => {
+        const list = Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
+        annotator?.highlight(list, statementMap(programRef.current), referencesTo, !!scroll);
+      }),
+    [bridge, annotator],
+  );
+
   // Flash what changed once the new program has painted.
   useEffect(() => {
     const ids = pendingFlash.current;

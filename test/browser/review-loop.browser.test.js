@@ -325,3 +325,48 @@ test("after the agent ends the review the reviewer can still send; only closing 
     await context.close();
   }
 });
+
+test("the changed button toggles a lasting highlight of the last turn's changes", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "toggle-changes.html");
+  const write = (a, b) => fs.writeFileSync(file, htmlPage("Toggle", `root = Stack([a, b])\na = TextContent("${a}")\nb = TextContent("${b}")`, CDN_RUNTIME_URL));
+  write("one", "two");
+  const { context, page, frame, problems } = await openReview(file, VIEWPORTS[0]);
+  const btn = page.locator(".bar .changes");
+  // Each mark must sit on the statement it names.
+  const marked = () =>
+    frame.evaluate(() =>
+      Array.from(document.querySelectorAll(".austere-mark")).map((m) => {
+        const r = m.getBoundingClientRect();
+        const hit = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2).find((e) => e.closest("[data-oui-id]"));
+        return hit?.closest("[data-oui-id]").getAttribute("data-oui-id");
+      }),
+    );
+  try {
+    write("one, edited", "two");
+    await btn.waitFor({ state: "visible", timeout: 10_000 });
+    assert.equal(await btn.getAttribute("aria-pressed"), "false");
+    assert.deepEqual(await marked(), [], "off by default");
+
+    await btn.click();
+    assert.equal(await btn.getAttribute("aria-pressed"), "true");
+    await page.waitForTimeout(3000); // longer than a flash
+    assert.deepEqual(await marked(), ["a"]);
+
+    // A new turn replaces the marks while the toggle stays on.
+    write("one, edited", "two, edited");
+    await frame.waitForSelector("text=two, edited");
+    await page.waitForFunction(() => document.querySelector(".bar .changes").title.endsWith(": b"));
+    await page.waitForTimeout(300);
+    assert.equal(await btn.getAttribute("aria-pressed"), "true");
+    assert.deepEqual(await marked(), ["b"]);
+
+    await btn.click();
+    assert.equal(await btn.getAttribute("aria-pressed"), "false");
+    await page.waitForTimeout(100);
+    assert.deepEqual(await marked(), []);
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});
