@@ -342,6 +342,16 @@ test("the changed button toggles a lasting highlight of the last turn's changes"
         return hit?.closest("[data-oui-id]").getAttribute("data-oui-id");
       }),
     );
+  // Marks arrive over two postMessage hops: wait for the expected ids, then compare.
+  const marksBecome = async (want, what) => {
+    const deadline = Date.now() + 5000;
+    let got = await marked();
+    while (JSON.stringify(got) !== JSON.stringify(want) && Date.now() < deadline) {
+      await page.waitForTimeout(50);
+      got = await marked();
+    }
+    assert.deepEqual(got, want, what);
+  };
   try {
     write("one, edited", "two");
     await btn.waitFor({ state: "visible", timeout: 10_000 });
@@ -350,21 +360,68 @@ test("the changed button toggles a lasting highlight of the last turn's changes"
 
     await btn.click();
     assert.equal(await btn.getAttribute("aria-pressed"), "true");
-    await page.waitForTimeout(3000); // longer than a flash
-    assert.deepEqual(await marked(), ["a"]);
+    await marksBecome(["a"], "on marks the last turn's change");
+    await page.waitForTimeout(3000); // outlasts a flash: the marks must not fade
+    assert.deepEqual(await marked(), ["a"], "marks persist");
+
+    // Reloading the frame keeps the toggle and puts the marks back.
+    await frame.evaluate(() => (window.__beforeReload = true));
+    await page.locator(".menu-btn").click();
+    await page.locator('[data-cmd="reload"]').click();
+    await frame.waitForFunction(() => !window.__beforeReload && document.querySelector("[data-oui-id]"), null, { timeout: 15_000 });
+    await marksBecome(["a"], "marks come back after a frame reload");
 
     // A new turn replaces the marks while the toggle stays on.
     write("one, edited", "two, edited");
     await frame.waitForSelector("text=two, edited");
-    await page.waitForFunction(() => document.querySelector(".bar .changes").title.endsWith(": b"));
-    await page.waitForTimeout(300);
+    await marksBecome(["b"], "a new turn replaces the marks");
     assert.equal(await btn.getAttribute("aria-pressed"), "true");
-    assert.deepEqual(await marked(), ["b"]);
 
     await btn.click();
     assert.equal(await btn.getAttribute("aria-pressed"), "false");
-    await page.waitForTimeout(100);
-    assert.deepEqual(await marked(), []);
+    await marksBecome([], "off clears the marks");
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});
+
+test("a lasting highlight stays inside a statement's own scroller and never widens the page", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "toggle-wide.html");
+  const long = "x".repeat(400);
+  // The diff shares a row, so no ancestor's edge lines up with its own.
+  const write = (line) =>
+    fs.writeFileSync(
+      file,
+      htmlPage("Wide", `root = Stack([patch, side], "row")\nside = TextContent("notes")\npatch = Diff("diff --git a/a.js b/a.js\n--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-const a = 1;\n+${line}")`, CDN_RUNTIME_URL),
+    );
+  write("const a = 2;");
+  const { context, page, frame, problems } = await openReview(file, VIEWPORTS[0]);
+  try {
+    write(`const a = '${long}';`);
+    const btn = page.locator(".bar .changes");
+    await btn.waitFor({ state: "visible", timeout: 10_000 });
+    await btn.click();
+    const check = async (when) => {
+      await frame.waitForSelector(".austere-mark");
+      await page.waitForTimeout(200); // let the redraw after layout land
+      const geo = await frame.evaluate(() => ({
+        mark: document.querySelector(".austere-mark").getBoundingClientRect().right,
+        diff: document.querySelector(".austere-diff").getBoundingClientRect().right,
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      }));
+      // The mark pads the statement's box by 4px.
+      assert.ok(geo.mark <= geo.diff + 4.5, `${when}: mark ends at ${geo.mark}px, past the diff's own edge at ${geo.diff}px`);
+      assert.ok(geo.overflow <= 1, `${when}: page scrolls sideways by ${geo.overflow}px`);
+    };
+    await check("live update");
+    // A fresh render lays the long line out differently: measure the restored mark too.
+    await frame.evaluate(() => (window.__beforeReload = true));
+    await page.locator(".menu-btn").click();
+    await page.locator('[data-cmd="reload"]').click();
+    await frame.waitForFunction(() => !window.__beforeReload && document.querySelector(".austere-diff"), null, { timeout: 15_000 });
+    await check("after reload");
     assert.deepEqual(problems, [], "browser errors");
   } finally {
     await context.close();

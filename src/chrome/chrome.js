@@ -331,8 +331,8 @@ window.addEventListener("message", (e) => {
         $(".title").textContent = d.title;
         document.title = `${d.title} · austere`;
       }
-      // A reloaded frame starts unmarked. Its listeners mount right after "ready": give React a tick.
-      if (state.highlight) setTimeout(() => postHighlight(false), 80);
+      // A reloaded frame starts unmarked; it handles "highlight" from the start.
+      if (state.highlight) postHighlight(false);
       break;
     case "annotate":
       addToQueue(d.item);
@@ -358,7 +358,8 @@ window.addEventListener("message", (e) => {
       state.scrollY = d.y || 0;
       break;
     case "changes":
-      state.changes = (d.ids || []).slice(0, 50);
+      // Frame code is untrusted: keep string ids only.
+      state.changes = Array.isArray(d.ids) ? d.ids.filter((id) => typeof id === "string").slice(0, 50) : [];
       renderChanges();
       if (state.highlight) postHighlight(false);
       break;
@@ -795,13 +796,16 @@ function renderPresence() {
 function renderChanges() {
   const btn = $(".changes");
   btn.setAttribute("aria-pressed", String(state.highlight));
-  if (!state.changes.length) {
+  // While on, the button stays so it can be switched off, even after a turn that changed nothing.
+  if (!state.changes.length && !state.highlight) {
     btn.hidden = true;
     return;
   }
   btn.hidden = false;
   btn.textContent = `${state.changes.length} changed`;
-  btn.title = `${state.highlight ? "Hide" : "Highlight"} what the last turn changed: ${state.changes.join(", ")}`;
+  btn.title = state.changes.length
+    ? `${state.highlight ? "Hide" : "Highlight"} what the last turn changed: ${state.changes.join(", ")}`
+    : "The last turn changed nothing on the page. Click to stop highlighting.";
 }
 // On: the last turn's changes stay marked, and each new turn's replace them, until switched off.
 function postHighlight(scroll) {

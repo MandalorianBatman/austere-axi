@@ -145,10 +145,9 @@ async function prepare(program) {
   return libraryWithPacks();
 }
 
-function App({ initialProgram, initialLibrary, bridge, annotator, initialState }) {
-  const [view, setView] = useState({ program: initialProgram, library: initialLibrary });
+function App({ programRef, initialLibrary, bridge, annotator, initialState }) {
+  const [view, setView] = useState({ program: programRef.current, library: initialLibrary });
   const program = view.program;
-  const programRef = useRef(initialProgram);
   const pendingFlash = useRef(null);
 
   useEffect(
@@ -157,6 +156,8 @@ function App({ initialProgram, initialLibrary, bridge, annotator, initialState }
         if (typeof next !== "string" || next === programRef.current) return;
         const changed = changedStatementIds(programRef.current, next);
         programRef.current = next;
+        // The last turn's marks are stale now; the chrome sends this turn's.
+        annotator?.highlight([]);
         // A new Mermaid(...) call may need its pack first.
         const library = await prepare(next);
         if (programRef.current !== next) return;
@@ -170,15 +171,6 @@ function App({ initialProgram, initialLibrary, bridge, annotator, initialState }
     () =>
       bridge.on("reveal", ({ id }) => {
         annotator?.reveal(id, statementMap(programRef.current), referencesTo);
-      }),
-    [bridge, annotator],
-  );
-
-  useEffect(
-    () =>
-      bridge.on("highlight", ({ ids, scroll }) => {
-        const list = Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
-        annotator?.highlight(list, statementMap(programRef.current), referencesTo, !!scroll);
       }),
     [bridge, annotator],
   );
@@ -266,6 +258,8 @@ function boot() {
   mount.id = "austere-root";
   document.body.appendChild(mount);
   const bridge = createBridge();
+  // The program on screen; App replaces it on live updates.
+  const live = { current: program };
   let annotator = null;
   let started = null;
 
@@ -275,7 +269,7 @@ function boot() {
     (started ||= ready.then((library) =>
       createRoot(mount).render(
         <App
-          initialProgram={program}
+          programRef={live}
           initialLibrary={library}
           bridge={bridge}
           annotator={annotator}
@@ -289,7 +283,16 @@ function boot() {
     return;
   }
 
-  annotator = createAnnotator({ post: (msg) => bridge.send(msg) });
+  let mapped = { program: null, map: null };
+  const lookup = () => {
+    if (mapped.program !== live.current) mapped = { program: live.current, map: statementMap(live.current) };
+    return [mapped.map, referencesTo];
+  };
+  annotator = createAnnotator({ post: (msg) => bridge.send(msg), lookup });
+  // Registered here, not in App: the chrome may send it as soon as the frame is ready.
+  bridge.on("highlight", ({ ids, scroll }) => {
+    annotator.highlight(Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [], !!scroll);
+  });
   // Links that would open a new window (markdown, URL cells) would get a
   // sandboxed popup that breaks most sites, so the chrome opens them instead.
   // The chrome refuses this server's own URLs; those keep the sandboxed popup.
