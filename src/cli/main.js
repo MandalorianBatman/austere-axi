@@ -61,12 +61,13 @@ FEEDBACK (what poll returns)
         part: the exact piece clicked, e.g. a diff file:+line or a diagram node), note
     action: <@ToAssistant message>           form: {<formName>: {<field>: value}}, context
     message: <free text from the composer>
-    render_error: <statement>                a render failure the reviewer asked you to fix
+    render_error: <statement>                a render failure: sent by the open review page
+                                             on its own (once per revision), or by the reviewer
 
 CHECK verifies syntax, component names, required props, unresolved references and
 statements unreachable from root. It warns when an Architecture diagram will not fit the
-page (it would scroll sideways). Mermaid syntax is only checked when it renders; failures
-show in the reviewer's panel and can come back as render_error.
+page (it would scroll sideways). Mermaid syntax is only checked when it renders; the open
+review page sends failures back through poll as render_error.
 
 LOOKS
   The reviewer judges how the page looks. Do not open, screenshot or inspect the page

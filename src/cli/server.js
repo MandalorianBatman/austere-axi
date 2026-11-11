@@ -60,6 +60,9 @@ export function persistEnv() {
 const LOGIN_TTL_MS = 60_000;
 const OWNER = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set(["annotation", "message"]);
+// Render failures the owner's page reports on its own; they reach the agent as notes from this author.
+const RENDER_CHECK_AUTHOR = "Render check";
+const MAX_RENDER_ERRORS = 20;
 // Transcript entries a page gets at once; it asks for older ones as the reader scrolls back.
 const PAGE = 200;
 // A stalled event stream is dropped once more than SSE_MAX_BUFFER stays queued for it for SSE_STALL_MS, or at once past
@@ -106,6 +109,7 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
   const graceTimers = new Map(); // id -> timeout
   const byeAt = new Map(); // id -> ms of last explicit tab close
   const browserSeen = new Set();
+  const renderReported = new Map(); // id -> { revision, keys: Set<string> } render errors already sent for that revision
   let tailnet = null;
   const linkBase = linkUrl(); // throws on a bad AUSTERE_AXI_LINK_URL: better to stop here than print wrong links
   let lastActivity = Date.now();
@@ -1054,6 +1058,29 @@ export async function runServer({ port, verbose = false, alsoListen = [], persis
       wake(s);
       broadcastPresence(s);
       return send(res, 200, { ok: true, entry });
+    }
+    if (sub === "/render-errors" && req.method === "POST") {
+      const body = await readBody(req);
+      // A report for an older revision describes a program the agent has already replaced.
+      if (s.closedAt || body.revision !== s.revision) return send(res, 200, { ok: true, count: 0 });
+      let seen = renderReported.get(s.id);
+      if (!seen || seen.revision !== s.revision) renderReported.set(s.id, (seen = { revision: s.revision, keys: new Set() }));
+      const items = [];
+      for (const e of Array.isArray(body.errors) ? body.errors.slice(0, MAX_RENDER_ERRORS) : []) {
+        if (!e || typeof e !== "object" || typeof e.message !== "string" || !e.message) continue;
+        const statement = typeof e.statement === "string" ? e.statement.slice(0, 200) : "";
+        const message = e.message.slice(0, 1000);
+        const key = `${statement}\n${message}`;
+        if (seen.keys.has(key)) continue;
+        seen.keys.add(key);
+        items.push({ kind: "render-error", statement: statement || undefined, target: statement || undefined, message, note: "Reported when the page rendered." });
+      }
+      if (!items.length) return send(res, 200, { ok: true, count: 0 });
+      const entry = store.addUserBatch(s, items, { author: RENDER_CHECK_AUTHOR });
+      broadcastTranscript(s, [entry]);
+      wake(s);
+      broadcastPresence(s);
+      return send(res, 200, { ok: true, count: items.length });
     }
     if ((sub === "/release" || sub === "/discard") && req.method === "POST") {
       const body = await readBody(req);

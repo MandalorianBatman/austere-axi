@@ -59,6 +59,7 @@ const state = {
   unread: 0,
   more: false,
   program: null,
+  revision: 0,
   frameReady: false,
   scrollY: 0,
   parserErrors: [],
@@ -344,11 +345,13 @@ window.addEventListener("message", (e) => {
     case "errors":
       state.parserErrors = (d.errors || []).filter((x) => x.severity !== "warning");
       renderLog();
+      reportRenderErrors();
       break;
     case "runtime-error":
       if (d.error && !state.runtimeErrors.some((x) => x.statementId === d.error.statementId && x.message === d.error.message)) {
         state.runtimeErrors.push(d.error);
         renderLog();
+        reportRenderErrors();
       }
       break;
     case "state":
@@ -400,6 +403,23 @@ function addToQueue(item) {
   saveQueue();
   renderLog(true);
   renderDock();
+}
+
+// The owner's page sends render failures to the agent on its own, so the agent never has to look
+// at the page to learn it is broken. The server drops repeats and reports for an older revision.
+let renderReportTimer = 0;
+function reportRenderErrors() {
+  if (!OWNER || state.closed) return;
+  clearTimeout(renderReportTimer);
+  renderReportTimer = setTimeout(() => {
+    const errors = [...state.parserErrors, ...state.runtimeErrors].map((e) => ({ statement: str(e.statementId), message: str(e.message) }));
+    if (!errors.length) return;
+    fetch(`${BASE}/render-errors`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ revision: state.revision, errors }),
+    }).catch(() => {});
+  }, 500);
 }
 
 function removeFromQueue(qid) {
@@ -568,14 +588,16 @@ function renderLog(scrollToEnd = false) {
   log.textContent = "";
   const issues = [...state.parserErrors, ...state.runtimeErrors];
   if (issues.length) {
-    const box = h("div", { class: "issues" }, h("div", { class: "issues-head", text: `Render issues (${issues.length})` }));
+    const head = `Render issues (${issues.length})${OWNER ? " · sent to the agent" : ""}`;
+    const box = h("div", { class: "issues" }, h("div", { class: "issues-head", text: head }));
     for (const err of issues.slice(0, 8)) {
       box.append(
         h(
           "div",
           { class: "issue" },
           h("div", { class: "issue-text" }, err.statementId ? h("code", { text: err.statementId }) : null, " ", err.message),
-          state.closed
+          // The owner's page already sent it to the agent (reportRenderErrors).
+          state.closed || OWNER
             ? null
             : h("button", {
                 type: "button",
@@ -992,6 +1014,8 @@ function connect() {
       ]);
     }
     showPackNotice(d.thirdPartyPacks);
+    state.revision = d.revision;
+    reportRenderErrors();
     if (state.program === null) state.program = d.program;
     else if (d.program !== state.program) {
       state.program = d.program;
@@ -1019,6 +1043,7 @@ function connect() {
   });
   es.addEventListener("changed", (e) => {
     const d = JSON.parse(e.data);
+    state.revision = d.revision;
     state.parserErrors = [];
     state.runtimeErrors = [];
     showPackNotice(d.thirdPartyPacks);

@@ -187,6 +187,7 @@ Session rules:
 - A review the user ended or closed does not open again unless you pass `--reopen`.
 - If all review tabs stay closed, `poll` returns `browser_disconnected`: 10 s after a tab closes, or 5 min after a dropped connection (for example, a locked phone). The agent stops polling but does not end the review, so notes left later are picked up by the next `poll`.
 - `feedback <file>` returns notes no agent has answered, also from earlier days. Reading them acknowledges them; `reply` marks them answered.
+- Render failures (bad Mermaid syntax, an unknown component, a component that throws) reach the agent without a click. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent.
 
 ## Components and packs
 
