@@ -18,6 +18,8 @@ Review pages for coding agents.
 
 <sub>The real loop, about 30 s: [MP4](docs/demo.mp4) · [WebM](docs/demo.webm).</sub>
 
+**[Website](https://mandalorianbatman.github.io/austere-axi/)** · **[Playground](https://mandalorianbatman.github.io/austere-axi/play/)** (no install) · **[Gallery](https://mandalorianbatman.github.io/austere-axi/gallery/)** · **[Benchmark](docs/benchmark.md)** · **[Writing a pack](docs/writing-a-pack.md)**
+
 ```
 root = Stack([intro, flow, options, decide], "column", "l")
 intro = Card([CardHeader("Session storage migration", "Redis → Postgres"), introText])
@@ -38,6 +40,18 @@ strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big ba
 A full page (KPIs, diagram, table, chart, diff, decision form) is about 1,000 tokens: [`examples/session-migration.html`](examples/session-migration.html).
 
 **See it without installing:** the [gallery](https://mandalorianbatman.github.io/austere-axi/gallery/) shows example pages next to their source and token counts. The [playground](https://mandalorianbatman.github.io/austere-axi/play/) lets you edit OpenUI Lang and see the page live.
+
+## Quick start
+
+Needs Node.js 22.18 or later. Your agent runs:
+
+```sh
+npx -y austere-axi spec              # component reference (read once per session)
+npx -y austere-axi plan.html         # validate and open the page for review
+npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
+```
+
+`--help` prints the file skeleton and the loop (about 900 tokens); `help all` adds the rarer commands and the environment. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`. To have agents reach for it on their own, use the [skill, plugin or MCP server](#install).
 
 ## Why
 
@@ -126,16 +140,6 @@ In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/pl
 command = "npx"
 args = ["-y", "austere-axi", "mcp"]
 ```
-
-## Quick start
-
-```sh
-npx -y austere-axi spec              # component reference (read once per session)
-npx -y austere-axi plan.html         # validate and open the page for review
-npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
-```
-
-`--help` prints the file skeleton and the loop (about 900 tokens); `help all` adds the rarer commands and the environment. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`.
 
 ## How it works
 
@@ -322,7 +326,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: MandalorianBatman/austere-axi/action@main   # pin a release tag or SHA once you settle
+      - uses: MandalorianBatman/austere-axi/action@v0.7.0
         with:
           pages: reviews/*.html
 ```
@@ -408,6 +412,10 @@ node dist/cli.mjs examples/session-migration.html
 ```
 
 Repo layout, website, playground, benchmark, CI and release: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Contributing
+
+Bug reports, examples, docs fixes and packs are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) has setup and the rules. Issues labelled [`good first issue`](https://github.com/MandalorianBatman/austere-axi/labels/good%20first%20issue) are small and have a clear finish line. Security problems: [report privately](https://github.com/MandalorianBatman/austere-axi/security/advisories/new), not in an issue.
 
 ## License
 
