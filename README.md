@@ -169,6 +169,8 @@ austere-axi export <file>        one self-contained HTML file, works offline
 austere-axi hub on|off|status|list|notes|open   home page with every page and note
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
+austere-axi publish <file>       hosted share link anyone can open and annotate   [--auto] [--new]
+austere-axi publish list|rm <file|id>   your hosted pages; delete one now
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out
 austere-axi mcp                  MCP server on stdio (see Use with MCP)
@@ -289,6 +291,26 @@ Trust model: anyone who has the link, and can reach your machine on the tailnet,
 
 A request without a valid invite or the owner key is refused, on loopback too. The hub and its Notes view are yours only. Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To make all old phone links and owner cookies stop working, delete that file and restart the server. A reverse proxy on the same machine gets no owner rights from looking local.
 
+## Hosted share links
+
+`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints a public link. Anyone with the link can open the page and add notes. It is the only command that contacts the service, and nothing is sent until you run it.
+
+```sh
+austere-axi publish plan.html          # prints https://austere.kasat.xyz/p/<id>
+austere-axi publish plan.html          # again: same link, new version
+austere-axi publish plan.html --new    # a fresh link
+austere-axi publish list               # your pages, expiry, note counts
+austere-axi publish rm plan.html       # or the page id; the link stops working at once
+```
+
+- **What is uploaded:** the file, with the runtime tag pointed at the service's pinned copy of this CLI version, the installed packs it declares, and images beside it inlined as `data:` URLs. A declared pack that is not installed at that version is an error. The upload limit is 1 MB after gzip.
+- **Who can see it:** anyone with the link (an unguessable id, `noindex`). Reviewers type a name before their first note. The page runs in the same opaque-origin sandbox as in local review and cannot make network requests.
+- **Hold:** reviewers' notes wait for you by default; `--auto` on a publish sends them straight to the agent.
+- **Expiry:** 30 days after the last publish.
+- **Owner token:** created on the first `publish`, stored in `~/.austere-axi/cloud.json` (mode 0600). It only controls your pages; deleting the file loses control of them until they expire.
+
+The protocol is in [docs/hosted-share-links.md](docs/hosted-share-links.md).
+
 ## GitHub Action
 
 Post an austere review page on every pull request. The action runs `austere-axi check` on the pages you commit, exports each one as a self-contained HTML file with `austere-axi export`, uploads them as a workflow artifact, and posts or updates **one** comment on the PR with a summary and a download link.
@@ -347,6 +369,7 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs |
+| `AUSTERE_AXI_CLOUD_URL` | `https://austere.kasat.xyz` | the service `publish` talks to (self-hosting, tests) |
 
 ## Security
 
@@ -372,7 +395,7 @@ OpenUI's Node side has PostHog telemetry. The CLI sets `OPENUI_TELEMETRY_DISABLE
 - Image attachments in feedback.
 - Live data: `Query` and `Mutation` are off, so pages are static.
 - Themes: one dark theme only.
-- Hosted sharing: use `export` to make one offline file.
+- Notes left on a hosted page (`publish`) reaching `poll` and `feedback`.
 
 ## Development
 

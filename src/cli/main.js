@@ -104,6 +104,12 @@ COMMANDS
   ${BIN} share <file> --as "<name>" [--auto]   invite link for a teammate on your tailnet. Their notes
                                    wait for the owner to send them on; --auto skips the wait
   ${BIN} share list [--links] | revoke <name|id>
+  ${BIN} publish <file>          hosted share link (austere.kasat.xyz): anyone with the link can
+                                   view the page and add notes. Uploads the page, its installed packs
+                                   and images beside it. Again on the same file: same link, updated.
+                                   [--auto] reviewers' notes skip your hold   [--new] a fresh link
+  ${BIN} publish list | rm <file|id>   your hosted pages (expiry, notes) | delete one now
+                                   The only command that contacts the service.
   ${BIN} stop                    stop the background server
   ${BIN} server [--persist]      run the server in the foreground; --persist: never idle out
                                    (behind a reverse proxy, under systemd)
@@ -113,7 +119,7 @@ ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1  AUSTERE_AXI_DISCONNECT_GRACE_MS (300000)
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
-  AUSTERE_AXI_NPM_REGISTRY
+  AUSTERE_AXI_NPM_REGISTRY  AUSTERE_AXI_CLOUD_URL (https://austere.kasat.xyz)
 `;
 
 function parseArgs(argv) {
@@ -823,6 +829,45 @@ async function cmdShare(args, flags) {
   });
 }
 
+/** `publish`: the one command that talks to the hosted service; its module loads only here. */
+async function cmdPublish(args, flags) {
+  const cloud = await import("./cloud.js");
+  const [sub, ...more] = args;
+  try {
+    if (sub === "list") {
+      const pages = await cloud.listPages();
+      if (!pages.length) return print({ pages: "none", next: `${BIN} publish <file>` });
+      return print({
+        pages: pages.map((p) => ({ id: p.id, title: p.title, file: p.file, url: p.url, expires: shortDate(p.expiresAt), notes: p.notes })),
+        next: `${BIN} publish rm <file|id> deletes one now.`,
+      });
+    }
+    if (sub === "rm") {
+      const key = more.join(" ");
+      if (!key) return fail(`rm needs a file or page id: ${BIN} publish rm <file|id> (see ${BIN} publish list)`);
+      const asFile = canonicalFile(key);
+      const r = await cloud.removePage(cloud.readCloud().pages[asFile] ? asFile : key);
+      return print({ status: "removed", id: r.id, file: r.file, note: r.gone ? "It was already gone from the service (expired or deleted)." : "The link stops working at once." });
+    }
+    const abs = needFile(sub, "publish");
+    if (!abs) return;
+    const r = await cloud.publish(abs, { auto: !!flags.auto, fresh: !!flags.new });
+    print({
+      status: r.updated ? "updated" : "published",
+      file: abs,
+      url: r.url,
+      mode: r.auto ? "auto: reviewers' notes go straight to the agent" : "hold: reviewers' notes wait until you send them on",
+      expires: shortDate(r.expiresAt),
+      packs: r.packs || undefined,
+      images: r.images || undefined,
+      note: "Anyone with the link can view the page and add notes. It expires 30 days after the last publish.",
+      next: `${BIN} publish ${quote(sub)} again updates this link; publish rm deletes it.`,
+    });
+  } catch (err) {
+    fail(String(err?.message || err), err?.status ? { http: err.status } : {});
+  }
+}
+
 async function cmdStop() {
   // A server from before the health proof is stopped too (without the key).
   const h = await serverIfRunning({ legacy: true });
@@ -917,6 +962,8 @@ async function main() {
       return cmdExport(rest[0], flags);
     case "share":
       return cmdShare(rest, flags);
+    case "publish":
+      return cmdPublish(rest, flags);
     case "stop":
       return cmdStop();
     case "server":
