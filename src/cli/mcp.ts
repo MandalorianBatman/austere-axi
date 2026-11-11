@@ -62,7 +62,7 @@ const PROTOCOLS = ["2025-11-25", "2025-06-18", "2024-11-05"];
 /** Many MCP clients give up on a tool call after about a minute, so poll returns `timeout` before that. */
 const POLL_TIMEOUT_MS = 50_000;
 
-const INSTRUCTIONS = `austere-axi turns plans, comparisons, decisions, code reviews and reports into review pages the user annotates in the browser. Call \`spec\` once per session for the workflow, the file skeleton and the component reference. Results are the CLI's output: where a \`next:\` hint names an \`austere-axi <command>\`, call the tool of that name instead. Pass absolute file paths. The reviewer judges how a page looks: do not open, screenshot or inspect it yourself unless the user asks.`;
+const INSTRUCTIONS = `austere-axi turns plans, comparisons, decisions, code reviews and reports into review pages the user annotates in the browser. Call \`spec\` once per session for the workflow, the file skeleton and the component reference. Results are the CLI's output: where a \`next:\` hint names an \`austere-axi <command>\`, call the tool of that name instead. Pass absolute file paths. The reviewer judges how a page looks: do not open, screenshot or inspect it yourself unless the user asks. Revise a page only with the \`patch\` tool: send the changed statements (every statement that shows a changed value), never the whole file.`;
 
 const file: ArgSchema = { type: "string", description: "Path of the .html page. Use an absolute path; a relative one resolves against the server's working directory." };
 
