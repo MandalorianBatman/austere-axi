@@ -73,8 +73,8 @@ WHEN TO USE
   Plans, comparisons, decisions, reviews, reports: anything easier to grasp as a page.
   Not for a few sentences of prose.
 
-COMMANDS
-  ${BIN}                         sessions + this summary
+COMMANDS (\`${BIN} <command> --help\` for one command's flags and an example)
+  ${BIN}                         sessions + command list
   ${BIN} <file>                  open/resume a review   [--no-open] [--reopen]
   ${BIN} poll <file>             long-poll for feedback  [--cursor n] [--agent-reply "..."] [--agent-reply-file f|-]
                                    --cursor n acknowledges feedback up to n; --after n returns
@@ -116,6 +116,114 @@ ENV
   AUSTERE_AXI_NPM_REGISTRY
 `;
 
+/**
+ * Every command: usage line, one-line summary, the flags it accepts (name → help) and an example.
+ * main() rejects any flag a command does not list, and `<command> --help` prints its entry.
+ * Keep in step with HELP above and the README's CLI section.
+ */
+const COMMANDS = {
+  open: {
+    usage: "<file> [--no-open] [--reopen]",
+    summary: "validate the page and open it for review (`open <file>` is the same)",
+    flags: { "no-open": "do not launch a browser; print the url (and a phone url when Tailscale is up)", reopen: "open a review the user ended or closed again" },
+    example: "plan.html --no-open",
+  },
+  poll: {
+    usage: "poll <file> [--cursor n] [--agent-reply text | --agent-reply-file path|-]",
+    summary: "wait until the reviewer presses Send; returns the feedback batch and a cursor",
+    flags: {
+      cursor: "acknowledge feedback up to n (the cursor the last poll printed)",
+      after: "return everything after n again",
+      "agent-reply": "post a reply first: a small Markdown subset (paragraphs, - lists, `code`, **bold**, links), a line or two",
+      "agent-reply-file": "read the reply from a file, or - for stdin",
+      takeover: "replace a poll that is already listening on this review",
+      "timeout-ms": "return status: timeout after n ms (default: wait for feedback)",
+      owner: "label for this listener, shown to a second poll",
+    },
+    example: 'poll plan.html --cursor 3 --agent-reply "Switched the rollout to dual-write."',
+  },
+  reply: {
+    usage: "reply <file> --agent-reply text | --agent-reply-file path|- [--cursor n]",
+    summary: "post a reply without polling; acknowledges feedback up to the cursor",
+    flags: {
+      "agent-reply": "reply text: a small Markdown subset, a line or two",
+      "agent-reply-file": "read the reply from a file, or - for stdin",
+      cursor: "acknowledge feedback up to n",
+    },
+    example: 'reply plan.html --cursor 3 --agent-reply "Done."',
+  },
+  end: { usage: "end <file>", summary: "stop as the agent; the reviewer can still add notes for later", flags: {}, example: "end plan.html" },
+  close: { usage: "close <file>", summary: "close the review: no more notes until reopen", flags: {}, example: "close plan.html" },
+  reopen: { usage: "reopen <file>", summary: "reopen an ended or closed review", flags: {}, example: "reopen plan.html" },
+  login: {
+    usage: "login [file]",
+    summary: "single-use link that signs a browser in as you (SSH, --no-open, another browser)",
+    flags: {},
+    example: "login plan.html",
+  },
+  feedback: {
+    usage: "feedback <file> [--all] [--peek]",
+    summary: "feedback no agent has answered yet; reading it acknowledges it, reply answers it",
+    flags: { all: "include feedback already answered", peek: "read without acknowledging" },
+    example: "feedback plan.html",
+  },
+  check: {
+    usage: "check <file> [--fix]",
+    summary: "validate the program without a browser: syntax, components, props, references, reachability",
+    flags: { fix: 'declare the packs the page uses (writes the <meta name="austere-packs"> tag)' },
+    example: "check plan.html",
+  },
+  patch: {
+    usage: "patch <file> < statements",
+    summary: "merge statements from stdin: same name replaces, new name adds, `name = null` deletes",
+    flags: {},
+    example: "patch plan.html <<'EOF'\n  intro = Card([CardHeader(\"New title\")])\n  EOF",
+  },
+  spec: {
+    usage: "spec [group|pack...]",
+    summary: "component reference; groups: Layout Content Data Charts Forms Buttons",
+    flags: {},
+    example: "spec Charts Forms",
+  },
+  components: {
+    usage: "components [list [group] | search <words> | show <Name...> | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
+    summary: "every component, including ones spec leaves out; install, remove and write packs",
+    flags: { trust: "install a third-party pack (read its code first)", name: "npm package name for `new`" },
+    example: "components search scatter",
+  },
+  export: {
+    usage: "export <file> [--out path]",
+    summary: "one self-contained HTML file that works offline",
+    flags: { out: "output path (default: <file>.export.html)" },
+    example: "export plan.html --out review.html",
+  },
+  hub: {
+    usage: "hub on|off|status|list|notes|open [words] [--project dir] [--unanswered]",
+    summary: "the owner's home page: every page by project and day, every note",
+    flags: { project: "only pages or notes from this project dir (list, notes)", unanswered: "only notes no agent answered (notes)" },
+    example: "hub notes --unanswered",
+  },
+  share: {
+    usage: 'share <file> --as "<name>" [--auto] | share list [--links] | share revoke <name|id>',
+    summary: "invite link for a teammate on your tailnet; their notes wait for you unless --auto",
+    flags: { as: "the reviewer's name", auto: "send this reviewer's notes straight to the agent", links: "show the links (list)" },
+    example: 'share plan.html --as "Ana"',
+  },
+  stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
+  server: {
+    usage: "server [--persist] [--port n] [--verbose]",
+    summary: "run the server in the foreground (under systemd, behind a reverse proxy)",
+    flags: { persist: "never idle out", port: "listen port (default: AUSTERE_AXI_PORT or 4388)", verbose: "log requests", "also-listen": "extra address to listen on (repeatable)" },
+    example: "server --persist",
+  },
+  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch end as tools", flags: {}, example: "mcp" },
+  help: { usage: "help [command]", summary: "the full workflow, or one command's help", flags: {}, example: "help poll" },
+};
+
+/** Flags that take a value; every other flag is a switch. */
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "project", "as", "cursor", "after"]);
+
+/** @returns {{ flags: Record<string, any>, pos: string[], error?: string }} */
 function parseArgs(argv) {
   const flags = {};
   const pos = [];
@@ -128,10 +236,12 @@ function parseArgs(argv) {
     if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const key = eq > 0 ? a.slice(2, eq) : a.slice(2);
-      const takesValue = ["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "project", "as", "cursor", "after"].includes(key);
       let val = true;
       if (eq > 0) val = a.slice(eq + 1);
-      else if (takesValue) val = argv[++i];
+      else if (VALUE_FLAGS.has(key)) {
+        if (i + 1 >= argv.length) return { flags, pos, error: `--${key} needs a value` };
+        val = argv[++i];
+      }
       if (key === "also-listen") (flags[key] ||= []).push(val);
       else flags[key] = val;
     } else if (a === "-h") flags.help = true;
@@ -141,14 +251,35 @@ function parseArgs(argv) {
   return { flags, pos };
 }
 
+/** A failure while running: exit 1. */
 function fail(message, extra = {}) {
   print({ status: "error", error: message, ...extra });
   process.exitCode = 1;
 }
 
+/** The command was called wrong (unknown command or flag, missing argument): exit 2, before anything runs. */
+function usage(message, cmd) {
+  const spec = cmd && COMMANDS[cmd];
+  print({ status: "error", code: "USAGE", error: message, usage: spec ? `${BIN} ${spec.usage}` : undefined, help: `${BIN} ${spec ? `${cmd} ` : ""}--help` });
+  process.exitCode = 2;
+}
+
+function commandHelp(cmd) {
+  const spec = COMMANDS[cmd];
+  const lines = [`${BIN} ${spec.usage}`, `  ${spec.summary}`];
+  const flags = Object.entries(spec.flags);
+  if (flags.length) {
+    lines.push("", "FLAGS");
+    const width = Math.max(...flags.map(([k]) => k.length + (VALUE_FLAGS.has(k) ? 6 : 0)));
+    for (const [k, text] of flags) lines.push(`  ${(`--${k}` + (VALUE_FLAGS.has(k) ? " <val>" : "")).padEnd(width + 4)}${text}`);
+  }
+  lines.push("", "EXAMPLE", `  ${BIN} ${spec.example}`, "", `Full workflow and file skeleton: ${BIN} --help`);
+  process.stdout.write(lines.join("\n") + "\n");
+}
+
 function needFile(file, cmd) {
   if (!file) {
-    fail(`${cmd} needs a file: ${BIN} ${cmd} <file.html>`);
+    usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>`, cmd);
     return null;
   }
   const abs = canonicalFile(file);
@@ -192,19 +323,26 @@ async function cmdHome() {
   let sessions = [];
   if (h) {
     const r = await request("GET", "/api/sessions");
-    sessions = (r.data.sessions || [])
-      .filter((s) => s.status !== "ended")
-      .slice(0, 12)
-      .map((s) => ({
-        file: s.file,
-        presence: s.presence,
-        browsers: s.browsers,
-        pending: s.pending || undefined,
-        url: s.links.local,
-      }));
+    sessions = (r.data.sessions || []).filter((s) => s.status !== "ended");
   }
-  process.stdout.write(HELP + "\n");
-  print({ server: h ? `running on ${port()} (v${h.version})` : "not running", open_sessions: sessions.length ? sessions : "none" });
+  const shown = sessions.slice(0, 12).map((s) => ({
+    file: s.file,
+    presence: s.presence,
+    browsers: s.browsers,
+    pending: s.pending || undefined,
+    url: s.links.local,
+  }));
+  print({
+    bin: `${BIN} ${VERSION}`,
+    description: "review pages written in OpenUI Lang; the reviewer annotates them in the browser and notes come back by statement name",
+    server: h ? `running on ${port()} (v${h.version})` : "not running",
+    open_sessions: sessions.length > shown.length ? `${shown.length} of ${sessions.length} shown` : sessions.length,
+    sessions: shown.length ? shown : undefined,
+    commands: Object.fromEntries(Object.entries(COMMANDS).map(([name, c]) => [name === "open" ? "<file>" : name, c.summary])),
+    next: shown.length
+      ? `${BIN} poll <file> waits for feedback on an open session. ${BIN} --help: workflow and file skeleton.`
+      : `${BIN} --help: workflow and file skeleton. ${BIN} spec: component reference. ${BIN} <command> --help: one command.`,
+  });
 }
 
 async function cmdOpen(file, flags) {
@@ -362,7 +500,7 @@ async function cmdReply(file, flags) {
   const abs = needFile(file, "reply");
   if (!abs) return;
   const text = await replyText(flags);
-  if (!text) return fail('reply needs text: --agent-reply "..." or --agent-reply-file <path|->');
+  if (!text) return usage('reply needs text: --agent-reply "..." or --agent-reply-file <path|->', "reply");
   await ensureServer();
   const r = await request("POST", "/api/reply", { file: abs, text, cursor: seqFlag(flags, "cursor") }, { timeoutMs: 10_000 });
   if (r.status !== 200) return fail(r.data?.error || `reply failed (${r.status})`);
@@ -435,7 +573,7 @@ async function cmdCheck(file, flags = {}) {
 async function cmdPatch(file) {
   const abs = needFile(file, "patch");
   if (!abs) return;
-  if (process.stdin.isTTY) return fail(`pipe the changed statements on stdin: ${BIN} patch ${quote(file)} <<'EOF' ... EOF`);
+  if (process.stdin.isTTY) return usage(`pipe the changed statements on stdin: ${BIN} patch ${quote(file)} <<'EOF' ... EOF`, "patch");
   const patch = await readStdin();
   if (!patch.trim()) return fail("stdin was empty");
   const html = fs.readFileSync(abs, "utf8");
@@ -483,7 +621,7 @@ function cmdSpec(groups) {
   const parts = text.split(/\n(?=### )/);
   const head = parts[0].split("\n## Component Signatures")[0];
   const picked = parts.filter((p) => p.startsWith("### ") && wanted.has(p.slice(4, p.indexOf("\n")).trim().toLowerCase()));
-  if (!picked.length) return fail(`unknown group; one of: Layout Content Data Charts Forms Buttons`);
+  if (!picked.length) return usage(`unknown group; one of: Layout Content Data Charts Forms Buttons, or an installed pack`, "spec");
   const trimmed = picked.map((p) => p.split(/\n## /)[0]);
   process.stdout.write(`${head}\n\n## Component Signatures (subset)\n\n${trimmed.join("\n")}\n`);
 }
@@ -512,7 +650,7 @@ async function cmdComponents(sub, args, flags) {
     case "show":
       return printResult(showComponents(args));
     case "add": {
-      if (!args[0]) return fail(`add needs a pack: ${BIN} components add <npm-package>[@version] | <folder> | <file.tgz>`);
+      if (!args[0]) return usage(`add needs a pack: ${BIN} components add <npm-package>[@version] | <folder> | <file.tgz>`, "components");
       const { addPack } = await import("./install.js");
       let r;
       try {
@@ -537,7 +675,7 @@ async function cmdComponents(sub, args, flags) {
       });
     }
     case "remove": {
-      if (!args[0]) return fail(`remove needs a pack name: ${BIN} components remove <name>`);
+      if (!args[0]) return usage(`remove needs a pack name: ${BIN} components remove <name>`, "components");
       const { removePack } = await import("./install.js");
       const r = removePack(args[0]);
       if (!r) return fail(`${args[0]} is not installed (${BIN} components list)`);
@@ -583,7 +721,7 @@ async function cmdComponents(sub, args, flags) {
       // `components charts` reads as `components list charts`.
       const listed = listComponents(sub);
       if (listed.status !== "error") return print(listed);
-      return fail(`unknown components command: ${sub}. One of: list search show add remove new build`);
+      return usage(`unknown components command: ${sub}. One of: list search show add remove new build`, "components");
     }
   }
 }
@@ -755,7 +893,7 @@ async function cmdHub(sub, args, flags) {
       return print({ status: opened ? "opened" : "open the url", url, sign_in: opened ? undefined : signInHint() });
     }
     default:
-      return fail(`unknown hub command: ${sub}. One of: on off status list notes open`);
+      return usage(`unknown hub command: ${sub}. One of: on off status list notes open`, "hub");
   }
 }
 
@@ -792,7 +930,7 @@ async function cmdShare(args, flags) {
   }
   if (sub === "revoke") {
     const key = more.join(" ");
-    if (!key) return fail(`revoke needs a name or id: ${BIN} share revoke <name|id> (see ${BIN} share list)`);
+    if (!key) return usage(`revoke needs a name or id: ${BIN} share revoke <name|id> (see ${BIN} share list)`, "share");
     let revoked;
     if (await serverIfRunning()) {
       const r = await request("POST", "/api/share/revoke", { key });
@@ -807,7 +945,7 @@ async function cmdShare(args, flags) {
   // share <file> --as "<name>"
   const abs = needFile(sub, "share");
   if (!abs) return;
-  if (typeof flags.as !== "string" || !flags.as.trim()) return fail(`share needs a reviewer name: ${BIN} share ${quote(sub)} --as "<name>"`);
+  if (typeof flags.as !== "string" || !flags.as.trim()) return usage(`share needs a reviewer name: ${BIN} share ${quote(sub)} --as "<name>"`, "share");
   await ensureServer();
   const r = await request("POST", "/api/share", { file: abs, name: flags.as, auto: !!flags.auto });
   if (r.status !== 200) return fail(r.data?.error || `share failed (${r.status})`);
@@ -873,17 +1011,24 @@ async function main() {
   if (major < MIN_NODE[0] || (major === MIN_NODE[0] && minor < MIN_NODE[1])) {
     return fail(`austere-axi needs Node ${MIN_NODE.join(".")} or newer; this is ${process.versions.node}. Install a current Node LTS.`);
   }
-  const { flags, pos } = parseArgs(process.argv.slice(2));
+  const { flags, pos, error } = parseArgs(process.argv.slice(2));
   if (flags.version) return process.stdout.write(VERSION + "\n");
   const [cmd, ...rest] = pos;
-  if (flags.help) {
-    if (cmd === "reply" || cmd === "poll") {
-      return process.stdout.write(
-        `${BIN} ${cmd} <file> --agent-reply "text" | --agent-reply-file <path|->\n` +
-          "Replies render a small Markdown subset (paragraphs, - lists, `code`, **bold**, links). Keep them to a line or two.\n",
-      );
-    }
-    return process.stdout.write(HELP);
+  // Which COMMANDS entry this is: none for the home view, "open" for a bare file.
+  let name = null;
+  if (cmd !== undefined) {
+    if (Object.hasOwn(COMMANDS, cmd)) name = cmd;
+    else if (/\.html?$/i.test(cmd) || fs.existsSync(cmd)) name = "open";
+    else if (flags.help) return process.stdout.write(HELP);
+    else return usage(`unknown command: ${cmd}. One of: ${Object.keys(COMMANDS).join(" ")}, or a page file`);
+  }
+  if (flags.help) return name && name !== "help" ? commandHelp(name) : process.stdout.write(HELP);
+  if (error) return usage(error, name);
+  const allowed = name ? Object.keys(COMMANDS[name].flags) : [];
+  const unknown = Object.keys(flags).filter((k) => !allowed.includes(k));
+  if (unknown.length) {
+    const valid = allowed.length ? `valid: ${allowed.map((k) => `--${k}`).join(" ")}` : "it takes no flags";
+    return usage(`unknown flag${unknown.length > 1 ? "s" : ""} for ${name ?? BIN}: ${unknown.map((k) => `--${k}`).join(" ")}; ${valid}`, name);
   }
   stateDir();
   switch (cmd) {
@@ -928,10 +1073,11 @@ async function main() {
     case "open":
       return cmdOpen(rest[0], flags);
     case "help":
-      return process.stdout.write(HELP);
+      if (!rest[0]) return process.stdout.write(HELP);
+      if (!Object.hasOwn(COMMANDS, rest[0])) return usage(`no command named ${rest[0]}. One of: ${Object.keys(COMMANDS).join(" ")}`, "help");
+      return commandHelp(rest[0]);
     default:
-      if (/\.html?$/i.test(cmd) || fs.existsSync(cmd)) return cmdOpen(cmd, flags);
-      return fail(`unknown command: ${cmd}. Run ${BIN} --help`);
+      return cmdOpen(cmd, flags);
   }
 }
 
