@@ -87,7 +87,8 @@ function detailOf(target, el) {
   return Object.keys(detail).length ? detail : undefined;
 }
 
-export function createAnnotator({ post }) {
+/** lookup() returns [statementMap, referencesTo] for the program on screen; marks resolve ids through it. */
+export function createAnnotator({ post, lookup }) {
   let mode = "explore";
   const root = document.createElement("div");
   root.setAttribute(UI_ATTR, "");
@@ -367,20 +368,74 @@ export function createAnnotator({ post }) {
     return refsTo(map, id).flatMap((parent) => elementsFor(parent, map, refsTo, seen));
   }
 
-  function flash(ids, tone = "changed", map, refsTo) {
+  /** The outermost elements rendering any of ids (nested ones are covered by their ancestor). */
+  function outermost(ids, map, refsTo) {
     const els = new Set();
     for (const id of ids) for (const el of elementsFor(id, map, refsTo)) els.add(el);
-    // Drop elements nested in another flashed element.
-    const list = Array.from(els).filter((el) => !Array.from(els).some((o) => o !== el && o.contains(el)));
+    return Array.from(els).filter((el) => !Array.from(els).some((o) => o !== el && o.contains(el)));
+  }
+
+  function overlay(rect, className) {
+    const f = document.createElement("div");
+    f.setAttribute(UI_ATTR, "");
+    f.className = className;
+    f.style.left = `${rect.left + window.scrollX - 4}px`;
+    f.style.top = `${rect.top + window.scrollY - 4}px`;
+    f.style.width = `${rect.width + 8}px`;
+    f.style.height = `${rect.height + 8}px`;
+    return f;
+  }
+
+  /**
+   * The border boxes el renders. A statement wrapper is display: contents, and a range over
+   * it would count text scrolled away inside its own scrollers (a long diff line), so its
+   * rendered children are measured instead: their border boxes stop at what they show.
+   */
+  function renderedBox(el) {
+    if (getComputedStyle(el).display !== "contents") return el.getBoundingClientRect();
+    let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
+    const add = (r) => {
+      if (!r.width && !r.height) return;
+      [left, top, right, bottom] = [Math.min(left, r.left), Math.min(top, r.top), Math.max(right, r.right), Math.max(bottom, r.bottom)];
+    };
+    const walk = (node) => {
+      for (const c of node.childNodes) {
+        if (c.nodeType === Node.ELEMENT_NODE) {
+          if (getComputedStyle(c).display === "contents") walk(c);
+          else add(c.getBoundingClientRect());
+        } else if (c.nodeType === Node.TEXT_NODE && c.textContent.trim()) {
+          const range = document.createRange();
+          range.selectNodeContents(c);
+          add(range.getBoundingClientRect());
+        }
+      }
+    };
+    walk(el);
+    return { left, top, right, bottom };
+  }
+
+  /** el's box cut to the ancestors that clip it (scrollers, overflow: hidden); null when nothing shows. */
+  function visibleBox(el) {
+    let { left, top, right, bottom } = renderedBox(el);
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      const s = getComputedStyle(a);
+      const clipX = s.overflowX !== "visible";
+      const clipY = s.overflowY !== "visible";
+      // A display: contents box has no rect of its own and clips nothing.
+      if ((!clipX && !clipY) || s.display === "contents") continue;
+      const c = a.getBoundingClientRect();
+      if (clipX) [left, right] = [Math.max(left, c.left), Math.min(right, c.right)];
+      if (clipY) [top, bottom] = [Math.max(top, c.top), Math.min(bottom, c.bottom)];
+    }
+    return right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null;
+  }
+
+  function flash(ids, tone = "changed", map, refsTo) {
+    const list = outermost(ids, map, refsTo);
     for (const el of list) {
-      const rect = boxOf(el);
-      const f = document.createElement("div");
-      f.setAttribute(UI_ATTR, "");
-      f.className = `austere-flash ${tone}`;
-      f.style.left = `${rect.left + window.scrollX - 4}px`;
-      f.style.top = `${rect.top + window.scrollY - 4}px`;
-      f.style.width = `${rect.width + 8}px`;
-      f.style.height = `${rect.height + 8}px`;
+      const box = visibleBox(el);
+      if (!box) continue;
+      const f = overlay(box, `austere-flash ${tone}`);
       document.body.appendChild(f);
       setTimeout(() => f.remove(), 2400);
     }
@@ -397,6 +452,62 @@ export function createAnnotator({ post }) {
     return true;
   }
 
+  // Persistent marks on the last turn's changes, while the reviewer keeps them on.
+  // Overlays use page coordinates: they follow page scrolling, and anything that can
+  // move a marked statement (layout, DOM changes, inner scrollers) redraws them.
+  const marks = document.createElement("div");
+  marks.setAttribute(UI_ATTR, "");
+  root.appendChild(marks);
+  let marked = null; // statement ids
+  let marksRaf = 0;
+
+  function drawMarks() {
+    marksRaf = 0;
+    const [map, refsTo] = marked && lookup ? lookup() : [];
+    // Statements that render nothing, or sit scrolled out of their container, get no mark.
+    const list = [];
+    const boxes = [];
+    for (const el of marked ? outermost(marked, map, refsTo) : []) {
+      const box = visibleBox(el);
+      if (!box) continue;
+      list.push(el);
+      boxes.push(box);
+    }
+    marks.replaceChildren(...boxes.map((box) => overlay(box, "austere-mark")));
+    return list;
+  }
+  const scheduleMarks = () => {
+    if (marked && !marksRaf) marksRaf = requestAnimationFrame(drawMarks);
+  };
+  window.addEventListener("resize", scheduleMarks, { passive: true });
+  new ResizeObserver(scheduleMarks).observe(document.body);
+  // Our own overlays mutate too; redrawing for them would loop every frame.
+  new MutationObserver((records) => {
+    if (records.some((r) => !isOurs(r.target.nodeType === 1 ? r.target : r.target.parentElement))) scheduleMarks();
+  }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class", "style", "hidden", "open"] });
+  document.addEventListener(
+    "scroll",
+    (e) => {
+      if (e.target !== document) scheduleMarks();
+    },
+    { capture: true, passive: true },
+  );
+
+  /** Mark ids until called again; an empty list clears. With scroll, bring the first mark into view if none is. */
+  function highlight(ids, scroll = false) {
+    marked = ids.length ? ids : null;
+    const list = drawMarks();
+    if (scroll && list.length) {
+      const boxes = list.map(boxOf);
+      if (!boxes.some((r) => r.bottom > 0 && r.top < window.innerHeight)) {
+        const r = boxes[0];
+        const y = r.top + window.scrollY - Math.max(24, (window.innerHeight - r.height) / 3);
+        window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+      }
+    }
+    return list.length;
+  }
+
   return {
     setMode(next) {
       mode = next === "annotate" ? "annotate" : "explore";
@@ -409,5 +520,6 @@ export function createAnnotator({ post }) {
     },
     flash,
     reveal,
+    highlight,
   };
 }

@@ -64,7 +64,7 @@ const state = {
   parserErrors: [],
   runtimeErrors: [],
   changes: [],
-  changeIdx: 0,
+  highlight: false,
   sheetOpen: SS.get(`austere:sheet:${SID}`) === true,
   sending: false,
   connected: false,
@@ -98,7 +98,7 @@ document.body.innerHTML = `
         <button type="button" data-mode="annotate" title="Click anything to comment on it (⌘/Ctrl+I)">Annotate</button>
         <button type="button" data-mode="explore" title="Use the page normally (⌘/Ctrl+I)">Explore</button>
       </div>
-      <button type="button" class="changes" hidden></button>
+      <button type="button" class="changes" aria-pressed="false" hidden></button>
     </div>
     <div class="bar-right">
       <span class="presence"></span>
@@ -331,6 +331,8 @@ window.addEventListener("message", (e) => {
         $(".title").textContent = d.title;
         document.title = `${d.title} · austere`;
       }
+      // A reloaded frame starts unmarked; it handles "highlight" from the start.
+      if (state.highlight) postHighlight(false);
       break;
     case "annotate":
       addToQueue(d.item);
@@ -356,9 +358,10 @@ window.addEventListener("message", (e) => {
       state.scrollY = d.y || 0;
       break;
     case "changes":
-      state.changes = (d.ids || []).slice(0, 50);
-      state.changeIdx = 0;
+      // Frame code is untrusted: keep string ids only.
+      state.changes = Array.isArray(d.ids) ? d.ids.filter((id) => typeof id === "string").slice(0, 50) : [];
       renderChanges();
+      if (state.highlight) postHighlight(false);
       break;
     case "toggle-mode":
       setMode(state.mode === "annotate" ? "explore" : "annotate");
@@ -792,19 +795,26 @@ function renderPresence() {
 
 function renderChanges() {
   const btn = $(".changes");
-  if (!state.changes.length) {
+  btn.setAttribute("aria-pressed", String(state.highlight));
+  // While on, the button stays so it can be switched off, even after a turn that changed nothing.
+  if (!state.changes.length && !state.highlight) {
     btn.hidden = true;
     return;
   }
   btn.hidden = false;
   btn.textContent = `${state.changes.length} changed`;
-  btn.title = `Show next change: ${state.changes.join(", ")}`;
+  btn.title = state.changes.length
+    ? `${state.highlight ? "Hide" : "Highlight"} what the last turn changed: ${state.changes.join(", ")}`
+    : "The last turn changed nothing on the page. Click to stop highlighting.";
+}
+// On: the last turn's changes stay marked, and each new turn's replace them, until switched off.
+function postHighlight(scroll) {
+  post({ type: "highlight", ids: state.highlight ? state.changes : [], scroll });
 }
 $(".changes").addEventListener("click", () => {
-  if (!state.changes.length) return;
-  const id = state.changes[state.changeIdx % state.changes.length];
-  state.changeIdx++;
-  post({ type: "reveal", id });
+  state.highlight = !state.highlight;
+  renderChanges();
+  postHighlight(state.highlight);
 });
 
 // ── menu ──
@@ -1014,6 +1024,9 @@ function connect() {
     showPackNotice(d.thirdPartyPacks);
     if (d.shellChanged || !state.frameReady) {
       state.program = d.program;
+      // A full reload reports no changes: drop the previous turn's.
+      state.changes = [];
+      renderChanges();
       loadFrame();
     } else {
       state.program = d.program;

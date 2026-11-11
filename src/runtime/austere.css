@@ -811,6 +811,15 @@ html.austere-annotating .austere-page :where(a, button, input, select, textarea,
   background: rgba(116, 211, 160, 0.1);
   animation-duration: 1.2s;
 }
+.austere-mark {
+  position: absolute;
+  z-index: 2147482998;
+  pointer-events: none;
+  border-radius: 10px;
+  border: 1.5px solid var(--austere-changed);
+  background: rgba(242, 196, 109, 0.06);
+  box-shadow: 0 0 0 3px rgba(242, 196, 109, 0.12);
+}
 @keyframes austere-flash {
   0% {
     opacity: 0;

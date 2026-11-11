@@ -125,6 +125,11 @@ code {
   font-weight: 600;
   cursor: pointer;
 }
+.changes[aria-pressed="true"] {
+  border-color: var(--amber);
+  background: var(--amber);
+  color: #1a1408;
+}
 .presence {
   display: inline-flex;
   align-items: center;

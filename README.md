@@ -145,6 +145,7 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 - **Components**: 58 stock OpenUI components, plus `Architecture` (`Node`, `Edge`, `Group`), `Diff` and `FileTree`. `Mermaid` and nine shadcn-style components are bundled [packs](#components-and-packs).
 - **Architecture diagrams** lay out automatically ([dagre](https://github.com/dagrejs/dagre)). The agent never writes coordinates. Each node and edge is a click target. `lanes` puts each group in a column; `tone` colors a box or line to show risk. Use Mermaid for sequences, state machines, ER and gantt.
 - **Annotations** go to the smallest named statement under the click, with detail where it exists: table row and column, `file:+line` in a diff, a diagram node, or selected text. The reviewer can move a note to a parent section.
+- **Changes**: after each agent turn the changed statements flash, and the bar shows `N changed`. That button is a toggle: on, it keeps the last turn's changes outlined until you switch it off, and each new turn replaces the outlines with its own changes.
 - **Buttons and forms** send feedback. `@ToAssistant("…")` sends a message with the form values. A button with no action sends its label.
 - **Phone review**: when Tailscale runs, the server also listens on the tailnet IP and prints a phone link. The link carries your owner key; keep it to yourself. The review UI has a mobile layout.
 
