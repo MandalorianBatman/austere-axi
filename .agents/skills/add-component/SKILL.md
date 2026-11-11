@@ -1,6 +1,6 @@
 ---
 name: add-component
-description: Add a component to the austere-axi OpenUI library, add a prop to one, or re-enable a stock OpenUI component. Maintainer-only (not shipped). Use for any change under src/runtime/components/ or src/runtime/stock.js.
+description: Add a component to the austere-axi OpenUI library, add a prop to one, or re-enable a stock OpenUI component. Maintainer-only (not shipped). Use for any change under src/runtime/components/ or src/runtime/stock.ts.
 user-invocable: true
 metadata:
   internal: true
@@ -12,7 +12,7 @@ Read this whole file before writing code. The tests enforce the mechanical rules
 
 ## 1. Does it earn its place?
 
-Every component's signature, description and notes are part of the reference every agent reads (`austere-axi spec`). They cost tokens in every session, in every agent, for good. The budget is 5.8k tokens, enforced in `test/library.test.js`; the build prints the current size.
+Every component's signature, description and notes are part of the reference every agent reads (`austere-axi spec`). They cost tokens in every session, in every agent, for good. The budget is 5.8k tokens, enforced in `test/library.test.ts`; the build prints the current size.
 
 Add a component only when all three hold:
 
@@ -24,7 +24,7 @@ Prefer, in this order:
 
 1. A note on an existing component.
 2. A new optional prop on an existing component.
-3. Re-enabling a stock OpenUI component from `REMOVED` in `src/runtime/stock.js`.
+3. Re-enabling a stock OpenUI component from `REMOVED` in `src/runtime/stock.ts`.
 4. A new component with `tier: "extended"`: in the library and `components search`, out of `spec` (one name in its group's notes).
 5. A new core component.
 
@@ -48,14 +48,14 @@ Agents write positional calls, and saved artifacts keep those calls forever.
 
 ## 3. Write the file
 
-A component is one file: `src/runtime/components/<Name>.jsx`, default-exporting `austereComponent({...})`. The contract is documented in `src/runtime/define.js`. The build picks the file up automatically, so there is no list to edit. Files whose names start with `_` are helpers, not components.
+A component is one file: `src/runtime/components/<Name>.tsx`, default-exporting `austereComponent({...})`. The contract is documented in `src/runtime/define.ts`. The build picks the file up automatically, so there is no list to edit. Files whose names start with `_` are helpers, not components.
 
-A family, meaning a container and its value-only parts, shares one file and default-exports an array in the order the spec should list them. `Architecture.jsx` is the example: it exports `[Architecture, Node, Edge, Group]`. Parts reference each other's `definition.ref`. A part that sits inside another part's prop (an `Edge` naming two `Node`s) reaches the renderer as the parsed element, and its `statementId` is the name the agent gave it. Use that as its id, and as its own click target with `data-oui-id` and `data-oui-c`.
+A family, meaning a container and its value-only parts, shares one file and default-exports an array in the order the spec should list them. `Architecture.tsx` is the example: it exports `[Architecture, Node, Edge, Group]`. Parts reference each other's `definition.ref`. A part that sits inside another part's prop (an `Edge` naming two `Node`s) reaches the renderer as the parsed element, and its `statementId` is the name the agent gave it. Use that as its id, and as its own click target with `data-oui-id` and `data-oui-c`.
 
 ```jsx
 import React from "react";
 import { z } from "zod";
-import { austereComponent } from "../define.js";
+import { austereComponent } from "../define.ts";
 
 function ThingView({ props }) {
   return <div className="austere-thing">…</div>;
@@ -77,11 +77,11 @@ export default austereComponent({
 Renderer rules:
 
 - **Static:** no fetching and no timers. The only state allowed is UI state, such as expanded or collapsed.
-- **Lenient:** render whatever you can from malformed input, and never throw. Show an inline `.austere-render-error` only when nothing at all can render. Also call `reportRuntimeError` from `../env.js` so the error reaches the reviewer's panel.
+- **Lenient:** render whatever you can from malformed input, and never throw. Show an inline `.austere-render-error` only when nothing at all can render. Also call `reportRuntimeError` from `../env.ts` so the error reaches the reviewer's panel.
 - **Dark only:** use the `--openui-*` and `--austere-*` variables. Put CSS in `src/runtime/austere.css` under a `/* ── Thing ── */` section, with an `austere-thing-` class prefix.
 - **Never overflow the column:** long paths and code must wrap or scroll inside the component. Check this at 390px.
 - **No interactive DOM for feedback:** let the annotation layer and OpenUI forms carry feedback. A toggle that only changes local UI state is fine.
-- **Testable parsing:** keep input parsing in a plain-JS helper next to the component, named `_<name>-parse.js`, so Node can import it. Unit-test it in `test/components.test.js` against the near-miss shapes agents actually write, such as markdown bullets, lowercase codes, long-form variants, absolute paths and duplicates. `_filetree-parse.js` and `_diff-parse.js` are the existing examples.
+- **Testable parsing:** keep input parsing in a plain TypeScript helper (no JSX) next to the component, named `_<name>-parse.ts`, so Node can import it. Unit-test it in `test/components.test.ts` against the near-miss shapes agents actually write, such as markdown bullets, lowercase codes, long-form variants, absolute paths and duplicates. `_filetree-parse.ts` and `_diff-parse.ts` are the existing examples.
 
 ## 4. Make it annotatable
 

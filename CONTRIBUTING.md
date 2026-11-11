@@ -30,7 +30,7 @@ npm test
 
 - **A new component** in core: follow `.agents/skills/add-component/SKILL.md`. Released props are positional and append-only, and the component reference has a token budget, so most new components belong in a pack instead.
 - **A new pack:** you do not need a PR here. Build it in your own repo against `austere-axi/pack` (see [`docs/writing-a-pack.md`](docs/writing-a-pack.md), and [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as a worked example), publish it to npm, then open an issue so we can link it.
-- **User-facing behaviour** (CLI output, flags, the review page): update `README.md` in the same PR. Agents read `--help` and `spec`, so change those in `src/cli/main.js` and `src/runtime/prompt.js` when the workflow changes.
+- **User-facing behaviour** (CLI output, flags, the review page): update `README.md` in the same PR. Agents read `--help` and `spec`, so change those in `src/cli/main.ts` and `src/runtime/prompt.ts` when the workflow changes.
 
 Before you open the PR:
 
@@ -47,11 +47,11 @@ If you use a coding agent, `.agents/skills/review-change/SKILL.md` runs these ch
 | Path | Contents |
 |---|---|
 | `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `FileTree`), one file each |
-| `src/runtime/stock.js` | Which stock components ship, which stay out of `spec`, their groups |
+| `src/runtime/stock.ts` | Which stock components ship, which stay out of `spec`, their groups |
 | `docs/` | [Writing a pack](docs/writing-a-pack.md) |
 | `packs/` | Packs bundled with austere-axi (`mermaid`, `shadcn`) |
-| `src/runtime/pack-api.js`, `src/pack-kit/` | `austere-axi/pack` and the `components build` pipeline |
-| `src/shared/catalog.js` | Component catalog and prompt tiers |
+| `src/runtime/pack-api.ts`, `src/pack-kit/` | `austere-axi/pack` and the `components build` pipeline |
+| `src/shared/catalog.ts` | Component catalog and prompt tiers |
 | `src/runtime/` | Library, annotation layer, review bridge, styles |
 | `src/chrome/` | Review UI around the page iframe |
 | `src/cli/` | CLI, server, sessions, `check`, `export`, packs, hub |
@@ -63,9 +63,9 @@ Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/ad
 
 **Visual checks:** `npm run gallery`, `npm run shot`, and `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
 
-**Website:** `npm run site` builds `_site/` (needs Chrome or `CHROME_PATH`). `site/` holds the hand-written pages and CSS, `examples/` feeds the gallery (add a file there and it appears with a generated thumbnail), `scripts/site.mjs` builds `_site/`, and `.github/workflows/pages.yml` deploys it to GitHub Pages on every push to `main`. Examples need a `<meta name="description">` for the gallery blurb. None of it is published to npm.
+**Website:** `npm run site` builds `_site/` (needs Chrome or `CHROME_PATH`). `site/` holds the hand-written pages and CSS, `examples/` feeds the gallery (add a file there and it appears with a generated thumbnail), `scripts/site.ts` builds `_site/`, and `.github/workflows/pages.yml` deploys it to GitHub Pages on every push to `main`. Examples need a `<meta name="description">` for the gallery blurb. None of it is published to npm.
 
-**Playground** (`/play/`, source in `site/play/`): a textarea editor beside a sandboxed frame running `dist/austere.js`. It plays the part of the review chrome over the same `postMessage` bridge, so edits re-render in place and clicks arrive as the annotations `poll` prints. Problems come from `src/shared/check-program.js`, the same code as `austere-axi check`, bundled for the browser by `scripts/site.mjs` (with the spec, the component catalog and one template per example in `play/data.json`). The program travels in the URL hash (`#code=v1.<deflate-raw, base64url>`), so there is no server. `test/browser/play.browser.test.js` drives it in headless Chrome as part of `npm run test:browser`. Packs other than the bundled ones are not available there.
+**Playground** (`/play/`, source in `site/play/`): a textarea editor beside a sandboxed frame running `dist/austere.js`. It plays the part of the review chrome over the same `postMessage` bridge, so edits re-render in place and clicks arrive as the annotations `poll` prints. Problems come from `src/shared/check-program.ts`, the same code as `austere-axi check`, bundled for the browser by `scripts/site.ts` (with the spec, the component catalog and one template per example in `play/data.json`). The program travels in the URL hash (`#code=v1.<deflate-raw, base64url>`), so there is no server. `test/browser/play.browser.test.ts` drives it in headless Chrome as part of `npm run test:browser`. Packs other than the bundled ones are not available there.
 
 **Benchmark** against lavish-axi: `npm run bench` (needs model keys; see [docs/benchmark.md](docs/benchmark.md)). `npm run bench:report` rebuilds its tables from the committed results.
 

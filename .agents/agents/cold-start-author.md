@@ -29,7 +29,7 @@ The point of this exercise is to test the tool's own instructions, so you must l
 2. Write the page to the output path, in one go.
 3. Run `node <repo>/dist/cli.mjs check <path>` before fixing anything, and keep its exact output.
 4. Fix the page and re-check until it passes. Count the rounds.
-5. Run `node <repo>/scripts/shot.mjs <path> --full --out <path>.png`, then open the PNG with Read. Compare what you see with what you intended. If it cannot find a browser, say so and skip this step.
+5. Run `node <repo>/scripts/shot.ts <path> --full --out <path>.png`, then open the PNG with Read. Compare what you see with what you intended. If it cannot find a browser, say so and skip this step.
 
    The screenshot is a maintainer's stand-in for the human reviewer's eyes. Real users of the tool never have it, so do not suggest adding it to the docs. Report what it showed you instead.
 

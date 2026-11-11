@@ -51,9 +51,9 @@ reviewer's browser ◄───────────────────�
 
 ### What the CLI uploads
 
-`publish` reuses `readArtifact` and `rewriteRuntime` (see `src/cli/export.js`):
+`publish` reuses `readArtifact` and `rewriteRuntime` (see `src/cli/export.ts`):
 
-1. Replace the runtime `<script>` tag with `<script src="/rt/<cliVersion>/austere.js"></script>`. Add `/rt/<cliVersion>/mermaid.min.js` when the program uses `Mermaid(`. Bundled `@austere-axi/*` packs need no tag from the CLI: the runtime resolves them itself to `/rt/<cliVersion>/packs/<id>/pack.js` (`packSource` in `src/runtime/packs.js`).
+1. Replace the runtime `<script>` tag with `<script src="/rt/<cliVersion>/austere.js"></script>`. Add `/rt/<cliVersion>/mermaid.min.js` when the program uses `Mermaid(`. Bundled `@austere-axi/*` packs need no tag from the CLI: the runtime resolves them itself to `/rt/<cliVersion>/packs/<id>/pack.js` (`packSource` in `src/runtime/packs.ts`).
 2. Each installed third-party pack is uploaded as a blob and referenced as `/pk/<sha256>.js`. A pack that is missing locally or doesn't match is an error, because the hosted page can't fetch it from a CDN.
 3. Relative-path images are inlined as `data:` URLs.
 4. Everything else in the file is byte-for-byte unchanged. Inlining relative images (step 3) is the one explicit exception beyond runtime tags: the hosted page has no file system to resolve them against. Otherwise this keeps the AGENTS.md rule that the served artifact equals the file except for runtime tags.
@@ -74,7 +74,7 @@ The Worker proxies `https://cdn.jsdelivr.net/npm/austere-axi@<version>/dist/<ass
 
 ### Hosted page
 
-`GET /p/:id` returns the same shell the local server builds (`src/cli/server.js`), loading `/rt/<v>/chrome/chrome.{js,css}`, with:
+`GET /p/:id` returns the same shell the local server builds (`src/cli/server.ts`), loading `/rt/<v>/chrome/chrome.{js,css}`, with:
 
 ```js
 window.__AUSTERE__ = { id, viewer: { role: "reviewer", name: "" }, hosted: { base: "/p/<id>", report: "/p/<id>/report" } };
@@ -96,7 +96,7 @@ X-Robots-Tag: noindex, nofollow
 Referrer-Policy: no-referrer
 ```
 
-`GET /p/:id/a/` serves the artifact with `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'`. `font-src data:` is needed because the runtime injects Inter as a `data:font/woff2` URL. The frame cannot make network requests. Notes leave it only by `postMessage` to the chrome, which is how it already works locally (`src/runtime/index.jsx`).
+`GET /p/:id/a/` serves the artifact with `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'`. `font-src data:` is needed because the runtime injects Inter as a `data:font/woff2` URL. The frame cannot make network requests. Notes leave it only by `postMessage` to the chrome, which is how it already works locally (`src/runtime/index.tsx`).
 
 ### Data model (D1)
 

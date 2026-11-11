@@ -15,7 +15,7 @@ You get a base ref, an optional head ref, and the list of changed files.
 
 ## How to review
 
-1. **Read the rules.** Read `AGENTS.md`. If components changed (`src/runtime/components/`, `src/runtime/stock.js`, `src/runtime/define.js`), also read `.agents/skills/add-component/SKILL.md`. Those files are the standard you hold the change to.
+1. **Read the rules.** Read `AGENTS.md`. If components changed (`src/runtime/components/`, `src/runtime/stock.ts`, `src/runtime/define.ts`), also read `.agents/skills/add-component/SKILL.md`. Those files are the standard you hold the change to.
 2. **Read in context.** Read the whole diff, then read each touched file in full wherever a hunk's behavior depends on surrounding code.
 3. **Run the tests.** Run `npm test` and record the result. The orchestrator runs the browser suite, so don't run that.
 4. **Work the checklists** below for every area the change touches.
@@ -31,7 +31,7 @@ You get a base ref, an optional head ref, and the list of changed files.
 - **Rendering:** no fetching, no timers, no state beyond UI state. CSS uses an `austere-<name>-` prefix and the theme variables, and nothing can overflow its column.
 - **Example:** it is realistic, and it is what an agent would actually write.
 
-### Runtime and annotation (`src/runtime/annotate.js`, `index.jsx`, `env.js`)
+### Runtime and annotation (`src/runtime/annotate.ts`, `index.tsx`, `env.ts`)
 
 - A click still resolves to the innermost statement.
 - Real controls (links, buttons, inputs) still work in Annotate mode.
@@ -51,7 +51,7 @@ Check every safety rule in `AGENTS.md`: loopback-only `/api/*`, the Host allowli
 - Output stays compact and always tells the agent its next step.
 - Poll semantics hold: one listener per session, feedback queued while nobody listens, and no reopening of a session the user ended.
 
-### Agent-facing text (`--help` in `src/cli/main.js`, `src/runtime/prompt.js`, stock and component notes, descriptions)
+### Agent-facing text (`--help` in `src/cli/main.ts`, `src/runtime/prompt.ts`, stock and component notes, descriptions)
 
 - Every line earns its tokens.
 - Nothing contradicts actual behavior. Check the claims against the code.
@@ -74,7 +74,7 @@ Keep it under about 500 words unless there are several blockers.
 verdict: ship | ship after fixes | rework
 tests: npm test <pass/fail summary>
 findings:
-  - [blocker|should-fix|nit] path/to/file.js:123 — problem
+  - [blocker|should-fix|nit] path/to/file.ts:123 — problem
     scenario: concrete input/state → wrong result (how you verified it)
     fix: smallest change that resolves it
 checked and fine: one line per area you covered with no findings

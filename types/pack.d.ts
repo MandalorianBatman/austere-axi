@@ -1,6 +1,6 @@
 // Types for "austere-axi/pack": what a component pack imports. Hand-written
-// to match src/runtime/pack-api.js and src/runtime/define.js.
-import type { ZodObject, ZodRawShape, infer as ZodInfer } from "zod";
+// to match src/runtime/pack-api.ts and src/runtime/define.ts.
+import type { core, ZodObject, ZodRawShape, infer as ZodInfer } from "zod";
 
 export type { Catalog, CatalogEntry, PackCatalog, Tier } from "./catalog.js";
 
@@ -42,8 +42,30 @@ export interface ComponentSpec<Shape extends ZodRawShape = ZodRawShape> {
   tier?: "core" | "extended";
 }
 
+/**
+ * A sub-component value as another component's renderer receives it: what
+ * `z.array(Child.definition.ref)` parses to. `partial` is true while the program streams in.
+ */
+export interface ElementValue<Props> {
+  type: "element";
+  typeName: string;
+  props: Props;
+  partial: boolean;
+}
+
+/** The OpenUI component definition inside an AustereComponent. */
+export interface ComponentDefinition<Props = unknown> {
+  name: string;
+  props: core.$ZodObject;
+  description: string;
+  /** The renderer, as passed to austereComponent(). */
+  component: unknown;
+  /** Use in another component's props to nest this one: `z.array(Child.definition.ref)`. */
+  ref: core.$ZodType<ElementValue<Props>>;
+}
+
 /** What austereComponent() returns. Put `definition.ref` in another component's props to nest it. */
-export interface AustereComponent {
+export interface AustereComponent<Props = unknown> {
   name: string;
   group: string;
   notes: string[];
@@ -52,13 +74,10 @@ export interface AustereComponent {
   tier: "core" | "extended";
   example: string[] | null;
   stress: string[] | null;
-  definition: {
-    ref: any;
-    [key: string]: any;
-  };
+  definition: ComponentDefinition<Props>;
 }
 
-export declare function austereComponent<Shape extends ZodRawShape>(spec: ComponentSpec<Shape>): AustereComponent;
+export declare function austereComponent<Shape extends ZodRawShape>(spec: ComponentSpec<Shape>): AustereComponent<ZodInfer<ZodObject<Shape>>>;
 
 /** What a pack's entry module default-exports. */
 export interface PackModule {
