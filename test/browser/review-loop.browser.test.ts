@@ -5,17 +5,18 @@
 //   - clicking a component's parts in Annotate mode, then Send, makes `poll`
 //     return each one addressed to the right statement with detail.part
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
-import net from "node:net";
+import net, { type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
-import { launchBrowser } from "../../scripts/lib/browser.mjs";
-import { CDN_RUNTIME_URL } from "../../src/cli/artifact.js";
-import { ownerKey } from "../../src/cli/invites.js";
-import { ROOT, examplePage, htmlPage, loadLibrary } from "../../scripts/lib/plugins.mjs";
+import type { Browser, Frame } from "playwright-core";
+import { launchBrowser } from "../../scripts/lib/browser.ts";
+import { CDN_RUNTIME_URL } from "../../src/cli/artifact.ts";
+import { ownerKey } from "../../src/cli/invites.ts";
+import { ROOT, examplePage, htmlPage, loadLibrary, type LoadedLibrary } from "../../scripts/lib/plugins.ts";
 
 const VIEWPORTS = [
   { name: "desktop", width: 1280, height: 900 },
@@ -23,26 +24,46 @@ const VIEWPORTS = [
 ];
 const MAX_PARTS_PER_STATEMENT = 3;
 
-let port;
-let server;
-let browser;
-let skipReason;
-let lib;
+let port: number;
+let server: ChildProcess;
+let browser: Browser;
+let skipReason: string | undefined;
+let lib: LoadedLibrary;
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-browser-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-browser-work-"));
 const KEY = ownerKey(STATE);
 
-function freePort() {
+/** A feedback item as `poll` returns it, as far as these tests read it. */
+interface PollItem {
+  kind?: string;
+  text?: string;
+  note?: string;
+  target?: string;
+  detail?: { part?: string };
+}
+
+/** The fields these tests read from the server's JSON replies. */
+interface ApiReply {
+  session: { id: string };
+  code: string;
+  status: string;
+  items: PollItem[];
+}
+
+/** A frame flag that a reload clears. */
+type FlaggedWindow = Window & { __beforeReload?: boolean };
+
+function freePort(): Promise<number> {
   return new Promise((resolve) => {
     const s = net.createServer();
     s.listen(0, "127.0.0.1", () => {
-      const p = s.address().port;
+      const p = (s.address() as AddressInfo).port;
       s.close(() => resolve(p));
     });
   });
 }
 
-function api(route, body) {
+function api(route: string, body: unknown): Promise<ApiReply> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const r = http.request(
@@ -50,7 +71,7 @@ function api(route, body) {
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
-        res.on("end", () => resolve(JSON.parse(data)));
+        res.on("end", () => resolve(JSON.parse(data) as ApiReply));
       },
     );
     r.on("error", reject);
@@ -77,11 +98,11 @@ function pages() {
   return list;
 }
 
-async function openReview(file, viewport) {
+async function openReview(file: string, viewport: { width: number; height: number }) {
   const { session } = await api("/api/open", { file });
   const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
   const page = await context.newPage();
-  const problems = [];
+  const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
@@ -90,7 +111,7 @@ async function openReview(file, viewport) {
   const { code } = await api("/api/login", {});
   await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
   const frameEl = await page.waitForSelector("iframe.frame");
-  const frame = await frameEl.contentFrame();
+  const frame = (await frameEl.contentFrame()) as Frame;
   await frame.waitForSelector("[data-oui-id]", { timeout: 15_000 });
   if (await frame.locator(".austere-mermaid").count()) {
     await frame.waitForSelector(".austere-mermaid-svg svg, .austere-render-error", { timeout: 15_000 });
@@ -114,13 +135,13 @@ before(async () => {
   }
   browser = launched.browser;
   port = await freePort();
-  server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.js"), "server", "--port", String(port)], {
+  server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" },
     stdio: "ignore",
   });
   for (let i = 0; i < 100; i++) {
     try {
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         const r = http.get({ host: "127.0.0.1", port, path: "/api/health" }, (res) => {
           res.resume();
           res.statusCode === 200 ? resolve() : reject(new Error(String(res.statusCode)));
@@ -155,7 +176,7 @@ describe("renders cleanly", () => {
         try {
           const state = await frame.evaluate(() => ({
             overflow: document.documentElement.scrollWidth - window.innerWidth,
-            renderErrors: Array.from(document.querySelectorAll(".austere-render-error")).map((e) => e.textContent.trim()),
+            renderErrors: Array.from(document.querySelectorAll(".austere-render-error")).map((e) => (e.textContent as string).trim()),
             statements: document.querySelectorAll("[data-oui-id]").length,
           }));
           const issues = await page.locator(".issues").allInnerTexts();
@@ -180,15 +201,16 @@ test("every component part is annotatable end to end", async (t) => {
   try {
     // Pick up to N parts per statement: first, middle, last.
     const targets = await frame.evaluate((max) => {
-      const by = new Map();
+      const by = new Map<string, string[]>();
       for (const el of document.querySelectorAll("[data-austere-part]")) {
         const id = el.closest("[data-oui-id]")?.getAttribute("data-oui-id");
         if (!id) continue;
         if (!by.has(id)) by.set(id, []);
-        const v = el.getAttribute("data-austere-part");
-        if (!by.get(id).includes(v)) by.get(id).push(v);
+        const v = el.getAttribute("data-austere-part") as string;
+        const list = by.get(id) as string[];
+        if (!list.includes(v)) list.push(v);
       }
-      const out = [];
+      const out: { id: string; part: string }[] = [];
       for (const [id, parts] of by) {
         const idx = [...new Set([0, Math.floor((parts.length - 1) / 2), parts.length - 1])].slice(0, max);
         for (const i of idx) out.push({ id, part: parts[i] });
@@ -207,7 +229,7 @@ test("every component part is annotatable end to end", async (t) => {
     for (const c of lib.CUSTOM_COMPONENTS) {
       for (const program of c.example || []) {
         // value-only parts have none: their container's example shows them
-        const first = program.match(/^\s*([A-Za-z_]\w*)\s*=/m)[1];
+        const first = (program.match(/^\s*([A-Za-z_]\w*)\s*=/m) as RegExpMatchArray)[1];
         if (!withParts.has(first)) t.diagnostic(`${c.name} (${first}) has no data-austere-part targets`);
       }
     }
@@ -217,19 +239,19 @@ test("every component part is annotatable end to end", async (t) => {
       const loc = frame.locator(`[data-oui-id="${id}"] [data-austere-part="${part.replace(/"/g, '\\"')}"]`).first();
       // An SVG stroke (a diagram edge) is not hit at its bounding-box centre:
       // find a point on the stroke that nothing covers, and click exactly there.
-      const point = await loc.evaluate((el) => {
+      const point = await loc.evaluate((el: SVGGeometryElement) => {
         if (typeof el.getTotalLength !== "function") return null;
         el.scrollIntoView({ block: "center", inline: "center" });
         const len = el.getTotalLength();
         for (const t of [0.5, 0.3, 0.7, 0.2, 0.8, 0.12, 0.88]) {
           const q = el.getPointAtLength(len * t);
-          const p = new DOMPoint(q.x, q.y).matrixTransform(el.getScreenCTM());
+          const p = new DOMPoint(q.x, q.y).matrixTransform(el.getScreenCTM() as DOMMatrix);
           if (el.ownerDocument.elementFromPoint(p.x, p.y) === el) return { x: p.x, y: p.y };
         }
         return null;
       });
       if (point) {
-        const origin = await (await frame.frameElement()).evaluate((f) => {
+        const origin = await (await frame.frameElement()).evaluate((f: HTMLIFrameElement) => {
           const r = f.getBoundingClientRect();
           return { x: r.left + f.clientLeft, y: r.top + f.clientTop };
         });
@@ -264,8 +286,8 @@ test("every component part is annotatable end to end", async (t) => {
 
 test("a page using an installed pack renders it, warns about third-party code, and its parts are annotatable", async (t) => {
   if (skipReason) return t.skip(skipReason);
-  const cli = (...args) => {
-    const r = spawnSync(process.execPath, [path.join(ROOT, "src/cli/main.js"), ...args], {
+  const cli = (...args: string[]) => {
+    const r = spawnSync(process.execPath, [path.join(ROOT, "src/cli/main.ts"), ...args], {
       env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, OPENUI_TELEMETRY_DISABLED: "1" },
       encoding: "utf8",
     });
@@ -285,7 +307,7 @@ test("a page using an installed pack renders it, warns about third-party code, a
   const { context, page, frame, problems } = await openReview(file, VIEWPORTS[1]);
   try {
     await frame.waitForSelector(".pack-milestones li", { timeout: 10_000 });
-    assert.match(await page.locator(".notice").textContent(), /Third-party pack code runs in this page: check queued items before you send \(austere-pack-milestones@0\.1\.0\)/);
+    assert.match((await page.locator(".notice").textContent()) as string, /Third-party pack code runs in this page: check queued items before you send \(austere-pack-milestones@0\.1\.0\)/);
     await frame.locator('[data-austere-part="GA"]').click();
     await frame.locator(".austere-pop textarea").fill("move GA");
     await frame.locator(".austere-pop textarea").press("Enter");
@@ -329,7 +351,7 @@ test("after the agent ends the review the reviewer can still send; only closing 
 test("the changed button toggles a lasting highlight of the last turn's changes", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "toggle-changes.html");
-  const write = (a, b) => fs.writeFileSync(file, htmlPage("Toggle", `root = Stack([a, b])\na = TextContent("${a}")\nb = TextContent("${b}")`, CDN_RUNTIME_URL));
+  const write = (a: string, b: string) => fs.writeFileSync(file, htmlPage("Toggle", `root = Stack([a, b])\na = TextContent("${a}")\nb = TextContent("${b}")`, CDN_RUNTIME_URL));
   write("one", "two");
   const { context, page, frame, problems } = await openReview(file, VIEWPORTS[0]);
   const btn = page.locator(".bar .changes");
@@ -339,11 +361,11 @@ test("the changed button toggles a lasting highlight of the last turn's changes"
       Array.from(document.querySelectorAll(".austere-mark")).map((m) => {
         const r = m.getBoundingClientRect();
         const hit = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2).find((e) => e.closest("[data-oui-id]"));
-        return hit?.closest("[data-oui-id]").getAttribute("data-oui-id");
+        return hit?.closest("[data-oui-id]")!.getAttribute("data-oui-id");
       }),
     );
   // Marks arrive over two postMessage hops: wait for the expected ids, then compare.
-  const marksBecome = async (want, what) => {
+  const marksBecome = async (want: string[], what: string) => {
     const deadline = Date.now() + 5000;
     let got = await marked();
     while (JSON.stringify(got) !== JSON.stringify(want) && Date.now() < deadline) {
@@ -365,10 +387,10 @@ test("the changed button toggles a lasting highlight of the last turn's changes"
     assert.deepEqual(await marked(), ["a"], "marks persist");
 
     // Reloading the frame keeps the toggle and puts the marks back.
-    await frame.evaluate(() => (window.__beforeReload = true));
+    await frame.evaluate(() => ((window as FlaggedWindow).__beforeReload = true));
     await page.locator(".menu-btn").click();
     await page.locator('[data-cmd="reload"]').click();
-    await frame.waitForFunction(() => !window.__beforeReload && document.querySelector("[data-oui-id]"), null, { timeout: 15_000 });
+    await frame.waitForFunction(() => !(window as FlaggedWindow).__beforeReload && document.querySelector("[data-oui-id]"), null, { timeout: 15_000 });
     await marksBecome(["a"], "marks come back after a frame reload");
 
     // A new turn replaces the marks while the toggle stays on.
@@ -391,7 +413,7 @@ test("a lasting highlight stays inside a statement's own scroller and never wide
   const file = path.join(WORK, "toggle-wide.html");
   const long = "x".repeat(400);
   // The diff shares a row, so no ancestor's edge lines up with its own.
-  const write = (line) =>
+  const write = (line: string) =>
     fs.writeFileSync(
       file,
       htmlPage("Wide", `root = Stack([patch, side], "row")\nside = TextContent("notes")\npatch = Diff("diff --git a/a.js b/a.js\n--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-const a = 1;\n+${line}")`, CDN_RUNTIME_URL),
@@ -403,12 +425,12 @@ test("a lasting highlight stays inside a statement's own scroller and never wide
     const btn = page.locator(".bar .changes");
     await btn.waitFor({ state: "visible", timeout: 10_000 });
     await btn.click();
-    const check = async (when) => {
+    const check = async (when: string) => {
       await frame.waitForSelector(".austere-mark");
       await page.waitForTimeout(200); // let the redraw after layout land
       const geo = await frame.evaluate(() => ({
-        mark: document.querySelector(".austere-mark").getBoundingClientRect().right,
-        diff: document.querySelector(".austere-diff").getBoundingClientRect().right,
+        mark: (document.querySelector(".austere-mark") as Element).getBoundingClientRect().right,
+        diff: (document.querySelector(".austere-diff") as Element).getBoundingClientRect().right,
         overflow: document.documentElement.scrollWidth - window.innerWidth,
       }));
       // The mark pads the statement's box by 4px.
@@ -417,10 +439,10 @@ test("a lasting highlight stays inside a statement's own scroller and never wide
     };
     await check("live update");
     // A fresh render lays the long line out differently: measure the restored mark too.
-    await frame.evaluate(() => (window.__beforeReload = true));
+    await frame.evaluate(() => ((window as FlaggedWindow).__beforeReload = true));
     await page.locator(".menu-btn").click();
     await page.locator('[data-cmd="reload"]').click();
-    await frame.waitForFunction(() => !window.__beforeReload && document.querySelector(".austere-diff"), null, { timeout: 15_000 });
+    await frame.waitForFunction(() => !(window as FlaggedWindow).__beforeReload && document.querySelector(".austere-diff"), null, { timeout: 15_000 });
     await check("after reload");
     assert.deepEqual(problems, [], "browser errors");
   } finally {

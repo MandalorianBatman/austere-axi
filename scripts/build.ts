@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import {
+  IIFE_TSCONFIG,
   ROOT,
   bundledPackSources,
   bundledPacksPlugin,
@@ -22,19 +23,19 @@ import {
   loadLibrary,
   registryPlugin,
   slimHighlighterPlugin,
-} from "./lib/plugins.mjs";
+} from "./lib/plugins.ts";
 
 const require = createRequire(import.meta.url);
 const DIST = path.join(ROOT, "dist");
-const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { version: string };
 const only = process.argv.slice(2);
-const want = (step) => only.length === 0 || only.includes(step);
+const want = (step: string): boolean => only.length === 0 || only.includes(step);
 
 fs.mkdirSync(DIST, { recursive: true });
 
 async function buildRuntime() {
   const result = await esbuild.build({
-    entryPoints: [path.join(ROOT, "src/runtime/index.jsx")],
+    entryPoints: [path.join(ROOT, "src/runtime/index.tsx")],
     bundle: true,
     format: "iife",
     minify: true,
@@ -42,6 +43,7 @@ async function buildRuntime() {
     jsx: "automatic",
     legalComments: "none",
     loader: { ".css": "text" },
+    tsconfigRaw: IIFE_TSCONFIG,
     define: {
       "process.env.NODE_ENV": '"production"',
       __AUSTERE_VERSION__: JSON.stringify(pkg.version),
@@ -63,7 +65,7 @@ function copyMermaid() {
 }
 
 async function buildPacks() {
-  const { buildPack } = await import("../src/pack-kit/index.js");
+  const { buildPack } = await import("../src/pack-kit/index.ts");
   process.env.OPENUI_TELEMETRY_DISABLED = "1";
   for (const p of bundledPackSources()) {
     const outDir = path.join(DIST, "packs", p.id);
@@ -78,7 +80,7 @@ const packsBuilt = () => bundledPackSources().every((p) => fs.existsSync(path.jo
 async function buildPackKit() {
   const out = path.join(DIST, "pack-kit.mjs");
   await esbuild.build({
-    entryPoints: [path.join(ROOT, "src/pack-kit/index.js")],
+    entryPoints: [path.join(ROOT, "src/pack-kit/index.ts")],
     bundle: true,
     platform: "node",
     format: "esm",
@@ -108,11 +110,12 @@ async function buildChrome() {
   const outDir = path.join(DIST, "chrome");
   fs.mkdirSync(outDir, { recursive: true });
   await esbuild.build({
-    entryPoints: [path.join(ROOT, "src/chrome/chrome.js"), path.join(ROOT, "src/chrome/chrome.css")],
+    entryPoints: [path.join(ROOT, "src/chrome/chrome.ts"), path.join(ROOT, "src/chrome/chrome.css")],
     bundle: true,
     minify: true,
     format: "iife",
     target: "es2020",
+    tsconfigRaw: IIFE_TSCONFIG,
     outdir: outDir,
     logLevel: "warning",
   });
@@ -122,7 +125,7 @@ async function buildChrome() {
 async function buildCli() {
   const out = path.join(DIST, "cli.mjs");
   await esbuild.build({
-    entryPoints: [path.join(ROOT, "src/cli/main.js")],
+    entryPoints: [path.join(ROOT, "src/cli/main.ts")],
     bundle: true,
     platform: "node",
     format: "esm",
@@ -143,5 +146,5 @@ if (want("packkit")) await buildPackKit();
 if (want("runtime")) await buildRuntime();
 if (want("mermaid")) copyMermaid();
 if (want("spec")) await buildSpec();
-if (want("chrome") && fs.existsSync(path.join(ROOT, "src/chrome/chrome.js"))) await buildChrome();
-if (want("cli") && fs.existsSync(path.join(ROOT, "src/cli/main.js"))) await buildCli();
+if (want("chrome") && fs.existsSync(path.join(ROOT, "src/chrome/chrome.ts"))) await buildChrome();
+if (want("cli") && fs.existsSync(path.join(ROOT, "src/cli/main.ts"))) await buildCli();

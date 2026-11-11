@@ -1,11 +1,59 @@
-// @ts-check
 // `austere-axi mcp`: an MCP server over stdio (newline-delimited JSON-RPC 2.0).
 // Each tool runs this same CLI as a child process, so the MCP surface returns
 // exactly what the CLI prints and stdout stays reserved for the protocol.
 import { spawn } from "node:child_process";
 import path from "node:path";
 import readline from "node:readline";
-import { CLI_ENTRY, VERSION } from "./paths.js";
+import { CLI_ENTRY, VERSION } from "./paths.ts";
+
+/** One CLI run: its arguments and what to pipe to its stdin. */
+interface Run {
+  args: string[];
+  stdin?: string;
+}
+
+/** A tool argument's JSON schema. */
+interface ArgSchema {
+  type: "string" | "boolean" | "integer" | "array";
+  description: string;
+  items?: { type: "string" };
+  minimum?: number;
+}
+
+/** Tool arguments once `validate` has passed: every key is one the tool lists, with its type. */
+type ToolArgs = {
+  file: string;
+  groups?: string[];
+  fix?: boolean;
+  no_open?: boolean;
+  reopen?: boolean;
+  agent_reply?: string;
+  cursor?: number;
+  takeover?: boolean;
+  timeout_ms?: number;
+  text: string;
+  statements: string;
+};
+
+interface Tool {
+  title: string;
+  description: string;
+  readOnly?: boolean;
+  properties: Record<string, ArgSchema>;
+  required?: string[];
+  run: (a: ToolArgs) => Run[];
+}
+
+type RpcId = string | number | null;
+
+/** A JSON-RPC request or notification, once it has a string method. */
+type RpcRequest = {
+  id?: RpcId;
+  method: string;
+  params?: { requestId?: RpcId; protocolVersion?: string; name?: unknown; arguments?: unknown };
+};
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object";
 
 // 2025-03-26 is left out: it requires JSON-RPC batches, which this server does not accept.
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2024-11-05"];
@@ -15,13 +63,9 @@ const POLL_TIMEOUT_MS = 50_000;
 
 const INSTRUCTIONS = `austere-axi turns plans, comparisons, decisions, code reviews and reports into review pages the user annotates in the browser. Call \`spec\` once per session for the workflow, the file skeleton and the component reference. Results are the CLI's output: where a \`next:\` hint names an \`austere-axi <command>\`, call the tool of that name instead. Pass absolute file paths.`;
 
-const file = { type: "string", description: "Path of the .html page. Use an absolute path; a relative one resolves against the server's working directory." };
+const file: ArgSchema = { type: "string", description: "Path of the .html page. Use an absolute path; a relative one resolves against the server's working directory." };
 
-/**
- * @typedef {{ args: string[], stdin?: string }} Run
- * @type {Record<string, { title: string, description: string, readOnly?: boolean, properties: Record<string, any>, required?: string[], run: (a: Record<string, any>) => Run[] }>}
- */
-const TOOLS = {
+const TOOLS: Record<string, Tool> = {
   spec: {
     title: "Workflow and component reference",
     description: "The page workflow, the HTML file skeleton and the component reference. Call once per session before writing a page. With groups or pack names, returns only those signatures.",
@@ -95,21 +139,16 @@ const TOOLS = {
   },
 };
 
-/**
- * Run the CLI once; resolves with what it printed and its exit code.
- * @param {Run} run
- * @param {AbortSignal} signal
- * @returns {Promise<{ code: number, text: string }>}
- */
-function runCli({ args, stdin }, signal) {
+/** Run the CLI once; resolves with what it printed and its exit code. */
+function runCli({ args, stdin }: Run, signal: AbortSignal): Promise<{ code: number; text: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [CLI_ENTRY, ...args], {
       env: process.env,
       stdio: ["pipe", "pipe", "ignore"],
       windowsHide: true,
     });
-    const out = [];
-    child.stdout.on("data", (c) => out.push(c));
+    const out: Buffer[] = [];
+    child.stdout.on("data", (c: Buffer) => out.push(c));
     child.stdin.on("error", () => {});
     child.stdin.end(stdin ?? "");
     const kill = () => child.kill();
@@ -122,30 +161,33 @@ function runCli({ args, stdin }, signal) {
   });
 }
 
-function validate(tool, a) {
+function validate(tool: Tool, a: Record<string, unknown>): string | null {
   for (const key of tool.required || []) {
-    if (typeof a[key] !== "string" || !a[key].trim()) return `${key} is required`;
+    const v = a[key];
+    if (typeof v !== "string" || !v.trim()) return `${key} is required`;
   }
   for (const [key, v] of Object.entries(a)) {
     const p = tool.properties[key];
     if (!p) return `unknown argument: ${key}`;
     const ok =
       p.type === "array" ? Array.isArray(v) && v.every((x) => typeof x === "string")
-      : p.type === "integer" ? Number.isInteger(v) && v >= 0
+      : p.type === "integer" ? typeof v === "number" && Number.isInteger(v) && v >= 0
       : typeof v === p.type;
     if (!ok) return `${key} must be ${p.type === "integer" ? "a non-negative integer" : `a ${p.type}`}`;
   }
   return null;
 }
 
-async function callTool(name, a, signal) {
+async function callTool(name: string, a: Record<string, unknown>, signal: AbortSignal): Promise<{ content: { type: "text"; text: string }[]; isError: boolean }> {
   const tool = TOOLS[name];
   const bad = validate(tool, a);
   if (bad) return { content: [{ type: "text", text: `status: error\nerror: ${bad}` }], isError: true };
   if (typeof a.file === "string") a = { ...a, file: path.resolve(a.file) };
+  // validate checked every argument against the tool's schema, and that the required ones are there.
+  const args = a as ToolArgs;
   let text = "";
   let isError = false;
-  for (const run of tool.run(a)) {
+  for (const run of tool.run(args)) {
     const r = await runCli(run, signal);
     text += r.text;
     if (r.code !== 0) {
@@ -166,17 +208,16 @@ function listTools() {
   }));
 }
 
-export function runMcp() {
-  /** @type {Map<string | number, AbortController>} */
-  const inflight = new Map();
-  const send = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n");
-  const error = (id, code, message) => send({ id, error: { code, message } });
+export function runMcp(): Promise<void> {
+  const inflight = new Map<RpcId, AbortController>();
+  const send = (msg: object) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n");
+  const error = (id: unknown, code: number, message: string) => send({ id, error: { code, message } });
 
-  async function handle(msg) {
+  async function handle(msg: RpcRequest): Promise<unknown> {
     const { id, method, params = {} } = msg;
     // A notification (no id) never gets a response; the only one acted on is a cancellation.
     if (id === undefined || id === null) {
-      if (method === "notifications/cancelled") inflight.get(params.requestId)?.abort();
+      if (method === "notifications/cancelled" && params.requestId !== undefined) inflight.get(params.requestId)?.abort();
       return;
     }
     switch (method) {
@@ -185,7 +226,7 @@ export function runMcp() {
         return send({
           id,
           result: {
-            protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0],
+            protocolVersion: asked !== undefined && PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0],
             capabilities: { tools: { listChanged: false } },
             serverInfo: { name: "austere-axi", title: "austere-axi", version: VERSION },
             instructions: INSTRUCTIONS,
@@ -197,9 +238,9 @@ export function runMcp() {
       case "tools/list":
         return send({ id, result: { tools: listTools() } });
       case "tools/call": {
-        if (!Object.hasOwn(TOOLS, params.name)) return error(id, -32602, `unknown tool: ${params.name}`);
+        if (typeof params.name !== "string" || !Object.hasOwn(TOOLS, params.name)) return error(id, -32602, `unknown tool: ${params.name}`);
         const args = params.arguments ?? {};
-        if (typeof args !== "object" || Array.isArray(args)) return error(id, -32602, "arguments must be an object");
+        if (!isRecord(args) || Array.isArray(args)) return error(id, -32602, "arguments must be an object");
         const ctl = new AbortController();
         inflight.set(id, ctl);
         try {
@@ -218,22 +259,24 @@ export function runMcp() {
   const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
   lines.on("line", (line) => {
     if (!line.trim()) return;
-    let msg;
+    let msg: unknown;
     try {
       msg = JSON.parse(line);
     } catch {
       return error(null, -32700, "parse error");
     }
     if (Array.isArray(msg)) return error(null, -32600, "batch not supported");
-    if (!msg || typeof msg !== "object" || typeof msg.method !== "string") {
-      if (msg && typeof msg === "object" && "id" in msg && !("result" in msg || "error" in msg)) error(msg.id ?? null, -32600, "invalid request");
+    if (!isRecord(msg) || typeof msg.method !== "string") {
+      if (isRecord(msg) && "id" in msg && !("result" in msg || "error" in msg)) error(msg.id ?? null, -32600, "invalid request");
       return;
     }
-    handle(msg).catch((err) => {
-      if (msg.id !== undefined && msg.id !== null) error(msg.id, -32603, String(err?.message || err));
+    // A JSON-RPC message with a string method: the protocol's request shape.
+    const req = msg as RpcRequest;
+    handle(req).catch((err: unknown) => {
+      if (req.id !== undefined && req.id !== null) error(req.id, -32603, String((isRecord(err) ? err.message : undefined) || err));
     });
   });
-  return new Promise((resolve) => {
+  return new Promise<void>((resolve) => {
     lines.on("close", () => {
       for (const ctl of inflight.values()) ctl.abort();
       resolve(undefined);

@@ -1,4 +1,3 @@
-// @ts-check
 // Reading and rewriting artifact HTML files. An artifact is an ordinary HTML
 // file with one runtime <script src=".../austere.js"> tag and one
 // <script type="text/openui"> block holding the program.
@@ -9,7 +8,7 @@ const PROGRAM_RE = /(<script\b[^>]*\btype\s*=\s*["']text\/openui(?:-lang)?["'][^
 const RUNTIME_RE = /<script\b[^>]*\bsrc\s*=\s*["']([^"']*\/austere(?:\.min)?\.js(?:\?[^"']*)?|austere(?:\.min)?\.js)["'][^>]*>\s*<\/script\s*>/i;
 const TITLE_RE = /<title[^>]*>([\s\S]*?)<\/title\s*>/i;
 
-export function skeleton(title = "Artifact") {
+export function skeleton(title = "Artifact"): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -27,16 +26,22 @@ intro = Card([CardHeader("${title.replace(/"/g, '\\"')}")])
 `;
 }
 
-/**
- * @returns {{ program: string|null, programStart: number, programEnd: number, programLine: number,
- *   runtimeSrc: string|null, title: string, shell: string }}
- */
-export function readArtifact(html) {
+export interface Artifact {
+  program: string | null;
+  programStart: number;
+  programEnd: number;
+  programLine: number;
+  runtimeSrc: string | null;
+  title: string;
+  shell: string;
+}
+
+export function readArtifact(html: string): Artifact {
   const text = String(html);
   const m = PROGRAM_RE.exec(text);
   const rt = RUNTIME_RE.exec(text);
   const t = TITLE_RE.exec(text);
-  let program = null;
+  let program: string | null = null;
   let programStart = -1;
   let programEnd = -1;
   let programLine = 0;
@@ -60,13 +65,13 @@ export function readArtifact(html) {
 }
 
 /** 1-based line number of a character offset. */
-export function lineAt(text, offset) {
+export function lineAt(text: string, offset: number): number {
   let line = 1;
   for (let i = 0; i < offset && i < text.length; i++) if (text.charCodeAt(i) === 10) line++;
   return line;
 }
 
-export function replaceProgram(html, program) {
+export function replaceProgram(html: string, program: string): string {
   const text = String(html);
   const m = PROGRAM_RE.exec(text);
   if (!m) throw new Error('no <script type="text/openui"> block to patch');
@@ -76,7 +81,7 @@ export function replaceProgram(html, program) {
 }
 
 /** Point the runtime tag at another URL (local server, or nothing when inlined). */
-export function rewriteRuntime(html, replacement) {
+export function rewriteRuntime(html: string, replacement: string | (() => string)): string {
   const text = String(html);
   const rep = typeof replacement === "function" ? replacement() : replacement;
   if (RUNTIME_RE.test(text)) return text.replace(RUNTIME_RE, () => rep);
@@ -85,11 +90,13 @@ export function rewriteRuntime(html, replacement) {
   return rep + "\n" + text;
 }
 
-export function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+export function escapeHtml(s: unknown): string {
+  return String(s).replace(/[&<>"']/g, (c) => ENTITIES[c]);
 }
 
-function decodeEntities(s) {
+function decodeEntities(s: string): string {
   return s
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")

@@ -1,6 +1,7 @@
 {
   "name": "@austere-axi/pack-mermaid",
   "private": true,
+  "type": "module",
   "description": "Mermaid diagrams for austere-axi. Bundled with austere-axi and versioned with it.",
-  "austere": { "bundled": true }
+  "austere": { "bundled": true, "entry": "src/index.ts" }
 }

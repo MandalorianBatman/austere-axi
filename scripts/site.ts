@@ -3,11 +3,12 @@
 //   site/**             copied as is; every .html goes through render() for {{root}}, {{nav}}, {{hero}}, {{version}}
 //   dist/austere.js ... the runtime, Mermaid and the bundled packs, so live pages load them from the site itself
 //   gallery/<id>.html   each file in examples/, with its runtime tag pointed at ../austere.js
-//   gallery/thumbs/     screenshots of those pages, taken by scripts/shot.mjs (which also fails on render errors)
+//   gallery/thumbs/     screenshots of those pages, taken by scripts/shot.ts (which also fails on render errors)
 //   gallery/index.html  thumbnail, OpenUI Lang source and token count for each example
 //   assets/hero.png     the landing page's screenshot, unless docs/demo.gif exists (copied to assets/demo.gif)
 //   assets/social-preview.png  og:image, copied from docs/social-preview.png when present (else hero.png)
-//   play/play.js        site/play/*.js bundled (the parser, checker and editor), with play/data.json beside it:
+//   copy.js             site/copy.ts compiled (site/*.ts sources are not copied)
+//   play/play.js        site/play/*.ts bundled (the parser, checker and editor), with play/data.json beside it:
 //                       spec, component catalog and a starter template per example
 //
 // Needs `npm run build` first, and Chrome or CHROME_PATH (same as `npm run shot`).
@@ -16,9 +17,25 @@ import * as esbuild from "esbuild";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { escapeHtml, readArtifact, rewriteRuntime } from "../src/cli/artifact.js";
-import { checkHtml } from "../src/cli/check.js";
-import { ROOT, estimateTokens } from "./lib/plugins.mjs";
+import { escapeHtml, readArtifact, rewriteRuntime } from "../src/cli/artifact.ts";
+import { checkHtml } from "../src/cli/check.ts";
+import { IIFE_TSCONFIG, ROOT, estimateTokens } from "./lib/plugins.ts";
+
+interface Example {
+  id: string;
+  title: string;
+  description: string;
+  program: string;
+  tokens: number;
+  statements: number;
+  check: ReturnType<typeof checkHtml>;
+  live: string;
+}
+
+interface ShotResult {
+  code: number | null;
+  output: string;
+}
 
 const SITE = path.join(ROOT, "site");
 const DIST = path.join(ROOT, "dist");
@@ -26,7 +43,7 @@ const EXAMPLES = path.join(ROOT, "examples");
 const OUT = path.join(ROOT, "_site");
 const DEMO_GIF = path.join(ROOT, "docs", "demo.gif");
 const SOCIAL = path.join(ROOT, "docs", "social-preview.png");
-const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { version: string };
 
 const REPO = "https://github.com/MandalorianBatman/austere-axi";
 const THUMB = { width: 1280, height: 800 };
@@ -48,11 +65,11 @@ for (const f of ["austere.js", "mermaid.min.js", "spec.json", "catalog.json"]) {
   }
 }
 
-const formatInt = (n) => n.toLocaleString("en-US");
-const decode = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+const formatInt = (n: number): string => n.toLocaleString("en-US");
+const decode = (s: string): string => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
 
 /** Fill the placeholders of a site page. `rel` is the page's path inside _site/, with forward slashes. */
-function render(html, rel, vars = {}) {
+function render(html: string, rel: string, vars: Record<string, string> = {}): string {
   const depth = rel.split("/").length - 1;
   const root = "../".repeat(depth);
   const current = rel === "gallery/index.html" ? "gallery/" : rel.replace(/index\.html$/, "");
@@ -66,7 +83,7 @@ function render(html, rel, vars = {}) {
   return out.replaceAll("{{root}}", root);
 }
 
-function* htmlFiles(dir) {
+function* htmlFiles(dir: string): Generator<string> {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, entry.name);
     if (entry.isDirectory()) yield* htmlFiles(file);
@@ -74,10 +91,10 @@ function* htmlFiles(dir) {
   }
 }
 
-/** Run scripts/shot.mjs on a page; it exits non-zero on render errors and page errors. */
-function shot(file, out, { width, height }) {
+/** Run scripts/shot.ts on a page; it exits non-zero on render errors and page errors. */
+function shot(file: string, out: string, { width, height }: { width: number; height: number }): Promise<ShotResult> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join(ROOT, "scripts/shot.mjs"), file, "--out", out, "--width", String(width), "--height", String(height)], {
+    const child = spawn(process.execPath, [path.join(ROOT, "scripts/shot.ts"), file, "--out", out, "--width", String(width), "--height", String(height)], {
       cwd: ROOT,
       env: process.env,
     });
@@ -88,8 +105,8 @@ function shot(file, out, { width, height }) {
   });
 }
 
-async function pool(items, size, fn) {
-  const results = new Array(items.length);
+async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(size, items.length) }, async () => {
@@ -102,12 +119,12 @@ async function pool(items, size, fn) {
   return results;
 }
 
-function loadExamples() {
+function loadExamples(): Example[] {
   const ids = fs
     .readdirSync(EXAMPLES)
     .filter((f) => f.endsWith(".html"))
     .map((f) => f.slice(0, -".html".length));
-  const rank = (id) => (ORDER.includes(id) ? ORDER.indexOf(id) : ORDER.length);
+  const rank = (id: string) => (ORDER.includes(id) ? ORDER.indexOf(id) : ORDER.length);
   ids.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
   return ids.map((id) => {
     const html = fs.readFileSync(path.join(EXAMPLES, `${id}.html`), "utf8");
@@ -129,7 +146,7 @@ function loadExamples() {
   });
 }
 
-function galleryPage(examples) {
+function galleryPage(examples: Example[]): string {
   const entries = examples.map((ex) => {
     const alt = `Screenshot of the ${ex.title} page`;
     return `<article class="entry" id="${ex.id}">
@@ -188,7 +205,7 @@ ${entries.join("\n")}
 `;
 }
 
-function heroHtml(example) {
+function heroHtml(example: Example): string {
   const gif = fs.existsSync(DEMO_GIF);
   const src = gif ? "assets/demo.gif" : "assets/hero.png";
   const alt = gif ? "Demo: an agent writes a page, the reviewer clicks a part and sends a note." : `The ${example.title} page, rendered by austere-axi.`;
@@ -213,7 +230,16 @@ const heroExample = examples.find((ex) => ex.id === HERO_EXAMPLE) || examples[0]
 // 2. Static files, runtime and live pages.
 fs.rmSync(OUT, { recursive: true, force: true });
 // The playground's modules are bundled below; their sources stay out of the site.
-fs.cpSync(SITE, OUT, { recursive: true, filter: (src) => !/[\\/]play[\\/][^\\/]+\.js$/.test(src) });
+fs.cpSync(SITE, OUT, { recursive: true, filter: (src) => !src.endsWith(".ts") });
+// site/copy.ts is a plain page script: compiled, not bundled.
+await esbuild.build({
+  entryPoints: [path.join(SITE, "copy.ts")],
+  outfile: path.join(OUT, "copy.js"),
+  format: "iife",
+  target: "es2022",
+  tsconfigRaw: IIFE_TSCONFIG,
+  logLevel: "warning",
+});
 fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
 for (const f of ["austere.js", "mermaid.min.js"]) fs.copyFileSync(path.join(DIST, f), path.join(OUT, f));
 const packsDir = path.join(DIST, "packs");
@@ -228,7 +254,7 @@ for (const ex of examples) fs.writeFileSync(path.join(OUT, "gallery", `${ex.id}.
 // The playground (site/play/): its modules are bundled into one file, and the data it needs
 // (the parser's schema, the component catalog, one template per example) sits beside it.
 await esbuild.build({
-  entryPoints: [path.join(SITE, "play", "play.js")],
+  entryPoints: [path.join(SITE, "play", "play.ts")],
   outfile: path.join(OUT, "play", "play.js"),
   bundle: true,
   format: "esm",
@@ -237,7 +263,7 @@ await esbuild.build({
   legalComments: "none",
   logLevel: "warning",
 });
-const readJson = (name) => JSON.parse(fs.readFileSync(path.join(DIST, name), "utf8"));
+const readJson = (name: string): unknown => JSON.parse(fs.readFileSync(path.join(DIST, name), "utf8"));
 fs.writeFileSync(
   path.join(OUT, "play", "data.json"),
   JSON.stringify({
@@ -247,7 +273,7 @@ fs.writeFileSync(
     templates: examples.map(({ id, title, description, program }) => ({ id, title, description, program })),
   }),
 );
-// 3. Screenshots, from the pages as deployed. shot.mjs fails on render errors.
+// 3. Screenshots, from the pages as deployed. shot.ts fails on render errors.
 const jobs = examples.map((ex) => ({ ex, file: path.join(OUT, "gallery", `${ex.id}.html`), out: path.join(OUT, "gallery", "thumbs", `${ex.id}.png`) }));
 const shots = await pool(jobs, 4, async (job) => ({ job, ...(await shot(job.file, job.out, THUMB)) }));
 const broken = shots.filter((s) => s.code !== 0);

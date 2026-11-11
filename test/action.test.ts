@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import test from "node:test";
-import { escapeMd, expandPages, marker, parseCheck, renderComment, resolveCli, upsertComment } from "../action/lib.mjs";
+import { escapeMd, expandPages, marker, parseCheck, renderComment, resolveCli, upsertComment } from "../action/lib.ts";
 
-const cli = (...args) => spawnSync(process.execPath, ["src/cli/main.js", ...args], { encoding: "utf8" }).stdout;
+const cli = (...args: string[]) => spawnSync(process.execPath, ["src/cli/main.ts", ...args], { encoding: "utf8" }).stdout;
 
 test("parseCheck reads real `check` output: errors with statement, line and message", () => {
   const r = parseCheck(cli("check", "test/fixtures/action/bad.html"));
@@ -12,7 +13,7 @@ test("parseCheck reads real `check` output: errors with statement, line and mess
   assert.equal(r.errors.length, 1);
   assert.equal(r.errors[0].statement, "summary");
   assert.equal(r.errors[0].line, "11");
-  assert.match(r.errors[0].message, /^Unknown component "NoSuchComponent"/);
+  assert.match(r.errors[0].message ?? "", /^Unknown component "NoSuchComponent"/);
 });
 
 test("parseCheck counts warnings and reads a passing page", () => {
@@ -34,7 +35,8 @@ test("escapeMd: PR-controlled text cannot inject links, HTML, mentions or table 
   assert.doesNotMatch(s, /[<>[\]|`@\n]/);
 });
 
-const page = (over = {}) => ({ page: "a.html", title: "A", ok: true, statements: 5, warnings: 0, errors: [], exported: "a.html", ...over });
+interface PageResult { page: string; title: string; ok: boolean; statements: number; warnings: number; errors: { statement: string; line: number; message: string }[]; exported: string | undefined }
+const page = (over: Partial<PageResult> = {}): PageResult => ({ page: "a.html", title: "A", ok: true, statements: 5, warnings: 0, errors: [], exported: "a.html", ...over });
 
 test("renderComment: marker first, attribution link, artifact link; failures list their errors", () => {
   const pass = renderComment([page()], { tag: "t", artifactUrl: "https://example.test/art/1" });
@@ -59,16 +61,17 @@ test("renderComment: a title cannot break out of the table", () => {
 });
 
 /** `login` set: a user token that may call GET /user. Unset: the workflow token, which gets a 403 there. */
-function fakeGitHub(comments, login) {
-  const calls = [];
-  const f = async (url, init) => {
+interface Comment { id: number; body: string; user: { login: string; type: string } }
+function fakeGitHub(comments: Comment[], login?: string) {
+  const calls: [string | undefined, string][] = [];
+  const f = async (url: string, init: RequestInit) => {
     calls.push([init.method, url.replace("https://api.test", "")]);
-    const json = (v) => ({ ok: true, status: 200, json: async () => v, text: async () => "" });
+    const json = (v: unknown) => ({ ok: true, status: 200, json: async () => v, text: async () => "" });
     if (url.endsWith("/user")) return login ? json({ login }) : { ok: false, status: 403, text: async () => "Resource not accessible by integration" };
     if (init.method === "GET") return json(comments);
     return json({ html_url: "https://example.test/c", id: 7 });
   };
-  return { f, calls };
+  return { f: f as unknown as typeof fetch, calls };
 }
 
 const bot = { login: "github-actions[bot]", type: "Bot" };
@@ -104,8 +107,8 @@ test("upsertComment: a marked comment by someone else is never taken over", asyn
 
 test("resolveCli: on Windows npx runs as node npx-cli.js, since a shell would re-parse PR-controlled paths", () => {
   const execPath = "C:\\node\\node.exe";
-  const files = new Set(["C:\\npm\\npx.cmd", "C:\\npm\\node_modules\\npm\\bin\\npx-cli.js", "C:\\node\\node_modules\\npm\\bin\\npx-cli.js"]);
-  const o = { platform: "win32", execPath, exists: (p) => files.has(p) };
+  const files = new Set<fs.PathLike>(["C:\\npm\\npx.cmd", "C:\\npm\\node_modules\\npm\\bin\\npx-cli.js", "C:\\node\\node_modules\\npm\\bin\\npx-cli.js"]);
+  const o = { platform: "win32" as NodeJS.Platform, execPath, exists: (p: fs.PathLike) => files.has(p) };
   assert.deepEqual(resolveCli(["npx", "-y", "austere-axi@1"], { ...o, env: { PATH: "C:\\Windows;\"C:\\npm\"" } }), [execPath, "C:\\npm\\node_modules\\npm\\bin\\npx-cli.js", "-y", "austere-axi@1"]);
   assert.deepEqual(resolveCli(["npx", "-y", "austere-axi@1"], { ...o, env: { PATH: "C:\\Windows" } }), [execPath, "C:\\node\\node_modules\\npm\\bin\\npx-cli.js", "-y", "austere-axi@1"]);
   assert.deepEqual(resolveCli(["node", "dist/cli.mjs"], o), ["node", "dist/cli.mjs"]);
@@ -113,6 +116,6 @@ test("resolveCli: on Windows npx runs as node npx-cli.js, since a shell would re
 });
 
 test("upsertComment: a 403 rejects with the status so the action can warn instead of fail", async () => {
-  const f = async () => ({ ok: false, status: 403, text: async () => "Resource not accessible by integration" });
-  await assert.rejects(upsertComment({ api: "https://api.test", repo: "o/r", pr: 5, token: "x", body: "b", tag: "t", fetch: f }), (e) => e.status === 403);
+  const f = (async () => ({ ok: false, status: 403, text: async () => "Resource not accessible by integration" })) as unknown as typeof fetch;
+  await assert.rejects(upsertComment({ api: "https://api.test", repo: "o/r", pr: 5, token: "x", body: "b", tag: "t", fetch: f }), (e: { status?: number }) => e.status === 403);
 });

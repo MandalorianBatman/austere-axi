@@ -3,7 +3,128 @@
 // The local server inlines the boot object as window.__AUSTERE__. The hosted
 // service's CSP forbids inline scripts, so it ships the same object as JSON in
 // <script type="application/json" id="austere-boot">.
-const BOOT = window.__AUSTERE__ ?? JSON.parse(document.getElementById("austere-boot")?.textContent || "{}");
+
+type Mode = "annotate" | "explore";
+
+/** The boot object the server hands the page. */
+interface Boot {
+  id: string;
+  title: string;
+  name: string;
+  file: string;
+  version?: string;
+  artifactUrl?: string;
+  hosted?: { base?: string; report?: string } | null;
+  viewer?: { role: string; name: string; auto?: boolean };
+}
+
+/** A queued note. Items come from the frame (untrusted), localStorage or the server. */
+interface QueueItem {
+  kind: string;
+  qid?: string;
+  target?: string;
+  component?: string;
+  note?: string;
+  text?: string;
+  selection?: string;
+  excerpt?: string;
+  message?: string;
+  statement?: string;
+  detail?: { part?: unknown; row?: unknown; column?: unknown; [key: string]: unknown };
+  form?: Record<string, unknown>;
+  path?: unknown;
+}
+
+/** A transcript entry: an agent reply or a batch of notes. */
+interface Entry {
+  id: string;
+  role: string;
+  at: number;
+  text?: string;
+  author?: string;
+  items?: QueueItem[];
+  held?: boolean;
+  end?: boolean;
+  seenAt?: number;
+  workAt?: number;
+  doneAt?: number;
+  discarded?: boolean;
+}
+
+/** A parser or render error the frame reports. */
+interface RenderIssue {
+  statementId?: string;
+  message: string;
+  severity?: string;
+}
+
+/** Messages the frame posts over the review bridge. Frame code is untrusted. */
+type FrameMessage = { austere: 1 } & (
+  | { type: "hello" }
+  | { type: "ready"; title?: string }
+  | { type: "annotate" | "action"; item: unknown }
+  | { type: "errors"; errors?: RenderIssue[] }
+  | { type: "runtime-error"; error?: RenderIssue }
+  | { type: "state"; state: unknown }
+  | { type: "scroll"; y?: number }
+  | { type: "changes"; ids?: unknown }
+  | { type: "toggle-mode" }
+  | { type: "open-url"; url: unknown }
+);
+
+/** Messages the chrome posts to the frame. */
+type ChromeMessage =
+  | { type: "init"; mode: Mode; state: unknown; scrollY: number }
+  | { type: "reveal"; id: string | undefined }
+  | { type: "mode"; mode: Mode }
+  | { type: "highlight"; ids: string[]; scroll: boolean }
+  | { type: "source"; program: string };
+
+interface SessionInfo {
+  status: string;
+  endedBy: string | null;
+  closed?: boolean;
+  unread?: number;
+}
+
+interface SnapshotEvent {
+  transcript?: Entry[];
+  presence: string;
+  session: SessionInfo;
+  more?: boolean;
+  links: { remote?: string } | null;
+  version?: string;
+  thirdPartyPacks?: string[];
+  program: string;
+}
+
+interface PresenceEvent extends SessionInfo {
+  presence: string;
+}
+
+interface ChangedEvent {
+  program: string;
+  shellChanged?: boolean;
+  thirdPartyPacks?: string[];
+}
+
+interface HostedConversation {
+  notes?: { seq: number; author?: string; items?: unknown; at: number }[];
+  replies?: { seq: number; text?: string; at: number }[];
+  publishedAt?: unknown;
+  cursor?: string | number | null;
+  thirdPartyPacks?: string[];
+}
+
+interface ItemOptions {
+  queued?: boolean;
+  held?: boolean;
+}
+
+type AttrValue = string | boolean | null | undefined | ((e: Event) => unknown);
+type Child = Node | string | number | null | undefined | false;
+
+const BOOT: Boot = (window as Window & { __AUSTERE__?: Boot }).__AUSTERE__ ?? JSON.parse(document.getElementById("austere-boot")?.textContent || "{}");
 const SID = BOOT.id;
 // Hosted mode (austere-cloud, docs/hosted-share-links.md): a public reviewer
 // page that polls instead of streaming and has no owner controls.
@@ -13,7 +134,7 @@ const VIEWER = BOOT.viewer || { role: "owner", name: "" };
 const OWNER = !HOSTED && VIEWER.role === "owner";
 const NAME_MAX = 40;
 const LS = {
-  get(key, fallback) {
+  get<T>(key: string, fallback: T): T {
     try {
       const v = localStorage.getItem(key);
       return v == null ? fallback : JSON.parse(v);
@@ -21,7 +142,7 @@ const LS = {
       return fallback;
     }
   },
-  set(key, value) {
+  set(key: string, value: unknown) {
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch {
@@ -30,14 +151,14 @@ const LS = {
   },
 };
 const SS = {
-  get(key) {
+  get<T = unknown>(key: string): T | null {
     try {
       return JSON.parse(sessionStorage.getItem(key) || "null");
     } catch {
       return null;
     }
   },
-  set(key, value) {
+  set(key: string, value: unknown) {
     try {
       sessionStorage.setItem(key, JSON.stringify(value));
     } catch {
@@ -46,11 +167,33 @@ const SS = {
   },
 };
 // A hosted reviewer names themself once; the local server names invited reviewers.
-let viewerName = HOSTED ? String(LS.get("austere:name", "") || "").slice(0, NAME_MAX) : VIEWER.name;
+let viewerName: string = HOSTED ? String(LS.get("austere:name", "") || "").slice(0, NAME_MAX) : VIEWER.name;
 
-const state = {
-  mode: LS.get("austere:mode", "annotate"),
-  queue: LS.get(`austere:queue:${SID}`, []),
+const state: {
+  mode: Mode;
+  queue: QueueItem[];
+  transcript: Entry[];
+  presence: string;
+  status: string;
+  endedBy: string | null;
+  closed: boolean;
+  unread: number;
+  more: boolean;
+  program: string | null;
+  frameReady: boolean;
+  scrollY: number;
+  parserErrors: RenderIssue[];
+  runtimeErrors: RenderIssue[];
+  changes: string[];
+  highlight: boolean;
+  sheetOpen: boolean;
+  sending: boolean;
+  connected: boolean;
+  editing: string | null | undefined;
+  links: { remote?: string } | null;
+} = {
+  mode: LS.get<Mode>("austere:mode", "annotate"),
+  queue: LS.get<QueueItem[]>(`austere:queue:${SID}`, []),
   transcript: [],
   presence: "idle",
   status: "open",
@@ -74,18 +217,20 @@ const state = {
 
 // ── markup ──
 
-const $ = (sel, root = document) => root.querySelector(sel);
-function h(tag, attrs = {}, ...children) {
+// Elements of the markup below: the queries are of known elements (a cast at the boundary).
+const $ = <E extends Element = HTMLElement>(sel: string, root: ParentNode = document): E => root.querySelector(sel) as E;
+function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, AttrValue> = {}, ...children: (Child | Child[])[]): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (v == null || v === false) continue;
-    if (k === "class") el.className = v;
-    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-    else if (k === "text") el.textContent = v;
-    else if (k === "html") el.innerHTML = v;
-    else el.setAttribute(k, v === true ? "" : v);
+    if (k === "class") el.className = String(v);
+    else if (k.startsWith("on")) {
+      if (typeof v === "function") el.addEventListener(k.slice(2), v);
+    } else if (k === "text") el.textContent = String(v);
+    else if (k === "html") el.innerHTML = String(v);
+    else el.setAttribute(k, v === true ? "" : String(v));
   }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(String(c)));
+  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
   return el;
 }
 
@@ -174,7 +319,7 @@ if (nameForm) {
   $(".composer").before(nameForm);
   nameForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    const input = $("input", nameForm);
+    const input = $<HTMLInputElement>("input", nameForm);
     const name = input.value.trim().slice(0, NAME_MAX);
     if (!name) return input.focus();
     viewerName = name;
@@ -185,7 +330,7 @@ if (nameForm) {
   });
 }
 
-const reportForm = HOSTED?.report
+const reportForm: HTMLFormElement | null = HOSTED?.report
   ? h(
       "form",
       { class: "report-box", hidden: true },
@@ -195,7 +340,9 @@ const reportForm = HOSTED?.report
         "div",
         { class: "report-row" },
         h("span", { class: "report-status" }),
-        h("button", { type: "button", class: "btn tiny ghost", text: "Cancel", onclick: () => (reportForm.hidden = true) }),
+        h("button", { type: "button", class: "btn tiny ghost", text: "Cancel", onclick: () => {
+          if (reportForm) reportForm.hidden = true;
+        } }),
         h("button", { type: "submit", class: "btn tiny primary", text: "Send report" }),
       ),
     )
@@ -223,27 +370,27 @@ if (HOSTED) {
     $(".panel").append(reportForm);
     reportForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const reason = $("textarea", reportForm).value.trim();
+      const reason = $<HTMLTextAreaElement>("textarea", reportForm).value.trim();
       const status = $(".report-status", reportForm);
       if (!reason) return $("textarea", reportForm).focus();
       status.textContent = "Sending…";
       try {
-        const r = await fetch(HOSTED.report, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason }) });
+        const r = await fetch(HOSTED.report as string, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason }) });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        $("textarea", reportForm).value = "";
+        $<HTMLTextAreaElement>("textarea", reportForm).value = "";
         reportForm.hidden = true;
-        foot.querySelector(".report-open").replaceWith(h("span", { class: "report-done", text: "Reported. Thank you." }));
+        $(".report-open", foot).replaceWith(h("span", { class: "report-done", text: "Reported. Thank you." }));
       } catch (err) {
-        status.textContent = `Not sent: ${err.message}`;
+        status.textContent = `Not sent: ${(err as Error).message}`;
       }
     });
   }
   $(".panel").append(foot);
 }
 
-const frame = $(".frame");
+const frame = $<HTMLIFrameElement>(".frame");
 const log = $(".log");
-const textarea = $(".composer textarea");
+const textarea = $<HTMLTextAreaElement>(".composer textarea");
 const banner = $(".banner");
 
 $(".title").textContent = BOOT.title;
@@ -254,24 +401,24 @@ document.title = `${BOOT.title} · austere`;
 
 // ── tiny markdown for agent replies ──
 
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+function esc(s: unknown): string {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]);
 }
-function inline(s) {
+function inline(s: string): string {
   return esc(s)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 }
-function markdown(src) {
+function markdown(src: unknown): string {
   const lines = String(src).replace(/\r\n/g, "\n").split("\n");
-  const out = [];
+  const out: string[] = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
     if (/^```/.test(line)) {
-      const buf = [];
+      const buf: string[] = [];
       i++;
       while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
       i++;
@@ -280,7 +427,7 @@ function markdown(src) {
     }
     if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
       const ordered = /^\s*\d+\./.test(line);
-      const buf = [];
+      const buf: string[] = [];
       while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) buf.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""));
       out.push(`<${ordered ? "ol" : "ul"}>${buf.map((b) => `<li>${inline(b)}</li>`).join("")}</${ordered ? "ol" : "ul"}>`);
       continue;
@@ -294,7 +441,7 @@ function markdown(src) {
       i++;
       continue;
     }
-    const buf = [];
+    const buf: string[] = [];
     while (i < lines.length && lines[i].trim() && !/^```|^\s*([-*]|\d+\.)\s+|^#{1,6}\s/.test(lines[i])) buf.push(lines[i++]);
     out.push(`<p>${buf.map(inline).join("<br>")}</p>`);
   }
@@ -303,7 +450,7 @@ function markdown(src) {
 
 // ── frame bridge ──
 
-function post(msg) {
+function post(msg: ChromeMessage) {
   frame.contentWindow?.postMessage({ austere: 1, ...msg }, "*");
 }
 
@@ -314,7 +461,7 @@ function loadFrame() {
 
 window.addEventListener("message", (e) => {
   if (e.source !== frame.contentWindow) return;
-  const d = e.data;
+  const d = e.data as FrameMessage | null | undefined;
   if (!d || d.austere !== 1) return;
   switch (d.type) {
     case "hello":
@@ -346,8 +493,9 @@ window.addEventListener("message", (e) => {
       renderLog();
       break;
     case "runtime-error":
-      if (d.error && !state.runtimeErrors.some((x) => x.statementId === d.error.statementId && x.message === d.error.message)) {
-        state.runtimeErrors.push(d.error);
+      const error = d.error;
+      if (error && !state.runtimeErrors.some((x) => x.statementId === error.statementId && x.message === error.message)) {
+        state.runtimeErrors.push(error);
         renderLog();
       }
       break;
@@ -359,7 +507,7 @@ window.addEventListener("message", (e) => {
       break;
     case "changes":
       // Frame code is untrusted: keep string ids only.
-      state.changes = Array.isArray(d.ids) ? d.ids.filter((id) => typeof id === "string").slice(0, 50) : [];
+      state.changes = Array.isArray(d.ids) ? d.ids.filter((id): id is string => typeof id === "string").slice(0, 50) : [];
       renderChanges();
       if (state.highlight) postHighlight(false);
       break;
@@ -374,8 +522,8 @@ window.addEventListener("message", (e) => {
 
 // Popups from the frame keep its sandbox, so external links are opened here
 // instead. Never this origin: artifact code must not get a window on it.
-function openExternal(url) {
-  let u;
+function openExternal(url: unknown) {
+  let u: URL;
   try {
     u = new URL(String(url));
   } catch {
@@ -391,10 +539,12 @@ function saveQueue() {
   LS.set(`austere:queue:${SID}`, state.queue);
 }
 
-function addToQueue(item) {
-  if (state.closed || !item || typeof item !== "object" || typeof item.kind !== "string") return;
+function addToQueue(raw: unknown) {
+  if (state.closed || !raw || typeof raw !== "object" || typeof (raw as { kind?: unknown }).kind !== "string") return;
   // Frame code is untrusted: the item is rendered here and saved to localStorage, so its text fields must be strings.
-  for (const k of ["target", "component", "note", "text", "selection", "excerpt", "message", "statement"]) if (k in item) item[k] = str(item[k]);
+  const fields = raw as Record<string, unknown>;
+  for (const k of ["target", "component", "note", "text", "selection", "excerpt", "message", "statement"]) if (k in fields) fields[k] = str(fields[k]);
+  const item = raw as QueueItem;
   item.qid = `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   state.queue.push(item);
   saveQueue();
@@ -402,22 +552,22 @@ function addToQueue(item) {
   renderDock();
 }
 
-function removeFromQueue(qid) {
+function removeFromQueue(qid: string | undefined) {
   state.queue = state.queue.filter((q) => q.qid !== qid);
   saveQueue();
   renderLog();
   renderDock();
 }
 
-function anchorLabel(item) {
+function anchorLabel(item: QueueItem): { icon: string; text: string | undefined; sub: string | undefined } {
   if (item.kind === "annotation") return { icon: "✎", text: item.target, sub: item.component };
   if (item.kind === "action") return { icon: "↗", text: item.message, sub: "button" };
   if (item.kind === "render-error") return { icon: "!", text: item.statement || "page", sub: "render issue" };
   return { icon: "", text: "", sub: "" };
 }
 
-function flatForm(obj, prefix = "") {
-  const parts = [];
+function flatForm(obj: object | null | undefined, prefix = ""): string[] {
+  const parts: string[] = [];
   for (const [k, v] of Object.entries(obj || {})) {
     if (v && typeof v === "object" && !Array.isArray(v)) parts.push(...flatForm(v, ""));
     else parts.push(`${prefix}${k}: ${Array.isArray(v) ? v.join(", ") : v}`);
@@ -425,9 +575,9 @@ function flatForm(obj, prefix = "") {
   return parts;
 }
 
-const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
+const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
 
-function itemQuote(item) {
+function itemQuote(item: QueueItem): unknown {
   if (item.selection) return item.selection;
   if (item.detail?.part) return item.excerpt ? `${item.detail.part}  ${item.excerpt}` : item.detail.part;
   if (item.detail?.column) {
@@ -440,7 +590,7 @@ function itemQuote(item) {
 }
 
 /** One bad item shows a marker instead of aborting the whole panel render. */
-function itemBody(item, opts = {}) {
+function itemBody(item: QueueItem, opts: ItemOptions = {}): HTMLElement {
   try {
     return renderItem(item, opts);
   } catch {
@@ -448,7 +598,7 @@ function itemBody(item, opts = {}) {
   }
 }
 
-function renderItem(item, { queued, held } = {}) {
+function renderItem(item: QueueItem, { queued, held }: ItemOptions = {}): HTMLElement {
   const a = anchorLabel(item);
   const wrap = h("div", { class: `item kind-${item.kind}` });
   if (a.text) {
@@ -511,18 +661,18 @@ function renderItem(item, { queued, held } = {}) {
   return wrap;
 }
 
-function fmtTime(ms) {
+function fmtTime(ms: number | undefined): string {
   if (!ms) return "";
   return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 /** "You" for the viewer's own notes, otherwise the author's name; the owner's notes read "Owner" to a reviewer. */
-function whoLabel(entry) {
+function whoLabel(entry: Entry): string {
   if (OWNER) return entry.author || "You";
   return entry.author === viewerName ? "You" : entry.author || "Owner";
 }
 
-async function heldAction(kind, ids) {
+async function heldAction(kind: string, ids?: string[]) {
   try {
     await fetch(`${BASE}/${kind}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(ids ? { ids } : { all: true }) });
   } catch {
@@ -530,7 +680,7 @@ async function heldAction(kind, ids) {
   }
 }
 
-function receipt(entry) {
+function receipt(entry: Entry): HTMLElement | null {
   // Hosted notes have no delivery receipts: the owner's agent sees them after a sync.
   if (HOSTED) return entry.author === viewerName ? h("div", { class: "receipt" }, h("em", { text: "Sent to the page owner" })) : null;
   if (entry.held) {
@@ -543,7 +693,7 @@ function receipt(entry) {
     }
     return row;
   }
-  const steps = [
+  const steps: [string, number | undefined][] = [
     ["Seen", entry.seenAt],
     ["Working", entry.workAt],
     ["Done", entry.doneAt],
@@ -680,13 +830,13 @@ function renderComposer() {
   const closed = state.closed;
   const n = state.queue.length;
   textarea.disabled = closed || gone || state.sending;
-  $(".send").disabled = closed || gone || state.sending;
-  if ($(".send-end")) $(".send-end").disabled = closed || state.sending;
+  $<HTMLButtonElement>(".send").disabled = closed || gone || state.sending;
+  if ($(".send-end")) $<HTMLButtonElement>(".send-end").disabled = closed || state.sending;
   $(".send").textContent = state.sending ? "Sending…" : n ? `Send ${n}` : "Send";
   textarea.placeholder = closed ? "Review closed" : n ? "Add a message (optional)…" : "Message the agent…";
 }
 
-function composerError(text) {
+function composerError(text: string) {
   const el = $(".composer-error");
   el.textContent = text || "";
   el.hidden = !text;
@@ -695,7 +845,7 @@ function composerError(text) {
 async function sendAll(end = false) {
   if (state.sending || state.closed) return;
   const text = textarea.value.trim();
-  const items = state.queue.map(({ qid, ...rest }) => rest);
+  const items: QueueItem[] = state.queue.map(({ qid, ...rest }) => rest);
   if (text) items.push({ kind: "message", text });
   if (!items.length && !end) {
     textarea.focus();
@@ -703,7 +853,7 @@ async function sendAll(end = false) {
   }
   if (end && !OWNER) return;
   if (end && !items.length && !confirm("End this review? The agent will stop listening; notes you send later still reach it.")) return;
-  if (HOSTED && !viewerName) {
+  if (HOSTED && !viewerName && nameForm) {
     nameForm.hidden = false;
     $("input", nameForm).focus();
     return;
@@ -717,15 +867,16 @@ async function sendAll(end = false) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(HOSTED ? { name: viewerName, items } : { items, end }),
     });
-    const data = await r.json().catch(() => ({}));
+    const data: { error?: string; entry?: Entry } = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
     state.queue = [];
     saveQueue();
     textarea.value = "";
-    if (data.entry && !state.transcript.some((e) => e.id === data.entry.id)) state.transcript.push(data.entry);
+    const entry = data.entry;
+    if (entry && !state.transcript.some((e) => e.id === entry.id)) state.transcript.push(entry);
     if (HOSTED) pollConversation();
   } catch (err) {
-    composerError(`Not sent: ${err.message}. Your notes are still queued.`);
+    composerError(`Not sent: ${(err as Error).message}. Your notes are still queued.`);
   } finally {
     state.sending = false;
     renderLog(true);
@@ -747,13 +898,13 @@ textarea.addEventListener("keydown", (e) => {
 
 // ── mode, presence, changes ──
 
-function setMode(mode) {
+function setMode(mode: string | undefined) {
   state.mode = mode === "explore" ? "explore" : "annotate";
   LS.set("austere:mode", state.mode);
-  for (const b of document.querySelectorAll(".seg button")) b.classList.toggle("on", b.dataset.mode === state.mode);
+  for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) b.classList.toggle("on", b.dataset.mode === state.mode);
   post({ type: "mode", mode: state.closed ? "explore" : state.mode });
 }
-for (const b of document.querySelectorAll(".seg button")) b.addEventListener("click", () => setMode(b.dataset.mode));
+for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) b.addEventListener("click", () => setMode(b.dataset.mode));
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && (e.key === "i" || e.key === "I")) {
     e.preventDefault();
@@ -763,8 +914,8 @@ document.addEventListener("keydown", (e) => {
 
 function renderPresence() {
   const el = $(".presence");
-  let label;
-  let cls;
+  let label: string;
+  let cls: string;
   if (state.closed) [label, cls] = ["Review closed", "ended"];
   else if (gone) [label, cls] = ["Page removed", "ended"];
   else if (!state.connected) [label, cls] = ["Reconnecting…", "off"];
@@ -808,7 +959,7 @@ function renderChanges() {
     : "The last turn changed nothing on the page. Click to stop highlighting.";
 }
 // On: the last turn's changes stay marked, and each new turn's replace them, until switched off.
-function postHighlight(scroll) {
+function postHighlight(scroll: boolean) {
   post({ type: "highlight", ids: state.highlight ? state.changes : [], scroll });
 }
 $(".changes").addEventListener("click", () => {
@@ -826,7 +977,7 @@ $(".menu-btn").addEventListener("click", (e) => {
 });
 document.addEventListener("click", () => (menuPop.hidden = true));
 menuPop.addEventListener("click", async (e) => {
-  const cmd = e.target.closest("[data-cmd]")?.dataset.cmd;
+  const cmd = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd : undefined;
   if (!cmd) return;
   if (cmd === "copy-path") navigator.clipboard?.writeText(BOOT.file);
   if (cmd === "copy-link") navigator.clipboard?.writeText(state.links?.remote || location.href);
@@ -846,7 +997,7 @@ menuPop.addEventListener("click", async (e) => {
 // ── mobile sheet ──
 
 const isNarrow = () => window.matchMedia("(max-width: 860px)").matches;
-function setSheet(open) {
+function setSheet(open: boolean) {
   state.sheetOpen = open;
   SS.set(`austere:sheet:${SID}`, open);
   document.documentElement.classList.toggle("sheet-open", open);
@@ -858,7 +1009,7 @@ function renderDock() {
   const parts = ["Conversation"];
   if (n) parts.push(`${n} queued`);
   const last = state.transcript[state.transcript.length - 1];
-  if (last?.role === "agent" && last.at > (SS.get(`austere:seen:${SID}`) || 0)) parts.push("new reply");
+  if (last?.role === "agent" && last.at > (SS.get<number>(`austere:seen:${SID}`) || 0)) parts.push("new reply");
   dock.innerHTML = `<span class="dock-grip"></span><span>${esc(parts.join(" · "))}</span><span class="dock-presence ${esc($(".presence").className.replace("presence", "").trim())}"></span>`;
 }
 function pulseDock() {
@@ -877,7 +1028,7 @@ $(".scrim").addEventListener("click", () => setSheet(false));
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && state.sheetOpen && isNarrow()) setSheet(false);
 });
-let touchY = null;
+let touchY: number | null = null;
 $(".panel-head").addEventListener("touchstart", (e) => (touchY = e.touches[0].clientY), { passive: true });
 $(".panel-head").addEventListener(
   "touchend",
@@ -902,7 +1053,7 @@ $(".dock").addEventListener(
 // Third-party packs run their own code inside the page, which is also where
 // annotations and button presses come from: say so, so the reviewer reads the
 // queue before sending.
-function showPackNotice(packs) {
+function showPackNotice(packs: string[] | undefined) {
   const notice = $(".notice");
   if (!packs || !packs.length) {
     notice.hidden = true;
@@ -914,7 +1065,7 @@ function showPackNotice(packs) {
   notice.hidden = false;
 }
 
-function showBanner(text, actions = []) {
+function showBanner(text: string, actions: HTMLElement[] = []) {
   banner.textContent = "";
   if (!text) {
     banner.hidden = true;
@@ -924,7 +1075,7 @@ function showBanner(text, actions = []) {
   banner.hidden = false;
 }
 
-function mergeEntries(entries) {
+function mergeEntries(entries: Entry[]) {
   for (const e of entries) {
     const i = state.transcript.findIndex((x) => x.id === e.id);
     if (e.discarded) {
@@ -942,7 +1093,7 @@ async function loadEarlier() {
   try {
     const r = await fetch(`${BASE}/transcript?before=${encodeURIComponent(first.id)}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const d = await r.json();
+    const d: { entries?: Entry[]; more?: boolean } = await r.json();
     const known = new Set(state.transcript.map((e) => e.id));
     state.transcript = [...(d.entries || []).filter((e) => !e.discarded && !known.has(e.id)), ...state.transcript];
     state.more = !!d.more;
@@ -950,21 +1101,22 @@ async function loadEarlier() {
     renderLog();
     log.scrollTop = log.scrollHeight - fromBottom;
   } catch (err) {
-    composerError(`Could not load earlier messages: ${err.message}`);
+    composerError(`Could not load earlier messages: ${(err as Error).message}`);
   }
 }
 
-let es = null;
+let es: EventSource | null = null;
 let disconnectedAt = 0;
 function connect() {
   es = new EventSource(`${BASE}/events`);
-  es.addEventListener("open", () => {
+  const source = es;
+  source.addEventListener("open", () => {
     state.connected = true;
     disconnectedAt = 0;
     showBanner("");
     renderPresence();
   });
-  es.addEventListener("error", () => {
+  source.addEventListener("error", () => {
     state.connected = false;
     if (!disconnectedAt) disconnectedAt = Date.now();
     renderPresence();
@@ -976,8 +1128,8 @@ function connect() {
       }
     }, 4000);
   });
-  es.addEventListener("snapshot", (e) => {
-    const d = JSON.parse(e.data);
+  source.addEventListener("snapshot", (e) => {
+    const d: SnapshotEvent = JSON.parse(e.data);
     state.transcript = (d.transcript || []).filter((e) => !e.discarded);
     state.presence = d.presence;
     state.status = d.session.status;
@@ -1001,13 +1153,13 @@ function connect() {
     renderLog();
     setMode(state.mode);
   });
-  es.addEventListener("transcript", (e) => {
-    mergeEntries(JSON.parse(e.data).entries || []);
+  source.addEventListener("transcript", (e) => {
+    mergeEntries((JSON.parse(e.data) as { entries?: Entry[] }).entries || []);
     renderLog();
     renderDock();
   });
-  es.addEventListener("presence", (e) => {
-    const d = JSON.parse(e.data);
+  source.addEventListener("presence", (e) => {
+    const d: PresenceEvent = JSON.parse(e.data);
     state.presence = d.presence;
     state.status = d.status;
     state.endedBy = d.endedBy;
@@ -1017,8 +1169,8 @@ function connect() {
     renderPresence();
     renderLog();
   });
-  es.addEventListener("changed", (e) => {
-    const d = JSON.parse(e.data);
+  source.addEventListener("changed", (e) => {
+    const d: ChangedEvent = JSON.parse(e.data);
     state.parserErrors = [];
     state.runtimeErrors = [];
     showPackNotice(d.thirdPartyPacks);
@@ -1034,8 +1186,8 @@ function connect() {
     }
     renderLog();
   });
-  es.addEventListener("ended", (e) => {
-    const d = JSON.parse(e.data);
+  source.addEventListener("ended", (e) => {
+    const d: { by: string | null; closed?: boolean } = JSON.parse(e.data);
     state.status = "ended";
     state.endedBy = d.by;
     if (d.closed) {
@@ -1045,10 +1197,10 @@ function connect() {
     renderPresence();
     renderLog();
   });
-  es.addEventListener("server", (e) => {
-    const d = JSON.parse(e.data);
+  source.addEventListener("server", (e) => {
+    const d: { state: string } = JSON.parse(e.data);
     if (d.state === "revoked") {
-      es.close();
+      source.close();
       state.connected = false;
       showBanner("Your invite was revoked. Ask the owner for a new link.");
       return;
@@ -1061,19 +1213,19 @@ function connect() {
 
 // Hosted: no live stream. Check {base}/conversation every 30 s and on focus.
 const POLL_MS = 30_000;
-let cursor = null;
-let publishedAt = null;
-let polling = null;
+let cursor: string | number | null = null;
+let publishedAt: unknown = null;
+let polling: Promise<void> | null = null;
 let pollAgain = false;
 
 /** Maps the service's notes and replies onto transcript entries. */
-function hostedEntries(d) {
-  const notes = (d.notes || []).map((n) => ({ id: `n${n.seq}`, role: "user", author: String(n.author || "").slice(0, NAME_MAX), items: Array.isArray(n.items) ? n.items.filter((x) => x && typeof x === "object") : [], at: n.at }));
-  const replies = (d.replies || []).map((r) => ({ id: `r${r.seq}`, role: "agent", text: String(r.text || ""), at: r.at }));
+function hostedEntries(d: HostedConversation): Entry[] {
+  const notes = (d.notes || []).map((n): Entry => ({ id: `n${n.seq}`, role: "user", author: String(n.author || "").slice(0, NAME_MAX), items: Array.isArray(n.items) ? n.items.filter((x: unknown): x is QueueItem => !!x && typeof x === "object") : [], at: n.at }));
+  const replies = (d.replies || []).map((r): Entry => ({ id: `r${r.seq}`, role: "agent", text: String(r.text || ""), at: r.at }));
   return [...notes, ...replies];
 }
 
-async function pollConversation() {
+async function pollConversation(): Promise<void> {
   if (gone) return;
   if (polling) {
     pollAgain = true;
@@ -1091,7 +1243,7 @@ async function pollConversation() {
         return;
       }
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const d = await r.json();
+      const d: HostedConversation = await r.json();
       state.connected = true;
       if (publishedAt == null) publishedAt = d.publishedAt;
       else if (d.publishedAt !== publishedAt) {
@@ -1138,3 +1290,6 @@ renderDock();
 loadFrame();
 if (HOSTED) startPolling();
 else connect();
+
+// A module, so its top-level names stay out of the global scope of the type check.
+export {};

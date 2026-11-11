@@ -1,17 +1,34 @@
 import React from "react";
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
+import type { RendererArgs } from "austere-axi/pack";
+import { isElement } from "./element.ts";
 
 const nothing = () => null;
-const STATES = ["done", "current", "upcoming"];
+const STATES = ["done", "current", "upcoming"] as const;
 
-function TimelineView({ props }) {
-  const items = (Array.isArray(props.items) ? props.items : []).filter((el) => el && el.props);
+type TimelineState = (typeof STATES)[number];
+
+interface TimelineItemProps {
+  title: string;
+  date?: string;
+  detail?: string;
+  state?: TimelineState;
+}
+
+interface TimelineProps {
+  items: unknown[];
+}
+
+const isState = (s: unknown): s is TimelineState => STATES.some((x) => x === s);
+
+function TimelineView({ props }: RendererArgs<TimelineProps>) {
+  const items = (Array.isArray(props.items) ? props.items : []).filter(isElement<TimelineItemProps>);
   return (
     <ol className="sh-timeline">
       {items.map((el, i) => {
         const p = el.props;
-        const state = STATES.includes(p.state) ? p.state : "done";
+        const state = isState(p.state) ? p.state : "done";
         return (
           <li key={i} className={`sh-timeline-item is-${state}`} data-austere-part={p.title}>
             <span className="sh-timeline-dot" aria-hidden="true" />

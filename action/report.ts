@@ -3,7 +3,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { renderComment, upsertComment } from "./lib.mjs";
+import { renderComment, upsertComment } from "./lib.ts";
+import type { HttpError, PageResult } from "./lib.ts";
 
 const env = process.env;
 const resultsFile = path.join(env.RUNNER_TEMP || os.tmpdir(), "austere-results.json");
@@ -11,7 +12,7 @@ if (!fs.existsSync(resultsFile)) {
   console.log("austere-axi: no results (the run step did not get as far as checking a page); nothing to report.");
   process.exit(0);
 }
-const results = JSON.parse(fs.readFileSync(resultsFile, "utf8"));
+const results = JSON.parse(fs.readFileSync(resultsFile, "utf8")) as PageResult[];
 const tag = (env.INPUT_COMMENT_TAG || "default").trim() || "default";
 const runUrl = env.GITHUB_SERVER_URL && env.GITHUB_REPOSITORY && env.GITHUB_RUN_ID
   ? `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`
@@ -24,7 +25,7 @@ if ((env.INPUT_COMMENT || "true") !== "true") process.exit(0);
 
 let pr = 0;
 try {
-  const event = JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH || "", "utf8"));
+  const event = JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH || "", "utf8")) as { pull_request?: { number?: number } | null };
   pr = event.pull_request?.number || 0;
 } catch {}
 if (!pr) {
@@ -42,7 +43,8 @@ try {
     tag,
   });
   console.log(`austere-axi: ${action} PR comment ${url}`);
-} catch (err) {
+} catch (caught) {
+  const err = caught as HttpError | null | undefined;
   const msg = String(err?.message || err).replace(/[\r\n%]+/g, " ");
   const hint = err?.status === 403 || err?.status === 401
     ? " The token cannot write PR comments (fork PRs get a read-only token; otherwise grant `pull-requests: write`). The job summary has the report."

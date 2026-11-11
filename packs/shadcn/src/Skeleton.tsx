@@ -1,9 +1,15 @@
 import React from "react";
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
+import type { RendererArgs } from "austere-axi/pack";
 
-function SkeletonView({ props }) {
-  const lines = Math.min(12, Math.max(1, Number.isInteger(props.lines) ? props.lines : 3));
+interface SkeletonProps {
+  lines?: number;
+  shape?: "lines" | "avatar";
+}
+
+function SkeletonView({ props }: RendererArgs<SkeletonProps>) {
+  const lines = Math.min(12, Math.max(1, typeof props.lines === "number" && Number.isInteger(props.lines) ? props.lines : 3));
   return (
     <div className="sh-skeleton" aria-hidden="true">
       {props.shape === "avatar" ? <span className="sh-skel sh-skel-avatar" /> : null}

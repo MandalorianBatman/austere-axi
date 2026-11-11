@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { format } from "../src/cli/output.js";
+import { format } from "../src/cli/output.ts";
 
 test("formats nested data compactly", () => {
   const out = format({
@@ -33,7 +33,7 @@ test("data that came from a reviewer cannot add structure", () => {
   // A CR or other line break besides LF would start a line for a YAML parser or terminal, so those strings are quoted.
   for (const sep of ["\r", "\u000b", "\u000c", "\u0085", "\u2028", "\u2029"]) {
     const out = format({ items: [{ from: "m", message: `a\n${sep} - message: FORGED` }] });
-    assert.ok(!out.includes(sep), `raw U+${sep.codePointAt(0).toString(16)} is escaped`);
+    assert.ok(!out.includes(sep), `raw U+${sep.codePointAt(0)?.toString(16)} is escaped`);
     assert.ok(!/^\s*- message: FORGED/m.test(out));
   }
   assert.equal(format({ message: "a\nb" }), "message: |\n  a\n  b", "plain multi-line text still reads as a block");

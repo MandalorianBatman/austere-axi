@@ -5,42 +5,158 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TASKS } from "./tasks.mjs";
+import type { Tool } from "./lib/prompts.ts";
+import type { Pricing, Usage } from "./lib/providers.ts";
+import type { Validation, ViewportRender } from "./lib/validate.ts";
+import { TASKS } from "./tasks.ts";
+
+/** A turn as results.json keeps it. */
+export interface TurnSummary {
+  usage: Usage;
+  costUsd: number;
+  wallMs: number;
+  ttftMs: number | null;
+  stopReason: string;
+}
+
+/** How an edit reply applied: `patch` for austere-axi, SEARCH/REPLACE for lavish-axi. */
+export interface AppliedEdit {
+  ok: boolean;
+  detail?: string;
+  edits?: number;
+  attempts?: number;
+  retry?: string;
+}
+
+/** One trial in results.json: a model, task, tool and repetition. */
+export interface Trial {
+  id: string;
+  model: string;
+  task: string;
+  tool: Tool;
+  rep: number;
+  at: string;
+  error?: undefined;
+  first: TurnSummary & {
+    bytes: number;
+    valid: Omit<Validation, "output">;
+    render: { ok?: boolean; desktop?: ViewportRender; mobile?: ViewportRender };
+    facts: { found: number; of: number; missing: string[] };
+  };
+  fix: (TurnSummary & { ok: boolean }) | null;
+  revision: TurnSummary & {
+    anchor: { found: boolean; statement?: string; selector?: string };
+    applied: AppliedEdit;
+    valid: Omit<Validation, "output">;
+    expect: { found: number; of: number };
+    success: boolean;
+  };
+}
+
+/** A trial that threw. */
+export interface TrialError {
+  id: string;
+  model: string;
+  task: string;
+  tool: Tool;
+  rep: number;
+  error: string;
+  first?: undefined;
+  revision?: undefined;
+}
+
+export interface ResultsMeta {
+  updated: string;
+  node: string;
+  platform: string;
+  versions: Record<string, string>;
+  models: Record<string, { provider: string; model: string; pricing: Pricing }>;
+}
+
+/** bench/results/results.json */
+export interface Results {
+  meta: ResultsMeta;
+  trials: (Trial | TrialError)[];
+}
+
+type FixedTrial = Trial & { fix: TurnSummary & { ok: boolean } };
+
+/** Per model and tool: medians, means and counts over its trials. */
+interface Cell {
+  n: number;
+  firstOutTok: number;
+  bytes: number;
+  valid: number;
+  fixes: number;
+  fixOk: number;
+  fixOutTok: number;
+  outTok: number;
+  wallMs: number;
+  cost: number;
+  render: number;
+  facts: [number, number];
+  truncated: number;
+  revOutTok: number;
+  revWallMs: number;
+  revCost: number;
+  revOk: number;
+}
+
+/** lavish-axi over austere-axi, median of paired ratios. */
+interface Ratios {
+  n: number;
+  firstOutTok: number;
+  outTok: number;
+  wallMs: number;
+  cost: number;
+  revOutTok: number;
+  revWallMs: number;
+  revCost: number;
+}
+
+interface Pair {
+  model: string;
+  task: string;
+  a: Trial;
+  l: Trial;
+}
+
+export type Summary = ReturnType<typeof summarize>;
 
 const BENCH = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(BENCH);
 const RESULTS_FILE = path.join(BENCH, "results", "results.json");
-const TOOLS = ["austere", "lavish"];
+const TOOLS: Tool[] = ["austere", "lavish"];
 const TOOL_NAME = { austere: "austere-axi", lavish: "lavish-axi" };
 
-const median = (xs) => {
-  const s = xs.filter((x) => x != null && Number.isFinite(x)).sort((a, b) => a - b);
+const median = (xs: (number | null | undefined)[]) => {
+  const s = xs.filter((x): x is number => x != null && Number.isFinite(x)).sort((a, b) => a - b);
   if (!s.length) return NaN;
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
-const int = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "–");
-const secs = (ms) => (Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)} s` : "–");
-const usd = (n) => (Number.isFinite(n) ? `$${n < 0.01 ? n.toFixed(4) : n.toFixed(3)}` : "–");
-const pct = (a, b) => (b ? `${a}/${b} (${Math.round((100 * a) / b)}%)` : "–");
-const times = (r) => (Number.isFinite(r) ? `${r.toFixed(1)}×` : "–");
+const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
+const int = (n: number) => (Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "–");
+const secs = (ms: number) => (Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)} s` : "–");
+const usd = (n: number) => (Number.isFinite(n) ? `$${n < 0.01 ? n.toFixed(4) : n.toFixed(3)}` : "–");
+const pct = (a: number, b: number) => (b ? `${a}/${b} (${Math.round((100 * a) / b)}%)` : "–");
+const times = (r: number) => (Number.isFinite(r) ? `${r.toFixed(1)}×` : "–");
 
 // A page's cost includes the fix turn, when the tool told the agent to fix
 // something on open: that is what it takes to get a page the reviewer can use.
-const pageOut = (t) => t.first.usage.output + (t.fix?.usage.output ?? 0);
-const pageWall = (t) => t.first.wallMs + (t.fix?.wallMs ?? 0);
-const pageCost = (t) => t.first.costUsd + (t.fix?.costUsd ?? 0);
+const pageOut = (t: Trial) => t.first.usage.output + (t.fix?.usage.output ?? 0);
+const pageWall = (t: Trial) => t.first.wallMs + (t.fix?.wallMs ?? 0);
+const pageCost = (t: Trial) => t.first.costUsd + (t.fix?.costUsd ?? 0);
 
-export function summarize(results) {
-  const trials = results.trials.filter((t) => !t.error);
+export function summarize(results: Results) {
+  const trials = results.trials.filter((t): t is Trial => !t.error);
   const models = [...new Set(trials.map((t) => t.model))];
-  const cells = {};
+  const cells: Record<string, Cell> = {};
   for (const model of models)
     for (const tool of TOOLS) {
       const ts = trials.filter((t) => t.model === model && t.tool === tool);
       if (!ts.length) continue;
-      const fixed = ts.filter((t) => t.fix);
+      const fixed = ts.filter((t): t is FixedTrial => !!t.fix);
       cells[`${model}/${tool}`] = {
         n: ts.length,
         firstOutTok: median(ts.map((t) => t.first.usage.output)),
@@ -62,13 +178,13 @@ export function summarize(results) {
       };
     }
   // Paired ratios: the same model, task and repetition, lavish over austere.
-  const pairs = [];
+  const pairs: Pair[] = [];
   for (const a of trials.filter((t) => t.tool === "austere")) {
     const l = trials.find((t) => t.tool === "lavish" && t.model === a.model && t.task === a.task && t.rep === a.rep);
     if (l) pairs.push({ model: a.model, task: a.task, a, l });
   }
-  const ratio = (ps, f) => median(ps.map((p) => f(p.l) / f(p.a)));
-  const ratios = (ps) => ({
+  const ratio = (ps: Pair[], f: (t: Trial) => number) => median(ps.map((p) => f(p.l) / f(p.a)));
+  const ratios = (ps: Pair[]): Ratios => ({
     n: ps.length,
     firstOutTok: ratio(ps, (t) => t.first.usage.output),
     outTok: ratio(ps, pageOut),
@@ -79,7 +195,7 @@ export function summarize(results) {
     revCost: ratio(ps, (t) => t.revision.costUsd),
   });
   const byModel = Object.fromEntries(models.map((m) => [m, ratios(pairs.filter((p) => p.model === m))]));
-  const byTask = {};
+  const byTask: Record<string, { austere: number; lavish: number; outTok: number; wallMs: number; revOutTok: number }> = {};
   for (const task of TASKS)
     for (const model of models) {
       const ps = pairs.filter((p) => p.task === task.id && p.model === model);
@@ -95,16 +211,16 @@ export function summarize(results) {
   return { models, tasks: new Set(trials.map((t) => t.task)).size, cells, overall: ratios(pairs), byModel, byTask, trials: trials.length };
 }
 
-export function headline(s) {
+export function headline(s: Summary): string {
   const o = s.overall;
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   return `Across ${o.n} paired runs (${plural(s.tasks, "review page")}, ${plural(s.models.length, "model")}), lavish-axi spent a median **${times(o.outTok)}** the output tokens of austere-axi to produce the same page, took **${times(o.wallMs)}** as long and cost **${times(o.cost)}** as much. Answering one reviewer note took **${times(o.revOutTok)}** the output tokens.`;
 }
 
-export function tables(results, s) {
+export function tables(results: Results, s: Summary): string {
   const meta = results.meta;
-  const out = [];
-  const modelLabel = (m) => `${m} (${meta.models[m]?.model ?? "?"})`;
+  const out: string[] = [];
+  const modelLabel = (m: string) => `${m} (${meta.models[m]?.model ?? "?"})`;
   out.push(`Versions: austere-axi ${meta.versions.austere}, lavish-axi ${meta.versions.lavish}. ${s.trials} trials, last run ${meta.updated.slice(0, 10)}.`, "");
   out.push("### The page", "");
   out.push(
@@ -134,7 +250,7 @@ export function tables(results, s) {
   out.push("Each pair is the same model, task and repetition. Above 1× means lavish-axi used more.", "");
   out.push("| Model | Pairs | Output tokens, first try | Output tokens, page | Time, page | Cost, page | Revision tokens | Revision time | Revision cost |");
   out.push("|---|--:|--:|--:|--:|--:|--:|--:|--:|");
-  for (const [m, r] of [...Object.entries(s.byModel), ["all", s.overall]])
+  for (const [m, r] of [...Object.entries(s.byModel), ["all", s.overall] as const])
     out.push(
       `| ${m === "all" ? "**all**" : modelLabel(m)} | ${r.n} | ${times(r.firstOutTok)} | ${times(r.outTok)} | ${times(r.wallMs)} | ${times(r.cost)} | ${times(r.revOutTok)} | ${times(r.revWallMs)} | ${times(r.revCost)} |`,
     );
@@ -150,8 +266,8 @@ export function tables(results, s) {
 }
 
 /** Grouped bars: one panel per metric, one group per model, austere vs lavish. */
-export function chart(s) {
-  const panels = [
+export function chart(s: Summary): string {
+  const panels: { title: string; key: "outTok" | "wallMs" | "revOutTok"; fmt: (v: number) => string }[] = [
     { title: "Output tokens per page", key: "outTok", fmt: int },
     { title: "Seconds per page", key: "wallMs", fmt: (v) => (v / 1000).toFixed(0) },
     { title: "Output tokens per revision", key: "revOutTok", fmt: int },
@@ -163,8 +279,8 @@ export function chart(s) {
   const top = 56;
   const W = panels.length * pw + (panels.length - 1) * gap + 32;
   const H = top + ph + 64;
-  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const parts = [];
+  const esc = (t: string) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const parts: string[] = [];
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">`);
   parts.push(`<rect width="${W}" height="${H}" fill="#ffffff"/>`);
   parts.push(`<text x="16" y="24" font-size="15" font-weight="600" fill="#111827">austere-axi vs lavish-axi: medians, lower is better</text>`);
@@ -197,7 +313,7 @@ export function chart(s) {
   return `${parts.join("\n")}\n`;
 }
 
-function replaceBetween(file, start, end, body) {
+function replaceBetween(file: string, start: string, end: string, body: string): void {
   if (!fs.existsSync(file)) return;
   const text = fs.readFileSync(file, "utf8");
   const a = text.indexOf(start);
@@ -206,8 +322,8 @@ function replaceBetween(file, start, end, body) {
   fs.writeFileSync(file, `${text.slice(0, a + start.length)}\n${body}\n${text.slice(b)}`);
 }
 
-export function writeReport() {
-  const results = JSON.parse(fs.readFileSync(RESULTS_FILE, "utf8"));
+export function writeReport(): void {
+  const results: Results = JSON.parse(fs.readFileSync(RESULTS_FILE, "utf8"));
   const s = summarize(results);
   if (!s.trials) return;
   const body = `${headline(s)}\n\n${tables(results, s)}`;

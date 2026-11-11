@@ -3,26 +3,33 @@
 // server's origin: a popup it opens on its own URL stays sandboxed, so it
 // cannot act as the owner, and the chrome opens only external links for it.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { launchBrowser } from "../../scripts/lib/browser.mjs";
-import { ownerKey } from "../../src/cli/invites.js";
-import { ownerHeaders } from "../owner.js";
-import { freePort } from "../port.js";
+import type { Browser, Frame, Page } from "playwright-core";
+import { launchBrowser } from "../../scripts/lib/browser.ts";
+import { ownerKey } from "../../src/cli/invites.ts";
+import { ownerHeaders } from "../owner.ts";
+import { freePort } from "../port.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-sandbox-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-sandbox-work-"));
 const FILE = path.join(WORK, "escape.html");
 const LINKS_FILE = path.join(WORK, "links.html");
-let port;
-let server;
-let browser;
-let skipReason;
+let port: number;
+let server: ChildProcess;
+let browser: Browser;
+let skipReason: string | undefined;
+
+/** The fields these tests read from the server's JSON replies. */
+interface ApiReply {
+  session: { id: string };
+  entries: unknown;
+}
 
 // Stands in for pack code: from the frame, open our own URL on the first
 // click; from a window of its own, try to send a message as the owner.
@@ -52,14 +59,14 @@ document.getElementById("self").addEventListener("click", () => window.open(loca
 </script></body></html>`;
 const ORIGIN_PAGE = { status: 200, contentType: "text/html", body: "<script>document.title = self.origin</script>" };
 
-function api(route, body) {
+function api(route: string, body: unknown): Promise<ApiReply> {
   return new Promise((resolve, reject) => {
     const r = http.request(
       { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", ...ownerHeaders(STATE) } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
-        res.on("end", () => resolve(JSON.parse(data)));
+        res.on("end", () => resolve(JSON.parse(data) as ApiReply));
       },
     );
     r.on("error", reject);
@@ -81,13 +88,13 @@ before(async () => {
   fs.writeFileSync(FILE, ARTIFACT);
   fs.writeFileSync(LINKS_FILE, LINKS);
   port = await freePort();
-  server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.js"), "server", "--port", String(port)], {
+  server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" },
     stdio: "ignore",
   });
   for (let i = 0; i < 100; i++) {
     try {
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         const r = http.get({ host: "127.0.0.1", port, path: "/api/health" }, (res) => {
           res.resume();
           res.statusCode === 200 ? resolve() : reject(new Error(String(res.statusCode)));
@@ -120,7 +127,7 @@ test("a popup opened by artifact code keeps the sandbox and cannot act as the ow
   try {
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${ownerKey(STATE)}`);
-    const frame = await (await page.waitForSelector("iframe.frame")).contentFrame();
+    const frame = (await (await page.waitForSelector("iframe.frame")).contentFrame()) as Frame;
     await frame.waitForSelector("#target");
     const popupP = context.waitForEvent("page", { timeout: 5000 });
     await frame.click("#target");
@@ -144,11 +151,11 @@ test("the chrome opens external links for the frame, never its own origin", asyn
   try {
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${ownerKey(STATE)}`);
-    const frame = await (await page.waitForSelector("iframe.frame")).contentFrame();
+    const frame = (await (await page.waitForSelector("iframe.frame")).contentFrame()) as Frame;
     await frame.waitForSelector("#target");
-    const opened = [];
+    const opened: Page[] = [];
     context.on("page", (p) => opened.push(p));
-    const send = (url) => frame.evaluate((u) => parent.postMessage({ austere: 1, type: "open-url", url: u }, "*"), url);
+    const send = (url: string) => frame.evaluate((u) => parent.postMessage({ austere: 1, type: "open-url", url: u }, "*"), url);
     await send(`http://127.0.0.1:${port}/s/${session.id}/a/escape.html`);
     await send("javascript:alert(1)");
     await page.waitForTimeout(300);
@@ -170,7 +177,7 @@ test("a new-window link in the frame opens through the chrome, outside the sandb
   try {
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${ownerKey(STATE)}`);
-    const frame = await (await page.waitForSelector("iframe.frame")).contentFrame();
+    const frame = (await (await page.waitForSelector("iframe.frame")).contentFrame()) as Frame;
     await frame.waitForSelector("#ext");
     await page.click('.seg button[data-mode="explore"]');
     const popupP = context.waitForEvent("page", { timeout: 5000 });

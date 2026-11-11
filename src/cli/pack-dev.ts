@@ -1,15 +1,22 @@
-// @ts-check
 // Writing your own pack: `components new` scaffolds one, `components build`
 // turns it into dist/pack.js + dist/catalog.json with the pack kit.
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { VERSION, packKitPath } from "./paths.js";
-import { coreCatalog } from "./packs.js";
-import { isValidPackName } from "../shared/packs-meta.js";
+import type { BuildPackOptions, BuildPackResult } from "../../types/pack-kit.d.ts";
+import { VERSION, packKitPath } from "./paths.ts";
+import { coreCatalog } from "./packs.ts";
+import { isValidPackName } from "../shared/packs-meta.ts";
 
-const TEMPLATE = {
+type Esbuild = BuildPackOptions["esbuild"];
+
+/** The pack kit module (dist/pack-kit.mjs, or src/pack-kit in development). */
+interface PackKit {
+  buildPack(options: BuildPackOptions): Promise<BuildPackResult>;
+}
+
+const TEMPLATE: Record<string, string> = {
   "src/index.js": `// The pack: every component it adds, plus CSS the runtime puts on the page once.
 import Milestones from "./Milestones.jsx";
 import css from "./style.css";
@@ -103,7 +110,7 @@ export default austereComponent({
 `,
 };
 
-function packageJson(name) {
+function packageJson(name: string) {
   return {
     name,
     version: "0.1.0",
@@ -117,7 +124,7 @@ function packageJson(name) {
   };
 }
 
-function readme(name) {
+function readme(name: string): string {
   return `# ${name}
 
 Components for [austere-axi](https://github.com/MandalorianBatman/austere-axi) review pages.
@@ -137,14 +144,13 @@ Publish with \`npm publish\` after \`npm run build\`. Others install it with
 `;
 }
 
-/** @param {string} dir @param {{ name?: string }} [options] */
-export function newPack(dir, { name } = {}) {
+export function newPack(dir: string | undefined, { name }: { name?: string } = {}): { dir: string; name: string; files: string[] } {
   if (!dir) throw new Error("new needs a folder: austere-axi components new austere-pack-milestones");
   const abs = path.resolve(dir);
   if (fs.existsSync(abs) && fs.readdirSync(abs).length) throw new Error(`${abs} is not empty`);
   const pkgName = name || path.basename(abs).toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
   if (!isValidPackName(pkgName)) throw new Error(`${JSON.stringify(pkgName)} is not an npm package name; pass --name`);
-  const files = {
+  const files: Record<string, string> = {
     "package.json": JSON.stringify(packageJson(pkgName), null, 2) + "\n",
     "README.md": readme(pkgName),
     ".gitignore": "node_modules\n",
@@ -158,11 +164,12 @@ export function newPack(dir, { name } = {}) {
 }
 
 /** esbuild from the pack's own node_modules, else the current folder's, else ours (development). */
-async function findEsbuild(dir) {
+async function findEsbuild(dir: string): Promise<Esbuild | null> {
   for (const base of [path.join(dir, "package.json"), path.join(process.cwd(), "package.json"), import.meta.url]) {
     try {
       const resolved = createRequire(base).resolve("esbuild");
-      return await import(pathToFileURL(resolved).href);
+      const esbuild: Esbuild = await import(pathToFileURL(resolved).href);
+      return esbuild;
     } catch {
       // next
     }
@@ -170,13 +177,13 @@ async function findEsbuild(dir) {
   return null;
 }
 
-export async function buildPackDir(dir = ".") {
+export async function buildPackDir(dir = "."): Promise<{ name: string; version: string; components: string[]; size: number; files: string[]; warnings: string[] }> {
   const abs = path.resolve(dir);
   if (!fs.existsSync(path.join(abs, "package.json"))) throw new Error(`${abs} has no package.json (\`austere-axi components new <dir>\` makes a pack)`);
   const esbuild = await findEsbuild(abs);
   if (!esbuild) throw new Error(`components build needs esbuild: run \`npm install -D esbuild\` in ${abs}`);
   process.env.OPENUI_TELEMETRY_DISABLED ||= "1";
-  const kit = await import(pathToFileURL(packKitPath()).href);
+  const kit: PackKit = await import(pathToFileURL(packKitPath()).href);
   const { catalog, warnings, packFile, catalogFile } = await kit.buildPack({
     dir: abs,
     esbuild,

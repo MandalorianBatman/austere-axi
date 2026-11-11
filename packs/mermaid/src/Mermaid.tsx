@@ -1,13 +1,27 @@
 import React, { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { assetUrl, austereComponent, reportRuntimeError } from "austere-axi/pack";
+import type { RendererArgs } from "austere-axi/pack";
+import type { Mermaid as MermaidApi } from "mermaid";
+
+declare global {
+  interface Window {
+    /** Set by mermaid.min.js once loaded. */
+    mermaid?: MermaidApi;
+  }
+}
+
+interface MermaidProps {
+  source: string;
+  caption?: string;
+}
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
-let mermaidPromise = null;
+let mermaidPromise: Promise<MermaidApi> | null = null;
 let seq = 0;
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
+function loadScript(src: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const s = document.createElement("script");
     s.src = src;
     s.async = true;
@@ -17,19 +31,20 @@ function loadScript(src) {
   });
 }
 
-export function loadMermaid() {
+export function loadMermaid(): Promise<MermaidApi> {
   if (window.mermaid) return Promise.resolve(initMermaid(window.mermaid));
   if (!mermaidPromise) {
     const local = assetUrl("mermaid.min.js");
     mermaidPromise = (local ? loadScript(local).catch(() => loadScript(MERMAID_CDN)) : loadScript(MERMAID_CDN)).then(
-      () => initMermaid(window.mermaid),
+      // The script just loaded defines window.mermaid.
+      () => initMermaid(window.mermaid as MermaidApi),
     );
   }
   return mermaidPromise;
 }
 
 let initialized = false;
-function initMermaid(m) {
+function initMermaid(m: MermaidApi): MermaidApi {
   if (!initialized) {
     initialized = true;
     m.initialize({
@@ -81,13 +96,13 @@ function initMermaid(m) {
 }
 
 /** Agents sometimes wrap the source in a markdown fence. */
-function stripFence(source) {
+function stripFence(source: string): string {
   const m = /^```(?:mermaid)?\s*\n([\s\S]*?)\n?```\s*$/.exec(source);
   return m ? m[1] : source;
 }
 
 /** Words of an SVG text element, lines joined with spaces (tspans would run together). */
-function words(el) {
+function words(el: Element): string {
   const lines = el.querySelectorAll("tspan, div, span, p");
   const parts = lines.length ? Array.from(lines, (x) => (x.children.length ? "" : x.textContent)) : [el.textContent];
   return parts.join(" ").replace(/\s+/g, " ").trim();
@@ -98,8 +113,8 @@ function words(el) {
  * flowchart nodes, clusters and edge labels; sequence actors, messages and
  * notes; class and ER entities (by title); gantt tasks.
  */
-function labelParts(root) {
-  const set = (el, label) => {
+function labelParts(root: Element): void {
+  const set = (el: Element, label: string) => {
     if (label) el.setAttribute("data-austere-part", label.slice(0, 80));
   };
   root.querySelectorAll("g.node, g.cluster, g.edgeLabel").forEach((g) => {
@@ -110,9 +125,14 @@ function labelParts(root) {
   root.querySelectorAll("text.actor, text.messageText, text.noteText, text.taskText").forEach((el) => set(el, words(el)));
 }
 
-function MermaidView({ props, statementId }) {
-  const ref = useRef(null);
-  const [error, setError] = useState(null);
+/** `err?.message`, for any thrown value. */
+function errorMessage(err: unknown): unknown {
+  return typeof err === "object" && err !== null && "message" in err ? err.message : undefined;
+}
+
+function MermaidView({ props, statementId }: RendererArgs<MermaidProps>) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
   const source = String(props.source ?? "").trim();
 
   useEffect(() => {
@@ -139,10 +159,10 @@ function MermaidView({ props, statementId }) {
         bindFunctions?.(ref.current);
         setError(null);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
         // Keep where it failed; drop the parser's list of expected tokens.
-        const message = String(err?.message || err).split("\n").slice(0, 4).join(" ").split(/\s*Expecting /)[0];
+        const message = String(errorMessage(err) || err).split("\n").slice(0, 4).join(" ").split(/\s*Expecting /)[0];
         setError(message);
         reportRuntimeError({ source: "mermaid", statementId, component: "Mermaid", message });
         // Mermaid leaves its scratch node behind on a failure; remove only this

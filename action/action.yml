@@ -54,7 +54,7 @@ runs:
 
     - id: austere
       shell: bash
-      run: node "$GITHUB_ACTION_PATH/run.mjs"
+      run: node "$GITHUB_ACTION_PATH/run.ts"
       env:
         INPUT_PAGES: ${{ inputs.pages }}
         INPUT_VERSION: ${{ inputs.version }}
@@ -73,7 +73,7 @@ runs:
 
     - if: ${{ !cancelled() }}
       shell: bash
-      run: node "$GITHUB_ACTION_PATH/report.mjs"
+      run: node "$GITHUB_ACTION_PATH/report.ts"
       env:
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_COMMENT_TAG: ${{ inputs.comment-tag }}

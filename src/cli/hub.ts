@@ -1,52 +1,99 @@
-// @ts-check
 // hub.db (SQLite, node:sqlite): the record of every review session (its notes,
-// replies and the agent's cursor; see sessions.js), plus an index of every
+// replies and the agent's cursor; see sessions.ts), plus an index of every
 // artifact reviewed or checked on this machine, by project (git root) and date.
 // The hub (`austere-axi hub on`) is the owner's view of it: the home page lists
 // every artifact, /notes every note.
 import fs from "node:fs";
 import path from "node:path";
-import { stateDir } from "./paths.js";
+import type * as sqlite from "node:sqlite";
+import { stateDir } from "./paths.ts";
+import type { NoteItem } from "./sessions.ts";
 
-export function hubConfigFile() {
+/** A row of `artifacts`: every artifact reviewed or checked on this machine, and its review state. */
+export interface ArtifactRow {
+  id: string;
+  file: string;
+  project: string;
+  title: string | null;
+  created_at: number;
+  updated_at: number;
+  reviewed: number;
+  status: string | null;
+  ended_by: string | null;
+  ended_at: number | null;
+  closed_at: number | null;
+  acked_seq: number;
+}
+
+/** Hub.list(): an artifact with how many of its items stand where. */
+export interface HubListRow extends ArtifactRow {
+  open: number;
+  received: number;
+  addressed: number;
+  held: number;
+}
+
+/** Hub.notes(): one item of a note, with its page. */
+export interface HubNoteRow {
+  id: string;
+  artifact_id: string;
+  at: number;
+  kind: string;
+  target: string | null;
+  text: string | null;
+  status: string;
+  author: string;
+  title: string | null;
+  file: string;
+  project: string;
+}
+
+/** Hub.stats(). */
+export interface HubStats {
+  artifacts: number;
+  projects: number;
+  unanswered: number;
+}
+
+export function hubConfigFile(): string {
   return path.join(stateDir(), "hub.json");
 }
 
-export function hubEnabled() {
+export function hubEnabled(): boolean {
   try {
-    return JSON.parse(fs.readFileSync(hubConfigFile(), "utf8")).enabled === true;
+    return (JSON.parse(fs.readFileSync(hubConfigFile(), "utf8")) as { enabled?: unknown }).enabled === true;
   } catch {
     return false;
   }
 }
 
-export function setHubEnabled(enabled) {
+export function setHubEnabled(enabled: boolean): void {
   fs.writeFileSync(hubConfigFile(), JSON.stringify({ enabled, changedAt: new Date().toISOString() }) + "\n", { mode: 0o600 });
 }
 
-export function hubDbFile() {
+export function hubDbFile(): string {
   return path.join(stateDir(), "hub.db");
 }
 
-let DatabaseSync = null;
-async function loadSqlite() {
+let DatabaseSync: typeof sqlite.DatabaseSync | null = null;
+async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
   if (DatabaseSync) return DatabaseSync;
   // node:sqlite prints an ExperimentalWarning on load; the hub is not the place to show it.
-  const emit = process.emitWarning;
-  process.emitWarning = function (warning, ...rest) {
-    if (/sqlite/i.test(String(warning && warning.message ? warning.message : warning))) return;
+  const emit = process.emitWarning as (this: NodeJS.Process, warning: string | Error, ...rest: unknown[]) => void;
+  process.emitWarning = function (warning: string | Error, ...rest: unknown[]) {
+    if (/sqlite/i.test(String(typeof warning !== "string" && warning && warning.message ? warning.message : warning))) return;
     return emit.call(process, warning, ...rest);
   };
   try {
     ({ DatabaseSync } = await import("node:sqlite"));
   } finally {
-    process.emitWarning = emit;
+    process.emitWarning = emit as typeof process.emitWarning;
   }
   return DatabaseSync;
 }
 
 /** The project an artifact belongs to: the nearest folder with a .git, else its own folder. */
-export function projectOf(file) {
+export function projectOf(file: string): string {
   let dir = path.dirname(file);
   for (;;) {
     if (fs.existsSync(path.join(dir, ".git"))) return dir;
@@ -57,7 +104,7 @@ export function projectOf(file) {
 }
 
 /** Open hub.db with the schema in place. */
-export async function openDatabase(file = hubDbFile()) {
+export async function openDatabase(file = hubDbFile()): Promise<sqlite.DatabaseSync> {
   const Database = await loadSqlite();
   // Every note is in here: create it as the owner's only (SQLite gives its WAL the same mode).
   if (file !== ":memory:") fs.closeSync(fs.openSync(file, "a", 0o600));
@@ -123,9 +170,9 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS notes_artifact ON notes(artifact_id, at);
 `;
 
-function migrate(db) {
+function migrate(db: sqlite.DatabaseSync): void {
   db.exec(SCHEMA);
-  const has = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   // Indexes made before team review have no author column.
   if (!has("items", "author")) db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
   // Before sessions moved into the database, artifacts had no review state of their own.
@@ -136,12 +183,12 @@ function migrate(db) {
 }
 
 /** A bindable SQLite text value from untrusted item data: strings pass, other shapes become JSON, empty is null. */
-export function bindText(v) {
+export function bindText(v: unknown): string | null {
   return v == null || v === "" ? null : typeof v === "string" ? v : JSON.stringify(v);
 }
 
 /** The text the hub shows and searches for one item of a note. */
-export function itemText(it) {
+export function itemText(it: NoteItem): unknown {
   if (it.kind === "annotation") return it.note || it.selection || it.excerpt || "";
   if (it.kind === "action") return it.message || "";
   if (it.kind === "render-error") return it.message || "";
@@ -149,12 +196,15 @@ export function itemText(it) {
 }
 
 export class Hub {
-  static async open(file = hubDbFile()) {
+  db: sqlite.DatabaseSync;
+  q: { upsertArtifact: sqlite.StatementSync; artifact: sqlite.StatementSync };
+
+  static async open(file = hubDbFile()): Promise<Hub> {
     return new Hub(await openDatabase(file));
   }
 
-  /** @param {any} db an open hub.db (openDatabase) */
-  constructor(db) {
+  /** @param db an open hub.db (openDatabase) */
+  constructor(db: sqlite.DatabaseSync) {
     this.db = db;
     this.q = {
       upsertArtifact: db.prepare(`
@@ -170,21 +220,21 @@ export class Hub {
     };
   }
 
-  close() {
+  close(): void {
     this.db.close();
   }
 
   /** An artifact `check` or `patch` saw (not necessarily reviewed). */
-  register({ id, file, title, at = Date.now() }) {
+  register({ id, file, title, at = Date.now() }: { id: string; file: string; title?: string | null; at?: number }): void {
     this.q.upsertArtifact.run(id, file, projectOf(file), title || null, at, at, 0, null, null);
   }
 
-  artifact(id) {
-    return this.q.artifact.get(id) || null;
+  artifact(id: string): ArtifactRow | null {
+    return (this.q.artifact.get(id) as ArtifactRow | undefined) || null;
   }
 
   /** Artifacts, newest activity first, with feedback counts. `q` filters on title, file and project. */
-  list({ q = "", project = "", limit = 500 } = {}) {
+  list({ q = "", project = "", limit = 500 }: { q?: string; project?: string; limit?: number } = {}): HubListRow[] {
     const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     return this.db
       .prepare(
@@ -199,16 +249,18 @@ export class Hub {
          GROUP BY a.id ORDER BY a.updated_at DESC LIMIT ?`,
       )
       .all(q, like, like, like, project, project, limit)
-      .map((r) => ({ ...r, open: r.open || 0, received: r.received || 0, addressed: r.addressed || 0, held: r.held || 0 }));
+      .map((row) => {
+        const r = row as unknown as ArtifactRow & { open: number | null; received: number | null; addressed: number | null; held: number | null };
+        return { ...r, open: r.open || 0, received: r.received || 0, addressed: r.addressed || 0, held: r.held || 0 };
+      });
   }
 
   /**
    * Notes (annotations and messages) across all pages, newest first.
    * `q` matches note text, target and page title. `status`: "unanswered" (held, open and received), "answered", or "" for all.
    * `author`: a reviewer's name, "owner" for the owner's own notes, or "" for everyone. Discarded notes are left out.
-   * @param {{ q?: string, status?: string, project?: string, author?: string, limit?: number }} [o]
    */
-  notes({ q = "", status = "", project = "", author = "", limit = 200 } = {}) {
+  notes({ q = "", status = "", project = "", author = "", limit = 200 }: { q?: string; status?: string; project?: string; author?: string; limit?: number } = {}): HubNoteRow[] {
     const anyAuthor = author === "" ? "all" : "one";
     const who = author === "owner" ? "" : author;
     const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
@@ -224,29 +276,29 @@ export class Hub {
            AND (? = '' OR (? = 'unanswered' AND i.status != 'addressed') OR (? = 'answered' AND i.status = 'addressed'))
          ORDER BY i.at DESC, i.id LIMIT ?`,
       )
-      .all(anyAuthor, who, q, like, like, like, project, project, status, status, status, limit);
+      .all(anyAuthor, who, q, like, like, like, project, project, status, status, status, limit) as unknown as HubNoteRow[];
   }
 
   /** Reviewer names with notes in the index (the owner's own notes are not listed). */
-  authors() {
+  authors(): string[] {
     return this.db
       .prepare(`SELECT DISTINCT author FROM items WHERE author != '' AND status != 'discarded' ORDER BY author COLLATE NOCASE`)
       .all()
       .map((r) => String(r.author));
   }
 
-  stats() {
+  stats(): HubStats {
     return this.db
       .prepare(
         `SELECT (SELECT COUNT(*) FROM artifacts) AS artifacts, (SELECT COUNT(DISTINCT project) FROM artifacts) AS projects,
                 (SELECT COUNT(*) FROM items WHERE status IN ('open', 'received', 'held')) AS unanswered`,
       )
-      .get();
+      .get() as unknown as HubStats;
   }
 }
 
 /** Register an artifact with the hub from a CLI command, if the hub is on. Never fails the command. */
-export async function registerWithHub(file, title, id) {
+export async function registerWithHub(file: string, title: string | null | undefined, id: string): Promise<void> {
   if (!hubEnabled()) return;
   try {
     const hub = await Hub.open();

@@ -1,4 +1,3 @@
-// @ts-check
 // Network binding. Loopback always; plus this machine's Tailscale IPv4 when
 // Tailscale is up, so the review link opens on a phone on the same tailnet.
 // Never 0.0.0.0: the server can read local files, so only trusted networks.
@@ -13,25 +12,30 @@ const CANDIDATES = [
   "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
 ];
 
-let cache = { at: 0, value: null };
+/** This machine on the tailnet: its IPv4 and, when it has one, its MagicDNS name. */
+export interface Tailnet {
+  ip: string;
+  dnsName: string | null;
+}
 
-function run(bin, args) {
+let cache: { at: number; value: Tailnet | null } = { at: 0, value: null };
+
+function run(bin: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(bin, args, { timeout: 2500, windowsHide: true }, (err, stdout) => resolve(err ? null : stdout));
   });
 }
 
-/** @returns {Promise<{ ip: string, dnsName: string|null } | null>} */
-export async function detectTailscale({ fresh = false } = {}) {
+export async function detectTailscale({ fresh = false }: { fresh?: boolean } = {}): Promise<Tailnet | null> {
   if (/^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_NO_TAILSCALE || "")) return null;
   if (!fresh && Date.now() - cache.at < 30_000) return cache.value;
-  let value = null;
+  let value: Tailnet | null = null;
   for (const bin of CANDIDATES) {
     if (bin.startsWith("/") && !fs.existsSync(bin)) continue;
     const out = await run(bin, ["status", "--json"]);
     if (!out) continue;
     try {
-      const j = JSON.parse(out);
+      const j = JSON.parse(out) as TailscaleStatus;
       if (j.BackendState && j.BackendState !== "Running") break;
       const ip = (j.Self?.TailscaleIPs || []).find((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x));
       if (ip) {
@@ -47,8 +51,14 @@ export async function detectTailscale({ fresh = false } = {}) {
   return value;
 }
 
+/** The parts of `tailscale status --json` read here. */
+interface TailscaleStatus {
+  BackendState?: string;
+  Self?: { TailscaleIPs?: string[]; DNSName?: string };
+}
+
 /** Hosts the server answers to (DNS-rebinding defense). */
-export function allowedHosts(extra = []) {
+export function allowedHosts(extra: (string | null | undefined)[] = []): Set<string> {
   const set = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
   for (const h of extra) if (h) set.add(h.toLowerCase());
   for (const h of String(process.env.AUSTERE_AXI_ALLOWED_HOSTS || "").split(/\s+/)) if (h) set.add(h.toLowerCase());
@@ -60,12 +70,11 @@ export function allowedHosts(extra = []) {
  * (a reverse proxy with TLS, say) changes the scheme, host or port, e.g. `https://austere.example.com`.
  * Returns it without a trailing slash, or null when unset. Throws on a value that is not a plain http(s) origin
  * (the server answers at the root only, so a path prefix would give links that redirect to the wrong place).
- * @returns {{ base: string, host: string } | null}
  */
-export function linkUrl() {
+export function linkUrl(): { base: string; host: string } | null {
   const raw = String(process.env.AUSTERE_AXI_LINK_URL || "").trim();
   if (!raw) return null;
-  let u;
+  let u: URL;
   try {
     u = new URL(raw);
   } catch {
@@ -76,12 +85,12 @@ export function linkUrl() {
   return { base: u.origin, host: u.hostname.toLowerCase() };
 }
 
-export function hostOnly(hostHeader) {
+export function hostOnly(hostHeader: string | undefined): string {
   const h = String(hostHeader || "").toLowerCase();
   if (h.startsWith("[")) return h.slice(0, h.indexOf("]") + 1);
   return h.replace(/:\d+$/, "");
 }
 
-export function isLoopback(addr) {
+export function isLoopback(addr: string | undefined): boolean {
   return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
 }

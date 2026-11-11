@@ -1,23 +1,54 @@
-// @ts-check
 process.env.OPENUI_TELEMETRY_DISABLED = process.env.OPENUI_TELEMETRY_DISABLED || "1";
 
 import fs from "node:fs";
 import path from "node:path";
 import { mergeStatements } from "@openuidev/lang-core";
-import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.js";
-import { checkHtml, statementLines } from "./check.js";
-import { splitStatements } from "../shared/statements.js";
-import { ensureServer, loginUrl, openBrowser, request, serverIfRunning, shutdownServer } from "./client.js";
-import { Hub, hubDbFile, hubEnabled, registerWithHub, setHubEnabled } from "./hub.js";
-import { InviteStore, inviteId } from "./invites.js";
-import { lockStateDir } from "./lock.js";
-import { SessionStore, sessionId } from "./sessions.js";
-import { exportHtml } from "./export.js";
-import { format, print } from "./output.js";
-import { describeItem, locator } from "../shared/feedback.js";
-import { VERSION, assetPath, canonicalFile, port, stateDir } from "./paths.js";
-import { listComponents, searchComponents, showComponents } from "./components.js";
-import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.js";
+import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
+import { checkHtml, statementLines } from "./check.ts";
+import type { CheckResult } from "./check.ts";
+import { splitStatements } from "../shared/statements.ts";
+import { ensureServer, loginUrl, openBrowser, request, serverIfRunning, shutdownServer } from "./client.ts";
+import { Hub, hubDbFile, hubEnabled, registerWithHub, setHubEnabled } from "./hub.ts";
+import type { HubListRow, HubNoteRow } from "./hub.ts";
+import { InviteStore, inviteId } from "./invites.ts";
+import { lockStateDir } from "./lock.ts";
+import { SessionStore, sessionId } from "./sessions.ts";
+import type { FeedbackEntry, NoteItem } from "./sessions.ts";
+import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, RevokeResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import { exportHtml } from "./export.ts";
+import { format, print } from "./output.ts";
+import { describeItem, locator } from "../shared/feedback.ts";
+import type { FeedbackItem } from "../shared/feedback.ts";
+import { VERSION, assetPath, canonicalFile, port, stateDir } from "./paths.ts";
+import { listComponents, searchComponents, showComponents } from "./components.ts";
+import type { InstallError } from "./install.ts";
+import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
+import type { InstalledPack } from "./packs.ts";
+import type { PackRef } from "../shared/packs-meta.ts";
+
+/** A YAML-shaped result for print(), built up field by field. */
+type Printed = Record<string, unknown>;
+
+/** Parsed flags: a switch is `true`, a value flag its string, `--also-listen` every value given. */
+interface Flags {
+  [flag: string]: string | true | string[] | undefined;
+  "also-listen"?: string[];
+}
+
+/** A command's entry in COMMANDS. */
+interface CommandSpec {
+  usage: string;
+  summary: string;
+  /** Flag name → one-line help. */
+  flags: Record<string, string>;
+  example: string;
+}
+
+/** The message of what a catch caught: the CLI's own code throws Errors. */
+function messageOf(err: unknown): string {
+  const e = err as Error;
+  return e.message;
+}
 
 const BIN = "austere-axi";
 
@@ -121,7 +152,7 @@ ENV
  * main() rejects any flag a command does not list, and `<command> --help` prints its entry.
  * Keep in step with HELP above and the README's CLI section.
  */
-const COMMANDS = {
+const COMMANDS: Record<string, CommandSpec> = {
   open: {
     usage: "<file> [--no-open] [--reopen]",
     summary: "validate the page and open it for review (`open <file>` is the same)",
@@ -223,10 +254,9 @@ const COMMANDS = {
 /** Flags that take a value; every other flag is a switch. */
 const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "project", "as", "cursor", "after"]);
 
-/** @returns {{ flags: Record<string, any>, pos: string[], error?: string }} */
-function parseArgs(argv) {
-  const flags = {};
-  const pos = [];
+function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
+  const flags: Flags = {};
+  const pos: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--") {
@@ -236,13 +266,13 @@ function parseArgs(argv) {
     if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const key = eq > 0 ? a.slice(2, eq) : a.slice(2);
-      let val = true;
+      let val: string | true = true;
       if (eq > 0) val = a.slice(eq + 1);
       else if (VALUE_FLAGS.has(key)) {
         if (i + 1 >= argv.length) return { flags, pos, error: `--${key} needs a value` };
         val = argv[++i];
       }
-      if (key === "also-listen") (flags[key] ||= []).push(val);
+      if (key === "also-listen") (flags["also-listen"] ||= []).push(String(val));
       else flags[key] = val;
     } else if (a === "-h") flags.help = true;
     else if (a === "-v" || a === "-V") flags.version = true;
@@ -252,19 +282,19 @@ function parseArgs(argv) {
 }
 
 /** A failure while running: exit 1. */
-function fail(message, extra = {}) {
+function fail(message: string, extra: Printed = {}): void {
   print({ status: "error", error: message, ...extra });
   process.exitCode = 1;
 }
 
 /** The command was called wrong (unknown command or flag, missing argument): exit 2, before anything runs. */
-function usage(message, cmd) {
+function usage(message: string, cmd?: string | null): void {
   const spec = cmd && COMMANDS[cmd];
   print({ status: "error", code: "USAGE", error: message, usage: spec ? `${BIN} ${spec.usage}` : undefined, help: `${BIN} ${spec ? `${cmd} ` : ""}--help` });
   process.exitCode = 2;
 }
 
-function commandHelp(cmd) {
+function commandHelp(cmd: string): void {
   const spec = COMMANDS[cmd];
   const lines = [`${BIN} ${spec.usage}`, `  ${spec.summary}`];
   const flags = Object.entries(spec.flags);
@@ -277,7 +307,7 @@ function commandHelp(cmd) {
   process.stdout.write(lines.join("\n") + "\n");
 }
 
-function needFile(file, cmd) {
+function needFile(file: string | undefined, cmd: string): string | null {
   if (!file) {
     usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>`, cmd);
     return null;
@@ -290,16 +320,16 @@ function needFile(file, cmd) {
   return abs;
 }
 
-function readStdin() {
+function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
-    const chunks = [];
-    process.stdin.on("data", (c) => chunks.push(c));
+    const chunks: Buffer[] = [];
+    process.stdin.on("data", (c: Buffer) => chunks.push(c));
     process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     process.stdin.on("error", reject);
   });
 }
 
-async function replyText(flags) {
+async function replyText(flags: Flags): Promise<string> {
   if (typeof flags["agent-reply-file"] === "string") {
     const f = flags["agent-reply-file"];
     return (f === "-" ? await readStdin() : fs.readFileSync(f, "utf8")).trim();
@@ -308,9 +338,9 @@ async function replyText(flags) {
   return "";
 }
 
-function compactCheck(result) {
+function compactCheck(result: CheckResult): string | Printed {
   if (result.ok && !result.warnings.length) return `ok (${result.statements} statements)`;
-  const out = { ok: result.ok, statements: result.statements };
+  const out: Printed = { ok: result.ok, statements: result.statements };
   if (result.errors.length) out.errors = result.errors;
   if (result.warnings.length) out.warnings = result.warnings;
   return out;
@@ -320,9 +350,9 @@ function compactCheck(result) {
 
 async function cmdHome() {
   const h = await serverIfRunning();
-  let sessions = [];
+  let sessions: SessionListing[] = [];
   if (h) {
-    const r = await request("GET", "/api/sessions");
+    const r = await request<SessionsResponse>("GET", "/api/sessions");
     sessions = (r.data.sessions || []).filter((s) => s.status !== "ended");
   }
   const shown = sessions.slice(0, 12).map((s) => ({
@@ -345,13 +375,13 @@ async function cmdHome() {
   });
 }
 
-async function cmdOpen(file, flags) {
+async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   const abs = needFile(file, "open");
-  if (!abs) return;
+  if (!abs || file === undefined) return; // needFile reported a missing file
   const html = fs.readFileSync(abs, "utf8");
   const check = checkHtml(html, { file: quote(file) });
   await ensureServer();
-  const r = await request("POST", "/api/open", { file: abs, reopen: !!flags.reopen });
+  const r = await request<OpenResponse>("POST", "/api/open", { file: abs, reopen: !!flags.reopen });
   if (r.status !== 200) return fail(r.data?.error || `open failed (${r.status})`);
   const d = r.data;
   if (d.status === "refused") {
@@ -363,11 +393,11 @@ async function cmdOpen(file, flags) {
     });
   }
   const noOpen = flags["no-open"] || /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_NO_OPEN || "");
-  let browser;
+  let browser: string;
   if (d.browsers > 0) browser = `already open (${d.browsers} tab${d.browsers > 1 ? "s" : ""}); it live-updates`;
   else if (noOpen) browser = "not opened (--no-open)";
   else browser = (await openBrowser(d.links.local)) ? "opened" : "could not launch";
-  const out = {
+  const out: Printed = {
     status: "open",
     file: abs,
     url: d.links.local,
@@ -384,12 +414,12 @@ async function cmdOpen(file, flags) {
   print(out);
 }
 
-function quote(file) {
+function quote(file: string): string {
   return /[\s"'$`\\]/.test(file) ? JSON.stringify(file) : file;
 }
 
-function describeItems(abs, items) {
-  let lines = new Map();
+function describeItems(abs: string, items: NoteItem[]): Printed[] {
+  let lines = new Map<string, { line: number; text: string }>();
   try {
     lines = statementLines(fs.readFileSync(abs, "utf8"));
   } catch {
@@ -397,10 +427,11 @@ function describeItems(abs, items) {
   }
   const at = locator(lines);
   return items.map((it) => {
-    /** @type {Record<string, any>} */
-    let o;
+    let o: Printed;
     try {
-      o = describeItem(it, at);
+      // Stored items are untrusted: a malformed one throws, caught here.
+      const item: FeedbackItem = it;
+      o = describeItem(item, at);
     } catch {
       // one malformed item must not hide the rest of the delivery, which the server already marked received
       o = { malformed: `could not read this ${typeof it?.kind === "string" ? it.kind : "feedback"} item` };
@@ -410,7 +441,7 @@ function describeItems(abs, items) {
 }
 
 
-function thirdPartyOf(abs) {
+function thirdPartyOf(abs: string): string[] {
   try {
     return pagePacks(fs.readFileSync(abs, "utf8")).thirdParty.map((p) => `${p.name}@${p.version}`);
   } catch {
@@ -418,7 +449,7 @@ function thirdPartyOf(abs) {
   }
 }
 
-const NEXT = {
+const NEXT: Record<string, (f: string, cursor?: number) => string> = {
   feedback: (f, cursor) =>
     `Apply it by editing the named statements in place (keep names stable; the page live-updates and highlights changes). Run \`${BIN} check ${f}\` if you restructured, then \`${BIN} poll ${f} --cursor ${cursor} --agent-reply "<one line: what changed>"\`.`,
   feedbackEnded: (f, cursor) =>
@@ -433,13 +464,14 @@ const NEXT = {
 };
 
 /** `--cursor` / `--after` as given; the server checks they are whole numbers. */
-function seqFlag(flags, name) {
-  return typeof flags[name] === "string" ? flags[name] : undefined;
+function seqFlag(flags: Flags, name: string): string | undefined {
+  const v = flags[name];
+  return typeof v === "string" ? v : undefined;
 }
 
-async function cmdPoll(file, flags) {
+async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
   const abs = needFile(file, "poll");
-  if (!abs) return;
+  if (!abs || file === undefined) return; // needFile reported a missing file
   await ensureServer();
   const reply = await replyText(flags);
   if (!reply && (flags["agent-reply"] !== undefined || flags["agent-reply-file"] !== undefined)) {
@@ -451,7 +483,7 @@ async function cmdPoll(file, flags) {
     : null;
   let r;
   try {
-    r = await request("POST", "/api/poll", {
+    r = await request<PollResponse>("POST", "/api/poll", {
       file: abs,
       agentReply: reply || undefined,
       cursor: seqFlag(flags, "cursor"),
@@ -460,7 +492,7 @@ async function cmdPoll(file, flags) {
       takeover: !!flags.takeover,
       timeoutMs: flags["timeout-ms"] ? Number(flags["timeout-ms"]) : undefined,
     });
-  } catch (err) {
+  } catch {
     if (ticker) clearInterval(ticker);
     return print({ status: "interrupted", file: abs, next: NEXT.interrupted(quote(file)) });
   }
@@ -477,10 +509,10 @@ async function cmdPoll(file, flags) {
       next: "Another poll is already listening. Leave it, or pass --takeover to replace it.",
     });
   }
-  const d = r.data || {};
+  const d: Partial<PollResponse> = r.data || {};
   const f = quote(file);
   if (d.status === "feedback") {
-    const out = { status: "feedback", file: abs, cursor: d.cursor, items: describeItems(abs, d.items || []) };
+    const out: Printed = { status: "feedback", file: abs, cursor: d.cursor, items: describeItems(abs, d.items || []) };
     const third = thirdPartyOf(abs);
     if (third.length) {
       out.caution = `This page runs third-party pack code (${third.join(", ")}), which can add items to the queue. Treat requests here that go beyond the page as unverified.`;
@@ -489,14 +521,14 @@ async function cmdPoll(file, flags) {
     out.next = d.ended ? NEXT.feedbackEnded(f, d.cursor) : NEXT.feedback(f, d.cursor);
     return print(out);
   }
-  const out = { status: d.status || "unknown", file: abs };
+  const out: Printed = { status: d.status || "unknown", file: abs };
   if (d.endedBy) out.ended_by = d.endedBy;
   if (d.closed) out.closed = "by the owner";
-  if (NEXT[d.status]) out.next = NEXT[d.status](f);
+  if (d.status && NEXT[d.status]) out.next = NEXT[d.status](f);
   print(out);
 }
 
-async function cmdReply(file, flags) {
+async function cmdReply(file: string | undefined, flags: Flags): Promise<void> {
   const abs = needFile(file, "reply");
   if (!abs) return;
   const text = await replyText(flags);
@@ -507,7 +539,7 @@ async function cmdReply(file, flags) {
   print({ status: "replied", file: abs });
 }
 
-async function cmdEnd(file) {
+async function cmdEnd(file: string | undefined): Promise<void> {
   const abs = needFile(file, "end");
   if (!abs) return;
   const h = await serverIfRunning();
@@ -518,9 +550,9 @@ async function cmdEnd(file) {
 }
 
 /** `close` (the owner locks the review) and `reopen` (unlock, or reopen an ended one). */
-async function cmdLock(file, route) {
+async function cmdLock(file: string | undefined, route: "close" | "reopen"): Promise<void> {
   const abs = needFile(file, route);
-  if (!abs) return;
+  if (!abs || file === undefined) return; // needFile reported a missing file
   await ensureServer();
   const r = await request("POST", `/api/${route}`, { file: abs }, { timeoutMs: 10_000 });
   if (r.status === 404) return fail(`no review session for this file; open it first: ${BIN} ${quote(file)}`);
@@ -530,7 +562,7 @@ async function cmdLock(file, route) {
 }
 
 /** `check --fix`: make the page's <meta name="austere-packs"> match the installed packs its program calls. */
-function fixPacks(abs, html) {
+function fixPacks(abs: string, html: string): { html: string; changes: string[] } {
   const art = readArtifact(html);
   if (art.program == null) return { html, changes: [] };
   const declared = pagePacks(html).declared;
@@ -538,7 +570,7 @@ function fixPacks(abs, html) {
   const needed = neededPacks(art.program);
   // Keep declared packs this machine cannot judge (not installed here).
   const next = [...needed, ...declared.filter((d) => !installed.has(d.name))];
-  const fmt = (p) => `${p.name}@${p.version}`;
+  const fmt = (p: PackRef) => `${p.name}@${p.version}`;
   const before = new Set(declared.map(fmt));
   const after = new Set(next.map(fmt));
   const changes = [
@@ -553,15 +585,15 @@ function fixPacks(abs, html) {
   return { html: out, changes: changes.length ? changes : ["updated integrity hashes"] };
 }
 
-async function cmdCheck(file, flags = {}) {
+async function cmdCheck(file: string | undefined, flags: Flags = {}): Promise<void> {
   const abs = needFile(file, "check");
-  if (!abs) return;
+  if (!abs || file === undefined) return; // needFile reported a missing file
   let html = fs.readFileSync(abs, "utf8");
-  let fixed = [];
+  let fixed: string[] = [];
   if (flags.fix) ({ html, changes: fixed } = fixPacks(abs, html));
   const result = checkHtml(html, { file: quote(file) });
   await registerWithHub(abs, result.title, sessionId(abs));
-  const out = { status: result.ok ? "ok" : "errors", file: abs, statements: result.statements };
+  const out: Printed = { status: result.ok ? "ok" : "errors", file: abs, statements: result.statements };
   if (fixed.length) out.fixed = fixed;
   if (result.errors.length) out.errors = result.errors;
   if (result.warnings.length) out.warnings = result.warnings;
@@ -570,9 +602,9 @@ async function cmdCheck(file, flags = {}) {
   if (!result.ok) process.exitCode = 1;
 }
 
-async function cmdPatch(file) {
+async function cmdPatch(file: string | undefined): Promise<void> {
   const abs = needFile(file, "patch");
-  if (!abs) return;
+  if (!abs || file === undefined) return; // needFile reported a missing file
   if (process.stdin.isTTY) return usage(`pipe the changed statements on stdin: ${BIN} patch ${quote(file)} <<'EOF' ... EOF`, "patch");
   const patch = await readStdin();
   if (!patch.trim()) return fail("stdin was empty");
@@ -588,13 +620,13 @@ async function cmdPatch(file) {
   fs.writeFileSync(abs, next);
   const result = checkHtml(next, { file: quote(file) });
   await registerWithHub(abs, result.title, sessionId(abs));
-  const out = { status: "patched", file: abs };
+  const out: Printed = { status: "patched", file: abs };
   if (dropped.length) Object.assign(out, { dropped, warning: `unreferenced statement(s) dropped: ${dropped.join(", ")} (reference them from a parent to keep them on the page)` });
   print({ ...out, check: compactCheck(result) });
 }
 
 /** A pack's part of the reference: its signatures and notes, as `spec` prints core groups. */
-function packSpec(p) {
+function packSpec(p: InstalledPack): string {
   const lines = [`### ${p.name}@${p.version}${isThirdParty(p.name, p) ? " (third-party)" : ""}`];
   lines.push(`A page using these must declare the pack: run \`${BIN} check --fix <file>\` after writing it. Examples: \`${BIN} components show <Name>\`.`);
   for (const c of p.catalog.components) lines.push(`${c.signature}${c.description ? ` — ${c.description}` : ""}`);
@@ -602,12 +634,13 @@ function packSpec(p) {
   return lines.join("\n") + "\n";
 }
 
-function cmdSpec(groups) {
+function cmdSpec(groups: string[]): boolean | void {
   let text = fs.readFileSync(assetPath("prompt.md"), "utf8");
   const packs = installedPacks();
   const packArgs = groups.filter((g) => packs.some((p) => p.name === g));
   if (packArgs.length) {
-    return process.stdout.write(packArgs.map((g) => packSpec(packs.find((p) => p.name === g))).join("\n"));
+    // packArgs holds only names of installed packs, so every find succeeds.
+    return process.stdout.write(packArgs.map((g) => packSpec(packs.find((p) => p.name === g) as InstalledPack)).join("\n"));
   }
   if (!groups.length) {
     if (!text.endsWith("\n")) text += "\n";
@@ -626,7 +659,7 @@ function cmdSpec(groups) {
   process.stdout.write(`${head}\n\n## Component Signatures (subset)\n\n${trimmed.join("\n")}\n`);
 }
 
-function cmdExport(file, flags) {
+function cmdExport(file: string | undefined, flags: Flags): void {
   const abs = needFile(file, "export");
   if (!abs) return;
   const out = typeof flags.out === "string" ? path.resolve(flags.out) : abs.replace(/\.html?$/i, "") + ".export.html";
@@ -635,12 +668,12 @@ function cmdExport(file, flags) {
   print({ status: "exported", file: out, bytes: html.length, notices: notices.length ? notices : undefined });
 }
 
-function printResult(out) {
+function printResult(out: object): void {
   print(out);
-  if (out && out.status === "error") process.exitCode = 1;
+  if (out && "status" in out && out.status === "error") process.exitCode = 1;
 }
 
-async function cmdComponents(sub, args, flags) {
+async function cmdComponents(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
   switch (sub) {
     case undefined:
     case "list":
@@ -651,12 +684,14 @@ async function cmdComponents(sub, args, flags) {
       return printResult(showComponents(args));
     case "add": {
       if (!args[0]) return usage(`add needs a pack: ${BIN} components add <npm-package>[@version] | <folder> | <file.tgz>`, "components");
-      const { addPack } = await import("./install.js");
+      const { addPack } = await import("./install.ts");
       let r;
       try {
         r = await addPack(args[0], { trust: !!flags.trust });
-      } catch (err) {
-        const out = { status: err.code === "untrusted" ? "needs --trust" : "error", error: err.message };
+      } catch (caught) {
+        // addPack throws Errors, flagged with `code` or `network` where main says more.
+        const err = caught as InstallError;
+        const out: Printed = { status: err.code === "untrusted" ? "needs --trust" : "error", error: err.message };
         if (err.network) out.next = `Offline or behind a proxy? \`npm pack ${args[0]}\` downloads it; then \`${BIN} components add ./<file>.tgz\`.`;
         print(out);
         process.exitCode = 1;
@@ -676,7 +711,7 @@ async function cmdComponents(sub, args, flags) {
     }
     case "remove": {
       if (!args[0]) return usage(`remove needs a pack name: ${BIN} components remove <name>`, "components");
-      const { removePack } = await import("./install.js");
+      const { removePack } = await import("./install.ts");
       const r = removePack(args[0]);
       if (!r) return fail(`${args[0]} is not installed (${BIN} components list)`);
       return print({
@@ -686,7 +721,7 @@ async function cmdComponents(sub, args, flags) {
       });
     }
     case "new": {
-      const { newPack } = await import("./pack-dev.js");
+      const { newPack } = await import("./pack-dev.ts");
       try {
         const r = newPack(args[0], { name: typeof flags.name === "string" ? flags.name : undefined });
         return print({
@@ -697,11 +732,11 @@ async function cmdComponents(sub, args, flags) {
           next: `cd ${quote(path.relative(process.cwd(), r.dir) || ".")} && npm install && npm run build, then \`${BIN} components add .\``,
         });
       } catch (err) {
-        return fail(err.message);
+        return fail(messageOf(err));
       }
     }
     case "build": {
-      const { buildPackDir } = await import("./pack-dev.js");
+      const { buildPackDir } = await import("./pack-dev.ts");
       try {
         const r = await buildPackDir(args[0] || ".");
         return print({
@@ -714,7 +749,7 @@ async function cmdComponents(sub, args, flags) {
           next: `\`${BIN} components add ${quote(args[0] || ".")}\` to use it here (again after each build), then \`${BIN} check --fix <file>\` on pages that use it.`,
         });
       } catch (err) {
-        return fail(err.message);
+        return fail(messageOf(err));
       }
     }
     default: {
@@ -728,20 +763,20 @@ async function cmdComponents(sub, args, flags) {
 
 // ── feedback (any later session) ──
 
-function shortDate(ms) {
+function shortDate(ms: number): string {
   const d = new Date(ms);
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-async function cmdFeedback(file, flags) {
+async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void> {
   const abs = needFile(file, "feedback");
-  if (!abs) return;
+  if (!abs || file === undefined) return; // needFile reported a missing file
   const opts = { all: !!flags.all, peek: !!flags.peek };
-  let entries = null;
-  let status = null;
+  let entries: FeedbackEntry[] | null = null;
+  let status: string | null = null;
   if (await serverIfRunning()) {
-    const r = await request("POST", "/api/feedback", { file: abs, ...opts }, { timeoutMs: 10_000 });
+    const r = await request<FeedbackResponse>("POST", "/api/feedback", { file: abs, ...opts }, { timeoutMs: 10_000 });
     if (r.status === 200) {
       entries = r.data.entries;
       status = r.data.session.status;
@@ -770,7 +805,7 @@ async function cmdFeedback(file, flags) {
   if (!entries.length) {
     return print({ status: "none", file: abs, review: status, note: "Every piece of feedback on it has been answered." });
   }
-  const items = [];
+  const items: Printed[] = [];
   for (const e of entries) {
     for (const it of describeItems(abs, (e.items || []).map((x) => (e.author ? { ...x, author: e.author } : x)))) {
       items.push(opts.all ? { sent: shortDate(e.at), status: e.status, ...it } : { sent: shortDate(e.at), ...it });
@@ -790,7 +825,7 @@ async function cmdFeedback(file, flags) {
 
 // ── hub ──
 
-async function cmdHub(sub, args, flags) {
+async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
   const url = `http://127.0.0.1:${port()}/`;
   switch (sub) {
     case "on": {
@@ -811,7 +846,7 @@ async function cmdHub(sub, args, flags) {
     case undefined:
     case "status": {
       const h = await serverIfRunning();
-      const out = {
+      const out: Printed = {
         hub: hubEnabled() ? "on" : "off",
         server: h ? `running on ${port()}${h.persist ? " (persist)" : ""}` : "not running",
       };
@@ -825,7 +860,7 @@ async function cmdHub(sub, args, flags) {
             hub.close();
           }
         } catch (err) {
-          out.index = `${hubDbFile()} cannot be opened: ${err.message}`;
+          out.index = `${hubDbFile()} cannot be opened: ${messageOf(err)}`;
         }
       }
       if (!hubEnabled()) out.next = `\`${BIN} hub on\` shows a home page with every artifact and note.`;
@@ -834,13 +869,13 @@ async function cmdHub(sub, args, flags) {
     case "list": {
       if (!fs.existsSync(hubDbFile())) return print({ artifacts: "none", next: `\`${BIN} hub on\` starts indexing.` });
       const project = typeof flags.project === "string" ? path.resolve(flags.project) : "";
-      let hub;
+      let hub: Hub;
       try {
         hub = await Hub.open();
       } catch (err) {
-        return fail(`${hubDbFile()} cannot be opened: ${err.message}`);
+        return fail(`${hubDbFile()} cannot be opened: ${messageOf(err)}`);
       }
-      let rows;
+      let rows: HubListRow[];
       try {
         rows = hub.list({ q: args.join(" "), project, limit: 40 });
       } finally {
@@ -860,13 +895,13 @@ async function cmdHub(sub, args, flags) {
     case "notes": {
       if (!fs.existsSync(hubDbFile())) return print({ notes: "none", next: `\`${BIN} hub on\` starts indexing.` });
       const project = typeof flags.project === "string" ? path.resolve(flags.project) : "";
-      let hub;
+      let hub: Hub;
       try {
         hub = await Hub.open();
       } catch (err) {
-        return fail(`${hubDbFile()} cannot be opened: ${err.message}`);
+        return fail(`${hubDbFile()} cannot be opened: ${messageOf(err)}`);
       }
-      let rows;
+      let rows: HubNoteRow[];
       try {
         rows = hub.notes({ q: args.join(" "), project, status: flags.unanswered ? "unanswered" : "", limit: 40 });
       } finally {
@@ -899,17 +934,17 @@ async function cmdHub(sub, args, flags) {
 
 // ── share (team review) ──
 
-function ago(ms) {
+function ago(ms: number): string {
   return shortDate(ms);
 }
 
-async function cmdShare(args, flags) {
+async function cmdShare(args: string[], flags: Flags): Promise<void> {
   const [sub, ...more] = args;
   if (sub === "list") {
-    let invites;
+    let invites: InviteSummary[];
     const withLinks = Boolean(flags.links);
     if (await serverIfRunning()) {
-      const r = await request("GET", `/api/share/list${withLinks ? "?links=1" : ""}`);
+      const r = await request<ShareListResponse>("GET", `/api/share/list${withLinks ? "?links=1" : ""}`);
       if (r.status !== 200) return fail(r.data?.error || `share list failed (${r.status})`);
       invites = r.data.invites;
     } else {
@@ -931,9 +966,9 @@ async function cmdShare(args, flags) {
   if (sub === "revoke") {
     const key = more.join(" ");
     if (!key) return usage(`revoke needs a name or id: ${BIN} share revoke <name|id> (see ${BIN} share list)`, "share");
-    let revoked;
+    let revoked: RevokeResponse["revoked"];
     if (await serverIfRunning()) {
-      const r = await request("POST", "/api/share/revoke", { key });
+      const r = await request<RevokeResponse>("POST", "/api/share/revoke", { key });
       if (r.status !== 200) return fail(r.data?.error || `revoke failed (${r.status})`);
       revoked = r.data.revoked;
     } else {
@@ -947,7 +982,7 @@ async function cmdShare(args, flags) {
   if (!abs) return;
   if (typeof flags.as !== "string" || !flags.as.trim()) return usage(`share needs a reviewer name: ${BIN} share ${quote(sub)} --as "<name>"`, "share");
   await ensureServer();
-  const r = await request("POST", "/api/share", { file: abs, name: flags.as, auto: !!flags.auto });
+  const r = await request<ShareResponse>("POST", "/api/share", { file: abs, name: flags.as, auto: !!flags.auto });
   if (r.status !== 200) return fail(r.data?.error || `share failed (${r.status})`);
   const d = r.data;
   print({
@@ -961,7 +996,7 @@ async function cmdShare(args, flags) {
   });
 }
 
-async function cmdStop() {
+async function cmdStop(): Promise<void> {
   // A server from before the health proof is stopped too (without the key).
   const h = await serverIfRunning({ legacy: true });
   if (!h) return print({ status: "not running" });
@@ -970,20 +1005,20 @@ async function cmdStop() {
 }
 
 /** The hint for a browser the CLI did not open: the plain url answers 403 until that browser signs in. */
-function signInHint(file) {
+function signInHint(file?: string): string {
   return `A browser that is not signed in gets 403 at the url: run \`${BIN} login${file ? ` ${quote(file)}` : ""}\` and open the single-use link it prints.`;
 }
 
-async function cmdLogin(file) {
+async function cmdLogin(file: string | undefined): Promise<void> {
   let url = `http://127.0.0.1:${port()}/`;
-  let abs = null;
+  let abs: string | null = null;
   if (file) {
     abs = needFile(file, "login");
     if (!abs) return;
   }
   await ensureServer();
-  if (abs) {
-    const r = await request("GET", "/api/sessions");
+  if (abs && file) {
+    const r = await request<SessionsResponse>("GET", "/api/sessions");
     if (r.status !== 200) return fail(r.data?.error || `login failed (${r.status})`);
     const s = (r.data.sessions || []).find((x) => x.file === abs);
     if (!s) return fail(`no review for ${abs} yet: \`${BIN} ${quote(file)} --no-open\` starts one`);
@@ -997,8 +1032,8 @@ async function cmdLogin(file) {
   });
 }
 
-async function cmdServer(flags) {
-  const { runServer } = await import("./server.js");
+async function cmdServer(flags: Flags): Promise<void> {
+  const { runServer } = await import("./server.ts");
   const p = flags.port ? Number(flags.port) : port();
   await runServer({ port: p, verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist });
 }
@@ -1006,7 +1041,7 @@ async function cmdServer(flags) {
 /** The oldest Node this CLI supports: node:sqlite, and type stripping for development. Keep in step with `engines`. */
 const MIN_NODE = [22, 18];
 
-async function main() {
+async function main(): Promise<unknown> {
   const [major, minor] = process.versions.node.split(".").map(Number);
   if (major < MIN_NODE[0] || (major === MIN_NODE[0] && minor < MIN_NODE[1])) {
     return fail(`austere-axi needs Node ${MIN_NODE.join(".")} or newer; this is ${process.versions.node}. Install a current Node LTS.`);
@@ -1015,7 +1050,7 @@ async function main() {
   if (flags.version) return process.stdout.write(VERSION + "\n");
   const [cmd, ...rest] = pos;
   // Which COMMANDS entry this is: none for the home view, "open" for a bare file.
-  let name = null;
+  let name: string | null = null;
   if (cmd !== undefined) {
     if (Object.hasOwn(COMMANDS, cmd)) name = cmd;
     else if (/\.html?$/i.test(cmd) || fs.existsSync(cmd)) name = "open";
@@ -1067,7 +1102,7 @@ async function main() {
     case "server":
       return cmdServer(flags);
     case "mcp": {
-      const { runMcp } = await import("./mcp.js");
+      const { runMcp } = await import("./mcp.ts");
       return runMcp();
     }
     case "open":
@@ -1081,7 +1116,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  process.stdout.write(format({ status: "error", error: String(err?.message || err) }) + "\n");
+main().catch((caught: unknown) => {
+  // Whatever escaped: an Error's message, else the thrown value itself.
+  const err = caught as { message?: unknown } | null | undefined;
+  process.stdout.write(format({ status: "error", error: String(err?.message || caught) }) + "\n");
   process.exitCode = 1;
 });

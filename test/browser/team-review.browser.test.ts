@@ -2,42 +2,52 @@
 // a teammate opens an invite link and leaves a note; it is held in the owner's
 // panel; the owner sends it on and the agent's poll returns it with the author.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
-import net from "node:net";
+import net, { type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { launchBrowser } from "../../scripts/lib/browser.mjs";
-import { ownerKey } from "../../src/cli/invites.js";
+import type { Browser } from "playwright-core";
+import { launchBrowser } from "../../scripts/lib/browser.ts";
+import { ownerKey } from "../../src/cli/invites.ts";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-team-browser-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-team-browser-work-"));
 const FILE = path.join(WORK, "plan.html");
 const KEY = ownerKey(STATE);
-let port;
-let server;
-let browser;
-let skipReason;
+let port: number;
+let server: ChildProcess;
+let browser: Browser;
+let skipReason: string | undefined;
 
-function freePort() {
+/** The fields these tests read from the server's JSON replies. */
+interface ApiReply {
+  session: { id: string };
+  link: string;
+  status: string;
+  code: string;
+  items: { text: string; author?: string }[];
+}
+
+function freePort(): Promise<number> {
   return new Promise((resolve) => {
     const s = net.createServer();
     s.listen(0, "127.0.0.1", () => {
-      const p = s.address().port;
+      const p = (s.address() as AddressInfo).port;
       s.close(() => resolve(p));
     });
   });
 }
 
-function api(route, body, timeoutMs = 0) {
+function api(route: string, body: unknown, timeoutMs = 0): Promise<ApiReply> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const r = http.request({ host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } }, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
-      res.on("end", () => resolve(JSON.parse(data)));
+      res.on("end", () => resolve(JSON.parse(data) as ApiReply));
     });
     r.on("error", reject);
     if (timeoutMs) r.setTimeout(timeoutMs, () => r.destroy(new Error("timeout")));
@@ -67,7 +77,7 @@ intro = TextContent("hello")
 </script></body></html>`,
   );
   port = await freePort();
-  server = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(port)], {
+  server = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(port)], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_LINK_HOST: "127.0.0.1", OPENUI_TELEMETRY_DISABLED: "1" },
     stdio: "ignore",
   });
@@ -179,9 +189,9 @@ test("the owner's held view shows what the agent would receive, and a bad note c
     await guest.goto(invite.link);
     await guest.click("form[action$='/join'] button");
     await guest.waitForSelector(".composer textarea");
-    const send = (items) =>
+    const send = (items: unknown[]) =>
       guest.evaluate(
-        ({ id, items }) => fetch(`/s/${id}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items }) }).then((r) => r.status),
+        ({ id, items }: { id: string; items: unknown[] }) => fetch(`/s/${id}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items }) }).then((r) => r.status),
         { id: session.id, items },
       );
     const long = "q".repeat(300) + " TAIL-PAST-CUT";

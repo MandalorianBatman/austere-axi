@@ -1,19 +1,21 @@
 // Team review: invite links, reviewer identity, the hold queue, auto mode, revoke.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { InviteStore, cleanName, inviteId, tokenFromCookie } from "../src/cli/invites.js";
-import { SessionStore } from "../src/cli/sessions.js";
-import { Hub } from "../src/cli/hub.js";
-import { ownerHeaders } from "./owner.js";
-import { freePort } from "./port.js";
+import { InviteStore, cleanName, inviteId, tokenFromCookie } from "../src/cli/invites.ts";
+import { SessionStore } from "../src/cli/sessions.ts";
+import type { AgentEntry, Session, UserEntry } from "../src/cli/sessions.ts";
+import { Hub } from "../src/cli/hub.ts";
+import { ownerHeaders } from "./owner.ts";
+import { freePort } from "./port.ts";
 
-const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
+const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 
 // ── invites ──
 
@@ -63,7 +65,7 @@ test("held notes stay out of the agent's queue and feedback until the owner send
   const store = await SessionStore.open(dir);
   try {
     const s = store.ensure(path.join(dir, "plan.html"));
-    const note = (text) => [{ kind: "message", text, id: text }];
+    const note = (text: string) => [{ kind: "message", text, id: text }];
     const mine = store.addUserBatch(s, note("owner note"));
     const held = store.addUserBatch(s, note("held note"), { author: "Ana", hold: true });
     const auto = store.addUserBatch(s, note("auto note"), { author: "Bo" });
@@ -79,23 +81,23 @@ test("held notes stay out of the agent's queue and feedback until the owner send
     const out = store.release(s, [held.id]);
     assert.equal(out.length, 1);
     assert.equal(held.held, false);
-    assert.ok(store.unread(s).includes(held), "released notes are unread");
+    assert.ok((store.unread(s) as UserEntry[]).includes(held), "released notes are unread");
     assert.deepEqual(store.release(s, [held.id]), [], "releasing twice does nothing");
 
     const dropped = store.addUserBatch(s, note("drop me"), { author: "Ana", hold: true });
     store.discard(s, [dropped.id]);
     assert.equal(dropped.discarded, true);
-    assert.ok(!store.unread(s).includes(dropped));
+    assert.ok(!(store.unread(s) as UserEntry[]).includes(dropped));
     assert.ok(!store.feedback(s, { all: true, peek: true }).entries.some((e) => e.id === dropped.id), "discarded notes never come back");
 
     // A restart keeps held notes held.
     const again = store.addUserBatch(s, note("still held"), { author: "Ana", hold: true });
     const reopened = await SessionStore.open(dir);
     try {
-      const reloaded = reopened.get(s.id);
-      assert.equal(reloaded.transcript.find((e) => e.id === again.id).held, true);
+      const reloaded = reopened.get(s.id) as Session;
+      assert.equal(reloaded.transcript.find((e) => e.id === again.id)?.held, true);
       assert.ok(!reopened.unread(reloaded).some((e) => e.id === again.id));
-      assert.equal(reloaded.transcript.find((e) => e.id === dropped.id).discarded, true);
+      assert.equal(reloaded.transcript.find((e) => e.id === dropped.id)?.discarded, true);
     } finally {
       reopened.close();
     }
@@ -121,8 +123,8 @@ test("the hub records the author and held status, and filters on the author", as
 
     const all = hub.notes();
     assert.deepEqual(all.map((n) => n.id).sort(), ["i1", "i2", "i3"], "discarded notes are left out");
-    assert.equal(all.find((n) => n.id === "i2").author, "Ana");
-    assert.equal(all.find((n) => n.id === "i2").status, "held");
+    assert.equal(all.find((n) => n.id === "i2")?.author, "Ana");
+    assert.equal(all.find((n) => n.id === "i2")?.status, "held");
     assert.deepEqual(hub.notes({ author: "Ana" }).map((n) => n.id), ["i2"]);
     assert.deepEqual(hub.notes({ author: "owner" }).map((n) => n.id), ["i1"]);
     assert.deepEqual(hub.authors(), ["Ana", "Bo"]);
@@ -166,12 +168,76 @@ test("an index made before team review gains the author column", async () => {
 
 // ── the server ──
 
-async function startServer(extraEnv) {
+type Headers = Record<string, string>;
+
+/** A transcript item as the server returns it. */
+interface Item {
+  id: string;
+  kind: string;
+  text?: string;
+  author?: string;
+  target?: string;
+  component?: string;
+  path?: string[];
+  note?: string;
+}
+
+interface Entry {
+  id: string;
+  author?: string;
+  held?: boolean;
+  items: Item[];
+}
+
+/** The JSON bodies of the routes these tests call, merged: each test reads only the fields its route returns. */
+interface Api {
+  error: string;
+  link: string;
+  invites: { link?: string }[];
+  links: { remote: string };
+  remote: string;
+  session: { id: string };
+  entry: Entry;
+  status: string;
+  entries: Entry[];
+  items: Item[];
+  pending: number;
+  held: number;
+  count: number;
+  revoked: { name: string }[];
+  sessions: { id: string; status: string; browsers: number }[];
+}
+
+interface Res<T> {
+  status: number | undefined;
+  data: T;
+  headers: http.IncomingHttpHeaders;
+}
+
+interface Server {
+  port: number;
+  state: string;
+  child: ChildProcess;
+  owner: Headers;
+}
+
+interface StreamEvent {
+  name: string;
+  // Event payloads are JSON whose shape depends on the event name; events without data carry null.
+  data: { transcript: Entry[]; entries: Entry[]; state: string };
+}
+
+interface Stalled {
+  sock: net.Socket;
+  status: number;
+}
+
+async function startServer(extraEnv: Record<string, string>): Promise<Server> {
   const port = await freePort();
   const state = tmp("austere-team-state-");
   const owner = ownerHeaders(state);
   owners.set(port, owner);
-  const child = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(port)], {
+  const child = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(port)], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1", ...extraEnv },
     stdio: "ignore",
   });
@@ -179,13 +245,13 @@ async function startServer(extraEnv) {
 }
 
 /** The owner's key and cookie for the server on `port`, or none. */
-const owners = new Map();
+const owners = new Map<number, Headers>();
 
 /**
  * `remote`: send from 127.0.0.2, which the server does not count as loopback, like a tailnet peer.
  * A local request with no cookie of its own comes from the owner (the CLI, or the owner's browser).
  */
-function request(port, method, route, { body, headers = {}, remote = false } = {}) {
+function request<T = Api>(port: number, method: string, route: string, { body, headers = {}, remote = false }: { body?: unknown; headers?: Headers; remote?: boolean } = {}): Promise<Res<T>> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const owner = !remote && !headers.cookie ? owners.get(port) || {} : {};
@@ -195,11 +261,11 @@ function request(port, method, route, { body, headers = {}, remote = false } = {
         let data = "";
         res.on("data", (c) => (data += c));
         res.on("end", () => {
-          let parsed = data;
+          let parsed: unknown = data;
           try {
             parsed = JSON.parse(data);
           } catch {}
-          resolve({ status: res.statusCode, data: parsed, headers: res.headers });
+          resolve({ status: res.statusCode, data: parsed as T, headers: res.headers });
         });
       },
     );
@@ -210,23 +276,23 @@ function request(port, method, route, { body, headers = {}, remote = false } = {
 }
 
 /** Open an event stream and collect what arrives. */
-function stream(port, route, headers = {}) {
-  const events = [];
+function stream(port: number, route: string, headers: Headers = {}) {
+  const events: StreamEvent[] = [];
   let ended = false;
   const owner = !headers.cookie ? owners.get(port) || {} : {};
   const r = http.request({ host: "127.0.0.1", port, path: route, headers: { host: `127.0.0.1:${port}`, ...owner, ...headers } });
-  const done = new Promise((resolve) => {
+  const done = new Promise<void>((resolve) => {
     r.on("response", (res) => {
       let buf = "";
       res.on("data", (c) => {
         buf += c;
-        let i;
+        let i: number;
         while ((i = buf.indexOf("\n\n")) >= 0) {
           const block = buf.slice(0, i);
           buf = buf.slice(i + 2);
           const name = /^event: (.+)$/m.exec(block)?.[1];
           const data = /^data: (.+)$/m.exec(block)?.[1];
-          if (name) events.push({ name, data: data ? JSON.parse(data) : null });
+          if (name) events.push({ name, data: (data ? JSON.parse(data) : null) as StreamEvent["data"] });
         }
       });
       res.on("end", () => {
@@ -241,7 +307,7 @@ function stream(port, route, headers = {}) {
   return { events, done, isEnded: () => ended, close: () => r.destroy() };
 }
 
-const until = async (fn, ms = 3000) => {
+const until = async (fn: () => boolean | Promise<boolean>, ms = 3000) => {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     if (await fn()) return true;
@@ -250,7 +316,7 @@ const until = async (fn, ms = 3000) => {
   return false;
 };
 
-async function up(port) {
+async function up(port: number) {
   for (let i = 0; i < 100; i++) {
     try {
       if ((await request(port, "GET", "/api/health")).status === 200) return;
@@ -260,7 +326,7 @@ async function up(port) {
   throw new Error("server did not start");
 }
 
-async function stop(s) {
+async function stop(s: Server) {
   if (s.child.exitCode === null) {
     const exited = new Promise((r) => s.child.once("exit", r));
     s.child.kill();
@@ -271,8 +337,8 @@ async function stop(s) {
 
 const WORK = tmp("austere-team-work-");
 const FILE = path.join(WORK, "plan.html");
-let srv;
-let id;
+let srv: Server;
+let id: string;
 
 before(async () => {
   fs.writeFileSync(
@@ -293,17 +359,17 @@ after(async () => {
   fs.rmSync(WORK, { recursive: true, force: true });
 });
 
-const share = (name, auto = false) => request(srv.port, "POST", "/api/share", { body: { file: FILE, name, auto } });
+const share = (name: string, auto = false) => request(srv.port, "POST", "/api/share", { body: { file: FILE, name, auto } });
 
 /** Follow an invite link as a browser would: the link shows a confirmation, and a same-origin POST from it sets the cookie. */
-async function accept(link) {
+async function accept(link: string) {
   const u = new URL(link);
-  const page = await request(srv.port, "GET", u.pathname + u.search);
+  const page = await request<string>(srv.port, "GET", u.pathname + u.search);
   assert.equal(page.status, 200);
-  const r = await join(new URLSearchParams({ invite: u.searchParams.get("invite") }).toString(), { origin: `http://127.0.0.1:${srv.port}` });
+  const r = await join(new URLSearchParams({ invite: u.searchParams.get("invite") ?? "" }).toString(), { origin: `http://127.0.0.1:${srv.port}` });
   assert.equal(r.status, 303);
   assert.equal(r.headers.location, `/s/${id}`, "the token is gone from the URL");
-  const set = [].concat(r.headers["set-cookie"])[0];
+  const set = ([] as (string | undefined)[]).concat(r.headers["set-cookie"])[0] ?? "";
   assert.match(set, /HttpOnly/);
   assert.match(set, /SameSite=Lax/, "Lax, so the cookie comes back after a click in chat or email");
   assert.match(set, new RegExp(`Path=/s/${id}`));
@@ -311,7 +377,7 @@ async function accept(link) {
 }
 
 /** The confirmation form's POST: urlencoded, not JSON. */
-function join(form, headers = {}) {
+function join(form: string, headers: Headers = {}): Promise<Res<string>> {
   return new Promise((resolve, reject) => {
     const r = http.request(
       { host: "127.0.0.1", port: srv.port, method: "POST", path: `/s/${id}/join`, headers: { host: `127.0.0.1:${srv.port}`, "content-type": "application/x-www-form-urlencoded", ...headers } },
@@ -326,7 +392,7 @@ function join(form, headers = {}) {
   });
 }
 
-const sendNote = (as, text, extra = {}) =>
+const sendNote = (as: { cookie: string } | null, text: string, extra = {}) =>
   request(srv.port, "POST", `/s/${id}/send`, {
     body: { items: [{ kind: "message", text }], ...extra },
     headers: { origin: `http://127.0.0.1:${srv.port}`, ...(as ? { cookie: as.cookie } : {}) },
@@ -399,14 +465,14 @@ test("an invalid or missing token is refused; a cookie for a revoked invite is n
   assert.equal((await request(srv.port, "GET", `/s/${id}`)).status, 200, "no invite: the owner, as before");
   const bad = await request(srv.port, "GET", `/s/${id}`, { headers: { cookie: "austere_rv=forged" } });
   assert.equal(bad.status, 403, "a forged cookie does not fall back to the owner");
-  assert.match([].concat(bad.headers["set-cookie"])[0], /Max-Age=0/);
+  assert.match(([] as (string | undefined)[]).concat(bad.headers["set-cookie"])[0] ?? "", /Max-Age=0/);
 });
 
 test("an invite link only asks for confirmation; a cross-site GET plants no cookie", async () => {
   const link = (await share("Dee")).data.link;
   const u = new URL(link);
   const token = u.searchParams.get("invite");
-  const page = await request(srv.port, "GET", u.pathname + u.search, { headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" } });
+  const page = await request<string>(srv.port, "GET", u.pathname + u.search, { headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" } });
   assert.equal(page.status, 200);
   assert.equal(page.headers["set-cookie"], undefined, "the GET sets no cookie");
   assert.match(page.data, /Continue as Dee/);
@@ -415,8 +481,8 @@ test("an invite link only asks for confirmation; a cross-site GET plants no cook
   assert.equal(page.headers["x-frame-options"], "DENY", "the confirmation cannot be framed");
 
   // The join needs a same-origin Origin: a foreign or missing one is refused and sets nothing.
-  const form = new URLSearchParams({ invite: token }).toString();
-  for (const headers of [{ origin: "http://evil.example.test" }, { origin: "null" }, {}]) {
+  const form = new URLSearchParams({ invite: token ?? "" }).toString();
+  for (const headers of [{ origin: "http://evil.example.test" }, { origin: "null" }, {}] as Headers[]) {
     const r = await join(form, headers);
     assert.equal(r.status, 403, JSON.stringify(headers));
     assert.equal(r.headers["set-cookie"], undefined, JSON.stringify(headers));
@@ -435,7 +501,7 @@ test("a held note waits: poll and feedback skip it until the owner sends it", as
   const ana = await accept(link);
 
   // The reviewer's page names them and hides owner controls.
-  const page = await request(srv.port, "GET", `/s/${id}`, { headers: { cookie: ana.cookie } });
+  const page = await request<string>(srv.port, "GET", `/s/${id}`, { headers: { cookie: ana.cookie } });
   assert.equal(page.status, 200);
   assert.match(page.data, /"viewer":\{"role":"reviewer","name":"Ana"/);
   assert.ok(!page.data.includes(path.basename(WORK)), "the owner's path is not in the reviewer's page");
@@ -479,10 +545,10 @@ test("releasing held notes needs explicit ids: a note the owner was never shown 
 
     // The owner's snapshot keeps only the last 200 entries, so the early note is not on screen.
     const owner = stream(srv.port, `/s/${id}/events`);
-    let rendered;
+    let rendered: string[];
     try {
       assert.ok(await until(() => owner.events.some((e) => e.name === "snapshot")));
-      rendered = owner.events.find((e) => e.name === "snapshot").data.transcript.filter((e) => e.held).map((e) => e.id);
+      rendered = owner.events.find((e) => e.name === "snapshot")!.data.transcript.filter((e) => e.held).map((e) => e.id);
     } finally {
       owner.close();
     }
@@ -560,7 +626,7 @@ test("reviewers add notes and nothing else", async () => {
   assert.notEqual(r.data.entry.items[0].id, "taken", "the server picks the id");
   assert.equal(r.data.entry.author, "Dee", "the author comes from the invite, not the request");
   const sessions = await request(srv.port, "GET", "/api/sessions");
-  assert.equal(sessions.data.sessions.find((s) => s.id === id).status, "open");
+  assert.equal(sessions.data.sessions.find((s) => s.id === id)!.status, "open");
 
   // A target, component or path entry the annotator would never produce is dropped, so a long one cannot
   // hide text behind the owner's shortened view; invisible characters are stripped from the note.
@@ -591,7 +657,7 @@ test("a reviewer cannot read through a symlink out of the page's directory", asy
     fs.symlinkSync(path.join(outside, "private.txt"), links[0]);
     fs.symlinkSync(outside, links[1]);
     const gal = await accept((await share("Gal")).data.link);
-    const get = (p) => request(srv.port, "GET", `/s/${id}/a/${p}`, { headers: { cookie: gal.cookie } });
+    const get = (p: string) => request(srv.port, "GET", `/s/${id}/a/${p}`, { headers: { cookie: gal.cookie } });
     assert.equal((await get("inside.txt")).status, 200, "a real file in the directory is served");
     const file = await get("notes.txt");
     assert.equal(file.status, 404, "a file link that points outside");
@@ -705,7 +771,7 @@ test("the server log never holds a token", async () => {
   await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Hal" } });
   const log = fs.readFileSync(path.join(srv.state, "server.log"), "utf8");
   assert.ok(log.includes("share Hal"), "shares are logged by name");
-  assert.ok(!log.includes(token));
+  assert.ok(!log.includes(String(token)));
 });
 
 // Off loopback (a tailnet peer), nobody is the owner without the owner key. Otherwise a reviewer
@@ -724,7 +790,7 @@ test("off loopback, the hub and pages need the owner key or an invite", { skip: 
   const r = await request(srv.port, "GET", u.pathname + u.search, { remote: true });
   assert.equal(r.status, 302);
   assert.equal(r.headers.location, `/s/${id}`, "the key is gone from the URL");
-  const set = [].concat(r.headers["set-cookie"])[0];
+  const set = ([] as (string | undefined)[]).concat(r.headers["set-cookie"])[0] ?? "";
   assert.match(set, /^austere_owner=.*HttpOnly; SameSite=Lax/);
   const owner = { cookie: set.split(";")[0] };
   assert.equal((await request(srv.port, "GET", `/s/${id}`, { remote: true, headers: owner })).status, 200);
@@ -768,9 +834,9 @@ test("a reviewer's note keeps only the documented fields, with the documented ty
   await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Mal" } });
 });
 
-function cli(...args) {
+function cli(...args: string[]): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["src/cli/main.js", ...args], {
+    const child = spawn(process.execPath, ["src/cli/main.ts", ...args], {
       env: { ...process.env, AUSTERE_AXI_STATE_DIR: srv.state, AUSTERE_AXI_PORT: String(srv.port), AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" },
     });
     let out = "";
@@ -800,7 +866,7 @@ test("feedback shows the rest of a delivery when one item cannot be read", async
 // ── event stream limits ──
 
 /** An event stream that is never read: its socket buffers fill and the server has to cope. Resolves with the HTTP status line. */
-function stalledStream(port, cookie) {
+function stalledStream(port: number, cookie: string): Promise<Stalled> {
   return new Promise((resolve, reject) => {
     const sock = net.connect(port, "127.0.0.1", () => {
       sock.write(`GET /s/${id}/events HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nCookie: ${cookie}\r\n\r\n`);
@@ -814,11 +880,11 @@ function stalledStream(port, cookie) {
   });
 }
 
-const browsers = async () => (await request(srv.port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id).browsers;
+const browsers = async () => (await request(srv.port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)!.browsers;
 
 test("an event stream that never reads is dropped once its backlog passes the cap", async () => {
   const eve = await accept((await share("Eve")).data.link);
-  const socks = [];
+  const socks: net.Socket[] = [];
   try {
     for (let i = 0; i < 4; i++) {
       const s = await stalledStream(srv.port, eve.cookie);
@@ -846,7 +912,7 @@ test("one event larger than the cap reaches a reading stream without dropping it
   try {
     assert.equal(status, 200);
     let got = 0;
-    const arrived = new Promise((resolve) => sock.on("data", (d) => (got += d.length) > 3_000_000 && resolve()));
+    const arrived = new Promise<void>((resolve) => sock.on("data", (d: Buffer) => (got += d.length) > 3_000_000 && resolve()));
     sock.resume();
     assert.equal((await sendNote(ivy, "x".repeat(3_000_000))).status, 200);
     await arrived;
@@ -874,7 +940,7 @@ test("a reviewer can have only so many notes held at once", async () => {
 
 test("a reviewer gets a few event streams, and the whole session a few more", async () => {
   const fay = await accept((await share("Fay")).data.link);
-  const stalled = [];
+  const stalled: net.Socket[] = [];
   try {
     for (let i = 0; i < 4; i++) stalled.push((await stalledStream(srv.port, fay.cookie)).sock);
     const fifth = await stalledStream(srv.port, fay.cookie).catch(() => null);
@@ -913,9 +979,9 @@ test("a long transcript loses nothing: every entry, held and waiting notes too, 
     for (let i = 0; i < 1000; i++) store.addAgentReply(s, `reply ${i}`);
     store.close();
     store = await SessionStore.open(dir);
-    s = store.get(s.id);
+    s = store.get(s.id) as Session;
     assert.equal(s.transcript.length, 1002);
-    assert.equal(s.transcript.at(-1).text, "reply 999", "the newest entry stays");
+    assert.equal((s.transcript.at(-1) as AgentEntry).text, "reply 999", "the newest entry stays");
     assert.deepEqual(store.heldEntries(s).map((e) => e.id), [held.id]);
     assert.deepEqual(store.unread(s).map((e) => e.id), [waiting.id]);
     store.close();

@@ -1,24 +1,22 @@
-// @ts-check
 // The component catalog: one entry per component (signature, description,
 // group, tier, examples, pack). It is what `components list|search|show`
 // read, what a pack ships as catalog.json, and where the prompt's tiers are
 // decided. Plain data and pure functions: used by the build, the CLI and tests.
+import type { Catalog, CatalogEntry, CatalogFromSpecOptions, LibrarySpec } from "../../types/catalog.d.ts";
 
 export const CATALOG_FORMAT = 1;
 
 /**
  * Catalog from an OpenUI library spec (`library.toSpec()`).
- * @param {{components: Record<string, {signature: string, description?: string}>, componentGroups?: {name: string, components: string[], notes?: string[]}[]}} spec
- * @param {{ pack?: string, version?: string, tiers?: Record<string, string>, examples?: Record<string, string[]>, only?: string[] }} [options]
- *   `only` keeps just these components (a pack's own, out of a library that also holds the core).
+ * `only` keeps just these components (a pack's own, out of a library that also holds the core).
  */
-export function catalogFromSpec(spec, { pack = "core", version = "", tiers = {}, examples = {}, only = null } = {}) {
-  const groupOf = new Map();
+export function catalogFromSpec(spec: LibrarySpec, { pack = "core", version = "", tiers = {}, examples = {}, only = null }: CatalogFromSpecOptions = {}): Catalog {
+  const groupOf = new Map<string, string>();
   for (const g of spec.componentGroups || []) for (const n of g.components) if (!groupOf.has(n)) groupOf.set(n, g.name);
   const keep = only ? new Set(only) : null;
   const components = Object.entries(spec.components)
     .filter(([name]) => !keep || keep.has(name))
-    .map(([name, c]) => ({
+    .map(([name, c]): CatalogEntry => ({
       name,
       group: groupOf.get(name) || "Other",
       signature: c.signature,
@@ -39,7 +37,7 @@ export function catalogFromSpec(spec, { pack = "core", version = "", tiers = {},
  * and each group gets one line naming them, so an agent knows they exist and
  * asks for the full signature only when it needs one.
  */
-export function promptSpec(spec, tiers = {}) {
+export function promptSpec<S extends LibrarySpec>(spec: S, tiers: Record<string, string> = {}): S {
   const extended = new Set(Object.keys(tiers).filter((n) => tiers[n] === "extended" && spec.components[n]));
   if (!extended.size) return spec;
   const components = Object.fromEntries(Object.entries(spec.components).filter(([n]) => !extended.has(n)));
@@ -54,7 +52,7 @@ export function promptSpec(spec, tiers = {}) {
   return { ...spec, components, componentGroups };
 }
 
-const words = (text) =>
+const words = (text: string | undefined) =>
   String(text || "")
     .toLowerCase()
     .split(/[^a-z0-9]+/)
@@ -63,13 +61,12 @@ const words = (text) =>
 /**
  * Rank catalog entries for a free-text query: names first, then groups,
  * descriptions, signatures and the notes of the entry's group.
- * @returns {{ entry: object, score: number }[]}
  */
-export function searchCatalog(entries, query, { notesOf = /** @type {(entry: any) => string[]} */ (() => []), limit = 8 } = {}) {
+export function searchCatalog<E extends CatalogEntry>(entries: E[], query: string, { notesOf = () => [], limit = 8 }: { notesOf?: (entry: E) => string[]; limit?: number } = {}): { entry: E; score: number }[] {
   const q = String(query || "").trim().toLowerCase();
   const terms = words(q);
   if (!terms.length) return [];
-  const scored = [];
+  const scored: { entry: E; score: number }[] = [];
   for (const e of entries) {
     const name = e.name.toLowerCase();
     let score = 0;

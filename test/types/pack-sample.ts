@@ -1,11 +1,9 @@
-// @ts-check
 // A pack written against types/pack.d.ts, as `components new` generates it.
 // `npm run typecheck` keeps it compiling, so the public types cannot drift.
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
 
-/** @param {{ props: { events: string[] } }} args */
-function MilestonesView({ props }) {
+function MilestonesView({ props }: { props: { events: string[] } }) {
   return props.events.length;
 }
 

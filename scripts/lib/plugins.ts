@@ -1,10 +1,13 @@
 // esbuild plugins and helpers shared by the build, the tests and the
 // maintainer scripts.
 import * as esbuild from "esbuild";
+import type { Plugin, TsconfigRaw } from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { Catalog, LibrarySpec } from "../../types/catalog.d.ts";
+import type { AustereComponent } from "../../types/pack.d.ts";
 
 const require = createRequire(import.meta.url);
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -12,8 +15,27 @@ export const COMPONENTS_DIR = path.join(ROOT, "src/runtime/components");
 export const PACKS_DIR = path.join(ROOT, "packs");
 const ENTRY_CANDIDATES = ["src/index.jsx", "src/index.js", "index.jsx", "index.js"];
 
-/** Packs bundled with austere-axi: packs/<id>/ with a package.json and an entry module. */
-export function bundledPackSources() {
+/**
+ * tsconfig for the browser scripts bundled as IIFEs (runtime, chrome, site/copy.js). The repo's tsconfig.json
+ * is `strict`, which makes esbuild prepend "use strict" to an IIFE and so run every bundled dependency in
+ * strict mode; these bundles keep the sloppy-mode wrapper they had as JavaScript.
+ */
+export const IIFE_TSCONFIG: TsconfigRaw = { compilerOptions: { verbatimModuleSyntax: true } };
+
+export interface BundledPackSource {
+  id: string;
+  dir: string;
+  name: string;
+  entry: string;
+}
+
+interface PackPackageJson {
+  name: string;
+  austere?: { entry?: string };
+}
+
+/** Packs bundled with austere-axi: packs/<id>/ with a package.json and an entry module (package.json "austere.entry", else the first of ENTRY_CANDIDATES). */
+export function bundledPackSources(): BundledPackSource[] {
   if (!fs.existsSync(PACKS_DIR)) return [];
   return fs
     .readdirSync(PACKS_DIR)
@@ -21,9 +43,10 @@ export function bundledPackSources() {
     .filter((id) => fs.existsSync(path.join(PACKS_DIR, id, "package.json")))
     .map((id) => {
       const dir = path.join(PACKS_DIR, id);
-      const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
-      const entry = ENTRY_CANDIDATES.map((c) => path.join(dir, c)).find((f) => fs.existsSync(f));
-      if (!entry) throw new Error(`packs/${id} has no entry module (${ENTRY_CANDIDATES.join(", ")})`);
+      const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")) as PackPackageJson;
+      const candidates = pkg.austere?.entry ? [pkg.austere.entry] : ENTRY_CANDIDATES;
+      const entry = candidates.map((c) => path.join(dir, c)).find((f) => fs.existsSync(f));
+      if (!entry) throw new Error(`packs/${id} has no entry module (${candidates.join(", ")})`);
       return { id, dir, name: pkg.name, entry };
     });
 }
@@ -33,17 +56,17 @@ export function bundledPackSources() {
  * components } } from dist/packs/<id>/catalog.json, so the runtime knows which
  * components load which bundled pack without carrying their code.
  */
-export function bundledPacksPlugin(distDir) {
+export function bundledPacksPlugin(distDir: string): Plugin {
   return {
     name: "austere-bundled-packs",
     setup(build) {
       build.onResolve({ filter: /^austere:bundled-packs$/ }, () => ({ path: "bundled-packs", namespace: "austere-bundled-packs" }));
       build.onLoad({ filter: /.*/, namespace: "austere-bundled-packs" }, () => {
-        const index = {};
+        const index: Record<string, { name: string; version: string; components: string[] }> = {};
         for (const { id } of bundledPackSources()) {
           const file = path.join(distDir, "packs", id, "catalog.json");
-          if (!fs.existsSync(file)) throw new Error(`dist/packs/${id}/catalog.json is missing: build the packs first (node scripts/build.mjs packs)`);
-          const cat = JSON.parse(fs.readFileSync(file, "utf8"));
+          if (!fs.existsSync(file)) throw new Error(`dist/packs/${id}/catalog.json is missing: build the packs first (node scripts/build.ts packs)`);
+          const cat = JSON.parse(fs.readFileSync(file, "utf8")) as Catalog;
           index[id] = { name: cat.pack, version: cat.version, components: cat.components.map((c) => c.name) };
         }
         return { contents: `export default ${JSON.stringify(index)};`, loader: "js" };
@@ -53,18 +76,18 @@ export function bundledPacksPlugin(distDir) {
 }
 
 /** In Node builds of the library, a bundled pack's "austere-axi/pack" import is the runtime's pack API. */
-const packApiAlias = {
+const packApiAlias: Plugin = {
   name: "austere-pack-api",
   setup(build) {
-    build.onResolve({ filter: /^austere-axi\/pack$/ }, () => ({ path: path.join(ROOT, "src/runtime/pack-api.js") }));
+    build.onResolve({ filter: /^austere-axi\/pack$/ }, () => ({ path: path.join(ROOT, "src/runtime/pack-api.ts") }));
   },
 };
 
-/** Component files: every .js/.jsx in components/ whose name does not start with "_". */
-export function componentFiles() {
+/** Component files: every .ts/.tsx in components/ whose name does not start with "_". */
+export function componentFiles(): string[] {
   return fs
     .readdirSync(COMPONENTS_DIR)
-    .filter((f) => /\.jsx?$/.test(f) && !f.startsWith("_"))
+    .filter((f) => /\.tsx?$/.test(f) && !f.startsWith("_"))
     .sort();
 }
 
@@ -73,7 +96,7 @@ export function componentFiles() {
  * default export, in file order. A file exports one component, or an array
  * for a family (a container and its value-only parts, in prompt order).
  */
-export const registryPlugin = {
+export const registryPlugin: Plugin = {
   name: "austere-registry",
   setup(build) {
     build.onResolve({ filter: /^austere:components$/ }, () => ({ path: "components", namespace: "austere-registry" }));
@@ -96,14 +119,14 @@ export const registryPlugin = {
   },
 };
 
-function fontCss() {
+function fontCss(): string {
   const file = require.resolve("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2");
   const b64 = fs.readFileSync(file).toString("base64");
   return `@font-face{font-family:"Inter Variable";font-style:normal;font-display:swap;font-weight:100 900;src:url(data:font/woff2;base64,${b64}) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}`;
 }
 
 /** Inline Inter as a data URL so artifacts render identically offline. */
-export const fontPlugin = {
+export const fontPlugin: Plugin = {
   name: "austere-font",
   setup(build) {
     build.onResolve({ filter: /\/font\.css$/ }, (args) => ({ path: args.path, namespace: "austere-font" }));
@@ -113,21 +136,21 @@ export const fontPlugin = {
 
 // OpenUI's CodeBlock imports the full Prism build and every theme; swap in
 // the light build with common languages (saves ~0.5 MB).
-export const slimHighlighterPlugin = {
+export const slimHighlighterPlugin: Plugin = {
   name: "austere-slim-highlighter",
   setup(build) {
     build.onResolve({ filter: /^react-syntax-highlighter$/ }, () => ({
-      path: path.join(ROOT, "src/runtime/highlighter.js"),
+      path: path.join(ROOT, "src/runtime/highlighter.ts"),
     }));
     build.onResolve({ filter: /^react-syntax-highlighter\/dist\/cjs\/styles\/prism(\/index\.js)?$/ }, () => ({
-      path: path.join(ROOT, "src/runtime/highlighter-styles.js"),
+      path: path.join(ROOT, "src/runtime/highlighter-styles.ts"),
     }));
   },
 };
 
 // Keep node_modules external when bundling for Node, except OpenUI component
 // subpaths whose ESM uses extensionless imports Node cannot load.
-const nodeExternals = {
+const nodeExternals: Plugin = {
   name: "externals",
   setup(build) {
     build.onResolve({ filter: /^[^./]/ }, (args) => {
@@ -144,7 +167,45 @@ const nodeExternals = {
  * (ours plus the bundled packs'), BUNDLED_PACKS, GROUPS, TIERS, EXAMPLES,
  * buildLibrary, PROMPT_OPTIONS, prompt(), catalog(version), schema() }.
  */
-export async function loadLibrary() {
+export interface AustereLibrary {
+  components: Record<string, { description?: string }>;
+  root?: string;
+  toSpec(): LibrarySpec;
+  toJSONSchema(): Record<string, unknown>;
+}
+
+export interface BuildLibraryOptions {
+  onSkip?: (component: AustereComponent, message: string) => void;
+}
+
+export interface BundledPack {
+  id: string;
+  name: string;
+  components: AustereComponent[];
+}
+
+/** What the bundled library module exports. */
+interface LibraryModule {
+  austereLibrary: AustereLibrary;
+  CUSTOM_COMPONENTS: AustereComponent[];
+  BUNDLED_PACKS: BundledPack[];
+  GROUPS: { name: string; components: string[]; notes?: string[] }[];
+  TIERS: Record<string, string>;
+  EXAMPLES: Record<string, string[]>;
+  buildLibrary: (extra?: AustereComponent[], options?: BuildLibraryOptions) => AustereLibrary;
+  catalogFromSpec: (spec: LibrarySpec, options?: { version?: string; tiers?: Record<string, string>; examples?: Record<string, string[]> }) => Catalog;
+  promptSpec: (spec: LibrarySpec, tiers?: Record<string, string>) => LibrarySpec;
+  PROMPT_OPTIONS: unknown;
+  generateSystemPrompt: (options: { library: LibrarySpec; promptOptions: unknown }) => string;
+}
+
+export interface LoadedLibrary extends LibraryModule {
+  prompt: () => string;
+  catalog: (version: string) => Catalog;
+  schema: () => Record<string, unknown> & { root: string };
+}
+
+export async function loadLibrary(): Promise<LoadedLibrary> {
   const tmp = path.join(ROOT, "node_modules/.austere-build");
   fs.mkdirSync(tmp, { recursive: true });
   const out = path.join(tmp, `library-${process.pid}-${Date.now()}.mjs`);
@@ -152,7 +213,7 @@ export async function loadLibrary() {
   await esbuild.build({
     stdin: {
       contents: `
-        import { buildLibrary, CUSTOM_COMPONENTS as CORE_COMPONENTS, groupsFor, tiersFor, examplesFor } from "./src/runtime/library.jsx";
+        import { buildLibrary, CUSTOM_COMPONENTS as CORE_COMPONENTS, groupsFor, tiersFor, examplesFor } from "./src/runtime/library.tsx";
         ${packs.map((p, i) => `import pack${i} from ${JSON.stringify("./" + path.relative(ROOT, p.entry).split(path.sep).join("/"))};`).join("\n")}
         // Bundled packs (Mermaid) are part of the core spec: no tag needed to use them.
         export const BUNDLED_PACKS = [${packs
@@ -165,8 +226,8 @@ export async function loadLibrary() {
         export const TIERS = tiersFor(CUSTOM_COMPONENTS);
         export const EXAMPLES = examplesFor(CUSTOM_COMPONENTS);
         export { buildLibrary };
-        export { catalogFromSpec, promptSpec } from "./src/shared/catalog.js";
-        export { PROMPT_OPTIONS } from "./src/runtime/prompt.js";
+        export { catalogFromSpec, promptSpec } from "./src/shared/catalog.ts";
+        export { PROMPT_OPTIONS } from "./src/runtime/prompt.ts";
         export { generateSystemPrompt } from "@openuidev/lang-core";
       `,
       resolveDir: ROOT,
@@ -183,12 +244,12 @@ export async function loadLibrary() {
   });
   process.env.OPENUI_TELEMETRY_DISABLED = "1";
   try {
-    const mod = await import(pathToFileURL(out).href);
+    const mod = (await import(pathToFileURL(out).href)) as LibraryModule;
     return {
       ...mod,
       prompt: () =>
         mod.generateSystemPrompt({ library: mod.promptSpec(mod.austereLibrary.toSpec(), mod.TIERS), promptOptions: mod.PROMPT_OPTIONS }),
-      catalog: (version) => {
+      catalog: (version: string) => {
         const cat = mod.catalogFromSpec(mod.austereLibrary.toSpec(), { version, tiers: mod.TIERS, examples: mod.EXAMPLES });
         // Mark what a bundled pack provides, so `components` can say where it comes from.
         for (const p of mod.BUNDLED_PACKS) {
@@ -204,10 +265,10 @@ export async function loadLibrary() {
 }
 
 /** Rough token estimate used for the prompt budget (matches what the build prints). */
-export const estimateTokens = (text) => Math.round(text.length / 3.8);
+export const estimateTokens = (text: string): number => Math.round(text.length / 3.8);
 
 /** Wrap each component's examples (or its stress examples) in a minimal page program, one card each. */
-export function examplePage(components, field = "example") {
+export function examplePage(components: AustereComponent[], field: "example" | "stress" = "example"): string {
   const cards = components
     .flatMap((c) => (c[field] || []).map((program) => ({ name: c.name, program })))
     .map(({ name, program }, i) => {
@@ -220,7 +281,7 @@ export function examplePage(components, field = "example") {
   ].join("\n");
 }
 
-export function htmlPage(title, program, runtimeSrc) {
+export function htmlPage(title: string, program: string, runtimeSrc: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>

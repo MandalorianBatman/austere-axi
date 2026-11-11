@@ -1,4 +1,3 @@
-// @ts-check
 // Installing component packs: from the npm registry, a .tgz (`npm pack`
 // output), or a pack folder that has been built. Only three files are kept
 // per pack: dist/pack.js, dist/catalog.json and package.json. Installing runs
@@ -11,20 +10,60 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
-import { coreCatalog, installedPacks, isFirstParty, packDirName, packsDir, PACK_API, readLock, writeLock, TRUSTED_SCOPE } from "./packs.js";
-import { isValidPackName, isValidVersion, splitSpec } from "../shared/packs-meta.js";
-import { CATALOG_FORMAT } from "../shared/catalog.js";
+import type { PackCatalog } from "../../types/catalog.d.ts";
+import { coreCatalog, installedPacks, isFirstParty, packDirName, packsDir, PACK_API, readLock, writeLock, TRUSTED_SCOPE } from "./packs.ts";
+import type { PackSource, PackTrust } from "./packs.ts";
+import { isValidPackName, isValidVersion, splitSpec } from "../shared/packs-meta.ts";
+import { CATALOG_FORMAT } from "../shared/catalog.ts";
+
+/** The part of a registry packument (`GET <registry>/<name>`) installing reads. */
+export interface RegistryMeta {
+  "dist-tags"?: Record<string, string>;
+  versions: Record<string, { dist?: { tarball?: string; integrity?: string; shasum?: string } }>;
+}
+
+/** The three files kept from a pack. */
+interface PackFiles {
+  packJs: Buffer;
+  catalog: Buffer;
+  packageJson: Buffer | null;
+}
+
+/** A pack's files and where they came from. */
+interface FetchedPack extends PackFiles {
+  source: PackSource;
+  resolved: string;
+  /** What the registry served it as; its catalog must say the same. */
+  expect?: { name: string; version: string };
+}
+
+export interface AddedPack {
+  name: string;
+  version: string;
+  integrity: string;
+  previous: string | undefined;
+  components: string[];
+  warnings: string[];
+  trust: PackTrust;
+}
+
+/** What install errors carry besides the message (main.ts reads them). */
+export interface InstallError extends Error {
+  code?: string;
+  network?: boolean;
+  status?: number;
+}
 
 const MAX_TARBALL = 20 * 1024 * 1024;
 const MAX_PACK_JS = 8 * 1024 * 1024;
 
-export function registryUrl() {
+export function registryUrl(): string {
   const r = process.env.AUSTERE_AXI_NPM_REGISTRY || process.env.npm_config_registry || "https://registry.npmjs.org/";
   return r.endsWith("/") ? r : r + "/";
 }
 
 /** A folder or tarball rather than an npm name: anything path-shaped (an npm name has a slash only after "@scope"). */
-export function looksLikePath(spec) {
+export function looksLikePath(spec: string): boolean {
   return (
     /^(\.{1,2}([\\/]|$)|[\\/]|~[\\/]|[A-Za-z]:[\\/])/.test(spec) ||
     /\.t(ar\.)?gz$/i.test(spec) ||
@@ -33,19 +72,19 @@ export function looksLikePath(spec) {
   );
 }
 
-function sri(alg, buf) {
+function sri(alg: string, buf: Buffer): string {
   return `${alg}-${crypto.createHash(alg).update(buf).digest("base64")}`;
 }
 
 // ── tarballs ──
 
 /** Files in a (gunzipped) tar archive, with the top folder ("package/") stripped. */
-export function untar(buf) {
-  const files = new Map();
+export function untar(buf: Buffer): Map<string, Buffer> {
+  const files = new Map<string, Buffer>();
   let off = 0;
-  let longName = null;
-  let paxPath = null;
-  const str = (h, a, b) => h.subarray(a, b).toString("utf8").replace(/\0[\s\S]*$/, "");
+  let longName: string | null = null;
+  let paxPath: string | null = null;
+  const str = (h: Buffer, a: number, b: number): string => h.subarray(a, b).toString("utf8").replace(/\0[\s\S]*$/, "");
   while (off + 512 <= buf.length) {
     const h = buf.subarray(off, off + 512);
     if (h.every((b) => b === 0)) break;
@@ -77,7 +116,7 @@ export function untar(buf) {
 
 // ── versions ──
 
-function cmp(a, b) {
+function cmp(a: string, b: string): number {
   const pa = a.split(/[.-]/).map((x) => parseInt(x, 10) || 0);
   const pb = b.split(/[.-]/).map((x) => parseInt(x, 10) || 0);
   for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
@@ -85,8 +124,8 @@ function cmp(a, b) {
 }
 
 /** Resolve "", a dist-tag, x.y.z, ^x.y.z, ~x.y.z, x or x.y against the published versions. */
-export function pickVersion(meta, range) {
-  const tags = meta["dist-tags"] || {};
+export function pickVersion(meta: RegistryMeta, range: string): string | null {
+  const tags: Record<string, string> = meta["dist-tags"] || {};
   const versions = Object.keys(meta.versions || {}).filter(isValidVersion);
   if (!range || range === "latest") return tags.latest || null;
   if (tags[range]) return tags[range];
@@ -95,7 +134,7 @@ export function pickVersion(meta, range) {
   if (!m) return null;
   const [, op, M, mi, pa] = m;
   const want = [Number(M), mi && /\d/.test(mi) ? Number(mi) : null, pa && /\d/.test(pa) ? Number(pa) : null];
-  const ok = (v) => {
+  const ok = (v: string): boolean => {
     if (v.includes("-")) return false;
     const [a, b, c] = v.split(".").map(Number);
     if (a !== want[0]) return false;
@@ -112,11 +151,13 @@ export function pickVersion(meta, range) {
 
 // ── sources ──
 
-async function fetchBuffer(url, accept) {
+async function fetchBuffer(url: string, accept?: string): Promise<Buffer> {
   let res;
   try {
     res = await fetch(url, { headers: accept ? { accept } : {}, redirect: "follow" });
-  } catch (err) {
+  } catch (caught) {
+    // fetch rejects with a TypeError whose cause carries the network error code.
+    const err = caught as { cause?: { code?: string }; message?: string };
     const e = Object.assign(new Error(`could not reach ${url} (${err.cause?.code || err.message})`), { network: true });
     throw e;
   }
@@ -131,15 +172,15 @@ async function fetchBuffer(url, accept) {
   return buf;
 }
 
-async function fromRegistry(spec) {
+async function fromRegistry(spec: string): Promise<FetchedPack> {
   const { name, version: range } = spec.startsWith("@") || spec.includes("@") ? splitSpec(spec) : { name: spec, version: "" };
   if (!isValidPackName(name)) throw new Error(`${JSON.stringify(name)} is not an npm package name`);
   const metaUrl = registryUrl() + name.replace("/", "%2f");
-  let meta;
+  let meta: RegistryMeta;
   try {
     meta = JSON.parse((await fetchBuffer(metaUrl, "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8")).toString("utf8"));
   } catch (err) {
-    if (err.status === 404) throw new Error(`no package ${name} on ${registryUrl()}`);
+    if (err instanceof Error && "status" in err && err.status === 404) throw new Error(`no package ${name} on ${registryUrl()}`);
     throw err;
   }
   const version = pickVersion(meta, range);
@@ -158,12 +199,12 @@ async function fromRegistry(spec) {
   return { ...readTarball(tgz, `${name}@${version}`), expect: { name, version }, source: "npm", resolved: dist.tarball };
 }
 
-function readTarball(tgz, label) {
+function readTarball(tgz: Buffer, label: string): PackFiles {
   let files;
   try {
     files = untar(zlib.gunzipSync(tgz));
   } catch (err) {
-    throw new Error(`${label}: not a gzipped tarball (${err.message})`);
+    throw new Error(`${label}: not a gzipped tarball (${err instanceof Error ? err.message : undefined})`);
   }
   const packJs = files.get("dist/pack.js");
   const catalog = files.get("dist/catalog.json");
@@ -173,17 +214,17 @@ function readTarball(tgz, label) {
   return { packJs, catalog, packageJson: files.get("package.json") || null };
 }
 
-function fromTarball(file) {
+function fromTarball(file: string): FetchedPack {
   const abs = path.resolve(file.replace(/^~(?=[\\/])/, process.env.HOME || ""));
   if (!fs.existsSync(abs)) throw new Error(`no such file: ${abs}`);
   return { ...readTarball(fs.readFileSync(abs), path.basename(abs)), source: "tarball", resolved: abs };
 }
 
-function fromFolder(dir) {
+function fromFolder(dir: string): FetchedPack {
   const abs = path.resolve(dir.replace(/^~(?=[\\/])/, process.env.HOME || ""));
   if (!fs.existsSync(abs)) throw new Error(`no such folder: ${abs}`);
   if (fs.statSync(abs).isFile()) return fromTarball(abs);
-  const read = (rel) => (fs.existsSync(path.join(abs, rel)) ? fs.readFileSync(path.join(abs, rel)) : null);
+  const read = (rel: string): Buffer | null => (fs.existsSync(path.join(abs, rel)) ? fs.readFileSync(path.join(abs, rel)) : null);
   const packJs = read("dist/pack.js");
   const catalog = read("dist/catalog.json");
   if (!packJs || !catalog) throw new Error(`${abs} has no dist/pack.js and dist/catalog.json: run \`austere-axi components build ${dir}\` first`);
@@ -192,8 +233,8 @@ function fromFolder(dir) {
 
 // ── install ──
 
-function parseCatalog(buf, label) {
-  let cat;
+function parseCatalog(buf: Buffer, label: string): PackCatalog {
+  let cat: PackCatalog;
   try {
     cat = JSON.parse(buf.toString("utf8"));
   } catch {
@@ -216,7 +257,7 @@ function parseCatalog(buf, label) {
  * Install a pack. `spec`: npm name[@range], a .tgz, or a built pack folder.
  * Third-party packs (outside @austere-axi/) from npm or a tarball need `trust`.
  */
-export async function addPack(spec, { trust = false } = {}) {
+export async function addPack(spec: string, { trust = false }: { trust?: boolean } = {}): Promise<AddedPack> {
   const local = looksLikePath(spec);
   if (!local) {
     const { name } = spec.startsWith("@") || spec.includes("@") ? splitSpec(spec) : { name: spec };
@@ -229,8 +270,7 @@ export async function addPack(spec, { trust = false } = {}) {
       );
     }
   }
-  /** @type {{ expect?: { name: string, version: string }, [key: string]: any }} */
-  const got = local ? fromFolder(spec) : await fromRegistry(spec);
+  const got: FetchedPack = local ? fromFolder(spec) : await fromRegistry(spec);
   if (got.source === "tarball" && !trust) {
     // Nothing vouches for a tarball's name, so even an @austere-axi/ one needs --trust.
     const peek = parseCatalog(got.catalog, path.basename(got.resolved));
@@ -252,7 +292,7 @@ export async function addPack(spec, { trust = false } = {}) {
     throw new Error(`${label}: dist/pack.js changed after its catalog was built; run \`austere-axi components build\` again`);
   }
 
-  const warnings = [];
+  const warnings: string[] = [];
   const coreNames = new Set(coreCatalog().components.map((c) => c.name));
   const others = installedPacks().filter((p) => p.name !== cat.pack);
   for (const c of cat.components) {
@@ -285,7 +325,7 @@ export async function addPack(spec, { trust = false } = {}) {
   return { name: cat.pack, version: cat.version, integrity, previous: previous?.version, components: lock.packs[cat.pack].components, warnings, trust: lock.packs[cat.pack].trust };
 }
 
-export function removePack(name) {
+export function removePack(name: string): { name: string; version: string } | null {
   const lock = readLock();
   const entry = lock.packs[name];
   if (!entry) return null;

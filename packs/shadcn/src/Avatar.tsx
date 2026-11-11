@@ -1,8 +1,16 @@
 import React from "react";
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
+import type { RendererArgs } from "austere-axi/pack";
+import { isElement } from "./element.ts";
 
-const initials = (name) =>
+interface AvatarProps {
+  name: string;
+  src?: string;
+  size?: "md" | "lg";
+}
+
+const initials = (name: string) =>
   String(name || "?")
     .trim()
     .split(/\s+/)
@@ -12,9 +20,9 @@ const initials = (name) =>
     .toUpperCase() || "?";
 
 /** Only https and data: images; anything else falls back to initials. */
-const safeSrc = (src) => (typeof src === "string" && /^(https:\/\/|data:image\/)/i.test(src) ? src : "");
+const safeSrc = (src: unknown): string => (typeof src === "string" && /^(https:\/\/|data:image\/)/i.test(src) ? src : "");
 
-function Face({ name, src, size }) {
+function Face({ name, src, size }: AvatarProps) {
   const url = safeSrc(src);
   return (
     <span className={`sh-avatar sh-avatar-${size === "lg" ? "lg" : "md"}`} title={name} data-austere-part={name || undefined}>
@@ -23,7 +31,7 @@ function Face({ name, src, size }) {
   );
 }
 
-function AvatarView({ props }) {
+function AvatarView({ props }: RendererArgs<AvatarProps>) {
   return <Face name={props.name} src={props.src} size={props.size} />;
 }
 
@@ -37,9 +45,14 @@ export const Avatar = austereComponent({
   example: `owner = Avatar("Ada Lovelace")`,
 });
 
-function AvatarGroupView({ props }) {
-  const list = (Array.isArray(props.avatars) ? props.avatars : []).filter((el) => el && el.props);
-  const max = Number.isInteger(props.max) && props.max > 0 ? props.max : 4;
+interface AvatarGroupProps {
+  avatars: unknown[];
+  max?: number;
+}
+
+function AvatarGroupView({ props }: RendererArgs<AvatarGroupProps>) {
+  const list = (Array.isArray(props.avatars) ? props.avatars : []).filter(isElement<AvatarProps>);
+  const max = typeof props.max === "number" && Number.isInteger(props.max) && props.max > 0 ? props.max : 4;
   const shown = list.slice(0, max);
   const rest = list.length - shown.length;
   return (

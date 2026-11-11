@@ -7,8 +7,8 @@ import test from "node:test";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-cli-"));
 const env = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_OPEN: "1", AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_PORT: "4997" };
-const cli = (...args) => {
-  const r = spawnSync(process.execPath, ["src/cli/main.js", ...args], { encoding: "utf8", env });
+const cli = (...args: string[]) => {
+  const r = spawnSync(process.execPath, ["src/cli/main.ts", ...args], { encoding: "utf8", env });
   return { code: r.status, out: r.stdout };
 };
 

@@ -12,8 +12,16 @@
 const COMMON =
   "No existing design system applies; this is a standalone review page. Use only the facts below; do not invent extra data.";
 
-/** @type {Array<{id:string,title:string,playbooks:string[],prompt:string,facts:string[],feedback:{anchor:string,note:string,expect:string[]}}>} */
-export const TASKS = [
+export interface Task {
+  id: string;
+  title: string;
+  playbooks: string[];
+  prompt: string;
+  facts: string[];
+  feedback: { anchor: string; note: string; expect: string[] };
+}
+
+export const TASKS: Task[] = [
   {
     id: "migration-plan",
     title: "Migration plan",

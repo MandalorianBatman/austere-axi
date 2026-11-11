@@ -5,23 +5,36 @@
 // Packs bundled with austere-axi (Mermaid) need no tag: they load when the
 // program calls one of their components, so older pages keep working.
 import bundledPacks from "austere:bundled-packs";
-import { RUNTIME_BASE, assetUrl } from "./env.js";
-import { registeredPacks } from "./pack-api.js";
-import { parsePacksMeta } from "../shared/packs-meta.js";
+import type { RegisteredPack } from "../../types/pack.d.ts";
+import { RUNTIME_BASE, assetUrl } from "./env.ts";
+import { registeredPacks } from "./pack-api.ts";
+import { parsePacksMeta } from "../shared/packs-meta.ts";
+import type { PackRef } from "../shared/packs-meta.ts";
 
 export { parsePacksMeta };
+
+/** A pack the page needs; `bundled` names the austere-axi dist folder of a bundled pack. */
+export interface WantedPack extends PackRef {
+  bundled?: string;
+}
+
+/** Where a pack's script comes from, and the integrity the browser checks. */
+export interface PackSource {
+  src: string;
+  integrity?: string;
+}
 
 const CDN = "https://cdn.jsdelivr.net/npm";
 
 /** The packs this page declares, from its <meta name="austere-packs">. */
-export function declaredPacks(doc = document) {
+export function declaredPacks(doc: Document = document): PackRef[] {
   const meta = doc.querySelector('meta[name="austere-packs"]');
   return meta ? parsePacksMeta(meta.getAttribute("content") || "") : [];
 }
 
 /** Declared packs plus the bundled packs whose components the program calls. */
-export function packsFor(program, declared) {
-  const out = [...declared];
+export function packsFor(program: string, declared: PackRef[]): WantedPack[] {
+  const out: WantedPack[] = [...declared];
   for (const [id, b] of Object.entries(bundledPacks)) {
     if (out.some((p) => p.name === b.name)) continue;
     if (b.components.some((n) => new RegExp(`\\b${n}\\s*\\(`).test(program))) out.push({ name: b.name, version: b.version, bundled: id });
@@ -30,7 +43,7 @@ export function packsFor(program, declared) {
 }
 
 /** Under review: the runtime came from the local server, which also serves installed packs. */
-export function served() {
+export function served(): boolean {
   return /\/__austere\/$/.test(RUNTIME_BASE);
 }
 
@@ -41,7 +54,7 @@ export function served() {
  *              (an opaque-origin page cannot make the CORS request SRI needs)
  *   otherwise  the npm CDN, with Subresource Integrity when the tag gives a hash
  */
-export function packSource(p) {
+export function packSource(p: WantedPack): PackSource {
   if (p.bundled) {
     return { src: assetUrl(`packs/${p.bundled}/pack.js`) || `${CDN}/austere-axi@${p.version}/dist/packs/${p.bundled}/pack.js` };
   }
@@ -52,7 +65,7 @@ export function packSource(p) {
   return { src: `${CDN}/${p.name}@${p.version}/dist/pack.js`, integrity: p.integrity };
 }
 
-function loadScript(src, integrity) {
+function loadScript(src: string, integrity: string | undefined): Promise<void> {
   return new Promise((resolve, reject) => {
     const s = document.createElement("script");
     s.src = src;
@@ -71,7 +84,7 @@ function loadScript(src, integrity) {
  * Load the packs not registered yet (an exported page has them inline).
  * Never rejects: a pack that fails is reported and the page renders without it.
  */
-export async function loadPacks(list, { onError } = {}) {
+export async function loadPacks(list: WantedPack[], { onError }: { onError?: (pack: WantedPack, err: Error) => void } = {}): Promise<RegisteredPack[]> {
   const missing = list.filter((p) => !registeredPacks().some((r) => r.name === p.name));
   await Promise.all(
     missing.map((p) => {
@@ -82,7 +95,7 @@ export async function loadPacks(list, { onError } = {}) {
             onError?.(p, new Error(`${src} loaded but did not register pack ${p.name}`));
           }
         },
-        (err) => onError?.(p, err),
+        (err: Error) => onError?.(p, err),
       );
     }),
   );
@@ -90,7 +103,7 @@ export async function loadPacks(list, { onError } = {}) {
 }
 
 /** Add each pack's CSS to the page once. */
-export function injectPackStyles(packs) {
+export function injectPackStyles(packs: RegisteredPack[]): void {
   for (const p of packs) {
     if (!p.css) continue;
     const id = `austere-pack-css-${p.name.replace(/[^a-z0-9]/gi, "-")}`;

@@ -1,11 +1,18 @@
 import React, { useMemo } from "react";
 import { z } from "zod";
-import { austereComponent } from "../define.js";
-import { parseUnifiedDiff } from "./_diff-parse.js";
+import type { RendererArgs } from "../../../types/pack.d.ts";
+import { austereComponent } from "../define.ts";
+import { parseUnifiedDiff } from "./_diff-parse.ts";
+import type { DiffRow } from "./_diff-parse.ts";
 
-function DiffView({ props }) {
+const diffProps = z.object({
+  patch: z.string(),
+  title: z.string().optional(),
+});
+
+function DiffView({ props }: RendererArgs<z.infer<typeof diffProps>>) {
   const files = useMemo(() => parseUnifiedDiff(props.patch), [props.patch]);
-  const stats = (rows) => {
+  const stats = (rows: DiffRow[]) => {
     let a = 0;
     let d = 0;
     for (const r of rows) {
@@ -77,10 +84,7 @@ function DiffView({ props }) {
 export default austereComponent({
   name: "Diff",
   group: "Content",
-  props: z.object({
-    patch: z.string(),
-    title: z.string().optional(),
-  }),
+  props: diffProps,
   description:
     "Unified diff (git diff output, one or more files) with line numbers. patch is a raw multi-line string. Clicked lines reach the agent as file:+line.",
   notes: ["- Diff for code changes: show the hunks that matter, not whole files. Hunk counts are recomputed, so only start lines matter."],

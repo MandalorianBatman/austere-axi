@@ -1,18 +1,137 @@
 // Architecture diagrams: the parsed OpenUI props → a graph model → an automatic
 // dagre layout. Free of JSX and DOM so it can be unit-tested in Node
-// (test/components.test.js). Never throws on agent input.
+// (test/components.test.ts). Never throws on agent input.
 import dagre from "@dagrejs/dagre";
-import { lanesPlanWidth, runLanes, runStackedLanes } from "./_architecture-lanes.js";
+import type { EdgeLabel, NodeLabel } from "@dagrejs/dagre";
+import { lanesPlanWidth, runLanes, runStackedLanes } from "./_architecture-lanes.ts";
 
 // Vocabulary borrowed from archify's JSON IR, so agents that know it feel at home.
-export const NODE_KINDS = ["frontend", "backend", "database", "messagebus", "cloud", "security", "external"];
-export const EDGE_STYLES = ["solid", "dashed", "emphasis", "security"];
-export const GROUP_KINDS = ["region", "security", "plain"];
-export const DIRECTIONS = ["auto", "right", "down", "lanes"];
+export const NODE_KINDS = ["frontend", "backend", "database", "messagebus", "cloud", "security", "external"] as const;
+export const EDGE_STYLES = ["solid", "dashed", "emphasis", "security"] as const;
+export const GROUP_KINDS = ["region", "security", "plain"] as const;
+export const DIRECTIONS = ["auto", "right", "down", "lanes"] as const;
 // Tints that carry meaning the author chooses (risk, a store family, the end
 // of the story). Edges take the same names minus "strong".
-export const NODE_TONES = ["info", "success", "warning", "danger", "strong"];
-export const EDGE_TONES = ["info", "success", "warning", "danger"];
+export const NODE_TONES = ["info", "success", "warning", "danger", "strong"] as const;
+export const EDGE_TONES = ["info", "success", "warning", "danger"] as const;
+
+export type NodeKind = (typeof NODE_KINDS)[number];
+export type EdgeStyle = (typeof EDGE_STYLES)[number];
+export type GroupKind = (typeof GROUP_KINDS)[number];
+export type Direction = (typeof DIRECTIONS)[number];
+export type NodeTone = (typeof NODE_TONES)[number];
+export type EdgeTone = (typeof EDGE_TONES)[number];
+
+/** The parsed props of Architecture(nodes, edges, groups?, direction?), as loose as the parser hands them over. */
+export interface ArchitectureInput {
+  nodes?: unknown;
+  edges?: unknown;
+  groups?: unknown;
+  direction?: unknown;
+}
+
+export interface ModelNode {
+  id: string;
+  named: boolean;
+  label: string;
+  kind: NodeKind;
+  detail: string;
+  tag: string;
+  tone: NodeTone | "";
+  row: number | null;
+}
+
+export interface ModelEdge {
+  id: string;
+  named: boolean;
+  from: string;
+  to: string;
+  label: string;
+  style: EdgeStyle;
+  tone: EdgeTone | "";
+}
+
+export interface ModelGroup {
+  id: string;
+  named: boolean;
+  label: string;
+  kind: GroupKind;
+  members: string[];
+  /** Set by nestGroups: the smallest group that contains all members. */
+  parent?: string | null;
+  memberSet?: Set<string>;
+  directMembers?: string[];
+}
+
+export interface Model {
+  nodes: ModelNode[];
+  edges: ModelEdge[];
+  groups: ModelGroup[];
+  direction: Direction;
+  problems: string[];
+}
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** A node box sized from its text. */
+export interface NodeSize {
+  width: number;
+  height: number;
+  labelLines: string[];
+  detailLines: string[];
+  tagLine: string;
+  tagRow: number;
+}
+
+export interface EdgeLabelSize {
+  lines: string[];
+  width: number;
+  height: number;
+}
+
+export interface LabelBox extends EdgeLabelSize {
+  cx: number;
+  cy: number;
+}
+
+export interface LaidOutNode extends ModelNode, NodeSize {
+  x: number;
+  y: number;
+  rowIndex?: number;
+  laneIndex?: number;
+}
+
+export interface LaidOutEdge extends ModelEdge {
+  points: Point[];
+  labelBox: LabelBox | null;
+  orthogonal?: boolean;
+}
+
+export interface LaidOutGroup extends ModelGroup {
+  labelLine: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  lane?: boolean;
+}
+
+export interface Layout {
+  rankdir: string;
+  nodes: LaidOutNode[];
+  edges: LaidOutEdge[];
+  groups: LaidOutGroup[];
+  width: number;
+  height: number;
+}
+
+export interface ArchitectureNote {
+  code: string;
+  message: string;
+}
 
 export const SIZES = {
   label: 13,
@@ -40,13 +159,13 @@ export const LANES_SCROLL_WIDTH = 1000;
  * Approximate advance width of text at a font size. Deterministic (no DOM) and
  * deliberately generous, so laid-out boxes never clip their text.
  */
-export function textWidth(text, size, mono = false) {
+export function textWidth(text: unknown, size: number, mono = false): number {
   let w = 0;
   for (const ch of String(text ?? "")) w += charUnits(ch, mono);
   return Math.ceil(w * size);
 }
 
-function charUnits(ch, mono) {
+function charUnits(ch: string, mono: boolean): number {
   if (mono) return 0.62;
   if (ch.charCodeAt(0) > 0x2e7f) return 1.02; // CJK and other wide scripts
   if (/[ilI.,:;'|!()[\]{} ]/.test(ch)) return 0.32;
@@ -59,13 +178,13 @@ function charUnits(ch, mono) {
  * Break text into at most `maxLines` lines no wider than `maxWidth`, preferring
  * breaks after spaces, "/", "-", "_" and "."; the last line ends in "…" when cut.
  */
-export function wrapText(text, size, maxWidth, maxLines = 2, mono = false) {
+export function wrapText(text: unknown, size: number, maxWidth: number, maxLines = 2, mono = false): string[] {
   // Words keep their trailing break character ("src/", "read-"); no lookbehind,
   // which Safari before 16.4 cannot parse at all.
   const words = (String(text ?? "").trim().match(/[^\s/\-_.:]*[\s/\-_.:]?/g) || []).filter(Boolean);
-  const lines = [];
+  const lines: string[] = [];
   let line = "";
-  const push = (s) => lines.push(s.trimEnd());
+  const push = (s: string) => lines.push(s.trimEnd());
   for (const word of words) {
     // One line past the limit proves the text is cut; stop measuring there
     // (an agent may paste a 10 kB token).
@@ -102,24 +221,32 @@ export function wrapText(text, size, maxWidth, maxLines = 2, mono = false) {
   return kept;
 }
 
-const isElement = (v) => v && typeof v === "object" && v.props && typeof v.props === "object";
-const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
+/** A parsed OpenUI element: a component call with its props. */
+interface ElementLike {
+  statementId?: string;
+  props: Record<string, unknown>;
+}
+
+const isElement = (v: unknown): v is ElementLike =>
+  !!v && typeof v === "object" && "props" in v && !!v.props && typeof v.props === "object";
+const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
+const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T => (list as readonly unknown[]).includes(v);
 
 /**
  * Parsed props of Architecture(nodes, edges, groups?, direction?) → model.
  * Ids are statement names; inline (unnamed) nodes, edges and groups get
  * synthetic ids and are not separate click targets.
- * @returns {{ nodes: object[], edges: object[], groups: object[], direction: string, problems: string[] }}
  */
-export function buildModel(props) {
-  const problems = [];
-  const nodes = new Map();
-  const seenEls = new Map();
+export function buildModel(props: ArchitectureInput | null | undefined): Model {
+  const problems: string[] = [];
+  const nodes = new Map<string, ModelNode>();
+  const seenEls = new Map<ElementLike, string>();
   let anon = 0;
 
-  const addNode = (el) => {
+  const addNode = (el: unknown): string | null => {
     if (!isElement(el)) return null;
-    if (seenEls.has(el)) return seenEls.get(el);
+    const seen = seenEls.get(el);
+    if (seen !== undefined) return seen;
     const id = el.statementId || `_node${anon++}`;
     if (!nodes.has(id)) {
       const p = el.props;
@@ -128,11 +255,11 @@ export function buildModel(props) {
         id,
         named: !!el.statementId,
         label,
-        kind: NODE_KINDS.includes(p.kind) ? p.kind : "backend",
+        kind: oneOf(NODE_KINDS, p.kind) ? p.kind : "backend",
         detail: str(p.detail).trim(),
         tag: str(p.tag).trim(),
-        tone: NODE_TONES.includes(p.tone) ? p.tone : "",
-        row: Number.isInteger(p.row) && p.row > 0 ? Math.min(p.row, 200) : null,
+        tone: oneOf(NODE_TONES, p.tone) ? p.tone : "",
+        row: typeof p.row === "number" && Number.isInteger(p.row) && p.row > 0 ? Math.min(p.row, 200) : null,
       });
     }
     seenEls.set(el, id);
@@ -141,8 +268,8 @@ export function buildModel(props) {
 
   for (const el of Array.isArray(props?.nodes) ? props.nodes : []) addNode(el);
 
-  const edges = [];
-  const edgeIds = new Set();
+  const edges: ModelEdge[] = [];
+  const edgeIds = new Set<string>();
   for (const el of Array.isArray(props?.edges) ? props.edges : []) {
     if (!isElement(el)) continue;
     const id = el.statementId || `_edge${anon++}`;
@@ -157,31 +284,31 @@ export function buildModel(props) {
       from,
       to,
       label: str(el.props.label).trim(),
-      style: EDGE_STYLES.includes(el.props.style) ? el.props.style : "solid",
-      tone: EDGE_TONES.includes(el.props.tone) ? el.props.tone : "",
+      style: oneOf(EDGE_STYLES, el.props.style) ? el.props.style : "solid",
+      tone: oneOf(EDGE_TONES, el.props.tone) ? el.props.tone : "",
     });
   }
 
-  const groups = [];
-  const groupIds = new Set();
+  const groups: ModelGroup[] = [];
+  const groupIds = new Set<string>();
   for (const el of Array.isArray(props?.groups) ? props.groups : []) {
     if (!isElement(el)) continue;
     const id = el.statementId || `_group${anon++}`;
     if (groupIds.has(id)) continue;
-    const members = [...new Set((Array.isArray(el.props.members) ? el.props.members : []).map(addNode).filter(Boolean))];
+    const members = [...new Set((Array.isArray(el.props.members) ? el.props.members : []).map(addNode).filter((m): m is string => !!m))];
     if (!members.length) continue;
     groupIds.add(id);
     groups.push({
       id,
       named: !!el.statementId,
       label: str(el.props.label).trim(),
-      kind: GROUP_KINDS.includes(el.props.kind) ? el.props.kind : "region",
+      kind: oneOf(GROUP_KINDS, el.props.kind) ? el.props.kind : "region",
       members,
     });
   }
 
   nestGroups(groups, problems);
-  const direction = DIRECTIONS.includes(props?.direction) ? props.direction : "auto";
+  const direction = oneOf(DIRECTIONS, props?.direction) ? props.direction : "auto";
   return { nodes: [...nodes.values()], edges, groups, direction, problems };
 }
 
@@ -190,7 +317,7 @@ export function buildModel(props) {
  * group that contains all its members; each node sits in the smallest group
  * that lists it. Groups that overlap without nesting are reported.
  */
-function nestGroups(groups, problems) {
+function nestGroups(groups: ModelGroup[], problems: string[]): void {
   const bySize = [...groups].sort((a, b) => a.members.length - b.members.length);
   for (const g of bySize) {
     const set = new Set(g.members);
@@ -199,17 +326,18 @@ function nestGroups(groups, problems) {
         ?.id ?? null;
     g.memberSet = set;
   }
-  const owner = new Map();
+  const owner = new Map<string, string>();
   for (const g of bySize) {
     for (const m of g.members) {
       if (!owner.has(m)) owner.set(m, g.id);
       else {
-        let first = groups.find((x) => x.id === owner.get(m));
+        let first = groups.find((x) => x.id === owner.get(m)) as ModelGroup;
         if (!isAncestor(groups, g.id, first.id)) {
           // Name the outermost group around the first that does not contain g:
           // that is the one g really crosses.
-          for (let up = groups.find((x) => x.id === first.parent); up; up = groups.find((x) => x.id === up.parent)) {
-            if (g.members.every((x) => up.memberSet.has(x))) break;
+          for (let up = groups.find((x) => x.id === first.parent); up; up = groups.find((x) => x.id === up?.parent)) {
+            const set = up.memberSet as Set<string>;
+            if (g.members.every((x) => set.has(x))) break;
             first = up;
           }
           problems.push(
@@ -222,24 +350,25 @@ function nestGroups(groups, problems) {
   for (const g of groups) g.directMembers = g.members.filter((m) => owner.get(m) === g.id);
 }
 
-function isAncestor(groups, ancestorId, id) {
+function isAncestor(groups: ModelGroup[], ancestorId: string, id: string): boolean {
   let cur = groups.find((g) => g.id === id);
   while (cur?.parent) {
     if (cur.parent === ancestorId) return true;
-    cur = groups.find((g) => g.id === cur.parent);
+    const parent: string = cur.parent;
+    cur = groups.find((g) => g.id === parent);
   }
   return false;
 }
 
 /** Detail text: up to two monospace lines; "\n" forces a break. */
-function detailLinesFor(detail, width) {
+function detailLinesFor(detail: string, width: number): string[] {
   if (!detail) return [];
   const parts = detail.split("\n").map((t) => t.trim()).filter(Boolean);
-  const lines = [];
+  const lines: string[] = [];
   for (let i = 0; i < parts.length; i++) {
     if (lines.length === 2) {
       // More text than two lines: fold the rest into the last line, cut.
-      const last = lines.pop().replace(/…$/, "");
+      const last = (lines.pop() ?? "").replace(/…$/, "");
       lines.push(wrapText(`${last} ${parts.slice(i).join(" ")}`, SIZES.detail, width, 1, true)[0]);
       break;
     }
@@ -253,7 +382,7 @@ function detailLinesFor(detail, width) {
  * lines), detail (≤2 lines). Everything stays inside the box, so a chip never
  * covers an arrowhead. `forceWidth` stretches the box (lanes fill a column).
  */
-export function sizeNode(node, forceWidth = 0) {
+export function sizeNode(node: ModelNode, forceWidth = 0): NodeSize {
   const { label, detail, tag, nodeMinW, nodeMaxW, padX, icon } = SIZES;
   // A risk glyph shares the first label line when there is no tag row.
   const glyph = node.tone === "danger" && !node.tag ? 20 : 0;
@@ -275,18 +404,18 @@ export function sizeNode(node, forceWidth = 0) {
 }
 
 /** An edge label: up to two lines, so a sentence does not widen the whole diagram. */
-export function sizeEdgeLabel(label) {
+export function sizeEdgeLabel(label: string): EdgeLabelSize | null {
   if (!label) return null;
   const lines = wrapText(label, SIZES.edge, SIZES.edgeMaxW - 12, 2);
   const width = Math.max(...lines.map((l) => textWidth(l, SIZES.edge))) + 12;
   return { lines, width, height: 6 + lines.length * 13 };
 }
 
-function runLayout(model, rankdir) {
+function runLayout(model: Model, rankdir: "LR" | "TB"): Layout {
   const g = new dagre.graphlib.Graph({ compound: true, multigraph: true });
   g.setGraph({ rankdir, nodesep: rankdir === "LR" ? 26 : 34, ranksep: rankdir === "LR" ? 46 : 42, edgesep: 14, marginx: 18, marginy: 14 });
   g.setDefaultEdgeLabel(() => ({}));
-  const boxes = new Map();
+  const boxes = new Map<string, NodeSize>();
   for (const n of model.nodes) {
     const box = sizeNode(n);
     boxes.set(n.id, box);
@@ -295,7 +424,7 @@ function runLayout(model, rankdir) {
   for (const grp of model.groups) g.setNode(`group:${grp.id}`, {});
   for (const grp of model.groups) {
     if (grp.parent) g.setParent(`group:${grp.id}`, `group:${grp.parent}`);
-    for (const m of grp.directMembers) g.setParent(m, `group:${grp.id}`);
+    for (const m of grp.directMembers ?? []) g.setParent(m, `group:${grp.id}`);
   }
   const labels = new Map(model.edges.map((e) => [e.id, sizeEdgeLabel(e.label)]));
   for (const e of model.edges) {
@@ -304,22 +433,22 @@ function runLayout(model, rankdir) {
   }
   dagre.layout(g);
 
-  const nodes = model.nodes.map((n) => {
+  const nodes: LaidOutNode[] = model.nodes.map((n) => {
     const p = g.node(n.id);
-    const box = boxes.get(n.id);
+    const box = boxes.get(n.id) as NodeSize;
     return { ...n, ...box, x: p.x - box.width / 2, y: p.y - box.height / 2 };
   });
-  const edges = model.edges.map((e) => {
-    const d = g.edge({ v: e.from, w: e.to, name: e.id }) || {};
+  const edges: LaidOutEdge[] = model.edges.map((e) => {
+    const d: Partial<EdgeLabel> = g.edge({ v: e.from, w: e.to, name: e.id }) || {};
     const lb = labels.get(e.id);
     return {
       ...e,
-      points: (d.points || []).map((pt) => ({ x: pt.x, y: pt.y })),
-      labelBox: lb ? { cx: d.x, cy: d.y, width: lb.width, height: lb.height, lines: lb.lines } : null,
+      points: (d.points || []).map((pt: Point) => ({ x: pt.x, y: pt.y })),
+      labelBox: lb ? { cx: d.x as number, cy: d.y as number, width: lb.width, height: lb.height, lines: lb.lines } : null,
     };
   });
-  const groups = model.groups.map((grp) => {
-    const p = g.node(`group:${grp.id}`) || {};
+  const groups: LaidOutGroup[] = model.groups.map((grp) => {
+    const p: Partial<NodeLabel> = g.node(`group:${grp.id}`) || {};
     const width = p.width ?? 0;
     // The label chip sits on the frame's top edge; it never runs past the frame.
     const labelLine = grp.label ? wrapText(grp.label, SIZES.group, Math.max(24, width - 24 - 14), 1)[0] : "";
@@ -333,15 +462,17 @@ function runLayout(model, rankdir) {
   // returns unusable points. Draw each loop as an arc reaching to its label.
   for (const e of edges) {
     if (e.from !== e.to) continue;
-    const n = nodes.find((x) => x.id === e.from);
-    const d = g.edge({ v: e.from, w: e.to, name: e.id }) || {};
+    const n = nodes.find((x) => x.id === e.from) as LaidOutNode;
+    const d: Partial<EdgeLabel> = g.edge({ v: e.from, w: e.to, name: e.id }) || {};
     const r = n.x + n.width;
     const b = n.y + n.height;
     const cx = n.x + n.width / 2;
     const cy = n.y + n.height / 2;
     const placed = Number.isFinite(d.x) && Number.isFinite(d.y);
+    const dx = d.x as number;
+    const dy = d.y as number;
     if (rankdir === "TB") {
-      const lx = placed ? d.x : r + 30 + (e.labelBox ? e.labelBox.width / 2 : 0);
+      const lx = placed ? dx : r + 30 + (e.labelBox ? e.labelBox.width / 2 : 0);
       const reach = Math.max(r + 18, e.labelBox ? lx - e.labelBox.width / 2 - 3 : lx);
       const y1 = cy - n.height * 0.22;
       const y2 = cy + n.height * 0.22;
@@ -353,7 +484,7 @@ function runLayout(model, rankdir) {
       ];
       if (e.labelBox) e.labelBox = { ...e.labelBox, cx: Math.max(lx, reach + 3 + e.labelBox.width / 2), cy };
     } else {
-      const ly = placed ? d.y : b + 30 + (e.labelBox ? e.labelBox.height / 2 : 0);
+      const ly = placed ? dy : b + 30 + (e.labelBox ? e.labelBox.height / 2 : 0);
       const reach = Math.max(b + 16, e.labelBox ? ly - e.labelBox.height / 2 - 3 : ly);
       const spread = Math.min(30, n.width * 0.3);
       e.points = [
@@ -380,12 +511,12 @@ function runLayout(model, rankdir) {
 export const LEGIBLE_SCALE = 0.85;
 
 /** A lanes diagram too wide for the usual page column: the page widens for it. */
-export function wantsWidePage(model) {
+export function wantsWidePage(model: Model): boolean {
   return model.direction === "lanes" && lanesPlanWidth(model) * LEGIBLE_SCALE > DEFAULT_TARGET_WIDTH;
 }
 
 /** Fraction of natural size a layout is drawn at in `targetWidth`. */
-export function scaleAt(layout, targetWidth = DEFAULT_TARGET_WIDTH) {
+export function scaleAt(layout: { width: number }, targetWidth = DEFAULT_TARGET_WIDTH): number {
   return Math.min(1, targetWidth / Math.max(1, layout.width));
 }
 
@@ -396,7 +527,7 @@ export function scaleAt(layout, targetWidth = DEFAULT_TARGET_WIDTH) {
  * when neither is legible, top-to-bottom unless left-to-right shrinks clearly
  * less. So the same diagram can run across on a desktop and down on a phone.
  */
-export function layoutModel(model, targetWidth = DEFAULT_TARGET_WIDTH) {
+export function layoutModel(model: Model, targetWidth = DEFAULT_TARGET_WIDTH): Layout | null {
   if (!model.nodes.length) return null;
   if (model.direction === "right") return runLayout(model, "LR");
   if (model.direction === "down") return runLayout(model, "TB");
@@ -421,13 +552,12 @@ export function layoutModel(model, targetWidth = DEFAULT_TARGET_WIDTH) {
 /**
  * What `check` can tell an author without a browser: model problems (groups
  * that cross) and layouts that will not come out as written on a laptop.
- * @returns {{ code: string, message: string }[]}
  */
-export function architectureNotes(props) {
+export function architectureNotes(props: ArchitectureInput | null | undefined): ArchitectureNote[] {
   const model = buildModel(props);
-  const notes = model.problems.map((message) => ({ code: "architecture", message }));
+  const notes: ArchitectureNote[] = model.problems.map((message) => ({ code: "architecture", message }));
   if (!model.nodes.length) return notes;
-  const layoutNote = (message) => notes.push({ code: "architecture-layout", message });
+  const layoutNote = (message: string) => notes.push({ code: "architecture-layout", message });
   if (model.direction === "lanes") {
     const lanes = runLanes(model);
     if (!lanes) layoutNote('direction "lanes" needs Groups (each top-level Group is a column); without any it lays out as auto.');
@@ -436,10 +566,11 @@ export function architectureNotes(props) {
         `These lanes need about ${lanes.width}px; a laptop page gives about ${LANES_TARGET_WIDTH}px, so they scroll sideways there (narrow screens stack them as bands). To fit: fewer lanes, fewer boxes side by side, shorter edge labels.`,
       );
   } else {
-    const l = layoutModel(model, DEFAULT_TARGET_WIDTH);
+    // Not lanes and not empty: always a dagre layout.
+    const l = layoutModel(model, DEFAULT_TARGET_WIDTH) as Layout;
     if (scaleAt(l, DEFAULT_TARGET_WIDTH) < LEGIBLE_SCALE) {
       const forced = model.direction === "right" || model.direction === "down";
-      const auto = forced ? layoutModel({ ...model, direction: "auto" }, DEFAULT_TARGET_WIDTH) : l;
+      const auto = forced ? (layoutModel({ ...model, direction: "auto" }, DEFAULT_TARGET_WIDTH) as Layout) : l;
       const advice =
         forced && scaleAt(auto, DEFAULT_TARGET_WIDTH) >= LEGIBLE_SCALE
           ? "Leave direction out (auto) to fit the page."
@@ -453,10 +584,10 @@ export function architectureNotes(props) {
 }
 
 /** d3 curveBasis through dagre's points, so edges read as smooth curves. */
-export function edgePath(points) {
+export function edgePath(points: Point[]): string {
   if (!points.length) return "";
-  const f = (n) => Math.round(n * 10) / 10;
-  if (points.length < 3) return `M${f(points[0].x)},${f(points[0].y)}L${f(points.at(-1).x)},${f(points.at(-1).y)}`;
+  const f = (n: number) => Math.round(n * 10) / 10;
+  if (points.length < 3) return `M${f(points[0].x)},${f(points[0].y)}L${f(points[points.length - 1].x)},${f(points[points.length - 1].y)}`;
   let [x0, y0] = [points[0].x, points[0].y];
   let [x1, y1] = [points[1].x, points[1].y];
   let d = `M${f(x0)},${f(y0)}L${f((5 * x0 + x1) / 6)},${f((5 * y0 + y1) / 6)}`;

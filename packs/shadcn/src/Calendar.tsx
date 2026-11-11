@@ -1,13 +1,14 @@
 import React from "react";
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
+import type { RendererArgs } from "austere-axi/pack";
 
 const DAY = /^(\d{4})-(\d{2})-(\d{2})(?:\s+(.*))?$/;
 const WEEK = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 /** Marks as { day -> label } for the month; entries are "YYYY-MM-DD" or "YYYY-MM-DD label". */
-function marksFor(year, month, entries) {
-  const marks = new Map();
+function marksFor(year: number, month: number, entries: unknown): Map<number, string> {
+  const marks = new Map<number, string>();
   for (const raw of Array.isArray(entries) ? entries : []) {
     const m = DAY.exec(String(raw).trim());
     if (m && Number(m[1]) === year && Number(m[2]) === month) marks.set(Number(m[3]), (m[4] || "").trim());
@@ -15,7 +16,12 @@ function marksFor(year, month, entries) {
   return marks;
 }
 
-function CalendarView({ props }) {
+interface CalendarProps {
+  month: string;
+  highlights?: string[];
+}
+
+function CalendarView({ props }: RendererArgs<CalendarProps>) {
   const m = /^(\d{4})-(\d{2})/.exec(String(props.month ?? ""));
   const year = m ? Number(m[1]) : NaN;
   const month = m ? Number(m[2]) : NaN;
@@ -25,7 +31,7 @@ function CalendarView({ props }) {
   const lead = (first.getUTCDay() + 6) % 7;
   const marks = marksFor(year, month, props.highlights);
   const title = first.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
-  const cells = [...Array(lead).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
+  const cells = [...Array<null>(lead).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
   return (
     <div className="sh-calendar">
       <div className="sh-calendar-title">{title}</div>

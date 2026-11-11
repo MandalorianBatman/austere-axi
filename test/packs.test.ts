@@ -5,27 +5,48 @@ import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { after, before, test } from "node:test";
-import { catalogFromSpec, promptSpec, searchCatalog } from "../src/shared/catalog.js";
-import { formatPacksMeta, parsePacksMeta, splitSpec } from "../src/shared/packs-meta.js";
-import { mergePackSchemas, setPacksMeta } from "../src/cli/packs.js";
-import { looksLikePath, pickVersion, untar } from "../src/cli/install.js";
-import { ownerHeaders } from "./owner.js";
-import { freePort } from "./port.js";
+import { catalogFromSpec, promptSpec, searchCatalog } from "../src/shared/catalog.ts";
+import { formatPacksMeta, parsePacksMeta, splitSpec } from "../src/shared/packs-meta.ts";
+import { mergePackSchemas, setPacksMeta } from "../src/cli/packs.ts";
+import { looksLikePath, pickVersion, untar } from "../src/cli/install.ts";
+import { ownerHeaders } from "./owner.ts";
+import { freePort } from "./port.ts";
+import type { PackCatalog } from "../types/catalog.d.ts";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-state-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-work-"));
 process.env.AUSTERE_AXI_STATE_DIR = STATE;
 process.env.OPENUI_TELEMETRY_DISABLED = "1";
-const ENV = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1" };
+const ENV: NodeJS.ProcessEnv = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1" };
+
+/** dist/catalog.json of a built pack, as far as these tests read it. */
+interface BuiltCatalog {
+  pack: string;
+  components: { name: string; signature: string }[];
+  defs: Record<string, unknown>;
+  integrity: string;
+}
+
+/** packs.json in the state dir. */
+interface PacksLock {
+  packs: Record<string, { trust: string; source: string; integrity: string }>;
+}
+
+interface RegistryMeta {
+  name: string;
+  "dist-tags": Record<string, string>;
+  versions: Record<string, { name: string; version: string; dist: { tarball: string; integrity: string } }>;
+}
 
 // Async: the mock registry below answers from this process while the CLI runs.
-function cli(...args) {
+function cli(...args: string[]): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["src/cli/main.js", ...args], { env: ENV });
+    const child = spawn(process.execPath, ["src/cli/main.ts", ...args], { env: ENV });
     let out = "";
     child.stdout.on("data", (c) => (out += c));
     child.stderr.on("data", (c) => (out += c));
@@ -33,7 +54,7 @@ function cli(...args) {
   });
 }
 
-const page = (program, head = "") => `<!doctype html><html><head><meta charset="utf-8"><title>Packs</title>
+const page = (program: string, head = "") => `<!doctype html><html><head><meta charset="utf-8"><title>Packs</title>
 ${head}<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
 <body><script type="text/openui">
 ${program}
@@ -62,7 +83,7 @@ test("setPacksMeta puts the tag before the runtime script, replaces it, and remo
   const one = setPacksMeta(html, [{ name: "gantt", version: "1.0.0" }]);
   assert.ok(one.indexOf('<meta name="austere-packs" content="gantt@1.0.0">') < one.indexOf("austere.js"));
   const two = setPacksMeta(one, [{ name: "gantt", version: "1.1.0", integrity: "sha384-x" }]);
-  assert.equal(two.match(/austere-packs/g).length, 1);
+  assert.equal(two.match(/austere-packs/g)?.length, 1);
   assert.match(two, /content="gantt@1\.1\.0 sha384-x"/);
   assert.equal(setPacksMeta(two, []), html);
 });
@@ -81,11 +102,11 @@ test("catalog: tiers leave the prompt but stay searchable; search ranks names fi
   };
   const tiers = { AreaChart: "extended" };
   const cat = catalogFromSpec(spec, { version: "1.0.0", tiers, examples: { Table: ["t = Table([])"] } });
-  assert.equal(cat.components.find((c) => c.name === "AreaChart").tier, "extended");
-  assert.deepEqual(cat.components.find((c) => c.name === "Table").examples, ["t = Table([])"]);
+  assert.equal(cat.components.find((c) => c.name === "AreaChart")?.tier, "extended");
+  assert.deepEqual(cat.components.find((c) => c.name === "Table")?.examples, ["t = Table([])"]);
   const p = promptSpec(spec, tiers);
   assert.deepEqual(Object.keys(p.components), ["BarChart", "Table"]);
-  assert.match(p.componentGroups[0].notes.at(-1), /Also in Charts .*: AreaChart\./);
+  assert.match(p.componentGroups[0].notes.at(-1) as string, /Also in Charts .*: AreaChart\./);
   const hits = searchCatalog(cat.components, "area chart");
   assert.equal(hits[0].entry.name, "AreaChart");
   assert.equal(searchCatalog(cat.components, "rows")[0].entry.name, "Table");
@@ -106,11 +127,11 @@ test("mergePackSchemas adds the component, its defs and its slots, and leaves co
     ],
     defs: { Gantt: { type: "object" }, GanttTask: { type: "object" }, Card: { type: "string" } },
   };
-  const out = mergePackSchemas(core, [cat]);
-  assert.deepEqual(out.properties.Gantt, { $ref: "#/$defs/Gantt" });
-  assert.ok(out.required.includes("GanttTask"));
-  assert.deepEqual(out.$defs.Card.properties.children.items.anyOf, [{ $ref: "#/$defs/Card" }, { $ref: "#/$defs/Gantt" }]);
-  assert.notEqual(out.$defs.Card.type, "string");
+  const out = mergePackSchemas(core, [cat as unknown as PackCatalog]);
+  assert.deepEqual(out.properties?.Gantt, { $ref: "#/$defs/Gantt" });
+  assert.ok(out.required?.includes("GanttTask"));
+  assert.deepEqual(out.$defs?.Card.properties?.children.items?.anyOf, [{ $ref: "#/$defs/Card" }, { $ref: "#/$defs/Gantt" }]);
+  assert.notEqual(out.$defs?.Card.type, "string");
   assert.equal(core.required.length, 1, "the core schema is not mutated");
 });
 
@@ -127,7 +148,7 @@ test("pickVersion: tags, exact versions and ranges", () => {
   assert.equal(pickVersion(meta, "9.9.9"), null);
 });
 
-function tarEntry(name, data) {
+function tarEntry(name: string, data: Buffer): Buffer {
   const h = Buffer.alloc(512);
   h.write(name, 0);
   h.write("0000644\0", 100);
@@ -145,7 +166,7 @@ function tarEntry(name, data) {
   return Buffer.concat([h, data, Buffer.alloc((512 - (data.length % 512)) % 512)]);
 }
 
-function tgz(files) {
+function tgz(files: Record<string, string | Buffer>): Buffer {
   return zlib.gzipSync(Buffer.concat([...Object.entries(files).map(([n, d]) => tarEntry(`package/${n}`, Buffer.from(d))), Buffer.alloc(1024)]));
 }
 
@@ -156,8 +177,8 @@ test("folders and tarballs are told apart from npm names", () => {
 
 test("untar reads files under the package folder", () => {
   const files = untar(zlib.gunzipSync(tgz({ "dist/pack.js": "x()", "package.json": "{}" })));
-  assert.equal(files.get("dist/pack.js").toString(), "x()");
-  assert.equal(files.get("package.json").toString(), "{}");
+  assert.equal(files.get("dist/pack.js")?.toString(), "x()");
+  assert.equal(files.get("package.json")?.toString(), "{}");
 });
 
 // ── the loop through the CLI ──
@@ -171,7 +192,7 @@ test("new → build → add → show → check --fix → export → spec → rem
   r = await cli("components", "build", PACK);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /status: built/);
-  const cat = JSON.parse(fs.readFileSync(path.join(PACK, "dist/catalog.json"), "utf8"));
+  const cat = JSON.parse(fs.readFileSync(path.join(PACK, "dist/catalog.json"), "utf8")) as BuiltCatalog;
   assert.equal(cat.pack, "austere-pack-milestones");
   assert.equal(cat.components[0].signature, "Milestones(events: string[])");
   assert.ok(cat.defs.Milestones);
@@ -235,7 +256,7 @@ test("export inlines the bundled Mermaid pack after the runtime", async () => {
   const r = await cli("export", file, "--out", path.join(WORK, "flow.export.html"));
   assert.equal(r.code, 0, r.out);
   const html = fs.readFileSync(path.join(WORK, "flow.export.html"), "utf8");
-  const head = (f) => fs.readFileSync(path.join("dist", f), "utf8").slice(0, 300).replace(/<\/script/gi, "<\\/script");
+  const head = (f: string) => fs.readFileSync(path.join("dist", f), "utf8").slice(0, 300).replace(/<\/script/gi, "<\\/script");
   const runtimeAt = html.indexOf(head("austere.js"));
   const packAt = html.indexOf(head("packs/mermaid/pack.js"));
   assert.ok(packAt > 0, "the Mermaid pack is inlined");
@@ -290,15 +311,17 @@ test("unknown components point at search instead of listing everything", async (
 
 // ── npm registry ──
 
-let registry;
-let registryPort;
-const published = {};
+let registry: http.Server | undefined;
+let registryPort = 0;
+const published: Record<string, RegistryMeta | Buffer> = {};
 
-function publish(name, version, files) {
+function publish(name: string, version: string, files: Record<string, string | Buffer>) {
   const tarball = tgz(files);
   published[name] ||= { name, "dist-tags": {}, versions: {} };
-  published[name]["dist-tags"].latest = version;
-  published[name].versions[version] = {
+  const meta = published[name];
+  if (Buffer.isBuffer(meta)) throw new Error(`${name} is a tarball`);
+  meta["dist-tags"].latest = version;
+  meta.versions[version] = {
     name,
     version,
     dist: {
@@ -310,8 +333,8 @@ function publish(name, version, files) {
 }
 
 before(async () => {
-  registry = http.createServer((req, res) => {
-    const url = decodeURIComponent(req.url.slice(1));
+  const server = http.createServer((req, res) => {
+    const url = decodeURIComponent((req.url ?? "").slice(1));
     if (url.startsWith("tarballs/")) {
       const body = published[url.slice("tarballs/".length)];
       if (!body) return res.writeHead(404).end();
@@ -321,17 +344,18 @@ before(async () => {
     if (!meta || typeof meta !== "object" || Buffer.isBuffer(meta)) return res.writeHead(404).end("{}");
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(meta));
   });
-  await new Promise((r) => registry.listen(0, "127.0.0.1", r));
-  registryPort = registry.address().port;
+  registry = server;
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  registryPort = (server.address() as AddressInfo).port;
   ENV.AUSTERE_AXI_NPM_REGISTRY = `http://127.0.0.1:${registryPort}/`;
 });
 
 after(() => registry?.close());
 
-async function builtPackFiles(name, version) {
+async function builtPackFiles(name: string, version: string): Promise<Record<string, string | Buffer>> {
   const dir = path.join(WORK, `src-${name.replace(/\W/g, "-")}-${version}`);
   await cli("components", "new", dir, "--name", name);
-  const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+  const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")) as { version: string };
   pkg.version = version;
   fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify(pkg));
   const r = await cli("components", "build", dir);
@@ -354,7 +378,7 @@ test("installing from the registry: third-party packs need --trust; ranges resol
   assert.match(r.out, /pack: austere-pack-steps@1\.0\.0/);
   r = await cli("components", "add", "austere-pack-steps", "--trust");
   assert.match(r.out, /pack: austere-pack-steps@1\.1\.0\nreplaced: "1\.0\.0"/);
-  const lock = JSON.parse(fs.readFileSync(path.join(STATE, "packs.json"), "utf8"));
+  const lock = JSON.parse(fs.readFileSync(path.join(STATE, "packs.json"), "utf8")) as PacksLock;
   assert.equal(lock.packs["austere-pack-steps"].trust, "--trust");
   assert.equal(lock.packs["austere-pack-steps"].source, "npm");
   assert.ok(!fs.existsSync(path.join(STATE, "packs", "austere-pack-steps@1.0.0")), "the replaced version is removed");
@@ -374,7 +398,7 @@ test("installing from the registry: third-party packs need --trust; ranges resol
 
   // A catalog whose pack.js changed after it was built is refused.
   const files = await builtPackFiles("austere-pack-stale", "1.0.0");
-  files["dist/pack.js"] = Buffer.concat([files["dist/pack.js"], Buffer.from("\n;")]);
+  files["dist/pack.js"] = Buffer.concat([Buffer.from(files["dist/pack.js"]), Buffer.from("\n;")]);
   publish("austere-pack-stale", "1.0.0", files);
   r = await cli("components", "add", "austere-pack-stale", "--trust");
   assert.equal(r.code, 1);
@@ -388,9 +412,9 @@ test("installing from the registry: third-party packs need --trust; ranges resol
 
 test("the server serves an installed pack only at its locked version and hash", async () => {
   const port = await freePort();
-  const server = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(port)], { env: ENV, stdio: "ignore" });
-  const get = (p, headers = {}) =>
-    new Promise((resolve, reject) => {
+  const server = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(port)], { env: ENV, stdio: "ignore" });
+  const get = (p: string, headers: Record<string, string> = {}) =>
+    new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
       http
         .get({ host: "127.0.0.1", port, path: p, headers }, (res) => {
           let body = "";
@@ -406,7 +430,7 @@ test("the server serves an installed pack only at its locked version and hash", 
       } catch {}
       await new Promise((r) => setTimeout(r, 50));
     }
-    const lock = JSON.parse(fs.readFileSync(path.join(STATE, "packs.json"), "utf8")).packs["austere-pack-steps"];
+    const lock = (JSON.parse(fs.readFileSync(path.join(STATE, "packs.json"), "utf8")) as PacksLock).packs["austere-pack-steps"];
     const route = `/__austere/installed-packs/${encodeURIComponent("austere-pack-steps@1.1.0")}/pack.js`;
     const ok = await get(`${route}?integrity=${encodeURIComponent(lock.integrity)}`);
     assert.equal(ok.status, 200);
@@ -423,7 +447,7 @@ test("the server serves an installed pack only at its locked version and hash", 
     );
     const opened = await cli(page3p, "--no-open");
     assert.match(opened.out, /status: open/);
-    const sid = /\/s\/([a-f0-9]{12})/.exec(opened.out)[1];
+    const sid = /\/s\/([a-f0-9]{12})/.exec(opened.out)?.[1];
     await new Promise((resolve, reject) => {
       const body = JSON.stringify({ items: [{ kind: "message", text: "ship it" }] });
       const r = http.request(
@@ -454,7 +478,7 @@ test("the server serves an installed pack only at its locked version and hash", 
 
 test("the bundled shadcn pack lists its components in the built catalog", () => {
   const file = path.join("dist", "packs", "shadcn", "catalog.json");
-  const catalog = JSON.parse(fs.readFileSync(file, "utf8"));
+  const catalog = JSON.parse(fs.readFileSync(file, "utf8")) as BuiltCatalog;
   const names = catalog.components.map((c) => c.name);
   for (const n of ["Progress", "Avatar", "AvatarGroup", "Tooltip", "HoverCard", "Breadcrumb", "BreadcrumbItem", "Kbd", "Skeleton", "Calendar", "Timeline", "TimelineItem"]) {
     assert.ok(names.includes(n), `${n} is in the shadcn catalog`);

@@ -1,13 +1,45 @@
 // Unified-diff parsing for Diff, free of JSX so it can be unit-tested in Node.
 
+export interface DiffHunkRow {
+  kind: "hunk";
+  text: string;
+  oldStart?: number;
+  newStart?: number;
+  tail?: string;
+  oldCount?: number;
+  newCount?: number;
+}
+export interface DiffMetaRow {
+  kind: "meta";
+  text: string;
+}
+export interface DiffLineRow {
+  kind: "add" | "del" | "ctx";
+  text: string;
+  oldNo?: number;
+  newNo?: number;
+}
+export type DiffRow = DiffHunkRow | DiffMetaRow | DiffLineRow;
+export interface DiffFile {
+  name: string;
+  rows: DiffRow[];
+}
+interface CountedHunk extends DiffHunkRow {
+  oldStart: number;
+  newStart: number;
+  tail: string;
+  oldCount: number;
+  newCount: number;
+}
+
 /** Parse a unified diff (git or plain) into files -> rows. Tolerant of partial input. */
-export function parseUnifiedDiff(patch) {
-  const files = [];
-  let file = null;
+export function parseUnifiedDiff(patch: unknown): DiffFile[] {
+  const files: DiffFile[] = [];
+  let file: DiffFile | null = null;
   let oldNo = 0;
   let newNo = 0;
-  let hunk = null;
-  const ensureFile = (name) => {
+  let hunk: DiffHunkRow | null = null;
+  const ensureFile = (name: string): DiffFile => {
     if (!file) {
       file = { name: name || "", rows: [] };
       files.push(file);
@@ -37,8 +69,8 @@ export function parseUnifiedDiff(patch) {
     }
     if (raw.startsWith("+++ ")) {
       const name = raw.slice(4).replace(/^b\//, "").replace(/\t.*$/, "");
-      ensureFile(name);
-      if (name !== "/dev/null") file.name = name;
+      const target = ensureFile(name);
+      if (name !== "/dev/null") target.name = name;
       continue;
     }
     const f = ensureFile("");
@@ -47,7 +79,8 @@ export function parseUnifiedDiff(patch) {
       if (m) {
         oldNo = Number(m[1]);
         newNo = Number(m[2]);
-        hunk = { kind: "hunk", text: raw, oldStart: oldNo, newStart: newNo, tail: m[3], oldCount: 0, newCount: 0 };
+        const counted: CountedHunk = { kind: "hunk", text: raw, oldStart: oldNo, newStart: newNo, tail: m[3], oldCount: 0, newCount: 0 };
+        hunk = counted;
       } else {
         hunk = { kind: "hunk", text: raw };
       }
@@ -60,7 +93,7 @@ export function parseUnifiedDiff(patch) {
     }
     const sign = raw[0];
     const text = raw.slice(1);
-    const counted = hunk && hunk.oldStart !== undefined ? hunk : null;
+    const counted = hunk && isCounted(hunk) ? hunk : null;
     if (sign === "+") {
       f.rows.push({ kind: "add", text, newNo: newNo++ });
       if (counted) counted.newCount++;
@@ -84,4 +117,8 @@ export function parseUnifiedDiff(patch) {
     }
   }
   return files;
+}
+
+function isCounted(h: DiffHunkRow): h is CountedHunk {
+  return h.oldStart !== undefined;
 }

@@ -1,8 +1,10 @@
 // Configuration of the stock OpenUI components we ship. Custom components do
 // NOT go here: each lives in its own file in ./components/ (see
 // .agents/skills/add-component/SKILL.md).
-import { StaticTabsRenderer } from "./overrides/Tabs.jsx";
-import { GROUP_NAMES } from "./groups.js";
+import type { ComponentRenderer } from "@openuidev/react-lang";
+import { StaticTabsRenderer } from "./overrides/Tabs.tsx";
+import type { TabsProps } from "./overrides/Tabs.tsx";
+import { GROUP_NAMES } from "./groups.ts";
 
 // Stock components that do not earn their prompt tokens in review artifacts
 // (chat/commerce cards, image-first blocks, modals, carousels, duplicates).
@@ -37,7 +39,7 @@ export const REMOVED = [
 // right choice in a review page. Each group's notes name them, and
 // `austere-axi components show <Name>` prints the signature on demand. A
 // required prop of a core component must keep a core option (Text stays for
-// OverviewCardItem's top); test/library.test.js checks this.
+// OverviewCardItem's top); test/library.test.ts checks this.
 export const EXTENDED = [
   "ScatterChart",
   "ScatterSeries",
@@ -59,7 +61,7 @@ export const EXTENDED = [
 ];
 
 /** Stock renderers replaced with page-appropriate behavior (props unchanged). */
-export const STOCK_RENDERERS = { Tabs: StaticTabsRenderer };
+export const STOCK_RENDERERS: Record<string, ComponentRenderer<TabsProps>> = { Tabs: StaticTabsRenderer };
 
 // Value-only components are read by their parent (never rendered as DOM on
 // their own) or must stay direct children of a list; leave them untagged.
@@ -216,5 +218,5 @@ export const STOCK_GROUPS = [
 export { GROUP_NAMES };
 
 if (STOCK_GROUPS.map((g) => g.name).join() !== GROUP_NAMES.join()) {
-  throw new Error("stock.js STOCK_GROUPS and groups.js GROUP_NAMES list different groups");
+  throw new Error("stock.ts STOCK_GROUPS and groups.ts GROUP_NAMES list different groups");
 }

@@ -4,9 +4,11 @@ import assert from "node:assert/strict";
 import { before, test } from "node:test";
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
-import { checkHtml } from "../src/cli/check.js";
-import { estimateTokens, examplePage, htmlPage, loadLibrary } from "../scripts/lib/plugins.mjs";
-import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/signatures.mjs";
+import { checkHtml } from "../src/cli/check.ts";
+import { estimateTokens, examplePage, htmlPage, loadLibrary } from "../scripts/lib/plugins.ts";
+import type { LoadedLibrary } from "../scripts/lib/plugins.ts";
+import type { AustereComponent } from "../types/pack.d.ts";
+import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/signatures.ts";
 
 // Every agent pays for the component reference on every `spec` read. Raise
 // this only as a deliberate decision, in the same change that needs it.
@@ -18,7 +20,7 @@ import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/si
 const PROMPT_BUDGET_TOKENS = 5950;
 const DESCRIPTION_MAX_CHARS = 280;
 
-let lib;
+let lib: LoadedLibrary;
 before(async () => {
   lib = await loadLibrary();
 });
@@ -44,9 +46,9 @@ test(`component reference stays within ${PROMPT_BUDGET_TOKENS} tokens`, () => {
 });
 
 /** Top-level parameters of a signature: [{ name, optional, type }]. */
-function params(signature) {
+function params(signature: string) {
   const inner = signature.slice(signature.indexOf("(") + 1, signature.lastIndexOf(")"));
-  const out = [];
+  const out: string[] = [];
   let depth = 0;
   let cur = "";
   for (const ch of inner) {
@@ -58,7 +60,7 @@ function params(signature) {
     } else cur += ch;
   }
   if (cur.trim()) out.push(cur.trim());
-  return out.map((p) => /^(\w+)(\?)?:\s*([\s\S]*)$/.exec(p)).filter(Boolean).map(([, name, q, type]) => ({ name, optional: !!q, type }));
+  return out.map((p) => /^(\w+)(\?)?:\s*([\s\S]*)$/.exec(p)).filter((m) => m !== null).map(([, name, q, type]) => ({ name, optional: !!q, type }));
 }
 
 test("a component the spec leaves out is never the only way to fill a required prop of one it keeps", () => {
@@ -77,7 +79,7 @@ test("a component the spec leaves out is never the only way to fill a required p
 });
 
 test("a pack component whose slot the library cannot place keeps its other slots, and the page still renders", () => {
-  const skipped = [];
+  const skipped: string[] = [];
   const zed = {
     name: "Zed",
     group: "Content",
@@ -85,15 +87,15 @@ test("a pack component whose slot the library cannot place keeps its other slots
     tagged: true,
     slots: ["Nope.children", "Card.children"],
     definition: defineComponent({ name: "Zed", props: z.object({ text: z.string() }), description: "test", component: () => null }),
-  };
+  } as unknown as AustereComponent;
   const withZed = lib.buildLibrary([zed], { onSkip: (c, message) => skipped.push(message) });
   assert.ok(withZed.components.Zed);
   assert.match(skipped.join("\n"), /Nope/);
-  assert.match(JSON.stringify(withZed.toJSONSchema().$defs.Card), /#\/\$defs\/Zed/);
+  assert.match(JSON.stringify((withZed.toJSONSchema().$defs as Record<string, unknown>).Card), /#\/\$defs\/Zed/);
   assert.deepEqual(zed.slots, ["Nope.children", "Card.children"], "the pack's own component is not mutated");
   // A pack component named like a core one is skipped, not fatal.
-  const dup = { ...zed, name: "Card", slots: null };
-  const notes = [];
+  const dup: AustereComponent = { ...zed, name: "Card", slots: null };
+  const notes: string[] = [];
   lib.buildLibrary([dup], { onSkip: (c, message) => notes.push(message) });
   assert.match(notes.join(), /already defined/);
 });
@@ -108,7 +110,7 @@ test("released prop orders are append-only", () => {
 test("custom components have short descriptions", () => {
   for (const c of lib.CUSTOM_COMPONENTS) {
     const d = lib.austereLibrary.components[c.name].description;
-    assert.ok(d.length <= DESCRIPTION_MAX_CHARS, `${c.name} description is ${d.length} chars (max ${DESCRIPTION_MAX_CHARS})`);
+    assert.ok(d !== undefined && d.length <= DESCRIPTION_MAX_CHARS, `${c.name} description is ${d?.length} chars (max ${DESCRIPTION_MAX_CHARS})`);
   }
 });
 
@@ -116,7 +118,7 @@ test("the gallery of every example (and of every stress example) passes check wi
   // Examples share one page in the gallery and the browser suite, so their
   // statement names must not collide.
   const schema = lib.schema();
-  for (const field of ["example", "stress"]) {
+  for (const field of ["example", "stress"] as const) {
     const r = checkHtml(htmlPage("gallery", examplePage(lib.CUSTOM_COMPONENTS, field), "austere.js"), { schema });
     assert.equal(r.ok, true, `${field}: ${JSON.stringify(r.errors)}`);
     const warnings = field === "stress" ? r.warnings.filter((w) => w.code !== "architecture-layout") : r.warnings;
@@ -127,7 +129,7 @@ test("the gallery of every example (and of every stress example) passes check wi
 test("every custom component example and stress example passes check", () => {
   const schema = lib.schema();
   for (const c of lib.CUSTOM_COMPONENTS) {
-    for (const field of ["example", "stress"]) {
+    for (const field of ["example", "stress"] as const) {
       if (!c[field]) continue;
       const r = checkHtml(htmlPage(c.name, examplePage([c], field), "austere.js"), { schema });
       assert.equal(r.ok, true, `${c.name} ${field}: ${JSON.stringify(r.errors)}`);

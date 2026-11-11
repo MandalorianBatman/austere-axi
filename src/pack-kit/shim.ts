@@ -3,7 +3,9 @@
 // runtime (in a page) or the pack kit (in Node, for the catalog) provides. A
 // pack bundle therefore carries none of them, and shares the page's single
 // React and the library's zod.
-export const HOST_MODULES = {
+import type { Plugin } from "esbuild";
+
+export const HOST_MODULES: Record<string, string> = {
   react: "React",
   "react/jsx-runtime": "jsxRuntime",
   "react/jsx-dev-runtime": "jsxRuntime",
@@ -13,7 +15,7 @@ export const HOST_MODULES = {
 
 const FILTER = /^(react|react\/jsx-runtime|react\/jsx-dev-runtime|zod|austere-axi\/pack)$/;
 
-export const hostShimPlugin = {
+export const hostShimPlugin: Plugin = {
   name: "austere-host-shim",
   setup(build) {
     build.onResolve({ filter: FILTER }, (args) => ({ path: args.path, namespace: "austere-host" }));

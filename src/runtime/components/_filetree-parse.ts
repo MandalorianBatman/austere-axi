@@ -1,8 +1,41 @@
 // FileTree input parsing, kept free of JSX so it can be unit-tested in Node
-// (test/filetree.test.js). Lenient by design: agents write paths in many
+// (test/filetree.test.ts). Lenient by design: agents write paths in many
 // near-git shapes, and none of them may throw or become fake folders.
 
-export const STATUS = {
+export type StatusKey = "added" | "modified" | "deleted" | "renamed" | "conflict";
+export interface FileStatus {
+  key: StatusKey;
+  label: string;
+  title: string;
+}
+
+/** One parsed entry line. */
+export interface FileEntry {
+  path: string;
+  isDir: boolean;
+  status: FileStatus | undefined;
+  note: string | undefined;
+  from: string | undefined;
+}
+
+/** A tree node; the root has name "" and path "". */
+export interface TreeNode {
+  name: string;
+  path: string;
+  part?: string;
+  dir: boolean;
+  status?: FileStatus;
+  note?: string;
+  from?: string;
+  children: Map<string, TreeNode>;
+}
+
+export interface TreeSummary {
+  files: number;
+  parts: { key: StatusKey; count: number }[];
+}
+
+export const STATUS: Record<StatusKey, FileStatus> = {
   added: { key: "added", label: "A", title: "added" },
   modified: { key: "modified", label: "M", title: "modified" },
   deleted: { key: "deleted", label: "D", title: "deleted" },
@@ -15,7 +48,7 @@ export const STATUS = {
 const SHORT = /^(\?\?|!!|[MADRCUT ]{1,2}|[RC]\d{1,3})\s+(?=\S)/i;
 const LONG = /^(new file|modified|deleted|renamed|copied|typechange|both modified|untracked):\s+/i;
 
-function statusFromShort(code) {
+function statusFromShort(code: string): FileStatus | undefined {
   const c = code.toUpperCase();
   if (c === "??") return STATUS.added; // untracked = a new file, which is what a plan means
   if (c === "!!") return undefined;
@@ -26,7 +59,7 @@ function statusFromShort(code) {
   return STATUS.modified; // M, T, MM, " M"
 }
 
-function statusFromLong(word) {
+function statusFromLong(word: string): FileStatus {
   const w = word.toLowerCase();
   if (w === "new file" || w === "untracked" || w === "copied") return STATUS.added;
   if (w === "deleted") return STATUS.deleted;
@@ -39,13 +72,13 @@ function statusFromLong(word) {
  * "M src/a.ts # why" | "R100 old -> new" | "?? tmp/" | "- src/a.ts" | "modified: x"
  * → { path, isDir, status?, note?, from? } or null. Never throws.
  */
-export function parseEntry(raw) {
+export function parseEntry(raw: unknown): FileEntry | null {
   if (typeof raw !== "string") return null;
   let s = raw.replace(/[\r\n]+/g, " ").trim();
   if (!s) return null;
   s = s.replace(/^[-*+]\s+/, ""); // markdown bullet
 
-  let note;
+  let note: string | undefined;
   const hash = /\s#(\s|$)/.exec(s);
   if (hash) {
     note = s.slice(hash.index + hash[0].length).trim() || undefined;
@@ -58,7 +91,7 @@ export function parseEntry(raw) {
     }
   }
 
-  let status;
+  let status: FileStatus | undefined;
   const long = LONG.exec(s);
   if (long) {
     status = statusFromLong(long[1]);
@@ -72,7 +105,7 @@ export function parseEntry(raw) {
     }
   }
 
-  let from;
+  let from: string | undefined;
   const arrow = s.indexOf(" -> ");
   if (arrow >= 0) {
     from = clean(s.slice(0, arrow));
@@ -86,13 +119,13 @@ export function parseEntry(raw) {
   return { path, isDir, status, note, from: from || undefined };
 }
 
-function clean(p) {
+function clean(p: string): string {
   return p.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/{2,}/g, "/");
 }
 
 /** Last entry wins for a repeated path, in first-appearance order. */
-export function parseEntries(list) {
-  const byPath = new Map();
+export function parseEntries(list: unknown): FileEntry[] {
+  const byPath = new Map<string, FileEntry>();
   for (const raw of Array.isArray(list) ? list : []) {
     const e = parseEntry(raw);
     if (!e) continue;
@@ -103,9 +136,9 @@ export function parseEntries(list) {
 }
 
 /** What a rename shows: the old name alone when only the name changed. */
-export function fromLabel(entry) {
+export function fromLabel(entry: FileEntry): string | undefined {
   if (!entry.from) return undefined;
-  const dir = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+  const dir = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
   return dir(entry.from) === dir(entry.path) ? entry.from.slice(entry.from.lastIndexOf("/") + 1) : entry.from;
 }
 
@@ -115,8 +148,8 @@ export function fromLabel(entry) {
  * `part` is what a click reaches the agent as: the path as written (leading
  * "/" kept), with a trailing "/" for folders.
  */
-export function buildTree(entries) {
-  const root = { name: "", path: "", dir: true, children: new Map() };
+export function buildTree(entries: FileEntry[]): TreeNode {
+  const root: TreeNode = { name: "", path: "", dir: true, children: new Map() };
   for (const e of entries) {
     const absolute = e.path.startsWith("/");
     const segs = e.path.split("/").filter(Boolean);
@@ -140,12 +173,12 @@ export function buildTree(entries) {
 }
 
 // "src" > "session" > files becomes "src/session" > files, as code hosts show it.
-function compress(node) {
+function compress(node: TreeNode): TreeNode {
   for (const [key, child] of node.children) {
     let c = child;
     while (c.dir && c.children.size === 1 && !c.status && !c.note) {
       const only = c.children.values().next().value;
-      if (!only.dir) break;
+      if (!only || !only.dir) break;
       c = { ...only, name: `${c.name}/${only.name}` };
     }
     node.children.set(key, compress(c));
@@ -153,7 +186,7 @@ function compress(node) {
   return node;
 }
 
-function finish(node) {
+function finish(node: TreeNode): TreeNode {
   for (const c of node.children.values()) {
     c.part = c.dir ? `${c.path}/` : c.path;
     finish(c);
@@ -161,17 +194,17 @@ function finish(node) {
   return node;
 }
 
-export function countFiles(node) {
+export function countFiles(node: TreeNode): number {
   let n = 0;
   for (const c of node.children.values()) n += c.dir ? countFiles(c) : 1;
   return n;
 }
 
 /** "N files · 2 added · 1 modified" counts, over unique file rows. */
-export function summarize(tree) {
-  const by = {};
+export function summarize(tree: TreeNode): TreeSummary {
+  const by: Partial<Record<StatusKey, number>> = {};
   let files = 0;
-  const walk = (node) => {
+  const walk = (node: TreeNode) => {
     for (const c of node.children.values()) {
       if (c.dir) walk(c);
       else {
@@ -181,6 +214,6 @@ export function summarize(tree) {
     }
   };
   walk(tree);
-  const order = ["added", "modified", "renamed", "deleted", "conflict"];
-  return { files, parts: order.filter((k) => by[k]).map((k) => ({ key: k, count: by[k] })) };
+  const order: StatusKey[] = ["added", "modified", "renamed", "deleted", "conflict"];
+  return { files, parts: order.filter((k) => by[k]).map((k) => ({ key: k, count: by[k] ?? 0 })) };
 }

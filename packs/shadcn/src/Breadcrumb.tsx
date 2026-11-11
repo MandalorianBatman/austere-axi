@@ -1,12 +1,23 @@
 import React from "react";
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
+import type { RendererArgs } from "austere-axi/pack";
+import { isElement } from "./element.ts";
 
 const nothing = () => null;
-const safeHref = (h) => (typeof h === "string" && /^(https?:\/\/|\/|#)/i.test(h) ? h : "");
+const safeHref = (h: unknown): string => (typeof h === "string" && /^(https?:\/\/|\/|#)/i.test(h) ? h : "");
 
-function BreadcrumbView({ props }) {
-  const items = (Array.isArray(props.items) ? props.items : []).filter((el) => el && el.props);
+interface BreadcrumbItemProps {
+  label: string;
+  href?: string;
+}
+
+interface BreadcrumbProps {
+  items: unknown[];
+}
+
+function BreadcrumbView({ props }: RendererArgs<BreadcrumbProps>) {
+  const items = (Array.isArray(props.items) ? props.items : []).filter(isElement<BreadcrumbItemProps>);
   return (
     <nav className="sh-breadcrumb" aria-label="Breadcrumb">
       <ol>

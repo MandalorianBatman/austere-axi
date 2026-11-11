@@ -9,35 +9,86 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { SessionStore, sessionId } from "../src/cli/sessions.js";
-import { Hub } from "../src/cli/hub.js";
-import { freePort } from "./port.js";
-import { ownerKey } from "../src/cli/invites.js";
-import { ownerHeaders } from "./owner.js";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import type { IncomingHttpHeaders } from "node:http";
+import { SessionStore, sessionId } from "../src/cli/sessions.ts";
+import type { Session } from "../src/cli/sessions.ts";
+import { Hub } from "../src/cli/hub.ts";
+import { freePort } from "./port.ts";
+import { ownerKey } from "../src/cli/invites.ts";
+import { ownerHeaders } from "./owner.ts";
 
-const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
+interface Note {
+  id: string;
+  text: string;
+  author?: string;
+  held?: boolean;
+}
+
+interface SessionRow {
+  id: string;
+  status: string;
+  pending: number;
+}
+
+/** Every response body field these tests read; each route fills in its own. */
+interface Body {
+  status: string;
+  closed: boolean;
+  ended: boolean;
+  cursor: number;
+  items: Note[];
+  entry: Note;
+  session: { id: string };
+  sessions: SessionRow[];
+  link: string;
+  pid: number;
+  version: string;
+  persist: boolean;
+}
+
+interface Res {
+  status: number | undefined;
+  data: Body;
+  headers: IncomingHttpHeaders;
+}
+
+interface ServerProc {
+  child: ChildProcessWithoutNullStreams;
+  out: string;
+  exited: Promise<number | null>;
+}
+
+interface Ctx {
+  port: number;
+  state: string;
+  id: string;
+  proc: ServerProc;
+}
+
+const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const WORK = tmp("austere-durable-work-");
 const FILE = path.join(WORK, "plan.html");
 const BASE_ENV = { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" };
 
 // The state dir of the server on each port: requests go as its owner, unless they bring a reviewer's cookie.
-const stateOf = new Map();
+const stateOf = new Map<number, string>();
 
-function request(port, method, route, body, headers = {}) {
+function request(port: number, method: string, route: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
-    const owner = stateOf.has(port) ? ownerHeaders(stateOf.get(port)) : {};
+    const owner = stateOf.has(port) ? ownerHeaders(stateOf.get(port) as string) : {};
     const r = http.request(
       { host: "127.0.0.1", port, method, path: route, headers: { host: `127.0.0.1:${port}`, ...(payload ? { "content-type": "application/json" } : {}), ...owner, ...headers } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
         res.on("end", () => {
-          let parsed = data;
+          let parsed: unknown = data;
           try {
             parsed = JSON.parse(data);
           } catch {}
-          resolve({ status: res.statusCode, data: parsed, headers: res.headers });
+          resolve({ status: res.statusCode, data: parsed as Body, headers: res.headers });
         });
       },
     );
@@ -48,18 +99,18 @@ function request(port, method, route, body, headers = {}) {
 }
 
 /** Run the server in the foreground; `out` collects what it prints. */
-function startServer(port, state, extraEnv = {}) {
+function startServer(port: number, state: string, extraEnv: Record<string, string> = {}): ServerProc {
   stateOf.set(port, state);
-  const child = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(port)], {
+  const child = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(port)], {
     env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, ...extraEnv },
   });
-  const proc = { child, out: "", exited: new Promise((r) => child.once("exit", r)) };
+  const proc: ServerProc = { child, out: "", exited: new Promise<number | null>((r) => child.once("exit", r)) };
   child.stdout.on("data", (c) => (proc.out += c));
   child.stderr.on("data", (c) => (proc.out += c));
   return proc;
 }
 
-async function up(port) {
+async function up(port: number) {
   for (let i = 0; i < 200; i++) {
     try {
       if ((await request(port, "GET", "/api/health")).status === 200) return;
@@ -69,16 +120,16 @@ async function up(port) {
   throw new Error("server did not start");
 }
 
-async function kill(proc, signal = "SIGTERM") {
+async function kill(proc: ServerProc, signal: NodeJS.Signals = "SIGTERM") {
   if (proc.child.exitCode === null && proc.child.signalCode === null) {
     proc.child.kill(signal);
     await proc.exited;
   }
 }
 
-function cli(port, state, ...args) {
+function cli(port: number, state: string, ...args: string[]): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["src/cli/main.js", ...args], {
+    const child = spawn(process.execPath, ["src/cli/main.ts", ...args], {
       env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) },
     });
     let out = "";
@@ -88,15 +139,15 @@ function cli(port, state, ...args) {
   });
 }
 
-const page = (port) => ({ origin: `http://127.0.0.1:${port}` });
-const message = (text) => ({ items: [{ kind: "message", text }] });
+const page = (port: number) => ({ origin: `http://127.0.0.1:${port}` });
+const message = (text: string) => ({ items: [{ kind: "message", text }] });
 
 /** Share the plan with a reviewer and join as them, through the invite form; returns their cookie header. */
-async function invite(port, id, name) {
+async function invite(port: number, id: string, name: string): Promise<string> {
   const share = await request(port, "POST", "/api/share", { file: FILE, name });
   assert.equal(share.status, 200, JSON.stringify(share.data));
   const token = new URL(share.data.link).searchParams.get("invite");
-  const set = await new Promise((resolve, reject) => {
+  const set = await new Promise<string[] | undefined>((resolve, reject) => {
     const r = http.request(
       { host: "127.0.0.1", port, method: "POST", path: `/s/${id}/join`, headers: { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/x-www-form-urlencoded" } },
       (res) => {
@@ -105,9 +156,9 @@ async function invite(port, id, name) {
       },
     );
     r.on("error", reject);
-    r.end(new URLSearchParams({ invite: token }).toString());
+    r.end(new URLSearchParams({ invite: token as string }).toString());
   });
-  return [].concat(set)[0].split(";")[0];
+  return ([] as string[]).concat(set ?? [])[0].split(";")[0];
 }
 
 before(() => {
@@ -124,7 +175,7 @@ intro = TextContent("hello")
 after(() => fs.rmSync(WORK, { recursive: true, force: true }));
 
 /** A server of its own for one test, with the plan open. */
-async function withServer(fn, extraEnv) {
+async function withServer(fn: (ctx: Ctx) => Promise<void>, extraEnv?: Record<string, string>) {
   const port = await freePort();
   const state = tmp("austere-durable-state-");
   const proc = startServer(port, state, extraEnv);
@@ -144,13 +195,13 @@ test("a note sent after the agent ended is kept, and the next poll returns it an
     const sent = await request(port, "POST", `/s/${id}/send`, message("one more thing"), page(port));
     assert.equal(sent.status, 200, "an ended review still takes notes");
     const sessions = (await request(port, "GET", "/api/sessions")).data.sessions;
-    assert.equal(sessions.find((s) => s.id === id).pending, 1, "waiting for the agent");
+    assert.equal(sessions.find((s) => s.id === id)?.pending, 1, "waiting for the agent");
 
     const poll = await request(port, "POST", "/api/poll", { file: FILE });
     assert.equal(poll.data.status, "feedback");
     assert.equal(poll.data.items[0].text, "one more thing");
     assert.equal(poll.data.ended, undefined, "not handed over as a final batch");
-    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id).status, "open");
+    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.status, "open");
 
     // A batch sent with end stays final: delivered with ended, and the review stays ended.
     await request(port, "POST", `/s/${id}/send`, { ...message("last words"), end: true }, page(port));
@@ -186,7 +237,7 @@ test("feedback is unread until acknowledged: a poll without a cursor gets it aga
     await request(port, "POST", `/s/${id}/send`, message("first"), page(port));
     let r = await cli(port, state, "poll", FILE);
     assert.match(r.out, /status: feedback/);
-    const cursor = Number(/cursor: (\d+)/.exec(r.out)[1]);
+    const cursor = Number((/cursor: (\d+)/.exec(r.out) as RegExpExecArray)[1]);
     assert.match(r.out, new RegExp(`poll \\S+ --cursor ${cursor} --agent-reply`), "the next hint carries the cursor");
 
     // The agent lost that answer (crashed, or its tool call timed out): it comes back.
@@ -197,7 +248,7 @@ test("feedback is unread until acknowledged: a poll without a cursor gets it aga
     // Acknowledged with the cursor: gone, and the page shows it seen.
     const ack = await request(port, "POST", "/api/poll", { file: FILE, cursor, timeoutMs: 200 });
     assert.equal(ack.data.status, "timeout");
-    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id).pending, 0);
+    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.pending, 0);
 
     // --after replays what was acknowledged.
     const replay = await request(port, "POST", "/api/poll", { file: FILE, after: cursor - 1 });
@@ -247,7 +298,7 @@ test("unread notes reopen an ended review even when they are older than the end:
     assert.equal(poll.data.status, "feedback");
     assert.equal(poll.data.items[0].text, "held before the agent ended");
     assert.equal(poll.data.ended, undefined);
-    assert.equal((await session()).status, "open");
+    assert.equal((await session())?.status, "open");
 
     // The same when the reviewer ended it from the page.
     const second = await request(port, "POST", `/s/${id}/send`, message("held before the reviewer ended"), { ...page(port), cookie: invited });
@@ -256,13 +307,13 @@ test("unread notes reopen an ended review even when they are older than the end:
     const again = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
     assert.equal(again.data.items[0].text, "held before the reviewer ended");
     assert.equal(again.data.ended, undefined);
-    assert.equal((await session()).status, "open");
+    assert.equal((await session())?.status, "open");
 
     // A replay of acknowledged notes does not reopen an ended review.
     await request(port, "POST", "/api/end", { file: FILE });
     const replay = await request(port, "POST", "/api/poll", { file: FILE, cursor: again.data.cursor, after: 0 });
     assert.equal(replay.data.status, "feedback");
-    assert.equal((await session()).status, "ended");
+    assert.equal((await session())?.status, "ended");
   }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
 
 test("ending keeps the composer open; only the owner's close refuses notes, until reopen", () =>
@@ -325,7 +376,7 @@ test("a newer CLI that replaces an older server keeps --persist", async () => {
   // An older server that runs with --persist and proves it holds the owner key; it exits when asked to.
   const old = http.createServer((req, res) => {
     res.setHeader("content-type", "application/json");
-    const url = new URL(req.url, "http://x");
+    const url = new URL(req.url ?? "", "http://x");
     if (url.pathname === "/api/health") {
       const proof = crypto.createHmac("sha256", ownerKey(state)).update(`${port}:${url.searchParams.get("nonce")}`).digest("base64url");
       return res.end(JSON.stringify({ name: "austere-axi", version: "0.0.1", pid: 1, port, stateDir: state, proof, listen: ["127.0.0.1"], persist: true }));
@@ -338,7 +389,7 @@ test("a newer CLI that replaces an older server keeps --persist", async () => {
     }
     res.end("{}");
   });
-  await new Promise((r) => old.listen(port, "127.0.0.1", r));
+  await new Promise<void>((r) => old.listen(port, "127.0.0.1", r));
   stateOf.set(port, state);
   try {
     const r = await cli(port, state, FILE, "--no-open");
@@ -358,7 +409,7 @@ test("session files from before the database are imported once, every state inta
   const dir = tmp("austere-import-");
   const file = path.join(dir, "plan.html");
   const id = sessionId(file);
-  const items = (text) => [{ kind: "message", text, id: `${text}-item` }];
+  const items = (text: string) => [{ kind: "message", text, id: `${text}-item` }];
   const legacy = {
     id,
     file,
@@ -382,8 +433,8 @@ test("session files from before the database are imported once, every state inta
   fs.mkdirSync(sessions);
   fs.writeFileSync(path.join(sessions, `${id}.json`), JSON.stringify(legacy));
   try {
-    const check = (store, status = "ended") => {
-      const s = store.get(id);
+    const check = (store: SessionStore, status = "ended") => {
+      const s = store.get(id) as Session;
       assert.equal(s.status, status);
       assert.equal(s.endedBy, status === "ended" ? "agent" : null);
       assert.deepEqual(store.unread(s).map((e) => e.id), ["u-pending"]);
@@ -402,7 +453,7 @@ test("session files from before the database are imported once, every state inta
     let store = await SessionStore.open(dir);
     check(store);
     // The server reopens the review after the import.
-    store.reopen(store.get(id));
+    store.reopen(store.get(id) as Session);
     store.close();
     assert.deepEqual(fs.readdirSync(sessions), [`${id}.json.imported`]);
 

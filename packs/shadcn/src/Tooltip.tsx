@@ -1,9 +1,15 @@
 import React from "react";
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
+import type { RendererArgs } from "austere-axi/pack";
 
 // Hover and keyboard focus show the card; the page is static, so no portal or positioning engine.
-function TooltipView({ props }) {
+interface TooltipProps {
+  text: string;
+  tip: string;
+}
+
+function TooltipView({ props }: RendererArgs<TooltipProps>) {
   return (
     <span className="sh-pop sh-tooltip" tabIndex={0}>
       <span className="sh-pop-trigger">{props.text}</span>
@@ -24,7 +30,13 @@ export const Tooltip = austereComponent({
   example: `term = Tooltip("idempotent", "Safe to run twice with the same result.")`,
 });
 
-function HoverCardView({ props }) {
+interface HoverCardProps {
+  text: string;
+  title: string;
+  body?: string;
+}
+
+function HoverCardView({ props }: RendererArgs<HoverCardProps>) {
   return (
     <span className="sh-pop sh-hovercard" tabIndex={0}>
       <span className="sh-pop-trigger">{props.text}</span>

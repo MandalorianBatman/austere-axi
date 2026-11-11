@@ -6,14 +6,14 @@ Status: implemented in 0.5.0 (RLM-272). sid.kasat settled all decisions (Q1–Q2
 
 On a page served through a reverse proxy (`austere.kasat.xyz/s/<id>`), the reviewer could not add notes once no agent was listening. The cause is in how a review ends, not in storage:
 
-1. When every tab is closed, `poll` returns `browser_disconnected` (`src/cli/server.js` `armGrace`). The hint for that status (`src/cli/main.js:291`) tells the agent to ask the user whether to end the review, and agents usually end it.
-2. Ending locks the composer (`src/chrome/chrome.js:529-531`), and the server answers `/send` with 409.
-3. Separately, the server exits after 30 minutes with no poll and no open tab, unless the hub is on (`server.js:969-974`). Behind a proxy, the page then stops working.
+1. When every tab is closed, `poll` returns `browser_disconnected` (`src/cli/server.ts` `armGrace`). The hint for that status (`src/cli/main.ts:291`) tells the agent to ask the user whether to end the review, and agents usually end it.
+2. Ending locks the composer (`src/chrome/chrome.ts:529-531`), and the server answers `/send` with 409.
+3. Separately, the server exits after 30 minutes with no poll and no open tab, unless the hub is on (`server.ts:969-974`). Behind a proxy, the page then stops working.
 
 Two weaknesses in delivery sit underneath:
 
 - The source of truth is memory: `SessionStore.sessions[].pending`. It is written to `sessions/<id>.json` about 150 ms later on a best-effort basis, with write errors ignored. `hub.db` (SQLite) is an optional index that is synced after that write.
-- Delivery is at-most-once. Ids leave `pending` when the HTTP response finishes (`sessions.js` `markDelivered`). If an agent crashes after that, the notes are lost.
+- Delivery is at-most-once. Ids leave `pending` when the HTTP response finishes (`sessions.ts` `markDelivered`). If an agent crashes after that, the notes are lost.
 
 ## Decisions
 
@@ -90,7 +90,7 @@ The server never moves `acked_seq` when a response finishes. Only the next reque
 - `server --persist` turns off the idle exit.
 - `feedback [--peek]` reads from SQLite, and opens it read-only when no server is running.
 - `hub on|off` keeps only the meaning "open the hub page". The database is always on.
-- Hint changes in `main.js`: `browser_disconnected` becomes "stop polling, don't end; later notes are kept". `ended` adds "a new note reopens it on the next poll".
+- Hint changes in `main.ts`: `browser_disconnected` becomes "stop polling, don't end; later notes are kept". `ended` adds "a new note reopens it on the next poll".
 
 ## Chrome changes
 
@@ -140,7 +140,7 @@ The whole import runs in one transaction, and running it again does nothing.
 5. The JSON and hub import maps every state correctly, and running it a second time changes nothing.
 6. `/send` returns 409 only after `close`, not after `end`. `reopen` lets it succeed again.
 7. A second server on the same state dir fails because of the lock.
-8. Browser test (`test/browser/review-loop.browser.test.js`): after the agent ends, the composer still sends, and the note shows as unread.
+8. Browser test (`test/browser/review-loop.browser.test.ts`): after the agent ends, the composer still sends, and the note shows as unread.
 
 ## Phases
 
@@ -148,7 +148,7 @@ The whole import runs in one transaction, and running it again does nothing.
 2. Cursor `poll`, `reply` acknowledgement, `--after`, replay. The CLI output and hints change.
 3. Split `end` from `close`, add `reopen`, reopen ended sessions on new notes. Update the composer gating and the unread presence label.
 4. `server --persist`, a systemd unit in the README, and remove the link between the hub and the idle exit.
-5. README "Session rules" and the CLI help (`main.js:48-60`, `290-294`) brought up to date.
+5. README "Session rules" and the CLI help (`main.ts:48-60`, `290-294`) brought up to date.
 
 ## Out of scope
 

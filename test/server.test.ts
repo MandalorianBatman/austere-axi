@@ -2,29 +2,47 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import type { IncomingHttpHeaders } from "node:http";
+import type { ChildProcess } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import crypto from "node:crypto";
-import { LoginCodes, OWNER_COOKIE } from "../src/cli/invites.js";
-import { VERSION } from "../src/cli/paths.js";
-import { ownerHeaders } from "./owner.js";
-import { freePort } from "./port.js";
+import { LoginCodes, OWNER_COOKIE } from "../src/cli/invites.ts";
+import { VERSION } from "../src/cli/paths.ts";
+import { ownerHeaders } from "./owner.ts";
+import { freePort } from "./port.ts";
 
 const PORT = await freePort();
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-test-"));
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), "austere-work-"));
 const FILE = path.join(WORK, "plan.html");
-let server;
+let server: ChildProcess | undefined;
 const OWNER = ownerHeaders(STATE);
 
+/** The JSON bodies the server answers with, as far as these tests read them. */
+interface ApiData {
+  status: string;
+  session: { id: string };
+  items: { kind: string; text?: string }[];
+  endedBy?: string;
+  links: { local: string; remote?: string };
+  proof?: string;
+}
+
+interface Res<T> {
+  status: number | undefined;
+  data: T;
+  headers: IncomingHttpHeaders;
+}
+
 /** As the owner: the CLI's key header and the owner cookie. */
-function req(method, route, body, headers = {}) {
-  return bare(method, route, body, { ...OWNER, ...headers });
+function req<T = ApiData>(method: string, route: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res<T>> {
+  return bare<T>(method, route, body, { ...OWNER, ...headers });
 }
 
 /** As any local process: loopback, and no owner key. */
-function bare(method, route, body, headers = {}) {
+function bare<T = ApiData>(method: string, route: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res<T>> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const r = http.request(
@@ -33,11 +51,11 @@ function bare(method, route, body, headers = {}) {
         let data = "";
         res.on("data", (c) => (data += c));
         res.on("end", () => {
-          let parsed = data;
+          let parsed: unknown = data;
           try {
             parsed = JSON.parse(data);
           } catch {}
-          resolve({ status: res.statusCode, data: parsed, headers: res.headers });
+          resolve({ status: res.statusCode, data: parsed as T, headers: res.headers });
         });
       },
     );
@@ -57,7 +75,7 @@ intro = TextContent("hello")
 </script></body></html>`,
   );
   fs.writeFileSync(path.join(WORK, "shot.png"), "png");
-  server = spawn(process.execPath, ["src/cli/main.js", "server", "--port", String(PORT)], {
+  server = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(PORT)], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" },
     stdio: "ignore",
   });
@@ -73,7 +91,8 @@ intro = TextContent("hello")
 
 after(async () => {
   if (server && server.exitCode === null) {
-    const exited = new Promise((r) => server.once("exit", r));
+    const child = server;
+    const exited = new Promise((r) => child.once("exit", r));
     server.kill();
     await exited;
   }
@@ -139,7 +158,7 @@ test("serves the artifact with a local runtime and confines sibling files", asyn
   const open = await req("POST", "/api/open", { file: FILE });
   const id = open.data.session.id;
   const host = { host: `127.0.0.1:${PORT}` };
-  const page = await req("GET", `/s/${id}/a/plan.html`, undefined, host);
+  const page = await req<string>("GET", `/s/${id}/a/plan.html`, undefined, host);
   assert.equal(page.status, 200);
   assert.match(page.data, /src="\/__austere\/austere\.js/);
   assert.doesNotMatch(page.data, /jsdelivr/);
@@ -151,11 +170,11 @@ test("serves the artifact with a local runtime and confines sibling files", asyn
 // ── the owner key on loopback ──
 
 const posix = process.platform !== "win32";
-const mode = (p) => fs.statSync(p).mode & 0o777;
+const mode = (p: string) => fs.statSync(p).mode & 0o777;
 
-function cli(env, ...args) {
+function cli(env: Record<string, string>, ...args: string[]): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["src/cli/main.js", ...args], { env: { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1", ...env } });
+    const child = spawn(process.execPath, ["src/cli/main.ts", ...args], { env: { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1", ...env } });
     let out = "";
     child.stdout.on("data", (c) => (out += c));
     child.stderr.on("data", (c) => (out += c));
@@ -187,8 +206,8 @@ test("another local process without the owner key cannot read files, sessions or
     assert.equal(r.status, 403, `${p} is refused without the owner cookie`);
     assert.doesNotMatch(String(r.data), /DUMMY/);
   }
-  assert.match((await bare("GET", `/s/${id}`, undefined, host)).data, /austere-axi login/, "the owner is told how to get in");
-  assert.match((await req("GET", `/s/${id}/a/credentials`, undefined, host)).data, /DUMMY-SECRET/, "the owner still can");
+  assert.match((await bare<string>("GET", `/s/${id}`, undefined, host)).data, /austere-axi login/, "the owner is told how to get in");
+  assert.match((await req<string>("GET", `/s/${id}/a/credentials`, undefined, host)).data, /DUMMY-SECRET/, "the owner still can");
   assert.equal((await req("GET", "/api/sessions")).status, 200);
   await req("POST", "/api/end", { file: secret });
 });
@@ -206,10 +225,11 @@ test("health proves the server holds the owner key without giving it away", asyn
  * A listener on a free port that answers health like austere-axi, and records every request.
  * `healthBody` may be a function of the request URL, for a listener that relays another server.
  */
-async function fakeServer(healthBody, { stays = false } = {}) {
+async function fakeServer(healthBody: object | ((url: string) => Promise<unknown>), { stays = false } = {}) {
   const port = await freePort();
-  const seen = [];
+  const seen: { method: string | undefined; url: string; key: string | string[] | undefined }[] = [];
   const fake = http.createServer(async (rq, rs) => {
+    if (rq.url === undefined) throw new Error("request without a url");
     seen.push({ method: rq.method, url: rq.url, key: rq.headers["x-austere-key"] });
     rs.setHeader("content-type", "application/json");
     if (rq.url.startsWith("/api/health")) return rs.end(JSON.stringify(typeof healthBody === "function" ? await healthBody(rq.url) : healthBody));
@@ -221,8 +241,8 @@ async function fakeServer(healthBody, { stays = false } = {}) {
     }
     rs.end(JSON.stringify({ status: "feedback", items: [{ kind: "message", text: "DUMMY-INJECTED" }], links: { local: "http://attacker.invalid/" } }));
   });
-  await new Promise((r) => fake.listen(port, "127.0.0.1", r));
-  return { port, seen, close: () => new Promise((r) => (fake.listening ? fake.close(r) : r())) };
+  await new Promise<void>((r) => fake.listen(port, "127.0.0.1", r));
+  return { port, seen, close: () => new Promise<void>((r) => (fake.listening ? fake.close(() => r()) : r())) };
 }
 
 test("the CLI refuses a port squatter that cannot prove it holds the owner key", async () => {
@@ -255,7 +275,7 @@ test("the CLI refuses a port squatter that cannot prove it holds the owner key",
 
 test("a squatter that relays the real server's health proof is still refused", async () => {
   // Same state dir, so the same key: only the port in the proof tells the relay from the server.
-  const fake = await fakeServer(async (url) => (await bare("GET", url)).data);
+  const fake = await fakeServer(async (url: string) => (await bare<unknown>("GET", url)).data);
   try {
     const env = { AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_PORT: String(fake.port), AUSTERE_AXI_NO_OPEN: "1" };
     const r = await cli(env, FILE);
@@ -352,7 +372,7 @@ test("the CLI opens the browser with a single-use login code, never with the key
     const signIn = await bare("GET", u.pathname + u.search, undefined, { host: u.host });
     assert.equal(signIn.status, 302);
     assert.equal(signIn.headers.location, u.pathname, "the code leaves the address bar");
-    assert.equal(String(signIn.headers["set-cookie"]), `${OWNER_COOKIE}=${/austere_owner=([^;]+)/.exec(OWNER.cookie)[1]}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
+    assert.equal(String(signIn.headers["set-cookie"]), `${OWNER_COOKIE}=${/austere_owner=([^;]+)/.exec(OWNER.cookie)?.[1]}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
   } finally {
     fs.rmSync(bin, { recursive: true, force: true });
   }
@@ -365,7 +385,7 @@ test("login prints a link that signs a browser in once", async () => {
   const r = await cli(env, "login", FILE);
   assert.equal(r.code, 0, r.out);
   assert.ok(!r.out.includes(OWNER["x-austere-key"]), "the printed link carries no key");
-  const u = new URL(/url: (\S+)/.exec(r.out)[1]);
+  const u = new URL(/url: (\S+)/.exec(r.out)?.[1] ?? "");
   const id = (await req("POST", "/api/open", { file: FILE })).data.session.id;
   assert.equal(u.pathname, `/s/${id}`, "the link goes to the file's review");
   const host = { host: u.host };
@@ -397,7 +417,7 @@ test("a login code expires", () => {
 test("the owner cookie is not the owner key, and neither stands in for the other", async () => {
   const id = (await req("POST", "/api/open", { file: FILE })).data.session.id;
   const key = OWNER["x-austere-key"];
-  const value = /austere_owner=([^;]+)/.exec(OWNER.cookie)[1];
+  const value = /austere_owner=([^;]+)/.exec(OWNER.cookie)?.[1] ?? "";
   assert.notEqual(value, key);
   const host = { host: `127.0.0.1:${PORT}` };
   // The owner's remote link sets the derived value too.
@@ -421,7 +441,7 @@ test("artifact responses carry their own sandbox, so a top-level load gets an op
   for (const route of [`/s/${id}/a/plan.html`, `/s/${id}/a/`, `/s/${id}/a/shot.png`, `/s/${id}/export`]) {
     const r = await req("GET", route, undefined, host);
     assert.equal(r.status, 200, route);
-    const csp = r.headers["content-security-policy"] || "";
+    const csp = String(r.headers["content-security-policy"] || "");
     assert.match(csp, /(^|;)\s*sandbox\b/, `${route}: no CSP sandbox`);
     assert.doesNotMatch(csp, /allow-same-origin|allow-top-navigation/, route);
   }

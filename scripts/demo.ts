@@ -16,15 +16,33 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { launchBrowser } from "./lib/browser.mjs";
-import { PAGE, PATCH } from "./lib/demo-page.mjs";
-import { ROOT } from "./lib/plugins.mjs";
+import { launchBrowser } from "./lib/browser.ts";
+import { PAGE, PATCH } from "./lib/demo-page.ts";
+import { ROOT } from "./lib/plugins.ts";
+import type { Locator, Page } from "playwright-core";
+
+// Globals the stage page defines (see STAGE); used inside page.evaluate callbacks.
+declare global {
+  interface Window {
+    __mouse?: { x: number; y: number };
+  }
+  function openReview(url: string | undefined): void;
+  function cursor(x: number, y: number, click?: boolean): void;
+}
+
+interface StageTerminal {
+  type(text: string, cps?: number): Promise<void>;
+  out(text: string, ms?: number): Promise<void>;
+  raw(html: string, cls: string): Promise<void>;
+  idle(): Promise<void>;
+}
 
 const args = process.argv.slice(2);
-const flag = (name) => args.includes(`--${name}`);
-const value = (name, fallback) => {
+const flag = (name: string): boolean => args.includes(`--${name}`);
+const value = (name: string, fallback: string): string => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : fallback;
 };
@@ -58,10 +76,10 @@ const REPLY = "Effort is 3 days; Postgres now has a replica.";
 
 // ── Isolated environment ────────────────────────────────────────────────────────
 const free = () =>
-  new Promise((resolve) => {
+  new Promise<number>((resolve) => {
     const s = net.createServer();
     s.listen(0, "127.0.0.1", () => {
-      const p = s.address().port;
+      const p = (s.address() as AddressInfo).port;
       s.close(() => resolve(p));
     });
   });
@@ -78,10 +96,10 @@ const ENV = {
   AUSTERE_AXI_NO_OPEN: "1",
   OPENUI_TELEMETRY_DISABLED: "1",
 };
-const cli = (cliArgs, input) => spawnSync(process.execPath, [CLI, ...cliArgs], { cwd: WORK, env: ENV, encoding: "utf8", input });
-const startPoll = (extra = []) => {
+const cli = (cliArgs: string[], input?: string) => spawnSync(process.execPath, [CLI, ...cliArgs], { cwd: WORK, env: ENV, encoding: "utf8", input });
+const startPoll = (extra: string[] = []) => {
   const child = spawn(process.execPath, [CLI, "poll", "plan.html", ...extra], { cwd: WORK, env: ENV, stdio: ["ignore", "pipe", "pipe"] });
-  const done = new Promise((resolve) => {
+  const done = new Promise<string>((resolve) => {
     let out = "";
     child.stdout.on("data", (c) => (out += c));
     child.on("close", () => resolve(out));
@@ -94,7 +112,7 @@ const startPoll = (extra = []) => {
  * the --no-open note) are left out so the notes stay readable.
  */
 const SKIP = /^\s*(browser: not opened|next:|source:|file:|line:|excerpt:)/;
-const tidy = (s) =>
+const tidy = (s: string): string =>
   s
     .split("\n")
     .filter((l) => l.trim() && !SKIP.test(l))
@@ -144,11 +162,11 @@ window.cursor = (x, y, click) => {
 </script>`;
 
 // ── Screencast: CDP frames with timestamps → constant-rate video via ffmpeg ─────
-const frames = [];
-async function startRecording(page) {
+const frames: { t: number; data: Buffer }[] = [];
+async function startRecording(page: Page): Promise<() => Promise<void>> {
   const cdp = await page.context().newCDPSession(page);
   cdp.on("Page.screencastFrame", (f) => {
-    frames.push({ t: f.metadata.timestamp, data: Buffer.from(f.data, "base64") });
+    frames.push({ t: f.metadata.timestamp!, data: Buffer.from(f.data, "base64") });
     cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => {});
   });
   await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, maxWidth: W, maxHeight: H, everyNthFrame: 1 });
@@ -157,9 +175,9 @@ async function startRecording(page) {
   };
 }
 
-function encode(dir) {
+function encode(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
-  const list = [];
+  const list: string[] = [];
   frames.forEach((f, i) => {
     const name = `f${String(i).padStart(5, "0")}.jpg`;
     fs.writeFileSync(path.join(dir, name), f.data);
@@ -168,7 +186,7 @@ function encode(dir) {
   });
   list.push(`file 'f${String(frames.length - 1).padStart(5, "0")}.jpg'`); // concat needs the last file twice
   fs.writeFileSync(path.join(dir, "frames.txt"), list.join("\n") + "\n");
-  const ff = (extra, out) => {
+  const ff = (extra: string[], out: string) => {
     const r = spawnSync("ffmpeg", ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", path.join(dir, "frames.txt"), ...extra, out], { encoding: "utf8" });
     if (r.status !== 0) throw new Error(`ffmpeg failed for ${path.basename(out)}: ${r.stderr}`);
   };
@@ -193,18 +211,19 @@ if (!browser) {
   process.exit(2);
 }
 let exit = 0;
-let poll;
+let poll: ReturnType<typeof startPoll> | undefined;
 try {
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
-  const problems = [];
+  const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(e.message));
   await page.setContent(STAGE);
   const stop = await startRecording(page);
-  const pause = (ms) => page.waitForTimeout(ms);
-  const T = {
-    type: (s, cps) => page.evaluate(([a, b]) => T.type(a, b), [s, cps]),
-    out: (s, ms) => page.evaluate(([a, b]) => T.out(a, b), [s, ms]),
-    raw: (h, c) => page.evaluate(([a, b]) => T.raw(a, b), [h, c]),
+  const pause = (ms: number) => page.waitForTimeout(ms);
+  // Inside page.evaluate, T is the stage page's window.T (same methods).
+  const T: StageTerminal = {
+    type: (s, cps) => page.evaluate(([a, b]) => T.type(a, b), [s, cps] as const),
+    out: (s, ms) => page.evaluate(([a, b]) => T.out(a, b), [s, ms] as const),
+    raw: (h, c) => page.evaluate(([a, b]) => T.raw(a, b), [h, c] as const),
     idle: () => page.evaluate(() => T.idle()),
   };
   const review = page.frameLocator("#review");
@@ -243,9 +262,9 @@ try {
   await pause(1000);
 
   // 4. The reviewer annotates a table cell and a diagram node, then sends.
-  const moveTo = async (loc, { click = false, dy = 0 } = {}) => {
+  const moveTo = async (loc: Locator, { click = false, dy = 0 }: { click?: boolean; dy?: number } = {}) => {
     await loc.scrollIntoViewIfNeeded();
-    const b = await loc.boundingBox();
+    const b = (await loc.boundingBox())!;
     const x = b.x + b.width / 2;
     const y = b.y + b.height / 2 + dy;
     const from = (await page.evaluate(() => window.__mouse)) || { x: W / 2, y: H / 2 };
@@ -314,13 +333,13 @@ try {
 
   await stop();
   if (problems.length) console.warn(`page errors:\n${problems.join("\n")}`);
-  console.log(`captured ${frames.length} frames over ${(frames.at(-1).t - frames[0].t).toFixed(1)} s`);
+  console.log(`captured ${frames.length} frames over ${(frames.at(-1)!.t - frames[0].t).toFixed(1)} s`);
   encode(path.join(TMP, "frames"));
   for (const f of ["demo.gif", "demo.mp4", "demo.webm"]) {
     console.log(`${path.relative(ROOT, path.join(OUT, f))}  ${(fs.statSync(path.join(OUT, f)).size / 1024).toFixed(0)} KB`);
   }
 } catch (err) {
-  console.error(err.stack || err);
+  console.error((err as Error).stack || err);
   exit = 1;
 } finally {
   poll?.child.kill();

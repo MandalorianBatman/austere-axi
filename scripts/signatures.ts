@@ -1,8 +1,8 @@
 // npm run signatures — record new components and appended props in
 // test/fixtures/signatures.json. Refuses (exit 1) on any change that would
 // break stored artifacts.
-import { loadLibrary } from "./lib/plugins.mjs";
-import { compareSignatures, readSnapshot, signaturesOf, writeSnapshot } from "./lib/signatures.mjs";
+import { loadLibrary } from "./lib/plugins.ts";
+import { compareSignatures, readSnapshot, signaturesOf, writeSnapshot } from "./lib/signatures.ts";
 
 const lib = await loadLibrary();
 const { errors, added, appended, next } = compareSignatures(readSnapshot(), signaturesOf(lib.schema()));

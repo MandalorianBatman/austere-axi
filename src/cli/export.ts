@@ -1,20 +1,19 @@
-// @ts-check
 // Standalone export: one HTML file that renders offline, with the runtime
 // (Mermaid and every pack the page uses, too) inlined. No network fetches.
 import fs from "node:fs";
 import path from "node:path";
-import { readArtifact, rewriteRuntime } from "./artifact.js";
-import { assetPath } from "./paths.js";
-import { implicitPacks, pagePacks } from "./packs.js";
+import { readArtifact, rewriteRuntime } from "./artifact.ts";
+import { assetPath } from "./paths.ts";
+import { implicitPacks, pagePacks } from "./packs.ts";
 
-function inlineScript(code) {
+function inlineScript(code: string): string {
   // A literal "</script" inside the bundle would end the tag early.
   return `<script>${code.replace(/<\/script/gi, "<\\/script")}</script>`;
 }
 
-export function exportHtml(html) {
+export function exportHtml(html: string): { html: string; notices: string[] } {
   const art = readArtifact(html);
-  const notices = [];
+  const notices: string[] = [];
   if (art.program == null) throw new Error('no <script type="text/openui"> block');
   let tags = "";
   if (/\bMermaid\s*\(/.test(art.program)) {

@@ -3,31 +3,60 @@
 // output), so it never drifts from the version being measured.
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { ROOT, LAVISH_CLI, lavishEnv } from "./paths.mjs";
+import type { Task } from "../tasks.ts";
+import { ROOT, LAVISH_CLI, lavishEnv } from "./paths.ts";
 
-const PREAMBLE = (tool) =>
+export type Tool = "austere" | "lavish";
+
+/** A tool's captured guidance: its version and the system prompt for a task. */
+export interface ToolGuidance {
+  system: (task: Task) => string;
+  version: string;
+}
+
+/**
+ * Where the reviewer's note is attached, as each tool's `poll` names it: an
+ * austere-axi statement, or a lavish-axi element selector and its text.
+ */
+export interface ReviewAnchor {
+  found?: boolean;
+  statement?: string;
+  component?: string;
+  line?: number;
+  source?: string;
+  selector?: string;
+  text?: string;
+}
+
+/** SEARCH/REPLACE outcome: the new text and edit count, or an error. */
+export interface SearchReplaceResult {
+  text?: string;
+  edits?: number;
+  error?: string;
+}
+
+const PREAMBLE = (tool: string) =>
   `You are a coding agent. The user uses ${tool} for review pages. Earlier in this session you ran the commands below; their output follows. You cannot run commands now, so answer with file contents in the exact format the user asks for.`;
 
-const sh = (cmd, args, env) => execFileSync(cmd, args, { encoding: "utf8", env: { ...process.env, ...env }, maxBuffer: 16 << 20 }).trim();
+const sh = (cmd: string, args: string[], env?: Record<string, string>) => execFileSync(cmd, args, { encoding: "utf8", env: { ...process.env, ...env }, maxBuffer: 16 << 20 }).trim();
 
-/** @returns {{ austere: { system: (task: any) => string, version: string }, lavish: { system: (task: any) => string, version: string } }} */
-export function captureGuidance() {
+export function captureGuidance(): Record<Tool, ToolGuidance> {
   const austereCli = path.join(ROOT, "dist", "cli.mjs");
   const austereHelp = sh("node", [austereCli, "--help"]);
   const austereSpec = sh("node", [austereCli, "spec"]);
   const austereVersion = /austere-axi (\S+)/.exec(austereHelp)?.[1] ?? "?";
 
-  const lav = (...args) => sh("node", [LAVISH_CLI, ...args], lavishEnv());
+  const lav = (...args: string[]) => sh("node", [LAVISH_CLI, ...args], lavishEnv());
   const lavishHelp = lav("--help");
   const lavishDesign = lav("design");
-  const playbooks = new Map();
-  const playbook = (id) => {
+  const playbooks = new Map<string, string>();
+  const playbook = (id: string) => {
     if (!playbooks.has(id)) playbooks.set(id, lav("playbook", id));
-    return playbooks.get(id);
+    return playbooks.get(id) ?? "";
   };
   const lavishVersion = sh("node", [LAVISH_CLI, "--version"], lavishEnv());
 
-  const block = (cmd, out) => `$ ${cmd}\n${out}\n`;
+  const block = (cmd: string, out: string) => `$ ${cmd}\n${out}\n`;
   return {
     austere: {
       version: austereVersion,
@@ -47,7 +76,7 @@ export function captureGuidance() {
 }
 
 /** First turn: the same words for both tools. */
-export function firstPrompt(task, tool) {
+export function firstPrompt(task: Task, tool: Tool): string {
   const file = tool === "austere" ? "page.html" : ".lavish/page.html";
   return `${task.prompt}
 
@@ -60,7 +89,7 @@ Write the page to \`${file}\`. Reply with the complete file in one \`\`\`html co
  * `austere-axi patch`. lavish-axi: search/replace edits, the way an agent's Edit
  * tool changes a file without writing it again.
  */
-export function revisionPrompt(task, tool, anchor) {
+export function revisionPrompt(task: Task, tool: Tool, anchor: ReviewAnchor): string {
   const note = task.feedback.note;
   if (tool === "austere") {
     return `You opened the page for review and ran \`austere-axi poll page.html\`. It returned:
@@ -100,9 +129,9 @@ Each SEARCH must match the current file exactly, once.`;
 }
 
 /** The file body from a reply: the first fenced block of the given language, else the whole reply. */
-export function fencedBlock(text, langs) {
+export function fencedBlock(text: string, langs: string[]): string {
   const re = /```([\w-]*)[^\n]*\n([\s\S]*?)\n?```/g;
-  let first = null;
+  let first: string | null = null;
   for (const m of text.matchAll(re)) {
     if (langs.includes(m[1].toLowerCase())) return m[2];
     first ??= m[2];
@@ -114,7 +143,7 @@ export function fencedBlock(text, langs) {
 }
 
 /** Applies SEARCH/REPLACE blocks. Returns the new text, or an error naming the first block that did not match once. */
-export function applySearchReplace(source, reply) {
+export function applySearchReplace(source: string, reply: string): SearchReplaceResult {
   const re = /<{5,9} ?SEARCH\n([\s\S]*?)\n?={5,9}\n([\s\S]*?)\n?>{5,9} ?REPLACE/g;
   let out = source;
   let count = 0;

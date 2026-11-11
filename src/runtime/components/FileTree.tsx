@@ -1,12 +1,26 @@
 import React, { useMemo, useState } from "react";
 import { z } from "zod";
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen } from "lucide-react";
-import { austereComponent } from "../define.js";
-import { buildTree, countFiles, parseEntries, summarize } from "./_filetree-parse.js";
+import type { CSSProperties } from "react";
+import type { RendererArgs } from "../../../types/pack.d.ts";
+import { austereComponent } from "../define.ts";
+import { buildTree, countFiles, parseEntries, summarize } from "./_filetree-parse.ts";
+import type { TreeNode } from "./_filetree-parse.ts";
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const fileTreeProps = z.object({
+  entries: z.array(z.string()),
+});
 
-function Row({ node, depth, collapsed, toggle }) {
+interface RowProps {
+  node: TreeNode;
+  depth: number;
+  collapsed: Set<string>;
+  toggle: (path: string) => void;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+function Row({ node, depth, collapsed, toggle }: RowProps) {
   const isOpen = node.dir && !collapsed.has(node.path);
   const Icon = node.dir ? (isOpen ? FolderOpen : Folder) : FileText;
   const status = node.status;
@@ -14,7 +28,7 @@ function Row({ node, depth, collapsed, toggle }) {
     <>
       <div
         className={`austere-filetree-row${node.dir ? " is-dir" : ""}${status ? ` is-${status.key}` : ""}`}
-        style={{ "--depth": depth }}
+        style={{ "--depth": depth } as CSSProperties}
         data-austere-part={node.part}
       >
         {node.dir ? (
@@ -53,10 +67,10 @@ function Row({ node, depth, collapsed, toggle }) {
   );
 }
 
-function FileTreeView({ props }) {
+function FileTreeView({ props }: RendererArgs<z.infer<typeof fileTreeProps>>) {
   const tree = useMemo(() => buildTree(parseEntries(props.entries)), [props.entries]);
-  const [collapsed, setCollapsed] = useState(() => new Set());
-  const toggle = (path) =>
+  const [collapsed, setCollapsed] = useState(() => new Set<string>());
+  const toggle = (path: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
@@ -89,9 +103,7 @@ function FileTreeView({ props }) {
 export default austereComponent({
   name: "FileTree",
   group: "Data",
-  props: z.object({
-    entries: z.array(z.string()),
-  }),
+  props: fileTreeProps,
   description:
     'File tree, one path per entry, optionally prefixed with a git status code (A new, M modified, D deleted, R old -> new) and suffixed with " # note". Folders are inferred. Clicked files and folders reach the agent by path.',
   renderer: FileTreeView,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { changedStatementIds, referencesTo, splitStatements, statementMap } from "../src/shared/statements.js";
+import { changedStatementIds, referencesTo, splitStatements, statementMap } from "../src/shared/statements.ts";
 
 const program = `root = Stack([intro, flow], "column", "l")
 // a comment

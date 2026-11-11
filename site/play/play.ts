@@ -1,23 +1,62 @@
-// The /play page. Bundled by scripts/site.mjs into _site/play/play.js.
+// The /play page. Bundled by scripts/site.ts into _site/play/play.js.
 //
 //   editor ──▶ checkProgram (the code behind `austere-axi check`) ──▶ problems + status
 //          └─▶ sandboxed iframe running dist/austere.js, fed over the review bridge
 //   click in the frame ──▶ "annotate" message ──▶ the text `austere-axi poll` would print
 //
-// The page plays the part of the review chrome (src/chrome/chrome.js): it answers the
+// The page plays the part of the review chrome (src/chrome/chrome.ts): it answers the
 // frame's "hello" with "init", pushes edits as "source" messages so the frame re-renders
 // in place, and receives the queued annotations.
 import { createParser } from "@openuidev/lang-core";
-import { escapeHtml, readArtifact, replaceProgram, rewriteRuntime, skeleton } from "../../src/cli/artifact.js";
-import { format } from "../../src/cli/output.js";
-import { checkProgram } from "../../src/shared/check-program.js";
-import { describeItem, locator } from "../../src/shared/feedback.js";
-import { splitStatements } from "../../src/shared/statements.js";
-import { createEditor } from "./editor.js";
-import { decodeProgram, encodeProgram, hashFor, hashParam } from "./share.js";
+import type { LibraryJSONSchema } from "@openuidev/lang-core";
+import type { Catalog, CatalogEntry } from "../../types/catalog.d.ts";
+import { escapeHtml, readArtifact, replaceProgram, rewriteRuntime, skeleton } from "../../src/cli/artifact.ts";
+import { format } from "../../src/cli/output.ts";
+import { checkProgram } from "../../src/shared/check-program.ts";
+import type { CheckEntry } from "../../src/shared/check-program.ts";
+import { describeItem, locator } from "../../src/shared/feedback.ts";
+import type { FeedbackItem } from "../../src/shared/feedback.ts";
+import { splitStatements } from "../../src/shared/statements.ts";
+import type { Statement } from "../../src/shared/statements.ts";
+import { createEditor } from "./editor.ts";
+import type { Severity } from "./editor.ts";
+import { decodeProgram, encodeProgram, hashFor, hashParam } from "./share.ts";
 
-const $ = (selector) => document.querySelector(selector);
-const BLANK = {
+interface Template {
+  id: string;
+  title: string;
+  program: string;
+}
+
+/** data.json, written by scripts/site.ts. */
+interface PlayData {
+  templates: Template[];
+  spec: LibraryJSONSchema & { root?: string };
+  catalog: Catalog;
+}
+
+/** A check finding, a render error from the frame, or the `</script` error. */
+interface Problem extends CheckEntry {
+  severity: Severity;
+}
+
+/** Messages the frame posts over the review bridge. */
+type FrameMessage = { austere: 1 } & (
+  | { type: "hello" }
+  | { type: "ready" }
+  | { type: "annotate" | "action"; item: FeedbackItem }
+  | { type: "runtime-error"; error?: { statementId?: string; message: string } }
+  | { type: "toggle-mode" }
+);
+
+/** Messages the page posts to the frame. */
+type PageMessage = { type: "init"; mode: string; scrollY: number } | { type: "source"; program: string } | { type: "mode"; mode: string };
+
+type Timer = ReturnType<typeof setTimeout>;
+
+// Elements of index.html: the queries are of known elements (a cast at the boundary).
+const $ = <E extends Element = HTMLElement>(selector: string): E => document.querySelector(selector) as E;
+const BLANK: Template = {
   id: "blank",
   title: "Blank page",
   program: `root = Stack([intro, body], "column", "l")
@@ -30,20 +69,20 @@ const DEFAULT_TEMPLATE = "session-migration";
 const RUNTIME_URL = new URL("../austere.js", document.baseURI).href;
 const LONG_LINK = 8000;
 
-const data = await fetch("data.json").then((r) => r.json());
+const data: PlayData = await fetch("data.json").then((r) => r.json());
 const templates = [BLANK, ...data.templates];
 const parser = createParser(data.spec, data.spec.root || "Stack");
 
 const app = $("#app");
-const frame = $("#frame");
-const state = { program: "", mode: "annotate", feedback: [], runtimeErrors: [], frameReady: false, sent: "" };
+const frame = $<HTMLIFrameElement>("#frame");
+const state: { program: string; mode: string; feedback: FeedbackItem[]; problems?: Problem[]; runtimeErrors: Problem[]; frameReady: boolean; sent: string } = { program: "", mode: "annotate", feedback: [], runtimeErrors: [], frameReady: false, sent: "" };
 
 // ── page documents ─────────────────────────────────────────────────────────
 
-const titleOf = (program) => /CardHeader\(\s*"((?:[^"\\]|\\.)*)"/.exec(program)?.[1]?.replace(/\\(.)/g, "$1") || "austere-axi page";
+const titleOf = (program: string): string => /CardHeader\(\s*"((?:[^"\\]|\\.)*)"/.exec(program)?.[1]?.replace(/\\(.)/g, "$1") || "austere-axi page";
 
 /** The artifact file for a program. The frame and the download differ only in the runtime tag. */
-function pageHtml(program, runtimeTag) {
+function pageHtml(program: string, runtimeTag?: string): string {
   const base = skeleton(titleOf(program));
   const html = runtimeTag ? rewriteRuntime(base, runtimeTag) : base;
   return replaceProgram(html, program);
@@ -54,32 +93,35 @@ function pageHtml(program, runtimeTag) {
 const editor = createEditor({
   root: $("#editor"),
   onInput: (text) => {
-    $("#template").value = ""; // no longer the template's text
+    $<HTMLSelectElement>("#template").value = ""; // no longer the template's text
     change(text);
   },
 });
-let statementIndex = new Map();
+let statementIndex = new Map<string, Statement>();
 
-function change(program, { reload = false } = {}) {
+/** Pending work after an edit. */
+const timers: { check?: Timer; push?: Timer; hash?: Timer } = {};
+
+function change(program: string, { reload = false } = {}) {
   state.program = program;
   state.runtimeErrors = [];
-  clearTimeout(change.check);
-  clearTimeout(change.push);
-  clearTimeout(change.hash);
-  change.check = setTimeout(runCheck, 120);
-  change.hash = setTimeout(updateHash, 400);
+  clearTimeout(timers.check);
+  clearTimeout(timers.push);
+  clearTimeout(timers.hash);
+  timers.check = setTimeout(runCheck, 120);
+  timers.hash = setTimeout(updateHash, 400);
   if (reload) loadFrame();
-  else change.push = setTimeout(pushSource, 150);
+  else timers.push = setTimeout(pushSource, 150);
 }
 
 function runCheck() {
   const program = state.program;
   statementIndex = new Map(splitStatements(program).map((s) => [s.id, s]));
-  const lineOf = (id) => statementIndex.get(id)?.line;
+  const lineOf = (id: string | undefined) => (id === undefined ? undefined : statementIndex.get(id)?.line);
   const result = checkProgram(program, { parser: () => parser, lineOf });
-  const problems = [
-    ...result.errors.map((e) => ({ ...e, severity: "error" })),
-    ...result.warnings.map((e) => ({ ...e, severity: "warning" })),
+  const problems: Problem[] = [
+    ...result.errors.map((e) => ({ ...e, severity: "error" as const })),
+    ...result.warnings.map((e) => ({ ...e, severity: "warning" as const })),
   ];
   if (/<\/script/i.test(program)) {
     problems.unshift({
@@ -102,7 +144,7 @@ function runCheck() {
   if (state.feedback.length) renderFeedback();
 }
 
-function problemLine(p) {
+function problemLine(p: Problem): number {
   return p.line || (p.statement && statementIndex.get(p.statement)?.line) || (p.statements && statementIndex.get(p.statements[0])?.line) || 0;
 }
 
@@ -123,7 +165,7 @@ function renderProblems() {
       if (line) {
         button.addEventListener("click", () => {
           showView("source");
-          const s = statementIndex.get(p.statement) || [...statementIndex.values()].find((x) => x.line === line);
+          const s = (p.statement && statementIndex.get(p.statement)) || [...statementIndex.values()].find((x) => x.line === line);
           editor.reveal(line, s ? s.endLine : line);
           editor.focus();
         });
@@ -144,7 +186,7 @@ function loadFrame() {
   frame.srcdoc = pageHtml(inline, `<script src="${RUNTIME_URL}"></script>`);
 }
 
-function post(message) {
+function post(message: PageMessage) {
   frame.contentWindow?.postMessage({ austere: 1, ...message }, "*");
 }
 
@@ -156,7 +198,7 @@ function pushSource() {
 
 window.addEventListener("message", (event) => {
   if (event.source !== frame.contentWindow) return;
-  const d = event.data;
+  const d = event.data as FrameMessage | null | undefined;
   if (!d || d.austere !== 1) return;
   switch (d.type) {
     case "hello":
@@ -172,8 +214,9 @@ window.addEventListener("message", (event) => {
       queueItem(d.item);
       break;
     case "runtime-error":
-      if (d.error && !state.runtimeErrors.some((e) => e.statement === d.error.statementId && e.message === d.error.message)) {
-        state.runtimeErrors.push({ severity: "error", code: "render", statement: d.error.statementId, message: `Render error: ${d.error.message}` });
+      const error = d.error;
+      if (error && !state.runtimeErrors.some((e) => e.statement === error.statementId && e.message === error.message)) {
+        state.runtimeErrors.push({ severity: "error", code: "render", statement: error.statementId, message: `Render error: ${error.message}` });
         renderProblems();
       }
       break;
@@ -183,7 +226,7 @@ window.addEventListener("message", (event) => {
   }
 });
 
-function setMode(mode) {
+function setMode(mode: string) {
   state.mode = mode;
   $("#mode-annotate").setAttribute("aria-pressed", String(mode === "annotate"));
   $("#mode-explore").setAttribute("aria-pressed", String(mode === "explore"));
@@ -198,10 +241,10 @@ $("#mode-explore").addEventListener("click", () => setMode("explore"));
 
 // ── what the agent receives ────────────────────────────────────────────────
 
-function queueItem(item) {
+function queueItem(item: FeedbackItem) {
   state.feedback.push(item);
   renderFeedback();
-  $("#feedback").open = true;
+  $<HTMLDetailsElement>("#feedback").open = true;
 }
 
 function renderFeedback() {
@@ -219,11 +262,11 @@ function renderFeedback() {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "chip";
-      button.textContent = id;
+      button.textContent = id ?? null;
       button.title = "Show this statement in the source";
-      button.disabled = !statementIndex.has(id);
+      button.disabled = id === undefined || !statementIndex.has(id);
       button.addEventListener("click", () => {
-        const s = statementIndex.get(id);
+        const s = id === undefined ? undefined : statementIndex.get(id);
         if (!s) return;
         showView("source");
         editor.reveal(s.line, s.endLine);
@@ -240,15 +283,15 @@ $("#fb-clear").addEventListener("click", () => {
 
 // ── templates, share, download ─────────────────────────────────────────────
 
-const select = $("#template");
-const option = (props) => Object.assign(document.createElement("option"), props);
+const select = $<HTMLSelectElement>("#template");
+const option = (props: Partial<HTMLOptionElement>) => Object.assign(document.createElement("option"), props);
 select.replaceChildren(...templates.map((t) => option({ value: t.id, textContent: t.title })), option({ value: "", textContent: "Your page", hidden: true }));
 select.addEventListener("change", () => {
   const t = templates.find((x) => x.id === select.value);
   if (t) load(t.program);
 });
 
-function load(program) {
+function load(program: string) {
   editor.set(program);
   state.feedback = [];
   renderFeedback();
@@ -262,7 +305,7 @@ async function updateHash() {
 }
 
 async function currentUrl() {
-  clearTimeout(change.hash);
+  clearTimeout(timers.hash);
   await updateHash();
   return location.href;
 }
@@ -292,8 +335,8 @@ $("#download").addEventListener("click", () => {
   toast(`Saved ${name}.html. Run \`npx -y austere-axi ${name}.html\` to review it with an agent.`);
 });
 
-let toastTimer = 0;
-function toast(text) {
+let toastTimer: Timer | 0 = 0;
+function toast(text: string) {
   const el = $("#toast");
   el.textContent = text;
   el.hidden = false;
@@ -303,23 +346,23 @@ function toast(text) {
 
 // ── panels ─────────────────────────────────────────────────────────────────
 
-function showView(view) {
+function showView(view: string | undefined) {
   app.dataset.view = view;
-  for (const tab of document.querySelectorAll(".tabs [role=tab]")) tab.setAttribute("aria-selected", String(tab.dataset.view === view));
+  for (const tab of document.querySelectorAll<HTMLElement>(".tabs [role=tab]")) tab.setAttribute("aria-selected", String(tab.dataset.view === view));
 }
-for (const tab of document.querySelectorAll(".tabs [role=tab]")) tab.addEventListener("click", () => showView(tab.dataset.view));
+for (const tab of document.querySelectorAll<HTMLElement>(".tabs [role=tab]")) tab.addEventListener("click", () => showView(tab.dataset.view));
 
 // ── component reference (catalog.json) ─────────────────────────────────────
 
-const code = (text) => escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
+const code = (text: string): string => escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
 
 function renderReference(filter = "") {
   const q = filter.trim().toLowerCase();
-  const groups = new Map(data.catalog.groups.map((g) => [g.name, { notes: g.notes, items: [] }]));
+  const groups = new Map(data.catalog.groups.map((g): [string, { notes: string[]; items: CatalogEntry[] }] => [g.name, { notes: g.notes, items: [] }]));
   for (const c of data.catalog.components) {
     if (q && !`${c.name} ${c.description} ${c.group}`.toLowerCase().includes(q)) continue;
     if (!groups.has(c.group)) groups.set(c.group, { notes: [], items: [] });
-    groups.get(c.group).items.push(c);
+    groups.get(c.group)?.items.push(c);
   }
   const html = [...groups]
     .filter(([, g]) => g.items.length)
@@ -339,12 +382,14 @@ function renderReference(filter = "") {
     .join("");
   $("#ref").innerHTML = html || '<p class="none">No component matches.</p>';
 }
-$("#ref-filter").addEventListener("input", (e) => renderReference(e.target.value));
+$("#ref-filter").addEventListener("input", (e) => {
+  if (e.target instanceof HTMLInputElement) renderReference(e.target.value);
+});
 $("#ref").addEventListener("click", async (e) => {
-  const button = e.target.closest("button.copy");
+  const button = e.target instanceof Element ? e.target.closest<HTMLElement>("button.copy") : null;
   if (!button) return;
   try {
-    await navigator.clipboard.writeText(button.dataset.signature);
+    await navigator.clipboard.writeText(button.dataset.signature ?? "");
     toast("Signature copied.");
   } catch {
     toast("Could not copy; select the signature instead.");
@@ -355,14 +400,14 @@ $("#ref").addEventListener("click", async (e) => {
 
 renderReference();
 setMode("annotate");
-let initial;
+let initial: string | undefined;
 const shared = hashParam(location.hash);
 if (shared) {
   try {
     initial = await decodeProgram(shared);
     select.value = "";
   } catch (err) {
-    toast(`${err.message} Showing the default page instead.`);
+    toast(`${(err as Error).message} Showing the default page instead.`);
   }
 }
 if (initial === undefined) {

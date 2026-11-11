@@ -5,37 +5,49 @@
 // appended props, and refuses anything else.
 import fs from "node:fs";
 import path from "node:path";
-import { ROOT } from "./plugins.mjs";
+import { ROOT } from "./plugins.ts";
+
+export interface Signature {
+  props: string[];
+  required: string[];
+}
+
+export type Signatures = Record<string, Signature>;
+
+interface SchemaDef {
+  type?: string;
+  properties?: Record<string, unknown>;
+  required?: string[];
+}
 
 export const SIGNATURES_FILE = path.join(ROOT, "test/fixtures/signatures.json");
 
 /** { Name: { props: [...], required: [...] } } from a library JSON schema. */
-export function signaturesOf(schema) {
-  const out = {};
-  for (const [name, def] of Object.entries(schema.$defs || {})) {
+export function signaturesOf(schema: Record<string, unknown>): Signatures {
+  const out: Signatures = {};
+  for (const [name, def] of Object.entries((schema.$defs || {}) as Record<string, SchemaDef | null | undefined>)) {
     if (!def || def.type !== "object" || !def.properties) continue;
     out[name] = { props: Object.keys(def.properties), required: def.required || [] };
   }
   return out;
 }
 
-export function readSnapshot() {
+export function readSnapshot(): Signatures {
   try {
-    return JSON.parse(fs.readFileSync(SIGNATURES_FILE, "utf8"));
+    return JSON.parse(fs.readFileSync(SIGNATURES_FILE, "utf8")) as Signatures;
   } catch {
     return {};
   }
 }
 
 /**
- * @returns {{ errors: string[], added: string[], appended: string[], next: object }}
- *   errors: contract violations; added/appended: what a snapshot update would record.
+ * errors: contract violations; added/appended: what a snapshot update would record.
  */
-export function compareSignatures(snapshot, current) {
-  const errors = [];
-  const added = [];
-  const appended = [];
-  const next = JSON.parse(JSON.stringify(snapshot));
+export function compareSignatures(snapshot: Signatures, current: Signatures): { errors: string[]; added: string[]; appended: string[]; next: Signatures } {
+  const errors: string[] = [];
+  const added: string[] = [];
+  const appended: string[] = [];
+  const next = JSON.parse(JSON.stringify(snapshot)) as Signatures;
   for (const [name, old] of Object.entries(snapshot)) {
     const cur = current[name];
     if (!cur) {
@@ -67,7 +79,7 @@ export function compareSignatures(snapshot, current) {
   return { errors, added, appended, next };
 }
 
-export function writeSnapshot(next) {
+export function writeSnapshot(next: Signatures): void {
   // One component per line so a diff shows exactly which signature changed.
   const lines = Object.keys(next)
     .sort()

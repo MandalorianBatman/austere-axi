@@ -3,7 +3,7 @@
 //   dist/catalog.json  the pack's components (signatures, groups, examples) and
 //                      the JSON schema `check` merges into the core one
 // Shipped as dist/pack-kit.mjs for `austere-axi components build`, and used by
-// scripts/build.mjs for the packs bundled with austere-axi. esbuild is passed
+// scripts/build.ts for the packs bundled with austere-axi. esbuild is passed
 // in (the pack's own), so austere-axi does not ship a bundler.
 //
 // A pack's entry module default-exports its components:
@@ -15,25 +15,30 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createLibrary } from "@openuidev/react-lang";
-import { hostShimPlugin } from "./shim.js";
-import { installHost } from "../runtime/host.js";
-import { PACK_API } from "../runtime/pack-api.js";
-import { CONTENT_SLOTS } from "../runtime/define.js";
-import { catalogFromSpec } from "../shared/catalog.js";
-import { isValidPackName, isValidVersion } from "../shared/packs-meta.js";
+import type { DefinedComponent } from "@openuidev/react-lang";
+import type { BuildFailure, BuildOptions } from "esbuild";
+import type { PackCatalog } from "../../types/catalog.d.ts";
+import type { AustereComponent } from "../../types/pack.d.ts";
+import type { BuildPackOptions, BuildPackResult, PackageJson } from "../../types/pack-kit.d.ts";
+import { hostShimPlugin } from "./shim.ts";
+import { installHost } from "../runtime/host.ts";
+import { PACK_API } from "../runtime/pack-api.ts";
+import { CONTENT_SLOTS } from "../runtime/define.ts";
+import { catalogFromSpec } from "../shared/catalog.ts";
+import { isValidPackName, isValidVersion } from "../shared/packs-meta.ts";
 
 export { PACK_API, CONTENT_SLOTS };
 
 export const ENTRY_CANDIDATES = ["src/index.jsx", "src/index.js", "index.jsx", "index.js"];
 
-export function readPackageJson(dir) {
+export function readPackageJson(dir: string): PackageJson {
   const file = path.join(dir, "package.json");
   if (!fs.existsSync(file)) return {};
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 
 /** The pack's entry module: package.json "austere.entry", else the first of ENTRY_CANDIDATES. */
-export function packEntry(dir, pkg = readPackageJson(dir)) {
+export function packEntry(dir: string, pkg: PackageJson = readPackageJson(dir)): string {
   const named = pkg.austere && pkg.austere.entry;
   const candidates = named ? [named] : ENTRY_CANDIDATES;
   for (const c of candidates) {
@@ -43,20 +48,20 @@ export function packEntry(dir, pkg = readPackageJson(dir)) {
   throw new Error(`no pack entry in ${dir}: expected ${candidates.join(" or ")}`);
 }
 
-export function sri(buffer) {
+export function sri(buffer: Uint8Array): string {
   return `sha384-${crypto.createHash("sha384").update(buffer).digest("base64")}`;
 }
 
 /** $defs reachable from the pack's own components: what `check` adds to the core schema. */
-function reachableDefs(schema, roots) {
+function reachableDefs(schema: { $defs?: Record<string, unknown> }, roots: string[]): Record<string, unknown> {
   const defs = schema.$defs || {};
-  const keep = {};
+  const keep: Record<string, unknown> = {};
   const queue = [...roots];
-  while (queue.length) {
-    const name = queue.shift();
+  let name: string | undefined;
+  while ((name = queue.shift()) !== undefined) {
     if (keep[name] || !defs[name]) continue;
     keep[name] = defs[name];
-    JSON.stringify(defs[name], (k, v) => {
+    JSON.stringify(defs[name], (k: string, v: unknown) => {
       if (k === "$ref" && typeof v === "string" && v.startsWith("#/$defs/")) queue.push(v.slice(8));
       return v;
     });
@@ -64,7 +69,7 @@ function reachableDefs(schema, roots) {
   return keep;
 }
 
-const BUILD_DEFAULTS = {
+const BUILD_DEFAULTS: BuildOptions = {
   bundle: true,
   jsx: "automatic",
   loader: { ".css": "text", ".svg": "text" },
@@ -72,26 +77,25 @@ const BUILD_DEFAULTS = {
   plugins: [hostShimPlugin],
 };
 
-function buildError(err, what) {
+/** What a failed build or import rejects with: esbuild's BuildFailure carries `errors`. */
+type BuildRejection = Error & Partial<Pick<BuildFailure, "errors">>;
+
+/** The entry's default export, unchecked: { components, css }, or the components themselves. */
+type PackExport = { components?: unknown; css?: unknown } | undefined;
+
+function isAustereComponent(c: unknown): c is AustereComponent {
+  return !!c && typeof c === "object" && "definition" in c && !!c.definition;
+}
+
+function buildError(err: BuildRejection, what: string): Error {
   const first = err && err.errors && err.errors[0];
   if (!first) return err;
   const at = first.location ? ` (${first.location.file}:${first.location.line})` : "";
   return new Error(`${what}: ${first.text}${at}`);
 }
 
-/**
- * Build a pack.
- * @param {object} o
- * @param {string} o.dir                 pack folder (package.json + entry module)
- * @param {object} o.esbuild             the esbuild module to bundle with
- * @param {string} [o.outDir]            default <dir>/dist
- * @param {string} [o.name]              default package.json name
- * @param {string} [o.version]           default package.json version
- * @param {string[]} [o.coreNames]       core component names, to warn about collisions
- * @param {boolean} [o.minify]           default true
- * @returns {Promise<{ catalog: object, warnings: string[], packFile: string, catalogFile: string }>}
- */
-export async function buildPack({ dir, esbuild, outDir, name, version, coreNames = [], minify = true }) {
+/** Build a pack. */
+export async function buildPack({ dir, esbuild, outDir, name, version, coreNames = [], minify = true }: BuildPackOptions): Promise<BuildPackResult> {
   dir = path.resolve(dir);
   const pkg = readPackageJson(dir);
   name = name || pkg.name;
@@ -101,7 +105,7 @@ export async function buildPack({ dir, esbuild, outDir, name, version, coreNames
   const entry = packEntry(dir, pkg);
   outDir = path.resolve(outDir || path.join(dir, "dist"));
   fs.mkdirSync(outDir, { recursive: true });
-  const warnings = [];
+  const warnings: string[] = [];
 
   // 1. Browser bundle: the entry plus a registerPack call.
   const packFile = path.join(outDir, "pack.js");
@@ -127,29 +131,28 @@ export async function buildPack({ dir, esbuild, outDir, name, version, coreNames
       outfile: packFile,
     });
   } catch (err) {
-    throw buildError(err, `pack ${name}: browser build failed`);
+    throw buildError(err as BuildRejection, `pack ${name}: browser build failed`);
   }
 
   // 2. The same module in Node, to read its component definitions.
   const tmp = path.join(outDir, `.catalog-${process.pid}-${Date.now()}.mjs`);
-  let exported;
+  let exported: PackExport;
   try {
     await esbuild.build({ ...BUILD_DEFAULTS, entryPoints: [entry], platform: "node", format: "esm", outfile: tmp });
     installHost();
     exported = (await import(pathToFileURL(tmp).href)).default;
-  } catch (err) {
+  } catch (caught) {
+    const err = caught as BuildRejection;
     const e = buildError(err, `pack ${name}: could not load its components in Node`);
     if (!err.errors) e.message += " (keep window/document access inside renderers and effects, not at module level)";
     throw e;
   } finally {
     fs.rmSync(tmp, { force: true });
   }
-  const components = [].concat(exported && exported.components ? exported.components : exported || []).flat();
+  const components = ([] as unknown[]).concat(exported && exported.components ? exported.components : exported || []).flat();
   if (!components.length) throw new Error(`pack ${name}: the entry module must export default { components: [...] }`);
-  for (const c of components) {
-    if (!c || !c.definition) throw new Error(`pack ${name}: components must be austereComponent(...) results`);
-  }
-  const seen = new Set();
+  if (!components.every(isAustereComponent)) throw new Error(`pack ${name}: components must be austereComponent(...) results`);
+  const seen = new Set<string>();
   const parents = new Set([...coreNames, ...components.map((c) => c.name)]);
   for (const c of components) {
     if (seen.has(c.name)) throw new Error(`pack ${name}: two components are named ${c.name}`);
@@ -165,30 +168,32 @@ export async function buildPack({ dir, esbuild, outDir, name, version, coreNames
   }
 
   // 3. Catalog: signatures from a library of just the pack's components.
-  const groups = [];
+  const groups: { name: string; components: string[]; notes: string[] }[] = [];
   for (const c of components) {
     let g = groups.find((x) => x.name === c.group);
     if (!g) groups.push((g = { name: c.group, components: [], notes: [] }));
     g.components.push(c.name);
     g.notes.push(...c.notes);
   }
-  const library = createLibrary({ id: name, components: components.map((c) => c.definition), componentGroups: groups });
+  // AustereComponent.definition is typed loosely in types/pack.d.ts; it holds a defineComponent() result.
+  const library = createLibrary({ id: name, components: components.map((c) => c.definition as DefinedComponent), componentGroups: groups });
   const spec = library.toSpec();
   const schema = library.toJSONSchema();
   const base = catalogFromSpec(spec, {
     pack: name,
     version,
-    tiers: Object.fromEntries(components.map((c) => [c.name, c.tier])),
-    examples: Object.fromEntries(components.filter((c) => c.example).map((c) => [c.name, c.example])),
+    tiers: Object.fromEntries(components.map((c) => [c.name, c.tier] as const)),
+    examples: Object.fromEntries(components.filter((c): c is AustereComponent & { example: string[] } => !!c.example).map((c) => [c.name, c.example] as const)),
   });
   const bytes = fs.readFileSync(packFile);
-  const catalog = {
+  const catalog: PackCatalog = {
     ...base,
     api: PACK_API,
     integrity: sri(bytes),
     size: bytes.length,
     css: Boolean(exported && typeof exported.css === "string" && exported.css),
-    components: base.components.map((e) => ({ ...e, slots: components.find((c) => c.name === e.name).slots })),
+    // Every catalog entry comes from one of these components.
+    components: base.components.map((e) => ({ ...e, slots: components.find((c) => c.name === e.name)!.slots })),
     defs: reachableDefs(schema, components.map((c) => c.name)),
   };
   const catalogFile = path.join(outDir, "catalog.json");

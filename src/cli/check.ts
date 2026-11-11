@@ -1,38 +1,56 @@
-// @ts-check
 // Validate an artifact without a browser: the same parser the renderer uses,
 // run against the curated library's JSON schema.
 import fs from "node:fs";
 import { createParser } from "@openuidev/lang-core";
-import { readArtifact } from "./artifact.js";
-import { assetPath } from "./paths.js";
-import { mergePackSchemas, packDefining, pagePacks } from "./packs.js";
-import { splitStatements } from "../shared/statements.js";
-import { checkProgram } from "../shared/check-program.js";
+import type { Parser } from "@openuidev/lang-core";
+import { readArtifact } from "./artifact.ts";
+import { assetPath } from "./paths.ts";
+import { mergePackSchemas, packDefining, pagePacks } from "./packs.ts";
+import type { InstalledPack, PagePacks, SpecSchema } from "./packs.ts";
+import { splitStatements } from "../shared/statements.ts";
+import { checkProgram } from "../shared/check-program.ts";
+import type { CheckEntry } from "../shared/check-program.ts";
 
-let coreSpec = null;
-const packParsers = new Map();
-const customParsers = new WeakMap();
+export interface CheckResult {
+  ok: boolean;
+  errors: CheckEntry[];
+  warnings: CheckEntry[];
+  statements: number;
+  title: string;
+  hasMermaid: boolean;
+}
+
+export interface CheckOptions {
+  schema?: SpecSchema;
+  file?: string;
+}
+
+let coreSpec: SpecSchema | null = null;
+const packParsers = new Map<string, Parser>();
+const customParsers = new WeakMap<SpecSchema, Parser>();
 
 /**
  * Parser for the shipped spec extended with the page's installed packs, or
  * for a given library schema (tests, maintainer scripts).
  */
-function getParser(schema, packs = []) {
+function getParser(schema: SpecSchema | undefined, packs: InstalledPack[] = []): Parser {
   if (schema) {
-    if (!customParsers.has(schema)) customParsers.set(schema, createParser(schema, schema.root || "Stack"));
-    return customParsers.get(schema);
+    let custom = customParsers.get(schema);
+    if (!custom) customParsers.set(schema, (custom = createParser(schema, schema.root || "Stack")));
+    return custom;
   }
   const key = packs.map((p) => `${p.name}@${p.version}:${p.integrity || ""}`).join(",");
-  if (!packParsers.has(key)) {
-    coreSpec ||= JSON.parse(fs.readFileSync(assetPath("spec.json"), "utf8"));
-    const spec = mergePackSchemas(coreSpec, packs.map((p) => p.catalog));
-    packParsers.set(key, createParser(spec, spec.root || "Stack"));
+  let parser = packParsers.get(key);
+  if (!parser) {
+    const core: SpecSchema = (coreSpec ||= JSON.parse(fs.readFileSync(assetPath("spec.json"), "utf8")));
+    const spec = mergePackSchemas(core, packs.map((p) => p.catalog));
+    packParsers.set(key, (parser = createParser(spec, spec.root || "Stack")));
   }
-  return packParsers.get(key);
+  return parser;
 }
 
 /** The parser lists every component on an unknown name; say where to look instead. */
-function unknownComponent(entry, packs, file) {
+function unknownComponent(entry: CheckEntry, packs: PagePacks, file: string): CheckEntry {
   const name = entry.component;
   const from = name && packDefining(name);
   if (from) {
@@ -56,22 +74,18 @@ function unknownComponent(entry, packs, file) {
 }
 
 /** Map statement id -> 1-based line in the HTML file. */
-export function statementLines(html) {
+export function statementLines(html: string): Map<string, { line: number; text: string }> {
   const art = readArtifact(html);
-  const out = new Map();
+  const out = new Map<string, { line: number; text: string }>();
   if (art.program == null) return out;
   for (const s of splitStatements(art.program)) out.set(s.id, { line: art.programLine + s.line - 1, text: s.text });
   return out;
 }
 
-/**
- * @param {string} html
- * @param {{ schema?: object, file?: string }} [options]
- */
-export function checkHtml(html, { schema, file = "<file>" } = {}) {
+export function checkHtml(html: string, { schema, file = "<file>" }: CheckOptions = {}): CheckResult {
   const art = readArtifact(html);
-  const packs = schema ? { installed: [], missing: [], mismatched: [], stale: [], declared: [] } : pagePacks(html);
-  const result = { ok: true, errors: [], warnings: [], statements: 0, title: art.title, hasMermaid: false };
+  const packs: PagePacks = schema ? { installed: [], missing: [], mismatched: [], stale: [], declared: [], thirdParty: [] } : pagePacks(html);
+  const result: CheckResult = { ok: true, errors: [], warnings: [], statements: 0, title: art.title, hasMermaid: false };
   if (art.program == null) {
     result.ok = false;
     result.errors.push({

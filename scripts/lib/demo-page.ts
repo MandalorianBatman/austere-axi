@@ -1,5 +1,5 @@
 // The page the demo's agent writes (PAGE), and the two statements it patches in (PATCH).
-// Shared by scripts/demo.mjs and scripts/social.mjs.
+// Shared by scripts/demo.ts and scripts/social.ts.
 export const PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Session storage migration</title>
 <script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>

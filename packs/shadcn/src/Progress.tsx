@@ -1,8 +1,15 @@
 import React from "react";
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
+import type { RendererArgs } from "austere-axi/pack";
 
-function ProgressView({ props }) {
+interface ProgressProps {
+  value: number;
+  label?: string;
+  max?: number;
+}
+
+function ProgressView({ props }: RendererArgs<ProgressProps>) {
   const max = Number(props.max) > 0 ? Number(props.max) : 100;
   const value = Math.min(max, Math.max(0, Number(props.value) || 0));
   const pct = Math.round((value / max) * 100);

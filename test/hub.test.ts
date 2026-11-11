@@ -7,11 +7,33 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { SessionStore } from "../src/cli/sessions.js";
-import { Hub, projectOf } from "../src/cli/hub.js";
-import { notesPage } from "../src/cli/hub-page.js";
-import { ownerHeaders } from "./owner.js";
-import { freePort } from "./port.js";
+import type { IncomingHttpHeaders } from "node:http";
+import { SessionStore } from "../src/cli/sessions.ts";
+import { Hub, projectOf } from "../src/cli/hub.ts";
+import { notesPage } from "../src/cli/hub-page.ts";
+import { ownerHeaders } from "./owner.ts";
+import { freePort } from "./port.ts";
+
+interface Health {
+  hub: boolean;
+  persist: boolean;
+  pid: number;
+}
+
+interface Poll {
+  status: string;
+}
+
+interface CliResult {
+  code: number | null;
+  out: string;
+}
+
+interface Res {
+  status: number | undefined;
+  data: string;
+  headers: IncomingHttpHeaders;
+}
 
 const PORT = await freePort();
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-state-"));
@@ -29,13 +51,13 @@ const ENV = {
   OPENUI_TELEMETRY_DISABLED: "1",
 };
 
-function cli(...args) {
+function cli(...args: string[]): Promise<CliResult> {
   return cliWith(ENV, ...args);
 }
 
-function cliWith(env, ...args) {
+function cliWith(env: NodeJS.ProcessEnv, ...args: string[]): Promise<CliResult> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["src/cli/main.js", ...args], { env });
+    const child = spawn(process.execPath, ["src/cli/main.ts", ...args], { env });
     let out = "";
     child.stdout.on("data", (c) => (out += c));
     child.stderr.on("data", (c) => (out += c));
@@ -44,7 +66,7 @@ function cliWith(env, ...args) {
 }
 
 /** As the owner of STATE: other ports here are only asked for their health, which needs no key. */
-function req(method, route, body, port = PORT) {
+function req(method: string, route: string, body?: unknown, port = PORT): Promise<Res> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const r = http.request(
@@ -86,7 +108,7 @@ test("feedback: what no agent has acknowledged or answered; reading it acknowled
   try {
     const s = store.ensure("/x/plan.html");
     const first = store.addUserBatch(s, [{ kind: "message", text: "one" }]);
-    store.ack(s, first.seq);
+    store.ack(s, first.seq as number);
     store.addAgentReply(s, "done");
     store.addUserBatch(s, [{ kind: "message", text: "two" }]);
     const peek = store.feedback(s, { peek: true });
@@ -114,7 +136,7 @@ test("hub: indexes checked and reviewed artifacts by project, hands feedback to 
   let r = await cli("hub", "on");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /status: on/);
-  assert.equal(JSON.parse((await req("GET", "/api/health")).data).hub, true);
+  assert.equal((JSON.parse((await req("GET", "/api/health")).data) as Health).hub, true);
 
   // check registers the artifact without a review.
   r = await cli("check", FILE);
@@ -126,7 +148,7 @@ test("hub: indexes checked and reviewed artifacts by project, hands feedback to 
   assert.match(home, /checked/);
 
   // Opening from the hub starts a session.
-  const id = /href="\/hub\/open\/([a-f0-9]{12})"/.exec(home)[1];
+  const id = (/href="\/hub\/open\/([a-f0-9]{12})"/.exec(home) as RegExpExecArray)[1];
   const open = await req("GET", `/hub/open/${id}`);
   assert.equal(open.status, 302);
   assert.equal(open.headers.location, `/s/${id}`);
@@ -146,7 +168,7 @@ test("hub: indexes checked and reviewed artifacts by project, hands feedback to 
   home = (await req("GET", "/")).data;
   assert.match(home, /1 unanswered/);
   // Received, so the next poll does not repeat it.
-  const poll = JSON.parse((await req("POST", "/api/poll", { file: FILE, timeoutMs: 200 })).data);
+  const poll = JSON.parse((await req("POST", "/api/poll", { file: FILE, timeoutMs: 200 })).data) as Poll;
   assert.notEqual(poll.status, "feedback");
 
   r = await cli("reply", FILE, "--agent-reply", "Expanded the intro");
@@ -180,7 +202,7 @@ test("the server idles out unless it persists; hub on/off does not restart it", 
   const port = await freePort();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-mode-"));
   const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
-  const health = async () => JSON.parse((await req("GET", "/api/health", undefined, port)).data);
+  const health = async () => JSON.parse((await req("GET", "/api/health", undefined, port)).data) as Health;
   const up = async () => (await req("GET", "/api/health", undefined, port).catch(() => null))?.status === 200;
   try {
     // Persisting (as behind a proxy): no idle exit, and hub on/off only changes the home page.
@@ -218,7 +240,7 @@ async function notesHub() {
   const hub = await Hub.open(path.join(dir, "hub.db"));
   hub.register({ id: "aaaaaaaaaaaa", file: path.join(dir, "a", "plan.html"), title: "Plan <A>" });
   hub.register({ id: "bbbbbbbbbbbb", file: path.join(dir, "b", "report.html"), title: "Report" });
-  const put = (id, artifact, at, kind, target, text, status) =>
+  const put = (id: string, artifact: string, at: number, kind: string, target: string | null, text: string, status: string) =>
     hub.db.prepare("INSERT INTO items (id, artifact_id, entry_id, at, kind, target, text, status, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}')").run(id, artifact, id, at, kind, target, text, status);
   put("n1", "aaaaaaaaaaaa", 1000, "annotation", "intro", "make it 100% shorter", "open");
   put("n2", "aaaaaaaaaaaa", 3000, "message", null, "<script>alert(1)</script>", "received");

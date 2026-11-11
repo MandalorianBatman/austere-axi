@@ -1,44 +1,44 @@
-// @ts-check
 // The hub's home page: every artifact by project, then by day.
 import os from "node:os";
 import path from "node:path";
-import { escapeHtml } from "./artifact.js";
+import { escapeHtml } from "./artifact.ts";
+import type { HubListRow, HubNoteRow } from "./hub.ts";
 
-function day(ms) {
+function day(ms: number): string {
   const d = new Date(ms);
   const today = new Date();
   const yesterday = new Date(Date.now() - 86_400_000);
-  const same = (a, b) => a.toDateString() === b.toDateString();
+  const same = (a: Date, b: Date): boolean => a.toDateString() === b.toDateString();
   if (same(d, today)) return "Today";
   if (same(d, yesterday)) return "Yesterday";
   return d.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
 }
 
-function time(ms) {
+function time(ms: number): string {
   return new Date(ms).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function tilde(p) {
+function tilde(p: string): string {
   const home = os.homedir();
   return p === home || p.startsWith(home + path.sep) ? "~" + p.slice(home.length) : p;
 }
 
 /** Feedback in the reviewer's terms: answered by the agent or not (yet). */
-function counts(a) {
+function counts(a: HubListRow): string {
   const waiting = a.open + a.received;
-  const parts = [];
+  const parts: string[] = [];
   if (waiting) parts.push(`<b class="open">${waiting} unanswered</b>`);
   if (a.addressed) parts.push(`${a.addressed} answered`);
   return parts.join(" · ");
 }
 
 /** A long path, shortened in the middle; the full one goes in a title. */
-function shortPath(p, max = 48) {
+function shortPath(p: string, max = 48): string {
   const t = tilde(p);
   return t.length <= max ? t : `${t.slice(0, 16)}…${t.slice(t.length - (max - 17))}`;
 }
 
-function state(a) {
+function state(a: HubListRow): string {
   if (!a.reviewed) return `<em>checked</em>`;
   if (a.status === "ended") return `<em>ended${a.ended_by ? ` by ${escapeHtml(a.ended_by)}` : ""}</em>`;
   return `<em class="live">in review</em>`;
@@ -69,22 +69,23 @@ b.by{color:#e8e8ec}
 `;
 
 /**
- * @param {any[]} rows   Hub.list() rows
- * @param {{ version: string, q: string, project: string, stats: { artifacts: number, projects: number, unanswered?: number } }} o
+ * @param rows   Hub.list() rows
  */
-export function hubPage(rows, { version, q, project, stats }) {
-  const byProject = new Map();
+export function hubPage(rows: HubListRow[], { version, q, project, stats }: { version: string; q: string; project: string; stats: { artifacts: number; projects: number; unanswered?: number } }): string {
+  const byProject = new Map<string, HubListRow[]>();
   for (const r of rows) {
-    if (!byProject.has(r.project)) byProject.set(r.project, []);
-    byProject.get(r.project).push(r);
+    let list = byProject.get(r.project);
+    if (!list) byProject.set(r.project, (list = []));
+    list.push(r);
   }
   const sections = [...byProject.entries()]
     .map(([proj, list]) => {
-      const days = new Map();
+      const days = new Map<string, HubListRow[]>();
       for (const r of list) {
         const k = day(r.updated_at);
-        if (!days.has(k)) days.set(k, []);
-        days.get(k).push(r);
+        let items = days.get(k);
+        if (!items) days.set(k, (items = []));
+        items.push(r);
       }
       const body = [...days.entries()]
         .map(
@@ -123,15 +124,16 @@ ${filter}${sections || `<p class="empty">${empty}</p>`}
 </main></body></html>`;
 }
 
-const STATUS_LABEL = { open: "unanswered", received: "unanswered", addressed: "answered", held: "held for the owner" };
+const STATUS_LABEL: Record<string, string | undefined> = { open: "unanswered", received: "unanswered", addressed: "answered", held: "held for the owner" };
 
 /**
  * The Notes view: every note across pages, newest first.
- * @param {{ id: string, artifact_id: string, at: number, target: string | null, text: string | null, status: string, author: string, title: string | null, file: string, project: string }[]} rows Hub.notes() rows
- * @param {{ version: string, q: string, project: string, status: string, author?: string, authors?: string[], stats: { artifacts: number, projects: number, unanswered: number } }} o
- * @returns {string}
+ * @param rows Hub.notes() rows
  */
-export function notesPage(rows, { version, q, project, status, author = "", authors = [], stats }) {
+export function notesPage(
+  rows: Omit<HubNoteRow, "kind">[],
+  { version, q, project, status, author = "", authors = [], stats }: { version: string; q: string; project: string; status: string; author?: string; authors?: string[]; stats: { artifacts: number; projects: number; unanswered: number } },
+): string {
   const items = rows
     .map((n) => {
       const waiting = n.status !== "addressed";
@@ -142,7 +144,7 @@ export function notesPage(rows, { version, q, project, status, author = "", auth
 </a></li>`;
     })
     .join("");
-  const opt = (v, label) => `<option value="${v}"${status === v ? " selected" : ""}>${label}</option>`;
+  const opt = (v: string, label: string): string => `<option value="${v}"${status === v ? " selected" : ""}>${label}</option>`;
   const people = authors.length
     ? `<select name="author" aria-label="Author"><option value="">Everyone</option><option value="owner"${author === "owner" ? " selected" : ""}>Owner</option>${authors
         .map((a) => `<option value="${escapeHtml(a)}"${author === a ? " selected" : ""}>${escapeHtml(a)}</option>`)

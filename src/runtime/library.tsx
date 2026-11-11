@@ -1,13 +1,34 @@
 import React from "react";
 import { createLibrary, defineComponent } from "@openuidev/react-lang";
+import type { ComponentGroup, ComponentRenderProps, ComponentRenderer, DefinedComponent, Library } from "@openuidev/react-lang";
 import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
 // Every file in ./components/ (not starting with "_"), collected at build time.
 import customComponents from "austere:components";
-import { EXTENDED, REMOVED, STOCK_GROUPS, STOCK_RENDERERS, STOCK_UNTAGGED } from "./stock.js";
+import type { AustereComponent } from "../../types/pack.d.ts";
+import { EXTENDED, REMOVED, STOCK_GROUPS, STOCK_RENDERERS, STOCK_UNTAGGED } from "./stock.ts";
+
+export interface BuildLibraryOptions {
+  /** Called for each pack component left out (its name is taken) or with a slot dropped. */
+  onSkip?: (component: AustereComponent, message: string) => void;
+}
+
+/** A prompt group with its notes always present. */
+export interface PromptGroup extends ComponentGroup {
+  notes: string[];
+}
+
+/** AustereComponent.definition is typed loosely in types/pack.d.ts; it holds a defineComponent() result. */
+function definitionOf(c: AustereComponent): DefinedComponent {
+  return c.definition as DefinedComponent;
+}
+
+function messageOf(err: unknown): unknown {
+  return err && typeof err === "object" && "message" in err ? err.message : undefined;
+}
 
 /** Wrap a renderer so its DOM carries the statement name it came from. */
-function tagged(Comp, name) {
-  function Tagged(props) {
+function tagged<P>(Comp: ComponentRenderer<P>, name: string): ComponentRenderer<P> {
+  function Tagged(props: ComponentRenderProps<P>) {
     const inner = React.createElement(Comp, props);
     if (!props.statementId) return inner;
     return React.createElement(
@@ -23,16 +44,16 @@ function tagged(Comp, name) {
 export const CUSTOM_COMPONENTS = customComponents;
 
 /** Components that leave the prompt but stay searchable (name → "extended"). */
-export function tiersFor(components = customComponents) {
+export function tiersFor(components: AustereComponent[] = customComponents): Record<string, string> {
   return Object.fromEntries([
-    ...EXTENDED.map((n) => [n, "extended"]),
-    ...components.filter((c) => c.tier === "extended").map((c) => [c.name, "extended"]),
+    ...EXTENDED.map((n) => [n, "extended"] as const),
+    ...components.filter((c) => c.tier === "extended").map((c) => [c.name, "extended"] as const),
   ]);
 }
 
 /** Example programs by component name, for the catalog. */
-export function examplesFor(components = customComponents) {
-  return Object.fromEntries(components.filter((c) => c.example).map((c) => [c.name, c.example]));
+export function examplesFor(components: AustereComponent[] = customComponents): Record<string, string[]> {
+  return Object.fromEntries(components.filter((c): c is AustereComponent & { example: string[] } => !!c.example).map((c) => [c.name, c.example] as const));
 }
 
 export const TIERS = tiersFor();
@@ -43,8 +64,8 @@ export const EXAMPLES = examplesFor();
  * to the one they name; a group no stock group has (a pack's own category)
  * comes after them, in the order it first appears.
  */
-export function groupsFor(components = customComponents) {
-  const groups = STOCK_GROUPS.map((g) => ({ name: g.name, components: [...g.components], notes: [...g.notes] }));
+export function groupsFor(components: AustereComponent[] = customComponents): PromptGroup[] {
+  const groups: PromptGroup[] = STOCK_GROUPS.map((g) => ({ name: g.name, components: [...g.components], notes: [...g.notes] }));
   for (const c of components) {
     let g = groups.find((x) => x.name === c.group);
     if (!g) groups.push((g = { name: c.group, components: [], notes: [] }));
@@ -61,7 +82,7 @@ export const GROUPS = groupsFor();
  * removed, plus our components and any pack components (`extra`). A pack
  * component whose name is taken is skipped and reported through `onSkip`.
  */
-export function buildLibrary(extra = [], { onSkip } = {}) {
+export function buildLibrary(extra: AustereComponent[] = [], { onSkip }: BuildLibraryOptions = {}): Library {
   const stockNames = new Set(Object.keys(openuiLibrary.components));
   for (const c of customComponents) {
     if (stockNames.has(c.name) && !REMOVED.includes(c.name)) {
@@ -69,7 +90,7 @@ export function buildLibrary(extra = [], { onSkip } = {}) {
     }
   }
   const taken = new Set([...[...stockNames].filter((n) => !REMOVED.includes(n)), ...customComponents.map((c) => c.name)]);
-  const added = [];
+  const added: AustereComponent[] = [];
   for (const c of extra) {
     if (taken.has(c.name)) {
       onSkip?.(c, `component ${c.name} is already defined; the pack's version is ignored`);
@@ -83,22 +104,22 @@ export function buildLibrary(extra = [], { onSkip } = {}) {
     openuiLibrary.extend({
       components: {
         remove: REMOVED,
-        add: components.map((c) => (c.slots && c.slots.length ? { component: c.definition, slots: c.slots } : c.definition)),
+        add: components.map((c) => (c.slots && c.slots.length ? { component: definitionOf(c), slots: c.slots } : definitionOf(c))),
       },
     });
   // A pack slot this library cannot place ("Nope.children") is dropped, not fatal:
   // the component still works in a Stack, and the page still renders.
-  let curated;
+  let curated: ReturnType<typeof extendWith>;
   for (let attempt = 0; ; attempt++) {
     try {
       curated = extendWith();
       break;
     } catch (err) {
-      const m = /Slot "([^"]+)" for "([^"]+)"/.exec(String(err && err.message));
+      const m = /Slot "([^"]+)" for "([^"]+)"/.exec(String(messageOf(err)));
       const victim = m && added.find((c) => c.name === m[2]);
       if (!victim || attempt > 50) throw err;
-      onSkip?.(victim, `${victim.name}: ${String(err.message).replace(/^\[extend\] /, "")} It can still be used in a Stack.`);
-      victim.slots = victim.slots.filter((x) => x !== m[1]);
+      onSkip?.(victim, `${victim.name}: ${String(messageOf(err)).replace(/^\[extend\] /, "")} It can still be used in a Stack.`);
+      victim.slots = (victim.slots ?? []).filter((x) => x !== m[1]);
     }
   }
   const untagged = new Set([...STOCK_UNTAGGED, ...components.filter((c) => !c.tagged).map((c) => c.name)]);

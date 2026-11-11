@@ -1,4 +1,3 @@
-// @ts-check
 // Splits an OpenUI Lang program into top-level statements without parsing
 // expressions. Used by the runtime (change highlighting) and the CLI (line
 // numbers and source excerpts for feedback). Follows the language's rules for
@@ -7,12 +6,19 @@
 
 const IDENT_START = /[A-Za-z_$]/;
 
-/**
- * @param {string} source
- * @returns {{ id: string, text: string, line: number, endLine: number }[]}
- */
-export function splitStatements(source) {
-  const out = [];
+/** A top-level statement: its id, source text and first and last line (1-based). */
+export interface Statement {
+  id: string;
+  text: string;
+  line: number;
+  endLine: number;
+}
+
+/** Statement id -> statement. */
+export type StatementMap = Map<string, Statement>;
+
+export function splitStatements(source: string | null | undefined): Statement[] {
+  const out: Statement[] = [];
   const src = String(source ?? "");
   let i = 0;
   let line = 1;
@@ -38,7 +44,7 @@ export function splitStatements(source) {
     const start = i;
     const startLine = line;
     let depth = 0;
-    let quote = null;
+    let quote: string | null = null;
     let esc = false;
     while (i < n) {
       const ch = src[i];
@@ -76,24 +82,24 @@ export function splitStatements(source) {
   return out;
 }
 
-function nextLineContinuesTernary(src, from) {
+function nextLineContinuesTernary(src: string, from: number): boolean {
   let j = from;
   while (j < src.length && (src[j] === " " || src[j] === "\t")) j++;
   return src[j] === "?" || src[j] === ":";
 }
 
 /** Map of statement id -> statement text (later definitions win, as in the language). */
-export function statementMap(source) {
-  const map = new Map();
+export function statementMap(source: string | null | undefined): StatementMap {
+  const map: StatementMap = new Map();
   for (const s of splitStatements(source)) map.set(s.id, s);
   return map;
 }
 
 /** Ids whose text is new or different in `next` compared to `prev`. */
-export function changedStatementIds(prevSource, nextSource) {
+export function changedStatementIds(prevSource: string | null | undefined, nextSource: string | null | undefined): string[] {
   const prev = statementMap(prevSource);
   const next = statementMap(nextSource);
-  const changed = [];
+  const changed: string[] = [];
   for (const [id, s] of next) {
     const before = prev.get(id);
     if (!before || normalize(before.text) !== normalize(s.text)) changed.push(id);
@@ -102,9 +108,9 @@ export function changedStatementIds(prevSource, nextSource) {
 }
 
 /** Ids of statements whose text references `id` as a whole word. */
-export function referencesTo(map, id) {
+export function referencesTo(map: StatementMap, id: string): string[] {
   const re = new RegExp(`(^|[^\\w$])${escapeRe(id)}(?![\\w$])`);
-  const refs = [];
+  const refs: string[] = [];
   for (const [other, s] of map) {
     if (other === id) continue;
     const body = s.text.slice(s.text.indexOf("=") + 1);
@@ -113,14 +119,14 @@ export function referencesTo(map, id) {
   return refs;
 }
 
-function stripStrings(text) {
+function stripStrings(text: string): string {
   return text.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/gs, '""');
 }
 
-function normalize(text) {
+function normalize(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function escapeRe(s) {
+function escapeRe(s: string): string {
   return s.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
 }

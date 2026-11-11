@@ -8,25 +8,30 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { after, before, describe, test } from "node:test";
-import { launchBrowser } from "../../scripts/lib/browser.mjs";
-import { ROOT } from "../../scripts/lib/plugins.mjs";
-import { readArtifact } from "../../src/cli/artifact.js";
+import { after, before, describe, test, type TestContext } from "node:test";
+import type { Browser, BrowserContext, Frame, Page } from "playwright-core";
+import { launchBrowser } from "../../scripts/lib/browser.ts";
+import { ROOT } from "../../scripts/lib/plugins.ts";
+import { readArtifact } from "../../src/cli/artifact.ts";
 
 const SITE = path.join(ROOT, "_site");
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml" };
+const TYPES: Record<string, string | undefined> = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml" };
 const PROGRAM = `root = Stack([intro, plan], "column", "l")
 intro = Card([CardHeader("Hello playground", "first version")])
 plan = Card([CardHeader("Plan"), steps])
 steps = MarkDownRenderer("Ship the **playground**")
 `;
 
-let browser;
-let server;
-let base;
-let skipReason;
+/** A page-scoped flag set in the frame to detect reloads. */
+type FlaggedWindow = Window & { __same?: boolean };
+
+let browser: Browser;
+let server: http.Server | undefined;
+let base: string;
+let skipReason: string | undefined;
 
 before(async () => {
   const launched = await launchBrowser();
@@ -35,10 +40,10 @@ before(async () => {
     return;
   }
   browser = launched.browser;
-  const built = spawnSync(process.execPath, [path.join(ROOT, "scripts/site.mjs")], { cwd: ROOT, env: process.env, encoding: "utf8" });
+  const built = spawnSync(process.execPath, [path.join(ROOT, "scripts/site.ts")], { cwd: ROOT, env: process.env, encoding: "utf8" });
   assert.equal(built.status, 0, `npm run site failed:\n${built.stdout}\n${built.stderr}`);
-  server = http.createServer((req, res) => {
-    let p = decodeURIComponent(new URL(req.url, "http://x").pathname);
+  const srv = http.createServer((req, res) => {
+    let p = decodeURIComponent(new URL(req.url ?? "", "http://x").pathname);
     if (p.endsWith("/")) p += "index.html";
     const file = path.join(SITE, p);
     if (!file.startsWith(SITE) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
@@ -48,32 +53,41 @@ before(async () => {
     res.setHeader("content-type", TYPES[path.extname(file)] || "application/octet-stream");
     res.end(fs.readFileSync(file));
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  base = `http://127.0.0.1:${server.address().port}`;
+  server = srv;
+  await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
+  base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
 });
 
 after(async () => {
   await browser?.close();
-  await new Promise((resolve) => (server ? server.close(resolve) : resolve()));
+  await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
 });
 
+/** An open playground tab. */
+interface PlayPage {
+  ctx: BrowserContext;
+  page: Page;
+  frame: Frame;
+  problems: string[];
+}
+
 /** Open /play/ (optionally with a hash) and wait for the first render. */
-async function open(t, { hash = "", viewport = { width: 1360, height: 900 }, context } = {}) {
+async function open(t: TestContext, { hash = "", viewport = { width: 1360, height: 900 }, context }: { hash?: string; viewport?: { width: number; height: number }; context?: BrowserContext } = {}): Promise<PlayPage | void> {
   if (skipReason) return t.skip(skipReason);
   const ctx = context || (await browser.newContext({ viewport }));
   const page = await ctx.newPage();
-  const problems = [];
+  const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
   page.on("console", (m) => {
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
   });
   await page.goto(`${base}/play/${hash}`);
-  const frame = await (await page.waitForSelector("#frame", { state: "attached" })).contentFrame();
+  const frame = (await (await page.waitForSelector("#frame", { state: "attached" })).contentFrame()) as Frame;
   await frame.waitForSelector("[data-oui-id]", { timeout: 15_000 });
   return { ctx, page, frame, problems };
 }
 
-async function type(page, program) {
+async function type(page: Page, program: string) {
   await page.locator("#source").fill(program);
 }
 
@@ -82,8 +96,8 @@ describe("playground", () => {
     const s = await open(t);
     if (!s) return;
     try {
-      await s.page.waitForFunction(() => /Passes austere-axi check/.test(document.querySelector("#status").textContent));
-      assert.match(await s.page.textContent("#status"), /\d+ statements · ~[\d,]+ tokens/);
+      await s.page.waitForFunction(() => /Passes austere-axi check/.test((document.querySelector("#status") as HTMLElement).textContent as string));
+      assert.match((await s.page.textContent("#status")) as string, /\d+ statements · ~[\d,]+ tokens/);
       assert.deepEqual(s.problems, []);
     } finally {
       await s.ctx.close();
@@ -96,10 +110,10 @@ describe("playground", () => {
     try {
       await type(s.page, PROGRAM);
       await s.frame.getByText("Ship the").waitFor();
-      await s.frame.evaluate(() => (window.__same = true)); // lost if the frame reloads
+      await s.frame.evaluate(() => ((window as FlaggedWindow).__same = true)); // lost if the frame reloads
       await type(s.page, PROGRAM.replace("Ship the **playground**", "Ship the **second version**"));
       await s.frame.getByText("second version").waitFor();
-      assert.equal(await s.frame.evaluate(() => window.__same), true);
+      assert.equal(await s.frame.evaluate(() => (window as FlaggedWindow).__same), true);
       assert.deepEqual(s.problems, []);
     } finally {
       await s.ctx.close();
@@ -113,14 +127,14 @@ describe("playground", () => {
       await type(s.page, PROGRAM.replace("MarkDownRenderer", "NoSuchThing"));
       const item = s.page.locator("#diag li.error").first();
       await item.waitFor();
-      assert.match(await item.textContent(), /line 4/);
-      assert.match(await item.textContent(), /Unknown component "NoSuchThing"/);
-      assert.match(await s.page.textContent("#status"), /1 error/);
+      assert.match((await item.textContent()) as string, /line 4/);
+      assert.match((await item.textContent()) as string, /Unknown component "NoSuchThing"/);
+      assert.match((await s.page.textContent("#status")) as string, /1 error/);
       assert.equal(await s.page.locator("#editor .marks i.error").count(), 1);
       await item.locator("button").click(); // selects the statement in the editor
-      assert.match(await s.page.locator("#source").evaluate((el) => el.value.slice(el.selectionStart, el.selectionEnd)), /^steps = NoSuchThing/);
+      assert.match(await s.page.locator("#source").evaluate((el: HTMLTextAreaElement) => el.value.slice(el.selectionStart, el.selectionEnd)), /^steps = NoSuchThing/);
       await type(s.page, PROGRAM);
-      await s.page.waitForFunction(() => /Passes austere-axi check/.test(document.querySelector("#status").textContent));
+      await s.page.waitForFunction(() => /Passes austere-axi check/.test((document.querySelector("#status") as HTMLElement).textContent as string));
       assert.equal(await s.page.locator("#diag li").count(), 0);
     } finally {
       await s.ctx.close();
@@ -136,7 +150,7 @@ describe("playground", () => {
       await a.page.waitForFunction(() => location.hash.startsWith("#code=v1."));
       const url = a.page.url();
       assert.ok(url.length < 2000, `link of ${url.length} characters`);
-      const b = await open(t, { hash: new URL(url).hash });
+      const b = (await open(t, { hash: new URL(url).hash })) as PlayPage;
       try {
         assert.equal(await b.page.locator("#source").inputValue(), PROGRAM);
         assert.equal(
@@ -156,7 +170,7 @@ describe("playground", () => {
     if (!s) return;
     try {
       await s.page.locator("#toast").waitFor();
-      assert.match(await s.page.textContent("#toast"), /damaged|truncated/);
+      assert.match((await s.page.textContent("#toast")) as string, /damaged|truncated/);
       assert.ok((await s.page.locator("#source").inputValue()).startsWith("root ="));
     } finally {
       await s.ctx.close();
@@ -174,8 +188,8 @@ describe("playground", () => {
       await download.saveAs(file);
       assert.equal(download.suggestedFilename(), "hello-playground.html");
       const html = fs.readFileSync(file, "utf8");
-      assert.equal(readArtifact(html).program.trim(), PROGRAM.trim());
-      const cli = path.join(ROOT, "src/cli/main.js");
+      assert.equal((readArtifact(html).program as string).trim(), PROGRAM.trim());
+      const cli = path.join(ROOT, "src/cli/main.ts");
       const check = spawnSync(process.execPath, [cli, "check", file], { encoding: "utf8", env: { ...process.env, AUSTERE_AXI_STATE_DIR: dir } });
       assert.equal(check.status, 0, check.stdout + check.stderr);
       assert.match(check.stdout, /status: ok/);
@@ -194,16 +208,16 @@ describe("playground", () => {
       await s.frame.getByText("Ship the").click();
       const pop = s.frame.locator(".austere-pop");
       await pop.waitFor({ state: "visible" });
-      assert.match(await pop.locator(".austere-pop-path").textContent(), /steps/);
+      assert.match((await pop.locator(".austere-pop-path").textContent()) as string, /steps/);
       await pop.locator("textarea").fill("Mention the date");
       await pop.locator("textarea").press("Enter");
-      const text = await s.page.locator("#fb-text").textContent();
+      const text = (await s.page.locator("#fb-text").textContent()) as string;
       assert.match(text, /^status: feedback/);
       assert.match(text, /annotation: steps \(MarkDownRenderer\)/);
       assert.match(text, /line: 4/);
       assert.match(text, /note: Mention the date/);
       await s.page.locator("#fb-jump .chip", { hasText: "steps" }).click();
-      assert.match(await s.page.locator("#source").evaluate((el) => el.value.slice(el.selectionStart, el.selectionEnd)), /^steps = /);
+      assert.match(await s.page.locator("#source").evaluate((el: HTMLTextAreaElement) => el.value.slice(el.selectionStart, el.selectionEnd)), /^steps = /);
     } finally {
       await s.ctx.close();
     }

@@ -1,18 +1,43 @@
-// @ts-check
 // CLI side of the server: find or start it, then talk JSON over loopback.
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.js";
-import { ownerKey } from "./invites.js";
+import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.ts";
+import { ownerKey } from "./invites.ts";
+import type { HealthInfo, LoginResponse } from "./server.ts";
+
+/** The `error` a control route answers with when it refuses. */
+export interface ApiError {
+  error?: string;
+}
+
+/**
+ * A control route's answer. `data` is the parsed JSON body, typed as what the route sends (see the
+ * response types in server.ts); a body that is not JSON stays its text.
+ */
+export interface ApiResult<T> {
+  status: number | undefined;
+  data: T & ApiError;
+}
+
+/** A server that proved it holds our owner key, or one from before the proof (`legacy`). */
+export type ServerHealth = HealthInfo & { foreign?: undefined; legacy?: true };
+
+/** health(): our server, or a listener that is not (`foreign`). */
+export type Health = ServerHealth | { foreign: true; legacy?: undefined };
 
 /**
  * Call a control route. `auth` sends the owner key, which the server requires on every route but
  * health; only send it to a server health() has checked.
  */
-export function request(method, route, body, { timeoutMs = 0, port = configuredPort(), auth = true } = {}) {
+export function request<T extends object = ApiError>(
+  method: string,
+  route: string,
+  body?: unknown,
+  { timeoutMs = 0, port = configuredPort(), auth = true }: { timeoutMs?: number; port?: number; auth?: boolean } = {},
+): Promise<ApiResult<T>> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const req = http.request(
@@ -28,17 +53,18 @@ export function request(method, route, body, { timeoutMs = 0, port = configuredP
         },
       },
       (res) => {
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
         res.on("end", () => {
           const raw = Buffer.concat(chunks).toString("utf8");
-          let data = raw;
+          let data: unknown = raw;
           try {
             data = JSON.parse(raw);
           } catch {
             // keep text
           }
-          resolve({ status: res.statusCode, data });
+          // The server's answer: trusted to have the shape the route sends.
+          resolve({ status: res.statusCode, data: data as T & ApiError });
         });
         res.on("error", reject);
       },
@@ -59,11 +85,11 @@ export function request(method, route, body, { timeoutMs = 0, port = configuredP
  * listener on another port cannot relay our server's answer. A server from before the proof comes
  * back with `legacy: true`: it is only ever asked to stop, without the key (shutdownServer).
  */
-export async function health(port) {
+export async function health(port: number): Promise<Health | null> {
   const nonce = crypto.randomBytes(16).toString("base64url");
-  let r;
+  let r: ApiResult<HealthInfo>;
   try {
-    r = await request("GET", `/api/health?nonce=${nonce}`, undefined, { timeoutMs: 1200, port, auth: false });
+    r = await request<HealthInfo>("GET", `/api/health?nonce=${nonce}`, undefined, { timeoutMs: 1200, port, auth: false });
   } catch {
     return null;
   }
@@ -75,10 +101,10 @@ export async function health(port) {
   return r.data;
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** Start a detached server. Returns a probe that tells whether the process has already exited. */
-function spawnServer(port, { alsoListen = [], persist = false } = {}) {
+function spawnServer(port: number, { alsoListen = [], persist = false }: { alsoListen?: string[]; persist?: boolean } = {}): () => number | "signal" | null {
   const log = fs.openSync(path.join(stateDir(), "server.log"), "a", 0o600);
   const args = [CLI_ENTRY, "server", "--port", String(port)];
   for (const h of alsoListen) args.push("--also-listen", h);
@@ -89,7 +115,7 @@ function spawnServer(port, { alsoListen = [], persist = false } = {}) {
     env: { ...process.env, OPENUI_TELEMETRY_DISABLED: "1" },
     windowsHide: true,
   });
-  let exited = null;
+  let exited: number | "signal" | null = null;
   child.on("exit", (code) => (exited = code ?? "signal"));
   child.unref();
   return () => exited;
@@ -99,10 +125,10 @@ function spawnServer(port, { alsoListen = [], persist = false } = {}) {
 const START_TIMEOUT_MS = 30_000;
 
 /** Make sure a compatible server is running; returns its health info. */
-export async function ensureServer() {
+export async function ensureServer(): Promise<ServerHealth> {
   const port = configuredPort();
   let h = await health(port);
-  let exited = () => null;
+  let exited: () => number | "signal" | null = () => null;
   if (h?.foreign) {
     throw new Error(`port ${port} is in use by something that is not austere-axi; set AUSTERE_AXI_PORT to another port`);
   }
@@ -111,7 +137,8 @@ export async function ensureServer() {
   }
   if (h && (h.legacy || versionGt(VERSION, h.version))) {
     // A newer CLI replaces an older server; sessions are on disk. The new one listens where the old one did and keeps --persist.
-    const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!h.tailnet || x !== h.tailnet.ip));
+    const { tailnet } = h;
+    const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!tailnet || x !== tailnet.ip));
     const persist = !!h.persist;
     await shutdownServer(h, port);
     for (let i = 0; i < 40 && (await health(port)); i++) await sleep(100);
@@ -142,13 +169,13 @@ export async function ensureServer() {
  * The running server's health, or null. `legacy` also returns a server from before the health proof,
  * which is good for nothing but shutdownServer.
  */
-export async function serverIfRunning({ legacy = false } = {}) {
+export async function serverIfRunning({ legacy = false }: { legacy?: boolean } = {}): Promise<ServerHealth | null> {
   const h = await health(configuredPort());
   return h && !h.foreign && (legacy || !h.legacy) ? h : null;
 }
 
 /** Ask the server `h` to stop. A legacy server asks for no key; do not hand one to a listener that has not proven itself. */
-export function shutdownServer(h, port = configuredPort()) {
+export function shutdownServer(h: ServerHealth, port = configuredPort()): Promise<ApiResult<ApiError> | void> {
   return request("POST", "/api/shutdown", {}, { timeoutMs: 2000, port, auth: !h.legacy }).catch(() => {});
 }
 
@@ -156,10 +183,9 @@ export function shutdownServer(h, port = configuredPort()) {
  * `url` (a page on the local server) with a fresh single-use login code, which the server swaps for
  * the owner cookie. The code works once and only for `ttlMs`, so a copy seen later (in a process
  * list, a terminal, browser history) is no use; the key itself never leaves the CLI.
- * @returns {Promise<{ url: string, ttlMs: number }>}
  */
-export async function loginUrl(url) {
-  const r = await request("POST", "/api/login", {}, { timeoutMs: 5000 });
+export async function loginUrl(url: string): Promise<{ url: string; ttlMs: number }> {
+  const r = await request<LoginResponse>("POST", "/api/login", {}, { timeoutMs: 5000 });
   if (r.status !== 200 || typeof r.data?.code !== "string") throw new Error(r.data?.error || `login failed (${r.status})`);
   const u = new URL(url);
   u.searchParams.set("login", r.data.code);
@@ -167,16 +193,16 @@ export async function loginUrl(url) {
 }
 
 /** Open `url` (a page on the local server) in the browser, signed in as the owner. */
-export async function openBrowser(url) {
-  let target;
+export async function openBrowser(url: string): Promise<boolean> {
+  let target: string;
   try {
     target = (await loginUrl(url)).url;
   } catch {
     return false;
   }
   const platform = process.platform;
-  let cmd;
-  let args;
+  let cmd: string;
+  let args: string[];
   if (platform === "darwin") {
     cmd = "open";
     args = [target];

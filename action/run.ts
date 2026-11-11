@@ -5,7 +5,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { expandPages, pageTitle, parseCheck, resolveCli } from "./lib.mjs";
+import { expandPages, pageTitle, parseCheck, resolveCli } from "./lib.ts";
+import type { PageResult } from "./lib.ts";
 
 const cwd = process.cwd();
 const temp = process.env.RUNNER_TEMP || os.tmpdir();
@@ -22,7 +23,7 @@ const env = {
   AUSTERE_AXI_NO_TAILSCALE: "1",
 };
 
-function austere(args) {
+function austere(args: string[]): { code: number; stdout: string; stderr: string } {
   const r = spawnSync(cli[0], [...cli.slice(1), ...args], {
     cwd,
     env,
@@ -33,7 +34,7 @@ function austere(args) {
   return { code: r.status ?? 1, stdout: r.stdout || "", stderr: r.stderr || (r.error ? String(r.error.message) : "") };
 }
 
-const oneLine = (s) => String(s).replace(/[\r\n%]+/g, " ");
+const oneLine = (s: unknown): string => String(s).replace(/[\r\n%]+/g, " ");
 
 const pages = expandPages(process.env.INPUT_PAGES, cwd);
 if (!pages.length) {
@@ -43,8 +44,8 @@ if (!pages.length) {
 
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
-const used = new Set();
-const results = [];
+const used = new Set<string>();
+const results: PageResult[] = [];
 
 for (const page of pages) {
   console.log(`\n$ austere-axi check ${page}`);
@@ -53,7 +54,7 @@ for (const page of pages) {
   if (check.stderr) process.stderr.write(check.stderr);
   const parsed = parseCheck(check.stdout);
   const ok = check.code === 0 && parsed.status === "ok";
-  const result = {
+  const result: PageResult = {
     page,
     title: pageTitle(fs.readFileSync(path.resolve(cwd, page), "utf8"), path.basename(page)),
     ok,

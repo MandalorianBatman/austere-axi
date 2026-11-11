@@ -1,9 +1,12 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import type { ReactNode, RefObject, SVGProps } from "react";
 import { Cloud, Database, Globe, Inbox, Monitor, Server, ShieldCheck, TriangleAlert } from "lucide-react";
-import { austereComponent } from "../define.js";
-import { reportRuntimeError } from "../env.js";
-import { LANES, orthogonalPath } from "./_architecture-lanes.js";
+import type { LucideIcon } from "lucide-react";
+import type { RendererArgs } from "../../../types/pack.d.ts";
+import { austereComponent } from "../define.ts";
+import { reportRuntimeError } from "../env.ts";
+import { LANES, orthogonalPath } from "./_architecture-lanes.ts";
 import {
   DIRECTIONS,
   EDGE_STYLES,
@@ -19,9 +22,10 @@ import {
   edgePath,
   layoutModel,
   textWidth,
-} from "./_architecture-model.js";
+} from "./_architecture-model.ts";
+import type { ArchitectureInput, EdgeStyle, GroupKind, LaidOutEdge, LaidOutNode, Layout, NodeKind } from "./_architecture-model.ts";
 
-const ICONS = {
+const ICONS: Record<NodeKind, LucideIcon> = {
   frontend: Monitor,
   backend: Server,
   database: Database,
@@ -30,14 +34,14 @@ const ICONS = {
   security: ShieldCheck,
   external: Globe,
 };
-const STYLE_NAMES = { dashed: "async", emphasis: "main path", security: "auth / trust" };
-const GROUP_NAMES = { region: "boundary", security: "trust zone" };
+const STYLE_NAMES: Partial<Record<EdgeStyle, string>> = { dashed: "async", emphasis: "main path", security: "auth / trust" };
+const GROUP_NAMES: Partial<Record<GroupKind, string>> = { region: "boundary", security: "trust zone" };
 
 // Every SVG text ends in a space: annotation quotes use textContent, which
 // would otherwise run a label and its detail together.
-const T = ({ children, ...rest }) => <text {...rest}>{children} </text>;
+const T = ({ children, ...rest }: SVGProps<SVGTextElement> & { children?: ReactNode }) => <text {...rest}>{children} </text>;
 
-function NodeBox({ n }) {
+function NodeBox({ n }: { n: LaidOutNode }) {
   const Icon = ICONS[n.kind];
   const { padX, icon } = SIZES;
   const left = n.x + padX;
@@ -88,17 +92,22 @@ function NodeBox({ n }) {
   );
 }
 
-function ArchitectureView({ props, statementId }) {
+function errorText(err: unknown): string {
+  const message = err !== null && typeof err === "object" && "message" in err ? err.message : undefined;
+  return String(message || err);
+}
+
+function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput>) {
   const rawId = useId();
   const uid = `austere-arch-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const model = useMemo(() => buildModel(props), [props]);
   // Room the page gives us, so "auto" can run across on desktop and down on a phone.
   // Measured before the first layout, so a diagram is laid out once for the
   // width it really has.
-  const boxRef = useRef(null);
-  const [room, setRoom] = useState(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState<number | null>(null);
   // A diagram wider than its box scrolls; fade the cut edge so that shows.
-  const scrollRef = useRef(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState(false);
   const checkCut = () => {
     const el = scrollRef.current;
@@ -124,12 +133,12 @@ function ArchitectureView({ props, statementId }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const { layout, error } = useMemo(() => {
+  const { layout, error } = useMemo((): { layout: Layout | null; error: string | null } => {
     if (room === null) return { layout: null, error: null };
     try {
       return { layout: layoutModel(model, room), error: null };
     } catch (err) {
-      return { layout: null, error: String(err?.message || err) };
+      return { layout: null, error: errorText(err) };
     }
   }, [model, room]);
   // Known before measuring (it does not depend on the width), so the page can
@@ -167,7 +176,15 @@ function ArchitectureView({ props, statementId }) {
   );
 }
 
-function Drawing({ layout, uid, fade, scrollRef, checkCut }) {
+interface DrawingProps {
+  layout: Layout;
+  uid: string;
+  fade: boolean;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  checkCut: () => void;
+}
+
+function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
 
   const byId = new Map(layout.nodes.map((n) => [n.id, n]));
   const kinds = [...new Set(layout.nodes.map((n) => n.kind))];
@@ -182,11 +199,11 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }) {
   // Shrink to fit down to the legible scale, then scroll.
   const minWidth = Math.round(Math.min(W, Math.max(320, W * LEGIBLE_SCALE)));
   // Part names: "From → To", plus the label when two edges join the same pair.
-  const pairs = new Map();
+  const pairs = new Map<string, number>();
   for (const e of layout.edges) pairs.set(`${e.from}>${e.to}`, (pairs.get(`${e.from}>${e.to}`) || 0) + 1);
-  const partOf = (e) => {
+  const partOf = (e: LaidOutEdge) => {
     const base = `${byId.get(e.from)?.label} → ${byId.get(e.to)?.label}`;
-    return pairs.get(`${e.from}>${e.to}`) > 1 && e.label ? `${base} (${e.label})` : base;
+    return (pairs.get(`${e.from}>${e.to}`) ?? 0) > 1 && e.label ? `${base} (${e.label})` : base;
   };
 
   return (
@@ -281,34 +298,35 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }) {
               </g>
             ) : null,
           )}
-          {layout.edges.map((e) =>
-            e.labelBox ? (
+          {layout.edges.map((e) => {
+            const box = e.labelBox;
+            return box ? (
               <g
                 key={`el-${e.id}`}
                 className={`austere-arch-edge s-${e.style}${e.tone ? ` t-${e.tone}` : ""}`}
                 data-oui-id={e.named ? e.id : undefined}
                 data-oui-c={e.named ? "Edge" : undefined}
               >
-                {e.labelBox.lines.join(" ") !== e.label ? <title>{e.label}</title> : null}
+                {box.lines.join(" ") !== e.label ? <title>{e.label}</title> : null}
                 <g className="austere-arch-edge-label" data-austere-part={partOf(e)}>
                   <rect
-                    x={e.labelBox.cx - e.labelBox.width / 2}
-                    y={e.labelBox.cy - e.labelBox.height / 2}
-                    width={e.labelBox.width}
-                    height={e.labelBox.height}
+                    x={box.cx - box.width / 2}
+                    y={box.cy - box.height / 2}
+                    width={box.width}
+                    height={box.height}
                     rx="5"
                   />
                   <text textAnchor="middle">
-                    {e.labelBox.lines.map((line, i) => (
-                      <tspan key={i} x={e.labelBox.cx} y={e.labelBox.cy + 4 + (i - (e.labelBox.lines.length - 1) / 2) * 13}>
+                    {box.lines.map((line, i) => (
+                      <tspan key={i} x={box.cx} y={box.cy + 4 + (i - (box.lines.length - 1) / 2) * 13}>
                         {line}{" "}
                       </tspan>
                     ))}
                   </text>
                 </g>
               </g>
-            ) : null,
-          )}
+            ) : null;
+          })}
 
           {layout.nodes.map((n) => (
             <NodeBox key={n.id} n={n} />

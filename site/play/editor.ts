@@ -3,7 +3,7 @@
 // scrolled along. No dependency; works with the platform's own caret, selection,
 // undo and mobile keyboard.
 
-const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const IDENT = /[A-Za-z_$][\w$]*/y;
 const NUMBER = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
 const KEYWORDS = new Set(["true", "false", "null"]);
@@ -12,12 +12,12 @@ const KEYWORDS = new Set(["true", "false", "null"]);
  * OpenUI Lang to HTML. Follows the statement splitter's rules for strings and comments
  * (// and # to the end of the line, outside strings; strings may span lines).
  */
-export function highlight(src) {
+export function highlight(src: string): string {
   let out = "";
   let i = 0;
   let depth = 0;
   let lineStart = true; // only whitespace so far on this line
-  const span = (cls, text) => (out += `<span class="t-${cls}">${esc(text)}</span>`);
+  const span = (cls: string, text: string) => (out += `<span class="t-${cls}">${esc(text)}</span>`);
   while (i < src.length) {
     const c = src[i];
     if (c === "\n") {
@@ -48,14 +48,14 @@ export function highlight(src) {
       lineStart = false;
     } else if (/[0-9]/.test(c) || (c === "-" && /[0-9]/.test(src[i + 1] || ""))) {
       NUMBER.lastIndex = i;
-      const m = NUMBER.exec(src);
+      const m = NUMBER.exec(src)!; // the test above guarantees a digit here
       span("number", m[0]);
       i += m[0].length;
       lineStart = false;
     } else if (/[A-Za-z_$]/.test(c)) {
       IDENT.lastIndex = i;
-      const word = IDENT.exec(src)[0];
-      const after = src.slice(i + word.length).match(/^[ \t]*(.?)(.?)/);
+      const word = IDENT.exec(src)![0]; // starts with an identifier character
+      const after = src.slice(i + word.length).match(/^[ \t]*(.?)(.?)/)!; // every part is optional
       const next = after[1];
       const isDef = lineStart && depth === 0 && next === "=" && after[2] !== "=";
       if (isDef) span("def", word);
@@ -76,15 +76,33 @@ export function highlight(src) {
   return src.endsWith("\n") || src === "" ? out + " " : out;
 }
 
-/**
- * @param {{ root: HTMLElement, onInput: (text: string) => void }} options
- * root holds .gutter, .marks, .hl and a textarea (see index.html).
- */
-export function createEditor({ root, onInput }) {
-  const area = root.querySelector("textarea");
-  const hl = root.querySelector(".hl");
-  const marks = root.querySelector(".marks");
-  const gutter = root.querySelector(".gutter-inner");
+export type Severity = "error" | "warning";
+
+export interface LineMark {
+  line: number;
+  severity: Severity;
+}
+
+export interface EditorOptions {
+  root: HTMLElement;
+  onInput: (text: string) => void;
+}
+
+export interface Editor {
+  readonly value: string;
+  set(text: string): void;
+  focus(): void;
+  mark(list: LineMark[]): void;
+  reveal(line: number, endLine?: number): void;
+  insert(text: string): void;
+}
+
+/** root holds .gutter, .marks, .hl and a textarea (see index.html). */
+export function createEditor({ root, onInput }: EditorOptions): Editor {
+  const area = root.querySelector("textarea") as HTMLTextAreaElement;
+  const hl = root.querySelector(".hl") as HTMLElement;
+  const marks = root.querySelector(".marks") as HTMLElement;
+  const gutter = root.querySelector(".gutter-inner") as HTMLElement;
   let lines = 0;
   let marked = "";
 

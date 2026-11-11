@@ -13,11 +13,11 @@ export const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-bench-"));
 process.on("exit", () => fs.rmSync(STATE, { recursive: true, force: true }));
 
 let lavishPort = 0;
-export function setLavishPort(port) {
+export function setLavishPort(port: number): void {
   lavishPort = port;
 }
 
-export function lavishEnv() {
+export function lavishEnv(): Record<string, string> {
   return {
     LAVISH_AXI_STATE_DIR: path.join(STATE, "lavish"),
     ...(lavishPort ? { LAVISH_AXI_PORT: String(lavishPort) } : {}),

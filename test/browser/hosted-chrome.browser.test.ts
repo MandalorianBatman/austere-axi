@@ -5,10 +5,12 @@
 // "new version" banner, the footer and the report box.
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import http from "node:http";
+import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { launchBrowser } from "../../scripts/lib/browser.mjs";
+import type { Browser } from "playwright-core";
+import { launchBrowser } from "../../scripts/lib/browser.ts";
 
 const ID = "pg_test";
 const BASE = `/p/${ID}`;
@@ -17,14 +19,31 @@ const SHELL_CSP =
 const FRAME_CSP =
   "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'";
 
-// What the stub service has seen and holds.
-const svc = { requests: [], sends: [], reports: [], notes: [], replies: [], publishedAt: 1_000, gone: false };
-let stub;
-let origin;
-let browser;
-let skipReason;
+/** A reviewer's send as the chrome posts it. */
+interface Send {
+  name: string;
+  items: unknown;
+}
+interface Note {
+  seq: number;
+  author: string;
+  items: unknown;
+  at: number;
+}
+interface Reply {
+  seq: number;
+  text: string;
+  at: number;
+}
 
-function body(req) {
+// What the stub service has seen and holds.
+const svc: { requests: string[]; sends: Send[]; reports: unknown[]; notes: Note[]; replies: Reply[]; publishedAt: number; gone: boolean } = { requests: [], sends: [], reports: [], notes: [], replies: [], publishedAt: 1_000, gone: false };
+let stub: http.Server | undefined;
+let origin: string;
+let browser: Browser;
+let skipReason: string | undefined;
+
+function body(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve) => {
     let data = "";
     req.on("data", (c) => (data += c));
@@ -32,7 +51,7 @@ function body(req) {
   });
 }
 
-function json(res, status, value) {
+function json(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(value));
 }
@@ -53,8 +72,8 @@ root = Stack([intro])
 intro = TextContent("hello")
 </script></body></html>`;
 
-async function handle(req, res) {
-  const url = new URL(req.url, origin);
+async function handle(req: IncomingMessage, res: ServerResponse) {
+  const url = new URL(req.url ?? "", origin);
   svc.requests.push(`${req.method} ${url.pathname}${url.search}`);
   if (req.method === "POST" && req.headers.origin && req.headers.origin !== origin) return json(res, 403, { error: "foreign origin" });
   if (url.pathname === BASE) {
@@ -65,7 +84,7 @@ async function handle(req, res) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": FRAME_CSP });
     return res.end(ARTIFACT);
   }
-  const asset = { "/rt/chrome/chrome.js": "dist/chrome/chrome.js", "/rt/chrome/chrome.css": "dist/chrome/chrome.css", "/rt/austere.js": "dist/austere.js" }[url.pathname];
+  const asset = ({ "/rt/chrome/chrome.js": "dist/chrome/chrome.js", "/rt/chrome/chrome.css": "dist/chrome/chrome.css", "/rt/austere.js": "dist/austere.js" } as Record<string, string | undefined>)[url.pathname];
   if (asset) {
     res.writeHead(200, { "content-type": asset.endsWith(".css") ? "text/css" : "text/javascript" });
     return res.end(fs.readFileSync(asset));
@@ -81,7 +100,7 @@ async function handle(req, res) {
     });
   }
   if (url.pathname === `${BASE}/send` && req.method === "POST") {
-    const b = await body(req);
+    const b = (await body(req)) as Send;
     svc.sends.push(b);
     svc.notes.push({ seq: svc.notes.length + 1, author: b.name, items: b.items, at: Date.now() });
     return json(res, 200, { ok: true });
@@ -106,14 +125,15 @@ before(async () => {
     return;
   }
   browser = launched.browser;
-  stub = http.createServer((req, res) => handle(req, res).catch((err) => json(res, 500, { error: String(err) })));
-  await new Promise((r) => stub.listen(0, "127.0.0.1", r));
-  origin = `http://127.0.0.1:${stub.address().port}`;
+  const server = http.createServer((req, res) => handle(req, res).catch((err) => json(res, 500, { error: String(err) })));
+  stub = server;
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
 after(async () => {
   await browser?.close();
-  await new Promise((r) => (stub ? stub.close(r) : r()));
+  await new Promise<void>((r) => (stub ? stub.close(() => r()) : r()));
 });
 
 test("hosted chrome: name prompt, named send, polled reply, new version, footer and report", async (t) => {
@@ -121,7 +141,7 @@ test("hosted chrome: name prompt, named send, polled reply, new version, footer 
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   try {
     const page = await ctx.newPage();
-    const cspErrors = [];
+    const cspErrors: string[] = [];
     page.on("console", (m) => m.type() === "error" && /Content Security Policy/.test(m.text()) && cspErrors.push(m.text()));
     page.on("pageerror", (err) => cspErrors.push(String(err)));
     await page.goto(`${origin}${BASE}`);
@@ -146,7 +166,7 @@ test("hosted chrome: name prompt, named send, polled reply, new version, footer 
     await page.press(".name-ask input", "Enter");
     await page.waitForSelector(".msg.user");
     assert.deepEqual(svc.sends, [{ name: "Ana", items: [{ kind: "message", text: "tighten the intro" }] }]);
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("austere:name"))), "Ana");
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("austere:name") as string)), "Ana");
     assert.match(await page.locator(".msg.user .who").innerText(), /^You/);
     assert.match(await page.locator(".composer-hint").innerText(), /Posting as Ana/);
     assert.ok(await page.locator(".name-ask").isHidden());

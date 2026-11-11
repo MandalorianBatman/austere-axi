@@ -23,10 +23,10 @@ Classify the changed files:
 
 | Area | Paths |
 |---|---|
-| components | `src/runtime/components/`, `packs/`, `src/runtime/stock.js`, `src/runtime/define.js`, `test/fixtures/signatures.json` |
+| components | `src/runtime/components/`, `packs/`, `src/runtime/stock.ts`, `src/runtime/define.ts`, `test/fixtures/signatures.json` |
 | look | `src/runtime/austere.css`, `src/chrome/` |
 | runtime | other `src/runtime/`, `src/pack-kit/` |
-| agent-facing text | `src/runtime/prompt.js`, the help text in `src/cli/main.js`, component descriptions and notes |
+| agent-facing text | `src/runtime/prompt.ts`, the help text in `src/cli/main.ts`, component descriptions and notes |
 | cli/server | other `src/cli/` |
 | docs/tooling | everything else |
 

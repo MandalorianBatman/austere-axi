@@ -1,4 +1,3 @@
-// @ts-check
 // Invite links for team review. An invite is a random token tied to one page and
 // a reviewer name. The token in the link becomes a cookie; a request that carries
 // a valid token acts as that reviewer. Stored in the state dir (invites.json).
@@ -9,19 +8,32 @@ import path from "node:path";
 export const COOKIE = "austere_rv";
 const RESERVED = new Set(["owner", "you", "agent", "me"]);
 
-/**
- * @typedef {{ token: string, name: string, sessionId: string, file: string, auto: boolean, createdAt: number }} Invite
- */
+/** One invite: a token tied to one page (session) and a reviewer name. `auto` sends the reviewer's notes on without the owner. */
+export interface Invite {
+  token: string;
+  name: string;
+  sessionId: string;
+  file: string;
+  auto: boolean;
+  createdAt: number;
+}
+
+/** What invites.json holds for one invite, judged as loosely as before: a long enough token, a name and a page. */
+function isInvite(i: unknown): i is Invite {
+  if (!i || typeof i !== "object") return false;
+  const o = i as Record<string, unknown>;
+  return typeof o.token === "string" && o.token.length >= 22 && Boolean(o.name) && Boolean(o.sessionId);
+}
 
 /** Equal strings, compared in constant time. */
-export function safeEqual(a, b) {
+export function safeEqual(a: string, b: string): boolean {
   const x = crypto.createHash("sha256").update(String(a)).digest();
   const y = crypto.createHash("sha256").update(String(b)).digest();
   return crypto.timingSafeEqual(x, y);
 }
 
 /** A reviewer name: one line, 1 to 40 characters, not a word the UI uses for someone else. */
-export function cleanName(raw) {
+export function cleanName(raw: unknown): string {
   const name = String(raw ?? "")
     .replace(/[\u0000-\u001f\u007f]/g, " ")
     .replace(/\s+/g, " ")
@@ -33,7 +45,7 @@ export function cleanName(raw) {
 }
 
 /** The value of cookie `name` (default: the invite cookie) in a Cookie header, or null. */
-export function tokenFromCookie(header, name = COOKIE) {
+export function tokenFromCookie(header: string | undefined, name = COOKIE): string | null {
   for (const part of String(header || "").split(";")) {
     const i = part.indexOf("=");
     if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
@@ -42,59 +54,59 @@ export function tokenFromCookie(header, name = COOKIE) {
 }
 
 /** The short id `share list` shows; `share revoke` takes it. */
-export function inviteId(inv) {
+export function inviteId(inv: Invite): string {
   return inv.token.slice(0, 8);
 }
 
 export class InviteStore {
-  /** @param {string} dir state dir */
-  constructor(dir) {
+  file: string;
+  invites: Invite[];
+
+  /** @param dir state dir */
+  constructor(dir: string) {
     this.file = path.join(dir, "invites.json");
-    /** @type {Invite[]} */
     this.invites = [];
     try {
-      const raw = JSON.parse(fs.readFileSync(this.file, "utf8"));
+      const raw = JSON.parse(fs.readFileSync(this.file, "utf8")) as { invites?: unknown };
       if (Array.isArray(raw.invites)) {
-        this.invites = raw.invites.filter((i) => i && typeof i.token === "string" && i.token.length >= 22 && i.name && i.sessionId);
+        this.invites = raw.invites.filter(isInvite);
       }
     } catch {
       // none yet, or unreadable: start empty
     }
   }
 
-  save() {
+  save(): void {
     const tmp = `${this.file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify({ invites: this.invites }, null, 2) + "\n", { mode: 0o600 });
     fs.renameSync(tmp, this.file);
   }
 
-  /** @returns {Invite} */
-  add({ name, sessionId, file, auto = false }) {
+  add({ name, sessionId, file, auto = false }: { name: unknown; sessionId: string; file: string; auto?: boolean }): Invite {
     const clean = cleanName(name);
     if (this.invites.some((i) => i.sessionId === sessionId && i.name.toLowerCase() === clean.toLowerCase())) {
       throw new Error(`this page is already shared with "${clean}"; revoke that invite first (share revoke "${clean}")`);
     }
-    /** @type {Invite} */
-    const inv = { token: crypto.randomBytes(24).toString("base64url"), name: clean, sessionId, file, auto: Boolean(auto), createdAt: Date.now() };
+    const inv: Invite = { token: crypto.randomBytes(24).toString("base64url"), name: clean, sessionId, file, auto: Boolean(auto), createdAt: Date.now() };
     this.invites.push(inv);
     this.save();
     return inv;
   }
 
   /** The invite for a token, or null. Compares every token, so timing does not show a near miss. */
-  find(token) {
+  find(token: unknown): Invite | null {
     if (typeof token !== "string" || !token) return null;
-    let hit = null;
+    let hit: Invite | null = null;
     for (const inv of this.invites) if (safeEqual(inv.token, token) && !hit) hit = inv;
     return hit;
   }
 
-  list() {
+  list(): Invite[] {
     return [...this.invites];
   }
 
   /** Remove the invites a key names: a full token, its short id, or a reviewer name. Returns what was removed. */
-  revoke(key) {
+  revoke(key: unknown): Invite[] {
     const k = String(key || "").trim();
     if (!k) return [];
     const gone = this.invites.filter((i) => safeEqual(i.token, k) || (k.length === 8 && inviteId(i) === k) || i.name.toLowerCase() === k.toLowerCase());
@@ -112,9 +124,9 @@ export const OWNER_COOKIE = "austere_owner";
  * The owner cookie's value: derived from the key, never the key itself. Browsers share 127.0.0.1
  * cookies across ports, so any local listener a page visits can read it; the derived value lets
  * that listener act as the owner in a browser, but not on /api/*, which wants the key.
- * @param {string} key the owner key
+ * @param key the owner key
  */
-export function ownerCookie(key) {
+export function ownerCookie(key: string): string {
   return crypto.createHmac("sha256", key).update("austere-axi owner cookie").digest("base64url");
 }
 
@@ -124,16 +136,19 @@ export function ownerCookie(key) {
  * for `ttlMs`, so seeing it later (on a command line, in a terminal) is no use.
  */
 export class LoginCodes {
-  /** @param {number} ttlMs @param {() => number} [now] */
-  constructor(ttlMs, now = Date.now) {
+  ttlMs: number;
+  now: () => number;
+  /** sha256(code) -> expiry */
+  codes: Map<string, number>;
+
+  constructor(ttlMs: number, now: () => number = Date.now) {
     this.ttlMs = ttlMs;
     this.now = now;
-    /** @type {Map<string, number>} sha256(code) -> expiry */
     this.codes = new Map();
   }
 
   /** A fresh code. */
-  issue() {
+  issue(): string {
     const t = this.now();
     for (const [h, exp] of this.codes) if (exp <= t) this.codes.delete(h);
     const code = crypto.randomBytes(16).toString("base64url");
@@ -142,7 +157,7 @@ export class LoginCodes {
   }
 
   /** Whether `code` is a live code; it is used up either way. */
-  take(code) {
+  take(code: string): boolean {
     const h = hashCode(code);
     const exp = this.codes.get(h);
     this.codes.delete(h);
@@ -151,15 +166,15 @@ export class LoginCodes {
 }
 
 // Looked up by hash, so the lookup's timing says nothing about a live code.
-const hashCode = (code) => crypto.createHash("sha256").update(String(code)).digest("base64url");
+const hashCode = (code: string): string => crypto.createHash("sha256").update(String(code)).digest("base64url");
 
 /**
  * The owner's key: a random token in the state dir (owner.key), made on first use. The CLI sends it
  * on /api/*; a browser gets the cookie derived from it (ownerCookie), from the owner's own remote
  * link or a login code.
- * @param {string} dir state dir
+ * @param dir state dir
  */
-export function ownerKey(dir) {
+export function ownerKey(dir: string): string {
   const file = path.join(dir, "owner.key");
   const read = () => {
     try {
@@ -180,7 +195,7 @@ export function ownerKey(dir) {
     fs.linkSync(tmp, file);
     return key;
   } catch (err) {
-    if (err?.code !== "EEXIST") throw err;
+    if ((err as NodeJS.ErrnoException | null)?.code !== "EEXIST") throw err;
     const theirs = read();
     if (theirs) return theirs;
     fs.renameSync(tmp, file); // there but unusable: replace it

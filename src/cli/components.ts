@@ -1,38 +1,79 @@
-// @ts-check
 // `austere-axi components ...`: browse the component catalog (core, bundled
 // packs, installed packs) and manage packs.
-import { coreCatalog, installedPacks, isThirdParty } from "./packs.js";
-import { searchCatalog } from "../shared/catalog.js";
+import type { CatalogEntry } from "../../types/catalog.d.ts";
+import { coreCatalog, installedPacks, isThirdParty } from "./packs.ts";
+import { searchCatalog } from "../shared/catalog.ts";
 
 const BIN = "austere-axi";
 
+/** A catalog entry with where it comes from: core, a bundled pack (part of core), or an installed pack. */
+export type ComponentEntry = CatalogEntry & { source: "core" | "bundled" | "installed"; version?: string };
+
+export interface ComponentCatalog {
+  entries: ComponentEntry[];
+  notesOf: (e: ComponentEntry) => string[];
+  groups: string[];
+}
+
+/** An error the CLI prints as is (exit 1). */
+export interface CommandError {
+  status: "error";
+  error: string;
+}
+
+export interface ComponentList {
+  status?: undefined;
+  core?: Record<string, string>;
+  extended?: Record<string, string>;
+  packs?: { pack: string; trust: "third-party" | undefined; components: string }[];
+  next?: string;
+}
+
+export interface ShownComponent {
+  name: string;
+  signature: string;
+  description: string;
+  group: string;
+  from: string;
+  notes?: string[];
+  example?: string;
+  use?: string;
+}
+
+export interface ComponentShow {
+  components: ShownComponent[];
+  unknown?: string[];
+  next?: string;
+  status?: "error";
+}
+
 /** Every component an agent can use here: core (with bundled packs) first, then installed packs. */
-export function catalogEntries() {
+export function catalogEntries(): ComponentCatalog {
   const core = coreCatalog();
-  const out = core.components.map((c) => ({ ...c, source: c.pack === "core" ? "core" : "bundled" }));
+  const out = core.components.map((c): ComponentEntry => ({ ...c, source: c.pack === "core" ? "core" : "bundled" }));
   const notes = new Map(core.groups.map((g) => [`core\0${g.name}`, g.notes]));
   for (const p of installedPacks()) {
     for (const g of p.catalog.groups || []) notes.set(`${p.name}\0${g.name}`, g.notes);
     for (const c of p.catalog.components) out.push({ ...c, pack: p.name, version: p.version, source: "installed" });
   }
-  const notesOf = (e) => notes.get(`${e.source === "installed" ? e.pack : "core"}\0${e.group}`) || [];
+  const notesOf = (e: ComponentEntry): string[] => notes.get(`${e.source === "installed" ? e.pack : "core"}\0${e.group}`) || [];
   return { entries: out, notesOf, groups: core.groups.map((g) => g.name) };
 }
 
-function where(e) {
+function where(e: ComponentEntry): string {
   if (e.source === "core") return e.tier === "extended" ? "core, not in spec" : "core";
   if (e.source === "bundled") return "core";
   return `pack ${e.pack}@${e.version}`;
 }
 
-export function listComponents(filter) {
+export function listComponents(filter: string | undefined): ComponentList | CommandError {
   const { entries, groups } = catalogEntries();
   const f = filter ? String(filter).toLowerCase() : null;
-  const out = {};
+  const out: ComponentList = {};
   const core = entries.filter((e) => e.source !== "installed");
   const groupNames = [...groups, ...new Set(core.map((e) => e.group).filter((g) => !groups.includes(g)))];
-  const coreOut = {};
-  const extended = {};
+  const coreOut: Record<string, string> = {};
+  const extended: Record<string, string> = {};
   for (const g of groupNames) {
     if (f && f !== "core" && g.toLowerCase() !== f) continue;
     const inGroup = core.filter((e) => e.group === g);
@@ -57,13 +98,12 @@ export function listComponents(filter) {
   return out;
 }
 
-const short = (text) => (text.length > 140 ? text.slice(0, 139).replace(/\s+\S*$/, "") + "…" : text);
+const short = (text: string): string => (text.length > 140 ? text.slice(0, 139).replace(/\s+\S*$/, "") + "…" : text);
 
-export function searchComponents(words) {
+export function searchComponents(words: string[]): CommandError | { status: "no matches"; query: string; next: string } | { query: string; results: string[]; next: string } {
   const query = words.join(" ").trim();
   if (!query) return { status: "error", error: `search needs words: ${BIN} components search gantt timeline` };
   const { entries, notesOf } = catalogEntries();
-  /** @type {{ entry: any, score: number }[]} */
   const hits = searchCatalog(entries, query, { notesOf, limit: 8 });
   if (!hits.length) {
     return {
@@ -81,19 +121,19 @@ export function searchComponents(words) {
   };
 }
 
-export function showComponents(names) {
+export function showComponents(names: string[]): ComponentShow | CommandError {
   if (!names.length) return { status: "error", error: `show needs a name: ${BIN} components show Gantt` };
   const { entries, notesOf } = catalogEntries();
-  const found = [];
-  const missing = [];
+  const found: ComponentEntry[] = [];
+  const missing: string[] = [];
   for (const n of names) {
     const e = entries.find((x) => x.name === n) || entries.find((x) => x.name.toLowerCase() === n.toLowerCase());
     if (!e) missing.push(n);
     else found.push(e);
   }
-  const out = {
+  const out: ComponentShow = {
     components: found.map((e) => {
-      const o = { name: e.name, signature: e.signature, description: e.description, group: e.group, from: where(e) };
+      const o: ShownComponent = { name: e.name, signature: e.signature, description: e.description, group: e.group, from: where(e) };
       const notes = notesOf(e).filter((line) => new RegExp(`\\b${e.name}\\b`).test(line) && !line.startsWith("- Also in "));
       if (notes.length) o.notes = notes.map((l) => l.replace(/^- /, ""));
       if (e.examples && e.examples.length) o.example = e.examples[0];

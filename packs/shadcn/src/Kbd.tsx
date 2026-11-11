@@ -1,8 +1,13 @@
 import React from "react";
 import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
+import type { RendererArgs } from "austere-axi/pack";
 
-function KbdView({ props }) {
+interface KbdProps {
+  keys: string;
+}
+
+function KbdView({ props }: RendererArgs<KbdProps>) {
   const keys = String(props.keys ?? "")
     .split("+")
     .map((k) => k.trim())

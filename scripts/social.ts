@@ -2,15 +2,15 @@
 //
 // Renders the 1200x630 social preview image (GitHub repo settings → Social preview,
 // Open Graph / Twitter card on the site): the headline, the one-line pitch, and a real
-// render of the demo page (scripts/lib/demo-page.mjs) with a reviewer's note pinned to the
+// render of the demo page (scripts/lib/demo-page.ts) with a reviewer's note pinned to the
 // Postgres node. Needs Chrome or CHROME_PATH (as `npm run shot`) and `npm run build`.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { launchBrowser } from "./lib/browser.mjs";
-import { PAGE } from "./lib/demo-page.mjs";
-import { ROOT } from "./lib/plugins.mjs";
+import { launchBrowser } from "./lib/browser.ts";
+import { PAGE } from "./lib/demo-page.ts";
+import { ROOT } from "./lib/plugins.ts";
 
 const args = process.argv.slice(2);
 const outArg = args.indexOf("--out");
@@ -35,7 +35,7 @@ try {
   const WIN_TOP = Math.round((630 - (PANEL_H + 38)) / 2);
   const shot = await browser.newPage({ viewport: { width: SHOT_W, height: Math.round(PANEL_H / SCALE) }, deviceScaleFactor: 1.5 });
   await shot.route(/\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {
-    const name = /\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())[1];
+    const name = /\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())![1];
     route.fulfill({ path: path.join(ROOT, "dist", name), contentType: "text/javascript" });
   });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "austere-social-"));
@@ -44,7 +44,7 @@ try {
   await shot.waitForSelector('[data-oui-id="pg"]');
   await shot.waitForTimeout(1200);
   const png = await shot.screenshot();
-  const pg = await shot.locator('[data-oui-id="pg"]').first().boundingBox();
+  const pg = (await shot.locator('[data-oui-id="pg"]').first().boundingBox())!;
   await shot.close();
   fs.rmSync(tmp, { recursive: true, force: true });
 

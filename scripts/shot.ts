@@ -10,12 +10,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { launchBrowser } from "./lib/browser.mjs";
-import { ROOT } from "./lib/plugins.mjs";
-import { installedPackFile } from "../src/cli/packs.js";
+import { launchBrowser } from "./lib/browser.ts";
+import { ROOT } from "./lib/plugins.ts";
+import { installedPackFile } from "../src/cli/packs.ts";
 
 const args = process.argv.slice(2);
-const flag = (name, fallback) => {
+const flag = <T,>(name: string, fallback: T): T | string | true => {
   const i = args.indexOf(`--${name}`);
   if (i < 0) return fallback;
   const v = args[i + 1];
@@ -29,7 +29,8 @@ if (!target) {
 const url = /^https?:|^file:/.test(target) ? target : pathToFileURL(path.resolve(target)).href;
 const width = Number(flag("width", 1280));
 const height = Number(flag("height", 900));
-const out = flag("out", path.join(ROOT, ".dev", `shot-${width}.png`));
+// A bare --out (no value) yields true, as before; it fails at mkdirSync.
+const out = flag("out", path.join(ROOT, ".dev", `shot-${width}.png`)) as string;
 
 const { browser, reason } = await launchBrowser();
 if (!browser) {
@@ -37,7 +38,7 @@ if (!browser) {
   process.exit(2);
 }
 const page = await browser.newPage({ viewport: { width, height } });
-const problems = [];
+const problems: string[] = [];
 page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
   if (m.type() === "error" || (m.type() === "warning" && m.text().startsWith("[austere]"))) problems.push(`console: ${m.text()}`);
@@ -45,20 +46,20 @@ page.on("console", (m) => {
 // Packs the page loads from the CDN come from this machine's installed packs
 // (AUSTERE_AXI_STATE_DIR), so a page with a pack renders offline too.
 await page.route(/^https:\/\/cdn\.jsdelivr\.net\/npm\/(.+)@(\d[^/]*)\/dist\/pack\.js$/, (route) => {
-  const [, name, version] = /^https:\/\/cdn\.jsdelivr\.net\/npm\/(.+)@(\d[^/]*)\/dist\/pack\.js$/.exec(route.request().url());
+  const [, name, version] = /^https:\/\/cdn\.jsdelivr\.net\/npm\/(.+)@(\d[^/]*)\/dist\/pack\.js$/.exec(route.request().url())!;
   const file = installedPackFile(name, version);
   if (!file) return route.continue();
   route.fulfill({ path: file, contentType: "text/javascript", headers: { "access-control-allow-origin": "*" } });
 });
 // The runtime, Mermaid and bundled packs come from dist/, wherever the page points.
 await page.route(/\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {
-  const name = /\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())[1];
+  const name = /\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())![1];
   route.fulfill({ path: path.join(ROOT, "dist", name), contentType: "text/javascript" });
 });
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(1500);
 const info = await page.evaluate(() => {
-  const parts = {};
+  const parts: Record<string, (string | null)[]> = {};
   for (const el of document.querySelectorAll("[data-austere-part]")) {
     const id = el.closest("[data-oui-id]")?.getAttribute("data-oui-id") || "(none)";
     (parts[id] ||= []).push(el.getAttribute("data-austere-part"));

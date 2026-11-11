@@ -3,8 +3,8 @@
 // checks with `npm run shot` or a real review (`node dist/cli.mjs .dev/gallery.html`).
 import fs from "node:fs";
 import path from "node:path";
-import { checkHtml } from "../src/cli/check.js";
-import { ROOT, examplePage, htmlPage, loadLibrary } from "./lib/plugins.mjs";
+import { checkHtml } from "../src/cli/check.ts";
+import { ROOT, examplePage, htmlPage, loadLibrary } from "./lib/plugins.ts";
 
 const wanted = process.argv.slice(2);
 const lib = await loadLibrary();

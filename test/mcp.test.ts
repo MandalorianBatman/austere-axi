@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import type { ChildProcessByStdio } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import type { Readable, Writable } from "node:stream";
 import { after, before, test } from "node:test";
-import { ownerHeaders } from "./owner.js";
-import { freePort } from "./port.js";
+import { ownerHeaders } from "./owner.ts";
+import { freePort } from "./port.ts";
 
 const PORT = await freePort();
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-mcp-state-"));
@@ -22,27 +24,39 @@ const ENV = {
   AUSTERE_AXI_NO_OPEN: "1",
   OPENUI_TELEMETRY_DISABLED: "1",
 };
-const page = (program) => `<!doctype html><html><head><title>Plan</title><script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+const page = (program: string) => `<!doctype html><html><head><title>Plan</title><script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
 <body><script type="text/openui">
 ${program}
 </script></body></html>`;
 
-let mcp;
-let nextId = 1;
-const waiting = new Map();
-/** Lines no pending request was waiting for. */
-const unexpected = [];
-
-function rpc(method, params) {
-  const id = nextId++;
-  mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  return new Promise((resolve) => waiting.set(id, resolve));
+interface ToolResult { isError: boolean; content: { type: string; text: string }[] }
+interface RpcMessage {
+  id?: number | null;
+  result: {
+    protocolVersion: string;
+    serverInfo: { name: string };
+    capabilities: { tools?: unknown };
+    tools: { name: string; inputSchema: { type: string } }[];
+  } & ToolResult;
+  error: { code: number; message: string };
 }
 
-const call = (name, args) => rpc("tools/call", { name, arguments: args }).then((r) => r.result);
+let mcp: ChildProcessByStdio<Writable, Readable, null>;
+let nextId = 1;
+const waiting = new Map<number | null | undefined, (msg: RpcMessage) => void>();
+/** Lines no pending request was waiting for. */
+const unexpected: RpcMessage[] = [];
 
-function api(method, route, body, headers = {}) {
-  return new Promise((resolve, reject) => {
+function rpc(method: string, params: Record<string, unknown>) {
+  const id = nextId++;
+  mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+  return new Promise<RpcMessage>((resolve) => waiting.set(id, resolve));
+}
+
+const call = (name: string, args: Record<string, unknown>) => rpc("tools/call", { name, arguments: args }).then((r): ToolResult => r.result);
+
+function api(method: string, route: string, body?: unknown, headers: Record<string, string> = {}) {
+  return new Promise<{ status: number | undefined; data: unknown }>((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const r = http.request({ host: "127.0.0.1", port: PORT, method, path: route, headers: { "content-type": "application/json", ...ownerHeaders(STATE), ...headers } }, (res) => {
       let data = "";
@@ -58,11 +72,11 @@ function api(method, route, body, headers = {}) {
 before(() => {
   fs.writeFileSync(GOOD, page('root = Stack([intro])\nintro = TextContent("hello")'));
   fs.writeFileSync(BAD, page('root = Stack([intro, missing])\nintro = TextContent("hello")'));
-  mcp = spawn(process.execPath, ["src/cli/main.js", "mcp"], { env: ENV, stdio: ["pipe", "pipe", "inherit"] });
+  mcp = spawn(process.execPath, ["src/cli/main.ts", "mcp"], { env: ENV, stdio: ["pipe", "pipe", "inherit"] });
   readline.createInterface({ input: mcp.stdout }).on("line", (line) => {
-    const msg = JSON.parse(line);
+    const msg = JSON.parse(line) as RpcMessage;
     if (!waiting.has(msg.id)) return unexpected.push(msg);
-    waiting.get(msg.id)(msg);
+    waiting.get(msg.id)?.(msg);
     waiting.delete(msg.id);
   });
 });
@@ -101,7 +115,7 @@ test("answers no notification, rejects batches, and does not offer the batch pro
   await rpc("ping", {});
   assert.deepEqual(unexpected, []);
 
-  const batch = new Promise((resolve) => waiting.set(null, resolve));
+  const batch = new Promise<RpcMessage>((resolve) => waiting.set(null, resolve));
   mcp.stdin.write(JSON.stringify([{ jsonrpc: "2.0", id: nextId++, method: "ping" }]) + "\n");
   const rejected = await batch;
   assert.equal(rejected.error.code, -32600);
