@@ -158,8 +158,10 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 
 ## CLI
 
+Usage errors (unknown command or flag, missing argument) exit 2 before anything runs; failures exit 1. `<command> --help` prints that command's flags and an example.
+
 ```
-austere-axi                      sessions + usage
+austere-axi                      sessions + command list
 austere-axi <file>               validate + open a review   [--no-open] [--reopen]
 austere-axi poll <file>          long-poll for feedback      [--cursor n] [--agent-reply "..."] [--after n] [--takeover]
 austere-axi reply <file>         post a reply without polling   [--cursor n]
