@@ -5,13 +5,20 @@
     "baseUrl": "https://api.minimax.io/anthropic",
     "keyEnv": "MINIMAX_API_KEY",
     "maxTokens": 32000,
-    "pricing": { "input": 0.3, "output": 1.2, "cacheRead": 0.06, "source": "https://platform.minimax.io/docs/pricing/overview (standard tier, 2026-11-06)" },
+    "pricing": {
+      "input": 0.3,
+      "output": 1.2,
+      "cacheRead": 0.06,
+      "source": "https://platform.minimax.io/docs/pricing/overview (standard tier, 2026-11-06)"
+    },
     "default": true
   },
   "claude-sonnet": {
     "provider": "claude-cli",
     "model": "sonnet",
-    "pricing": { "source": "total_cost_usd reported by the claude CLI (list price)" },
+    "pricing": {
+      "source": "total_cost_usd reported by the claude CLI (list price)"
+    },
     "default": true
   },
   "claude-sonnet-api": {
@@ -20,6 +27,19 @@
     "baseUrl": "https://api.anthropic.com",
     "keyEnv": "ANTHROPIC_API_KEY",
     "maxTokens": 32000,
-    "pricing": { "input": 2, "output": 10, "cacheRead": 0.1, "cacheWrite": 2.5, "source": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview (2026-11-06)" }
+    "pricing": {
+      "input": 2,
+      "output": 10,
+      "cacheRead": 0.1,
+      "cacheWrite": 2.5,
+      "source": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview (2026-11-06)"
+    }
+  },
+  "claude-haiku": {
+    "provider": "claude-cli",
+    "model": "haiku",
+    "pricing": {
+      "source": "total_cost_usd reported by the claude CLI (list price)"
+    }
   }
 }

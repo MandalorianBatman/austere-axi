@@ -25,6 +25,7 @@ type ToolArgs = {
   file: string;
   groups?: string[];
   fix?: boolean;
+  render?: boolean;
   no_open?: boolean;
   reopen?: boolean;
   agent_reply?: string;
@@ -61,7 +62,7 @@ const PROTOCOLS = ["2025-11-25", "2025-06-18", "2024-11-05"];
 /** Many MCP clients give up on a tool call after about a minute, so poll returns `timeout` before that. */
 const POLL_TIMEOUT_MS = 50_000;
 
-const INSTRUCTIONS = `austere-axi turns plans, comparisons, decisions, code reviews and reports into review pages the user annotates in the browser. Call \`spec\` once per session for the workflow, the file skeleton and the component reference. Results are the CLI's output: where a \`next:\` hint names an \`austere-axi <command>\`, call the tool of that name instead. Pass absolute file paths.`;
+const INSTRUCTIONS = `austere-axi turns plans, comparisons, decisions, code reviews and reports into review pages the user annotates in the browser. Call \`spec\` once per session for the workflow, the file skeleton and the component reference. Results are the CLI's output: where a \`next:\` hint names an \`austere-axi <command>\`, call the tool of that name instead. Pass absolute file paths. The reviewer judges how a page looks: do not open, screenshot or inspect it yourself unless the user asks.`;
 
 const file: ArgSchema = { type: "string", description: "Path of the .html page. Use an absolute path; a relative one resolves against the server's working directory." };
 
@@ -78,9 +79,13 @@ const TOOLS: Record<string, Tool> = {
   check: {
     title: "Validate a page",
     description: "Validate the page's OpenUI Lang program without a browser: syntax, component names, required props, unresolved references, unreachable statements.",
-    properties: { file, fix: { type: "boolean", description: "Write the <meta name=\"austere-packs\"> tag for the packs the page uses." } },
+    properties: {
+      file,
+      fix: { type: "boolean", description: "Write the <meta name=\"austere-packs\"> tag for the packs the page uses." },
+      render: { type: "boolean", description: "Also render the page in headless Chrome and report render errors and sideways scrolling as text. Only when the user asks to verify the page." },
+    },
     required: ["file"],
-    run: (a) => [{ args: ["check", ...(a.fix ? ["--fix"] : []), "--", a.file] }],
+    run: (a) => [{ args: ["check", ...(a.fix ? ["--fix"] : []), ...(a.render ? ["--render"] : []), "--", a.file] }],
   },
   open: {
     title: "Validate and open the review",

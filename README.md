@@ -135,7 +135,7 @@ npx -y austere-axi plan.html         # validate and open the page for review
 npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
 ```
 
-`--help` prints the file skeleton and the full loop.
+`--help` prints the file skeleton and the loop (about 900 tokens); `help all` adds the rarer commands and the environment. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`.
 
 ## How it works
 
@@ -143,7 +143,7 @@ npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
 agent writes plan.html ──► austere-axi plan.html ──► local server + browser review
                                                         │  reviewer annotates, picks options,
                                                         │  types, presses Send
-agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-poll returns the batch)
+agent patches changes  ◄── austere-axi poll plan.html ◄─┘  (long-poll returns the batch)
           │
           └─► page updates in place and flashes the changed statements
 ```
@@ -170,7 +170,7 @@ austere-axi close <file>         close the review: no more notes until reopen
 austere-axi reopen <file>        reopen an ended or closed review
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
-austere-axi check <file>         validate the program (no browser)    [--fix]
+austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]
 austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
@@ -183,7 +183,7 @@ austere-axi server --persist     run the server in the foreground and never idle
 austere-axi mcp                  MCP server on stdio (see MCP)
 ```
 
-Output is compact YAML for agents. Each `poll` item includes its statement and line, so the agent does not re-read the file.
+Output is compact YAML for agents. Each `poll` item has its statement and that statement's line and source, so the agent does not read the file again. Agents revise with `patch` only: they send the changed statements, never the whole file.
 
 ### Session rules
 
@@ -195,6 +195,7 @@ Output is compact YAML for agents. Each `poll` item includes its statement and l
 - A review the user ended or closed opens again only with `--reopen`.
 - **Tabs closed:** `poll` returns `browser_disconnected` 10 s after the last review tab closes, or 5 min after a dropped connection (for example, a locked phone). The review stays open, so later notes reach the next `poll`.
 - `feedback <file>` returns notes no agent has answered, from any day. Reading them acknowledges them; `reply` marks them answered.
+- **Render failures reach the agent without a click:** bad Mermaid syntax, an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px and prints render errors and the statements that make the page scroll sideways, as text, with no screenshot. Agents run it only when the user asks for a check.
 
 ## Components and packs
 
@@ -361,6 +362,7 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs |
+| `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
 
 ## Security
 

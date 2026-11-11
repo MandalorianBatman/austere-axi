@@ -16,6 +16,7 @@ import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
 import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, RevokeResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
 import { exportHtml } from "./export.ts";
+import { renderCheck } from "./render-check.ts";
 import { format, print } from "./output.ts";
 import { describeItem, locator } from "../shared/feedback.ts";
 import type { FeedbackItem } from "../shared/feedback.ts";
@@ -67,85 +68,70 @@ WORKFLOW
        intro = Card([CardHeader("Title", "Subtitle"), introText])
        introText = MarkDownRenderer("...")
        </script></body></html>
-     The CDN tag lets the file open on its own (needs network); review and \`export\` work offline.
-  3. ${BIN} <file.html>          validate + open for review (fix any errors it lists).
-                                   With --no-open the session still exists; it prints the url
-                                   (and a phone url when Tailscale is up) for the user. A browser
-                                   the CLI did not open signs in once with a link from \`${BIN} login\`.
-  4. ${BIN} poll <file.html>     wait for feedback. Leave it running in the foreground;
-                                   it returns when the reviewer presses Send. If your tool call
-                                   times out first, run the same poll again: nothing is lost.
-  5. Apply feedback by editing ONLY the named statements (keep names stable). The page
-     live-updates and highlights what changed. Then reply, passing the poll's cursor:
+     Arguments are positional and typed: follow each signature in spec exactly (order and
+     type; an array stays an array). Pass null to skip an optional one.
+  3. ${BIN} <file.html>          validate + open for review; fix any errors it lists.
+                                   --no-open: print the url for the user instead.
+  4. ${BIN} poll <file.html>     wait for feedback (foreground; if the call times out, poll again).
+  5. Revise with patch only: send just the changed statements; do not rewrite or re-read
+     the file (each note carries its statement's line and source):
+       ${BIN} patch <file.html> <<'EOF'
+       risks = Table([...])        same name replaces, new name adds, \`name = null\` deletes
+       EOF
+     If a changed value appears in several statements, patch each of them.
+     Then acknowledge and reply in one step:
        ${BIN} poll <file.html> --cursor <n> --agent-reply "one line: what changed"
-     Feedback stays unread until you acknowledge it (--cursor, or any reply); a poll
-     without either returns it again, so feedback lost on the way is not lost.
-  6. On status: ended, stop polling and continue in chat. Never reopen uninvited. Notes
-     the reviewer adds later are kept, and the next poll returns them.
+  6. On status: ended, stop polling and continue in chat. Never reopen uninvited.
 
-FEEDBACK (what poll returns)
-  status: feedback | ended | browser_disconnected | interrupted | replaced, plus a next: hint.
-  cursor: the number to acknowledge this feedback with.
-  items, each one of:
-    annotation: <statement> (<Component>)   line + source of that statement in the file,
-        within (parent statements), selection | excerpt, detail (table row/column, or
-        part: the exact piece clicked, e.g. a diff file:+line or a diagram node), note
-    action: <@ToAssistant message>           form: {<formName>: {<field>: value}}, context
-    message: <free text from the composer>
-    render_error: <statement>                a render failure the reviewer asked you to fix
+FEEDBACK (poll)
+  status: feedback | ended | browser_disconnected | interrupted | replaced, plus next:
+  cursor: pass it back to acknowledge; unacknowledged feedback is returned again.
+  items: annotation: <statement> (<Component>) with line, source, note
+         action: <@ToAssistant message> with form values | message: <free text>
+         render_error: <statement>  sent by the open review page on its own
 
 CHECK verifies syntax, component names, required props, unresolved references and
-statements unreachable from root. Mermaid syntax is only checked when it renders; failures
-show in the reviewer's panel and can come back as render_error. CHECK does not judge how
-a page looks: open it for that. It does warn when an Architecture diagram will not fit the
+statements unreachable from root. It warns when an Architecture diagram will not fit the
 page (it would scroll sideways).
 
-WHEN TO USE
-  Plans, comparisons, decisions, reviews, reports: anything easier to grasp as a page.
-  Not for a few sentences of prose.
+LOOKS
+  The reviewer judges how the page looks. Do not open, screenshot or inspect the page
+  yourself (browser tools, curl, headless runs) unless the user asks: check ok + open is
+  done. Render failures come back through poll. When the user asks you to verify the
+  page, run \`${BIN} check --render <file>\` (headless Chrome, text report, no image).
 
-COMMANDS (\`${BIN} <command> --help\` for one command's flags and an example)
-  ${BIN}                         sessions + command list
-  ${BIN} <file>                  open/resume a review   [--no-open] [--reopen]
-  ${BIN} poll <file>             long-poll for feedback  [--cursor n] [--agent-reply "..."] [--agent-reply-file f|-]
-                                   --cursor n acknowledges feedback up to n; --after n returns
-                                   everything after n again. One poll per session; --takeover
-                                   replaces a stuck one
-  ${BIN} reply <file>            post a reply without polling  --agent-reply "..." | --agent-reply-file f|-  [--cursor n]
-  ${BIN} end <file>              stop as the agent; the reviewer can still add notes for later
-  ${BIN} close <file>            close the review for the owner: no more notes until reopen
-  ${BIN} reopen <file>           reopen an ended or closed review
-  ${BIN} login [file]            single-use link that signs a browser in as you (SSH, --no-open,
-                                   another browser), to the file's review or the session list
-  ${BIN} feedback <file>         feedback no agent has answered yet (sent after polling stopped,
-                                   or in an earlier session)   [--all] [--peek]; answer with reply
-  ${BIN} check <file>            validate the program (no browser)   [--fix: declare the packs it uses]
-  ${BIN} patch <file>            merge statements from stdin into the program: same name
-                                   replaces, new name adds, \`name = null\` deletes;
-                                   reports added statements dropped as unreferenced
-  ${BIN} spec [group|pack...]    component reference (groups: Layout Content Data Charts Forms Buttons)
-  ${BIN} components [group]      every component, including ones spec leaves out
-  ${BIN} components search <words> | show <Name...>
-  ${BIN} components add <npm-package|folder|file.tgz> [--trust] | remove <package>
-                                   packs add components; a page that uses one declares it
-                                   (check --fix writes the <meta name="austere-packs"> tag)
-  ${BIN} components new <dir> | build [dir]    write your own pack
-  ${BIN} export <file>           single self-contained HTML   [--out path]
-  ${BIN} hub on|off|status|list|notes|open   the owner's home page: every artifact by project/date, every note
-  ${BIN} share <file> --as "<name>" [--auto]   invite link for a teammate on your tailnet. Their notes
-                                   wait for the owner to send them on; --auto skips the wait
-  ${BIN} share list [--links] | revoke <name|id>
-  ${BIN} stop                    stop the background server
-  ${BIN} server [--persist]      run the server in the foreground; --persist: never idle out
-                                   (behind a reverse proxy, under systemd)
-  ${BIN} mcp                     MCP server on stdio: spec check open poll reply patch end as tools
+COMMANDS
+  ${BIN} check <file>            validate without a browser: syntax, components, props,
+                                   references   [--fix: declare packs] [--render]
+  ${BIN} reply <file>            reply without polling  --agent-reply "..."  [--cursor n]
+  ${BIN} end <file>              stop as the agent; later notes wait for the next poll
+  ${BIN} feedback <file>         notes no agent has answered yet   [--all] [--peek]
+  ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
+  ${BIN} components search <words> | show <Name...>   components spec leaves out
+  ${BIN} <command> --help        one command's flags and an example
+  ${BIN} help all                every command, notes and environment
+`;
+
+/** `help all`: every command from COMMANDS (generated, so it cannot drift), then notes and the environment. */
+function helpAll() {
+  const rows = Object.entries(COMMANDS).map(([, c]) => `  ${BIN} ${c.usage}\n      ${c.summary}`);
+  return `
+ALL COMMANDS
+${rows.join("\n")}
+
+NOTES
+  The CDN script tag lets the file open on its own (needs network); review and export work
+  offline. A browser the CLI did not open gets 403 until it signs in with \`${BIN} login\`.
+  Mermaid syntax is only checked when it renders. check warns when an Architecture diagram
+  will not fit the page. check --render needs Chrome, Chromium or Edge (or CHROME_PATH).
 
 ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1  AUSTERE_AXI_DISCONNECT_GRACE_MS (300000)
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
-  AUSTERE_AXI_NPM_REGISTRY
+  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)
 `;
+}
 
 /**
  * Every command: usage line, one-line summary, the flags it accepts (name → help) and an example.
@@ -199,9 +185,12 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "feedback plan.html",
   },
   check: {
-    usage: "check <file> [--fix]",
+    usage: "check <file> [--fix] [--render]",
     summary: "validate the program without a browser: syntax, components, props, references, reachability",
-    flags: { fix: 'declare the packs the page uses (writes the <meta name="austere-packs"> tag)' },
+    flags: {
+      fix: 'declare the packs the page uses (writes the <meta name="austere-packs"> tag)',
+      render: "also render it in headless Chrome and report render errors and sideways scrolling as text (needs Chrome or CHROME_PATH); only when the user asks",
+    },
     example: "check plan.html",
   },
   patch: {
@@ -451,9 +440,9 @@ function thirdPartyOf(abs: string): string[] {
 
 const NEXT: Record<string, (f: string, cursor?: number) => string> = {
   feedback: (f, cursor) =>
-    `Apply it by editing the named statements in place (keep names stable; the page live-updates and highlights changes). Run \`${BIN} check ${f}\` if you restructured, then \`${BIN} poll ${f} --cursor ${cursor} --agent-reply "<one line: what changed>"\`.`,
+    `Revise with \`${BIN} patch ${f}\`: send only the changed statements on stdin (same name replaces, new name adds); do not rewrite or re-read the file. Then \`${BIN} poll ${f} --cursor ${cursor} --agent-reply "<one line: what changed>"\`.`,
   feedbackEnded: (f, cursor) =>
-    `The reviewer sent this and ended the review. Apply it, then \`${BIN} reply ${f} --cursor ${cursor} --agent-reply "<what changed>"\` and summarize in chat. Do not poll or reopen.`,
+    `The reviewer sent this and ended the review. Apply it with \`${BIN} patch ${f}\` (changed statements only), then \`${BIN} reply ${f} --cursor ${cursor} --agent-reply "<what changed>"\` and summarize in chat. Do not poll or reopen.`,
   ended: (f) =>
     `The review ended. Stop polling and continue in chat. Notes the reviewer adds later are kept for the next poll. Reopen only if the user asks (\`${BIN} ${f} --reopen\`).`,
   browser_disconnected: (f) =>
@@ -597,9 +586,33 @@ async function cmdCheck(file: string | undefined, flags: Flags = {}): Promise<vo
   if (fixed.length) out.fixed = fixed;
   if (result.errors.length) out.errors = result.errors;
   if (result.warnings.length) out.warnings = result.warnings;
-  if (result.ok && result.hasMermaid) out.note = "Mermaid sources are checked only when they render in the review page.";
+  if (flags.render) {
+    if (!result.ok) out.render = "skipped: fix the errors above first";
+    else {
+      const render = await renderOut(html);
+      out.render = render;
+      if (render.errors) out.status = "errors";
+      // The check the user asked for did not run: say so in the status and the exit code.
+      else if (render.status === "unavailable") out.status = "render_unavailable";
+    }
+  } else if (result.ok && result.hasMermaid) {
+    out.note = "Mermaid sources are checked when the review page renders them; failures come back through poll.";
+  }
   print(out);
-  if (!result.ok) process.exitCode = 1;
+  if (out.status !== "ok") process.exitCode = 1;
+}
+
+/** `check --render`'s part of the output: only what is wrong, or `clean`. */
+async function renderOut(html: string): Promise<Printed> {
+  const r = await renderCheck(html);
+  if (r.status === "unavailable") return { status: "unavailable", reason: r.reason };
+  const out: Printed = { status: r.errors.length ? "errors" : "clean", widths: "1280, 390", statements: r.statements };
+  if (r.errors.length) out.errors = r.errors.map((e) => ({ statement: e.statement || "(page)", message: e.error }));
+  if (r.overflow.length) {
+    out.scrolls_sideways = r.overflow.map((o) => ({ width: o.width, statements: o.statements.length ? o.statements.join(", ") : "(not one statement)" }));
+  }
+  if (r.notices.length) out.notices = r.notices;
+  return out;
 }
 
 async function cmdPatch(file: string | undefined): Promise<void> {
@@ -818,7 +831,7 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
     review: status,
     items,
     next:
-      `Apply what still applies (edit the named statements; names are stable), then \`${BIN} reply ${f} --agent-reply "<what changed>"\`, ` +
+      `Apply what still applies with \`${BIN} patch ${f}\` (changed statements only; names are stable), then \`${BIN} reply ${f} --agent-reply "<what changed>"\`, ` +
       `which marks it addressed. To continue live with the reviewer: \`${BIN} ${f}\`${status === "ended" ? " --reopen, if the user asks" : ""}, then poll.`,
   });
 }
@@ -1109,7 +1122,8 @@ async function main(): Promise<unknown> {
       return cmdOpen(rest[0], flags);
     case "help":
       if (!rest[0]) return process.stdout.write(HELP);
-      if (!Object.hasOwn(COMMANDS, rest[0])) return usage(`no command named ${rest[0]}. One of: ${Object.keys(COMMANDS).join(" ")}`, "help");
+      if (rest[0] === "all") return process.stdout.write(HELP + helpAll());
+      if (!Object.hasOwn(COMMANDS, rest[0])) return usage(`no command named ${rest[0]}. One of: all ${Object.keys(COMMANDS).join(" ")}`, "help");
       return commandHelp(rest[0]);
     default:
       return cmdOpen(cmd, flags);

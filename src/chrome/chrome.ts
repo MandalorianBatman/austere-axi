@@ -96,6 +96,7 @@ interface SnapshotEvent {
   version?: string;
   thirdPartyPacks?: string[];
   program: string;
+  revision: number;
 }
 
 interface PresenceEvent extends SessionInfo {
@@ -104,6 +105,7 @@ interface PresenceEvent extends SessionInfo {
 
 interface ChangedEvent {
   program: string;
+  revision: number;
   shellChanged?: boolean;
   thirdPartyPacks?: string[];
 }
@@ -180,6 +182,12 @@ const state: {
   unread: number;
   more: boolean;
   program: string | null;
+  revision: number;
+  // The revision the current render errors belong to, and whether the agent got them.
+  errorsRevision: number;
+  renderReport: "sent" | "failed" | null;
+  // The page uses third-party packs: their code could forge errors, so none are sent on their own.
+  thirdParty: boolean;
   frameReady: boolean;
   scrollY: number;
   parserErrors: RenderIssue[];
@@ -202,6 +210,10 @@ const state: {
   unread: 0,
   more: false,
   program: null,
+  revision: 0,
+  errorsRevision: 0,
+  renderReport: null,
+  thirdParty: false,
   frameReady: false,
   scrollY: 0,
   parserErrors: [],
@@ -490,13 +502,17 @@ window.addEventListener("message", (e) => {
       break;
     case "errors":
       state.parserErrors = (d.errors || []).filter((x) => x.severity !== "warning");
+      state.errorsRevision = state.revision;
       renderLog();
+      reportRenderErrors();
       break;
     case "runtime-error":
       const error = d.error;
       if (error && !state.runtimeErrors.some((x) => x.statementId === error.statementId && x.message === error.message)) {
         state.runtimeErrors.push(error);
+        state.errorsRevision = state.revision;
         renderLog();
+        reportRenderErrors();
       }
       break;
     case "state":
@@ -550,6 +566,31 @@ function addToQueue(raw: unknown) {
   saveQueue();
   renderLog(true);
   renderDock();
+}
+
+// The owner's page sends render failures to the agent on its own, so the agent never has to look
+// at the page to learn it is broken. Each report carries the revision its errors came from; the
+// server drops repeats and reports for an older revision. If the post fails, "Queue fix" stays.
+let renderReportTimer: ReturnType<typeof setTimeout> | undefined;
+function reportRenderErrors() {
+  // Third-party pack code runs in the frame and could forge errors: the owner queues those by hand.
+  if (!OWNER || state.closed || state.thirdParty) return;
+  clearTimeout(renderReportTimer);
+  renderReportTimer = setTimeout(async () => {
+    const errors = [...state.parserErrors, ...state.runtimeErrors].map((e) => ({ statement: str(e.statementId), message: str(e.message) }));
+    if (!errors.length) return;
+    const reply = await fetch(`${BASE}/render-errors`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ revision: state.errorsRevision, errors }),
+    }).then(
+      async (r) => (r.ok ? ((await r.json()) as { stale?: boolean }) : null),
+      () => null,
+    );
+    // A stale report (an older revision) reached no one; the new render reports its own errors.
+    state.renderReport = reply && !reply.stale ? "sent" : reply ? null : "failed";
+    renderLog();
+  }, 500);
 }
 
 function removeFromQueue(qid: string | undefined) {
@@ -718,14 +759,17 @@ function renderLog(scrollToEnd = false) {
   log.textContent = "";
   const issues = [...state.parserErrors, ...state.runtimeErrors];
   if (issues.length) {
-    const box = h("div", { class: "issues" }, h("div", { class: "issues-head", text: `Render issues (${issues.length})` }));
+    const sent = OWNER && state.renderReport === "sent";
+    const head = `Render issues (${issues.length})${sent ? " · sent to the agent" : ""}`;
+    const box = h("div", { class: "issues" }, h("div", { class: "issues-head", text: head }));
     for (const err of issues.slice(0, 8)) {
       box.append(
         h(
           "div",
           { class: "issue" },
           h("div", { class: "issue-text" }, err.statementId ? h("code", { text: err.statementId }) : null, " ", err.message),
-          state.closed
+          // Once the owner's page has sent it to the agent (reportRenderErrors), there is nothing to queue.
+          state.closed || sent
             ? null
             : h("button", {
                 type: "button",
@@ -1144,6 +1188,21 @@ function connect() {
       ]);
     }
     showPackNotice(d.thirdPartyPacks);
+    state.thirdParty = !!d.thirdPartyPacks?.length;
+    // First snapshot: errors the frame reported before it belong to this revision.
+    // A reconnect on the same revision resends what may have been lost (the server drops repeats).
+    // On a newer revision the held errors describe an old program: the new render reports its own.
+    // The same program on a newer revision (only the page shell changed) renders the same errors.
+    if (state.program === null || d.revision === state.revision || d.program === state.program) {
+      if (d.revision !== state.revision) state.errorsRevision = d.revision;
+      state.revision = d.revision;
+      reportRenderErrors();
+    } else {
+      state.revision = d.revision;
+      state.parserErrors = [];
+      state.runtimeErrors = [];
+      state.renderReport = null;
+    }
     if (state.program === null) state.program = d.program;
     else if (d.program !== state.program) {
       state.program = d.program;
@@ -1171,9 +1230,12 @@ function connect() {
   });
   source.addEventListener("changed", (e) => {
     const d: ChangedEvent = JSON.parse(e.data);
+    state.revision = d.revision;
+    state.renderReport = null;
     state.parserErrors = [];
     state.runtimeErrors = [];
     showPackNotice(d.thirdPartyPacks);
+    state.thirdParty = !!d.thirdPartyPacks?.length;
     if (d.shellChanged || !state.frameReady) {
       state.program = d.program;
       // A full reload reports no changes: drop the previous turn's.

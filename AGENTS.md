@@ -6,7 +6,7 @@ austere-axi is a CLI, a local review server, and a browser runtime for agent rev
 
 - **User-facing contract:** `README.md`.
 - **What agents are told while using the tool:** CLI output: `--help` (`src/cli/main.ts`), and `spec` (generated from `src/runtime/prompt.ts`, the component files and `src/runtime/stock.ts`).
-- **Shipped skills:** `skills/austere/SKILL.md` stays a stub that points at the CLI, so don't copy CLI guidance into it. `skills/austere-setup/SKILL.md` walks an agent through setup; keep its commands in step with the CLI.
+- **Shipped skills:** `skills/austere/SKILL.md` stays a stub that points at the CLI, so don't copy CLI guidance into it. The one exception is its line that the agent must not open, screenshot or inspect the page unless asked: it has to override a harness's "verify UI visually" rule before the agent reads the CLI. `skills/austere-setup/SKILL.md` walks an agent through setup; keep its commands in step with the CLI.
 - **MCP server and Claude Code plugin:** `austere-axi mcp` (`src/cli/mcp.ts`) runs the CLI as a child process for each tool call and returns its output; keep logic in the CLI commands, not there. A new tool argument maps to an existing CLI flag. `.claude-plugin/` holds the marketplace and plugin manifests; it lives in git, not in the npm package.
 - **Adding or changing a component:** follow `.agents/skills/add-component/SKILL.md`.
 - **Reviewing a change before committing:** follow `.agents/skills/review-change/SKILL.md`. It runs the checks and the agents in `.agents/agents/` (change-reviewer, visual-qa, cold-start-author).

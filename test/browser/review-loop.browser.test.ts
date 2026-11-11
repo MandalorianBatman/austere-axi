@@ -40,6 +40,7 @@ interface PollItem {
   note?: string;
   target?: string;
   detail?: { part?: string };
+  statement?: string;
 }
 
 /** The fields these tests read from the server's JSON replies. */
@@ -48,6 +49,7 @@ interface ApiReply {
   code: string;
   status: string;
   items: PollItem[];
+  cursor: number;
 }
 
 /** A frame flag that a reload clears. */
@@ -345,6 +347,34 @@ test("after the agent ends the review the reviewer can still send; only closing 
     assert.deepEqual(problems, [], "browser errors");
   } finally {
     await context.close();
+  }
+});
+
+test("the owner's page sends render errors to the agent once per revision, without a click", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "render-errors.html");
+  fs.writeFileSync(file, htmlPage("Render errors", 'root = Stack([intro, broken])\nintro = TextContent("hello")\nbroken = NoSuchThing("x")', CDN_RUNTIME_URL));
+  const first = await openReview(file, VIEWPORTS[0]);
+  try {
+    const res = await api("/api/poll", { file, timeoutMs: 5000 });
+    assert.equal(res.status, "feedback", JSON.stringify(res));
+    const items = res.items.filter((x) => x.kind === "render-error");
+    assert.ok(items.some((x) => x.statement === "broken"), JSON.stringify(res.items));
+    // Once the server confirms, the panel says so and drops "Queue fix".
+    await first.page.waitForSelector(".issues-head:has-text('sent to the agent')");
+    assert.equal(await first.page.locator(".issue .btn").count(), 0, "no Queue fix button: it was sent already");
+
+    // A second tab on the same revision reports the same errors: the agent does not get them twice.
+    const second = await openReview(file, VIEWPORTS[1]);
+    try {
+      await second.page.waitForTimeout(1000);
+      const again = await api("/api/poll", { file, cursor: res.cursor, timeoutMs: 1500 });
+      assert.equal(again.status, "timeout", JSON.stringify(again));
+    } finally {
+      await second.context.close();
+    }
+  } finally {
+    await first.context.close();
   }
 });
 

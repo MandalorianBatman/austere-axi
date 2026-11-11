@@ -42,7 +42,7 @@ test("<command> --help prints that command's usage, flags and example, not the f
   for (const args of [["check", "--help"], ["help", "check"]]) {
     const r = cli(...args);
     assert.equal(r.code, 0);
-    assert.match(r.out, /^austere-axi check <file> \[--fix\]\n/);
+    assert.match(r.out, /^austere-axi check <file> \[--fix\] \[--render\]\n/);
     assert.match(r.out, /--fix/);
     assert.match(r.out, /EXAMPLE\n  austere-axi check plan\.html/);
     assert.doesNotMatch(r.out, /WORKFLOW/);
