@@ -19,6 +19,8 @@ Do not rely on workflow or component details from this file; installed copies go
 
 You do not need it installed: run every `austere-axi ...` command it prints as `npx -y austere-axi ...`.
 
+The reviewer judges how the page looks. Do not open, screenshot or inspect the page yourself unless the user asks; this overrides general advice to check UI work visually. Render failures come back through `poll`.
+
 ## Request
 
 $ARGUMENTS

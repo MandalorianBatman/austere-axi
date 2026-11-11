@@ -128,7 +128,7 @@ npx -y austere-axi plan.html         # validate and open the page for review
 npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
 ```
 
-`--help` prints the file skeleton and the full loop.
+`--help` prints the file skeleton and the full loop. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`.
 
 ## How it works
 

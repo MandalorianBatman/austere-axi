@@ -64,10 +64,14 @@ FEEDBACK (what poll returns)
     render_error: <statement>                a render failure the reviewer asked you to fix
 
 CHECK verifies syntax, component names, required props, unresolved references and
-statements unreachable from root. Mermaid syntax is only checked when it renders; failures
-show in the reviewer's panel and can come back as render_error. CHECK does not judge how
-a page looks: open it for that. It does warn when an Architecture diagram will not fit the
-page (it would scroll sideways).
+statements unreachable from root. It warns when an Architecture diagram will not fit the
+page (it would scroll sideways). Mermaid syntax is only checked when it renders; failures
+show in the reviewer's panel and can come back as render_error.
+
+LOOKS
+  The reviewer judges how the page looks. Do not open, screenshot or inspect the page
+  yourself (browser tools, curl, headless runs) unless the user asks: check ok + open is
+  done. Render failures come back to you through poll.
 
 WHEN TO USE
   Plans, comparisons, decisions, reviews, reports: anything easier to grasp as a page.
@@ -427,7 +431,7 @@ async function cmdCheck(file, flags = {}) {
   if (fixed.length) out.fixed = fixed;
   if (result.errors.length) out.errors = result.errors;
   if (result.warnings.length) out.warnings = result.warnings;
-  if (result.ok && result.hasMermaid) out.note = "Mermaid sources are checked only when they render in the review page.";
+  if (result.ok && result.hasMermaid) out.note = "Mermaid sources are checked when the review page renders them; failures come back through poll.";
   print(out);
   if (!result.ok) process.exitCode = 1;
 }
