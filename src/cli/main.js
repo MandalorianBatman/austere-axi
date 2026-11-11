@@ -22,8 +22,9 @@ import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } fr
 
 const BIN = "austere-axi";
 
-const HELP = `${BIN} ${VERSION} — review pages written in OpenUI Lang. The reviewer annotates the page
-in the browser; feedback comes back addressed by statement name.
+const HELP = `${BIN} ${VERSION} — review artifacts written in OpenUI Lang. You write a short
+program instead of a whole HTML page; the reviewer annotates it in the browser;
+their feedback comes back to you addressed by statement name.
 
 WORKFLOW
   1. ${BIN} spec                 component reference (read once per session)
@@ -36,6 +37,8 @@ WORKFLOW
        intro = Card([CardHeader("Title", "Subtitle"), introText])
        introText = MarkDownRenderer("...")
        </script></body></html>
+     Arguments are positional and typed: follow each signature in spec exactly (order and
+     type; an array stays an array). Pass null to skip an optional one.
   3. ${BIN} <file.html>          validate + open for review; fix any errors it lists.
                                    --no-open: print the url for the user instead.
   4. ${BIN} poll <file.html>     wait for feedback (foreground; if the call times out, poll again).
@@ -54,6 +57,10 @@ FEEDBACK (poll)
   items: annotation: <statement> (<Component>) with line, source, note
          action: <@ToAssistant message> with form values | message: <free text>
          render_error: <statement>  sent by the open review page on its own
+
+CHECK verifies syntax, component names, required props, unresolved references and
+statements unreachable from root. It warns when an Architecture diagram will not fit the
+page (it would scroll sideways).
 
 LOOKS
   The reviewer judges how the page looks. Do not open, screenshot or inspect the page

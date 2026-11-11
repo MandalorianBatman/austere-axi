@@ -128,7 +128,7 @@ npx -y austere-axi plan.html         # validate and open the page for review
 npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
 ```
 
-`--help` prints the file skeleton and the loop (about 750 tokens); `help all` adds the rarer commands and the environment. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`.
+`--help` prints the file skeleton and the loop (about 900 tokens); `help all` adds the rarer commands and the environment. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`.
 
 ## How it works
 
