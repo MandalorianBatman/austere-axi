@@ -47,6 +47,7 @@ WORKFLOW
        ${BIN} patch <file.html> <<'EOF'
        risks = Table([...])        same name replaces, new name adds, \`name = null\` deletes
        EOF
+     If a changed value appears in several statements, patch each of them.
      Then acknowledge and reply in one step:
        ${BIN} poll <file.html> --cursor <n> --agent-reply "one line: what changed"
   6. On status: ended, stop polling and continue in chat. Never reopen uninvited.

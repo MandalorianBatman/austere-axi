@@ -37,7 +37,7 @@ const TOOLS = {
     properties: {
       file,
       fix: { type: "boolean", description: "Write the <meta name=\"austere-packs\"> tag for the packs the page uses." },
-      render: { type: "boolean", description: "Also render the page in headless Chrome and report render errors and sideways scrolling as text. Only when the user asks to verify the page, or no review tab is open." },
+      render: { type: "boolean", description: "Also render the page in headless Chrome and report render errors and sideways scrolling as text. Only when the user asks to verify the page." },
     },
     required: ["file"],
     run: (a) => [{ args: ["check", ...(a.fix ? ["--fix"] : []), ...(a.render ? ["--render"] : []), "--", a.file] }],

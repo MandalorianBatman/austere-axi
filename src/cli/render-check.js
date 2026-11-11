@@ -3,7 +3,7 @@
 // rendering shows: render errors (unknown components, Mermaid syntax, components that
 // throw), uncaught exceptions, and statements that make the page scroll sideways.
 // No screenshot. Opt-in: the reviewer judges how a page looks; this is for when the
-// user asks for a check, or no review tab is open to report render errors.
+// user asks for a check.
 //
 // The page is exported (runtime and packs inlined, so no network) and framed by a small
 // harness that speaks the review bridge, the way the review chrome frames it. Chrome is
