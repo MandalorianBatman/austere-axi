@@ -161,7 +161,7 @@ austere-axi close <file>         close the review: no more notes until reopen
 austere-axi reopen <file>        reopen an ended or closed review
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
-austere-axi check <file>         validate the program (no browser)    [--fix]
+austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]
 austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
@@ -187,7 +187,7 @@ Session rules:
 - A review the user ended or closed does not open again unless you pass `--reopen`.
 - If all review tabs stay closed, `poll` returns `browser_disconnected`: 10 s after a tab closes, or 5 min after a dropped connection (for example, a locked phone). The agent stops polling but does not end the review, so notes left later are picked up by the next `poll`.
 - `feedback <file>` returns notes no agent has answered, also from earlier days. Reading them acknowledges them; `reply` marks them answered.
-- Render failures (bad Mermaid syntax, an unknown component, a component that throws) reach the agent without a click. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent.
+- Render failures (bad Mermaid syntax, an unknown component, a component that throws) reach the agent without a click. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent; `check --render <file>` covers that case. It renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px and prints render errors and the statements that make the page scroll sideways, as text, with no screenshot. Agents run it only when the user asks for a check.
 
 ## Components and packs
 
@@ -348,6 +348,7 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs |
+| `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
 
 ## Security
 

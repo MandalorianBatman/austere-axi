@@ -13,6 +13,7 @@ import { InviteStore, inviteId } from "./invites.js";
 import { lockStateDir } from "./lock.js";
 import { SessionStore, sessionId } from "./sessions.js";
 import { exportHtml } from "./export.js";
+import { renderCheck } from "./render-check.js";
 import { format, print } from "./output.js";
 import { describeItem, locator } from "../shared/feedback.js";
 import { VERSION, assetPath, canonicalFile, port, stateDir } from "./paths.js";
@@ -72,7 +73,9 @@ review page sends failures back through poll as render_error.
 LOOKS
   The reviewer judges how the page looks. Do not open, screenshot or inspect the page
   yourself (browser tools, curl, headless runs) unless the user asks: check ok + open is
-  done. Render failures come back to you through poll.
+  done. Render failures come back to you through poll. When the user asks you to verify
+  the page, or no review tab is open, run \`${BIN} check --render <file>\`: it renders the
+  page in headless Chrome and reports render errors and sideways scrolling as text.
 
 WHEN TO USE
   Plans, comparisons, decisions, reviews, reports: anything easier to grasp as a page.
@@ -94,6 +97,8 @@ COMMANDS
   ${BIN} feedback <file>         feedback no agent has answered yet (sent after polling stopped,
                                    or in an earlier session)   [--all] [--peek]; answer with reply
   ${BIN} check <file>            validate the program (no browser)   [--fix: declare the packs it uses]
+                                   [--render: also render it in headless Chrome; text only, needs
+                                   Chrome or CHROME_PATH; only when asked or no tab is open]
   ${BIN} patch <file>            merge statements from stdin into the program: same name
                                    replaces, new name adds, \`name = null\` deletes;
                                    reports added statements dropped as unreferenced
@@ -118,7 +123,7 @@ ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1  AUSTERE_AXI_DISCONNECT_GRACE_MS (300000)
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
-  AUSTERE_AXI_NPM_REGISTRY
+  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)
 `;
 
 function parseArgs(argv) {
@@ -432,9 +437,28 @@ async function cmdCheck(file, flags = {}) {
   if (fixed.length) out.fixed = fixed;
   if (result.errors.length) out.errors = result.errors;
   if (result.warnings.length) out.warnings = result.warnings;
-  if (result.ok && result.hasMermaid) out.note = "Mermaid sources are checked when the review page renders them; failures come back through poll.";
+  if (flags.render) {
+    if (!result.ok) out.render = "skipped: fix the errors above first";
+    else out.render = await renderOut(html);
+  } else if (result.ok && result.hasMermaid) {
+    out.note = "Mermaid sources are checked when the review page renders them; failures come back through poll.";
+  }
+  if (out.render?.errors) out.status = "errors";
   print(out);
-  if (!result.ok) process.exitCode = 1;
+  if (out.status !== "ok") process.exitCode = 1;
+}
+
+/** `check --render`'s part of the output: only what is wrong, or `clean`. */
+async function renderOut(html) {
+  const r = await renderCheck(html);
+  if (r.status === "unavailable") return { status: "unavailable", reason: r.reason };
+  const out = { status: r.errors.length ? "errors" : "clean", widths: "1280, 390", statements: r.statements };
+  if (r.errors.length) out.errors = r.errors.map((e) => ({ statement: e.statement || "(page)", message: e.error }));
+  if (r.overflow.length) {
+    out.scrolls_sideways = r.overflow.map((o) => ({ width: o.width, statements: o.statements.length ? o.statements.join(", ") : "(not one statement)" }));
+  }
+  if (r.notices.length) out.notices = r.notices;
+  return out;
 }
 
 async function cmdPatch(file) {

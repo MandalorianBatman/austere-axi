@@ -34,9 +34,13 @@ const TOOLS = {
   check: {
     title: "Validate a page",
     description: "Validate the page's OpenUI Lang program without a browser: syntax, component names, required props, unresolved references, unreachable statements.",
-    properties: { file, fix: { type: "boolean", description: "Write the <meta name=\"austere-packs\"> tag for the packs the page uses." } },
+    properties: {
+      file,
+      fix: { type: "boolean", description: "Write the <meta name=\"austere-packs\"> tag for the packs the page uses." },
+      render: { type: "boolean", description: "Also render the page in headless Chrome and report render errors and sideways scrolling as text. Only when the user asks to verify the page, or no review tab is open." },
+    },
     required: ["file"],
-    run: (a) => [{ args: ["check", ...(a.fix ? ["--fix"] : []), "--", a.file] }],
+    run: (a) => [{ args: ["check", ...(a.fix ? ["--fix"] : []), ...(a.render ? ["--render"] : []), "--", a.file] }],
   },
   open: {
     title: "Validate and open the review",
