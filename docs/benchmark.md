@@ -82,7 +82,7 @@ Everything the models wrote is committed under `bench/results/pages/<model>/<tas
 
 ### Tasks
 
-Six review pages, each with a fixed prompt that holds all the facts the page needs (`bench/tasks.mjs`):
+Six review pages, each with a fixed prompt that holds all the facts the page needs (`bench/tasks.ts`):
 
 | Task | What the page has to show |
 |---|---|
@@ -98,7 +98,7 @@ Six review pages, each with a fixed prompt that holds all the facts the page nee
 The system prompt is the tool's own guidance, captured from its CLI at the start of the run, the same text an agent reads when it follows the tool's instructions:
 
 - **austere-axi:** `austere-axi --help` and `austere-axi spec`.
-- **lavish-axi:** `lavish-axi --help`, `lavish-axi design`, and `lavish-axi playbook <id>` for each playbook that matches the task (lavish-axi's help says to open every matching playbook before writing HTML). The playbooks per task are listed in `bench/tasks.mjs`.
+- **lavish-axi:** `lavish-axi --help`, `lavish-axi design`, and `lavish-axi playbook <id>` for each playbook that matches the task (lavish-axi's help says to open every matching playbook before writing HTML). The playbooks per task are listed in `bench/tasks.ts`.
 
 The user prompt is the same for both: the task, then "write the page to this file; reply with the complete file in one code block". The model has no tools; each turn is one model call.
 

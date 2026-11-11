@@ -1,4 +1,5 @@
-// Types for the pack kit (src/pack-kit/index.js, shipped as dist/pack-kit.mjs).
+// Types for the pack kit (src/pack-kit/index.ts, shipped as dist/pack-kit.mjs).
+import type * as esbuild from "esbuild";
 import type { PackCatalog } from "./catalog.js";
 
 export { PACK_API, CONTENT_SLOTS } from "./pack.js";
@@ -22,8 +23,8 @@ export declare function sri(buffer: Uint8Array): string;
 export interface BuildPackOptions {
   /** Pack folder (package.json + entry module). */
   dir: string;
-  /** The esbuild module to bundle with. */
-  esbuild: { build(options: any): Promise<unknown> };
+  /** The esbuild module to bundle with (the pack's own). */
+  esbuild: Pick<typeof esbuild, "build">;
   /** Default <dir>/dist. */
   outDir?: string;
   /** Default package.json name. */

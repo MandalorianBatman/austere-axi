@@ -86,7 +86,7 @@ What each field does:
 - **`tier: "extended"`**: keeps it out of `spec`, still findable with `components search`. Use it for rare components.
 - **`tagged`**: wraps the output with its statement name, which is what annotations address. Default `true`.
 
-To nest components, put `Child.definition.ref` in the parent's props, as `Gantt` does with `GanttTask`.
+To nest components, put `Child.definition.ref` in the parent's props, as `Gantt` does with `GanttTask`. The parent's renderer receives each child as an `ElementValue` (`{ type: "element", typeName, props, partial }`) whose `props` are typed from the child's schema; in TypeScript, `AustereComponent<Props>` and `ElementValue<Props>` come from `austere-axi/pack`.
 
 ## 3. Render
 
