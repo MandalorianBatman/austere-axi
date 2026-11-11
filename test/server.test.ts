@@ -446,3 +446,35 @@ test("artifact responses carry their own sandbox, so a top-level load gets an op
     assert.doesNotMatch(csp, /allow-same-origin|allow-top-navigation/, route);
   }
 });
+
+test("render errors from the owner's page reach poll once per revision; stale and third-party reports do not", async () => {
+  const file = path.join(WORK, "render.html");
+  fs.writeFileSync(file, fs.readFileSync(FILE, "utf8"));
+  const open = await req("POST", "/api/open", { file });
+  const id = open.data.session.id;
+  const host = { host: `127.0.0.1:${PORT}`, origin: `http://127.0.0.1:${PORT}` };
+  const report = (revision: number) =>
+    req<{ ok?: boolean; count?: number; stale?: boolean }>("POST", `/s/${id}/render-errors`, { revision, errors: [{ statement: "intro", message: "boom" }] }, host);
+
+  const stale = await report(7);
+  assert.equal(stale.data.stale, true, "a report for another revision is dropped");
+  assert.equal((await report(0)).data.count, 1);
+  assert.equal((await report(0)).data.count, 0, "a second tab's identical report adds nothing");
+  const poll = await req("POST", "/api/poll", { file, timeoutMs: 1000 });
+  assert.equal(poll.data.status, "feedback");
+  const items = poll.data.items.filter((i) => i.kind === "render-error");
+  assert.equal(items.length, 1);
+
+  // A page with third-party pack code in its frame: errors wait for the owner to queue them.
+  fs.writeFileSync(file, fs.readFileSync(FILE, "utf8").replace("<head>", '<head><meta name="austere-packs" content="austere-pack-gantt@1.2.0">'));
+  await req("GET", `/s/${id}/`, undefined, host);
+  await new Promise((r) => setTimeout(r, 300));
+  const sessions = await req<{ sessions: { id: string }[] }>("GET", "/api/sessions");
+  assert.ok(sessions.data.sessions.some((s) => s.id === id));
+  let refused = await report(1);
+  for (let i = 0; i < 20 && refused.status !== 409; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    refused = await report(1);
+  }
+  assert.equal(refused.status, 409);
+});

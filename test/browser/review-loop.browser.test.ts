@@ -360,6 +360,8 @@ test("the owner's page sends render errors to the agent once per revision, witho
     assert.equal(res.status, "feedback", JSON.stringify(res));
     const items = res.items.filter((x) => x.kind === "render-error");
     assert.ok(items.some((x) => x.statement === "broken"), JSON.stringify(res.items));
+    // Once the server confirms, the panel says so and drops "Queue fix".
+    await first.page.waitForSelector(".issues-head:has-text('sent to the agent')");
     assert.equal(await first.page.locator(".issue .btn").count(), 0, "no Queue fix button: it was sent already");
 
     // A second tab on the same revision reports the same errors: the agent does not get them twice.

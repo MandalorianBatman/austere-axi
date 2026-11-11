@@ -1223,7 +1223,9 @@ export async function runServer({
     if (sub === "/render-errors" && req.method === "POST") {
       const body = await readBody(req);
       // A report for an older revision describes a program the agent has already replaced.
-      if (s.closedAt || body.revision !== s.revision) return send(res, 200, { ok: true, count: 0 });
+      if (s.closedAt || body.revision !== s.revision) return send(res, 200, { ok: true, count: 0, stale: true });
+      // Third-party pack code runs in the frame and could forge errors; those wait for the owner's "Queue fix".
+      if (thirdPartyPacks(watchers.get(s.id)?.html).length) return send(res, 409, { error: "this page uses third-party packs; queue render errors by hand" });
       let seen = renderReported.get(s.id);
       if (!seen || seen.revision !== s.revision) renderReported.set(s.id, (seen = { revision: s.revision, keys: new Set() }));
       const items = [];

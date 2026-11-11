@@ -186,6 +186,8 @@ const state: {
   // The revision the current render errors belong to, and whether the agent got them.
   errorsRevision: number;
   renderReport: "sent" | "failed" | null;
+  // The page uses third-party packs: their code could forge errors, so none are sent on their own.
+  thirdParty: boolean;
   frameReady: boolean;
   scrollY: number;
   parserErrors: RenderIssue[];
@@ -211,6 +213,7 @@ const state: {
   revision: 0,
   errorsRevision: 0,
   renderReport: null,
+  thirdParty: false,
   frameReady: false,
   scrollY: 0,
   parserErrors: [],
@@ -570,20 +573,22 @@ function addToQueue(raw: unknown) {
 // server drops repeats and reports for an older revision. If the post fails, "Queue fix" stays.
 let renderReportTimer: ReturnType<typeof setTimeout> | undefined;
 function reportRenderErrors() {
-  if (!OWNER || state.closed) return;
+  // Third-party pack code runs in the frame and could forge errors: the owner queues those by hand.
+  if (!OWNER || state.closed || state.thirdParty) return;
   clearTimeout(renderReportTimer);
   renderReportTimer = setTimeout(async () => {
     const errors = [...state.parserErrors, ...state.runtimeErrors].map((e) => ({ statement: str(e.statementId), message: str(e.message) }));
     if (!errors.length) return;
-    const ok = await fetch(`${BASE}/render-errors`, {
+    const reply = await fetch(`${BASE}/render-errors`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ revision: state.errorsRevision, errors }),
     }).then(
-      (r) => r.ok,
-      () => false,
+      async (r) => (r.ok ? ((await r.json()) as { stale?: boolean }) : null),
+      () => null,
     );
-    state.renderReport = ok ? "sent" : "failed";
+    // A stale report (an older revision) reached no one; the new render reports its own errors.
+    state.renderReport = reply && !reply.stale ? "sent" : reply ? null : "failed";
     renderLog();
   }, 500);
 }
@@ -1183,9 +1188,21 @@ function connect() {
       ]);
     }
     showPackNotice(d.thirdPartyPacks);
-    // A reconnect can bring a newer revision; errors held from before stay tagged with theirs.
-    state.revision = d.revision;
-    reportRenderErrors();
+    state.thirdParty = !!d.thirdPartyPacks?.length;
+    // First snapshot: errors the frame reported before it belong to this revision.
+    // A reconnect on the same revision resends what may have been lost (the server drops repeats).
+    // On a newer revision the held errors describe an old program: the new render reports its own.
+    // The same program on a newer revision (only the page shell changed) renders the same errors.
+    if (state.program === null || d.revision === state.revision || d.program === state.program) {
+      if (d.revision !== state.revision) state.errorsRevision = d.revision;
+      state.revision = d.revision;
+      reportRenderErrors();
+    } else {
+      state.revision = d.revision;
+      state.parserErrors = [];
+      state.runtimeErrors = [];
+      state.renderReport = null;
+    }
     if (state.program === null) state.program = d.program;
     else if (d.program !== state.program) {
       state.program = d.program;
@@ -1218,6 +1235,7 @@ function connect() {
     state.parserErrors = [];
     state.runtimeErrors = [];
     showPackNotice(d.thirdPartyPacks);
+    state.thirdParty = !!d.thirdPartyPacks?.length;
     if (d.shellChanged || !state.frameReady) {
       state.program = d.program;
       // A full reload reports no changes: drop the previous turn's.

@@ -592,6 +592,8 @@ async function cmdCheck(file: string | undefined, flags: Flags = {}): Promise<vo
       const render = await renderOut(html);
       out.render = render;
       if (render.errors) out.status = "errors";
+      // The check the user asked for did not run: say so in the status and the exit code.
+      else if (render.status === "unavailable") out.status = "render_unavailable";
     }
   } else if (result.ok && result.hasMermaid) {
     out.note = "Mermaid sources are checked when the review page renders them; failures come back through poll.";
