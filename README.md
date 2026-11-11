@@ -128,7 +128,7 @@ npx -y austere-axi plan.html         # validate and open the page for review
 npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
 ```
 
-`--help` prints the file skeleton and the full loop. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`.
+`--help` prints the file skeleton and the loop (about 750 tokens); `help all` adds the rarer commands and the environment. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`.
 
 ## How it works
 
@@ -136,7 +136,7 @@ npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
 agent writes plan.html ──► austere-axi plan.html ──► local server + browser review
                                                         │  reviewer annotates, picks options,
                                                         │  types, presses Send
-agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-poll returns the batch)
+agent patches changes  ◄── austere-axi poll plan.html ◄─┘  (long-poll returns the batch)
           │
           └─► page updates in place and flashes the changed statements
 ```
@@ -152,7 +152,7 @@ agent edits statements ◄── austere-axi poll plan.html ◄─┘  (long-pol
 ## CLI
 
 ```
-austere-axi                      sessions + usage
+austere-axi                      open sessions
 austere-axi <file>               validate + open a review   [--no-open] [--reopen]
 austere-axi poll <file>          long-poll for feedback      [--cursor n] [--agent-reply "..."] [--after n] [--takeover]
 austere-axi reply <file>         post a reply without polling   [--cursor n]
@@ -174,7 +174,7 @@ austere-axi server --persist     run the server in the foreground and never idle
 austere-axi mcp                  MCP server on stdio (see Use with MCP)
 ```
 
-Output is compact YAML for agents. Each `poll` item has its statement and that statement's line, so the agent does not need to read the file again.
+Output is compact YAML for agents. Each `poll` item has its statement and that statement's line and source, so the agent does not read the file again. Agents revise with `patch` only: they send the changed statements, never the whole file.
 
 Session rules:
 
