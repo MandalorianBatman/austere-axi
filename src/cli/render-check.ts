@@ -279,13 +279,13 @@ interface HarnessReport {
 }
 
 /** Render the page headlessly and report what only rendering shows. */
-export async function renderCheck(html: string): Promise<RenderReport> {
+export async function renderCheck(html: string, dir: string): Promise<RenderReport> {
   const bin = findChrome();
   if (!bin) {
     const reason = process.env.CHROME_PATH ? `CHROME_PATH does not exist: ${process.env.CHROME_PATH}` : "no Chrome, Chromium or Edge found; install one or set CHROME_PATH";
     return { status: "unavailable", reason };
   }
-  const { html: page, notices } = exportHtml(html);
+  const { html: page, notices } = exportHtml(html, dir);
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "austere-render-"));
   const site = await serve(withMeasure(page));
   const { child, endpoint, exited } = launch(bin, profile);

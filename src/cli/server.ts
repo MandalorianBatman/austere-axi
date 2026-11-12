@@ -5,6 +5,7 @@
 //   /s/:id/events server-sent events for the chrome
 //   /__austere/*  runtime, mermaid, bundled packs, chrome assets
 //   /__austere/installed-packs/<name@version>/pack.js  packs from `components add`
+import { resolveSibling } from "./assets.ts";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -937,6 +938,27 @@ export async function runServer({
     res.once("close", () => rs.destroy());
   }
 
+  /**
+   * The artifact frame is sandboxed without `allow-same-origin`, so its opaque origin sends no
+   * cookie on subresource requests: a relative `Image` src never reaches the cookie check. Instead
+   * the frame's own URL carries a token, `/s/:id/a/<token>/<file>`, and relative URLs inherit it.
+   * One token per viewer, derived from the owner key: a revoked invite stops working, and the token
+   * opens only what `serveArtifact` serves anyway.
+   */
+  function assetToken(s: Session, viewer: Viewer): string {
+    const who = viewer.role === "owner" ? "owner" : `invite:${viewer.token}`;
+    return crypto.createHmac("sha256", ownerToken).update(`austere-axi asset\0${s.id}\0${who}`).digest("base64url");
+  }
+
+  /** Does `token` belong to the owner or to a live invite for this page? */
+  function assetTokenValid(s: Session, token: string): boolean {
+    let ok = safeEqual(token, assetToken(s, OWNER));
+    for (const inv of invites.list()) {
+      if (inv.sessionId === s.id && safeEqual(token, assetToken(s, { role: "reviewer", name: inv.name, auto: inv.auto, token: inv.token }))) ok = true;
+    }
+    return ok;
+  }
+
   function serveArtifact(req: http.IncomingMessage, res: http.ServerResponse, s: Session, rest: string): void {
     const dir = path.dirname(s.file);
     const base = path.basename(s.file);
@@ -952,29 +974,14 @@ export async function runServer({
     } catch {
       return send(res, 400, "bad path");
     }
-    if (decoded.includes("\0")) return send(res, 404, "not found");
-    const file = path.resolve(dir, decoded);
-    if (!file.startsWith(dir + path.sep) || decoded.split(/[/\\]/).some((p) => p.startsWith("."))) {
-      return send(res, 404, "not found");
-    }
-    // The check above is lexical; a symlink inside the directory can still lead out of it.
-    fs.realpath(dir, (e1, realDir) => {
-      if (e1) return send(res, 404, "not found");
-      fs.realpath(file, (e2, real) => {
-        if (e2 || !real.startsWith(realDir + path.sep)) return send(res, 404, "not found");
-        // A link with an ordinary name can still point at a dotfile in the directory.
-        if (path.relative(realDir, real).split(path.sep).some((p) => p.startsWith("."))) return send(res, 404, "not found");
-        fs.stat(real, (err, st) => {
-          if (err || !st.isFile() || st.size > 64 * 1024 * 1024) return send(res, 404, "not found");
-          streamFile(res, real, {
-            "content-type": MIME[path.extname(real).toLowerCase()] || "application/octet-stream",
-            "content-length": st.size,
-            "cache-control": "no-cache",
-            "x-content-type-options": "nosniff",
-            "content-security-policy": ARTIFACT_CSP,
-          });
-        });
-      });
+    const sib = resolveSibling(dir, decoded);
+    if (!sib.ok) return send(res, 404, "not found");
+    streamFile(res, sib.file, {
+      "content-type": MIME[path.extname(sib.file).toLowerCase()] || "application/octet-stream",
+      "content-length": sib.size,
+      "cache-control": "no-cache",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": ARTIFACT_CSP,
     });
   }
 
@@ -985,7 +992,7 @@ export async function runServer({
       file: viewer.role === "owner" ? s.file : "",
       viewer: { role: viewer.role, name: viewer.name, auto: viewer.role === "reviewer" ? viewer.auto : undefined },
       name: path.basename(s.file),
-      artifactUrl: `/s/${s.id}/a/${encodeURIComponent(path.basename(s.file))}`,
+      artifactUrl: `/s/${s.id}/a/${assetToken(s, viewer)}/${encodeURIComponent(path.basename(s.file))}`,
       version: VERSION,
     };
     return `<!doctype html>
@@ -1115,6 +1122,12 @@ export async function runServer({
         "cache-control": "no-store",
       });
       return res.end();
+    }
+
+    // The artifact frame's subresources carry no cookie (see assetToken); the token in the path is their credential.
+    const tokened = /^\/a\/([A-Za-z0-9_-]{43})\/(.*)$/.exec(sub);
+    if (tokened && (req.method === "GET" || req.method === "HEAD") && assetTokenValid(s, tokened[1])) {
+      return serveArtifact(req, res, s, tokened[2]);
     }
 
     const who = identify(req, s);
@@ -1284,7 +1297,7 @@ export async function runServer({
       const html = readFileSafe(s.file);
       if (html == null) return send(res, 404, "artifact file is missing");
       try {
-        const out = exportHtml(html);
+        const out = exportHtml(html, path.dirname(s.file));
         const name = path.basename(s.file).replace(/\.html?$/i, "") + ".export.html";
         return send(res, 200, out.html, {
           "content-type": "text/html; charset=utf-8",
@@ -1305,7 +1318,7 @@ export async function runServer({
       if (listeners.has(host)) return resolve(true);
       const server = http.createServer((req, res) => {
         handle(req, res).catch((err: HttpError) => {
-          log("error", req.method, String(req.url).split("?")[0], String(err?.stack || err));
+          log("error", req.method, String(req.url).split("?")[0].replace(/\/a\/[\w-]{43}\//, "/a/…/"), String(err?.stack || err));
           if (!res.headersSent) send(res, err.status || 500, { error: err.status ? String(err.message) : "internal error" });
           else res.end();
         });

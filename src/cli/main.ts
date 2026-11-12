@@ -589,7 +589,7 @@ async function cmdCheck(file: string | undefined, flags: Flags = {}): Promise<vo
   if (flags.render) {
     if (!result.ok) out.render = "skipped: fix the errors above first";
     else {
-      const render = await renderOut(html);
+      const render = await renderOut(html, path.dirname(abs));
       out.render = render;
       if (render.errors) out.status = "errors";
       // The check the user asked for did not run: say so in the status and the exit code.
@@ -603,8 +603,8 @@ async function cmdCheck(file: string | undefined, flags: Flags = {}): Promise<vo
 }
 
 /** `check --render`'s part of the output: only what is wrong, or `clean`. */
-async function renderOut(html: string): Promise<Printed> {
-  const r = await renderCheck(html);
+async function renderOut(html: string, dir: string): Promise<Printed> {
+  const r = await renderCheck(html, dir);
   if (r.status === "unavailable") return { status: "unavailable", reason: r.reason };
   const out: Printed = { status: r.errors.length ? "errors" : "clean", widths: "1280, 390", statements: r.statements };
   if (r.errors.length) out.errors = r.errors.map((e) => ({ statement: e.statement || "(page)", message: e.error }));
@@ -676,7 +676,7 @@ function cmdExport(file: string | undefined, flags: Flags): void {
   const abs = needFile(file, "export");
   if (!abs) return;
   const out = typeof flags.out === "string" ? path.resolve(flags.out) : abs.replace(/\.html?$/i, "") + ".export.html";
-  const { html, notices } = exportHtml(fs.readFileSync(abs, "utf8"));
+  const { html, notices } = exportHtml(fs.readFileSync(abs, "utf8"), path.dirname(abs));
   fs.writeFileSync(out, html);
   print({ status: "exported", file: out, bytes: html.length, notices: notices.length ? notices : undefined });
 }
