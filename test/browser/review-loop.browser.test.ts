@@ -373,9 +373,18 @@ test("Explore hides the conversation and gives the page the full width; Annotate
       await page.waitForSelector("iframe.frame");
       assert.equal(await page.locator(".panel").isVisible(), false, `${viewport.name}: panel hidden after reload in Explore`);
 
+      // Replies that arrive while the conversation is hidden: Annotate shows the latest one.
+      const last = `reply ${viewport.name} 24`;
+      for (let i = 0; i < 25; i++) await api("/api/reply", { file, text: `reply ${viewport.name} ${i}\n${"line\n".repeat(4)}` });
+      await page.waitForSelector(`.log :text("${last}")`, { state: "attached" });
+
       await page.keyboard.press("ControlOrMeta+i");
       await page.waitForSelector(`${conversation}:visible`);
       assert.equal(await frameWidth(), annotateWidth, `${viewport.name}: layout restored in Annotate`);
+      if (viewport.width > 860) {
+        const gap = await page.locator(".log").evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+        assert.ok(gap < 2, `${viewport.name}: log scrolled to the latest reply (gap ${gap}px)`);
+      }
       assert.deepEqual(problems, [], "browser errors");
     } finally {
       await context.close();

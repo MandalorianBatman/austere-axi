@@ -946,7 +946,11 @@ function setMode(mode: string | undefined) {
   state.mode = mode === "explore" ? "explore" : "annotate";
   LS.set("austere:mode", state.mode);
   // Explore uses the page alone: the conversation panel (and, on narrow screens, its sheet and dock) steps aside.
-  document.documentElement.classList.toggle("exploring", state.mode === "explore");
+  // A hidden log has no layout, so it could not follow new messages: show the latest when it returns.
+  const html = document.documentElement;
+  const wasExploring = html.classList.contains("exploring");
+  html.classList.toggle("exploring", state.mode === "explore");
+  if (wasExploring && state.mode === "annotate") log.scrollTop = log.scrollHeight;
   for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) b.classList.toggle("on", b.dataset.mode === state.mode);
   post({ type: "mode", mode: state.closed ? "explore" : state.mode });
 }
