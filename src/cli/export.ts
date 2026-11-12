@@ -124,7 +124,14 @@ function inlineImages(program: string, dir: string, notices: string[]): string {
       warn(lit.value, why);
       continue;
     }
-    out += program.slice(at, lit.start) + JSON.stringify(`data:${type};base64,${fs.readFileSync(sib.file).toString("base64")}`);
+    let bytes: Buffer;
+    try {
+      bytes = fs.readFileSync(sib.file);
+    } catch {
+      warn(lit.value, "it cannot be read (permissions?)");
+      continue;
+    }
+    out += program.slice(at, lit.start) + JSON.stringify(`data:${type};base64,${bytes.toString("base64")}`);
     at = lit.end;
   }
   return out + program.slice(at);

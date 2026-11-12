@@ -18,7 +18,8 @@ export function resolveSibling(dir: string, rel: string, maxBytes = MAX_ASSET_BY
   if (rel.includes("\0")) return { ok: false, reason: "outside" };
   const file = path.resolve(dir, rel);
   if (!file.startsWith(dir + path.sep)) return { ok: false, reason: "outside" };
-  if (rel.split(/[/\\]/).some((p) => p.startsWith("."))) return { ok: false, reason: "hidden" };
+  // "." is the folder itself ("./logo.png"); ".." and every other leading dot is refused.
+  if (rel.split(/[/\\]/).some((p) => p !== "." && p.startsWith("."))) return { ok: false, reason: "hidden" };
   try {
     // The check above is lexical; a symlink inside the directory can still lead out of it.
     const realDir = fs.realpathSync(dir);

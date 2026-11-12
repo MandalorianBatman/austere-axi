@@ -27,12 +27,13 @@ test("relative images of every supported type become data URIs", () => {
   for (const ext of Object.keys(types)) fs.writeFileSync(path.join(PAGE, `p.${ext}`), BYTES);
   fs.writeFileSync(path.join(PAGE, "img", "my pic.PNG"), BYTES);
   const lines = Object.keys(types).map((ext, i) => `i${i} = Image("alt", "p.${ext}")`);
-  lines.push(`sp = Image('alt', 'img/my%20pic.PNG')`, `q = Image(alt, "p.png?v=2#x")`);
-  const out = exported(["root = Stack([" + [...Object.keys(types).map((_, i) => `i${i}`), "sp", "q"].join(", ") + "])", ...lines].join("\n"));
+  lines.push(`sp = Image('alt', 'img/my%20pic.PNG')`, `q = Image(alt, "p.png?v=2#x")`, `d = Image(alt, "./img/./my pic.PNG")`);
+  const out = exported(["root = Stack([" + [...Object.keys(types).map((_, i) => `i${i}`), "sp", "q", "d"].join(", ") + "])", ...lines].join("\n"));
   assert.deepEqual(out.notices, []);
   Object.values(types).forEach((type, i) => assert.ok(out.program.includes(`i${i} = Image("alt", "${uri(type)}")`), `type ${type}`));
   assert.ok(out.program.includes(`sp = Image('alt', "${uri("image/png")}")`), "percent-encoded name, any extension case");
   assert.ok(out.program.includes(`q = Image(alt, "${uri("image/png")}")`), "a query or fragment is not part of the file name");
+  assert.ok(out.program.includes(`d = Image(alt, "${uri("image/png")}")`), "./ segments are the folder itself");
 });
 
 test("everything outside the image sources is unchanged", () => {
@@ -60,4 +61,14 @@ test("a missing, hidden, escaping or oversized image is left as written, with a 
   for (const [s, why] of [["gone.png", /no such file/], [".secret.png", /hidden/], ["../outside/o.png", /outside/], ["link.png", /outside/], ["plain.png", /hidden/], ["big.png", /over 10 MB/], ["doc.bmp", /not a png/]] as const) {
     assert.match(text, new RegExp(`Image "${s.replace(/[.]/g, "\\.")}" is not inlined: [^\\n]*${why.source}`));
   }
+});
+
+test("an image the process cannot read is left as written, and the export still finishes", { skip: process.platform === "win32" || process.getuid?.() === 0 }, () => {
+  const locked = path.join(PAGE, "locked.png");
+  fs.writeFileSync(locked, BYTES);
+  fs.chmodSync(locked, 0);
+  const out = exported(`root = Stack([a, b])\na = Image("alt", "locked.png")\nb = Image("alt", "p.png")`);
+  assert.ok(out.program.includes(`a = Image("alt", "locked.png")`));
+  assert.ok(out.program.includes(`b = Image("alt", "${uri("image/png")}")`), "the others are still inlined");
+  assert.match(out.notices.join("\n"), /Image "locked\.png" is not inlined: it cannot be read/);
 });

@@ -61,7 +61,7 @@ async function imageWidths(frame: Frame): Promise<number[]> {
 }
 
 before(async () => {
-  for (const f of ["austere.js", "chrome/chrome.js", "cli.mjs"]) {
+  for (const f of ["austere.js", "chrome/chrome.js"]) {
     if (!fs.existsSync(path.join("dist", f))) {
       skipReason = `dist/${f} missing; run npm run test:browser (it builds first)`;
       return;
