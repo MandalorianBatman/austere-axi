@@ -112,6 +112,24 @@ html.austere body > noscript {
   max-width: 100%;
 }
 
+/* Image: the whole picture at its own aspect ratio, as wide as its column (no crop, no fixed box),
+   but never taller than 80% of the screen: a tall picture narrows (its ratio comes from the
+   renderer) and centres. In a row Stack it shrinks with its siblings and keeps its height. */
+.austere-page .austere-image {
+  display: block;
+  width: min(100%, 80vh * var(--austere-image-ratio, 100));
+  height: auto;
+  min-width: 0;
+  margin-inline: auto;
+  align-self: flex-start;
+}
+/* An OptionCard thumbnail stays the stock square tile, filled. */
+.austere-page .openui-option-card__top--image .austere-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* ── Diff ── */
 .austere-diff {
   width: 100%;

@@ -1,6 +1,7 @@
 // `check --render`: render the page in headless Chrome and report, as text, what only
 // rendering shows: render errors (unknown components, Mermaid syntax, components that
-// throw), uncaught exceptions, and statements that make the page scroll sideways.
+// throw), uncaught exceptions, statements that make the page scroll sideways, and
+// Mermaid diagrams too wide to shrink legibly, which scroll inside their own box.
 // No screenshot. Opt-in: the reviewer judges how a page looks; this is for when the
 // user asks for a check.
 //
@@ -15,7 +16,9 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { readArtifact } from "./artifact.ts";
 import { exportHtml } from "./export.ts";
+import { splitStatements } from "../shared/statements.ts";
 
 const WIDTHS = [1280, 390];
 const LAUNCH_TIMEOUT_MS = 15_000;
@@ -30,8 +33,13 @@ export interface Overflow {
   width: number;
   statements: string[];
 }
+/** A Mermaid diagram that scrolls sideways in its box at the desktop width. */
+export interface WideDiagram {
+  statement: string;
+  message: string;
+}
 export type RenderReport =
-  | { status: "ok"; statements: number; errors: RenderError[]; overflow: Overflow[]; notices: string[] }
+  | { status: "ok"; statements: number; errors: RenderError[]; overflow: Overflow[]; wide: WideDiagram[]; notices: string[] }
   | { status: "unavailable"; reason: string };
 
 /** CHROME_PATH, else the first Chrome, Chromium or Edge found in the usual places. */
@@ -56,26 +64,26 @@ export function findChrome(): string | null {
 }
 
 // Appended to the exported page. It runs in the sandboxed frame and, when the harness asks,
-// waits for Mermaid, then reports render errors shown on the page, uncaught exceptions and
-// the statements past the right edge at the frame's current width.
+// waits for Mermaid, then reports render errors shown on the page, uncaught exceptions,
+// the statements past the right edge at the frame's current width and the Mermaid
+// diagrams that scroll inside their own box. Inactive tabs are not mounted, so it opens
+// each tab in turn, measures again, and then restores the tabs that were open.
 const MEASURE = `<script>(() => {
   const exceptions = [];
   addEventListener("error", (e) => exceptions.push(String((e.error && e.error.message) || e.message || "error")));
   addEventListener("unhandledrejection", (e) => exceptions.push(String((e.reason && e.reason.message) || e.reason)));
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  addEventListener("message", async (e) => {
-    const d = e.data;
-    if (e.source !== parent || !d || d.austereMeasure !== 1) return;
+  const idOf = (el) => (el.closest("[data-oui-id]") && el.closest("[data-oui-id]").getAttribute("data-oui-id")) || "";
+  const settle = async () => {
     for (let i = 0; i < 100; i++) {
       const pending = [...document.querySelectorAll(".austere-mermaid")].filter((m) => !m.querySelector("svg, .austere-render-error"));
       if (!pending.length) break;
       await sleep(100);
     }
     await sleep(200);
-    const shown = [...document.querySelectorAll(".austere-render-error")].map((el) => ({
-      statement: (el.closest("[data-oui-id]") && el.closest("[data-oui-id]").getAttribute("data-oui-id")) || "",
-      error: el.textContent.trim().slice(0, 300),
-    }));
+  };
+  const snapshot = () => {
+    const shown = [...document.querySelectorAll(".austere-render-error")].map((el) => ({ statement: idOf(el), error: el.textContent.trim().slice(0, 300) }));
     const se = document.scrollingElement;
     let past = null;
     if (se.scrollWidth > se.clientWidth + 1) {
@@ -93,11 +101,58 @@ const MEASURE = `<script>(() => {
       const out = [...document.body.querySelectorAll("*")].slice(0, 20000).filter(sticksOut);
       const outSet = new Set(out);
       const leaves = out.filter((el) => ![...el.children].some((c) => outSet.has(c)));
-      const ids = leaves.map((el) => el.closest("[data-oui-id]") && el.closest("[data-oui-id]").getAttribute("data-oui-id")).filter(Boolean);
-      past = [...new Set(ids)].slice(0, 8);
+      past = leaves.map(idOf).filter(Boolean);
     }
-    const statements = new Set([...document.querySelectorAll("[data-oui-id]")].map((el) => el.getAttribute("data-oui-id"))).size;
-    parent.postMessage({ austereMeasured: 1, id: d.id, shown, exceptions: exceptions.slice(0, 20), past, statements }, "*");
+    // The sideways check above skips these: the diagram scrolls in its own box, so only a
+    // reader who notices the scroll sees all of it.
+    const wide = [...document.querySelectorAll(".austere-mermaid-svg")]
+      .filter((box) => box.scrollWidth > box.clientWidth + 1)
+      .map((box) => ({ statement: idOf(box), width: box.scrollWidth, box: box.clientWidth }));
+    const ids = [...document.querySelectorAll("[data-oui-id]")].map((el) => el.getAttribute("data-oui-id"));
+    return { shown, past, wide, ids };
+  };
+  // Radix tabs switch on mousedown with the main button.
+  const press = (tab) => tab.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+  // Opens every tab under \`scope\` (the page, or an open tab panel), measuring each, then walks
+  // the tabs inside each panel while it is open: an inner Tabs mounts only with its panel.
+  // Restores each tab list's open tab. Capped so a huge page cannot stall the check.
+  let presses = 0;
+  const walk = async (scope, snaps) => {
+    const lists = [...scope.querySelectorAll('[role="tablist"]')].filter((l) => (l.parentElement.closest('[role="tabpanel"]') || document) === scope);
+    for (const list of lists) {
+      const count = list.querySelectorAll('[role="tab"]').length;
+      const opened = [...list.querySelectorAll('[role="tab"]')].findIndex((t) => t.getAttribute("aria-selected") === "true");
+      for (let i = 0; i < count && presses < 200; i++) {
+        const tab = list.querySelectorAll('[role="tab"]')[i];
+        if (!tab) break;
+        if (tab.getAttribute("aria-selected") !== "true") {
+          press(tab);
+          presses++;
+          await settle();
+          snaps.push(snapshot());
+        }
+        const panel = document.getElementById(tab.getAttribute("aria-controls") || "");
+        if (panel) await walk(panel, snaps);
+      }
+      const back = list.querySelectorAll('[role="tab"]')[opened];
+      if (back && back.getAttribute("aria-selected") !== "true") press(back);
+    }
+  };
+  addEventListener("message", async (e) => {
+    const d = e.data;
+    if (e.source !== parent || !d || d.austereMeasure !== 1) return;
+    await settle();
+    presses = 0;
+    const snaps = [snapshot()];
+    await walk(document, snaps);
+    const overflowed = snaps.filter((x) => x.past);
+    const past = overflowed.length ? [...new Set(overflowed.flatMap((x) => x.past))].slice(0, 8) : null;
+    const shown = [];
+    for (const s of snaps.flatMap((x) => x.shown)) if (!shown.some((y) => y.statement === s.statement && y.error === s.error)) shown.push(s);
+    const wide = [];
+    for (const w of snaps.flatMap((x) => x.wide)) if (!wide.some((y) => y.statement === w.statement)) wide.push(w);
+    const statements = new Set(snaps.flatMap((x) => x.ids)).size;
+    parent.postMessage({ austereMeasured: 1, id: d.id, shown, exceptions: exceptions.slice(0, 20), past, wide, statements }, "*");
   });
 })();</script>`;
 
@@ -130,16 +185,19 @@ window.__austereReport = async (widths) => {
   for (let i = 0; i < 150 && !ready; i++) await sleep(100);
   const overflow = [];
   let last = null;
+  let wide = null;
   for (const w of widths) {
     f.style.width = w + "px";
     await sleep(300);
     last = await measure();
     if (last.past) overflow.push({ width: w, statements: last.past });
+    // Only the desktop width: on a phone most diagrams scroll, and the page shows that they do.
+    if (!wide) wide = last.wide.map((x) => ({ ...x, at: w }));
   }
   const all = [...errors];
   for (const s of last.shown) if (!all.some((x) => x.statement === s.statement)) all.push(s);
   for (const x of last.exceptions) if (!all.some((y) => y.error === x)) all.push({ statement: "", error: x.slice(0, 300) });
-  return { rendered: ready, statements: last.statements, errors: all, overflow };
+  return { rendered: ready, statements: last.statements, errors: all, overflow, wide: wide || [] };
 };
 </script></body></html>`;
 
@@ -276,6 +334,18 @@ interface HarnessReport {
   statements: number;
   errors: RenderError[];
   overflow: Overflow[];
+  wide: { statement: string; width: number; box: number; at: number }[];
+}
+
+/** One line per wide Mermaid diagram, with the fix that suits its source. */
+function wideMessages(html: string, wide: HarnessReport["wide"]): WideDiagram[] {
+  const sources = new Map(splitStatements(readArtifact(html).program).map((s) => [s.id, s.text]));
+  return wide.map(({ statement, width, box, at }) => {
+    const sideways = /\b(?:flowchart|graph)\s+(?:LR|RL)\b/.test(sources.get(statement) ?? "");
+    const fix = sideways ? "use `flowchart TD` or split it" : "split it or shorten its labels";
+    const name = statement || "(not one statement)";
+    return { statement: name, message: `Mermaid ${name} is ${width}px wide at its smallest legible size, more than its ${box}px box at ${at}px, so it scrolls sideways; ${fix}.` };
+  });
 }
 
 /** Render the page headlessly and report what only rendering shows. */
@@ -310,7 +380,7 @@ export async function renderCheck(html: string, dir: string): Promise<RenderRepo
       if (r.exceptionDetails) throw new Error(`render report failed: ${r.exceptionDetails.text}`);
       const report = r.result.value;
       if (!report.rendered && !report.errors.length) report.errors.push({ statement: "", error: "the page did not finish rendering" });
-      return { status: "ok", statements: report.statements, errors: report.errors, overflow: report.overflow, notices };
+      return { status: "ok", statements: report.statements, errors: report.errors, overflow: report.overflow, wide: wideMessages(html, report.wide), notices };
     })();
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error(`rendering took longer than ${RENDER_TIMEOUT_MS / 1000} s`)), RENDER_TIMEOUT_MS);

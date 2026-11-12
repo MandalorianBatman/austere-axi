@@ -18,6 +18,8 @@ Review pages for coding agents.
 
 <sub>The real loop, about 30 s: [MP4](docs/demo.mp4) · [WebM](docs/demo.webm).</sub>
 
+**[Website](https://mandalorianbatman.github.io/austere-axi/)** · **[Playground](https://mandalorianbatman.github.io/austere-axi/play/)** (no install) · **[Gallery](https://mandalorianbatman.github.io/austere-axi/gallery/)** · **[Benchmark](docs/benchmark.md)** · **[Writing a pack](docs/writing-a-pack.md)**
+
 ```
 root = Stack([intro, flow, options, decide], "column", "l")
 intro = Card([CardHeader("Session storage migration", "Redis → Postgres"), introText])
@@ -38,6 +40,18 @@ strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big ba
 A full page (KPIs, diagram, table, chart, diff, decision form) is about 1,000 tokens: [`examples/session-migration.html`](examples/session-migration.html).
 
 **See it without installing:** the [gallery](https://mandalorianbatman.github.io/austere-axi/gallery/) shows example pages next to their source and token counts. The [playground](https://mandalorianbatman.github.io/austere-axi/play/) lets you edit OpenUI Lang and see the page live.
+
+## Quick start
+
+Needs Node.js 22.18 or later. Your agent runs:
+
+```sh
+npx -y austere-axi spec              # component reference (read once per session)
+npx -y austere-axi plan.html         # validate and open the page for review
+npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
+```
+
+`--help` prints the file skeleton and the loop (about 900 tokens); `help all` adds the rarer commands and the environment. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`. To have agents reach for it on their own, use the [skill, plugin or MCP server](#install).
 
 ## Why
 
@@ -127,16 +141,6 @@ command = "npx"
 args = ["-y", "austere-axi", "mcp"]
 ```
 
-## Quick start
-
-```sh
-npx -y austere-axi spec              # component reference (read once per session)
-npx -y austere-axi plan.html         # validate and open the page for review
-npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
-```
-
-`--help` prints the file skeleton and the loop (about 900 tokens); `help all` adds the rarer commands and the environment. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`.
-
 ## How it works
 
 ```
@@ -196,7 +200,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 - An `Image` src that is a path relative to the page (png, jpg, gif, webp, svg, avif) loads under review for the owner and for invited reviewers, and `export` inlines it as a data URI. Both read only regular files in the page's own folder, never dotfiles or links that leave it; `export` skips an image over 10 MB. A file `export` cannot read stays as written, and the output names it in `notices`.
 - **Tabs closed:** `poll` returns `browser_disconnected` 10 s after the last review tab closes, or 5 min after a dropped connection (for example, a locked phone). The review stays open, so later notes reach the next `poll`.
 - `feedback <file>` returns notes no agent has answered, from any day. Reading them acknowledges them; `reply` marks them answered.
-- **Render failures reach the agent without a click:** bad Mermaid syntax, an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px and prints render errors and the statements that make the page scroll sideways, as text, with no screenshot. Agents run it only when the user asks for a check.
+- **Render failures reach the agent without a click:** bad Mermaid syntax, an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px, opens each tab in turn, and prints render errors, the statements that make the page scroll sideways, and the Mermaid diagrams too wide for their box at 1280 px, as text, with no screenshot. Agents run it only when the user asks for a check.
 
 ## Components and packs
 
@@ -224,7 +228,7 @@ A page names its packs in the head, so it renders anywhere:
 - Under review, the server serves an installed pack only while it matches its hash in `~/.austere-axi/packs.json`. Opened directly, the page loads packs from jsDelivr with Subresource Integrity. `export` inlines them.
 - A pack component with no pack tag is a `missing-pack` error. `check --fix` repairs it.
 - **Bundled packs** need no tag and load only when used:
-  - `Mermaid`.
+  - `Mermaid`. A wide diagram shrinks while its text stays at 10 px or more; past that it scrolls sideways in its box, with a faded edge and a "Scroll sideways" hint.
   - `shadcn`: `Progress`, `Avatar`, `AvatarGroup`, `Tooltip`, `HoverCard`, `Breadcrumb` (`BreadcrumbItem`), `Kbd`, `Skeleton`, `Calendar` and `Timeline` (`TimelineItem`). Read-only.
   ```
   rollout = Progress(64, "Rows migrated")
@@ -323,7 +327,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: MandalorianBatman/austere-axi/action@main   # pin a release tag or SHA once you settle
+      - uses: MandalorianBatman/austere-axi/action@v0.7.0
         with:
           pages: reviews/*.html
 ```
@@ -409,6 +413,10 @@ node dist/cli.mjs examples/session-migration.html
 ```
 
 Repo layout, website, playground, benchmark, CI and release: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Contributing
+
+Bug reports, examples, docs fixes and packs are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) has setup and the rules. Issues labelled [`good first issue`](https://github.com/MandalorianBatman/austere-axi/labels/good%20first%20issue) are small and have a clear finish line. Security problems: [report privately](https://github.com/MandalorianBatman/austere-axi/security/advisories/new), not in an issue.
 
 ## License
 

@@ -4,6 +4,8 @@
 import type { ComponentRenderer } from "@openuidev/react-lang";
 import { StaticTabsRenderer } from "./overrides/Tabs.tsx";
 import type { TabsProps } from "./overrides/Tabs.tsx";
+import { WholeImageRenderer } from "./overrides/Image.tsx";
+import type { ImageProps } from "./overrides/Image.tsx";
 import { GROUP_NAMES } from "./groups.ts";
 
 // Stock components that do not earn their prompt tokens in review artifacts
@@ -60,8 +62,11 @@ export const EXTENDED = [
   "BoldText",
 ];
 
-/** Stock renderers replaced with page-appropriate behavior (props unchanged). */
-export const STOCK_RENDERERS: Record<string, ComponentRenderer<TabsProps>> = { Tabs: StaticTabsRenderer };
+/** Stock renderers replaced with page-appropriate behavior (props unchanged). Each reads only its own props. */
+export const STOCK_RENDERERS: Record<string, ComponentRenderer<TabsProps & ImageProps>> = {
+  Tabs: StaticTabsRenderer,
+  Image: WholeImageRenderer,
+};
 
 // Value-only components are read by their parent (never rendered as DOM on
 // their own) or must stay direct children of a list; leave them untagged.

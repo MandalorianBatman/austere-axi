@@ -17,6 +17,8 @@ interface MermaidProps {
 }
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+// Text is set at 14px (themeVariables.fontSize); shrinking past this keeps it under 10px.
+const MIN_SCALE = 10 / 14;
 let mermaidPromise: Promise<MermaidApi> | null = null;
 let seq = 0;
 
@@ -125,6 +127,15 @@ function labelParts(root: Element): void {
   root.querySelectorAll("text.actor, text.messageText, text.noteText, text.taskText").forEach((el) => set(el, words(el)));
 }
 
+/** Which sides of a scrolling box hide more content: "left", "right", both, or "". */
+function edges(box: HTMLElement): string {
+  const max = box.scrollWidth - box.clientWidth;
+  if (max <= 1) return "";
+  const left = box.scrollLeft > 1 ? "left" : "";
+  const right = box.scrollLeft < max - 1 ? "right" : "";
+  return `${left} ${right}`.trim();
+}
+
 /** `err?.message`, for any thrown value. */
 function errorMessage(err: unknown): unknown {
   return typeof err === "object" && err !== null && "message" in err ? err.message : undefined;
@@ -133,7 +144,30 @@ function errorMessage(err: unknown): unknown {
 function MermaidView({ props, statementId }: RendererArgs<MermaidProps>) {
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+  // Sides with more diagram past the box's edge; set once the diagram scrolls sideways.
+  const [more, setMore] = useState("");
   const source = String(props.source ?? "").trim();
+
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return undefined;
+    const update = () => setMore(edges(box));
+    const resized = new ResizeObserver(update);
+    resized.observe(box);
+    // The svg replaces the box's children after each render; watch the new one too.
+    const replaced = new MutationObserver(() => {
+      const svg = box.querySelector("svg");
+      if (svg) resized.observe(svg);
+      update();
+    });
+    replaced.observe(box, { childList: true });
+    box.addEventListener("scroll", update, { passive: true });
+    return () => {
+      resized.disconnect();
+      replaced.disconnect();
+      box.removeEventListener("scroll", update);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,13 +181,15 @@ function MermaidView({ props, statementId }: RendererArgs<MermaidProps>) {
         const el = ref.current.querySelector("svg");
         if (el) {
           // Keep Mermaid's natural max-width so small diagrams are not blown up,
-          // and let wide ones shrink, but not below 60% of their natural size:
-          // past that the text is unreadable, so the diagram scrolls instead.
+          // and let wide ones shrink while the text stays legible; past that the
+          // diagram scrolls inside its box, with a fade and a hint (see `edges`).
           el.removeAttribute("height");
           el.style.height = "auto";
           if (!el.style.maxWidth) el.style.maxWidth = "100%";
           const natural = el.viewBox && el.viewBox.baseVal ? el.viewBox.baseVal.width : 0;
-          if (natural > 0) el.style.minWidth = `${Math.round(Math.min(natural, natural * 0.6))}px`;
+          // Mermaid lays a gantt out to the page width it renders at, so it only has to fit its box.
+          const fitsPage = el.getAttribute("aria-roledescription") === "gantt";
+          if (natural > 0 && !fitsPage) el.style.minWidth = `${Math.round(natural * MIN_SCALE)}px`;
         }
         labelParts(ref.current);
         bindFunctions?.(ref.current);
@@ -181,7 +217,8 @@ function MermaidView({ props, statementId }: RendererArgs<MermaidProps>) {
           <strong>Diagram failed to render.</strong> {error}
         </div>
       ) : null}
-      <div className="austere-mermaid-svg" ref={ref} />
+      <div className="austere-mermaid-svg" ref={ref} data-more={more || undefined} />
+      {more ? <div className="austere-mermaid-more">Scroll sideways to see the whole diagram.</div> : null}
       {props.caption ? <figcaption>{props.caption}</figcaption> : null}
     </figure>
   );
@@ -196,7 +233,7 @@ export default austereComponent({
   }),
   description:
     "Diagram from Mermaid source (flowchart, sequence, state, class, ER, gantt). source is a raw multi-line string. Keep node labels to a few words; clicked nodes reach the agent by label.",
-  notes: ["- Mermaid for sequences, state machines, ER, gantt and quick flowcharts."],
+  notes: ["- Mermaid for sequences, state machines, ER, gantt and quick flowcharts. flowchart LR fits ~4 steps before it scrolls; use TD for longer chains."],
   renderer: MermaidView,
   example: `requestPath = Mermaid("flowchart LR
   client[Client] --> api[API]
