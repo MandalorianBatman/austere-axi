@@ -113,20 +113,38 @@ const MEASURE = `<script>(() => {
   };
   // Radix tabs switch on mousedown with the main button.
   const press = (tab) => tab.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+  // Opens every tab under \`scope\` (the page, or an open tab panel), measuring each, then walks
+  // the tabs inside each panel while it is open: an inner Tabs mounts only with its panel.
+  // Restores each tab list's open tab. Capped so a huge page cannot stall the check.
+  let presses = 0;
+  const walk = async (scope, snaps) => {
+    const lists = [...scope.querySelectorAll('[role="tablist"]')].filter((l) => (l.parentElement.closest('[role="tabpanel"]') || document) === scope);
+    for (const list of lists) {
+      const count = list.querySelectorAll('[role="tab"]').length;
+      const opened = [...list.querySelectorAll('[role="tab"]')].findIndex((t) => t.getAttribute("aria-selected") === "true");
+      for (let i = 0; i < count && presses < 200; i++) {
+        const tab = list.querySelectorAll('[role="tab"]')[i];
+        if (!tab) break;
+        if (tab.getAttribute("aria-selected") !== "true") {
+          press(tab);
+          presses++;
+          await settle();
+          snaps.push(snapshot());
+        }
+        const panel = document.getElementById(tab.getAttribute("aria-controls") || "");
+        if (panel) await walk(panel, snaps);
+      }
+      const back = list.querySelectorAll('[role="tab"]')[opened];
+      if (back && back.getAttribute("aria-selected") !== "true") press(back);
+    }
+  };
   addEventListener("message", async (e) => {
     const d = e.data;
     if (e.source !== parent || !d || d.austereMeasure !== 1) return;
     await settle();
+    presses = 0;
     const snaps = [snapshot()];
-    const tabs = [...document.querySelectorAll('[role="tab"]')];
-    const open = tabs.filter((t) => t.getAttribute("aria-selected") === "true");
-    for (const tab of tabs) {
-      if (!tab.isConnected || tab.getAttribute("aria-selected") === "true") continue;
-      press(tab);
-      await settle();
-      snaps.push(snapshot());
-    }
-    for (const tab of open) if (tab.isConnected) press(tab);
+    await walk(document, snaps);
     const overflowed = snaps.filter((x) => x.past);
     const past = overflowed.length ? [...new Set(overflowed.flatMap((x) => x.past))].slice(0, 8) : null;
     const shown = [];
