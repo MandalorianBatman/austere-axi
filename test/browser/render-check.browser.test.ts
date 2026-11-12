@@ -55,7 +55,7 @@ test("a Mermaid flowchart too wide to shrink legibly is named with a fix, even i
     `innerSecond = TabItem("b", "Inner second", [chain])`,
     `chain = Mermaid("flowchart LR\\n  ${chain}")`,
   ].join("\n");
-  const r = await renderCheck(htmlPage("Wide Mermaid", program, CDN_RUNTIME_URL));
+  const r = await renderCheck(htmlPage("Wide Mermaid", program, CDN_RUNTIME_URL), os.tmpdir());
   assert.equal(r.status, "ok", JSON.stringify(r));
   assert.deepEqual(r.errors, []);
   assert.deepEqual(r.overflow, [], "the diagram scrolls in its own box, not the page");
