@@ -43,6 +43,15 @@ function stringAt(src: string, i: number): Literal | null {
   return null;
 }
 
+/** The offset of the first character at or after `i` that is not whitespace or a comment. */
+function skipBlank(src: string, i: number): number {
+  for (;;) {
+    while (i < src.length && /\s/.test(src[i])) i++;
+    if (src[i] === "#" || (src[i] === "/" && src[i + 1] === "/")) while (i < src.length && src[i] !== "\n") i++;
+    else return i;
+  }
+}
+
 /**
  * The second argument of every `Image(alt, src)` call whose `src` is a string literal. Strings
  * and comments are skipped, so an `Image(` inside a Mermaid source or a note is not a call.
@@ -62,7 +71,7 @@ function imageSources(src: string): Literal[] {
       const word = src.slice(i, j);
       i = j;
       if (word !== "Image") continue;
-      while (j < src.length && /\s/.test(src[j])) j++;
+      j = skipBlank(src, j);
       if (src[j] !== "(") continue;
       // First argument: skip to its end at bracket depth 0, then read the second as a literal.
       let k = j + 1;
@@ -70,6 +79,7 @@ function imageSources(src: string): Literal[] {
       while (k < src.length) {
         const d = src[k];
         if (d === '"' || d === "'") k = stringAt(src, k)?.end ?? src.length;
+        else if (d === "#" || (d === "/" && src[k + 1] === "/")) k = skipBlank(src, k);
         else if (d === "(" || d === "[" || d === "{") {
           depth++;
           k++;
@@ -81,8 +91,7 @@ function imageSources(src: string): Literal[] {
         else k++;
       }
       if (src[k] !== ",") continue;
-      k++;
-      while (k < src.length && /\s/.test(src[k])) k++;
+      k = skipBlank(src, k + 1);
       if (src[k] === '"' || src[k] === "'") {
         const lit = stringAt(src, k);
         if (lit) out.push(lit);

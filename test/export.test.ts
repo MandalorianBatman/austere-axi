@@ -72,3 +72,11 @@ test("an image the process cannot read is left as written, and the export still 
   assert.ok(out.program.includes(`b = Image("alt", "${uri("image/png")}")`), "the others are still inlined");
   assert.match(out.notices.join("\n"), /Image "locked\.png" is not inlined: it cannot be read/);
 });
+
+test("comments and line breaks between an Image call's arguments do not hide its source", () => {
+  fs.writeFileSync(path.join(PAGE, "c.png"), BYTES);
+  const out = exported(`root = Stack([a, b])\na = Image("alt", // the picture\n  "c.png")\nb = Image( # first\n  "alt, // not a comment" , # second\n  'c.png' )`);
+  assert.deepEqual(out.notices, []);
+  assert.equal(out.program.split(uri("image/png")).length - 1, 2);
+  assert.ok(out.program.includes(`"alt, // not a comment"`), "a string stays as written");
+});
