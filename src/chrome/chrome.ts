@@ -945,6 +945,8 @@ textarea.addEventListener("keydown", (e) => {
 function setMode(mode: string | undefined) {
   state.mode = mode === "explore" ? "explore" : "annotate";
   LS.set("austere:mode", state.mode);
+  // Explore uses the page alone: the conversation panel (and, on narrow screens, its sheet and dock) steps aside.
+  document.documentElement.classList.toggle("exploring", state.mode === "explore");
   for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) b.classList.toggle("on", b.dataset.mode === state.mode);
   post({ type: "mode", mode: state.closed ? "explore" : state.mode });
 }

@@ -350,6 +350,39 @@ test("after the agent ends the review the reviewer can still send; only closing 
   }
 });
 
+test("Explore hides the conversation and gives the page the full width; Annotate brings it back", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "explore-panel.html");
+  fs.writeFileSync(file, htmlPage("Explore panel", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  for (const viewport of VIEWPORTS) {
+    const { context, page, problems } = await openReview(file, viewport);
+    const conversation = viewport.width > 860 ? ".panel" : ".dock";
+    const frameWidth = () => page.locator("iframe.frame").evaluate((el) => el.getBoundingClientRect().width);
+    try {
+      await page.click('.seg button[data-mode="annotate"]');
+      assert.equal(await page.locator(conversation).isVisible(), true, `${viewport.name}: conversation shown in Annotate`);
+      const annotateWidth = await frameWidth();
+
+      await page.click('.seg button[data-mode="explore"]');
+      assert.equal(await page.locator(".panel").isVisible(), false, `${viewport.name}: panel hidden in Explore`);
+      assert.equal(await page.locator(".dock").isVisible(), false, `${viewport.name}: dock hidden in Explore`);
+      assert.equal(await frameWidth(), viewport.width, `${viewport.name}: page takes the full width in Explore`);
+
+      // The mode is remembered, and the panel stays hidden after a reload.
+      await page.reload();
+      await page.waitForSelector("iframe.frame");
+      assert.equal(await page.locator(".panel").isVisible(), false, `${viewport.name}: panel hidden after reload in Explore`);
+
+      await page.keyboard.press("ControlOrMeta+i");
+      await page.waitForSelector(`${conversation}:visible`);
+      assert.equal(await frameWidth(), annotateWidth, `${viewport.name}: layout restored in Annotate`);
+      assert.deepEqual(problems, [], "browser errors");
+    } finally {
+      await context.close();
+    }
+  }
+});
+
 test("the owner's page sends render errors to the agent once per revision, without a click", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "render-errors.html");

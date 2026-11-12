@@ -278,6 +278,16 @@ code {
 .scrim {
   display: none;
 }
+/* Explore mode: the artifact takes the full width; the conversation returns on Annotate. */
+html.exploring .main {
+  grid-template-columns: minmax(0, 1fr);
+  padding-bottom: 0;
+}
+html.exploring .panel,
+html.exploring .scrim,
+html.exploring .dock {
+  display: none;
+}
 
 /* ── panel ── */
 .panel {
