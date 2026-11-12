@@ -422,6 +422,63 @@ test("a Mermaid diagram too wide for its box fades the hidden side and shows a s
   }
 });
 
+test("an Image shows the whole picture at its own aspect ratio: card-wide, screen-high at most, no band below, side by side, as a thumbnail", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  // Inline pictures: the test is about layout, not about how the frame fetches files.
+  const svg = (w: number, h: number) =>
+    "data:image/svg+xml;base64," + Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#888"/></svg>`).toString("base64");
+  const file = path.join(WORK, "image-ratio.html");
+  const program = [
+    "root = Stack([card, pair, pick])",
+    'card = Card([CardHeader("Pictures"), wide, tall])',
+    `wide = Image("A 2:1 picture", "${svg(400, 200)}")`,
+    `tall = Image("A 1:4 picture", "${svg(200, 800)}")`,
+    'pair = Card([CardHeader("Side by side"), row])',
+    'row = Stack([left, right], "row")',
+    `left = Image("A 5:1 picture", "${svg(1000, 200)}")`,
+    `right = Image("A 2:1 picture", "${svg(400, 200)}")`,
+    'pick = Card([CardHeader("Pick one"), opts])',
+    'opts = OptionCards("layout", "single", [optA])',
+    'optA = OptionCard("a", "Layout A", "Tall thumbnail", thumb)',
+    `thumb = Image("A 1:4 thumbnail", "${svg(200, 800)}")`,
+  ].join("\n");
+  fs.writeFileSync(file, htmlPage("Image ratio", program, CDN_RUNTIME_URL));
+  for (const viewport of VIEWPORTS) {
+    const { context, frame, problems } = await openReview(file, viewport);
+    try {
+      await frame.waitForFunction(() => Array.from(document.querySelectorAll("img")).every((i) => i.complete && i.naturalWidth > 0));
+      for (const name of ["wide", "tall", "left", "right"]) {
+        const box = await frame.locator(`[data-oui-id="${name}"]`).evaluate((node) => {
+          const img = node.querySelector("img") as HTMLImageElement;
+          const r = img.getBoundingClientRect();
+          const card = (node.closest(".openui-card-card") as HTMLElement).getBoundingClientRect();
+          // The statement wrapper is display: contents; its first child is the block the Image takes up.
+          const block = (node.firstElementChild as HTMLElement).getBoundingClientRect();
+          // Ratio from the content box: the 1px border would skew a short picture's ratio.
+          return { w: r.width, h: r.height, ratio: img.clientWidth / img.clientHeight, right: r.right, natural: img.naturalWidth / img.naturalHeight, fit: getComputedStyle(img).objectFit, block: block.height, card: card.width, cardRight: card.right };
+        });
+        const where = `${name} @ ${viewport.name}: ${JSON.stringify(box)}`;
+        assert.ok(Math.abs(box.ratio / box.natural - 1) < 0.02, `${where}: box ratio matches the picture`);
+        assert.notEqual(box.fit, "cover", `${where}: never cropped`);
+        assert.ok(Math.abs(box.block - box.h) < 1, `${where}: no band below the picture`);
+        assert.ok(box.right <= box.cardRight, `${where}: stays inside its card`);
+        if (name === "wide") assert.ok(box.w > box.card * 0.8, `${where}: takes the card width`);
+        if (name === "tall") assert.ok(box.h <= viewport.height * 0.8 + 2, `${where}: no taller than the screen allows`);
+      }
+      // An OptionCard thumbnail keeps the stock square tile, filled.
+      const tile = await frame.locator('[data-oui-id="thumb"]').evaluate((node) => {
+        const img = (node.querySelector("img") as HTMLImageElement).getBoundingClientRect();
+        const box = (node.closest(".openui-option-card__top--image") as HTMLElement).getBoundingClientRect();
+        return { img: [img.width, img.height], tile: [box.width, box.height] };
+      });
+      assert.deepEqual(tile.img, tile.tile, `thumbnail @ ${viewport.name}: fills its tile`);
+      assert.deepEqual(problems, [], "browser errors");
+    } finally {
+      await context.close();
+    }
+  }
+});
+
 test("the owner's page sends render errors to the agent once per revision, without a click", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "render-errors.html");
