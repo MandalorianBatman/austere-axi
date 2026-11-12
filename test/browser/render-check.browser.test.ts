@@ -41,3 +41,24 @@ test("a clean page reports nothing; a row too wide for a phone names the stateme
   assert.equal(wide.overflow[0].width, 390);
   assert.ok(wide.overflow[0].statements.length > 0 && wide.overflow[0].statements.every((s) => cards.includes(s)), JSON.stringify(wide.overflow));
 });
+
+test("a Mermaid flowchart too wide to shrink legibly is named with a fix, even in an inner tab of a tab not open by default", { skip }, async () => {
+  const chain = Array.from({ length: 10 }, (_, i) => `n${i}[Step ${i} of the long chain] --> n${i + 1}`).join("\\n  ");
+  const program = [
+    `root = Stack([small, tabs])`,
+    `small = Mermaid("flowchart LR\\n  a[Client] --> b[API]")`,
+    `tabs = Tabs([first, second])`,
+    `first = TabItem("first", "First", [TextContent("hi")])`,
+    `second = TabItem("second", "Second", [inner])`,
+    `inner = Tabs([innerFirst, innerSecond])`,
+    `innerFirst = TabItem("a", "Inner first", [TextContent("inner")])`,
+    `innerSecond = TabItem("b", "Inner second", [chain])`,
+    `chain = Mermaid("flowchart LR\\n  ${chain}")`,
+  ].join("\n");
+  const r = await renderCheck(htmlPage("Wide Mermaid", program, CDN_RUNTIME_URL));
+  assert.equal(r.status, "ok", JSON.stringify(r));
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.overflow, [], "the diagram scrolls in its own box, not the page");
+  assert.deepEqual(r.wide.map((w) => w.statement), ["chain"]);
+  assert.match(r.wide[0].message, /^Mermaid chain is \d+px wide .* at 1280px, so it scrolls sideways; use `flowchart TD` or split it\.$/);
+});

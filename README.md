@@ -195,7 +195,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 - A review the user ended or closed opens again only with `--reopen`.
 - **Tabs closed:** `poll` returns `browser_disconnected` 10 s after the last review tab closes, or 5 min after a dropped connection (for example, a locked phone). The review stays open, so later notes reach the next `poll`.
 - `feedback <file>` returns notes no agent has answered, from any day. Reading them acknowledges them; `reply` marks them answered.
-- **Render failures reach the agent without a click:** bad Mermaid syntax, an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px and prints render errors and the statements that make the page scroll sideways, as text, with no screenshot. Agents run it only when the user asks for a check.
+- **Render failures reach the agent without a click:** bad Mermaid syntax, an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px, opens each tab in turn, and prints render errors, the statements that make the page scroll sideways, and the Mermaid diagrams too wide for their box at 1280 px, as text, with no screenshot. Agents run it only when the user asks for a check.
 
 ## Components and packs
 
@@ -223,7 +223,7 @@ A page names its packs in the head, so it renders anywhere:
 - Under review, the server serves an installed pack only while it matches its hash in `~/.austere-axi/packs.json`. Opened directly, the page loads packs from jsDelivr with Subresource Integrity. `export` inlines them.
 - A pack component with no pack tag is a `missing-pack` error. `check --fix` repairs it.
 - **Bundled packs** need no tag and load only when used:
-  - `Mermaid`.
+  - `Mermaid`. A wide diagram shrinks while its text stays at 10 px or more; past that it scrolls sideways in its box, with a faded edge and a "Scroll sideways" hint.
   - `shadcn`: `Progress`, `Avatar`, `AvatarGroup`, `Tooltip`, `HoverCard`, `Breadcrumb` (`BreadcrumbItem`), `Kbd`, `Skeleton`, `Calendar` and `Timeline` (`TimelineItem`). Read-only.
   ```
   rollout = Progress(64, "Rows migrated")
