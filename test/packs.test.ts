@@ -336,18 +336,21 @@ interface FakeRegistry {
   tarballFailures: Map<string, number[]>;
   /** Requests it got for each tarball. */
   tarballRequests: Map<string, number>;
+  /** While set, it never answers a search. */
+  searchStalled: boolean;
   /** While set, it drops every connection. */
   down: boolean;
   requests: { path: string; authorization: string | undefined }[];
 }
 
 async function startRegistry(): Promise<FakeRegistry> {
-  const reg: FakeRegistry = { url: "", server: http.createServer(), published: {}, keywordsOf: {}, tarballFailures: new Map(), tarballRequests: new Map(), down: false, requests: [] };
+  const reg: FakeRegistry = { url: "", server: http.createServer(), published: {}, keywordsOf: {}, tarballFailures: new Map(), tarballRequests: new Map(), searchStalled: false, down: false, requests: [] };
   reg.server.on("request", (req: http.IncomingMessage, res: http.ServerResponse) => {
     if (reg.down) return req.socket.destroy();
     reg.requests.push({ path: req.url ?? "/", authorization: req.headers.authorization });
     const search = new URL(req.url ?? "/", "http://registry");
     if (search.pathname === "/-/v1/search") {
+      if (reg.searchStalled) return;
       const keyword = /^keywords:(.+)$/.exec(search.searchParams.get("text") ?? "")?.[1];
       const objects = Object.entries(reg.keywordsOf)
         .filter(([, k]) => keyword && k.includes(keyword))
@@ -831,6 +834,26 @@ test("show --pack picks one of several components with the same name, and search
   }
 });
 
+test("a pack the registry refuses (401/403) is not cached as broken; the next search lists it", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-refused-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    publish("austere-pack-gated", "1.0.0", await builtPackFiles("austere-pack-gated", "1.0.0"));
+    npm.tarballFailures.set("austere-pack-gated-1.0.0.tgz", [403]);
+    let r = await cliWith(env, "components", "search", "gated");
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /austere-pack-gated@/);
+    assert.match(r.out, /remote: 1 npm pack could not be read/);
+
+    r = await cliWith(env, "components", "search", "gated");
+    assert.match(r.out, /npm austere-pack-gated@1\.0\.0/, "a refused tarball is tried again once access is fixed");
+  } finally {
+    npm.tarballFailures.clear();
+    delete npm.keywordsOf["austere-pack-gated"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
 test("a pack with a malformed catalog is left out of search and refused by add", async () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-malformed-"));
   const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
@@ -1058,6 +1081,17 @@ test("a scope mapped to a private registry: search, add and trust use it, and it
     assert.match(r.out, /npm austere-pack-skyline@1\.0\.0/);
     assert.match(r.out, /remote: .*@acme registry unavailable \(/);
 
+    // The mapped registry stalls until the budget runs out: the default registry's packs, not yet cached, are still read.
+    fs.rmSync(path.join(state, "npm-packs"), { recursive: true, force: true });
+    mapAcme(acme.url);
+    acme.searchStalled = true;
+    publish("austere-pack-meteor", "1.0.0", await described("austere-pack-meteor", "1.0.0", "Meteorshower"));
+    r = await run("components", "search", "meteorshower");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm austere-pack-meteor@1\.0\.0/, "a pack not yet cached is read while the other registry stalls");
+    assert.match(r.out, /remote: .*@acme registry unavailable \(no answer from .* within 4s\)/);
+    acme.searchStalled = false;
+
     // A malformed registries file: search answers with a note, add and registry refuse, naming the file.
     fs.writeFileSync(path.join(state, "registries.json"), "{ not json");
     const namesFile = new RegExp(`${path.basename(state)}[\\\\/]+registries\\.json is malformed .*ask the user to fix it`);
@@ -1073,7 +1107,7 @@ test("a scope mapped to a private registry: search, add and trust use it, and it
     assert.match(r.out, namesFile);
   } finally {
     acme.server.close();
-    for (const name of ["@acme/pack-rocket", "austere-pack-skyline"]) delete npm.keywordsOf[name];
+    for (const name of ["@acme/pack-rocket", "austere-pack-skyline", "austere-pack-meteor"]) delete npm.keywordsOf[name];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });

@@ -127,6 +127,28 @@ async function readPack(registry: Registry, { name, version }: Listed, signal: A
   return read;
 }
 
+/** Runs at most `n` tasks at once, the rest in the order they were queued. */
+function limiter(n: number): <T>(task: () => Promise<T>) => Promise<T> {
+  let running = 0;
+  const queued: (() => void)[] = [];
+  return async (task) => {
+    if (running < n) running++;
+    else {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      queued.push(resolve);
+      await promise;
+    }
+    try {
+      return await task();
+    } finally {
+      // A finished task hands its slot straight to the next queued one.
+      const next = queued.shift();
+      if (next) next();
+      else running--;
+    }
+  };
+}
+
 /**
  * Packs on the registries that are not installed here. Never throws: an
  * unreachable registry, a timeout, an unreadable trust list or registries file
@@ -156,42 +178,37 @@ export async function remotePacks(): Promise<RemotePacks> {
   }
   const sources = [defaultRegistry(), ...regs.values()];
   const signal = AbortSignal.timeout(BUDGET_MS);
-  const lists = await Promise.all(
-    sources.map((registry) =>
-      listPacks(registry, signal, (err) => (signal.aborted ? `no answer from ${registry.url} within ${BUDGET_MS / 1000}s` : err instanceof Error ? err.message : String(err))),
-    ),
-  );
   const installed = new Set(installedPacks().map((p) => p.name));
-  const todo: { registry: Registry; pack: Listed }[] = [];
-  sources.forEach((registry, i) => {
-    const list = lists[i];
-    const label = registry.scope ? `${registry.scope} registry` : "registry";
-    if ("error" in list) return notes.push(`${label} unavailable (${list.error})`);
-    if (list.total > LIST_SIZE) notes.push(`only the first ${LIST_SIZE} of ${list.total} packs on the ${label} were searched`);
-    for (const pack of list.packs) {
-      if (!installed.has(pack.name) && registryFor(regs, pack.name).scope === registry.scope) todo.push({ registry, pack });
+  const fetchSlot = limiter(PARALLEL_FETCHES);
+  // Each registry reads its packs as soon as its own list arrives, so a stalled registry does not use up the others' budget.
+  const searched = await Promise.all(
+    sources.map(async (registry) => {
+      const label = registry.scope ? `${registry.scope} registry` : "registry";
+      const list = await listPacks(registry, signal, (err) =>
+        signal.aborted ? `no answer from ${registry.url} within ${BUDGET_MS / 1000}s` : err instanceof Error ? err.message : String(err),
+      );
+      if ("error" in list) return { registry, notes: [`${label} unavailable (${list.error})`], reads: [] };
+      const notes = list.total > LIST_SIZE ? [`only the first ${LIST_SIZE} of ${list.total} packs on the ${label} were searched`] : [];
+      const todo = list.packs.filter((pack) => !installed.has(pack.name) && registryFor(regs, pack.name).scope === registry.scope);
+      const reads = await Promise.all(todo.map((pack) => fetchSlot(() => readPack(registry, pack, signal)).catch(() => null)));
+      return { registry, notes, reads };
+    }),
+  );
+  const packs: RemotePack[] = [];
+  let unread = 0;
+  for (const { registry, notes: registryNotes, reads } of searched) {
+    notes.push(...registryNotes);
+    for (const r of reads) {
+      if (!r) unread++;
+      else if (!("error" in r)) {
+        const by = trustOf(trusted, r, registry.url);
+        packs.push({ ...r, registry, trust: by === "first-party" ? "first-party" : by ? "trusted" : "third-party" });
+      }
     }
-  });
-  const reads: (PackRead | null)[] = [];
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < todo.length) {
-      const i = next++;
-      reads[i] = await readPack(todo[i].registry, todo[i].pack, signal).catch(() => null);
-    }
-  };
-  await Promise.all(Array.from({ length: PARALLEL_FETCHES }, worker));
-  const unread = reads.filter((r) => r === null).length;
+  }
   if (unread) notes.push(`${unread} npm ${unread === 1 ? "pack" : "packs"} could not be read`);
   const rank = { "first-party": 0, trusted: 1, "third-party": 2 };
-  const packs = reads
-    .flatMap((r, i): RemotePack[] => {
-      if (!r || "error" in r) return [];
-      const { registry } = todo[i];
-      const by = trustOf(trusted, r, registry.url);
-      return [{ ...r, registry, trust: by === "first-party" ? "first-party" : by ? "trusted" : "third-party" }];
-    })
-    // Equal matches list the packs an agent may install first.
-    .sort((a, b) => rank[a.trust] - rank[b.trust]);
+  // Equal matches list the packs an agent may install first.
+  packs.sort((a, b) => rank[a.trust] - rank[b.trust]);
   return { packs, note: notes.join("; ") || undefined };
 }
