@@ -338,19 +338,26 @@ interface FakeRegistry {
   tarballRequests: Map<string, number>;
   /** While set, it never answers a search. */
   searchStalled: boolean;
+  /** While set, a search waits for it before answering. */
+  searchGate: Promise<void> | null;
+  /** Tarballs it never answers. */
+  stalledTarballs: Set<string>;
+  /** Called on each request for a stalled tarball. */
+  onStalledTarball: (() => void) | null;
   /** While set, it drops every connection. */
   down: boolean;
   requests: { path: string; authorization: string | undefined }[];
 }
 
 async function startRegistry(): Promise<FakeRegistry> {
-  const reg: FakeRegistry = { url: "", server: http.createServer(), published: {}, keywordsOf: {}, tarballFailures: new Map(), tarballRequests: new Map(), searchStalled: false, down: false, requests: [] };
-  reg.server.on("request", (req: http.IncomingMessage, res: http.ServerResponse) => {
+  const reg: FakeRegistry = { url: "", server: http.createServer(), published: {}, keywordsOf: {}, tarballFailures: new Map(), tarballRequests: new Map(), searchStalled: false, searchGate: null, stalledTarballs: new Set(), onStalledTarball: null, down: false, requests: [] };
+  reg.server.on("request", async (req: http.IncomingMessage, res: http.ServerResponse) => {
     if (reg.down) return req.socket.destroy();
     reg.requests.push({ path: req.url ?? "/", authorization: req.headers.authorization });
     const search = new URL(req.url ?? "/", "http://registry");
     if (search.pathname === "/-/v1/search") {
       if (reg.searchStalled) return;
+      if (reg.searchGate) await reg.searchGate;
       const keyword = /^keywords:(.+)$/.exec(search.searchParams.get("text") ?? "")?.[1];
       const objects = Object.entries(reg.keywordsOf)
         .filter(([, k]) => keyword && k.includes(keyword))
@@ -364,6 +371,7 @@ async function startRegistry(): Promise<FakeRegistry> {
     if (url.startsWith("tarballs/")) {
       const file = url.slice("tarballs/".length);
       reg.tarballRequests.set(file, (reg.tarballRequests.get(file) ?? 0) + 1);
+      if (reg.stalledTarballs.has(file)) return reg.onStalledTarball?.();
       const status = reg.tarballFailures.get(file)?.shift();
       if (status) return res.writeHead(status).end();
       const body = reg.published[file];
@@ -1091,6 +1099,28 @@ test("a scope mapped to a private registry: search, add and trust use it, and it
     assert.match(r.out, /npm austere-pack-meteor@1\.0\.0/, "a pack not yet cached is read while the other registry stalls");
     assert.match(r.out, /remote: .*@acme registry unavailable \(no answer from .* within 4s\)/);
     acme.searchStalled = false;
+
+    // The mapped registry lists first and its downloads stall: they must not hold every fetch slot, so the default registry's uncached pack is still read.
+    fs.rmSync(path.join(state, "npm-packs"), { recursive: true, force: true });
+    for (const n of [1, 2, 3, 4, 5]) {
+      const name = `@acme/pack-slow${n}`;
+      publish(name, "1.0.0", await described(name, "1.0.0", "Slowpoke"), acme);
+      acme.stalledTarballs.add(`${name}-1.0.0.tgz`);
+    }
+    // The default registry answers its search only once four @acme downloads hang, so @acme holds as many fetches as the old shared limit allowed.
+    const fourStalled = Promise.withResolvers<void>();
+    let stalls = 0;
+    acme.onStalledTarball = () => {
+      if (++stalls === 4) fourStalled.resolve();
+    };
+    npm.searchGate = fourStalled.promise;
+    publish("austere-pack-comet", "1.0.0", await described("austere-pack-comet", "1.0.0", "Cometdust"));
+    r = await run("components", "search", "cometdust");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm austere-pack-comet@1\.0\.0/, "slow downloads on one registry do not starve another registry's reads");
+    npm.searchGate = null;
+    acme.onStalledTarball = null;
+    acme.stalledTarballs.clear();
 
     // A malformed registries file: search answers with a note, add and registry refuse, naming the file.
     fs.writeFileSync(path.join(state, "registries.json"), "{ not json");

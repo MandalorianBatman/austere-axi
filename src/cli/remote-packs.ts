@@ -179,8 +179,7 @@ export async function remotePacks(): Promise<RemotePacks> {
   const sources = [defaultRegistry(), ...regs.values()];
   const signal = AbortSignal.timeout(BUDGET_MS);
   const installed = new Set(installedPacks().map((p) => p.name));
-  const fetchSlot = limiter(PARALLEL_FETCHES);
-  // Each registry reads its packs as soon as its own list arrives, so a stalled registry does not use up the others' budget.
+  // Each registry reads its packs as soon as its own list arrives, with its own fetch slots: a registry that stalls, or whose downloads hang, uses up only its own share.
   const searched = await Promise.all(
     sources.map(async (registry) => {
       const label = registry.scope ? `${registry.scope} registry` : "registry";
@@ -190,6 +189,7 @@ export async function remotePacks(): Promise<RemotePacks> {
       if ("error" in list) return { registry, notes: [`${label} unavailable (${list.error})`], reads: [] };
       const notes = list.total > LIST_SIZE ? [`only the first ${LIST_SIZE} of ${list.total} packs on the ${label} were searched`] : [];
       const todo = list.packs.filter((pack) => !installed.has(pack.name) && registryFor(regs, pack.name).scope === registry.scope);
+      const fetchSlot = limiter(PARALLEL_FETCHES);
       const reads = await Promise.all(todo.map((pack) => fetchSlot(() => readPack(registry, pack, signal)).catch(() => null)));
       return { registry, notes, reads };
     }),
