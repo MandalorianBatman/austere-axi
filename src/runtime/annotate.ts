@@ -213,7 +213,11 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     box.style.height = `${rect.height + pad * 2}px`;
   }
 
+  // The statement the hover box was last placed on; layout changes re-measure it.
+  let hovered: Element | null = null;
+
   function showHover(target: Element | null) {
+    hovered = target;
     if (!target) {
       hover.hidden = true;
       return;
@@ -440,7 +444,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     }
   });
   window.addEventListener("scroll", () => {
-    if (!pop.hidden) return;
+    // The box is position: fixed, so a locked one has to follow the page.
+    if (!pop.hidden) return scheduleLayout();
     hover.hidden = true;
     selBtn.hidden = true;
   }, { passive: true });
@@ -548,10 +553,9 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   marks.setAttribute(UI_ATTR, "");
   root.appendChild(marks);
   let marked: string[] | null = null; // statement ids
-  let marksRaf = 0;
+  let layoutRaf = 0;
 
   function drawMarks() {
-    marksRaf = 0;
     const [map, refsTo]: [StatementMap?, RefsTo?] = marked && lookup ? lookup() : [];
     // Statements that render nothing, or sit scrolled out of their container, get no mark.
     const list: Element[] = [];
@@ -565,19 +569,47 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     marks.replaceChildren(...boxes.map((box) => overlay(box, "austere-mark")));
     return list;
   }
-  const scheduleMarks = () => {
-    if (marked && !marksRaf) marksRaf = requestAnimationFrame(drawMarks);
-  };
-  window.addEventListener("resize", scheduleMarks, { passive: true });
-  new ResizeObserver(scheduleMarks).observe(document.body);
+
+  /**
+   * A shown hover box (locked under an open note, or under a resting pointer) stays on its
+   * statement when the page moves it: a live update re-lays out a diagram, a scroller scrolls.
+   * A re-render may replace the element, so a detached one is found again by its id.
+   */
+  function placeHover() {
+    if (hover.hidden || !hovered) return;
+    if (!hovered.isConnected) {
+      const id = hovered.getAttribute("data-oui-id") as string;
+      hovered = document.querySelector(`[data-oui-id="${CSS.escape(id)}"]`);
+    }
+    if (hovered) placeBox(hover, boxOf(hovered));
+    else hover.hidden = true;
+  }
+
+  function scheduleLayout() {
+    if (layoutRaf || (!marked && hover.hidden)) return;
+    layoutRaf = requestAnimationFrame(() => {
+      layoutRaf = 0;
+      if (marked) drawMarks();
+      placeHover();
+    });
+  }
+  window.addEventListener("resize", scheduleLayout, { passive: true });
+  new ResizeObserver(scheduleLayout).observe(document.body);
   // Our own overlays mutate too; redrawing for them would loop every frame.
+  // SVG geometry attributes count: a live update can move a diagram box without other changes.
   new MutationObserver((records) => {
-    if (records.some((r) => !isOurs(r.target.nodeType === 1 ? r.target : r.target.parentElement))) scheduleMarks();
-  }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class", "style", "hidden", "open"] });
+    if (records.some((r) => !isOurs(r.target.nodeType === 1 ? r.target : r.target.parentElement))) scheduleLayout();
+  }).observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ["class", "style", "hidden", "open", "x", "y", "width", "height", "d", "transform", "viewBox"],
+  });
   document.addEventListener(
     "scroll",
     (e) => {
-      if (e.target !== document) scheduleMarks();
+      if (e.target !== document) scheduleLayout();
     },
     { capture: true, passive: true },
   );
