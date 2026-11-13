@@ -50,7 +50,7 @@ function getParser(schema: SpecSchema | undefined, packs: InstalledPack[] = []):
 
 /** Components austere-axi used to have: an old page names them, so say what replaced them. */
 const REMOVED: Record<string, string> = {
-  Mermaid: "Mermaid was removed in 0.8. Draw the diagram with Architecture, or show the source as text in a CodeBlock.",
+  Mermaid: "Mermaid was removed from austere-axi. Draw the diagram with Architecture, or show the source as text in a CodeBlock.",
 };
 
 /** The parser lists every component on an unknown name; say where to look instead. */

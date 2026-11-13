@@ -314,7 +314,7 @@ test("a removed component says what replaced it", async () => {
   fs.writeFileSync(file, page('root = Stack([d])\nd = Mermaid("graph LR\\nA-->B")'));
   const r = await cli("check", file);
   assert.equal(r.code, 1);
-  assert.match(r.out, /Mermaid was removed in 0\.8\. Draw the diagram with Architecture/);
+  assert.match(r.out, /Mermaid was removed from austere-axi\. Draw the diagram with Architecture/);
   assert.doesNotMatch(r.out, /components search mermaid/);
 });
 

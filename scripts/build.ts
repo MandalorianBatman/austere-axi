@@ -28,6 +28,8 @@ const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"))
 const only = process.argv.slice(2);
 const want = (step: string): boolean => only.length === 0 || only.includes(step);
 
+// A full build starts empty, so output an older build made (a removed pack, a dropped asset) cannot ship in the package.
+if (only.length === 0) fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(DIST, { recursive: true });
 
 async function buildRuntime() {
