@@ -347,8 +347,10 @@ function publish(name: string, version: string, files: Record<string, string | B
   keywordsOf[name] = (JSON.parse(String(files["package.json"] ?? "{}")) as { keywords?: string[] }).keywords ?? [];
 }
 
-/** Tarballs the mock registry answers with HTTP 500. */
-const failingTarballs = new Set<string>();
+/** Statuses the mock registry answers a tarball with, one per request, before it serves the tarball. */
+const tarballFailures = new Map<string, number[]>();
+/** Requests the mock registry got for each tarball. */
+const tarballRequests = new Map<string, number>();
 /** While set, the mock registry drops every connection. */
 let registryDown = false;
 
@@ -369,7 +371,9 @@ before(async () => {
     const url = decodeURIComponent((req.url ?? "").slice(1));
     if (url.startsWith("tarballs/")) {
       const file = url.slice("tarballs/".length);
-      if (failingTarballs.has(file)) return res.writeHead(500).end();
+      tarballRequests.set(file, (tarballRequests.get(file) ?? 0) + 1);
+      const status = tarballFailures.get(file)?.shift();
+      if (status) return res.writeHead(status).end();
       const body = published[file];
       if (!body) return res.writeHead(404).end();
       return res.writeHead(200, { "content-type": "application/octet-stream" }).end(body);
@@ -525,7 +529,7 @@ test("a pack npm fails to serve is left out and counted, not cached; the other p
   try {
     publish("austere-pack-nova", "1.0.0", await builtPackFiles("austere-pack-nova", "1.0.0"));
     publish("austere-pack-nova-down", "1.0.0", await builtPackFiles("austere-pack-nova-down", "1.0.0"));
-    failingTarballs.add("austere-pack-nova-down-1.0.0.tgz");
+    tarballFailures.set("austere-pack-nova-down-1.0.0.tgz", [500]);
     let r = await cliWith(env, "components", "search", "nova");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /npm austere-pack-nova@1\.0\.0/);
@@ -533,14 +537,81 @@ test("a pack npm fails to serve is left out and counted, not cached; the other p
     assert.match(r.out, /remote: 1 npm pack could not be read/);
     assert.doesNotMatch(r.out, /local components only/);
 
-    failingTarballs.clear();
     r = await cliWith(env, "components", "search", "nova");
     assert.match(r.out, /npm austere-pack-nova-down@1\.0\.0/, "a server error is tried again on the next search");
     assert.doesNotMatch(r.out, /remote:/);
   } finally {
-    failingTarballs.clear();
+    tarballFailures.clear();
     delete keywordsOf["austere-pack-nova"];
     delete keywordsOf["austere-pack-nova-down"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("only a failure that cannot change is cached: a 408 is tried again on the next search, a 404 stays cached", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-lasting-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    publish("austere-pack-tardy", "1.0.0", await builtPackFiles("austere-pack-tardy", "1.0.0"));
+    publish("austere-pack-gone", "1.0.0", await builtPackFiles("austere-pack-gone", "1.0.0"));
+    tarballFailures.set("austere-pack-tardy-1.0.0.tgz", [408]);
+    delete published["austere-pack-gone-1.0.0.tgz"];
+    let r = await cliWith(env, "components", "search", "tardy");
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /npm austere-pack-tardy/);
+    assert.match(r.out, /remote: 1 npm pack could not be read/, "the 408 is counted as unread, the 404 is not");
+
+    r = await cliWith(env, "components", "search", "tardy");
+    assert.match(r.out, /npm austere-pack-tardy@1\.0\.0/, "a 408 is tried again on the next search");
+    assert.doesNotMatch(r.out, /remote:/);
+    assert.equal(tarballRequests.get("austere-pack-gone-1.0.0.tgz"), 1, "a 404 is cached for that version");
+  } finally {
+    tarballFailures.clear();
+    delete keywordsOf["austere-pack-tardy"];
+    delete keywordsOf["austere-pack-gone"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("show --pack picks one of several components with the same name, and search names --pack for them", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-twins-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    publish("austere-pack-twin-a", "1.0.0", await builtPackFiles("austere-pack-twin-a", "1.0.0"));
+    const b = await builtPackFiles("austere-pack-twin-b", "1.0.0");
+    const bCatalog = JSON.parse(String(b["dist/catalog.json"])) as { components: { signature: string }[] };
+    bCatalog.components[0].signature = "Milestones(events: string[], twin: string)";
+    b["dist/catalog.json"] = JSON.stringify(bCatalog);
+    publish("austere-pack-twin-b", "1.0.0", b);
+    const table = await builtPackFiles("austere-pack-tablet", "1.0.0");
+    const tCatalog = JSON.parse(String(table["dist/catalog.json"])) as { components: { name: string; signature: string }[] };
+    tCatalog.components[0].name = "Table";
+    tCatalog.components[0].signature = "Table(tablet: string[])";
+    table["dist/catalog.json"] = JSON.stringify(tCatalog);
+    publish("austere-pack-tablet", "1.0.0", table);
+
+    let r = await cliWith(env, "components", "search", "twin");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /`austere-axi components show Milestones --pack austere-pack-twin-[ab]`/);
+    r = await cliWith(env, "components", "show", "Milestones", "--pack", "austere-pack-twin-b");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /signature: "?Milestones\(events: string\[\], twin: string\)/);
+    assert.match(r.out, /from: "?npm austere-pack-twin-b@1\.0\.0/);
+    r = await cliWith(env, "components", "show", "Milestones", "--pack", "austere-pack-twin-a");
+    assert.match(r.out, /from: "?npm austere-pack-twin-a@1\.0\.0/);
+
+    r = await cliWith(env, "components", "search", "tablet");
+    assert.match(r.out, /`austere-axi components show Table --pack austere-pack-tablet`/, "a remote name that matches a local component names --pack");
+    r = await cliWith(env, "components", "show", "Table");
+    assert.match(r.out, /from: core/);
+    r = await cliWith(env, "components", "show", "Table", "--pack", "austere-pack-tablet");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /signature: "?Table\(tablet: string\[\]\)/);
+    assert.match(r.out, /from: "?npm austere-pack-tablet@1\.0\.0/);
+  } finally {
+    delete keywordsOf["austere-pack-twin-a"];
+    delete keywordsOf["austere-pack-twin-b"];
+    delete keywordsOf["austere-pack-tablet"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });

@@ -150,6 +150,14 @@ export async function searchComponents(words: string[]): Promise<SearchResult> {
     };
   }
   const next = [`\`${BIN} components show <Name>\` for examples.`];
+  // `show <Name>` returns the first entry by that name, so a pack on npm sharing it with another result or a local component needs --pack.
+  const localNames = new Set(entries.filter((e) => e.source !== "remote").map((e) => e.name));
+  const listed = [...local, ...npm].map((e) => e.name);
+  for (const e of npm) {
+    if (e.source === "remote" && (localNames.has(e.name) || listed.filter((n) => n === e.name).length > 1)) {
+      next.push(`\`${BIN} components show ${e.name} --pack ${e.pack}\` for the one from ${e.pack}.`);
+    }
+  }
   if (local.some((e) => e.source === "installed")) next.push(`Pack components need the page to declare their pack: \`${BIN} check --fix <file>\` adds it.`);
   const seen = new Set<string>();
   for (const e of npm) {
@@ -170,9 +178,13 @@ export async function searchComponents(words: string[]): Promise<SearchResult> {
   };
 }
 
-export async function showComponents(names: string[]): Promise<ComponentShow | CommandError> {
+/** `pack`: look the names up in that pack only ("core", a bundled or installed pack, or a pack on npm). */
+export async function showComponents(names: string[], pack?: string): Promise<ComponentShow | CommandError> {
   if (!names.length) return { status: "error", error: `show needs a name: ${BIN} components show Gantt` };
-  const lookup = (entries: ComponentEntry[], n: string) => entries.find((x) => x.name === n) || entries.find((x) => x.name.toLowerCase() === n.toLowerCase());
+  const lookup = (all: ComponentEntry[], n: string) => {
+    const entries = pack ? all.filter((x) => x.pack === pack) : all;
+    return entries.find((x) => x.name === n) || entries.find((x) => x.name.toLowerCase() === n.toLowerCase());
+  };
   let catalog = catalogEntries();
   let remote: RemotePacks | undefined;
   if (names.some((n) => !lookup(catalog.entries, n))) {

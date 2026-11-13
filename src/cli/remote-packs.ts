@@ -91,7 +91,11 @@ async function listPacks(signal: AbortSignal, reason: (err: unknown) => string):
   return list;
 }
 
-/** A pack version's catalog or its lasting failure; throws when the failure may clear up (no answer, a timeout, a rate limit, a 5xx). */
+/**
+ * A pack version's catalog or its lasting failure: it fails the install checks
+ * (an error with no status), or the registry answers 404 or 410. Throws on any
+ * other failure (no answer, a timeout, any other HTTP status), so the next search tries again.
+ */
 async function readPack({ name, version }: Listed, signal: AbortSignal): Promise<PackRead> {
   const file = path.join(cacheDir(), `${packDirName(name, version)}.json`);
   const cached = readCache<PackRead>(file);
@@ -102,7 +106,8 @@ async function readPack({ name, version }: Listed, signal: AbortSignal): Promise
     read = { name, version, integrity, trust: isFirstParty(name) ? "first-party" : "third-party", catalog };
   } catch (caught) {
     const err = caught as InstallError;
-    if (signal.aborted || err.network || err.status === 429 || (err.status ?? 0) >= 500) throw err;
+    const lasting = !err.network && (err.status === undefined || err.status === 404 || err.status === 410);
+    if (signal.aborted || !lasting) throw err;
     read = { name, version, error: err.message };
   }
   writeCache(file, read);
