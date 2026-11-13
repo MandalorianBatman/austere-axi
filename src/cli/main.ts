@@ -107,7 +107,7 @@ COMMANDS
   ${BIN} end <file>              stop as the agent; later notes wait for the next poll
   ${BIN} feedback <file>         notes no agent has answered yet   [--all] [--peek]
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
-  ${BIN} components search <words> | show <Name...>   components spec leaves out
+  ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} <command> --help        one command's flags and an example
   ${BIN} help all                every command, notes and environment
 `;
@@ -206,9 +206,13 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "spec Charts Forms",
   },
   components: {
-    usage: "components [list [group] | search <words> | show <Name...> | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
-    summary: "every component, including ones spec leaves out; install, remove and write packs",
-    flags: { trust: "install a third-party pack (read its code first)", name: "npm package name for `new`" },
+    usage: "components [list [group] | search <words> | show <Name...> [--pack pkg] | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
+    summary: "every component, including ones spec leaves out; search also lists up to 3 from packs on npm (not installed) under `npm`, and show finds them; install, remove and write packs",
+    flags: {
+      trust: "install a third-party pack (read its code first)",
+      name: "npm package name for `new`",
+      pack: "`show` looks only in this pack (core, an installed pack, or one on npm), for a name several packs share",
+    },
     example: "components search scatter",
   },
   export: {
@@ -241,7 +245,7 @@ const COMMANDS: Record<string, CommandSpec> = {
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "project", "as", "cursor", "after"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -691,9 +695,9 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
     case "list":
       return printResult(listComponents(args[0]));
     case "search":
-      return printResult(searchComponents(args));
+      return printResult(await searchComponents(args));
     case "show":
-      return printResult(showComponents(args));
+      return printResult(await showComponents(args, typeof flags.pack === "string" ? flags.pack : undefined));
     case "add": {
       if (!args[0]) return usage(`add needs a pack: ${BIN} components add <npm-package>[@version] | <folder> | <file.tgz>`, "components");
       const { addPack } = await import("./install.ts");

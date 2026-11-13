@@ -208,8 +208,9 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 
 ```sh
 austere-axi components                  # every component, by group
-austere-axi components search scatter   # search by name, group, description
+austere-axi components search scatter   # search by name, group, description; also packs on npm
 austere-axi components show AreaChart   # signature, notes, example
+austere-axi components show Milestones --pack austere-pack-orbit   # one pack's, when several share the name
 ```
 
 **Packs** add components. A pack is an npm package with `dist/pack.js` (the components, a few KB) and `dist/catalog.json` (signatures, examples, schema).
@@ -218,6 +219,8 @@ austere-axi components show AreaChart   # signature, notes, example
 austere-axi components add austere-pack-gantt --trust   # npm name, folder, or .tgz
 austere-axi check --fix plan.html                       # adds the pack tag to the page
 ```
+
+`components search` and `components show` also cover packs on npm that are not installed, meaning any package with the keyword `austere-axi-pack`. Search lists up to 8 core and installed components under `results`, then up to 3 from packs on npm under `npm`, so a pack on npm never pushes a core component out. A result names its pack, says `not installed`, and says whether the pack is first- or third-party; `show` cuts such a component's description, example and notes short. `show <Name>` returns the first component by that name, core and installed packs first; `--pack <pack>` looks only in that pack, and search names it for an npm result whose name another result or a local component shares. The CLI reads the pack's catalog from its tarball, checked against the registry's integrity hash, and runs none of its code. It caches the pack list for an hour, under `~/.austere-axi/npm-packs/`. It caches each pack version for good once it is read, fails the install checks, or the registry answers 404 or 410 for it; any other failure is tried again on the next search. For a third-party pack, the agent is told to ask you to review it and run `components add <pack> --trust`. With the registry unreachable, search shows local results, says so, and tries the registry again after 5 minutes. A pack the registry fails to serve is left out, and search says how many were.
 
 A page names its packs in the head, so it renders anywhere:
 
@@ -365,7 +368,7 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 | `AUSTERE_AXI_DISCONNECT_GRACE_MS` | `300000` | how long a dropped connection can stay away before `poll` returns; `0` disables |
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
-| `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs |
+| `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them |
 | `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
 
 ## Security

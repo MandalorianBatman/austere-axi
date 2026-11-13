@@ -162,6 +162,8 @@ Pin `austere-axi` as a dev dependency (`^0.4.1`) and publish only `dist`, `READM
 npm publish
 ```
 
+The `austere-axi-pack` keyword makes the pack discoverable. `austere-axi components search` finds the components of every published pack with that keyword and lists up to three of them apart from the installed ones, and `components show` prints their signatures and examples before anyone installs the pack. Both read `dist/catalog.json` from the published tarball, so write descriptions and examples that sell the component. For a pack that is not installed, `show` cuts the description to 140 characters, the example to 600, and the group notes to three of 140 each. A pack whose catalog fails the install checks (format, pack API, a component without a name, signature or group, a `dist/pack.js` that changed after the build) is left out of search.
+
 Once it is published, users install it with `austere-axi components add austere-pack-gantt --trust`. The Gantt pack is not on npm yet, so until then use `austere-axi components add <path-to-clone> --trust` or the `.tgz` from step 5. `--trust` is required for any pack outside `@austere-axi/`: its code runs inside the review page, so tell users what it does and keep it small enough to read. The README of the Gantt pack is a template for that.
 
 A GitHub Release can publish through npm trusted publishing instead of a token. Copy [`publish.yml`](https://github.com/MandalorianBatman/austere-pack-gantt/blob/main/.github/workflows/publish.yml) and set the trusted publisher once on npmjs.com.
