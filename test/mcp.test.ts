@@ -108,7 +108,7 @@ test("initializes and lists the review tools", async () => {
   );
   for (const t of list.result.tools) assert.equal(t.inputSchema.type, "object");
   const components = list.result.tools.find((t) => t.name === "components")!;
-  assert.deepEqual(Object.keys(components.inputSchema.properties), ["command", "args"]);
+  assert.deepEqual(Object.keys(components.inputSchema.properties), ["command", "args", "pack"]);
   assert.doesNotMatch(JSON.stringify(components.inputSchema), /trust/i, "the MCP surface cannot pass --trust");
   assert.deepEqual(components.inputSchema.properties.command.enum, ["search", "show", "list", "add"]);
 
@@ -186,6 +186,20 @@ test("components searches locally and refuses paths and untrusted packs", async 
   const shown = await call("components", { command: "show", args: ["BarChart"] });
   assert.equal(shown.isError, false, shown.content[0].text);
   assert.match(shown.content[0].text, /BarChart\(/);
+  const inCore = await call("components", { command: "show", args: ["BarChart"], pack: "core" });
+  assert.equal(inCore.isError, false, inCore.content[0].text);
+  assert.match(inCore.content[0].text, /BarChart\(/);
+  assert.match(inCore.content[0].text, /from: core/);
+  const inOther = await call("components", { command: "show", args: ["BarChart"], pack: "austere-pack-orbit" });
+  assert.equal(inOther.isError, true, "show looks only in the named pack");
+  assert.match(inOther.content[0].text, /unknown/);
+  for (const command of ["search", "list", "add"]) {
+    const packElsewhere = await call("components", { command, args: ["BarChart"], pack: "core" });
+    assert.equal(packElsewhere.isError, true, command);
+    assert.match(packElsewhere.content[0].text, /pack is only for show/, command);
+  }
+  const badPack = await call("components", { command: "show", args: ["BarChart"], pack: "../x" });
+  assert.match(badPack.content[0].text, /pack must be core or an npm package name/);
 
   for (const spec of ["./my-pack", "C:\\packs\\x", "pack.tgz", "foo@../bar", "--trust"]) {
     const refused = await call("components", { command: "add", args: [spec] });

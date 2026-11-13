@@ -39,6 +39,7 @@ type ToolArgs = {
   statements: string;
   command: string;
   args?: string[];
+  pack?: string;
 };
 
 interface Tool {
@@ -158,16 +159,21 @@ const TOOLS: Record<string, Tool> = {
     properties: {
       command: { type: "string", enum: ["search", "show", "list", "add"], description: "search <words>, show <Name...>, list [group], add <npm-package>." },
       args: { type: "array", items: { type: "string" }, description: "The command's words, component names, group, or one npm package name[@version]." },
+      pack: { type: "string", description: "show only: look the names up in this pack (core, or an npm package name) when two packs share a name." },
     },
     required: ["command"],
-    // An MCP client installs from the registry only: a folder or .tgz would run local files the user never vetted.
     reject: (a) => {
+      if (a.pack !== undefined) {
+        if (a.command !== "show") return "pack is only for show";
+        if (a.pack !== "core" && !isValidPackName(a.pack)) return "pack must be core or an npm package name";
+      }
+      // An MCP client installs from the registry only: a folder or .tgz would run local files the user never vetted.
       if (a.command !== "add") return null;
       if (a.args?.length !== 1) return "add takes exactly one npm package name[@version] in args";
       if (looksLikePath(a.args[0]) || !isValidPackName(splitSpec(a.args[0]).name)) return "add takes an npm package name[@version]; folders and .tgz files are installed from the command line";
       return null;
     },
-    run: (a) => [{ args: ["components", a.command, "--", ...(a.args ?? [])] }],
+    run: (a) => [{ args: ["components", a.command, ...(a.pack !== undefined ? ["--pack", a.pack] : []), "--", ...(a.args ?? [])] }],
   },
 };
 

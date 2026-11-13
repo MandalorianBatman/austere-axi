@@ -117,7 +117,7 @@ In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/pl
 
 - `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer calls. The agent polls again; nothing is lost. `timeout_ms: 0` waits until feedback arrives.
 - `poll` and `reply` take the `cursor` a poll returned, like `--cursor`.
-- `components` takes `command` (`search`, `show`, `list` or `add`) and `args`. `add` takes only an npm package name, never a folder or `.tgz`, and has no `trust`: a third-party pack the user has not trusted is refused, and the agent asks the user to install it.
+- `components` takes `command` (`search`, `show`, `list` or `add`) and `args`; `show` also takes `pack`, like `--pack`. `add` takes only an npm package name, never a folder or `.tgz`, and has no `trust`: a third-party pack the user has not trusted is refused, and the agent asks the user to install it.
 - Pass absolute file paths. The server resolves relative paths against its own working directory, which depends on the client.
 - No screen? Set `AUSTERE_AXI_NO_OPEN=1` in the server's `env` so `open` prints the link instead. Other [environment variables](#environment) work the same way.
 
