@@ -254,7 +254,7 @@ austere-axi trust remove @acme
 - Search marks packs on the list `trusted` and tells the agent it may add them.
 - `trust add` asks you to confirm at a terminal and refuses when stdin is not one, which is how agents run commands. That stops an agent adding a search hit to the list by accident. It does not stop an agent set on editing the file.
 - Only this file in your home folder counts. A project cannot ship its own list.
-- If the file is unreadable, search counts every npm pack third-party and says so, while `components add` and `trust` refuse until you fix or delete it.
+- If the file is unreadable, search counts every npm pack third-party and says so, and `trust` refuses until you fix or delete it. `components add` refuses only the installs the list would decide: a third-party npm pack without `--trust`. First-party packs, local folders and `--trust` installs are unaffected.
 
 **Write a pack:** [Writing a pack](docs/writing-a-pack.md) goes from scaffold to `npm publish`, with [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as the example. Short version:
 
