@@ -178,6 +178,7 @@ austere-axi check <file>         validate the program (no browser)    [--fix] [-
 austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
+austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
 austere-axi export <file>        one self-contained HTML file, works offline
 austere-axi hub on|off|status|list|notes|open   home page with every page and note
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
@@ -220,7 +221,7 @@ austere-axi components add austere-pack-gantt --trust   # npm name, folder, or .
 austere-axi check --fix plan.html                       # adds the pack tag to the page
 ```
 
-`components search` and `components show` also cover packs on npm that are not installed, meaning any package with the keyword `austere-axi-pack`. Search lists up to 8 core and installed components under `results`, then up to 3 from packs on npm under `npm`, so a pack on npm never pushes a core component out. A result names its pack, says `not installed`, and says whether the pack is first- or third-party; `show` cuts such a component's description, example and notes short. `show <Name>` returns the first component by that name, core and installed packs first; `--pack <pack>` looks only in that pack, and search names it for an npm result whose name another result or a local component shares. The CLI reads the pack's catalog from its tarball, checked against the registry's integrity hash, and runs none of its code. It caches the pack list for an hour, under `~/.austere-axi/npm-packs/`. It caches each pack version for good once it is read, fails the install checks, or the registry answers 404 or 410 for it; any other failure is tried again on the next search. For a third-party pack, the agent is told to ask you to review it and run `components add <pack> --trust`. With the registry unreachable, search shows local results, says so, and tries the registry again after 5 minutes. A pack the registry fails to serve is left out, and search says how many were.
+`components search` and `components show` also cover packs on npm that are not installed, meaning any package with the keyword `austere-axi-pack`. Search lists up to 8 core and installed components under `results`, then up to 3 from packs on npm under `npm`, so a pack on npm never pushes a core component out. A result names its pack, says `not installed`, and says whether the pack is first-party, `trusted` (on your trust list) or third-party; `show` cuts such a component's description, example and notes short. `show <Name>` returns the first component by that name, core and installed packs first; `--pack <pack>` looks only in that pack, and search names it for an npm result whose name another result or a local component shares. The CLI reads the pack's catalog from its tarball, checked against the registry's integrity hash, and runs none of its code. It caches the pack list for an hour, under `~/.austere-axi/npm-packs/`. It caches each pack version for good once it is read, fails the install checks, or the registry answers 404 or 410 for it; any other failure is tried again on the next search. For a third-party pack, the agent is told to ask you to review it and run `components add <pack> --trust`. With the registry unreachable, search shows local results, says so, and tries the registry again after 5 minutes. A pack the registry fails to serve is left out, and search says how many were.
 
 A page names its packs in the head, so it renders anywhere:
 
@@ -238,6 +239,20 @@ A page names its packs in the head, so it renders anywhere:
   ```
 
 **Trust.** Pack code runs inside your review pages, where notes and button presses also come from. Packs under `@austere-axi/` on npm install directly. Other npm packs and any `.tgz` need `--trust`, so read them first. A local folder counts as your own. A page with third-party packs shows a warning, and `poll` tells the agent.
+
+Your trust list, `~/.austere-axi/trusted.json`, names npm packs your agent may install without `--trust`:
+
+```sh
+austere-axi trust add austere-pack-gantt@1.2.0   # pins that version and the hash of its pack.js
+austere-axi trust add @acme                      # every pack in a scope, e.g. your company registry
+austere-axi trust list
+austere-axi trust remove @acme
+```
+
+- A pin trusts one exact version with the same `pack.js`. A later publish, or the same version with other code, still needs `--trust`. `components add <pack>` with no version installs the pinned one.
+- Search marks list packs `trusted` and tells the agent it may add them.
+- `trust add` asks you to confirm at a terminal and refuses when stdin is not one, which is how agents run commands. That stops an agent adding a search hit to the list by accident. It does not stop an agent set on editing the file.
+- Only this file in your home folder counts. A project cannot ship its own list.
 
 **Write a pack:** [Writing a pack](docs/writing-a-pack.md) goes from scaffold to `npm publish`, with [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as the example. Short version:
 
@@ -393,7 +408,7 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. Never 
 
 **Page sandbox.** The page runs in a sandboxed iframe with no same-origin access; packs run there too. Page files are also served with `Content-Security-Policy: sandbox`, so a page opened in a popup or its own tab stays sandboxed. In review, the review page opens new-window links only if they are external `http(s):` or `mailto:` links. A popup the frame opens any other way stays sandboxed.
 
-**Packs.** Third-party packs need `--trust`. Installed packs must match their lockfile hash; CDN loads use Subresource Integrity.
+**Packs.** Third-party packs need `--trust` unless your trust list names them. Installed packs must match their lockfile hash; CDN loads use Subresource Integrity.
 
 **Telemetry.** OpenUI's Node side has PostHog telemetry; the CLI sets `OPENUI_TELEMETRY_DISABLED=1`. The browser runtime sends none.
 

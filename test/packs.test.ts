@@ -488,6 +488,90 @@ test("search and show find packs on npm that are not installed, without installi
   }
 });
 
+test("the user's trust list: a pin trusts one version and pack.js, a scope trusts every pack in it", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-trust-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  const trusted = path.join(state, "trusted.json");
+  const sha384 = (b: string | Buffer) => `sha384-${crypto.createHash("sha384").update(b).digest("base64")}`;
+  const lockOf = () => (fs.existsSync(path.join(state, "packs.json")) ? (JSON.parse(fs.readFileSync(path.join(state, "packs.json"), "utf8")) as PacksLock).packs : {});
+  try {
+    // An agent's shell has no terminal: trust add refuses and writes nothing.
+    let r = await cliWith(env, "trust", "add", "austere-pack-pinned");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /needs the user at a terminal/);
+    assert.ok(!fs.existsSync(trusted), "trust add without a terminal writes nothing");
+
+    const v1 = await builtPackFiles("austere-pack-pinned", "1.0.0");
+    publish("austere-pack-pinned", "1.0.0", v1);
+    const tamper = await builtPackFiles("austere-pack-tamper", "1.0.0");
+    publish("austere-pack-tamper", "1.0.0", tamper);
+    fs.writeFileSync(
+      trusted,
+      JSON.stringify({
+        format: 1,
+        pins: {
+          "austere-pack-pinned": { version: "1.0.0", integrity: sha384(v1["dist/pack.js"]) },
+          "austere-pack-tamper": { version: "1.0.0", integrity: sha384(tamper["dist/pack.js"]) },
+        },
+        scopes: ["@acme"],
+      }),
+    );
+
+    r = await cliWith(env, "components", "search", "milestones");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /\[\w+; npm austere-pack-pinned@1\.0\.0, not installed, trusted\]/);
+    assert.match(r.out, /austere-pack-pinned is on the user's trust list .*you may run `austere-axi components add austere-pack-pinned`/);
+
+    // Another version of a pinned pack is not trusted; without a version, the pinned one installs.
+    publish("austere-pack-pinned", "1.1.0", await builtPackFiles("austere-pack-pinned", "1.1.0"));
+    r = await cliWith(env, "components", "add", "austere-pack-pinned@1.1.0");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /needs --trust[\s\S]*does not match the user's trust list/);
+    assert.equal(lockOf()["austere-pack-pinned"], undefined);
+    r = await cliWith(env, "components", "add", "austere-pack-pinned");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /pack: austere-pack-pinned@1\.0\.0/);
+    assert.equal(lockOf()["austere-pack-pinned"].trust, "trust-list");
+
+    // The same version republished with another pack.js is refused.
+    const packJs = Buffer.concat([Buffer.from(tamper["dist/pack.js"]), Buffer.from("\n;")]);
+    const cat = JSON.parse(String(tamper["dist/catalog.json"])) as BuiltCatalog;
+    const changed = { ...tamper, "dist/pack.js": packJs, "dist/catalog.json": JSON.stringify({ ...cat, integrity: sha384(packJs) }) };
+    publish("austere-pack-tamper", "1.0.0", changed);
+    r = await cliWith(env, "components", "add", "austere-pack-tamper");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /needs --trust[\s\S]*does not match the user's trust list/);
+    assert.equal(lockOf()["austere-pack-tamper"], undefined);
+
+    // A trusted scope covers any pack in it.
+    publish("@acme/pack-flows", "0.3.0", await builtPackFiles("@acme/pack-flows", "0.3.0"));
+    r = await cliWith(env, "components", "add", "@acme/pack-flows");
+    assert.equal(r.code, 0, r.out);
+    assert.equal(lockOf()["@acme/pack-flows"].trust, "trust-list");
+
+    r = await cliWith(env, "trust", "list");
+    assert.match(r.out, /austere-pack-pinned@1\.0\.0 sha384-/);
+    assert.match(r.out, /@acme/);
+    r = await cliWith(env, "trust", "remove", "@acme");
+    assert.equal(r.code, 0, r.out);
+    publish("@acme/pack-other", "0.1.0", await builtPackFiles("@acme/pack-other", "0.1.0"));
+    r = await cliWith(env, "components", "add", "@acme/pack-other");
+    assert.match(r.out, /needs --trust/);
+
+    // A malformed list is an error naming the file, not an empty list.
+    fs.writeFileSync(trusted, JSON.stringify({ format: 1, pins: { "austere-pack-pinned": { version: "1.0.0" } }, scopes: [] }));
+    const namesFile = new RegExp(`${path.basename(state)}[\\\\/]+trusted\\.json is malformed`);
+    r = await cliWith(env, "components", "add", "austere-pack-pinned");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, namesFile);
+    r = await cliWith(env, "components", "search", "milestones");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, namesFile);
+  } finally {
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
 test("with the registry down, search returns local results and says npm was not searched", async () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-offline-"));
   const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_NPM_REGISTRY: `http://127.0.0.1:${await freePort()}/` };
