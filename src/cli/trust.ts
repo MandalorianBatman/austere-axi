@@ -88,8 +88,16 @@ export function readTrustList(): TrustList {
   return list;
 }
 
-export function writeTrustList(list: TrustList): void {
+/**
+ * Read the list, change it and write it back in one step, so a change another
+ * process made since an earlier read (say, before a prompt) is kept. Writes
+ * only when `change` returns true; returns what it returned.
+ */
+export function updateTrustList(change: (list: TrustList) => boolean): boolean {
+  const list = readTrustList();
+  if (!change(list)) return false;
   writeJsonAtomic(trustFile(), { format: FORMAT, ...list });
+  return true;
 }
 
 /** Whether the list trusts every pack in this pack's scope on `registry`. */

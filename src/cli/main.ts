@@ -26,7 +26,7 @@ import { listComponents, searchComponents, showComponents } from "./components.t
 import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
 import type { InstalledPack } from "./packs.ts";
-import { isScope, readTrustList, trustFile, writeTrustList } from "./trust.ts";
+import { isScope, readTrustList, trustFile, updateTrustList } from "./trust.ts";
 import type { PackRef } from "../shared/packs-meta.ts";
 
 /** A YAML-shaped result for print(), built up field by field. */
@@ -825,8 +825,11 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
         if (!(await confirm(`Let agents install any pack under ${target}/ from ${registry} without --trust? Its code runs inside your review pages.`))) {
           return print({ status: "not changed" });
         }
-        list.scopes.push({ scope: target, registry });
-        writeTrustList(list);
+        updateTrustList((fresh) => {
+          if (fresh.scopes.some((s) => s.scope === target && s.registry === registry)) return false;
+          fresh.scopes.push({ scope: target, registry });
+          return true;
+        });
         return print({ status: "trusted", scope: target, registry, file: trustFile() });
       }
       let p;
@@ -842,28 +845,34 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
       if (!(await confirm(`Pin ${p.name}@${p.version}? Agents could then install this exact version without --trust; its code runs inside your review pages.`))) {
         return print({ status: "not changed" });
       }
-      list.pins[p.name] = pin;
-      writeTrustList(list);
+      let replaced: string | undefined;
+      updateTrustList((fresh) => {
+        const before = Object.hasOwn(fresh.pins, p.name) ? fresh.pins[p.name].version : undefined;
+        replaced = before !== p.version ? before : undefined;
+        fresh.pins[p.name] = pin;
+        return true;
+      });
       return print({
         status: "pinned",
         pack: `${p.name}@${p.version}`,
         integrity: p.integrity,
-        replaced: previous && previous.version !== p.version ? previous.version : undefined,
+        replaced,
         file: trustFile(),
       });
     }
     case "remove": {
       const target = args[0];
       if (!target) return usage(`remove needs a pack or scope: ${BIN} trust remove <npm-package> | @scope`, "trust");
-      const list = readTrustList();
-      if (isScope(target) && list.scopes.some((s) => s.scope === target)) {
-        list.scopes = list.scopes.filter((s) => s.scope !== target);
-      } else if (Object.hasOwn(list.pins, target)) {
+      const removed = updateTrustList((list) => {
+        if (isScope(target) && list.scopes.some((s) => s.scope === target)) {
+          list.scopes = list.scopes.filter((s) => s.scope !== target);
+          return true;
+        }
+        if (!Object.hasOwn(list.pins, target)) return false;
         delete list.pins[target];
-      } else {
-        return fail(`${target} is not on the trust list (${BIN} trust list)`);
-      }
-      writeTrustList(list);
+        return true;
+      });
+      if (!removed) return fail(`${target} is not on the trust list (${BIN} trust list)`);
       return print({ status: "removed", entry: target, note: "Packs already installed stay installed: `components remove` removes one." });
     }
     default:

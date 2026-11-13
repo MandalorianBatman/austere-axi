@@ -81,7 +81,7 @@ function where(e: ComponentEntry): string {
 /** How to get a pack on npm: an agent installs a first-party one or one on the user's trust list; the user vets and installs a third-party one. */
 function howToGet(e: ComponentEntry & { source: "remote" }): string {
   if (e.trust === "first-party") return `${e.pack} is not installed: \`${BIN} components add ${e.pack}\`.`;
-  if (e.trust === "trusted") return `${e.pack} is on the user's trust list and not installed: you may run \`${BIN} components add ${e.pack}\`.`;
+  if (e.trust === "trusted") return `${e.pack} is on the user's trust list and not installed: you may run \`${BIN} components add ${e.pack}@${e.version}\`.`;
   return `${e.pack} is third-party and not installed: ask the user to review its source (npm view ${e.pack} repository) and run \`${BIN} components add ${e.pack} --trust\`.`;
 }
 
