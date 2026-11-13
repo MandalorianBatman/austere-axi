@@ -4,6 +4,8 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import readline from "node:readline";
+import { splitSpec, isValidPackName } from "../shared/packs-meta.ts";
+import { looksLikePath } from "./install.ts";
 import { CLI_ENTRY, VERSION } from "./paths.ts";
 
 /** One CLI run: its arguments and what to pipe to its stdin. */
@@ -16,6 +18,7 @@ interface Run {
 interface ArgSchema {
   type: "string" | "boolean" | "integer" | "array";
   description: string;
+  enum?: string[];
   items?: { type: "string" };
   minimum?: number;
 }
@@ -34,14 +37,20 @@ type ToolArgs = {
   timeout_ms?: number;
   text: string;
   statements: string;
+  command: string;
+  args?: string[];
 };
 
 interface Tool {
   title: string;
   description: string;
   readOnly?: boolean;
+  /** Reaches the npm registry. */
+  openWorld?: boolean;
   properties: Record<string, ArgSchema>;
   required?: string[];
+  /** Why these arguments are refused before the CLI runs, or null. */
+  reject?: (a: ToolArgs) => string | null;
   run: (a: ToolArgs) => Run[];
 }
 
@@ -142,6 +151,22 @@ const TOOLS: Record<string, Tool> = {
     required: ["file"],
     run: (a) => [{ args: ["end", "--", a.file] }],
   },
+  components: {
+    title: "Find and install components",
+    description: "Components spec leaves out, and packs on npm. Third-party packs the user has not trusted are refused: ask the user to install them.",
+    openWorld: true,
+    properties: {
+      command: { type: "string", enum: ["search", "show", "list", "add"], description: "search <words>, show <Name...>, list [group], add <npm-package>." },
+      args: { type: "array", items: { type: "string" }, description: "The command's words, component names, group, or one npm package name[@version]." },
+    },
+    required: ["command"],
+    // An MCP client installs from the registry only: a folder or .tgz would run local files the user never vetted.
+    reject: (a) =>
+      a.command === "add" && (a.args?.length !== 1 || looksLikePath(a.args[0]) || !isValidPackName(splitSpec(a.args[0]).name))
+        ? "add takes one npm package name[@version]; folders and .tgz files are installed from the command line"
+        : null,
+    run: (a) => [{ args: ["components", a.command, "--", ...(a.args ?? [])] }],
+  },
 };
 
 /** Run the CLI once; resolves with what it printed and its exit code. */
@@ -179,8 +204,9 @@ function validate(tool: Tool, a: Record<string, unknown>): string | null {
       : p.type === "integer" ? typeof v === "number" && Number.isInteger(v) && v >= 0
       : typeof v === p.type;
     if (!ok) return `${key} must be ${p.type === "integer" ? "a non-negative integer" : `a ${p.type}`}`;
+    if (p.enum && !p.enum.includes(v as string)) return `${key} must be one of: ${p.enum.join(", ")}`;
   }
-  return null;
+  return tool.reject?.(a as ToolArgs) ?? null;
 }
 
 async function callTool(name: string, a: Record<string, unknown>, signal: AbortSignal): Promise<{ content: { type: "text"; text: string }[]; isError: boolean }> {
@@ -209,7 +235,7 @@ function listTools() {
     title: t.title,
     description: t.description,
     inputSchema: { type: "object", properties: t.properties, required: t.required, additionalProperties: false },
-    annotations: { title: t.title, readOnlyHint: !!t.readOnly, openWorldHint: false },
+    annotations: { title: t.title, readOnlyHint: !!t.readOnly, openWorldHint: !!t.openWorld },
   }));
 }
 

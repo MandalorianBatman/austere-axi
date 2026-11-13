@@ -23,6 +23,8 @@ const ENV = {
   AUSTERE_AXI_NO_TAILSCALE: "1",
   AUSTERE_AXI_NO_OPEN: "1",
   OPENUI_TELEMETRY_DISABLED: "1",
+  // Nothing listens here: components search and show stay local, and no test reaches npmjs.
+  AUSTERE_AXI_NPM_REGISTRY: `http://127.0.0.1:${await freePort()}/`,
 };
 const page = (program: string) => `<!doctype html><html><head><title>Plan</title><script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
 <body><script type="text/openui">
@@ -36,7 +38,7 @@ interface RpcMessage {
     protocolVersion: string;
     serverInfo: { name: string };
     capabilities: { tools?: unknown };
-    tools: { name: string; inputSchema: { type: string } }[];
+    tools: { name: string; inputSchema: { type: string; properties: Record<string, { enum?: string[] }> } }[];
   } & ToolResult;
   error: { code: number; message: string };
 }
@@ -102,9 +104,13 @@ test("initializes and lists the review tools", async () => {
   const list = await rpc("tools/list", {});
   assert.deepEqual(
     list.result.tools.map((t) => t.name),
-    ["spec", "check", "open", "poll", "reply", "patch", "end"],
+    ["spec", "check", "open", "poll", "reply", "patch", "end", "components"],
   );
   for (const t of list.result.tools) assert.equal(t.inputSchema.type, "object");
+  const components = list.result.tools.find((t) => t.name === "components")!;
+  assert.deepEqual(Object.keys(components.inputSchema.properties), ["command", "args"]);
+  assert.doesNotMatch(JSON.stringify(components.inputSchema), /trust/i, "the MCP surface cannot pass --trust");
+  assert.deepEqual(components.inputSchema.properties.command.enum, ["search", "show", "list", "add"]);
 
   const unknown = await rpc("tools/frobnicate", {});
   assert.equal(unknown.error.code, -32601);
@@ -169,4 +175,31 @@ test("open, poll for feedback, reply through the poll, end", async () => {
 
   const ended = await call("end", { file: GOOD });
   assert.match(ended.content[0].text, /^status: ended/m);
+});
+
+test("components searches locally and refuses paths and untrusted packs", async () => {
+  const found = await call("components", { command: "search", args: ["bar", "chart"] });
+  assert.equal(found.isError, false, found.content[0].text);
+  assert.match(found.content[0].text, /BarChart\(/);
+  assert.match(found.content[0].text, /remote: .*unavailable/);
+
+  const shown = await call("components", { command: "show", args: ["BarChart"] });
+  assert.equal(shown.isError, false, shown.content[0].text);
+  assert.match(shown.content[0].text, /BarChart\(/);
+
+  for (const spec of ["./my-pack", "C:\\packs\\x", "pack.tgz", "foo@../bar", "--trust"]) {
+    const refused = await call("components", { command: "add", args: [spec] });
+    assert.equal(refused.isError, true, spec);
+    assert.match(refused.content[0].text, /add takes one npm package name/, spec);
+  }
+  const smuggled = await call("components", { command: "add", args: ["austere-pack-orbit", "--trust"] });
+  assert.match(smuggled.content[0].text, /add takes one npm package name/);
+  const trustCommand = await call("components", { command: "trust", args: ["add", "austere-pack-orbit"] });
+  assert.match(trustCommand.content[0].text, /command must be one of/);
+
+  const untrusted = await call("components", { command: "add", args: ["austere-pack-orbit"] });
+  assert.equal(untrusted.isError, true);
+  assert.match(untrusted.content[0].text, /status: needs --trust/);
+  assert.match(untrusted.content[0].text, /austere-pack-orbit is a third-party pack/);
+  assert.ok(!fs.existsSync(path.join(STATE, "packs.json")), "nothing installed");
 });

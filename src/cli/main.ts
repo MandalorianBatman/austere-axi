@@ -250,7 +250,7 @@ const COMMANDS: Record<string, CommandSpec> = {
     flags: { persist: "never idle out", port: "listen port (default: AUSTERE_AXI_PORT or 4388)", verbose: "log requests", "also-listen": "extra address to listen on (repeatable)" },
     example: "server --persist",
   },
-  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch end as tools", flags: {}, example: "mcp" },
+  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch end components as tools", flags: {}, example: "mcp" },
   help: { usage: "help [command]", summary: "the full workflow, or one command's help", flags: {}, example: "help poll" },
 };
 
