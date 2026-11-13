@@ -151,10 +151,10 @@ export function pickVersion(meta: RegistryMeta, range: string): string | null {
 
 // ── sources ──
 
-async function fetchBuffer(url: string, accept?: string): Promise<Buffer> {
+export async function fetchBuffer(url: string, { accept, signal }: { accept?: string; signal?: AbortSignal } = {}): Promise<Buffer> {
   let res;
   try {
-    res = await fetch(url, { headers: accept ? { accept } : {}, redirect: "follow" });
+    res = await fetch(url, { headers: accept ? { accept } : {}, redirect: "follow", signal });
   } catch (caught) {
     // fetch rejects with a TypeError whose cause carries the network error code.
     const err = caught as { cause?: { code?: string }; message?: string };
@@ -172,13 +172,13 @@ async function fetchBuffer(url: string, accept?: string): Promise<Buffer> {
   return buf;
 }
 
-async function fromRegistry(spec: string): Promise<FetchedPack> {
+async function fromRegistry(spec: string, signal?: AbortSignal): Promise<FetchedPack> {
   const { name, version: range } = spec.startsWith("@") || spec.includes("@") ? splitSpec(spec) : { name: spec, version: "" };
   if (!isValidPackName(name)) throw new Error(`${JSON.stringify(name)} is not an npm package name`);
   const metaUrl = registryUrl() + name.replace("/", "%2f");
   let meta: RegistryMeta;
   try {
-    meta = JSON.parse((await fetchBuffer(metaUrl, "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8")).toString("utf8"));
+    meta = JSON.parse((await fetchBuffer(metaUrl, { accept: "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8", signal })).toString("utf8"));
   } catch (err) {
     if (err instanceof Error && "status" in err && err.status === 404) throw new Error(`no package ${name} on ${registryUrl()}`);
     throw err;
@@ -187,7 +187,7 @@ async function fromRegistry(spec: string): Promise<FetchedPack> {
   if (!version) throw new Error(`${name} has no version matching ${range || "latest"}`);
   const dist = meta.versions[version].dist || {};
   if (!dist.tarball) throw new Error(`${name}@${version} has no tarball`);
-  const tgz = await fetchBuffer(dist.tarball);
+  const tgz = await fetchBuffer(dist.tarball, { signal });
   if (dist.integrity) {
     const [alg] = dist.integrity.split("-");
     if (!["sha512", "sha384", "sha256"].includes(alg) || sri(alg, tgz) !== dist.integrity) {
@@ -253,6 +253,27 @@ function parseCatalog(buf: Buffer, label: string): PackCatalog {
   return cat;
 }
 
+/** A fetched pack's catalog, checked against the name the registry served and against its pack.js. */
+function verifyPack(got: FetchedPack, label: string): { cat: PackCatalog; integrity: string } {
+  const cat = parseCatalog(got.catalog, label);
+  if (got.expect && (cat.pack !== got.expect.name || cat.version !== got.expect.version)) {
+    throw new Error(`${label}: its catalog says ${cat.pack}@${cat.version}; rebuild the pack before publishing`);
+  }
+  if (got.packJs.length > MAX_PACK_JS) throw new Error(`${label}: pack.js is over ${MAX_PACK_JS / 1024 / 1024} MB`);
+  const integrity = sri("sha384", got.packJs);
+  if (cat.integrity && cat.integrity !== integrity) {
+    throw new Error(`${label}: dist/pack.js changed after its catalog was built; run \`austere-axi components build\` again`);
+  }
+  return { cat, integrity };
+}
+
+/** A registry pack's verified catalog and pack.js integrity, read from its tarball without installing it. */
+export async function readRegistryPack(name: string, version: string, signal?: AbortSignal): Promise<{ catalog: PackCatalog; integrity: string }> {
+  const label = `${name}@${version}`;
+  const { cat, integrity } = verifyPack(await fromRegistry(label, signal), label);
+  return { catalog: cat, integrity };
+}
+
 /**
  * Install a pack. `spec`: npm name[@range], a .tgz, or a built pack folder.
  * Third-party packs (outside @austere-axi/) from npm or a tarball need `trust`.
@@ -282,15 +303,7 @@ export async function addPack(spec: string, { trust = false }: { trust?: boolean
     );
   }
   const label = got.expect ? `${got.expect.name}@${got.expect.version}` : spec;
-  const cat = parseCatalog(got.catalog, label);
-  if (got.expect && (cat.pack !== got.expect.name || cat.version !== got.expect.version)) {
-    throw new Error(`${label}: its catalog says ${cat.pack}@${cat.version}; rebuild the pack before publishing`);
-  }
-  if (got.packJs.length > MAX_PACK_JS) throw new Error(`${label}: pack.js is over ${MAX_PACK_JS / 1024 / 1024} MB`);
-  const integrity = sri("sha384", got.packJs);
-  if (cat.integrity && cat.integrity !== integrity) {
-    throw new Error(`${label}: dist/pack.js changed after its catalog was built; run \`austere-axi components build\` again`);
-  }
+  const { cat, integrity } = verifyPack(got, label);
 
   const warnings: string[] = [];
   const coreNames = new Set(coreCatalog().components.map((c) => c.name));

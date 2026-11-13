@@ -107,7 +107,7 @@ COMMANDS
   ${BIN} end <file>              stop as the agent; later notes wait for the next poll
   ${BIN} feedback <file>         notes no agent has answered yet   [--all] [--peek]
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
-  ${BIN} components search <words> | show <Name...>   components spec leaves out
+  ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} <command> --help        one command's flags and an example
   ${BIN} help all                every command, notes and environment
 `;
@@ -207,7 +207,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   components: {
     usage: "components [list [group] | search <words> | show <Name...> | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
-    summary: "every component, including ones spec leaves out; install, remove and write packs",
+    summary: "every component, including ones spec leaves out; search and show also find packs on npm (not installed); install, remove and write packs",
     flags: { trust: "install a third-party pack (read its code first)", name: "npm package name for `new`" },
     example: "components search scatter",
   },
@@ -691,9 +691,9 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
     case "list":
       return printResult(listComponents(args[0]));
     case "search":
-      return printResult(searchComponents(args));
+      return printResult(await searchComponents(args));
     case "show":
-      return printResult(showComponents(args));
+      return printResult(await showComponents(args));
     case "add": {
       if (!args[0]) return usage(`add needs a pack: ${BIN} components add <npm-package>[@version] | <folder> | <file.tgz>`, "components");
       const { addPack } = await import("./install.ts");

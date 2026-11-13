@@ -45,8 +45,12 @@ interface RegistryMeta {
 
 // Async: the mock registry below answers from this process while the CLI runs.
 function cli(...args: string[]): Promise<{ code: number | null; out: string }> {
+  return cliWith(ENV, ...args);
+}
+
+function cliWith(env: NodeJS.ProcessEnv, ...args: string[]): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["src/cli/main.ts", ...args], { env: ENV });
+    const child = spawn(process.execPath, ["src/cli/main.ts", ...args], { env });
     let out = "";
     child.stdout.on("data", (c) => (out += c));
     child.stderr.on("data", (c) => (out += c));
@@ -323,6 +327,7 @@ test("a removed component says what replaced it", async () => {
 let registry: http.Server | undefined;
 let registryPort = 0;
 const published: Record<string, RegistryMeta | Buffer> = {};
+const keywordsOf: Record<string, string[]> = {};
 
 function publish(name: string, version: string, files: Record<string, string | Buffer>) {
   const tarball = tgz(files);
@@ -339,10 +344,22 @@ function publish(name: string, version: string, files: Record<string, string | B
     },
   };
   published[`${name}-${version}.tgz`] = tarball;
+  keywordsOf[name] = (JSON.parse(String(files["package.json"] ?? "{}")) as { keywords?: string[] }).keywords ?? [];
 }
 
 before(async () => {
   const server = http.createServer((req, res) => {
+    const search = new URL(req.url ?? "/", "http://registry");
+    if (search.pathname === "/-/v1/search") {
+      const keyword = /^keywords:(.+)$/.exec(search.searchParams.get("text") ?? "")?.[1];
+      const objects = Object.entries(keywordsOf)
+        .filter(([, k]) => keyword && k.includes(keyword))
+        .map(([name]) => {
+          const meta = published[name] as RegistryMeta;
+          return { package: { name, version: meta["dist-tags"].latest, keywords: keywordsOf[name] } };
+        });
+      return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ objects, total: objects.length }));
+    }
     const url = decodeURIComponent((req.url ?? "").slice(1));
     if (url.startsWith("tarballs/")) {
       const body = published[url.slice("tarballs/".length)];
@@ -415,6 +432,65 @@ test("installing from the registry: third-party packs need --trust; ranges resol
 
   r = await cli("components", "add", "austere-pack-missing", "--trust");
   assert.match(r.out, /no package austere-pack-missing/);
+});
+
+test("search and show find packs on npm that are not installed, without installing them", async () => {
+  // A fresh machine: nothing installed, no cached pack list.
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-remote-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    publish("austere-pack-orbit", "0.2.0", await builtPackFiles("austere-pack-orbit", "0.2.0"));
+    const broken = await builtPackFiles("austere-pack-broken", "1.0.0");
+    broken["dist/catalog.json"] = JSON.stringify({ format: 1, pack: "austere-pack-broken" });
+    publish("austere-pack-broken", "1.0.0", broken);
+    const unlisted = await builtPackFiles("austere-pack-unlisted", "1.0.0");
+    unlisted["package.json"] = JSON.stringify({ name: "austere-pack-unlisted", version: "1.0.0" });
+    publish("austere-pack-unlisted", "1.0.0", unlisted);
+
+    let r = await cliWith(env, "components", "search", "milestones");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Milestones\(events: string\[\]\) — .*\[\w+; npm austere-pack-orbit@0\.2\.0, not installed, third-party\]/);
+    assert.match(r.out, /\[\w+; npm @austere-axi\/pack-steps@0\.1\.0, not installed, first-party\]/);
+    assert.doesNotMatch(r.out, /austere-pack-broken|austere-pack-evil|austere-pack-stale|austere-pack-unlisted/, "packs failing the install checks, or without the keyword, are left out");
+    assert.match(r.out, /`austere-axi components add @austere-axi\/pack-steps`/);
+    assert.match(r.out, /ask the user to review its source .*`austere-axi components add austere-pack-orbit --trust`/);
+    assert.doesNotMatch(r.out, /remote:/);
+
+    r = await cliWith(env, "components", "show", "Milestones");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /signature: "?Milestones\(events: string\[\]\)/);
+    assert.match(r.out, /from: "?npm \S+@[\d.]+, not installed, (first|third)-party/);
+    assert.match(r.out, /example: /);
+    assert.match(r.out, /use: .*components add /);
+    assert.ok(!fs.existsSync(path.join(state, "packs.json")), "show installs nothing");
+    assert.ok(!fs.existsSync(path.join(state, "packs")), "show writes no pack files");
+
+    // Installed wins: the pack shows once, as installed.
+    r = await cliWith(env, "components", "add", "austere-pack-orbit", "--trust");
+    assert.equal(r.code, 0, r.out);
+    r = await cliWith(env, "components", "search", "milestones");
+    assert.match(r.out, /\[\w+; pack austere-pack-orbit@0\.2\.0\]/);
+    assert.doesNotMatch(r.out, /npm austere-pack-orbit/);
+  } finally {
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("with the registry down, search returns local results and says npm was not searched", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-offline-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_NPM_REGISTRY: `http://127.0.0.1:${await freePort()}/` };
+  try {
+    let r = await cliWith(env, "components", "search", "bar", "chart");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /BarChart\(/);
+    assert.match(r.out, /remote: .*unavailable/);
+    r = await cliWith(env, "components", "show", "Gantt");
+    assert.equal(r.code, 1);
+    assert.match(r.out, /unknown/);
+    assert.match(r.out, /remote: .*unavailable/);
+  } finally {
+    fs.rmSync(state, { recursive: true, force: true });
+  }
 });
 
 // ── the review server serves installed packs ──

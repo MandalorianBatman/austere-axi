@@ -208,7 +208,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 
 ```sh
 austere-axi components                  # every component, by group
-austere-axi components search scatter   # search by name, group, description
+austere-axi components search scatter   # search by name, group, description; also packs on npm
 austere-axi components show AreaChart   # signature, notes, example
 ```
 
@@ -218,6 +218,8 @@ austere-axi components show AreaChart   # signature, notes, example
 austere-axi components add austere-pack-gantt --trust   # npm name, folder, or .tgz
 austere-axi check --fix plan.html                       # adds the pack tag to the page
 ```
+
+`components search` and `components show` also cover packs on npm that are not installed, meaning any package with the keyword `austere-axi-pack`. A result names its pack, says `not installed`, and says whether the pack is first- or third-party. The CLI reads the pack's catalog from its tarball, checked against the registry's integrity hash, and runs none of its code. It caches the pack list for an hour and each catalog for good, under `~/.austere-axi/npm-packs/`. For a third-party pack, the agent is told to ask you to review it and run `components add <pack> --trust`. With the registry unreachable, search shows local results and says so.
 
 A page names its packs in the head, so it renders anywhere:
 
@@ -365,7 +367,7 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 | `AUSTERE_AXI_DISCONNECT_GRACE_MS` | `300000` | how long a dropped connection can stay away before `poll` returns; `0` disables |
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
-| `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs |
+| `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them |
 | `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
 
 ## Security
