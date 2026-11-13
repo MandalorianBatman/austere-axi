@@ -161,10 +161,12 @@ const TOOLS: Record<string, Tool> = {
     },
     required: ["command"],
     // An MCP client installs from the registry only: a folder or .tgz would run local files the user never vetted.
-    reject: (a) =>
-      a.command === "add" && (a.args?.length !== 1 || looksLikePath(a.args[0]) || !isValidPackName(splitSpec(a.args[0]).name))
-        ? "add takes one npm package name[@version]; folders and .tgz files are installed from the command line"
-        : null,
+    reject: (a) => {
+      if (a.command !== "add") return null;
+      if (a.args?.length !== 1) return "add takes exactly one npm package name[@version] in args";
+      if (looksLikePath(a.args[0]) || !isValidPackName(splitSpec(a.args[0]).name)) return "add takes an npm package name[@version]; folders and .tgz files are installed from the command line";
+      return null;
+    },
     run: (a) => [{ args: ["components", a.command, "--", ...(a.args ?? [])] }],
   },
 };

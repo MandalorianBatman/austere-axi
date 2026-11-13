@@ -190,10 +190,10 @@ test("components searches locally and refuses paths and untrusted packs", async 
   for (const spec of ["./my-pack", "C:\\packs\\x", "pack.tgz", "foo@../bar", "--trust"]) {
     const refused = await call("components", { command: "add", args: [spec] });
     assert.equal(refused.isError, true, spec);
-    assert.match(refused.content[0].text, /add takes one npm package name/, spec);
+    assert.match(refused.content[0].text, /add takes an npm package name.*folders and \.tgz/, spec);
   }
   const smuggled = await call("components", { command: "add", args: ["austere-pack-orbit", "--trust"] });
-  assert.match(smuggled.content[0].text, /add takes one npm package name/);
+  assert.match(smuggled.content[0].text, /add takes exactly one npm package name/);
   const trustCommand = await call("components", { command: "trust", args: ["add", "austere-pack-orbit"] });
   assert.match(trustCommand.content[0].text, /command must be one of/);
 
