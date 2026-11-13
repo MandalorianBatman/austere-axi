@@ -326,71 +326,94 @@ test("a removed component says what replaced it", async () => {
 
 // ── npm registry ──
 
-let registry: http.Server | undefined;
-let registryPort = 0;
-const published: Record<string, RegistryMeta | Buffer> = {};
-const keywordsOf: Record<string, string[]> = {};
-
-function publish(name: string, version: string, files: Record<string, string | Buffer>) {
-  const tarball = tgz(files);
-  published[name] ||= { name, "dist-tags": {}, versions: {} };
-  const meta = published[name];
-  if (Buffer.isBuffer(meta)) throw new Error(`${name} is a tarball`);
-  meta["dist-tags"].latest = version;
-  meta.versions[version] = {
-    name,
-    version,
-    dist: {
-      tarball: `http://127.0.0.1:${registryPort}/tarballs/${encodeURIComponent(name)}-${version}.tgz`,
-      integrity: `sha512-${crypto.createHash("sha512").update(tarball).digest("base64")}`,
-    },
-  };
-  published[`${name}-${version}.tgz`] = tarball;
-  keywordsOf[name] = (JSON.parse(String(files["package.json"] ?? "{}")) as { keywords?: string[] }).keywords ?? [];
+/** A fake npm registry: what is published on it, and every request it got. */
+interface FakeRegistry {
+  url: string;
+  server: http.Server;
+  published: Record<string, RegistryMeta | Buffer>;
+  keywordsOf: Record<string, string[]>;
+  /** Statuses it answers a tarball with, one per request, before it serves the tarball. */
+  tarballFailures: Map<string, number[]>;
+  /** Requests it got for each tarball. */
+  tarballRequests: Map<string, number>;
+  /** While set, it never answers a search. */
+  searchStalled: boolean;
+  /** While set, a search waits for it before answering. */
+  searchGate: Promise<void> | null;
+  /** Tarballs it never answers. */
+  stalledTarballs: Set<string>;
+  /** Called on each request for a stalled tarball. */
+  onStalledTarball: (() => void) | null;
+  /** While set, it drops every connection. */
+  down: boolean;
+  requests: { path: string; authorization: string | undefined }[];
 }
 
-/** Statuses the mock registry answers a tarball with, one per request, before it serves the tarball. */
-const tarballFailures = new Map<string, number[]>();
-/** Requests the mock registry got for each tarball. */
-const tarballRequests = new Map<string, number>();
-/** While set, the mock registry drops every connection. */
-let registryDown = false;
-
-before(async () => {
-  const server = http.createServer((req, res) => {
-    if (registryDown) return req.socket.destroy();
+async function startRegistry(): Promise<FakeRegistry> {
+  const reg: FakeRegistry = { url: "", server: http.createServer(), published: {}, keywordsOf: {}, tarballFailures: new Map(), tarballRequests: new Map(), searchStalled: false, searchGate: null, stalledTarballs: new Set(), onStalledTarball: null, down: false, requests: [] };
+  reg.server.on("request", async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    if (reg.down) return req.socket.destroy();
+    reg.requests.push({ path: req.url ?? "/", authorization: req.headers.authorization });
     const search = new URL(req.url ?? "/", "http://registry");
     if (search.pathname === "/-/v1/search") {
+      if (reg.searchStalled) return;
+      if (reg.searchGate) await reg.searchGate;
       const keyword = /^keywords:(.+)$/.exec(search.searchParams.get("text") ?? "")?.[1];
-      const objects = Object.entries(keywordsOf)
+      const objects = Object.entries(reg.keywordsOf)
         .filter(([, k]) => keyword && k.includes(keyword))
         .map(([name]) => {
-          const meta = published[name] as RegistryMeta;
-          return { package: { name, version: meta["dist-tags"].latest, keywords: keywordsOf[name] } };
+          const meta = reg.published[name] as RegistryMeta;
+          return { package: { name, version: meta["dist-tags"].latest, keywords: reg.keywordsOf[name] } };
         });
       return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ objects, total: objects.length }));
     }
     const url = decodeURIComponent((req.url ?? "").slice(1));
     if (url.startsWith("tarballs/")) {
       const file = url.slice("tarballs/".length);
-      tarballRequests.set(file, (tarballRequests.get(file) ?? 0) + 1);
-      const status = tarballFailures.get(file)?.shift();
+      reg.tarballRequests.set(file, (reg.tarballRequests.get(file) ?? 0) + 1);
+      if (reg.stalledTarballs.has(file)) return reg.onStalledTarball?.();
+      const status = reg.tarballFailures.get(file)?.shift();
       if (status) return res.writeHead(status).end();
-      const body = published[file];
+      const body = reg.published[file];
       if (!body) return res.writeHead(404).end();
       return res.writeHead(200, { "content-type": "application/octet-stream" }).end(body);
     }
-    const meta = published[url];
+    const meta = reg.published[url];
     if (!meta || typeof meta !== "object" || Buffer.isBuffer(meta)) return res.writeHead(404).end("{}");
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(meta));
   });
-  registry = server;
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  registryPort = (server.address() as AddressInfo).port;
-  ENV.AUSTERE_AXI_NPM_REGISTRY = `http://127.0.0.1:${registryPort}/`;
+  await new Promise<void>((r) => reg.server.listen(0, "127.0.0.1", r));
+  reg.url = `http://127.0.0.1:${(reg.server.address() as AddressInfo).port}/`;
+  return reg;
+}
+
+/** The default registry (AUSTERE_AXI_NPM_REGISTRY) of every test. */
+let npm: FakeRegistry;
+
+function publish(name: string, version: string, files: Record<string, string | Buffer>, on: FakeRegistry = npm) {
+  const tarball = tgz(files);
+  on.published[name] ||= { name, "dist-tags": {}, versions: {} };
+  const meta = on.published[name];
+  if (Buffer.isBuffer(meta)) throw new Error(`${name} is a tarball`);
+  meta["dist-tags"].latest = version;
+  meta.versions[version] = {
+    name,
+    version,
+    dist: {
+      tarball: `${on.url}tarballs/${encodeURIComponent(name)}-${version}.tgz`,
+      integrity: `sha512-${crypto.createHash("sha512").update(tarball).digest("base64")}`,
+    },
+  };
+  on.published[`${name}-${version}.tgz`] = tarball;
+  on.keywordsOf[name] = (JSON.parse(String(files["package.json"] ?? "{}")) as { keywords?: string[] }).keywords ?? [];
+}
+
+before(async () => {
+  npm = await startRegistry();
+  ENV.AUSTERE_AXI_NPM_REGISTRY = npm.url;
 });
 
-after(() => registry?.close());
+after(() => npm?.server.close());
 
 async function builtPackFiles(name: string, version: string): Promise<Record<string, string | Buffer>> {
   const dir = path.join(WORK, `src-${name.replace(/\W/g, "-")}-${version}`);
@@ -433,7 +456,7 @@ test("installing from the registry: third-party packs need --trust; ranges resol
 
   // A tampered tarball fails the registry's integrity hash.
   publish("austere-pack-evil", "1.0.0", await builtPackFiles("austere-pack-evil", "1.0.0"));
-  published["austere-pack-evil-1.0.0.tgz"] = tgz({ "dist/pack.js": "alert(1)", "dist/catalog.json": "{}" });
+  npm.published["austere-pack-evil-1.0.0.tgz"] = tgz({ "dist/pack.js": "alert(1)", "dist/catalog.json": "{}" });
   r = await cli("components", "add", "austere-pack-evil", "--trust");
   assert.equal(r.code, 1);
   assert.match(r.out, /does not match the registry's integrity hash/);
@@ -558,7 +581,7 @@ test("the user's trust list: a pin trusts one version and pack.js, a scope trust
     r = await cliWith(env, "components", "search", "acmeflows");
     assert.match(r.out, /npm @acme\/pack-flows@0\.3\.0, not installed, trusted\]/);
     // Registry B: the same packs behind another URL, where anyone could own @acme.
-    const mirror = http.createServer((req, res) => registry!.emit("request", req, res));
+    const mirror = http.createServer((req, res) => npm.server.emit("request", req, res));
     await new Promise<void>((done) => mirror.listen(0, "127.0.0.1", done));
     try {
       const envB = { ...env, AUSTERE_AXI_NPM_REGISTRY: `http://127.0.0.1:${(mirror.address() as AddressInfo).port}/` };
@@ -721,7 +744,7 @@ test("a pack installed at an older version than npm's shows once, as installed",
     assert.match(r.out, /\[\w+; pack austere-pack-comet@0\.1\.0\]/);
     assert.equal(r.out.match(/austere-pack-comet@/g)?.length, 1, r.out);
   } finally {
-    delete keywordsOf["austere-pack-comet"];
+    delete npm.keywordsOf["austere-pack-comet"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -732,7 +755,7 @@ test("a pack npm fails to serve is left out and counted, not cached; the other p
   try {
     publish("austere-pack-nova", "1.0.0", await builtPackFiles("austere-pack-nova", "1.0.0"));
     publish("austere-pack-nova-down", "1.0.0", await builtPackFiles("austere-pack-nova-down", "1.0.0"));
-    tarballFailures.set("austere-pack-nova-down-1.0.0.tgz", [500]);
+    npm.tarballFailures.set("austere-pack-nova-down-1.0.0.tgz", [500]);
     let r = await cliWith(env, "components", "search", "nova");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /npm austere-pack-nova@1\.0\.0/);
@@ -744,9 +767,9 @@ test("a pack npm fails to serve is left out and counted, not cached; the other p
     assert.match(r.out, /npm austere-pack-nova-down@1\.0\.0/, "a server error is tried again on the next search");
     assert.doesNotMatch(r.out, /remote:/);
   } finally {
-    tarballFailures.clear();
-    delete keywordsOf["austere-pack-nova"];
-    delete keywordsOf["austere-pack-nova-down"];
+    npm.tarballFailures.clear();
+    delete npm.keywordsOf["austere-pack-nova"];
+    delete npm.keywordsOf["austere-pack-nova-down"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -757,8 +780,8 @@ test("only a failure that cannot change is cached: a 408 is tried again on the n
   try {
     publish("austere-pack-tardy", "1.0.0", await builtPackFiles("austere-pack-tardy", "1.0.0"));
     publish("austere-pack-gone", "1.0.0", await builtPackFiles("austere-pack-gone", "1.0.0"));
-    tarballFailures.set("austere-pack-tardy-1.0.0.tgz", [408]);
-    delete published["austere-pack-gone-1.0.0.tgz"];
+    npm.tarballFailures.set("austere-pack-tardy-1.0.0.tgz", [408]);
+    delete npm.published["austere-pack-gone-1.0.0.tgz"];
     let r = await cliWith(env, "components", "search", "tardy");
     assert.equal(r.code, 0, r.out);
     assert.doesNotMatch(r.out, /npm austere-pack-tardy/);
@@ -767,11 +790,11 @@ test("only a failure that cannot change is cached: a 408 is tried again on the n
     r = await cliWith(env, "components", "search", "tardy");
     assert.match(r.out, /npm austere-pack-tardy@1\.0\.0/, "a 408 is tried again on the next search");
     assert.doesNotMatch(r.out, /remote:/);
-    assert.equal(tarballRequests.get("austere-pack-gone-1.0.0.tgz"), 1, "a 404 is cached for that version");
+    assert.equal(npm.tarballRequests.get("austere-pack-gone-1.0.0.tgz"), 1, "a 404 is cached for that version");
   } finally {
-    tarballFailures.clear();
-    delete keywordsOf["austere-pack-tardy"];
-    delete keywordsOf["austere-pack-gone"];
+    npm.tarballFailures.clear();
+    delete npm.keywordsOf["austere-pack-tardy"];
+    delete npm.keywordsOf["austere-pack-gone"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -812,9 +835,29 @@ test("show --pack picks one of several components with the same name, and search
     assert.match(r.out, /signature: "?Table\(tablet: string\[\]\)/);
     assert.match(r.out, /from: "?npm austere-pack-tablet@1\.0\.0/);
   } finally {
-    delete keywordsOf["austere-pack-twin-a"];
-    delete keywordsOf["austere-pack-twin-b"];
-    delete keywordsOf["austere-pack-tablet"];
+    delete npm.keywordsOf["austere-pack-twin-a"];
+    delete npm.keywordsOf["austere-pack-twin-b"];
+    delete npm.keywordsOf["austere-pack-tablet"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("a pack the registry refuses (401/403) is not cached as broken; the next search lists it", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-refused-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    publish("austere-pack-gated", "1.0.0", await builtPackFiles("austere-pack-gated", "1.0.0"));
+    npm.tarballFailures.set("austere-pack-gated-1.0.0.tgz", [403]);
+    let r = await cliWith(env, "components", "search", "gated");
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /austere-pack-gated@/);
+    assert.match(r.out, /remote: 1 npm pack could not be read/);
+
+    r = await cliWith(env, "components", "search", "gated");
+    assert.match(r.out, /npm austere-pack-gated@1\.0\.0/, "a refused tarball is tried again once access is fixed");
+  } finally {
+    npm.tarballFailures.clear();
+    delete npm.keywordsOf["austere-pack-gated"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -836,7 +879,7 @@ test("a pack with a malformed catalog is left out of search and refused by add",
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /bad component entry \\?"Milestones\\?" \(needs a name, signature and group\)/);
   } finally {
-    delete keywordsOf["austere-pack-nogroup"];
+    delete npm.keywordsOf["austere-pack-nogroup"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -856,7 +899,7 @@ test("a pack that inflates past the unpacked cap is left out of search and refus
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /austere-pack-bomb@1\.0\.0 unpacks to more than 32 MB/);
   } finally {
-    delete keywordsOf["austere-pack-bomb"];
+    delete npm.keywordsOf["austere-pack-bomb"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -875,7 +918,7 @@ test("a pack whose component name is not a string is left out of search", async 
     assert.match(r.out, /BarChart\(/);
     assert.doesNotMatch(r.out, /austere-pack-arrayname/);
   } finally {
-    delete keywordsOf["austere-pack-arrayname"];
+    delete npm.keywordsOf["austere-pack-arrayname"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -900,7 +943,7 @@ test("an npm pack's oversized signature and group are capped in search and show"
     assert.match(r.out, /Hugesig\(field: string/);
     for (const line of r.out.split("\n")) assert.ok(line.length < 700, `show line of ${line.length} chars`);
   } finally {
-    delete keywordsOf["austere-pack-huge"];
+    delete npm.keywordsOf["austere-pack-huge"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -917,7 +960,7 @@ test("search still answers when the npm cache cannot be written", async () => {
     assert.match(r.out, /npm austere-pack-lumen@1\.0\.0/);
     assert.doesNotMatch(r.out, /remote:/);
   } finally {
-    delete keywordsOf["austere-pack-lumen"];
+    delete npm.keywordsOf["austere-pack-lumen"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
@@ -931,7 +974,7 @@ test("after one search, npm results come from the cache when the registry goes d
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /npm austere-pack-halo@1\.0\.0/);
 
-    registryDown = true;
+    npm.down = true;
     r = await cliWith(env, "components", "search", "halo");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /npm austere-pack-halo@1\.0\.0/);
@@ -940,8 +983,161 @@ test("after one search, npm results come from the cache when the registry goes d
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /from: "?npm \S+@[\d.]+, not installed/);
   } finally {
-    registryDown = false;
-    delete keywordsOf["austere-pack-halo"];
+    npm.down = false;
+    delete npm.keywordsOf["austere-pack-halo"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("a scope mapped to a private registry: search, add and trust use it, and its token goes nowhere else", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-scoped-"));
+  const token = "s3cret-acme-token";
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, ACME_NPM_TOKEN: token };
+  const acme = await startRegistry();
+  const host = new URL(acme.url).host;
+  const lockOf = () => (JSON.parse(fs.readFileSync(path.join(state, "packs.json"), "utf8")) as { packs: Record<string, { trust: string; resolved: string }> }).packs;
+  const run = async (...args: string[]) => {
+    const r = await cliWith(env, ...args);
+    assert.ok(!r.out.includes(token), `the token is never printed: ${r.out}`);
+    return r;
+  };
+  const described = async (name: string, version: string, description: string) => {
+    const files = await builtPackFiles(name, version);
+    const cat = JSON.parse(String(files["dist/catalog.json"])) as BuiltCatalog;
+    return { ...files, "dist/catalog.json": JSON.stringify({ ...cat, components: cat.components.map((c) => ({ ...c, description })) }) };
+  };
+  const mapAcme = (url: string, tokenEnv?: string) =>
+    fs.writeFileSync(path.join(state, "registries.json"), JSON.stringify({ format: 1, scopes: { "@acme": { url, tokenEnv } } }));
+  try {
+    // Mapping a scope picks which host gets a token, so an agent (no terminal) cannot make one.
+    let r = await run("registry", "add", "@acme", acme.url.slice(0, -1), "--token-env", "ACME_NPM_TOKEN");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /registry add needs the user at a terminal[\s\S]*Ask the user/);
+    assert.ok(!fs.existsSync(path.join(state, "registries.json")), "nothing written without a terminal");
+    r = await run("registry", "add", "@acme", "http://npm.acme.dev/");
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /must be https \(http only on localhost\)/);
+    r = await run("registry", "add", "@austere-axi", "https://npm.acme.dev/");
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /first-party/);
+    r = await run("registry", "add", "@acme", `https://me:${token}@npm.acme.dev/`);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /must not carry credentials/);
+
+    mapAcme(acme.url, "ACME_NPM_TOKEN");
+    r = await run("registry", "list");
+    assert.ok(r.out.includes(`@acme ${acme.url} (token from $ACME_NPM_TOKEN)`), r.out);
+
+    publish("@acme/pack-rocket", "1.0.0", await described("@acme/pack-rocket", "1.0.0", "Rocketlaunch countdown"), acme);
+    publish("@acme/pack-fuel", "1.0.0", await described("@acme/pack-fuel", "1.0.0", "Fuelgauge readout"), acme);
+    // A tarball the registry points at another host is fetched without the token.
+    publish("@acme/pack-elsewhere", "1.0.0", await described("@acme/pack-elsewhere", "1.0.0", "Rocketlaunch elsewhere"), acme);
+    const moved = "@acme/pack-elsewhere-1.0.0.tgz";
+    npm.published[moved] = acme.published[moved];
+    (acme.published["@acme/pack-elsewhere"] as RegistryMeta).versions["1.0.0"].dist.tarball = `${npm.url}tarballs/${encodeURIComponent(moved)}`;
+    // A mapped registry serves only its scope, and the default registry's packs in that scope are someone else's.
+    publish("austere-pack-shadow", "1.0.0", await described("austere-pack-shadow", "1.0.0", "Shadowcraft overlay"), acme);
+    publish("@acme/pack-rocket", "9.0.0", await described("@acme/pack-rocket", "9.0.0", "Impostorware"));
+    publish("austere-pack-skyline", "1.0.0", await described("austere-pack-skyline", "1.0.0", "Skylinechart"));
+    npm.requests.length = 0;
+
+    r = await run("components", "search", "rocketlaunch");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(r.out.includes(`npm @acme/pack-rocket@1.0.0 (${host}), not installed, third-party]`), r.out);
+    assert.ok(r.out.includes(`npm @acme/pack-elsewhere@1.0.0 (${host}), not installed, third-party]`), r.out);
+    assert.ok(r.out.includes(`npm view @acme/pack-rocket repository --registry ${acme.url}`), r.out);
+    assert.doesNotMatch(r.out, /remote:/);
+    r = await run("components", "search", "shadowcraft");
+    assert.doesNotMatch(r.out, /austere-pack-shadow/, "a mapped registry cannot list a pack outside its scope");
+    r = await run("components", "search", "impostorware");
+    assert.doesNotMatch(r.out, /pack-rocket@9/, "the default registry's packs in a mapped scope are left out");
+    r = await run("components", "search", "skylinechart");
+    assert.match(r.out, /npm austere-pack-skyline@1\.0\.0, not installed, third-party\]/, "the default registry is not named");
+
+    r = await run("components", "add", "@acme/pack-rocket");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /needs --trust/);
+    r = await run("components", "add", "@acme/pack-rocket", "--trust");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /pack: "?@acme\/pack-rocket@1\.0\.0/);
+    assert.ok(lockOf()["@acme/pack-rocket"].resolved.startsWith(acme.url), "installed from the mapped registry");
+    r = await run("components", "add", "@acme/pack-elsewhere", "--trust");
+    assert.equal(r.code, 0, r.out);
+
+    assert.ok(acme.requests.some((q) => q.path.startsWith("/-/v1/search")) && acme.requests.some((q) => q.path.startsWith("/tarballs/")), "the mapped registry was searched and served tarballs");
+    assert.ok(acme.requests.every((q) => q.authorization === `Bearer ${token}`), "every request to the mapped registry carries its token");
+    assert.ok(npm.requests.some((q) => q.path.includes("pack-elsewhere")), "the moved tarball came from the default registry");
+    assert.ok(npm.requests.every((q) => q.authorization === undefined), "the default registry never sees the token");
+
+    // A scope trusted while @acme is mapped is bound to the mapped registry (what `trust add @acme` records).
+    fs.writeFileSync(path.join(state, "trusted.json"), JSON.stringify({ format: 2, pins: {}, scopes: [{ scope: "@acme", registry: acme.url }] }));
+    r = await run("components", "search", "fuelgauge");
+    assert.ok(r.out.includes(`npm @acme/pack-fuel@1.0.0 (${host}), not installed, trusted]`), r.out);
+    r = await run("components", "add", "@acme/pack-fuel");
+    assert.equal(r.code, 0, r.out);
+    assert.equal(lockOf()["@acme/pack-fuel"].trust, "trust-list");
+    r = await run("registry", "remove", "@acme");
+    assert.equal(r.code, 0, r.out);
+    r = await run("components", "add", "@acme/pack-fuel");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /needs --trust[\s\S]*not on the user's trust list/, "unmapped, @acme comes from the default registry, where the scope is not trusted");
+
+    // The mapped registry down: the default one still answers, with a note.
+    mapAcme(`http://127.0.0.1:${await freePort()}/`);
+    r = await run("components", "search", "skylinechart");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm austere-pack-skyline@1\.0\.0/);
+    assert.match(r.out, /remote: .*@acme registry unavailable \(/);
+
+    // The mapped registry stalls until the budget runs out: the default registry's packs, not yet cached, are still read.
+    fs.rmSync(path.join(state, "npm-packs"), { recursive: true, force: true });
+    mapAcme(acme.url);
+    acme.searchStalled = true;
+    publish("austere-pack-meteor", "1.0.0", await described("austere-pack-meteor", "1.0.0", "Meteorshower"));
+    r = await run("components", "search", "meteorshower");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm austere-pack-meteor@1\.0\.0/, "a pack not yet cached is read while the other registry stalls");
+    assert.match(r.out, /remote: .*@acme registry unavailable \(no answer from .* within 4s\)/);
+    acme.searchStalled = false;
+
+    // The mapped registry lists first and its downloads stall: they must not hold every fetch slot, so the default registry's uncached pack is still read.
+    fs.rmSync(path.join(state, "npm-packs"), { recursive: true, force: true });
+    for (const n of [1, 2, 3, 4, 5]) {
+      const name = `@acme/pack-slow${n}`;
+      publish(name, "1.0.0", await described(name, "1.0.0", "Slowpoke"), acme);
+      acme.stalledTarballs.add(`${name}-1.0.0.tgz`);
+    }
+    // The default registry answers its search only once four @acme downloads hang, so @acme holds as many fetches as the old shared limit allowed.
+    const fourStalled = Promise.withResolvers<void>();
+    let stalls = 0;
+    acme.onStalledTarball = () => {
+      if (++stalls === 4) fourStalled.resolve();
+    };
+    npm.searchGate = fourStalled.promise;
+    publish("austere-pack-comet", "1.0.0", await described("austere-pack-comet", "1.0.0", "Cometdust"));
+    r = await run("components", "search", "cometdust");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm austere-pack-comet@1\.0\.0/, "slow downloads on one registry do not starve another registry's reads");
+    npm.searchGate = null;
+    acme.onStalledTarball = null;
+    acme.stalledTarballs.clear();
+
+    // A malformed registries file: search answers with a note, add and registry refuse, naming the file.
+    fs.writeFileSync(path.join(state, "registries.json"), "{ not json");
+    const namesFile = new RegExp(`${path.basename(state)}[\\\\/]+registries\\.json is malformed .*ask the user to fix it`);
+    r = await run("components", "search", "skylinechart");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm austere-pack-skyline@1\.0\.0/);
+    assert.match(r.out, new RegExp(`registries unreadable: ask the user to fix .*${path.basename(state)}[\\\\/]+registries\\.json`));
+    r = await run("components", "add", "@acme/pack-rocket", "--trust");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, namesFile);
+    r = await run("registry", "list");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, namesFile);
+  } finally {
+    acme.server.close();
+    for (const name of ["@acme/pack-rocket", "austere-pack-skyline", "austere-pack-meteor"]) delete npm.keywordsOf[name];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
