@@ -207,7 +207,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   components: {
     usage: "components [list [group] | search <words> | show <Name...> | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
-    summary: "every component, including ones spec leaves out; search and show also find packs on npm (not installed); install, remove and write packs",
+    summary: "every component, including ones spec leaves out; search also lists up to 3 from packs on npm (not installed) under `npm`, and show finds them; install, remove and write packs",
     flags: { trust: "install a third-party pack (read its code first)", name: "npm package name for `new`" },
     example: "components search scatter",
   },

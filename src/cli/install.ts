@@ -167,7 +167,13 @@ export async function fetchBuffer(url: string, { accept, signal }: { accept?: st
   }
   const len = Number(res.headers.get("content-length") || 0);
   if (len > MAX_TARBALL) throw new Error(`${url} is larger than ${MAX_TARBALL / 1024 / 1024} MB`);
-  const buf = Buffer.from(await res.arrayBuffer());
+  let buf;
+  try {
+    buf = Buffer.from(await res.arrayBuffer());
+  } catch (caught) {
+    // The connection dropped mid-body: as much a network failure as no answer at all.
+    throw Object.assign(new Error(`could not read ${url} (${caught instanceof Error ? caught.message : String(caught)})`), { network: true });
+  }
   if (buf.length > MAX_TARBALL) throw new Error(`${url} is larger than ${MAX_TARBALL / 1024 / 1024} MB`);
   return buf;
 }
@@ -244,8 +250,17 @@ function parseCatalog(buf: Buffer, label: string): PackCatalog {
   if (cat.api !== PACK_API) throw new Error(`${label} was built for pack API ${cat.api}; this austere-axi has ${PACK_API}`);
   if (!isValidPackName(cat.pack || "") || !isValidVersion(cat.version || "")) throw new Error(`${label}: catalog has no valid pack name and version`);
   if (!Array.isArray(cat.components) || !cat.components.length) throw new Error(`${label}: catalog lists no components`);
+  if (cat.groups != null && !(Array.isArray(cat.groups) && cat.groups.every((g) => typeof g?.name === "string" && Array.isArray(g.notes) && g.notes.every((n) => typeof n === "string")))) {
+    throw new Error(`${label}: catalog has malformed groups (expected [{ "name": "...", "notes": ["..."] }])`);
+  }
   for (const c of cat.components) {
-    if (!/^[A-Z][A-Za-z0-9]*$/.test(c.name || "") || typeof c.signature !== "string") throw new Error(`${label}: bad component entry ${JSON.stringify(c.name)}`);
+    if (!c || !/^[A-Z][A-Za-z0-9]*$/.test(c.name || "") || typeof c.signature !== "string" || typeof c.group !== "string") {
+      throw new Error(`${label}: bad component entry ${JSON.stringify(c?.name)} (needs a name, signature and group)`);
+    }
+    if (c.description != null && typeof c.description !== "string") throw new Error(`${label}: ${c.name} has a description that is not a string`);
+    if (c.examples != null && !(Array.isArray(c.examples) && c.examples.every((x) => typeof x === "string"))) {
+      throw new Error(`${label}: ${c.name} has malformed examples (expected an array of strings)`);
+    }
     if (c.slots != null && !(Array.isArray(c.slots) && c.slots.every((x) => /^[A-Z][A-Za-z0-9]*\.[a-z][A-Za-z0-9]*$/.test(x)))) {
       throw new Error(`${label}: ${c.name} has malformed slots (expected ["Card.children", ...] or null)`);
     }

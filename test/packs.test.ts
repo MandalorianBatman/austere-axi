@@ -347,8 +347,14 @@ function publish(name: string, version: string, files: Record<string, string | B
   keywordsOf[name] = (JSON.parse(String(files["package.json"] ?? "{}")) as { keywords?: string[] }).keywords ?? [];
 }
 
+/** Tarballs the mock registry answers with HTTP 500. */
+const failingTarballs = new Set<string>();
+/** While set, the mock registry drops every connection. */
+let registryDown = false;
+
 before(async () => {
   const server = http.createServer((req, res) => {
+    if (registryDown) return req.socket.destroy();
     const search = new URL(req.url ?? "/", "http://registry");
     if (search.pathname === "/-/v1/search") {
       const keyword = /^keywords:(.+)$/.exec(search.searchParams.get("text") ?? "")?.[1];
@@ -362,7 +368,9 @@ before(async () => {
     }
     const url = decodeURIComponent((req.url ?? "").slice(1));
     if (url.startsWith("tarballs/")) {
-      const body = published[url.slice("tarballs/".length)];
+      const file = url.slice("tarballs/".length);
+      if (failingTarballs.has(file)) return res.writeHead(500).end();
+      const body = published[file];
       if (!body) return res.writeHead(404).end();
       return res.writeHead(200, { "content-type": "application/octet-stream" }).end(body);
     }
@@ -489,6 +497,96 @@ test("with the registry down, search returns local results and says npm was not 
     assert.match(r.out, /unknown/);
     assert.match(r.out, /remote: .*unavailable/);
   } finally {
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("a pack installed at an older version than npm's shows once, as installed", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-older-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    publish("austere-pack-comet", "0.1.0", await builtPackFiles("austere-pack-comet", "0.1.0"));
+    let r = await cliWith(env, "components", "add", "austere-pack-comet", "--trust");
+    assert.equal(r.code, 0, r.out);
+    publish("austere-pack-comet", "0.2.0", await builtPackFiles("austere-pack-comet", "0.2.0"));
+    r = await cliWith(env, "components", "search", "comet");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /\[\w+; pack austere-pack-comet@0\.1\.0\]/);
+    assert.equal(r.out.match(/austere-pack-comet@/g)?.length, 1, r.out);
+  } finally {
+    delete keywordsOf["austere-pack-comet"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("a pack npm fails to serve is left out and counted, not cached; the other packs are still listed", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-partial-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    publish("austere-pack-nova", "1.0.0", await builtPackFiles("austere-pack-nova", "1.0.0"));
+    publish("austere-pack-nova-down", "1.0.0", await builtPackFiles("austere-pack-nova-down", "1.0.0"));
+    failingTarballs.add("austere-pack-nova-down-1.0.0.tgz");
+    let r = await cliWith(env, "components", "search", "nova");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm austere-pack-nova@1\.0\.0/);
+    assert.doesNotMatch(r.out, /austere-pack-nova-down/);
+    assert.match(r.out, /remote: 1 npm pack could not be read/);
+    assert.doesNotMatch(r.out, /local components only/);
+
+    failingTarballs.clear();
+    r = await cliWith(env, "components", "search", "nova");
+    assert.match(r.out, /npm austere-pack-nova-down@1\.0\.0/, "a server error is tried again on the next search");
+    assert.doesNotMatch(r.out, /remote:/);
+  } finally {
+    failingTarballs.clear();
+    delete keywordsOf["austere-pack-nova"];
+    delete keywordsOf["austere-pack-nova-down"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("a pack with a malformed catalog is left out of search and refused by add", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-malformed-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    const files = await builtPackFiles("austere-pack-nogroup", "1.0.0");
+    const catalog = JSON.parse(String(files["dist/catalog.json"])) as { components: { group?: string }[] };
+    delete catalog.components[0].group;
+    files["dist/catalog.json"] = JSON.stringify(catalog);
+    publish("austere-pack-nogroup", "1.0.0", files);
+    let r = await cliWith(env, "components", "search", "nogroup");
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /austere-pack-nogroup/);
+    assert.doesNotMatch(r.out, /remote:/, "a pack that fails the install checks is not a registry failure");
+    r = await cliWith(env, "components", "add", "austere-pack-nogroup", "--trust");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /bad component entry \\?"Milestones\\?" \(needs a name, signature and group\)/);
+  } finally {
+    delete keywordsOf["austere-pack-nogroup"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("after one search, npm results come from the cache when the registry goes down", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-cached-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    publish("austere-pack-halo", "1.0.0", await builtPackFiles("austere-pack-halo", "1.0.0"));
+    let r = await cliWith(env, "components", "search", "halo");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm austere-pack-halo@1\.0\.0/);
+
+    registryDown = true;
+    r = await cliWith(env, "components", "search", "halo");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm austere-pack-halo@1\.0\.0/);
+    assert.doesNotMatch(r.out, /remote:/);
+    r = await cliWith(env, "components", "show", "Milestones");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /from: "?npm \S+@[\d.]+, not installed/);
+  } finally {
+    registryDown = false;
+    delete keywordsOf["austere-pack-halo"];
     fs.rmSync(state, { recursive: true, force: true });
   }
 });
