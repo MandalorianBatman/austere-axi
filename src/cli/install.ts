@@ -55,7 +55,10 @@ export interface InstallError extends Error {
 }
 
 const MAX_TARBALL = 20 * 1024 * 1024;
+const MAX_UNPACKED = 32 * 1024 * 1024;
 const MAX_PACK_JS = 8 * 1024 * 1024;
+/** The only files read from a pack tarball. */
+const PACK_FILES = new Set(["dist/pack.js", "dist/catalog.json", "package.json"]);
 
 export function registryUrl(): string {
   const r = process.env.AUSTERE_AXI_NPM_REGISTRY || process.env.npm_config_registry || "https://registry.npmjs.org/";
@@ -78,7 +81,7 @@ function sri(alg: string, buf: Buffer): string {
 
 // ── tarballs ──
 
-/** Files in a (gunzipped) tar archive, with the top folder ("package/") stripped. */
+/** The pack files (PACK_FILES) in a gunzipped tar archive, with the top folder ("package/") stripped. */
 export function untar(buf: Buffer): Map<string, Buffer> {
   const files = new Map<string, Buffer>();
   let off = 0;
@@ -105,8 +108,8 @@ export function untar(buf: Buffer): Map<string, Buffer> {
       continue;
     }
     if (type === "0") {
-      const full = (paxPath || longName || name).replace(/^\.?\//, "");
-      files.set(full.split("/").slice(1).join("/"), Buffer.from(body));
+      const full = (paxPath || longName || name).replace(/^\.?\//, "").split("/").slice(1).join("/");
+      if (PACK_FILES.has(full)) files.set(full, Buffer.from(body));
     }
     paxPath = null;
     longName = null;
@@ -208,8 +211,9 @@ async function fromRegistry(spec: string, signal?: AbortSignal): Promise<Fetched
 function readTarball(tgz: Buffer, label: string): PackFiles {
   let files;
   try {
-    files = untar(zlib.gunzipSync(tgz));
+    files = untar(zlib.gunzipSync(tgz, { maxOutputLength: MAX_UNPACKED }));
   } catch (err) {
+    if ((err as InstallError).code === "ERR_BUFFER_TOO_LARGE") throw new Error(`${label} unpacks to more than ${MAX_UNPACKED / 1024 / 1024} MB`);
     throw new Error(`${label}: not a gzipped tarball (${err instanceof Error ? err.message : undefined})`);
   }
   const packJs = files.get("dist/pack.js");
@@ -254,7 +258,7 @@ function parseCatalog(buf: Buffer, label: string): PackCatalog {
     throw new Error(`${label}: catalog has malformed groups (expected [{ "name": "...", "notes": ["..."] }])`);
   }
   for (const c of cat.components) {
-    if (!c || !/^[A-Z][A-Za-z0-9]*$/.test(c.name || "") || typeof c.signature !== "string" || typeof c.group !== "string") {
+    if (!c || typeof c.name !== "string" || !/^[A-Z][A-Za-z0-9]*$/.test(c.name) || typeof c.signature !== "string" || typeof c.group !== "string") {
       throw new Error(`${label}: bad component entry ${JSON.stringify(c?.name)} (needs a name, signature and group)`);
     }
     if (c.description != null && typeof c.description !== "string") throw new Error(`${label}: ${c.name} has a description that is not a string`);

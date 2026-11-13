@@ -157,7 +157,10 @@ export async function searchComponents(words: string[]): Promise<SearchResult> {
     seen.add(e.pack);
     next.push(howToGet(e));
   }
-  const line = (e: ComponentEntry): string => `${e.signature} — ${clip(e.description, 140)} [${e.group}; ${where(e)}]`;
+  const line = (e: ComponentEntry): string =>
+    e.source === "remote"
+      ? `${clip(e.signature, 300)} — ${clip(e.description, 140)} [${clip(e.group, 40)}; ${where(e)}]`
+      : `${e.signature} — ${clip(e.description, 140)} [${e.group}; ${where(e)}]`;
   return {
     query,
     results: local.length ? local.map(line) : undefined,
@@ -188,7 +191,9 @@ export async function showComponents(names: string[]): Promise<ComponentShow | C
     components: found.map((e) => {
       // A pack on npm is unvetted third-party text, so it gets a fixed share of the agent's context.
       const fromNpm = e.source === "remote";
-      const o: ShownComponent = { name: e.name, signature: e.signature, description: fromNpm ? clip(e.description, 140) : e.description, group: e.group, from: where(e) };
+      const o: ShownComponent = fromNpm
+        ? { name: e.name, signature: clip(e.signature, 300), description: clip(e.description, 140), group: clip(e.group, 40), from: where(e) }
+        : { name: e.name, signature: e.signature, description: e.description, group: e.group, from: where(e) };
       let notes = notesOf(e)
         .filter((line) => new RegExp(`\\b${e.name}\\b`).test(line) && !line.startsWith("- Also in "))
         .map((l) => l.replace(/^- /, ""));

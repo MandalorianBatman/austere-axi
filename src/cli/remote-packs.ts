@@ -60,11 +60,14 @@ function readCache<T>(file: string): T | null {
   }
 }
 
+/** Best effort: a cache that cannot be written only means the next search fetches again. */
 function writeCache(file: string, value: unknown): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value));
-  fs.renameSync(tmp, file);
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(value));
+    fs.renameSync(tmp, file);
+  } catch {}
 }
 
 async function listPacks(signal: AbortSignal, reason: (err: unknown) => string): Promise<PackList> {

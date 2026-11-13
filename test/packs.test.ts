@@ -567,6 +567,87 @@ test("a pack with a malformed catalog is left out of search and refused by add",
   }
 });
 
+test("a pack that inflates past the unpacked cap is left out of search and refused by add", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-bomb-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    const files = await builtPackFiles("austere-pack-bomb", "1.0.0");
+    files["filler.bin"] = Buffer.alloc(40 * 1024 * 1024);
+    publish("austere-pack-bomb", "1.0.0", files);
+    let r = await cliWith(env, "components", "search", "bomb", "chart");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /BarChart\(/);
+    assert.doesNotMatch(r.out, /austere-pack-bomb/);
+    r = await cliWith(env, "components", "add", "austere-pack-bomb", "--trust");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /austere-pack-bomb@1\.0\.0 unpacks to more than 32 MB/);
+  } finally {
+    delete keywordsOf["austere-pack-bomb"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("a pack whose component name is not a string is left out of search", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-arrayname-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    const files = await builtPackFiles("austere-pack-arrayname", "1.0.0");
+    const catalog = JSON.parse(String(files["dist/catalog.json"])) as { components: { name: unknown }[] };
+    catalog.components[0].name = ["Foo"];
+    files["dist/catalog.json"] = JSON.stringify(catalog);
+    publish("austere-pack-arrayname", "1.0.0", files);
+    const r = await cliWith(env, "components", "search", "arrayname", "chart");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /BarChart\(/);
+    assert.doesNotMatch(r.out, /austere-pack-arrayname/);
+  } finally {
+    delete keywordsOf["austere-pack-arrayname"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("an npm pack's oversized signature and group are capped in search and show", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-huge-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    const files = await builtPackFiles("austere-pack-huge", "1.0.0");
+    const catalog = JSON.parse(String(files["dist/catalog.json"])) as { components: { name: string; signature: string; group: string }[] };
+    catalog.components[0].name = "Hugesig";
+    catalog.components[0].signature = `Hugesig(${"field: string, ".repeat(2000)})`;
+    catalog.components[0].group = "g".repeat(5000);
+    files["dist/catalog.json"] = JSON.stringify(catalog);
+    publish("austere-pack-huge", "1.0.0", files);
+    let r = await cliWith(env, "components", "search", "hugesig");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Hugesig\(field: string/);
+    for (const line of r.out.split("\n")) assert.ok(line.length < 700, `search line of ${line.length} chars`);
+    r = await cliWith(env, "components", "show", "Hugesig");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Hugesig\(field: string/);
+    for (const line of r.out.split("\n")) assert.ok(line.length < 700, `show line of ${line.length} chars`);
+  } finally {
+    delete keywordsOf["austere-pack-huge"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("search still answers when the npm cache cannot be written", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-nocache-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  try {
+    publish("austere-pack-lumen", "1.0.0", await builtPackFiles("austere-pack-lumen", "1.0.0"));
+    fs.writeFileSync(path.join(state, "npm-packs"), "not a folder");
+    const r = await cliWith(env, "components", "search", "lumen", "chart");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /BarChart\(/);
+    assert.match(r.out, /npm austere-pack-lumen@1\.0\.0/);
+    assert.doesNotMatch(r.out, /remote:/);
+  } finally {
+    delete keywordsOf["austere-pack-lumen"];
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
 test("after one search, npm results come from the cache when the registry goes down", async () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-cached-"));
   const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
