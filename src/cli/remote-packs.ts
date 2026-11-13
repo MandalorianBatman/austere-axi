@@ -59,8 +59,9 @@ const LIST_FAILED_TTL_MS = 5 * 60_000;
 const BUDGET_MS = 4000;
 const PARALLEL_FETCHES = 4;
 
+/** Keyed by registry and token variable: catalogs read with a token stop showing once the mapping drops or changes it. */
 function cacheDir(registry: Registry): string {
-  return path.join(stateDir(), "npm-packs", crypto.createHash("sha256").update(registry.url).digest("hex").slice(0, 12));
+  return path.join(stateDir(), "npm-packs", crypto.createHash("sha256").update(`${registry.url}\0${registry.tokenEnv ?? ""}`).digest("hex").slice(0, 12));
 }
 
 function readCache<T>(file: string): T | null {

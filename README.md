@@ -269,6 +269,7 @@ austere-axi registry remove @acme
 - `components add @acme/<pack>` installs from @acme's registry. A mapped registry counts only for its own scope: packs it lists under other names are ignored, and the default registry's packs in that scope are left out.
 - `--token-env` names an environment variable that holds a bearer token. The file stores the name, never the token. The token goes only to that registry's own origin, never to the default registry or to a tarball on another host.
 - The URL must be https, or http on localhost. `@austere-axi` cannot be mapped.
+- `registry add` runs only at a terminal, like `trust add`: a mapping decides which host receives the token, so an agent without a terminal is told to ask you. `registry remove` works anywhere.
 - Mapping a scope grants no trust: its packs stay third-party until you trust the scope (`trust add @acme`, which records the mapped registry) or pin a pack.
 - Only this file in your home folder counts. If it is unreadable, search covers the default registry only and says so, while `components add`, `trust add` and `registry` refuse until you fix it.
 

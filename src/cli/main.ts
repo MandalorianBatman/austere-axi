@@ -232,7 +232,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   registry: {
     usage: "registry [list | add <@scope> <url> [--token-env NAME] | remove <@scope>]",
     summary:
-      "private npm registries for scopes: search, show and add fetch the scope's packs from its registry; grants no trust (its packs stay third-party unless on the trust list)",
+      "private npm registries for scopes: search, show and add fetch the scope's packs from its registry; grants no trust (its packs stay third-party unless on the trust list); add needs the user at a terminal",
     flags: { "token-env": "name of an environment variable holding a bearer token for the registry (the token itself is never stored)" },
     example: "registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN",
   },
@@ -914,6 +914,10 @@ async function cmdRegistry(sub: string | undefined, args: string[], flags: Flags
         entry = registryEntry(scope, url, tokenEnv);
       } catch (err) {
         return usage(messageOf(err), "registry");
+      }
+      // A mapping decides which host gets the token in --token-env, so only the user at a terminal may make one, as with trust add.
+      if (!process.stdin.isTTY) {
+        return fail(`registry add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} registry add ${scope} <url>\` themselves.`);
       }
       const regs = readRegistries();
       const previous = regs.get(scope);

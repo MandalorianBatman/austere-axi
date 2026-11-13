@@ -975,12 +975,14 @@ test("a scope mapped to a private registry: search, add and trust use it, and it
     const cat = JSON.parse(String(files["dist/catalog.json"])) as BuiltCatalog;
     return { ...files, "dist/catalog.json": JSON.stringify({ ...cat, components: cat.components.map((c) => ({ ...c, description })) }) };
   };
+  const mapAcme = (url: string, tokenEnv?: string) =>
+    fs.writeFileSync(path.join(state, "registries.json"), JSON.stringify({ format: 1, scopes: { "@acme": { url, tokenEnv } } }));
   try {
+    // Mapping a scope picks which host gets a token, so an agent (no terminal) cannot make one.
     let r = await run("registry", "add", "@acme", acme.url.slice(0, -1), "--token-env", "ACME_NPM_TOKEN");
-    assert.equal(r.code, 0, r.out);
-    assert.ok(r.out.includes(acme.url), r.out);
-    r = await run("registry", "list");
-    assert.ok(r.out.includes(`@acme ${acme.url} (token from $ACME_NPM_TOKEN)`), r.out);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /registry add needs the user at a terminal[\s\S]*Ask the user/);
+    assert.ok(!fs.existsSync(path.join(state, "registries.json")), "nothing written without a terminal");
     r = await run("registry", "add", "@acme", "http://npm.acme.dev/");
     assert.equal(r.code, 2, r.out);
     assert.match(r.out, /must be https \(http only on localhost\)/);
@@ -990,6 +992,10 @@ test("a scope mapped to a private registry: search, add and trust use it, and it
     r = await run("registry", "add", "@acme", `https://me:${token}@npm.acme.dev/`);
     assert.equal(r.code, 2, r.out);
     assert.match(r.out, /must not carry credentials/);
+
+    mapAcme(acme.url, "ACME_NPM_TOKEN");
+    r = await run("registry", "list");
+    assert.ok(r.out.includes(`@acme ${acme.url} (token from $ACME_NPM_TOKEN)`), r.out);
 
     publish("@acme/pack-rocket", "1.0.0", await described("@acme/pack-rocket", "1.0.0", "Rocketlaunch countdown"), acme);
     publish("@acme/pack-fuel", "1.0.0", await described("@acme/pack-fuel", "1.0.0", "Fuelgauge readout"), acme);
@@ -1046,8 +1052,7 @@ test("a scope mapped to a private registry: search, add and trust use it, and it
     assert.match(r.out, /needs --trust[\s\S]*not on the user's trust list/, "unmapped, @acme comes from the default registry, where the scope is not trusted");
 
     // The mapped registry down: the default one still answers, with a note.
-    r = await run("registry", "add", "@acme", `http://127.0.0.1:${await freePort()}/`);
-    assert.equal(r.code, 0, r.out);
+    mapAcme(`http://127.0.0.1:${await freePort()}/`);
     r = await run("components", "search", "skylinechart");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /npm austere-pack-skyline@1\.0\.0/);
