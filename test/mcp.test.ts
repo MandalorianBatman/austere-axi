@@ -200,6 +200,7 @@ test("components searches locally and refuses paths and untrusted packs", async 
   const untrusted = await call("components", { command: "add", args: ["austere-pack-orbit"] });
   assert.equal(untrusted.isError, true);
   assert.match(untrusted.content[0].text, /status: needs --trust/);
-  assert.match(untrusted.content[0].text, /austere-pack-orbit is a third-party pack/);
+  assert.match(untrusted.content[0].text, /austere-pack-orbit is third-party and not on the user's trust list.*Ask the user/);
+  assert.doesNotMatch(untrusted.content[0].text, /rerun with --trust/);
   assert.ok(!fs.existsSync(path.join(STATE, "packs.json")), "nothing installed");
 });
