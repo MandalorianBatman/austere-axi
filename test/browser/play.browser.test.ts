@@ -211,6 +211,8 @@ describe("playground", () => {
       assert.match((await pop.locator(".austere-pop-path").textContent()) as string, /steps/);
       await pop.locator("textarea").fill("Mention the date");
       await pop.locator("textarea").press("Enter");
+      // The note reaches the page by postMessage from the frame: wait for it, do not read at once.
+      await s.page.locator("#fb-text", { hasText: "status: feedback" }).waitFor();
       const text = (await s.page.locator("#fb-text").textContent()) as string;
       assert.match(text, /^status: feedback/);
       assert.match(text, /annotation: steps \(MarkDownRenderer\)/);

@@ -28,14 +28,14 @@ test("a Mermaid syntax error fails check --render, named by its statement", { sk
 });
 
 test("a clean page reports nothing; a row too wide for a phone names the statements past the edge", { skip }, async () => {
-  const clean = await renderCheck(htmlPage("Clean", 'root = Stack([intro])\nintro = Card([CardHeader("Title", "Sub"), t])\nt = MarkDownRenderer("hello")', CDN_RUNTIME_URL));
+  const clean = await renderCheck(htmlPage("Clean", 'root = Stack([intro])\nintro = Card([CardHeader("Title", "Sub"), t])\nt = MarkDownRenderer("hello")', CDN_RUNTIME_URL), os.tmpdir());
   assert.equal(clean.status, "ok", JSON.stringify(clean));
   assert.deepEqual(clean.errors, []);
   assert.deepEqual(clean.overflow, []);
 
   const cards = Array.from({ length: 12 }, (_, i) => `c${i}`);
   const program = [`root = Stack([row])`, `row = Stack([${cards.join(", ")}], "row")`, ...cards.map((c) => `${c} = Card([CardHeader("Header ${c} is wide", "sub")])`)].join("\n");
-  const wide = await renderCheck(htmlPage("Wide", program, CDN_RUNTIME_URL));
+  const wide = await renderCheck(htmlPage("Wide", program, CDN_RUNTIME_URL), os.tmpdir());
   assert.equal(wide.status, "ok", JSON.stringify(wide));
   assert.equal(wide.overflow.length, 1, JSON.stringify(wide.overflow));
   assert.equal(wide.overflow[0].width, 390);
@@ -55,7 +55,7 @@ test("a Mermaid flowchart too wide to shrink legibly is named with a fix, even i
     `innerSecond = TabItem("b", "Inner second", [chain])`,
     `chain = Mermaid("flowchart LR\\n  ${chain}")`,
   ].join("\n");
-  const r = await renderCheck(htmlPage("Wide Mermaid", program, CDN_RUNTIME_URL));
+  const r = await renderCheck(htmlPage("Wide Mermaid", program, CDN_RUNTIME_URL), os.tmpdir());
   assert.equal(r.status, "ok", JSON.stringify(r));
   assert.deepEqual(r.errors, []);
   assert.deepEqual(r.overflow, [], "the diagram scrolls in its own box, not the page");

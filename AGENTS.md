@@ -38,6 +38,7 @@ npm run social       # re-render docs/social-preview.png, 1200x630 (after build;
   - Loopback is not the owner; the owner key (header) or the cookie derived from it is. Never put the key on a command line, in printed output, or in a cookie; browsers sign in with a single-use login code.
   - Browser POST routes reject a foreign `Origin`.
   - Artifact files are served from the artifact's own directory only, with no dotfiles.
+  - The frame's subresources send no cookie (opaque origin), so the frame's URL carries a per-viewer token, `/s/:id/a/<token>/<file>` (`assetToken` in `src/cli/server.ts`). It opens only what that route already serves; keep `allow-same-origin` out of the sandbox. `export` reads sibling images through the same `resolveSibling` rules (`src/cli/assets.ts`).
 - Tests that start the server, or read packs or the hub, set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.
 - Nothing an installed pack ships runs in the CLI or the server; its code runs only in the sandboxed artifact frame. (`components build` does load the pack being built, in Node, to read its components.)
 - Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `bench/`, `docs/`, `scripts/` and `test/` are maintainer-only.

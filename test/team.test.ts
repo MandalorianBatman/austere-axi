@@ -713,6 +713,60 @@ test("an unreadable file in the page directory is a 404, not a server crash", { 
   }
 });
 
+// The artifact frame is sandboxed to an opaque origin, which sends no cookie on subresource requests;
+// its URL carries a token that its relative URLs inherit.
+const NO_COOKIE = { cookie: "none=1" };
+
+/** The artifact URL the review page hands this viewer to its frame, as a path, and the folder it sits in. */
+async function frameUrl(headers: Headers): Promise<{ page: string; dir: string }> {
+  const chrome = await request<string>(srv.port, "GET", `/s/${id}`, { headers });
+  const page = /"artifactUrl":"([^"]+)"/.exec(chrome.data)?.[1];
+  assert.ok(page, "the chrome page names the frame's URL");
+  return { page, dir: page.slice(0, page.lastIndexOf("/") + 1) };
+}
+
+test("relative files load in the sandboxed frame for the owner and for an invited reviewer, without a cookie", async () => {
+  const outside = tmp("austere-team-token-");
+  const made = ["fossil.svg", ".env", "leak.svg", "dotlink.svg"].map((n) => path.join(WORK, n));
+  try {
+    fs.writeFileSync(made[0], "<svg/>");
+    fs.writeFileSync(made[1], "DUMMY-DOTFILE-SECRET");
+    fs.writeFileSync(path.join(outside, "o.svg"), "DUMMY-OUTSIDE-SECRET");
+    fs.symlinkSync(path.join(outside, "o.svg"), made[2]);
+    fs.symlinkSync(made[1], made[3]);
+    const ana = await accept((await share("Ana")).data.link);
+    const owner = await frameUrl({});
+    const guest = await frameUrl({ cookie: ana.cookie });
+    assert.notEqual(owner.dir, guest.dir, "a token per viewer");
+    for (const { page, dir } of [owner, guest]) {
+      assert.match(page, new RegExp(`^/s/${id}/a/[\\w-]{43}/plan\\.html$`));
+      const doc = await request<string>(srv.port, "GET", page, { headers: NO_COOKIE });
+      assert.equal(doc.status, 200, "the page itself");
+      assert.match(String(doc.headers["content-security-policy"]), /^sandbox /);
+      assert.equal((await request(srv.port, "GET", `${dir}fossil.svg`, { headers: NO_COOKIE })).status, 200, "a file next to it");
+      for (const bad of [".env", "..%2F..%2Fplan.html", "%2e%2e%2fsecret", "leak.svg", "dotlink.svg", "nothing.svg"]) {
+        const r = await request(srv.port, "GET", `${dir}${bad}`, { headers: NO_COOKIE });
+        assert.equal(r.status, 404, bad);
+        assert.ok(!String(r.data).includes("DUMMY-"), bad);
+      }
+      assert.equal((await request(srv.port, "POST", `${dir}fossil.svg`, { headers: NO_COOKIE })).status, 403, "read-only");
+    }
+    // Without a valid token the cookie-less request is still refused, whatever the path.
+    const forged = `/s/${id}/a/${"A".repeat(43)}/fossil.svg`;
+    assert.equal((await request(srv.port, "GET", forged, { headers: NO_COOKIE })).status, 403);
+    assert.equal((await request(srv.port, "GET", `/s/${id}/a/fossil.svg`, { headers: NO_COOKIE })).status, 403);
+
+    // Revoking the invite takes the reviewer's token with it; the owner's keeps working.
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ana" } });
+    assert.equal((await request(srv.port, "GET", `${guest.dir}fossil.svg`, { headers: NO_COOKIE })).status, 403);
+    assert.equal((await request(srv.port, "GET", `${owner.dir}fossil.svg`, { headers: NO_COOKIE })).status, 200);
+  } finally {
+    for (const f of made) fs.rmSync(f, { force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ana" } });
+  }
+});
+
 test("reviewers see their own held notes but not another reviewer's", async () => {
   const eve = await accept((await share("Eve")).data.link);
   const fay = await accept((await share("Fay")).data.link);
