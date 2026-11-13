@@ -166,6 +166,8 @@ The `austere-axi-pack` keyword makes the pack discoverable. `austere-axi compone
 
 Once it is published, users install it with `austere-axi components add austere-pack-gantt --trust`. The Gantt pack is not on npm yet, so until then use `austere-axi components add <path-to-clone> --trust` or the `.tgz` from step 5. `--trust` is required for any pack outside `@austere-axi/` unless the user put it on their trust list (`austere-axi trust add`): its code runs inside the review page, so tell users what it does and keep it small enough to read. The README of the Gantt pack is a template for that.
 
+A team pack can live on a private registry (Verdaccio, Artifactory, GitHub Packages) under the team's npm scope. Publish it there with the same keyword, and each user maps the scope once: `austere-axi registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN`. Search, `show` and `components add` then fetch `@acme/` packs from that registry.
+
 A GitHub Release can publish through npm trusted publishing instead of a token. Copy [`publish.yml`](https://github.com/MandalorianBatman/austere-pack-gantt/blob/main/.github/workflows/publish.yml) and set the trusted publisher once on npmjs.com.
 
 ## Rules to keep once you publish

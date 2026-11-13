@@ -21,7 +21,7 @@ export interface TrustPin {
 /** An npm scope, "@acme": every pack under it is trusted, on this registry only. */
 export interface TrustScope {
   scope: string;
-  /** registryUrl() when the user added the scope. */
+  /** The registry the scope was routed to (registries.ts) when the user added it. */
   registry: string;
 }
 

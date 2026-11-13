@@ -4,13 +4,14 @@ import type { CatalogEntry } from "../../types/catalog.d.ts";
 import { coreCatalog, installedPacks, isThirdParty } from "./packs.ts";
 import { remotePacks } from "./remote-packs.ts";
 import type { RemotePack, RemotePacks } from "./remote-packs.ts";
+import { npmView } from "./registries.ts";
 import { searchCatalog } from "../shared/catalog.ts";
 
 const BIN = "austere-axi";
 
 /** A catalog entry with where it comes from: core, a bundled pack (part of core), an installed pack, or a pack on npm that is not installed. */
 export type ComponentEntry = CatalogEntry &
-  ({ source: "core" } | { source: "bundled" } | { source: "installed"; version: string } | { source: "remote"; version: string; trust: RemotePack["trust"] });
+  ({ source: "core" } | { source: "bundled" } | { source: "installed"; version: string } | { source: "remote"; version: string; trust: RemotePack["trust"]; registry: RemotePack["registry"] });
 
 export interface ComponentCatalog {
   entries: ComponentEntry[];
@@ -65,7 +66,7 @@ export function catalogEntries(remote: RemotePack[] = []): ComponentCatalog {
   }
   for (const p of remote) {
     for (const g of p.catalog.groups || []) notes.set(`${p.name}\0${g.name}`, g.notes);
-    for (const c of p.catalog.components) out.push({ ...filled(c), pack: p.name, version: p.version, source: "remote", trust: p.trust });
+    for (const c of p.catalog.components) out.push({ ...filled(c), pack: p.name, version: p.version, source: "remote", trust: p.trust, registry: p.registry });
   }
   const notesOf = (e: ComponentEntry): string[] => notes.get(`${e.source === "installed" || e.source === "remote" ? e.pack : "core"}\0${e.group}`) || [];
   return { entries: out, notesOf, groups: core.groups.map((g) => g.name) };
@@ -74,7 +75,7 @@ export function catalogEntries(remote: RemotePack[] = []): ComponentCatalog {
 function where(e: ComponentEntry): string {
   if (e.source === "core") return e.tier === "extended" ? "core, not in spec" : "core";
   if (e.source === "bundled") return "core";
-  if (e.source === "remote") return `npm ${e.pack}@${e.version}, not installed, ${e.trust}`;
+  if (e.source === "remote") return `npm ${e.pack}@${e.version}${e.registry.scope ? ` (${new URL(e.registry.url).host})` : ""}, not installed, ${e.trust}`;
   return `pack ${e.pack}@${e.version}`;
 }
 
@@ -82,7 +83,7 @@ function where(e: ComponentEntry): string {
 function howToGet(e: ComponentEntry & { source: "remote" }): string {
   if (e.trust === "first-party") return `${e.pack} is not installed: \`${BIN} components add ${e.pack}\`.`;
   if (e.trust === "trusted") return `${e.pack} is on the user's trust list and not installed: you may run \`${BIN} components add ${e.pack}@${e.version}\`.`;
-  return `${e.pack} is third-party and not installed: ask the user to review its source (npm view ${e.pack} repository) and run \`${BIN} components add ${e.pack} --trust\`.`;
+  return `${e.pack} is third-party and not installed: ask the user to review its source (${npmView(e.pack, e.registry)}) and run \`${BIN} components add ${e.pack} --trust\`.`;
 }
 
 export function listComponents(filter: string | undefined): ComponentList | CommandError {

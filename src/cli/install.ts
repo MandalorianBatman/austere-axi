@@ -6,8 +6,9 @@
 // Trust: a pack counts as first-party only when it came from the registry
 // under @austere-axi/ (the registry vouches for the scope). Another registry
 // pack installs without --trust only when the user's trust list (trust.ts)
-// names its scope or pins exactly this version and pack.js. A tarball needs
-// --trust whatever name its catalog claims; a folder is the user's own.
+// names its scope on the registry it comes from (registries.ts routes it) or
+// pins exactly this version and pack.js. A tarball needs --trust whatever name
+// its catalog claims; a folder is the user's own.
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -17,6 +18,8 @@ import { coreCatalog, installedPacks, isFirstParty, packDirName, packsDir, PACK_
 import type { PackSource, PackTrust } from "./packs.ts";
 import { mayTrust, readTrustList, trustOf } from "./trust.ts";
 import type { TrustList } from "./trust.ts";
+import { authHeaders, npmView, readRegistries, registryFor } from "./registries.ts";
+import type { Registry } from "./registries.ts";
 import { isValidPackName, isValidVersion, splitSpec } from "../shared/packs-meta.ts";
 import { CATALOG_FORMAT } from "../shared/catalog.ts";
 
@@ -63,11 +66,6 @@ const MAX_UNPACKED = 32 * 1024 * 1024;
 const MAX_PACK_JS = 8 * 1024 * 1024;
 /** The only files read from a pack tarball. */
 const PACK_FILES = new Set(["dist/pack.js", "dist/catalog.json", "package.json"]);
-
-export function registryUrl(): string {
-  const r = process.env.AUSTERE_AXI_NPM_REGISTRY || process.env.npm_config_registry || "https://registry.npmjs.org/";
-  return r.endsWith("/") ? r : r + "/";
-}
 
 /** A folder or tarball rather than an npm name: anything path-shaped (an npm name has a slash only after "@scope"). */
 export function looksLikePath(spec: string): boolean {
@@ -158,10 +156,11 @@ export function pickVersion(meta: RegistryMeta, range: string): string | null {
 
 // ── sources ──
 
-export async function fetchBuffer(url: string, { accept, signal }: { accept?: string; signal?: AbortSignal } = {}): Promise<Buffer> {
+/** GET `url`; a request to `registry` carries its token (authHeaders decides). */
+export async function fetchBuffer(url: string, { accept, signal, registry }: { accept?: string; signal?: AbortSignal; registry?: Registry } = {}): Promise<Buffer> {
   let res;
   try {
-    res = await fetch(url, { headers: accept ? { accept } : {}, redirect: "follow", signal });
+    res = await fetch(url, { headers: { ...(accept ? { accept } : {}), ...(registry ? authHeaders(registry, url) : {}) }, redirect: "follow", signal });
   } catch (caught) {
     // fetch rejects with a TypeError whose cause carries the network error code.
     const err = caught as { cause?: { code?: string }; message?: string };
@@ -169,7 +168,8 @@ export async function fetchBuffer(url: string, { accept, signal }: { accept?: st
     throw e;
   }
   if (!res.ok) {
-    const e = Object.assign(new Error(`${url}: HTTP ${res.status}`), { status: res.status });
+    const hint = (res.status === 401 || res.status === 403) && registry?.tokenEnv ? ` (is ${registry.tokenEnv} set to a token this registry accepts?)` : "";
+    const e = Object.assign(new Error(`${url}: HTTP ${res.status}${hint}`), { status: res.status });
     throw e;
   }
   const len = Number(res.headers.get("content-length") || 0);
@@ -185,22 +185,22 @@ export async function fetchBuffer(url: string, { accept, signal }: { accept?: st
   return buf;
 }
 
-async function fromRegistry(spec: string, signal?: AbortSignal): Promise<FetchedPack & Required<Pick<FetchedPack, "expect">>> {
+async function fromRegistry(spec: string, registry: Registry, signal?: AbortSignal): Promise<FetchedPack & Required<Pick<FetchedPack, "expect">>> {
   const { name, version: range } = spec.startsWith("@") || spec.includes("@") ? splitSpec(spec) : { name: spec, version: "" };
   if (!isValidPackName(name)) throw new Error(`${JSON.stringify(name)} is not an npm package name`);
-  const metaUrl = registryUrl() + name.replace("/", "%2f");
+  const metaUrl = registry.url + name.replace("/", "%2f");
   let meta: RegistryMeta;
   try {
-    meta = JSON.parse((await fetchBuffer(metaUrl, { accept: "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8", signal })).toString("utf8"));
+    meta = JSON.parse((await fetchBuffer(metaUrl, { accept: "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8", signal, registry })).toString("utf8"));
   } catch (err) {
-    if (err instanceof Error && "status" in err && err.status === 404) throw new Error(`no package ${name} on ${registryUrl()}`);
+    if (err instanceof Error && "status" in err && err.status === 404) throw new Error(`no package ${name} on ${registry.url}`);
     throw err;
   }
   const version = pickVersion(meta, range);
   if (!version) throw new Error(`${name} has no version matching ${range || "latest"}`);
   const dist = meta.versions[version].dist || {};
   if (!dist.tarball) throw new Error(`${name}@${version} has no tarball`);
-  const tgz = await fetchBuffer(dist.tarball, { signal });
+  const tgz = await fetchBuffer(dist.tarball, { signal, registry });
   if (dist.integrity) {
     const [alg] = dist.integrity.split("-");
     if (!["sha512", "sha384", "sha256"].includes(alg) || sri(alg, tgz) !== dist.integrity) {
@@ -290,29 +290,29 @@ function verifyPack(got: FetchedPack, label: string): { cat: PackCatalog; integr
   return { cat, integrity };
 }
 
-/** A registry pack's verified catalog and pack.js integrity, read from its tarball without installing it. `spec`: name[@range]. */
-export async function readRegistryPack(spec: string, signal?: AbortSignal): Promise<{ name: string; version: string; catalog: PackCatalog; integrity: string }> {
-  const got = await fromRegistry(spec, signal);
+/** A registry pack's verified catalog and pack.js integrity, read from its tarball on `registry` without installing it. `spec`: name[@range]. */
+export async function readRegistryPack(spec: string, registry: Registry, signal?: AbortSignal): Promise<{ name: string; version: string; catalog: PackCatalog; integrity: string }> {
+  const got = await fromRegistry(spec, registry, signal);
   const { name, version } = got.expect;
   const { cat, integrity } = verifyPack(got, `${name}@${version}`);
   return { name, version, catalog: cat, integrity };
 }
 
 /**
- * Install a pack. `spec`: npm name[@range], a .tgz, or a built pack folder.
+ * Install a pack. `spec`: npm name[@range] (from the registry registryFor routes it to), a .tgz, or a built pack folder.
  * Third-party packs from npm need `trust` unless the trust list covers them; a tarball always does.
  */
 export async function addPack(spec: string, { trust = false }: { trust?: boolean } = {}): Promise<AddedPack> {
-  const local = looksLikePath(spec);
+  const registry = looksLikePath(spec) ? null : registryFor(readRegistries(), splitSpec(spec).name);
   // Read only when it decides something: a registry pack that is not first-party, without --trust.
   let list: TrustList | null = null;
-  if (!local) {
+  if (registry) {
     const { name, version: range } = splitSpec(spec);
     list = isFirstParty(name) || trust ? null : readTrustList();
-    if (list && !mayTrust(list, name, registryUrl())) {
+    if (list && !mayTrust(list, name, registry.url)) {
       throw Object.assign(
         new Error(
-          `${name} is third-party and not on the user's trust list: its code would run inside the user's review pages, where it can read the page and add items to the feedback queue. Do not install it yourself. Ask the user to review its source (npm view ${name} repository) and run \`austere-axi components add ${name} --trust\` or \`austere-axi trust add ${name}\` themselves.`,
+          `${name} is third-party and not on the user's trust list: its code would run inside the user's review pages, where it can read the page and add items to the feedback queue. Do not install it yourself. Ask the user to review its source (${npmView(name, registry)}) and run \`austere-axi components add ${name} --trust\` or \`austere-axi trust add ${name}\` themselves.`,
         ),
         { code: "untrusted" },
       );
@@ -320,7 +320,7 @@ export async function addPack(spec: string, { trust = false }: { trust?: boolean
     // A pinned pack without a range installs the pinned version, not whatever is latest now.
     if (list && !range && Object.hasOwn(list.pins, name)) spec = `${name}@${list.pins[name].version}`;
   }
-  const got: FetchedPack = local ? fromFolder(spec) : await fromRegistry(spec);
+  const got: FetchedPack = registry ? await fromRegistry(spec, registry) : fromFolder(spec);
   if (got.source === "tarball" && !trust) {
     // Nothing vouches for a tarball's name, so even an @austere-axi/ one needs --trust.
     const peek = parseCatalog(got.catalog, path.basename(got.resolved));
@@ -333,7 +333,7 @@ export async function addPack(spec: string, { trust = false }: { trust?: boolean
   }
   const label = got.expect ? `${got.expect.name}@${got.expect.version}` : spec;
   const { cat, integrity } = verifyPack(got, label);
-  if (list && !trustOf(list, { name: cat.pack, version: cat.version, integrity }, registryUrl())) {
+  if (registry && list && !trustOf(list, { name: cat.pack, version: cat.version, integrity }, registry.url)) {
     throw Object.assign(
       new Error(
         `${label} does not match the user's trust list, which pins ${cat.pack}@${list.pins[cat.pack].version} and the hash of its pack.js: only that exact version and file install without --trust. Ask the user to review ${label} and run \`austere-axi trust add ${label}\` or \`austere-axi components add ${label} --trust\` themselves.`,

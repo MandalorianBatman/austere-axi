@@ -179,6 +179,7 @@ austere-axi patch <file>         merge statements from stdin into the program (r
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
+austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
 austere-axi export <file>        one self-contained HTML file, works offline
 austere-axi hub on|off|status|list|notes|open   home page with every page and note
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
@@ -250,11 +251,26 @@ austere-axi trust remove @acme
 ```
 
 - A pin trusts one exact version with the same `pack.js`. A later publish, or the same version with other code, still needs `--trust`. `components add <pack>` with no version installs the pinned one.
-- A scope is bound to the registry it was added from (`AUSTERE_AXI_NPM_REGISTRY`, else `npm_config_registry`, else npmjs). Pointed at another registry, packs in that scope are third-party again, since anyone may own the same scope name there.
+- A scope is bound to the registry it was added from: its private registry when the scope is mapped to one (see Private registries), else the default (`AUSTERE_AXI_NPM_REGISTRY`, else `npm_config_registry`, else npmjs). Pointed at another registry, packs in that scope are third-party again, since anyone may own the same scope name there.
 - Search marks packs on the list `trusted` and tells the agent it may add them.
 - `trust add` asks you to confirm at a terminal and refuses when stdin is not one, which is how agents run commands. That stops an agent adding a search hit to the list by accident. It does not stop an agent set on editing the file.
 - Only this file in your home folder counts. A project cannot ship its own list.
 - If the file is unreadable, search counts every npm pack third-party and says so, and `trust` refuses until you fix or delete it. `components add` refuses only the installs the list would decide: a third-party npm pack without `--trust`. First-party packs, local folders and `--trust` installs are unaffected.
+
+**Private registries.** Packs your team publishes to Verdaccio, Artifactory or GitHub Packages are found and installed once you map their npm scope to that registry, in `~/.austere-axi/registries.json`:
+
+```sh
+austere-axi registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN
+austere-axi registry list
+austere-axi registry remove @acme
+```
+
+- `components search` and `show` query the default registry and each mapped one, with the same `austere-axi-pack` keyword search. A hit from a mapped registry names its host, e.g. `npm @acme/pack-flows@0.3.0 (npm.acme.dev), not installed, third-party`. If one registry does not answer, the others still do and the result says which one was unavailable.
+- `components add @acme/<pack>` installs from @acme's registry. A mapped registry counts only for its own scope: packs it lists under other names are ignored, and the default registry's packs in that scope are left out.
+- `--token-env` names an environment variable that holds a bearer token. The file stores the name, never the token. The token goes only to that registry's own origin, never to the default registry or to a tarball on another host.
+- The URL must be https, or http on localhost. `@austere-axi` cannot be mapped.
+- Mapping a scope grants no trust: its packs stay third-party until you trust the scope (`trust add @acme`, which records the mapped registry) or pin a pack.
+- Only this file in your home folder counts. If it is unreadable, search covers the default registry only and says so, while `components add`, `trust add` and `registry` refuse until you fix it.
 
 **Write a pack:** [Writing a pack](docs/writing-a-pack.md) goes from scaffold to `npm publish`, with [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as the example. Short version:
 
@@ -385,7 +401,7 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 | `AUSTERE_AXI_DISCONNECT_GRACE_MS` | `300000` | how long a dropped connection can stay away before `poll` returns; `0` disables |
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
-| `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them |
+| `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them, except scopes mapped with `registry add` |
 | `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
 
 ## Security

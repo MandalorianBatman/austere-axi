@@ -27,6 +27,8 @@ import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
 import type { InstalledPack } from "./packs.ts";
 import { isScope, readTrustList, trustFile, updateTrustList } from "./trust.ts";
+import { defaultRegistry, npmView, readRegistries, registriesFile, registryEntry, registryFor, writeRegistries } from "./registries.ts";
+import { splitSpec } from "../shared/packs-meta.ts";
 import type { PackRef } from "../shared/packs-meta.ts";
 
 /** A YAML-shaped result for print(), built up field by field. */
@@ -111,6 +113,7 @@ COMMANDS
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} trust list              packs and scopes the user lets you add without --trust
+  ${BIN} registry list           private registries the user mapped npm scopes to
   ${BIN} <command> --help        one command's flags and an example
   ${BIN} help all                every command, notes and environment
 `;
@@ -133,6 +136,7 @@ ENV
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1  AUSTERE_AXI_DISCONNECT_GRACE_MS (300000)
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
   AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)
+  A scope's token variable (registry add --token-env), sent only to that scope's registry
 `;
 }
 
@@ -225,6 +229,13 @@ const COMMANDS: Record<string, CommandSpec> = {
     flags: {},
     example: "trust add austere-pack-gantt@1.2.0",
   },
+  registry: {
+    usage: "registry [list | add <@scope> <url> [--token-env NAME] | remove <@scope>]",
+    summary:
+      "private npm registries for scopes: search, show and add fetch the scope's packs from its registry; grants no trust (its packs stay third-party unless on the trust list)",
+    flags: { "token-env": "name of an environment variable holding a bearer token for the registry (the token itself is never stored)" },
+    example: "registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN",
+  },
   export: {
     usage: "export <file> [--out path]",
     summary: "one self-contained HTML file that works offline",
@@ -255,7 +266,7 @@ const COMMANDS: Record<string, CommandSpec> = {
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -799,7 +810,7 @@ async function confirm(question: string): Promise<boolean> {
 
 async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> {
   // install.ts is loaded only by the commands that install, like `components add`.
-  const { readRegistryPack, registryUrl } = await import("./install.ts");
+  const { readRegistryPack } = await import("./install.ts");
   switch (sub) {
     case undefined:
     case "list": {
@@ -819,8 +830,9 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
         return fail(`trust add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} trust add ${target}\` themselves after reviewing it.`);
       }
       const list = readTrustList();
+      const regs = readRegistries();
       if (isScope(target)) {
-        const registry = registryUrl();
+        const registry = registryFor(regs, target).url;
         if (list.scopes.some((s) => s.scope === target && s.registry === registry)) return print({ status: "already trusted", scope: target, registry });
         if (!(await confirm(`Let agents install any pack under ${target}/ from ${registry} without --trust? Its code runs inside your review pages.`))) {
           return print({ status: "not changed" });
@@ -833,15 +845,16 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
         return print({ status: "trusted", scope: target, registry, file: trustFile() });
       }
       let p;
+      const registry = registryFor(regs, splitSpec(target).name);
       try {
-        p = await readRegistryPack(target);
+        p = await readRegistryPack(target, registry);
       } catch (err) {
         return fail(messageOf(err));
       }
       const pin = { version: p.version, integrity: p.integrity };
       const previous = Object.hasOwn(list.pins, p.name) ? list.pins[p.name] : undefined;
       if (previous && previous.version === pin.version && previous.integrity === pin.integrity) return print({ status: "already pinned", pack: `${p.name}@${p.version}` });
-      process.stderr.write(`${p.name}@${p.version}  ${p.integrity}\ncomponents: ${p.catalog.components.map((c) => c.name).join(", ")}\nsource: npm view ${p.name} repository\n`);
+      process.stderr.write(`${p.name}@${p.version}  ${p.integrity}\ncomponents: ${p.catalog.components.map((c) => c.name).join(", ")}\nsource: ${npmView(p.name, registry)}\n`);
       if (!(await confirm(`Pin ${p.name}@${p.version}? Agents could then install this exact version without --trust; its code runs inside your review pages.`))) {
         return print({ status: "not changed" });
       }
@@ -877,6 +890,55 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
     }
     default:
       return usage(`unknown trust command: ${sub}. One of: list add remove`, "trust");
+  }
+}
+
+async function cmdRegistry(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
+  switch (sub) {
+    case undefined:
+    case "list": {
+      const regs = readRegistries();
+      return print({
+        file: registriesFile(),
+        default: defaultRegistry().url,
+        scopes: regs.size ? [...regs.values()].map((r) => `${r.scope} ${r.url}${r.tokenEnv ? ` (token from $${r.tokenEnv})` : ""}`) : "none",
+        note: "Packs in a listed scope come from its registry for search, show and add; every other pack from the default one. A registry grants no trust: its packs are third-party unless on the trust list.",
+      });
+    }
+    case "add": {
+      const [scope, url] = args;
+      if (!scope || !url) return usage(`add needs a scope and a registry URL: ${BIN} registry add @scope <url> [--token-env NAME]`, "registry");
+      const tokenEnv = typeof flags["token-env"] === "string" ? flags["token-env"] : undefined;
+      let entry;
+      try {
+        entry = registryEntry(scope, url, tokenEnv);
+      } catch (err) {
+        return usage(messageOf(err), "registry");
+      }
+      const regs = readRegistries();
+      const previous = regs.get(scope);
+      regs.set(scope, entry);
+      writeRegistries(regs);
+      return print({
+        status: "added",
+        scope,
+        registry: entry.url,
+        replaced: previous && previous.url !== entry.url ? previous.url : undefined,
+        token: entry.tokenEnv ? `$${entry.tokenEnv}${process.env[entry.tokenEnv] ? "" : " (not set in this shell)"}` : undefined,
+        file: registriesFile(),
+        note: `Packs under ${scope}/ now come from this registry. They stay third-party until the user trusts them: \`${BIN} trust add ${scope}\` at a terminal.`,
+      });
+    }
+    case "remove": {
+      const scope = args[0];
+      if (!scope) return usage(`remove needs a scope: ${BIN} registry remove @scope`, "registry");
+      const regs = readRegistries();
+      if (!regs.delete(scope)) return fail(`${scope} is not mapped to a registry (${BIN} registry list)`);
+      writeRegistries(regs);
+      return print({ status: "removed", scope, note: `Packs under ${scope}/ come from the default registry again (${defaultRegistry().url}).` });
+    }
+    default:
+      return usage(`unknown registry command: ${sub}. One of: list add remove`, "registry");
   }
 }
 
@@ -1206,6 +1268,8 @@ async function main(): Promise<unknown> {
       return cmdComponents(rest[0], rest.slice(1), flags);
     case "trust":
       return cmdTrust(rest[0], rest.slice(1));
+    case "registry":
+      return cmdRegistry(rest[0], rest.slice(1), flags);
     case "feedback":
       return cmdFeedback(rest[0], flags);
     case "hub":
