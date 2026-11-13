@@ -212,7 +212,7 @@ const COMMANDS: Record<string, CommandSpec> = {
     usage: "components [list [group] | search <words> | show <Name...> [--pack pkg] | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
     summary: "every component, including ones spec leaves out; search also lists up to 3 from packs on npm (not installed) under `npm`, and show finds them; install, remove and write packs",
     flags: {
-      trust: "install a third-party pack that is not on your trust list (read its code first)",
+      trust: "install a third-party pack not on the user's trust list; ask the user to review it and run the command themselves",
       name: "npm package name for `new`",
       pack: "`show` looks only in this pack (core, an installed pack, or one on npm), for a name several packs share",
     },
@@ -221,7 +221,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   trust: {
     usage: "trust [list | add <pkg[@range]|@scope> | remove <pkg|@scope>]",
     summary:
-      "your trust list (~/.austere-axi/trusted.json): an agent may add a pinned version (same pack.js) or any pack in a listed scope without --trust; add asks you at a terminal and refuses without one, so an agent cannot add to it by accident (one set on editing the file still can)",
+      "the user's trust list: packs you may add without --trust, as pinned versions (same pack.js) or scopes on the registry they were added from; add asks the user at a terminal",
     flags: {},
     example: "trust add austere-pack-gantt@1.2.0",
   },
@@ -808,8 +808,8 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
       return print({
         file: trustFile(),
         pins: pins.length ? pins : "none",
-        scopes: list.scopes.length ? list.scopes : "none",
-        note: "An agent may run `components add` on a pinned version (same pack.js) or any pack in these scopes, without --trust. Only the user adds to this list.",
+        scopes: list.scopes.length ? list.scopes.map((s) => `${s.scope} on ${s.registry}`) : "none",
+        note: "An agent may run `components add` on a pinned version (same pack.js), or on any pack in these scopes from the registry the scope was added from, without --trust. Only the user adds to this list.",
       });
     }
     case "add": {
@@ -820,13 +820,14 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
       }
       const list = readTrustList();
       if (isScope(target)) {
-        if (list.scopes.includes(target)) return print({ status: "already trusted", scope: target });
-        if (!(await confirm(`Let agents install any pack under ${target}/ from ${registryUrl()} without --trust? Its code runs inside your review pages.`))) {
+        const registry = registryUrl();
+        if (list.scopes.some((s) => s.scope === target && s.registry === registry)) return print({ status: "already trusted", scope: target, registry });
+        if (!(await confirm(`Let agents install any pack under ${target}/ from ${registry} without --trust? Its code runs inside your review pages.`))) {
           return print({ status: "not changed" });
         }
-        list.scopes.push(target);
+        list.scopes.push({ scope: target, registry });
         writeTrustList(list);
-        return print({ status: "trusted", scope: target, file: trustFile() });
+        return print({ status: "trusted", scope: target, registry, file: trustFile() });
       }
       let p;
       try {
@@ -855,8 +856,8 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
       const target = args[0];
       if (!target) return usage(`remove needs a pack or scope: ${BIN} trust remove <npm-package> | @scope`, "trust");
       const list = readTrustList();
-      if (isScope(target) && list.scopes.includes(target)) {
-        list.scopes = list.scopes.filter((s) => s !== target);
+      if (isScope(target) && list.scopes.some((s) => s.scope === target)) {
+        list.scopes = list.scopes.filter((s) => s.scope !== target);
       } else if (Object.hasOwn(list.pins, target)) {
         delete list.pins[target];
       } else {

@@ -244,15 +244,17 @@ Your trust list, `~/.austere-axi/trusted.json`, names npm packs your agent may i
 
 ```sh
 austere-axi trust add austere-pack-gantt@1.2.0   # pins that version and the hash of its pack.js
-austere-axi trust add @acme                      # every pack in a scope, e.g. your company registry
+austere-axi trust add @acme                      # every pack in a scope on the current registry, e.g. your company's
 austere-axi trust list
 austere-axi trust remove @acme
 ```
 
 - A pin trusts one exact version with the same `pack.js`. A later publish, or the same version with other code, still needs `--trust`. `components add <pack>` with no version installs the pinned one.
-- Search marks list packs `trusted` and tells the agent it may add them.
+- A scope is bound to the registry it was added from (`AUSTERE_AXI_NPM_REGISTRY`, else `npm_config_registry`, else npmjs). Pointed at another registry, packs in that scope are third-party again, since anyone may own the same scope name there.
+- Search marks packs on the list `trusted` and tells the agent it may add them.
 - `trust add` asks you to confirm at a terminal and refuses when stdin is not one, which is how agents run commands. That stops an agent adding a search hit to the list by accident. It does not stop an agent set on editing the file.
 - Only this file in your home folder counts. A project cannot ship its own list.
+- If the file is unreadable, search counts every npm pack third-party and says so, while `components add` and `trust` refuse until you fix or delete it.
 
 **Write a pack:** [Writing a pack](docs/writing-a-pack.md) goes from scaffold to `npm publish`, with [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as the example. Short version:
 

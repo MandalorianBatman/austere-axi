@@ -309,10 +309,10 @@ export async function addPack(spec: string, { trust = false }: { trust?: boolean
   if (!local) {
     const { name, version: range } = splitSpec(spec);
     list = isFirstParty(name) || trust ? null : readTrustList();
-    if (list && !mayTrust(list, name)) {
+    if (list && !mayTrust(list, name, registryUrl())) {
       throw Object.assign(
         new Error(
-          `${name} is a third-party pack: its code would run inside your review pages, where it can read the page and add items to the feedback queue. Look at its source first (npm view ${name} repository), then rerun with --trust.`,
+          `${name} is third-party and not on the user's trust list: its code would run inside the user's review pages, where it can read the page and add items to the feedback queue. Do not install it yourself. Ask the user to review its source (npm view ${name} repository) and run \`austere-axi components add ${name} --trust\` or \`austere-axi trust add ${name}\` themselves.`,
         ),
         { code: "untrusted" },
       );
@@ -326,14 +326,14 @@ export async function addPack(spec: string, { trust = false }: { trust?: boolean
     const peek = parseCatalog(got.catalog, path.basename(got.resolved));
     throw Object.assign(
       new Error(
-        `${path.basename(got.resolved)} (${peek.pack}) comes from a file, not the registry: its code would run inside your review pages. Rerun with --trust once you have looked at it.`,
+        `${path.basename(got.resolved)} (${peek.pack}) comes from a file, not the registry, so nothing vouches for it: its code would run inside the user's review pages. Do not install it yourself. Ask the user to look at it and run \`austere-axi components add ${spec} --trust\` themselves.`,
       ),
       { code: "untrusted" },
     );
   }
   const label = got.expect ? `${got.expect.name}@${got.expect.version}` : spec;
   const { cat, integrity } = verifyPack(got, label);
-  if (list && !trustOf(list, { name: cat.pack, version: cat.version, integrity })) {
+  if (list && !trustOf(list, { name: cat.pack, version: cat.version, integrity }, registryUrl())) {
     throw Object.assign(
       new Error(
         `${label} does not match the user's trust list, which pins ${cat.pack}@${list.pins[cat.pack].version} and the hash of its pack.js: only that exact version and file install without --trust. Ask the user to review ${label} and run \`austere-axi trust add ${label}\` or \`austere-axi components add ${label} --trust\` themselves.`,
