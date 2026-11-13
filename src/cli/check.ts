@@ -17,7 +17,6 @@ export interface CheckResult {
   warnings: CheckEntry[];
   statements: number;
   title: string;
-  hasMermaid: boolean;
 }
 
 export interface CheckOptions {
@@ -49,6 +48,11 @@ function getParser(schema: SpecSchema | undefined, packs: InstalledPack[] = []):
   return parser;
 }
 
+/** Components austere-axi used to have: an old page names them, so say what replaced them. */
+const REMOVED: Record<string, string> = {
+  Mermaid: "Mermaid was removed from austere-axi. Draw the diagram with Architecture, or show the source as text in a CodeBlock.",
+};
+
 /** The parser lists every component on an unknown name; say where to look instead. */
 function unknownComponent(entry: CheckEntry, packs: PagePacks, file: string): CheckEntry {
   const name = entry.component;
@@ -60,6 +64,8 @@ function unknownComponent(entry: CheckEntry, packs: PagePacks, file: string): Ch
       message: `${name} comes from pack ${from.name}@${from.version}, which this page does not declare. \`austere-axi check --fix ${file}\` adds it.`,
     };
   }
+  const removed = name && REMOVED[name];
+  if (removed) return { ...entry, message: removed };
   const unseen = [...packs.missing, ...packs.mismatched];
   if (unseen.length) {
     return {
@@ -85,7 +91,7 @@ export function statementLines(html: string): Map<string, { line: number; text: 
 export function checkHtml(html: string, { schema, file = "<file>" }: CheckOptions = {}): CheckResult {
   const art = readArtifact(html);
   const packs: PagePacks = schema ? { installed: [], missing: [], mismatched: [], stale: [], declared: [], thirdParty: [] } : pagePacks(html);
-  const result: CheckResult = { ok: true, errors: [], warnings: [], statements: 0, title: art.title, hasMermaid: false };
+  const result: CheckResult = { ok: true, errors: [], warnings: [], statements: 0, title: art.title };
   if (art.program == null) {
     result.ok = false;
     result.errors.push({
@@ -100,7 +106,6 @@ export function checkHtml(html: string, { schema, file = "<file>" }: CheckOption
       message: "No austere.js runtime <script> tag. Review still works, but the file will not render when opened directly.",
     });
   }
-  result.hasMermaid = /\bMermaid\s*\(/.test(art.program);
   for (const p of packs.missing) {
     result.warnings.push({
       code: "pack-not-installed",

@@ -115,16 +115,13 @@ async function openReview(file: string, viewport: { width: number; height: numbe
   const frameEl = await page.waitForSelector("iframe.frame");
   const frame = (await frameEl.contentFrame()) as Frame;
   await frame.waitForSelector("[data-oui-id]", { timeout: 15_000 });
-  if (await frame.locator(".austere-mermaid").count()) {
-    await frame.waitForSelector(".austere-mermaid-svg svg, .austere-render-error", { timeout: 15_000 });
-  }
   await page.waitForTimeout(400);
   return { context, page, frame, problems, session };
 }
 
 before(async () => {
   lib = await loadLibrary();
-  for (const f of ["austere.js", "mermaid.min.js", "packs/mermaid/pack.js", "chrome/chrome.js"]) {
+  for (const f of ["austere.js", "packs/shadcn/pack.js", "chrome/chrome.js"]) {
     if (!fs.existsSync(path.join(ROOT, "dist", f))) {
       skipReason = `dist/${f} missing; run npm run test:browser (it builds first)`;
       return;
@@ -389,36 +386,6 @@ test("Explore hides the conversation and gives the page the full width; Annotate
     } finally {
       await context.close();
     }
-  }
-});
-
-test("a Mermaid diagram too wide for its box fades the hidden side and shows a scroll hint, until it fits", async (t) => {
-  if (skipReason) return t.skip(skipReason);
-  const file = path.join(WORK, "mermaid-scroll.html");
-  const chain = Array.from({ length: 5 }, (_, i) => `n${i}[Step ${i}] --> n${i + 1}`).join("\\n  ");
-  fs.writeFileSync(file, htmlPage("Mermaid scroll", `root = Stack([chain])\nchain = Mermaid("flowchart LR\\n  ${chain}")`, CDN_RUNTIME_URL));
-  const { context, page, frame, problems } = await openReview(file, VIEWPORTS[1]);
-  const box = frame.locator(".austere-mermaid-svg");
-  const more = () => box.getAttribute("data-more");
-  const hint = frame.locator(".austere-mermaid-more");
-  const scrollTo = (x: number | "end") => box.evaluate((el, to) => (el.scrollLeft = to === "end" ? el.scrollWidth : to), x);
-  try {
-    assert.equal(await more(), "right", "phone: more diagram to the right at first");
-    assert.equal(await hint.isVisible(), true, "phone: scroll hint shown");
-    await scrollTo(40);
-    await page.waitForTimeout(100);
-    assert.equal(await more(), "left right", "partly scrolled: both sides hide some");
-    await scrollTo("end");
-    await page.waitForTimeout(100);
-    assert.equal(await more(), "left", "scrolled to the end: only the left hides some");
-
-    await page.setViewportSize({ width: VIEWPORTS[0].width, height: VIEWPORTS[0].height });
-    await page.waitForTimeout(400);
-    assert.equal(await more(), null, "desktop: the diagram fits, so no fade");
-    assert.equal(await hint.count(), 0, "desktop: no scroll hint");
-    assert.deepEqual(problems, [], "browser errors");
-  } finally {
-    await context.close();
   }
 });
 

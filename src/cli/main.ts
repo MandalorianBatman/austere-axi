@@ -122,8 +122,7 @@ ${rows.join("\n")}
 NOTES
   The CDN script tag lets the file open on its own (needs network); review and export work
   offline. A browser the CLI did not open gets 403 until it signs in with \`${BIN} login\`.
-  Mermaid syntax is only checked when it renders. check warns when an Architecture diagram
-  will not fit the page; check --render, when a Mermaid diagram scrolls sideways in its box.
+  check warns when an Architecture diagram will not fit the page.
   check --render needs Chrome, Chromium or Edge (or CHROME_PATH).
 
 ENV
@@ -596,8 +595,6 @@ async function cmdCheck(file: string | undefined, flags: Flags = {}): Promise<vo
       // The check the user asked for did not run: say so in the status and the exit code.
       else if (render.status === "unavailable") out.status = "render_unavailable";
     }
-  } else if (result.ok && result.hasMermaid) {
-    out.note = "Mermaid sources are checked when the review page renders them; failures come back through poll.";
   }
   print(out);
   if (out.status !== "ok") process.exitCode = 1;
@@ -607,13 +604,12 @@ async function cmdCheck(file: string | undefined, flags: Flags = {}): Promise<vo
 async function renderOut(html: string, dir: string): Promise<Printed> {
   const r = await renderCheck(html, dir);
   if (r.status === "unavailable") return { status: "unavailable", reason: r.reason };
-  const status = r.errors.length ? "errors" : r.overflow.length || r.wide.length ? "warnings" : "clean";
+  const status = r.errors.length ? "errors" : r.overflow.length ? "warnings" : "clean";
   const out: Printed = { status, widths: "1280, 390", statements: r.statements };
   if (r.errors.length) out.errors = r.errors.map((e) => ({ statement: e.statement || "(page)", message: e.error }));
   if (r.overflow.length) {
     out.scrolls_sideways = r.overflow.map((o) => ({ width: o.width, statements: o.statements.length ? o.statements.join(", ") : "(not one statement)" }));
   }
-  if (r.wide.length) out.warnings = r.wide;
   if (r.notices.length) out.notices = r.notices;
   return out;
 }

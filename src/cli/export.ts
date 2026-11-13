@@ -1,5 +1,5 @@
 // Standalone export: one HTML file that renders offline, with the runtime
-// (Mermaid and every pack the page uses, too) inlined. No network fetches.
+// (and every pack the page uses) inlined. No network fetches.
 import fs from "node:fs";
 import path from "node:path";
 import { readArtifact, rewriteRuntime } from "./artifact.ts";
@@ -54,7 +54,7 @@ function skipBlank(src: string, i: number): number {
 
 /**
  * The second argument of every `Image(alt, src)` call whose `src` is a string literal. Strings
- * and comments are skipped, so an `Image(` inside a Mermaid source or a note is not a call.
+ * and comments are skipped, so an `Image(` inside a CodeBlock source or a note is not a call.
  */
 function imageSources(src: string): Literal[] {
   const out: Literal[] = [];
@@ -151,11 +151,7 @@ export function exportHtml(html: string, dir: string): { html: string; notices: 
   const art = readArtifact(html);
   const notices: string[] = [];
   if (art.program == null) throw new Error('no <script type="text/openui"> block');
-  let tags = "";
-  if (/\bMermaid\s*\(/.test(art.program)) {
-    tags += inlineScript(fs.readFileSync(assetPath("mermaid.min.js"), "utf8")) + "\n";
-  }
-  tags += inlineScript(fs.readFileSync(assetPath("austere.js"), "utf8"));
+  let tags = inlineScript(fs.readFileSync(assetPath("austere.js"), "utf8"));
   // Packs register with the runtime, so they come after it.
   for (const p of implicitPacks(art.program)) tags += "\n" + inlineScript(fs.readFileSync(path.join(p.dir, "pack.js"), "utf8"));
   const packs = pagePacks(html);

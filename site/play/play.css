@@ -24,8 +24,8 @@
 .pane { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 
 /* Phone: the selected panel only (a desktop shows the preview beside Source or Components).
-   The preview is parked off-screen, not display:none: Mermaid and the diagram layout measure the
-   frame, and a frame with no box renders them wrong. */
+   The preview is parked off-screen, not display:none: the diagram layout measures the
+   frame, and a frame with no box renders it wrong. */
 @media (max-width: 899px) {
   #app[data-view=source] #pane-ref, #app[data-view=preview] #pane-ref, #app[data-view=preview] #pane-source, #app[data-view=ref] #pane-source { display: none; }
   #app[data-view=source] #pane-preview, #app[data-view=ref] #pane-preview { position: absolute; left: -10000px; width: calc(100vw - 40px); visibility: hidden; }

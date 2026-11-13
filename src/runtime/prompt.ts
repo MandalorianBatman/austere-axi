@@ -7,7 +7,7 @@ export const RULES = [
   "Statement names are what the reviewer clicks and what feedback points back to. Name every section, table, chart, diagram, option and risk descriptively in camelCase (rolloutTable, riskCallout, optionB), never s1/s2. Capitalized names read as components.",
   "To revise after feedback, pipe only the statements the feedback names (and new ones) to `austere-axi patch <file>`; never rewrite the file. Untouched statements keep their state on the reviewer's screen.",
   'Pass null to skip an optional argument before one you set: Tag("high", null, "sm", "danger").',
-  "Strings may span lines (use that for Mermaid, Diff, CodeBlock and long markdown) and accept \\n escapes; $ inside strings is literal. Escape \" inside double-quoted strings, or use single quotes. Never write </script> inside the program.",
+  "Strings may span lines (use that for Diff, CodeBlock and long markdown) and accept \\n escapes; $ inside strings is literal. Escape \" inside double-quoted strings, or use single quotes. Never write </script> inside the program.",
   "Artifacts are static: no Query, Mutation or tools, and you never need $variables (omit $binding props).",
   "Need something not listed? `austere-axi components search <words>` covers every component, including installed packs.",
   "Size: one idea per section, 3-7 sections, tables up to ~12 rows with phrase-length cells. A page that could have been a paragraph should have been a paragraph.",

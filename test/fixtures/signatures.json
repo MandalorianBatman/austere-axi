@@ -40,7 +40,6 @@
   "Label": {"props":["text"],"required":["text"]},
   "LineChart": {"props":["labels","series","variant","xLabel","yLabel","height"],"required":["labels","series"]},
   "MarkDownRenderer": {"props":["textMarkdown","variant"],"required":["textMarkdown"]},
-  "Mermaid": {"props":["source","caption"],"required":["source"]},
   "MetricIndicatorInline": {"props":["value","subtext","trend"],"required":["value"]},
   "Node": {"props":["label","kind","detail","tag","tone","row"],"required":["label"]},
   "OptionCard": {"props":["value","title","subtitle","topContent","disabled"],"required":["value","title"]},

@@ -3,7 +3,7 @@
 //   /s/:id        review page (chrome) for a session
 //   /s/:id/a/...  the artifact and its sibling assets, runtime tag pointed here
 //   /s/:id/events server-sent events for the chrome
-//   /__austere/*  runtime, mermaid, bundled packs, chrome assets
+//   /__austere/*  runtime, bundled packs, chrome assets
 //   /__austere/installed-packs/<name@version>/pack.js  packs from `components add`
 import { resolveSibling } from "./assets.ts";
 import fs from "node:fs";

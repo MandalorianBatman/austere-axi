@@ -1,6 +1,5 @@
 // Builds everything the published package needs into dist/:
 //   austere.js       runtime (React + OpenUI renderer + curated library + review layer), CSS inlined
-//   mermaid.min.js   lazy-loaded only by artifacts that use Mermaid
 //   packs/<id>/      bundled component packs (pack.js + catalog.json), loaded by
 //                    pages that call their components
 //   pack-kit.mjs     builds third-party packs (`austere-axi components build`)
@@ -12,7 +11,6 @@
 import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 import {
   IIFE_TSCONFIG,
   ROOT,
@@ -25,12 +23,13 @@ import {
   slimHighlighterPlugin,
 } from "./lib/plugins.ts";
 
-const require = createRequire(import.meta.url);
 const DIST = path.join(ROOT, "dist");
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { version: string };
 const only = process.argv.slice(2);
 const want = (step: string): boolean => only.length === 0 || only.includes(step);
 
+// A full build starts empty, so output an older build made (a removed pack, a dropped asset) cannot ship in the package.
+if (only.length === 0) fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(DIST, { recursive: true });
 
 async function buildRuntime() {
@@ -58,15 +57,11 @@ async function buildRuntime() {
   return result;
 }
 
-function copyMermaid() {
-  const src = path.join(path.dirname(require.resolve("mermaid/package.json")), "dist/mermaid.min.js");
-  fs.copyFileSync(src, path.join(DIST, "mermaid.min.js"));
-  console.log(`mermaid  dist/mermaid.min.js ${(fs.statSync(src).size / 1024 / 1024).toFixed(2)} MB`);
-}
-
 async function buildPacks() {
   const { buildPack } = await import("../src/pack-kit/index.ts");
   process.env.OPENUI_TELEMETRY_DISABLED = "1";
+  // A pack removed from packs/ must not linger in dist/, where the CLI and runtime would still find it.
+  fs.rmSync(path.join(DIST, "packs"), { recursive: true, force: true });
   for (const p of bundledPackSources()) {
     const outDir = path.join(DIST, "packs", p.id);
     const { catalog, warnings } = await buildPack({ dir: p.dir, esbuild, outDir, version: pkg.version });
@@ -144,7 +139,6 @@ async function buildCli() {
 if (want("packs") || (want("runtime") && !packsBuilt())) await buildPacks();
 if (want("packkit")) await buildPackKit();
 if (want("runtime")) await buildRuntime();
-if (want("mermaid")) copyMermaid();
 if (want("spec")) await buildSpec();
 if (want("chrome") && fs.existsSync(path.join(ROOT, "src/chrome/chrome.ts"))) await buildChrome();
 if (want("cli") && fs.existsSync(path.join(ROOT, "src/cli/main.ts"))) await buildCli();

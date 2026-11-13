@@ -1,5 +1,5 @@
 // Where the runtime was loaded from, and a tiny channel for runtime errors
-// (e.g. a Mermaid parse failure) that the review bridge forwards to the chrome.
+// (e.g. an Architecture layout failure) that the review bridge forwards to the chrome.
 import type { RuntimeError } from "../../types/pack.d.ts";
 
 /** A reported runtime error, stamped with when it happened. */

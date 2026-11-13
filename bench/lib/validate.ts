@@ -181,8 +181,8 @@ export class Checker {
       page.on("pageerror", (e) => pageErrors.push(String(e.message).slice(0, 300)));
       page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text().slice(0, 300)));
       // A page under review gets the runtime from the review server; here it comes from dist/.
-      await page.route(/\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {
-        const name = /\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())![1];
+      await page.route(/\/(austere\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {
+        const name = /\/(austere\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())![1];
         route.fulfill({ path: path.join(ROOT, "dist", name), contentType: "text/javascript" });
       });
       try {

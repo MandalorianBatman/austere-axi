@@ -215,7 +215,7 @@ export async function loadLibrary(): Promise<LoadedLibrary> {
       contents: `
         import { buildLibrary, CUSTOM_COMPONENTS as CORE_COMPONENTS, groupsFor, tiersFor, examplesFor } from "./src/runtime/library.tsx";
         ${packs.map((p, i) => `import pack${i} from ${JSON.stringify("./" + path.relative(ROOT, p.entry).split(path.sep).join("/"))};`).join("\n")}
-        // Bundled packs (Mermaid) are part of the core spec: no tag needed to use them.
+        // Bundled packs (shadcn) are part of the core spec: no tag needed to use them.
         export const BUNDLED_PACKS = [${packs
           .map((p, i) => `{ id: ${JSON.stringify(p.id)}, name: ${JSON.stringify(p.name)}, components: [].concat(pack${i}.components || pack${i}) }`)
           .join(", ")}];

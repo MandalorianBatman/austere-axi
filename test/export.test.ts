@@ -38,7 +38,7 @@ test("relative images of every supported type become data URIs", () => {
 
 test("everything outside the image sources is unchanged", () => {
   fs.writeFileSync(path.join(PAGE, "a.png"), BYTES);
-  const program = `root = Stack([a, m, n, r])\na = Image("alt, with (parens) and a comma", "a.png")\nm = Mermaid("graph TD\n A[Image(\\"a.png\\", \\"a.png\\")]")\nn = Image("x", "https://example.com/x.png")\nr = Image("x", "data:image/png;base64,AAAA")\n# Image("c", "a.png")`;
+  const program = `root = Stack([a, m, n, r])\na = Image("alt, with (parens) and a comma", "a.png")\nm = CodeBlock("text", "x = Image(\\"a.png\\", \\"a.png\\")")\nn = Image("x", "https://example.com/x.png")\nr = Image("x", "data:image/png;base64,AAAA")\n# Image("c", "a.png")`;
   const out = exported(program);
   assert.deepEqual(out.notices, []);
   const expected = program.replace(`Image("alt, with (parens) and a comma", "a.png")`, `Image("alt, with (parens) and a comma", "${uri("image/png")}")`);

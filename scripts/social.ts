@@ -34,8 +34,8 @@ try {
   const PANEL_H = 410;
   const WIN_TOP = Math.round((630 - (PANEL_H + 38)) / 2);
   const shot = await browser.newPage({ viewport: { width: SHOT_W, height: Math.round(PANEL_H / SCALE) }, deviceScaleFactor: 1.5 });
-  await shot.route(/\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {
-    const name = /\/(austere\.js|mermaid\.min\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())![1];
+  await shot.route(/\/(austere\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {
+    const name = /\/(austere\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())![1];
     route.fulfill({ path: path.join(ROOT, "dist", name), contentType: "text/javascript" });
   });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "austere-social-"));

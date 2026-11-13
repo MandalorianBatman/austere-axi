@@ -20,7 +20,7 @@ Out of scope: a paid tier (teams, private pages, longer history; see RLM-249), l
 |---|---|---|
 | Q1 | Hosting | Cloudflare Workers, R2 for page blobs, and D1 for pages, notes, tokens and reports. Free tier. |
 | Q2 | Domain | `https://austere.kasat.xyz`, with pages at `/p/<id>`. No separate user-content domain; the sandbox's opaque origin isolates the artifact. A brandable alias can be added later. |
-| Q3 | Upload | The raw artifact plus third-party pack bundles. The service serves pinned runtime, Mermaid, chrome and `@austere-axi/*` packs by CLI version. Relative images are inlined as data URLs within the size cap. |
+| Q3 | Upload | The raw artifact plus third-party pack bundles. The service serves pinned runtime, chrome and `@austere-axi/*` packs by CLI version. Relative images are inlined as data URLs within the size cap. |
 | Q4 | Republish | `publish` on the same file updates the same URL. The page id is stored in local state, keyed by absolute path. `--new` forces a fresh link. Old versions are not kept. |
 | Q5 | Identity | An anonymous owner token, created on first `publish` and stored in `~/.austere-axi/cloud.json`. GitHub login comes later. |
 | Q6 | Reviewers | Open link with a 128-bit unguessable id, unlisted, `noindex`. A one-time name prompt (stored in localStorage) appears before the first note. Names are self-declared. |
@@ -53,7 +53,7 @@ reviewer's browser ◄───────────────────�
 
 `publish` reuses `readArtifact` and `rewriteRuntime` (see `src/cli/export.ts`):
 
-1. Replace the runtime `<script>` tag with `<script src="/rt/<cliVersion>/austere.js"></script>`. Add `/rt/<cliVersion>/mermaid.min.js` when the program uses `Mermaid(`. Bundled `@austere-axi/*` packs need no tag from the CLI: the runtime resolves them itself to `/rt/<cliVersion>/packs/<id>/pack.js` (`packSource` in `src/runtime/packs.ts`).
+1. Replace the runtime `<script>` tag with `<script src="/rt/<cliVersion>/austere.js"></script>`. Bundled `@austere-axi/*` packs need no tag from the CLI: the runtime resolves them itself to `/rt/<cliVersion>/packs/<id>/pack.js` (`packSource` in `src/runtime/packs.ts`).
 2. Each installed third-party pack is uploaded as a blob and referenced as `/pk/<sha256>.js`. A pack that is missing locally or doesn't match is an error, because the hosted page can't fetch it from a CDN.
 3. Relative-path images are inlined as `data:` URLs.
 4. Everything else in the file is byte-for-byte unchanged. Inlining relative images (step 3) is the one explicit exception beyond runtime tags: the hosted page has no file system to resolve them against. Otherwise this keeps the AGENTS.md rule that the served artifact equals the file except for runtime tags.
@@ -68,7 +68,7 @@ The Worker checks that every `<script src>` in `html` points to `/rt/<cliVersion
 
 ### Pinned runtime (`/rt/<version>/…`)
 
-The Worker proxies `https://cdn.jsdelivr.net/npm/austere-axi@<version>/dist/<asset>` and caches the result with the Cache API. Only versions at or above `MIN_CLI_VERSION` are allowed, and only an allow-listed set of asset paths (runtime, Mermaid, chrome JS/CSS, packs). Pages stay same-origin, and `script-src 'self'` holds. No R2 copy of the runtime is needed.
+The Worker proxies `https://cdn.jsdelivr.net/npm/austere-axi@<version>/dist/<asset>` and caches the result with the Cache API. Only versions at or above `MIN_CLI_VERSION` are allowed, and only an allow-listed set of asset paths (runtime, chrome JS/CSS, packs). Pages stay same-origin, and `script-src 'self'` holds. No R2 copy of the runtime is needed.
 
 `MIN_CLI_VERSION` is the first austere-axi release that ships chrome hosted mode and `publish`. Releasing it to npm is a human step for sid.kasat.
 

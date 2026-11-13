@@ -2,7 +2,7 @@
 //
 // A page names the packs it needs in its head:
 //   <meta name="austere-packs" content="austere-pack-gantt@1.2.0 sha384-…, other@0.3.1">
-// Packs bundled with austere-axi (Mermaid) need no tag: they load when the
+// Packs bundled with austere-axi (shadcn) need no tag: they load when the
 // program calls one of their components, so older pages keep working.
 import bundledPacks from "austere:bundled-packs";
 import type { RegisteredPack } from "../../types/pack.d.ts";

@@ -7,7 +7,7 @@ const program = `root = Stack([intro, flow], "column", "l")
 intro = Card([CardHeader("Hi = there"), text])
 text = MarkDownRenderer("line one
 line two with ) and ] inside")
-flow = Mermaid('flowchart LR
+flow = CodeBlock('text', 'step one
   a --> b')
 `;
 
