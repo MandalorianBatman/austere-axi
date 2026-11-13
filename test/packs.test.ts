@@ -284,6 +284,8 @@ test("a tarball needs --trust whatever name it claims; a folder is local but sti
   let r = await cli("components", "add", file);
   assert.equal(r.code, 1);
   assert.match(r.out, /needs --trust/);
+  assert.match(r.out, /Ask the user to look at it and run `austere-axi components add \S+ --trust` themselves/);
+  assert.doesNotMatch(r.out, /rerun with --trust/i, "the agent is not told to pass --trust itself");
   r = await cli("components", "add", file, "--trust");
   assert.match(r.out, /trust: --trust/);
   r = await cli("components", "list");
@@ -411,6 +413,8 @@ test("installing from the registry: third-party packs need --trust; ranges resol
   let r = await cli("components", "add", "austere-pack-steps");
   assert.equal(r.code, 1);
   assert.match(r.out, /needs --trust/);
+  assert.match(r.out, /not on the user's trust list.*Ask the user to review its source .*`austere-axi components add austere-pack-steps --trust` or `austere-axi trust add austere-pack-steps` themselves/);
+  assert.doesNotMatch(r.out, /rerun with --trust/i, "the agent is not told to pass --trust itself");
   r = await cli("components", "add", "austere-pack-steps@~1.0.0", "--trust");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /pack: austere-pack-steps@1\.0\.0/);
@@ -483,6 +487,205 @@ test("search and show find packs on npm that are not installed, without installi
     r = await cliWith(env, "components", "search", "milestones");
     assert.match(r.out, /\[\w+; pack austere-pack-orbit@0\.2\.0\]/);
     assert.doesNotMatch(r.out, /npm austere-pack-orbit/);
+  } finally {
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("the user's trust list: a pin trusts one version and pack.js, a scope trusts every pack in it", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-trust-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  const trusted = path.join(state, "trusted.json");
+  const sha384 = (b: string | Buffer) => `sha384-${crypto.createHash("sha384").update(b).digest("base64")}`;
+  const lockOf = () => (fs.existsSync(path.join(state, "packs.json")) ? (JSON.parse(fs.readFileSync(path.join(state, "packs.json"), "utf8")) as PacksLock).packs : {});
+  try {
+    // An agent's shell has no terminal: trust add refuses and writes nothing.
+    let r = await cliWith(env, "trust", "add", "austere-pack-pinned");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /needs the user at a terminal/);
+    assert.ok(!fs.existsSync(trusted), "trust add without a terminal writes nothing");
+
+    const v1 = await builtPackFiles("austere-pack-pinned", "1.0.0");
+    publish("austere-pack-pinned", "1.0.0", v1);
+    const tamper = await builtPackFiles("austere-pack-tamper", "1.0.0");
+    publish("austere-pack-tamper", "1.0.0", tamper);
+    // Published before the first search, which caches the registry's pack list.
+    const flows = await builtPackFiles("@acme/pack-flows", "0.3.0");
+    const flowsCat = JSON.parse(String(flows["dist/catalog.json"])) as BuiltCatalog;
+    flows["dist/catalog.json"] = JSON.stringify({ ...flowsCat, components: flowsCat.components.map((c) => ({ ...c, description: "Acmeflows across the company" })) });
+    publish("@acme/pack-flows", "0.3.0", flows);
+    publish("@acme/pack-other", "0.1.0", await builtPackFiles("@acme/pack-other", "0.1.0"));
+    const registryA = ENV.AUSTERE_AXI_NPM_REGISTRY as string;
+    fs.writeFileSync(
+      trusted,
+      JSON.stringify({
+        format: 2,
+        pins: {
+          "austere-pack-pinned": { version: "1.0.0", integrity: sha384(v1["dist/pack.js"]) },
+          "austere-pack-tamper": { version: "1.0.0", integrity: sha384(tamper["dist/pack.js"]) },
+        },
+        scopes: [{ scope: "@acme", registry: registryA }],
+      }),
+    );
+
+    r = await cliWith(env, "components", "search", "milestones");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /\[\w+; npm austere-pack-pinned@1\.0\.0, not installed, trusted\]/);
+    assert.match(r.out, /austere-pack-pinned is on the user's trust list .*you may run `austere-axi components add austere-pack-pinned@1\.0\.0`/);
+
+    // Another version of a pinned pack is not trusted; without a version, the pinned one installs.
+    publish("austere-pack-pinned", "1.1.0", await builtPackFiles("austere-pack-pinned", "1.1.0"));
+    r = await cliWith(env, "components", "add", "austere-pack-pinned@1.1.0");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /needs --trust[\s\S]*does not match the user's trust list/);
+    assert.equal(lockOf()["austere-pack-pinned"], undefined);
+    r = await cliWith(env, "components", "add", "austere-pack-pinned");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /pack: austere-pack-pinned@1\.0\.0/);
+    assert.equal(lockOf()["austere-pack-pinned"].trust, "trust-list");
+
+    // The same version republished with another pack.js is refused.
+    const packJs = Buffer.concat([Buffer.from(tamper["dist/pack.js"]), Buffer.from("\n;")]);
+    const cat = JSON.parse(String(tamper["dist/catalog.json"])) as BuiltCatalog;
+    const changed = { ...tamper, "dist/pack.js": packJs, "dist/catalog.json": JSON.stringify({ ...cat, integrity: sha384(packJs) }) };
+    publish("austere-pack-tamper", "1.0.0", changed);
+    r = await cliWith(env, "components", "add", "austere-pack-tamper");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /needs --trust[\s\S]*does not match the user's trust list/);
+    assert.equal(lockOf()["austere-pack-tamper"], undefined);
+
+    // A trusted scope covers any pack in it, on the registry it was trusted on only.
+    r = await cliWith(env, "components", "search", "acmeflows");
+    assert.match(r.out, /npm @acme\/pack-flows@0\.3\.0, not installed, trusted\]/);
+    // Registry B: the same packs behind another URL, where anyone could own @acme.
+    const mirror = http.createServer((req, res) => registry!.emit("request", req, res));
+    await new Promise<void>((done) => mirror.listen(0, "127.0.0.1", done));
+    try {
+      const envB = { ...env, AUSTERE_AXI_NPM_REGISTRY: `http://127.0.0.1:${(mirror.address() as AddressInfo).port}/` };
+      r = await cliWith(envB, "components", "search", "acmeflows");
+      assert.equal(r.code, 0, r.out);
+      assert.match(r.out, /npm @acme\/pack-flows@0\.3\.0, not installed, third-party\]/);
+      r = await cliWith(envB, "components", "add", "@acme/pack-flows");
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.out, /needs --trust[\s\S]*not on the user's trust list/);
+      assert.equal(lockOf()["@acme/pack-flows"], undefined);
+    } finally {
+      mirror.close();
+    }
+    r = await cliWith(env, "components", "add", "@acme/pack-flows");
+    assert.equal(r.code, 0, r.out);
+    assert.equal(lockOf()["@acme/pack-flows"].trust, "trust-list");
+
+    r = await cliWith(env, "trust", "list");
+    assert.match(r.out, /austere-pack-pinned@1\.0\.0 sha384-/);
+    assert.ok(r.out.includes(`@acme on ${registryA}`), r.out);
+    r = await cliWith(env, "trust", "remove", "@acme");
+    assert.equal(r.code, 0, r.out);
+    r = await cliWith(env, "components", "add", "@acme/pack-other");
+    assert.match(r.out, /needs --trust/);
+
+    // A malformed list: add and trust refuse, naming the file; search still answers, counting every pack third-party.
+    fs.writeFileSync(trusted, JSON.stringify({ format: 2, pins: { "austere-pack-pinned": { version: "1.0.0" } }, scopes: [{ scope: "@acme", registry: registryA }] }));
+    const namesFile = new RegExp(`${path.basename(state)}[\\\\/]+trusted\\.json is malformed .*ask the user to fix or delete it`);
+    r = await cliWith(env, "components", "add", "austere-pack-pinned");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, namesFile);
+    r = await cliWith(env, "trust", "list");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, namesFile);
+    r = await cliWith(env, "components", "search", "acme");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /results:[\s\S]*pack @acme\/pack-flows@0\.3\.0\]/);
+    assert.match(r.out, /npm @acme\/pack-other@0\.1\.0, not installed, third-party\]/);
+    assert.match(r.out, new RegExp(`trust list unreadable: ask the user to fix .*${path.basename(state)}[\\\\/]+trusted\\.json`));
+
+    // A format 1 list never recorded a scope's registry, so it is not read.
+    fs.writeFileSync(trusted, JSON.stringify({ format: 1, pins: {}, scopes: ["@acme"] }));
+    r = await cliWith(env, "trust", "list");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /format 1 does not record which registry a scope was trusted on/);
+  } finally {
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+/** `trust add` by the user at a terminal, answering yes; `meanwhile` runs at the prompt, as another process editing the list would. */
+function trustAddWhile(env: NodeJS.ProcessEnv, target: string, meanwhile: () => void): Promise<{ code: number | null; out: string }> {
+  const { promise, resolve } = Promise.withResolvers<{ code: number | null; out: string }>();
+  const atTerminal = "data:text/javascript,Object.defineProperty(process.stdin,'isTTY',{value:true})";
+  const child = spawn(process.execPath, ["--import", atTerminal, "src/cli/main.ts", "trust", "add", target], { env });
+  let out = "";
+  let answered = false;
+  child.stdout.on("data", (c) => (out += c));
+  child.stderr.on("data", (c) => {
+    out += c;
+    if (answered || !out.includes("[y/N]")) return;
+    answered = true;
+    meanwhile();
+    child.stdin.end("y\n");
+  });
+  child.on("close", (code) => resolve({ code, out }));
+  return promise;
+}
+
+test("trust add keeps changes made to the list while it waited for the user", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-trust-race-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  const trusted = path.join(state, "trusted.json");
+  const registryA = ENV.AUSTERE_AXI_NPM_REGISTRY as string;
+  const writeList = (list: { pins: Record<string, { version: string; integrity: string }>; scopes: { scope: string; registry: string }[] }) =>
+    fs.writeFileSync(trusted, JSON.stringify({ format: 2, ...list }));
+  const readList = () => JSON.parse(fs.readFileSync(trusted, "utf8")) as { pins: Record<string, unknown>; scopes: { scope: string }[] };
+  try {
+    writeList({ pins: {}, scopes: [{ scope: "@old", registry: registryA }] });
+    let r = await trustAddWhile(env, "@acme", () => writeList({ pins: {}, scopes: [] }));
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /status: trusted/);
+    assert.deepEqual(readList().scopes.map((s) => s.scope), ["@acme"], "a scope removed at the prompt stays removed");
+
+    publish("austere-pack-raced", "1.0.0", await builtPackFiles("austere-pack-raced", "1.0.0"));
+    const otherPin = { version: "1.0.0", integrity: `sha384-${crypto.createHash("sha384").update("other").digest("base64")}` };
+    r = await trustAddWhile(env, "austere-pack-raced", () => writeList({ pins: { "austere-pack-other": otherPin }, scopes: [] }));
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /status: pinned/);
+    const list = readList();
+    assert.deepEqual(Object.keys(list.pins).sort(), ["austere-pack-other", "austere-pack-raced"], "a pin added at the prompt is kept");
+    assert.deepEqual(list.scopes, [], "a scope removed at the prompt stays removed");
+  } finally {
+    fs.rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test("a trusted scope covers versions its pin does not, and search names the version it read", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-packs-trust-version-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state };
+  const described = async (version: string) => {
+    const files = await builtPackFiles("@acme/pack-versions", version);
+    const cat = JSON.parse(String(files["dist/catalog.json"])) as BuiltCatalog;
+    files["dist/catalog.json"] = JSON.stringify({ ...cat, components: cat.components.map((c) => ({ ...c, description: "Acmeversions across the company" })) });
+    return files;
+  };
+  try {
+    const v1 = await described("1.0.0");
+    publish("@acme/pack-versions", "1.0.0", v1);
+    publish("@acme/pack-versions", "2.0.0", await described("2.0.0"));
+    fs.writeFileSync(
+      path.join(state, "trusted.json"),
+      JSON.stringify({
+        format: 2,
+        pins: { "@acme/pack-versions": { version: "1.0.0", integrity: `sha384-${crypto.createHash("sha384").update(v1["dist/pack.js"]).digest("base64")}` } },
+        scopes: [{ scope: "@acme", registry: ENV.AUSTERE_AXI_NPM_REGISTRY }],
+      }),
+    );
+    let r = await cliWith(env, "components", "search", "acmeversions");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /npm @acme\/pack-versions@2\.0\.0, not installed, trusted\]/);
+    assert.match(r.out, /you may run `austere-axi components add @acme\/pack-versions@2\.0\.0`/);
+    r = await cliWith(env, "components", "add", "@acme/pack-versions@2.0.0");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /pack: @acme\/pack-versions@2\.0\.0/);
+    const lock = JSON.parse(fs.readFileSync(path.join(state, "packs.json"), "utf8")) as PacksLock;
+    assert.equal(lock.packs["@acme/pack-versions"].trust, "trust-list");
   } finally {
     fs.rmSync(state, { recursive: true, force: true });
   }

@@ -2,6 +2,7 @@ process.env.OPENUI_TELEMETRY_DISABLED = process.env.OPENUI_TELEMETRY_DISABLED ||
 
 import fs from "node:fs";
 import path from "node:path";
+import readline from "node:readline/promises";
 import { mergeStatements } from "@openuidev/lang-core";
 import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
@@ -25,6 +26,7 @@ import { listComponents, searchComponents, showComponents } from "./components.t
 import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
 import type { InstalledPack } from "./packs.ts";
+import { isScope, readTrustList, trustFile, updateTrustList } from "./trust.ts";
 import type { PackRef } from "../shared/packs-meta.ts";
 
 /** A YAML-shaped result for print(), built up field by field. */
@@ -108,6 +110,7 @@ COMMANDS
   ${BIN} feedback <file>         notes no agent has answered yet   [--all] [--peek]
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
+  ${BIN} trust list              packs and scopes the user lets you add without --trust
   ${BIN} <command> --help        one command's flags and an example
   ${BIN} help all                every command, notes and environment
 `;
@@ -209,11 +212,18 @@ const COMMANDS: Record<string, CommandSpec> = {
     usage: "components [list [group] | search <words> | show <Name...> [--pack pkg] | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
     summary: "every component, including ones spec leaves out; search also lists up to 3 from packs on npm (not installed) under `npm`, and show finds them; install, remove and write packs",
     flags: {
-      trust: "install a third-party pack (read its code first)",
+      trust: "install a third-party pack not on the user's trust list; ask the user to review it and run the command themselves",
       name: "npm package name for `new`",
       pack: "`show` looks only in this pack (core, an installed pack, or one on npm), for a name several packs share",
     },
     example: "components search scatter",
+  },
+  trust: {
+    usage: "trust [list | add <pkg[@range]|@scope> | remove <pkg|@scope>]",
+    summary:
+      "the user's trust list: packs you may add without --trust, as pinned versions (same pack.js) or scopes on the registry they were added from; add asks the user at a terminal",
+    flags: {},
+    example: "trust add austere-pack-gantt@1.2.0",
   },
   export: {
     usage: "export <file> [--out path]",
@@ -777,6 +787,99 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
   }
 }
 
+/** Ask the user at the terminal; only a yes counts. */
+async function confirm(question: string): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return /^y(es)?$/i.test((await rl.question(`${question} [y/N] `)).trim());
+  } finally {
+    rl.close();
+  }
+}
+
+async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> {
+  // install.ts is loaded only by the commands that install, like `components add`.
+  const { readRegistryPack, registryUrl } = await import("./install.ts");
+  switch (sub) {
+    case undefined:
+    case "list": {
+      const list = readTrustList();
+      const pins = Object.entries(list.pins).map(([name, p]) => `${name}@${p.version} ${p.integrity}`);
+      return print({
+        file: trustFile(),
+        pins: pins.length ? pins : "none",
+        scopes: list.scopes.length ? list.scopes.map((s) => `${s.scope} on ${s.registry}`) : "none",
+        note: "An agent may run `components add` on a pinned version (same pack.js), or on any pack in these scopes from the registry the scope was added from, without --trust. Only the user adds to this list.",
+      });
+    }
+    case "add": {
+      const target = args[0];
+      if (!target) return usage(`add needs a pack or scope: ${BIN} trust add <npm-package>[@version] | @scope`, "trust");
+      if (!process.stdin.isTTY) {
+        return fail(`trust add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} trust add ${target}\` themselves after reviewing it.`);
+      }
+      const list = readTrustList();
+      if (isScope(target)) {
+        const registry = registryUrl();
+        if (list.scopes.some((s) => s.scope === target && s.registry === registry)) return print({ status: "already trusted", scope: target, registry });
+        if (!(await confirm(`Let agents install any pack under ${target}/ from ${registry} without --trust? Its code runs inside your review pages.`))) {
+          return print({ status: "not changed" });
+        }
+        updateTrustList((fresh) => {
+          if (fresh.scopes.some((s) => s.scope === target && s.registry === registry)) return false;
+          fresh.scopes.push({ scope: target, registry });
+          return true;
+        });
+        return print({ status: "trusted", scope: target, registry, file: trustFile() });
+      }
+      let p;
+      try {
+        p = await readRegistryPack(target);
+      } catch (err) {
+        return fail(messageOf(err));
+      }
+      const pin = { version: p.version, integrity: p.integrity };
+      const previous = Object.hasOwn(list.pins, p.name) ? list.pins[p.name] : undefined;
+      if (previous && previous.version === pin.version && previous.integrity === pin.integrity) return print({ status: "already pinned", pack: `${p.name}@${p.version}` });
+      process.stderr.write(`${p.name}@${p.version}  ${p.integrity}\ncomponents: ${p.catalog.components.map((c) => c.name).join(", ")}\nsource: npm view ${p.name} repository\n`);
+      if (!(await confirm(`Pin ${p.name}@${p.version}? Agents could then install this exact version without --trust; its code runs inside your review pages.`))) {
+        return print({ status: "not changed" });
+      }
+      let replaced: string | undefined;
+      updateTrustList((fresh) => {
+        const before = Object.hasOwn(fresh.pins, p.name) ? fresh.pins[p.name].version : undefined;
+        replaced = before !== p.version ? before : undefined;
+        fresh.pins[p.name] = pin;
+        return true;
+      });
+      return print({
+        status: "pinned",
+        pack: `${p.name}@${p.version}`,
+        integrity: p.integrity,
+        replaced,
+        file: trustFile(),
+      });
+    }
+    case "remove": {
+      const target = args[0];
+      if (!target) return usage(`remove needs a pack or scope: ${BIN} trust remove <npm-package> | @scope`, "trust");
+      const removed = updateTrustList((list) => {
+        if (isScope(target) && list.scopes.some((s) => s.scope === target)) {
+          list.scopes = list.scopes.filter((s) => s.scope !== target);
+          return true;
+        }
+        if (!Object.hasOwn(list.pins, target)) return false;
+        delete list.pins[target];
+        return true;
+      });
+      if (!removed) return fail(`${target} is not on the trust list (${BIN} trust list)`);
+      return print({ status: "removed", entry: target, note: "Packs already installed stay installed: `components remove` removes one." });
+    }
+    default:
+      return usage(`unknown trust command: ${sub}. One of: list add remove`, "trust");
+  }
+}
+
 // ── feedback (any later session) ──
 
 function shortDate(ms: number): string {
@@ -1101,6 +1204,8 @@ async function main(): Promise<unknown> {
       return cmdCheck(rest[0], flags);
     case "components":
       return cmdComponents(rest[0], rest.slice(1), flags);
+    case "trust":
+      return cmdTrust(rest[0], rest.slice(1));
     case "feedback":
       return cmdFeedback(rest[0], flags);
     case "hub":

@@ -26,7 +26,8 @@ export interface BundledPack {
 }
 
 export type PackSource = "npm" | "tarball" | "folder";
-export type PackTrust = "first-party" | "local" | "--trust";
+/** How an installed pack came to be trusted; "trust-list": the user's trusted.json covered it. */
+export type PackTrust = "first-party" | "local" | "--trust" | "trust-list";
 
 /** One pack in <state>/packs.json. */
 export interface LockEntry {
@@ -111,7 +112,7 @@ function readJson<T>(file: string, fallback: T): T {
   }
 }
 
-function writeJsonAtomic(file: string, value: unknown): void {
+export function writeJsonAtomic(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n");

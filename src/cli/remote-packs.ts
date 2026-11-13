@@ -10,7 +10,9 @@ import path from "node:path";
 import type { PackCatalog } from "../../types/catalog.d.ts";
 import { fetchBuffer, readRegistryPack, registryUrl } from "./install.ts";
 import type { InstallError } from "./install.ts";
-import { installedPacks, isFirstParty, packDirName } from "./packs.ts";
+import { installedPacks, packDirName } from "./packs.ts";
+import { readTrustList, trustFile, trustOf } from "./trust.ts";
+import type { TrustList } from "./trust.ts";
 import { stateDir } from "./paths.ts";
 import { isValidPackName, isValidVersion } from "../shared/packs-meta.ts";
 
@@ -19,7 +21,8 @@ export interface RemotePack {
   version: string;
   /** sha384 of dist/pack.js, as an install records it. */
   integrity: string;
-  trust: "first-party" | "third-party";
+  /** "trusted": on the user's trust list (trust.ts). */
+  trust: "first-party" | "trusted" | "third-party";
   catalog: PackCatalog;
 }
 
@@ -37,8 +40,11 @@ interface Listed {
 /** The pack list as cached: what the registry listed (`total` counts packs past the page), or why it could not be fetched. */
 type PackList = { at: number; packs: Listed[]; total: number } | { at: number; error: string };
 
+/** The pack as the registry has it; trust is the reader's, so it is not cached. */
+type ReadPack = Omit<RemotePack, "trust">;
+
 /** One pack version as cached: its catalog, or why it fails the install checks for good. */
-type PackRead = RemotePack | (Listed & { error: string });
+type PackRead = ReadPack | (Listed & { error: string });
 
 const KEYWORD = "austere-axi-pack";
 const LIST_SIZE = 250;
@@ -95,6 +101,7 @@ async function listPacks(signal: AbortSignal, reason: (err: unknown) => string):
  * A pack version's catalog or its lasting failure: it fails the install checks
  * (an error with no status), or the registry answers 404 or 410. Throws on any
  * other failure (no answer, a timeout, any other HTTP status), so the next search tries again.
+ * Trust is the reader's, so it is not cached.
  */
 async function readPack({ name, version }: Listed, signal: AbortSignal): Promise<PackRead> {
   const file = path.join(cacheDir(), `${packDirName(name, version)}.json`);
@@ -102,8 +109,8 @@ async function readPack({ name, version }: Listed, signal: AbortSignal): Promise
   if (cached) return cached;
   let read: PackRead;
   try {
-    const { catalog, integrity } = await readRegistryPack(name, version, signal);
-    read = { name, version, integrity, trust: isFirstParty(name) ? "first-party" : "third-party", catalog };
+    const { catalog, integrity } = await readRegistryPack(`${name}@${version}`, signal);
+    read = { name, version, integrity, catalog };
   } catch (caught) {
     const err = caught as InstallError;
     const lasting = !err.network && (err.status === undefined || err.status === 404 || err.status === 410);
@@ -116,11 +123,20 @@ async function readPack({ name, version }: Listed, signal: AbortSignal): Promise
 
 /**
  * Packs on the registry that are not installed here. Never throws: an
- * unreachable registry or a timeout comes back as a note. A pack whose
- * catalog fails the install checks is left out; packs the registry did not
- * serve this time are left out and counted in the note.
+ * unreachable registry, a timeout or an unreadable trust list comes back as a
+ * note, the last with every pack counted third-party. A pack whose catalog
+ * fails the install checks is left out; packs the registry did not serve this
+ * time are left out and counted in the note.
  */
 export async function remotePacks(): Promise<RemotePacks> {
+  const notes: string[] = [];
+  let trusted: TrustList;
+  try {
+    trusted = readTrustList();
+  } catch {
+    trusted = { pins: {}, scopes: [] };
+    notes.push(`trust list unreadable: ask the user to fix ${trustFile()}`);
+  }
   const signal = AbortSignal.timeout(BUDGET_MS);
   const reason = (err: unknown): string => (signal.aborted ? `no answer from ${registryUrl()} within ${BUDGET_MS / 1000}s` : err instanceof Error ? err.message : String(err));
   const list = await listPacks(signal, reason);
@@ -137,8 +153,16 @@ export async function remotePacks(): Promise<RemotePacks> {
   };
   await Promise.all(Array.from({ length: PARALLEL_FETCHES }, worker));
   const unread = reads.filter((r) => r === null).length;
-  const notes: string[] = [];
   if (unread) notes.push(`${unread} npm ${unread === 1 ? "pack" : "packs"} could not be read`);
   if (list.total > LIST_SIZE) notes.push(`only the first ${LIST_SIZE} of ${list.total} npm packs were searched`);
-  return { packs: reads.filter((r): r is RemotePack => !!r && !("error" in r)), note: notes.join("; ") || undefined };
+  const rank = { "first-party": 0, trusted: 1, "third-party": 2 };
+  const packs = reads
+    .filter((r): r is ReadPack => !!r && !("error" in r))
+    .map((p): RemotePack => {
+      const by = trustOf(trusted, p, registryUrl());
+      return { ...p, trust: by === "first-party" ? "first-party" : by ? "trusted" : "third-party" };
+    })
+    // Equal matches list the packs an agent may install first.
+    .sort((a, b) => rank[a.trust] - rank[b.trust]);
+  return { packs, note: notes.join("; ") || undefined };
 }
