@@ -1,5 +1,5 @@
 // Component packs on this machine.
-//   bundled    shipped in dist/packs/<id>/ (Mermaid); in the core spec, loaded implicitly
+//   bundled    shipped in dist/packs/<id>/ (shadcn); in the core spec, loaded implicitly
 //   installed  added with `components add`; files in <state>/packs/<name>@<version>/,
 //              recorded in <state>/packs.json with the integrity of their pack.js
 // A page uses an installed pack only when it declares it:

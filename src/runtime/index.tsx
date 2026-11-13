@@ -247,7 +247,7 @@ function App({ programRef, initialLibrary, bridge, annotator, initialState }: Ap
         programRef.current = next;
         // The last turn's marks are stale now; the chrome sends this turn's.
         annotator?.highlight([]);
-        // A new Mermaid(...) call may need its pack first.
+        // A new call to a bundled pack's component may need its pack first.
         const library = await prepare(next);
         if (programRef.current !== next) return;
         pendingFlash.current = changed;

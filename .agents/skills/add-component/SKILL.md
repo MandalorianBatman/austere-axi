@@ -28,7 +28,7 @@ Prefer, in this order:
 4. A new component with `tier: "extended"`: in the library and `components search`, out of `spec` (one name in its group's notes).
 5. A new core component.
 
-A component only some users need belongs in a pack, not here: `austere-axi components new` scaffolds one, and it can live in its own repo. Bundle a pack with austere-axi (`packs/<id>/`, like Mermaid) only when it is core-worthy but heavy, so pages that do not use it should not load it.
+A component only some users need belongs in a pack, not here: `austere-axi components new` scaffolds one, and it can live in its own repo. Bundle a pack with austere-axi (`packs/<id>/`, like shadcn) only when it is core-worthy but heavy, so pages that do not use it should not load it.
 
 Never add raw HTML or JS escape hatches, components that fetch data, or theming knobs.
 
@@ -39,7 +39,7 @@ If a request fails the bar, say so and propose the cheaper option instead of bui
 Agents write positional calls, and saved artifacts keep those calls forever.
 
 - **Argument order:** put the most-used arguments first, required before optional. The first one or two arguments should cover 90% of uses.
-- **Input format:** prefer one string or string array in a format agents already know (git diff, `git status --short`, Mermaid, markdown) over nested objects. `FileTree(["M src/a.ts", ...])` beats `FileTree([{path, status}])`.
+- **Input format:** prefer one string or string array in a format agents already know (git diff, `git status --short`, markdown) over nested objects. `FileTree(["M src/a.ts", ...])` beats `FileTree([{path, status}])`.
 - **Enums:** lowercase strings, few values.
 - **Name:** a PascalCase noun that does not collide with a stock OpenUI component (the build throws if it does).
 - **After release:** props are append-only, and every appended prop must be optional. `npm run signatures` and the tests enforce this.

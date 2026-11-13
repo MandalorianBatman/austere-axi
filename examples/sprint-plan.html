@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="description" content="Sprint plan with a Mermaid gantt chart, capacity by person, committed stories and risks.">
+<meta name="description" content="Sprint plan with the work's dependency map, capacity by person, committed stories and risks.">
 <title>Sprint 24 plan</title>
 <script src="../dist/austere.js"></script>
 </head>
@@ -17,21 +17,23 @@ goalKpis = OverviewCardBlock([kpiPoints, kpiCarry, kpiBuffer])
 kpiPoints = OverviewCardItem("points", Text("text", "Planned"), MetricIndicatorInline("34 pts", "velocity avg 36"))
 kpiCarry = OverviewCardItem("carry", Text("text", "Carry-over"), MetricIndicatorInline("5 pts", "2 stories"))
 kpiBuffer = OverviewCardItem("buffer", Text("text", "Unplanned buffer"), MetricIndicatorInline("15%", "one day for bugs"))
-schedule = Card([CardHeader("Schedule"), ganttChart])
-ganttChart = Mermaid("gantt
-  dateFormat YYYY-MM-DD
-  axisFormat %d %b
-  todayMarker off
-  section Backend
-  Workspace schema + migration :done, db, 2026-11-02, 2d
-  Membership API :active, api, after db, 4d
-  Seat counting in billing :billing, after api, 3d
-  section Frontend
-  Workspace switcher :ui, 2026-11-04, 4d
-  Invite flow :invite, after ui, 3d
-  section Release
-  Flag + staged rollout :milestone, rollout, 2026-11-12, 1d
-  Bug buffer :buf, 2026-11-12, 2d", "Billing is the long pole: it cannot start before the membership API lands.")
+schedule = Card([CardHeader("Schedule", "Billing is the long pole: it cannot start before the membership API lands."), scheduleMap])
+scheduleMap = Architecture([schemaWork, apiWork, billingWork, switcherWork, inviteWork, rolloutWork, bufferWork], [schemaToApi, apiToBilling, switcherToInvite, billingToRollout, inviteToRollout], [backendLane, frontendLane, releaseLane], "lanes")
+schemaWork = Node("Workspace schema + migration", "database", "2–3 Nov · Ben", "done", "success", 1)
+apiWork = Node("Membership API", "backend", "4–7 Nov · Ben", "in progress", "info", 2)
+billingWork = Node("Seat counting in billing", "backend", "8–10 Nov · Chi", "long pole", "warning", 3)
+switcherWork = Node("Workspace switcher", "frontend", "4–7 Nov · Ana", "in progress", "info", 2)
+inviteWork = Node("Invite flow", "frontend", "8–10 Nov · Ana", null, null, 3)
+rolloutWork = Node("Flag + staged rollout", "cloud", "12 Nov", "milestone", "strong", 4)
+bufferWork = Node("Bug buffer", "backend", "12–13 Nov", null, null, 5)
+schemaToApi = Edge(schemaWork, apiWork)
+apiToBilling = Edge(apiWork, billingWork, "API contract", "emphasis")
+switcherToInvite = Edge(switcherWork, inviteWork)
+billingToRollout = Edge(billingWork, rolloutWork, "seats on day one", "emphasis")
+inviteToRollout = Edge(inviteWork, rolloutWork)
+backendLane = Group("Backend", [schemaWork, apiWork, billingWork], "plain")
+frontendLane = Group("Frontend", [switcherWork, inviteWork], "plain")
+releaseLane = Group("Release", [rolloutWork, bufferWork], "plain")
 capacity = Card([CardHeader("Capacity by person"), capacityChart])
 capacityChart = BarChart(["Ana", "Ben", "Chi", "Dev"], [Series("Planned pts", [10, 9, 8, 7]), Series("Available pts", [11, 10, 8, 9])], "grouped", "Engineer", "pts")
 scope = Card([CardHeader("Committed stories"), storyTable])

@@ -250,7 +250,7 @@ try {
   await T.out(tidy(opened.stdout));
   await page.evaluate((u) => openReview(u), url);
   await artifact.locator("[data-oui-id]").first().waitFor({ timeout: 20_000 });
-  await artifact.locator(".austere-mermaid, [data-oui-id='pg']").first().waitFor();
+  await artifact.locator("[data-oui-id='pg']").first().waitFor();
   await pause(1200);
 
   // 3. The agent waits for feedback.

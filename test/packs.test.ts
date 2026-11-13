@@ -250,16 +250,16 @@ test("new → build → add → show → check --fix → export → spec → rem
   assert.match(r.out, /is not installed here/);
 });
 
-test("export inlines the bundled Mermaid pack after the runtime", async () => {
-  const file = path.join(WORK, "flow.html");
-  fs.writeFileSync(file, page('root = Stack([f])\nf = Mermaid("flowchart LR\n  a --> b")'));
-  const r = await cli("export", file, "--out", path.join(WORK, "flow.export.html"));
+test("export inlines the bundled shadcn pack after the runtime", async () => {
+  const file = path.join(WORK, "progress.html");
+  fs.writeFileSync(file, page('root = Stack([p])\np = Progress(64, "Rows migrated")'));
+  const r = await cli("export", file, "--out", path.join(WORK, "progress.export.html"));
   assert.equal(r.code, 0, r.out);
-  const html = fs.readFileSync(path.join(WORK, "flow.export.html"), "utf8");
+  const html = fs.readFileSync(path.join(WORK, "progress.export.html"), "utf8");
   const head = (f: string) => fs.readFileSync(path.join("dist", f), "utf8").slice(0, 300).replace(/<\/script/gi, "<\\/script");
   const runtimeAt = html.indexOf(head("austere.js"));
-  const packAt = html.indexOf(head("packs/mermaid/pack.js"));
-  assert.ok(packAt > 0, "the Mermaid pack is inlined");
+  const packAt = html.indexOf(head("packs/shadcn/pack.js"));
+  assert.ok(packAt > 0, "the shadcn pack is inlined");
   assert.ok(runtimeAt > 0 && runtimeAt < packAt, "after the runtime");
   assert.doesNotMatch(html, /cdn\.jsdelivr\.net\/npm\/austere-axi/);
 });
@@ -307,6 +307,15 @@ test("unknown components point at search instead of listing everything", async (
   const r = await cli("check", file);
   assert.match(r.out, /components search sparkline/);
   assert.doesNotMatch(r.out, /Available components/);
+});
+
+test("a removed component says what replaced it", async () => {
+  const file = path.join(WORK, "removed.html");
+  fs.writeFileSync(file, page('root = Stack([d])\nd = Mermaid("graph LR\\nA-->B")'));
+  const r = await cli("check", file);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /Mermaid was removed in 0\.8\. Draw the diagram with Architecture/);
+  assert.doesNotMatch(r.out, /components search mermaid/);
 });
 
 // ── npm registry ──

@@ -49,7 +49,7 @@ If you use a coding agent, `.agents/skills/review-change/SKILL.md` runs these ch
 | `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `FileTree`), one file each |
 | `src/runtime/stock.ts` | Which stock components ship, which stay out of `spec`, their groups |
 | `docs/` | [Writing a pack](docs/writing-a-pack.md) |
-| `packs/` | Packs bundled with austere-axi (`mermaid`, `shadcn`) |
+| `packs/` | Packs bundled with austere-axi (`shadcn`) |
 | `src/runtime/pack-api.ts`, `src/pack-kit/` | `austere-axi/pack` and the `components build` pipeline |
 | `src/shared/catalog.ts` | Component catalog and prompt tiers |
 | `src/runtime/` | Library, annotation layer, review bridge, styles |

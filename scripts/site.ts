@@ -1,7 +1,7 @@
 // npm run site — builds the public website into _site/ (deployed by .github/workflows/pages.yml).
 //
 //   site/**             copied as is; every .html goes through render() for {{root}}, {{nav}}, {{hero}}, {{version}}
-//   dist/austere.js ... the runtime, Mermaid and the bundled packs, so live pages load them from the site itself
+//   dist/austere.js ... the runtime and the bundled packs, so live pages load them from the site itself
 //   gallery/<id>.html   each file in examples/, with its runtime tag pointed at ../austere.js
 //   gallery/thumbs/     screenshots of those pages, taken by scripts/shot.ts (which also fails on render errors)
 //   gallery/index.html  thumbnail, OpenUI Lang source and token count for each example
@@ -58,7 +58,7 @@ const NAV = [
   { href: "https://skills.sh/mandalorianbatman/austere-axi", label: "skills.sh" },
 ];
 
-for (const f of ["austere.js", "mermaid.min.js", "spec.json", "catalog.json"]) {
+for (const f of ["austere.js", "spec.json", "catalog.json"]) {
   if (!fs.existsSync(path.join(DIST, f))) {
     console.error(`dist/${f} is missing: run \`npm run build\` first`);
     process.exit(2);
@@ -241,7 +241,7 @@ await esbuild.build({
   logLevel: "warning",
 });
 fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
-for (const f of ["austere.js", "mermaid.min.js"]) fs.copyFileSync(path.join(DIST, f), path.join(OUT, f));
+fs.copyFileSync(path.join(DIST, "austere.js"), path.join(OUT, "austere.js"));
 const packsDir = path.join(DIST, "packs");
 for (const id of fs.existsSync(packsDir) ? fs.readdirSync(packsDir) : []) {
   fs.mkdirSync(path.join(OUT, "packs", id), { recursive: true });

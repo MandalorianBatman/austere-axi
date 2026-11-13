@@ -153,8 +153,8 @@ agent patches changes  ◄── austere-axi poll plan.html ◄─┘  (long-pol
 ```
 
 - **A page is a plain `.html` file:** one runtime `<script>` tag and one `<script type="text/openui">` block. Opened directly, it loads the runtime from the CDN. Under review, the server serves a local copy.
-- **Components:** 58 stock OpenUI components, plus `Architecture` (`Node`, `Edge`, `Group`), `Diff` and `FileTree`. `Mermaid` and nine shadcn-style components come as bundled [packs](#components-and-packs).
-- **Diagrams lay out automatically** ([dagre](https://github.com/dagrejs/dagre)); the agent never writes coordinates. Every node and edge is a click target. `lanes` puts each group in a column; `tone` colors a box or line to show risk. Use Mermaid for sequences, state machines, ER and gantt.
+- **Components:** 58 stock OpenUI components, plus `Architecture` (`Node`, `Edge`, `Group`), `Diff` and `FileTree`. Nine shadcn-style components come as a bundled [pack](#components-and-packs).
+- **Diagrams lay out automatically** ([dagre](https://github.com/dagrejs/dagre)); the agent never writes coordinates. Every node and edge is a click target. `lanes` puts each group in a column; `tone` colors a box or line to show risk.
 - **Notes** attach to the smallest named statement under the click, with detail where it exists: table row and column, `file:+line` in a diff, a diagram node, or selected text. The reviewer can move a note to a parent section.
 - **Changes flash** after each agent turn, and the bar shows `N changed`. Click it to keep the last turn's changes outlined until you click again.
 - **Buttons and forms send feedback.** `@ToAssistant("…")` sends a message with the form values. A button with no action sends its label.
@@ -200,7 +200,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 - An `Image` src that is a path relative to the page (png, jpg, gif, webp, svg, avif) loads under review for the owner and for invited reviewers, and `export` inlines it as a data URI. Both read only regular files in the page's own folder, never dotfiles or links that leave it; `export` skips an image over 10 MB. A file `export` cannot read stays as written, and the output names it in `notices`.
 - **Tabs closed:** `poll` returns `browser_disconnected` 10 s after the last review tab closes, or 5 min after a dropped connection (for example, a locked phone). The review stays open, so later notes reach the next `poll`.
 - `feedback <file>` returns notes no agent has answered, from any day. Reading them acknowledges them; `reply` marks them answered.
-- **Render failures reach the agent without a click:** bad Mermaid syntax, an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px, opens each tab in turn, and prints render errors, the statements that make the page scroll sideways, and the Mermaid diagrams too wide for their box at 1280 px, as text, with no screenshot. Agents run it only when the user asks for a check.
+- **Render failures reach the agent without a click:** an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px, opens each tab in turn, and prints render errors and the statements that make the page scroll sideways, as text, with no screenshot. Agents run it only when the user asks for a check.
 
 ## Components and packs
 
@@ -228,7 +228,6 @@ A page names its packs in the head, so it renders anywhere:
 - Under review, the server serves an installed pack only while it matches its hash in `~/.austere-axi/packs.json`. Opened directly, the page loads packs from jsDelivr with Subresource Integrity. `export` inlines them.
 - A pack component with no pack tag is a `missing-pack` error. `check --fix` repairs it.
 - **Bundled packs** need no tag and load only when used:
-  - `Mermaid`. A wide diagram shrinks while its text stays at 10 px or more; past that it scrolls sideways in its box, with a faded edge and a "Scroll sideways" hint.
   - `shadcn`: `Progress`, `Avatar`, `AvatarGroup`, `Tooltip`, `HoverCard`, `Breadcrumb` (`BreadcrumbItem`), `Kbd`, `Skeleton`, `Calendar` and `Timeline` (`TimelineItem`). Read-only.
   ```
   rollout = Progress(64, "Rows migrated")
@@ -406,7 +405,7 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. Never 
 
 ```sh
 npm install
-npm run build     # dist/: runtime, packs, pack kit, Mermaid, spec, catalog, review UI, cli.mjs
+npm run build     # dist/: runtime, packs, pack kit, spec, catalog, review UI, cli.mjs
 npm test
 npm run typecheck # tsc over src/cli, src/shared and the pack types
 node dist/cli.mjs examples/session-migration.html
