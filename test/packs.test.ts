@@ -13,6 +13,7 @@ import { after, before, test } from "node:test";
 import { catalogFromSpec, promptSpec, searchCatalog } from "../src/shared/catalog.ts";
 import { formatPacksMeta, parsePacksMeta, splitSpec } from "../src/shared/packs-meta.ts";
 import { mergePackSchemas, setPacksMeta } from "../src/cli/packs.ts";
+import { packedScripts } from "../src/cli/export.ts";
 import { looksLikePath, pickVersion, untar } from "../src/cli/install.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
@@ -228,7 +229,7 @@ test("new → build → add → show → check --fix → export → spec → rem
   r = await cli("export", file, "--out", path.join(WORK, "launch.export.html"));
   assert.equal(r.code, 0, r.out);
   const exported = fs.readFileSync(path.join(WORK, "launch.export.html"), "utf8");
-  assert.ok(exported.includes(fs.readFileSync(path.join(PACK, "dist/pack.js"), "utf8").slice(0, 200).replace(/<\/script/gi, "<\\/script")));
+  assert.ok(packedScripts(exported).some((x) => x.code === fs.readFileSync(path.join(PACK, "dist/pack.js"), "utf8")), "the installed pack is inlined");
 
   // Rebuilt and added again at the same version: the page's hash is stale, and check says so.
   fs.appendFileSync(path.join(PACK, "src/style.css"), "\n.pack-milestones strong { letter-spacing: 0; }\n");
@@ -260,11 +261,10 @@ test("export inlines the bundled shadcn pack after the runtime", async () => {
   const r = await cli("export", file, "--out", path.join(WORK, "progress.export.html"));
   assert.equal(r.code, 0, r.out);
   const html = fs.readFileSync(path.join(WORK, "progress.export.html"), "utf8");
-  const head = (f: string) => fs.readFileSync(path.join("dist", f), "utf8").slice(0, 300).replace(/<\/script/gi, "<\\/script");
-  const runtimeAt = html.indexOf(head("austere.js"));
-  const packAt = html.indexOf(head("packs/shadcn/pack.js"));
-  assert.ok(packAt > 0, "the shadcn pack is inlined");
-  assert.ok(runtimeAt > 0 && runtimeAt < packAt, "after the runtime");
+  const dist = (f: string) => fs.readFileSync(path.join("dist", f), "utf8");
+  const packed = packedScripts(html);
+  assert.deepEqual(packed.map((x) => x.name), ["austere.js", "packs/shadcn/pack.js"], "the runtime, then the pack");
+  for (const x of packed) assert.equal(x.code, dist(x.name), `${x.name} is inlined whole`);
   assert.doesNotMatch(html, /cdn\.jsdelivr\.net\/npm\/austere-axi/);
 });
 

@@ -7,6 +7,10 @@ export const CDN_RUNTIME_URL = "https://cdn.jsdelivr.net/npm/austere-axi@0/dist/
 const PROGRAM_RE = /(<script\b[^>]*\btype\s*=\s*["']text\/openui(?:-lang)?["'][^>]*>)([\s\S]*?)(<\/script\s*>)/i;
 const RUNTIME_RE = /<script\b[^>]*\bsrc\s*=\s*["']([^"']*\/austere(?:\.min)?\.js(?:\?[^"']*)?|austere(?:\.min)?\.js)["'][^>]*>\s*<\/script\s*>/i;
 const TITLE_RE = /<title[^>]*>([\s\S]*?)<\/title\s*>/i;
+/** `export` marks the scripts it inlines (and their loader) with this attribute. */
+export const INLINE_ATTR = "data-austere-inline";
+// Exports from before INLINE_ATTR carry the runtime as a plain inline script, which ends by setting `window.__austere`.
+const INLINE_RUNTIME_RE = new RegExp(`<script\\b[^>]*\\b${INLINE_ATTR}\\b|window\\.__austere\\s*=\\s*\\{`);
 
 export function skeleton(title = "Artifact"): string {
   return `<!doctype html>
@@ -80,11 +84,23 @@ export function replaceProgram(html: string, program: string): string {
   return text.slice(0, m.index) + m[1] + tail + m[3] + text.slice(m.index + m[0].length);
 }
 
-/** Point the runtime tag at another URL (local server, or nothing when inlined). */
+/** Is this an exported copy, with the runtime inlined instead of a runtime tag? */
+export function hasInlineRuntime(html: string): boolean {
+  return !RUNTIME_RE.test(html) && INLINE_RUNTIME_RE.test(html);
+}
+
+/**
+ * Point the runtime tag at another URL (local server, or nothing when inlined). An exported copy
+ * (runtime already inlined) is left as it is: a second runtime would render the page twice.
+ */
 export function rewriteRuntime(html: string, replacement: string | (() => string)): string {
   const text = String(html);
+  if (RUNTIME_RE.test(text)) {
+    const rep = typeof replacement === "function" ? replacement() : replacement;
+    return text.replace(RUNTIME_RE, () => rep);
+  }
+  if (INLINE_RUNTIME_RE.test(text)) return text;
   const rep = typeof replacement === "function" ? replacement() : replacement;
-  if (RUNTIME_RE.test(text)) return text.replace(RUNTIME_RE, () => rep);
   // No runtime tag: inject one so the page still renders under review.
   if (/<\/head\s*>/i.test(text)) return text.replace(/<\/head\s*>/i, () => `${rep}\n</head>`);
   return rep + "\n" + text;

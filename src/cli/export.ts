@@ -1,15 +1,55 @@
 // Standalone export: one HTML file that renders offline, with the runtime
 // (and every pack the page uses) inlined. No network fetches.
+//
+// The scripts are inlined gzipped and base64-encoded (about a third of their size), in
+// non-executing <script type="application/x-austere-gzip"> blocks. A small loader unpacks them
+// with DecompressionStream and runs them in order: the runtime, then the packs.
 import fs from "node:fs";
 import path from "node:path";
-import { readArtifact, rewriteRuntime } from "./artifact.ts";
+import zlib from "node:zlib";
+import { INLINE_ATTR, escapeHtml, hasInlineRuntime, readArtifact, rewriteRuntime } from "./artifact.ts";
 import { resolveSibling } from "./assets.ts";
 import { assetPath } from "./paths.ts";
 import { implicitPacks, pagePacks } from "./packs.ts";
 
-function inlineScript(code: string): string {
-  // A literal "</script" inside the bundle would end the tag early.
-  return `<script>${code.replace(/<\/script/gi, "<\\/script")}</script>`;
+const PACKED_TYPE = "application/x-austere-gzip";
+
+/**
+ * Browser code, inlined into the exported page as its source text (so it uses only its
+ * argument): runs each packed script in page order; a failure replaces the page with the reason.
+ */
+async function unpackAndRun(type: string): Promise<void> {
+  try {
+    if (typeof DecompressionStream !== "function") throw new Error("this browser cannot unpack the page (no DecompressionStream)");
+    const blocks = Array.from(document.querySelectorAll<HTMLScriptElement>(`script[type="${type}"]`));
+    const codes = await Promise.all(
+      blocks.map((block) => {
+        const bin = atob((block.textContent ?? "").trim());
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+      }),
+    );
+    for (const code of codes) {
+      const script = document.createElement("script");
+      script.textContent = code;
+      document.head.appendChild(script);
+    }
+  } catch (err) {
+    document.documentElement.textContent = `This page could not start: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+const LOADER = `(${unpackAndRun})(${JSON.stringify(PACKED_TYPE)})`;
+
+function packedScript(name: string, code: string): string {
+  const b64 = zlib.gzipSync(Buffer.from(code, "utf8"), { level: 9 }).toString("base64");
+  return `<script type="${PACKED_TYPE}" ${INLINE_ATTR}="${escapeHtml(name)}">${b64}</script>`;
+}
+
+/** The scripts an export packed, unpacked, in page order (for tests and `check`). */
+export function packedScripts(html: string): { name: string; code: string }[] {
+  const re = new RegExp(`<script type="${PACKED_TYPE}" ${INLINE_ATTR}="([^"]*)">([^<]*)</script>`, "g");
+  return [...html.matchAll(re)].map((m) => ({ name: m[1], code: zlib.gunzipSync(Buffer.from(m[2], "base64")).toString("utf8") }));
 }
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -151,11 +191,14 @@ export function exportHtml(html: string, dir: string): { html: string; notices: 
   const art = readArtifact(html);
   const notices: string[] = [];
   if (art.program == null) throw new Error('no <script type="text/openui"> block');
-  let tags = inlineScript(fs.readFileSync(assetPath("austere.js"), "utf8"));
+  // Already exported: inlining again would add a second runtime.
+  if (hasInlineRuntime(html)) return { html, notices: ["The page is already an exported copy; it is returned as it is."] };
+  const scripts = [packedScript("austere.js", fs.readFileSync(assetPath("austere.js"), "utf8"))];
   // Packs register with the runtime, so they come after it.
-  for (const p of implicitPacks(art.program)) tags += "\n" + inlineScript(fs.readFileSync(path.join(p.dir, "pack.js"), "utf8"));
+  for (const p of implicitPacks(art.program)) scripts.push(packedScript(`packs/${p.id}/pack.js`, fs.readFileSync(path.join(p.dir, "pack.js"), "utf8")));
   const packs = pagePacks(html);
-  for (const p of packs.installed) tags += "\n" + inlineScript(fs.readFileSync(path.join(p.dir, "pack.js"), "utf8"));
+  for (const p of packs.installed) scripts.push(packedScript(`${p.name}@${p.version}`, fs.readFileSync(path.join(p.dir, "pack.js"), "utf8")));
+  const tags = [...scripts, `<script ${INLINE_ATTR}="loader">${LOADER}</script>`].join("\n");
   for (const p of [...packs.missing, ...packs.mismatched]) {
     notices.push(`Pack ${p.name}@${p.version} is not installed here, so the exported page loads it from the CDN (needs network).`);
   }

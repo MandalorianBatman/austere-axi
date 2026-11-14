@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import { createParser } from "@openuidev/lang-core";
 import type { Parser } from "@openuidev/lang-core";
-import { readArtifact } from "./artifact.ts";
+import { hasInlineRuntime, readArtifact } from "./artifact.ts";
 import { assetPath } from "./paths.ts";
 import { mergePackSchemas, packDefining, pagePacks } from "./packs.ts";
 import type { InstalledPack, PagePacks, SpecSchema } from "./packs.ts";
@@ -100,7 +100,12 @@ export function checkHtml(html: string, { schema, file = "<file>" }: CheckOption
     });
     return result;
   }
-  if (!art.runtimeSrc) {
+  if (hasInlineRuntime(html)) {
+    result.warnings.push({
+      code: "exported-copy",
+      message: `This is an exported copy (runtime inlined, ${(html.length / 1024 / 1024).toFixed(1)} MB). Review and patch the source page instead, then export it again.`,
+    });
+  } else if (!art.runtimeSrc) {
     result.warnings.push({
       code: "no-runtime-tag",
       message: "No austere.js runtime <script> tag. Review still works, but the file will not render when opened directly.",
