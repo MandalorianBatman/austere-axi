@@ -140,7 +140,7 @@ export declare const MUTATION_ROLE: Readonly<Record<MutationName, Role>>;
 
 /** The idempotency key: `n` increases by one per mutation a client sends. */
 export interface MutationKey {
-  /** Random per client install, 8–64 base64url characters. */
+  /** 8–64 base64url characters, random, owned by one outgoing queue (see the doc's Idempotency). */
   clientId: string;
   n: number;
 }
@@ -149,7 +149,10 @@ export type Mutation<N extends MutationName = MutationName> = N extends Mutation
   ? { v: number; t: "mutation"; clientId: string; n: number; name: N; args: MutationArgs[N] }
   : never;
 
-/** Builds a mutation frame at SYNC_VERSION. */
+/**
+ * Builds a mutation frame at SYNC_VERSION. Throws a RangeError when the frame would be over
+ * LIMITS.frameBytes: the server could not read its key to ack it.
+ */
 export declare function mutation<N extends MutationName>(name: N, args: MutationArgs[N], key: MutationKey): Mutation<N>;
 
 // ── Rows (server → client) ───────────────────────────────────────────────────
@@ -234,6 +237,8 @@ export interface HelloFrame {
   v: number;
   t: "hello";
   status: PresenceStatus;
+  /** Self-declared name; read only on unlisted pages without an invite, truncated to 40 characters. */
+  name?: string;
 }
 
 /** Also the heartbeat: send at least every 30 s. */
@@ -262,7 +267,7 @@ export interface Viewer {
   /** Per connection, server-assigned. */
   id: string;
   name: string;
-  /** `#rrggbb`, server-assigned. */
+  /** `#rrggbb`, lowercase, server-assigned. */
   colour: string;
   role: Role;
 }
@@ -281,7 +286,10 @@ export interface ChangesFrame {
   t: "changes";
   /** Latest state of each row changed after the pulled cursor, in `seq` order. */
   rows: Row[];
-  /** Store this after the rows are applied; pull after it next time. */
+  /**
+   * Highest `seq` this frame covers (the page's counter, on the last frame of a pull and on live
+   * frames). Store it after the rows are applied; pull after it next time.
+   */
   cursor: number;
   /** More rows follow in the next frame. */
   more?: boolean;
@@ -289,7 +297,10 @@ export interface ChangesFrame {
   reset?: boolean;
 }
 
-/** A connection-level failure. After `upgrade_required` or `forbidden` the server closes the socket. */
+/**
+ * A failure not tied to one mutation. After `upgrade_required`, or `forbidden` for a lost
+ * credential (revoked, expired, taken down), the server closes the socket.
+ */
 export interface ErrorFrame {
   v: number;
   t: "error";
@@ -341,7 +352,7 @@ export type ReceivedFrame = Exclude<ServerFrame, ChangesFrame> | ReceivedChanges
 
 /**
  * Validates one frame from a client (the server's side). `data` is the WebSocket text
- * frame, or an already-decoded value. Unknown fields are kept on the result.
+ * frame, or a decoded value, which is judged as its JSON text. Unknown fields are kept on the result.
  */
 export declare function parseClientFrame(data: unknown): Parsed<ClientFrame>;
 

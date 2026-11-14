@@ -165,10 +165,10 @@ Reviewer routes are same-origin from the hosted chrome, and a foreign `Origin` i
 New state: `~/.austere-axi/cloud.json` (mode 0600)
 
 ```json
-{ "url": "https://austere.kasat.xyz", "token": "…", "clientId": "…", "pages": { "/abs/path/plan.html": { "id": "…", "auto": false } } }
+{ "url": "https://austere.kasat.xyz", "token": "…", "pages": { "/abs/path/plan.html": { "id": "…", "auto": false } } }
 ```
 
-The service URL defaults to `https://austere.kasat.xyz`, and `AUSTERE_AXI_CLOUD_URL` overrides it for tests and self-hosting. `clientId` is the [idempotency](#idempotency) client id of this install.
+The service URL defaults to `https://austere.kasat.xyz`, and `AUSTERE_AXI_CLOUD_URL` overrides it for tests and self-hosting. Copying `cloud.json` to another machine makes that machine a peer of the same pages (Q14). It holds no [idempotency](#idempotency) `clientId`: those belong to one queue each.
 
 Commands:
 
@@ -224,13 +224,13 @@ import type { Mutation, Row } from "austere-axi/sync";
 - Unknown fields are kept on the parsed value and ignored. A row of an unknown `type` is kept (`skipped` on the parsed `changes` frame), not applied, and its `seq` still counts toward the cursor. A server frame of an unknown `t` is skipped (parses to `null`).
 - The server rejects an unknown mutation or client frame type with `invalid`. The service always deploys before a CLI that sends something new.
 - Changes are additive only: new optional fields, new mutations, new row types, new frame types, each with a `SYNC_VERSION` bump. Never remove, rename or retype a field, and never add a value to an existing set of string values (a status, a note state, an error code); add a field instead.
-- `MIN_CLI_VERSION` is service configuration. The owner socket sends the CLI version (`?cli=<version>`), and the reviewer chrome's version is the page's `cliVersion`. Below `MIN_CLI_VERSION` the handshake answers 426 `upgrade_required`.
+- `MIN_CLI_VERSION` is service configuration. The owner socket sends the CLI version (`?cli=<version>`), and the reviewer chrome's version is the page's `cliVersion`. A missing or malformed `cli`, or one below `MIN_CLI_VERSION`, gets 426 `upgrade_required`.
 - Compatibility window: the service supports the last 3 published austere-axi versions and `MIN_CLI_VERSION`. austere-cloud CI runs its sync tests against each of them (installed from npm) on every change. `MIN_CLI_VERSION` moves only by a deliberate release.
 - hub.db is a cache (Q14): when the `SYNC_VERSION` it was filled under differs from the CLI's, the CLI drops the cached rows and pulls from 0.
 
 ### Objects and pages (HTTP)
 
-- `POST /api/pages` (owner) creates an empty page object and returns `{ id, url }`. `publish --new` and a first publish call it; a republish reuses the id from `cloud.json`.
+- `POST /api/pages` (owner) creates an empty page object and returns `{ id, url }`. `publish --new` and a first publish call it; a republish reuses the id from `cloud.json`. Until its first `publish`, the page answers reviewers with 404, and the daily cron deletes a page left unpublished for 24 hours.
 - `PUT /api/objects/:sha256` (owner) uploads one object: page HTML (`Content-Type: text/html`) or pack JS (`text/javascript`), optionally `Content-Encoding: gzip`. The Worker recomputes the SHA-256 of the decoded bytes (400 when it differs), stores `objects/<sha256>` in R2 and answers 204. Uploading an existing object is a no-op. The 1 MB upload limit applies per request (413).
 - The `publish` mutation then names the page HTML and its packs by SHA-256. Each must have been uploaded (else `invalid`), and the page HTML must pass the `<script src>` check in [What the CLI uploads](#what-the-cli-uploads).
 
@@ -242,7 +242,7 @@ import type { Mutation, Row } from "austere-axi/sync";
 | `GET /p/:id/sync` | Reviewer chrome (same origin; a foreign `Origin` is rejected) | Invite token; none on an unlisted page |
 
 - Browsers cannot set headers on a WebSocket, and query strings end up in logs, so credentials ride in `Sec-WebSocket-Protocol`. The client offers `austere-sync.1` followed by `austere-owner.<token>` or `austere-invite.<token>` (`syncProtocols`); the server reads them with `readProtocols` and answers `Sec-WebSocket-Protocol: austere-sync.1`, never echoing a credential.
-- A handshake that fails is a plain HTTP response with `{ "error": { "code", "message" } }`: 403 `forbidden` (missing, wrong, revoked or expired credential), 404 (unknown, expired or deleted page), 410 (taken down), 426 `upgrade_required` (no `austere-sync.1` offered, or CLI below `MIN_CLI_VERSION`), 429 `rate_limited`.
+- A handshake that fails is a plain HTTP response with `{ "error": { "code", "message" } }`: 403 `forbidden` (missing, wrong, revoked or expired credential), 404 (unknown, unpublished, expired or deleted page), 410 (taken down), 426 `upgrade_required` (no `austere-sync.1` offered, or CLI version missing or below `MIN_CLI_VERSION`), 429 `rate_limited`. A client retries 429 after `Retry-After` and does not retry 403, 404, 410 or 426 on its own: the CLI stops syncing that page and reports why; the chrome shows the reason.
 - Frames are JSON text frames, one message each. A client frame is at most 64 KiB (`LIMITS.frameBytes`).
 - The page object uses WebSocket hibernation and keeps each socket's identity (role, invite name, viewer id, presence) in the socket attachment.
 
@@ -281,7 +281,7 @@ A reviewer session, start to first note:
 | `addReply` | owner | `{ text }` | An agent reply shown in the hosted conversation. `reply` row. |
 | `grant` | owner | `{ name, tokenHash, expiresAt }` | Creates invite `name`, or gives it a new token (the old link stops working). `acl` row. |
 | `revoke` | owner | `{ name }` | Revokes invite `name`; its open sockets get `error` `forbidden` and are closed. `acl` row. |
-| `delete` | owner | `{}` | Sends `page` with `deleted: true` to every socket, closes them, deletes the page's storage, D1 row and object references. Later handshakes get 404. |
+| `delete` | owner | `{}` | Sends the `page` row with `deleted: true` (and every other field as last published) to every socket, closes them (1000), deletes the page's storage, D1 row and object references. Later handshakes get 404. A page deleted before its first `publish` has no `page` row; its sockets just close. |
 
 - A mutation sent by the wrong role (`MUTATION_ROLE`) gets `forbidden`. A `note` or `name` that does not exist gets `invalid`.
 - Field rules are the validators in `austere-axi/sync`: hashes are lowercase hex SHA-256, `tokenHash` is base64url SHA-256 (43 characters), invite names are 1–40 characters, `addNote` needs at least one item, times are epoch milliseconds.
@@ -290,10 +290,11 @@ A reviewer session, start to first note:
 
 ### Idempotency
 
-- `clientId`: 16 random bytes, base64url, made once per install (`cloud.json` for the CLI, localStorage `austere:client` for the chrome). `n` starts at 1 and grows by one per new mutation; it is stored with the outgoing queue so a restart continues the count.
-- The page object stores the answer it gave each `(clientId, n)`, applied or rejected, for the life of the page. The same `(clientId, n)` again gets the same `ack` and changes nothing.
-- A client keeps each mutation until its `ack` arrives and, after a reconnect, re-sends the unacknowledged ones in order.
-- A mutation the parser rejects but whose key was readable (the `key` on a failed parse) is answered with an `ack` carrying the error; one without a readable key gets an `error` frame.
+- A `clientId` belongs to exactly one outgoing queue, the one that numbers its `n`, and is never copied or shared. The local server's queue lives in hub.db with its own `clientId`, made with hub.db and dropped with it. A one-shot command (`publish`, `publish rm`) makes a fresh `clientId` per run. Each chrome tab makes its own (sessionStorage `austere:client`). A `clientId` is 16 random bytes, base64url.
+- `n` starts at 1 and grows by one per new mutation; it is stored with the queue so a restart continues the count.
+- The page object stores the answer it gave each `(clientId, n)`, applied or rejected, for the life of the page, except `rate_limited`, which is not stored. The same `(clientId, n)` again gets the same `ack` and changes nothing.
+- A client keeps each mutation until its `ack` arrives and, after a reconnect, re-sends the unacknowledged ones in order. On a `rate_limited` ack it waits `retryAfter` seconds and re-sends the same mutation; on any other error ack it drops the mutation and reports the error.
+- A mutation the parser rejects but whose key was readable (the `key` on a failed parse) is answered with an `ack` carrying the error; one without a readable key gets an `error` frame. A frame over 64 KiB has no readable key, so clients never send one: `mutation()` throws instead of building it.
 
 ### Rows and the cursor
 
@@ -306,11 +307,12 @@ A reviewer session, start to first note:
 
 - The op log is private: clients never see operations, only the current state of rows.
 - Each page object has one counter. Every change to a row (created or updated) gives that row the next `seq`. Rows are only removed with the whole page.
-- `pull { after }` answers with every row the socket may see whose `seq` is greater than `after`, in `seq` order, each once in its latest state, at most 500 rows per `changes` frame, with `more: true` on all but the last. After that the server pushes a `changes` frame whenever rows change. A second `pull` restarts the feed from its `after`.
-- `cursor` is the page's counter at the end of the frame, including rows the socket may not see, so a reviewer's cursor advances like the owner's.
+- `pull { after }` answers with every row the socket may see whose `seq` is greater than `after`, in `seq` order, each once in its latest state, at most 500 rows per `changes` frame, with `more: true` on all but the last. No live frame is sent before that last frame. After it, the server pushes a `changes` frame whenever rows change. A second `pull` restarts the feed from its `after`.
+- `cursor` is the highest `seq` the frame covers. On the last frame of a pull and on live frames that is the page's counter, including rows the socket may not see, so a reviewer's cursor advances like the owner's.
 - A client applies rows as upserts by `(type, id)`, then stores `cursor`. Re-applying a row is harmless, so a crash between the two re-delivers instead of losing.
 - When `after` is ahead of the page's counter (its storage was reset), the first frame has `reset: true` and starts from 0; the client drops the rows it cached for the page.
 - Reviewers receive notes in every state; the chrome hides discarded ones.
+- A `page` row always carries every field. The deleted page's row keeps the fields of its last publish.
 
 ### Errors
 
@@ -322,22 +324,32 @@ A reviewer session, start to first note:
 | `too_large` | Frame over 64 KiB; `addNote` items over 4 KB; object over 1 MB | `error` frame; `ack` error; 413 |
 | `invalid` | Malformed frame, unknown mutation or frame type, missing note or invite | `ack` error when the key was readable, else `error` frame |
 
-Only `upgrade_required` and a revoke close the socket. The set of codes is closed: a new failure reuses one of these, with its own `message`.
+The server closes a socket in these cases only, each after the frame named:
+
+| Event | Frame first | Close code |
+|---|---|---|
+| `v` below `MIN_SYNC_VERSION` | `error` `upgrade_required` | 1008 |
+| The socket's invite is revoked or expires | `error` `forbidden` | 1008 |
+| A `publish` clears `unlisted`: sockets without an invite | `error` `forbidden` | 1008 |
+| Takedown | `error` `forbidden` | 1008 |
+| `delete` | `changes` with the deleted `page` row | 1000 |
+
+After a 1008 close a client does not reconnect on its own. After any other close (network, deploy, hibernation eviction) it reconnects with backoff (up to 60 s) and pulls after its stored cursor. The set of codes is closed: a new failure reuses one of these, with its own `message`.
 
 ### Access (Q16)
 
 - `grant` makes an invite: the CLI generates the token (32 random bytes, base64url), sends only its SHA-256 (`tokenHash`), and prints `https://austere.kasat.xyz/p/<id>#i=<token>`. The fragment is never sent to the server, so the token stays out of server logs and `Referer`.
 - The chrome reads `#i=`, stores it in localStorage under `austere:invite:<id>`, and removes it from the address bar (`history.replaceState`). It sends the token as `X-Austere-Invite` on same-origin HTTP calls and as `austere-invite.<token>` on the socket. The server hashes it and looks the hash up among the page's live invites.
-- `GET /p/:id` (the shell) holds no content and needs no invite. The artifact, the row feed and `addNote` do (or an unlisted page, or the owner token).
+- `GET /p/:id` (the shell) holds no content and needs no invite. The artifact, the row feed and `addNote` need a live invite, unless the page is unlisted. The owner token is not accepted on reviewer routes; the owner reviews through the local server.
 - The frame cannot carry a header or a cookie. The chrome trades its invite for an `assetToken` with `POST /p/:id/asset-token` (answer `{ token, expiresAt }`, valid 10 minutes, for this page only) and loads the frame from `/p/:id/a/<assetToken>/`, the pattern the local server uses for `/s/:id/a/<token>/<file>`.
 - A reviewer's name is their invite name. One name has one live token; granting the name again replaces the token.
-- `unlisted: true` on `publish` opts the page into the open link: no invite needed, and `addNote` takes the self-declared `name` from the prompt (Q6).
+- `unlisted: true` on `publish` opts the page into the open link: no invite needed, and `addNote` takes the self-declared `name` from the prompt (Q6). A later `publish` with `unlisted: false` closes the sockets that came in without an invite (see [Errors](#errors)).
 - On an invited page, the per-IP note limit counts per invite instead.
 
 ### Presence (Q17)
 
-- Presence runs when the page's `presence` is true (`publish --no-presence` sets it false). Otherwise the server drops presence frames and sends none.
-- After opening the socket, a viewer sends `hello { status }`. The server answers with one `hello` per viewer present, its own marked `self: true`, and sends the newcomer's `hello` to everyone else. A `hello` from the server carries `viewer: { id, name, colour, role }` (`id` per socket, `name` from the invite, or `Owner` for the owner, `colour` `#rrggbb` from a fixed palette, stable per name on the page), `status` and `focus`.
+- Presence runs when the page's `presence` is true (`publish --no-presence` sets it false). Otherwise the server drops presence frames and sends none. A `publish` that turns it off sends `bye` for every viewer, then stops.
+- A socket becomes a viewer with its first `hello`; until then it gets no presence frames (the `publish` command never sends one). After opening the socket, a viewer sends `hello { status, name? }` (`name` only on an unlisted page, from the name prompt). The server answers with one `hello` per viewer present, its own marked `self: true`, and sends the newcomer's `hello` to everyone else. A `hello` from the server carries `viewer: { id, name, colour, role }`, `status` and `focus`. `id` is per socket; `name` is the invite name, the self-declared name on an unlisted page (truncated to 40 characters, `Reviewer` when empty), or `Owner`; `colour` is lowercase `#rrggbb`, picked by the server and stable per name on the page (clients only display it).
 - `status { status }`: `viewing`, `away` (tab hidden) or `writing` (composer open). It is also the heartbeat: send it at least every 30 s.
 - `focus { statement }`: the statement id the viewer last clicked in the frame, or `null` to clear. The chrome outlines that statement with the viewer's name.
 - `bye {}`: sent on leaving (`pagehide`). The server sends `bye { viewer }` to the others on `bye`, on close, or after 60 s without a frame from that viewer.

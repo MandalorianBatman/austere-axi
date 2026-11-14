@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   LIMITS,
   MIN_SYNC_VERSION,
@@ -102,16 +104,34 @@ test("version: below MIN_SYNC_VERSION needs an upgrade, a newer version is read 
   assert.deepEqual(value(parseClientFrame(newer)), newer);
 });
 
-test("size limits answer too_large", () => {
-  const big = JSON.stringify(mutation("addReply", { text: "x".repeat(LIMITS.frameBytes) }, key));
+test("size limits answer too_large, counted in UTF-8 bytes", () => {
+  const frame = (text: string) => ({ v: 1, t: "mutation", ...key, name: "addReply", args: { text } });
+  const big = JSON.stringify(frame("x".repeat(LIMITS.frameBytes)));
   assert.deepEqual(error(parseClientFrame(big)), { code: "too_large", message: `frame is ${big.length} bytes; the limit is ${LIMITS.frameBytes}`, key: undefined });
-  // Bytes, not characters: 1,500 "é" are 3,000 bytes; 3,000 are under 4,096 characters but 6,000 bytes.
-  const note = (n: number) => mutation("addNote", { items: [{ kind: "message", text: "é".repeat(n) }] }, key);
-  assert.equal(parseClientFrame(JSON.stringify(note(1500))).ok, true);
-  const e = error(parseClientFrame(JSON.stringify(note(3000))));
+  // 40,000 "é" fit in 65,536 UTF-16 units but are 80,000 bytes.
+  assert.equal(error(parseClientFrame(JSON.stringify(frame("é".repeat(40000))))).code, "too_large");
+  // A decoded frame is measured as its JSON, not let through.
+  assert.equal(error(parseClientFrame(frame("x".repeat(LIMITS.frameBytes)))).code, "too_large");
+
+  // Note items: `[{"kind":"message","text":""}]` is 30 bytes, so 4,066 more is exactly the limit.
+  const note = (text: string) => mutation("addNote", { items: [{ kind: "message", text }] }, key);
+  assert.equal(parseClientFrame(JSON.stringify(note("x".repeat(LIMITS.noteItemsBytes - 30)))).ok, true);
+  const e = error(parseClientFrame(JSON.stringify(note("x".repeat(LIMITS.noteItemsBytes - 29)))));
   assert.equal(e.code, "too_large");
-  assert.match(e.message, /4096/);
-  assert.deepEqual(e.key, key);
+  assert.match(e.message, /4097 bytes; the limit is 4096/);
+  assert.deepEqual(e.key, key, "the key was readable, so the server acks the rejection");
+  assert.equal(error(parseClientFrame(JSON.stringify(note("é".repeat(2100))))).code, "too_large");
+});
+
+test("mutation() refuses a frame the server could not ack", () => {
+  assert.throws(() => mutation("addReply", { text: "x".repeat(LIMITS.frameBytes) }, key), RangeError);
+});
+
+test("cliVersion is a bare version, since it becomes a URL path", () => {
+  for (const cliVersion of ["0.9.0", "1.0.0-rc.1"]) assert.equal(parseClientFrame(mutation("publish", { ...valid.publish, cliVersion }, key)).ok, true);
+  for (const cliVersion of ["0.9.0/../../x", '0.9.0"><script>', "0.9", "v0.9.0"]) {
+    assert.match(error(parseClientFrame({ ...mutation("publish", valid.publish, key), args: { ...valid.publish, cliVersion } })).message, /^publish\.args\.cliVersion:/);
+  }
 });
 
 test("a frame that is not a JSON object is invalid", () => {
@@ -124,6 +144,7 @@ test("a frame that is not a JSON object is invalid", () => {
 test("presence frames from a client", () => {
   for (const frame of [
     { v: 1, t: "hello", status: "viewing" },
+    { v: 1, t: "hello", status: "viewing", name: "Sam" },
     { v: 1, t: "status", status: "writing" },
     { v: 1, t: "focus", statement: "intro" },
     { v: 1, t: "focus", statement: null },
@@ -153,12 +174,13 @@ const rows = {
 
 test("changes: every row type parses; unknown rows are skipped but kept; the cursor stands", () => {
   const future = { v: SYNC_VERSION + 1, type: "reaction", id: "x1", seq: 5, emoji: "+1" };
+  const inherited = { v: 1, type: "constructor", id: "x2", seq: 6 };
   const withExtra = { ...rows.note, pinned: true };
-  const got = value(parseServerFrame(JSON.stringify({ v: 1, t: "changes", rows: [rows.page, withExtra, rows.reply, rows.acl, future], cursor: 5, more: false })));
+  const got = value(parseServerFrame(JSON.stringify({ v: 1, t: "changes", rows: [rows.page, withExtra, rows.reply, rows.acl, future, inherited], cursor: 6, more: false })));
   assert.ok(got && got.t === "changes");
   assert.deepEqual(got.rows, [rows.page, withExtra, rows.reply, rows.acl]);
-  assert.deepEqual(got.skipped, [future]);
-  assert.equal(got.cursor, 5);
+  assert.deepEqual(got.skipped, [future, inherited]);
+  assert.equal(got.cursor, 6);
 });
 
 test("changes: a malformed row fails the frame with the row's path", () => {
@@ -176,6 +198,7 @@ test("server frames: ack, error, and an unknown type parses to null", () => {
   const err = { v: 1, t: "error", code: "upgrade_required", message: "austere-axi 0.9.0 or later is required" };
   assert.deepEqual(value(parseServerFrame(err)), err);
   assert.equal(value(parseServerFrame({ v: 1, t: "cursor", at: 3 })), null);
+  assert.equal(value(parseServerFrame({ v: 1, t: "toString" })), null);
 });
 
 test("handshake: credentials ride in Sec-WebSocket-Protocol", () => {
@@ -188,4 +211,14 @@ test("handshake: credentials ride in Sec-WebSocket-Protocol", () => {
   assert.deepEqual(readProtocols("austere-invite.bad token, austere-invite.a"), { sync: false });
   assert.deepEqual(readProtocols(null), { sync: false });
   assert.throws(() => syncProtocols({ invite: "has space in it......" }), /base64url/);
+});
+
+test("the published bundle (austere-axi/sync) imports nothing and parses frames", async () => {
+  const code = fs.readFileSync(fileURLToPath(import.meta.resolve("austere-axi/sync")), "utf8");
+  // Workers and browsers load it as it is; zod must be inside.
+  assert.doesNotMatch(code, /\bimport\s*[{*"'(]|\bimport\s+\w|\brequire\(/);
+  // Dynamic on purpose: this loads the built dist/sync.mjs, which only `npm test` (pretest) builds.
+  const pub = await import("austere-axi/sync");
+  assert.deepEqual(value(pub.parseClientFrame(JSON.stringify(mutation("revoke", { name: "Ana" }, key)))), mutation("revoke", { name: "Ana" }, key));
+  assert.equal(error(pub.parseClientFrame({ v: 0, t: "bye" })).code, "upgrade_required");
 });

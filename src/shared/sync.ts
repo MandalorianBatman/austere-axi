@@ -81,8 +81,8 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 const SHA256_B64URL = /^[A-Za-z0-9_-]{43}$/;
 const CLIENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const TOKEN = /^[A-Za-z0-9_-]{16,256}$/;
-const VERSION = /^\d+\.\d+\.\d+/;
-const COLOUR = /^#[0-9a-fA-F]{6}$/;
+const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const COLOUR = /^#[0-9a-f]{6}$/;
 
 // Every object is loose: fields this version does not know are kept on the parsed value.
 const seq = z.int().positive();
@@ -148,7 +148,7 @@ const ROWS: { [T in api.RowType]: z.ZodType<Extract<api.Row, { type: T }>> } = {
     ...rowBase,
     type: z.literal("page"),
     title: z.string(),
-    cliVersion: z.string(),
+    cliVersion: z.string().regex(VERSION),
     html: z.string(),
     packs: z.array(packRef),
     auto: z.boolean(),
@@ -172,7 +172,7 @@ const ROWS: { [T in api.RowType]: z.ZodType<Extract<api.Row, { type: T }>> } = {
 
 const CLIENT_FRAMES: { [T in Exclude<api.ClientFrame["t"], "mutation">]: z.ZodType<Extract<api.ClientFrame, { t: T }>> } = {
   pull: z.looseObject({ v: z.int(), t: z.literal("pull"), after: cursor }),
-  hello: z.looseObject({ v: z.int(), t: z.literal("hello"), status }),
+  hello: z.looseObject({ v: z.int(), t: z.literal("hello"), status, name: z.string().optional() }),
   status: z.looseObject({ v: z.int(), t: z.literal("status"), status }),
   focus: z.looseObject({ v: z.int(), t: z.literal("focus"), statement }),
   bye: z.looseObject({ v: z.int(), t: z.literal("bye") }),
@@ -219,20 +219,32 @@ function invalid(what: string, error: z.ZodError): { ok: false; error: api.SyncE
   return fail("invalid", `${where}: ${issue ? issue.message : "invalid"}`);
 }
 
-/** Decodes a text frame (or takes a decoded value) and checks its version. */
+/** The UTF-8 size of `text` when it is over `max` bytes. UTF-8 takes one to three bytes per UTF-16 unit. */
+function overLimit(text: string, max: number): number | undefined {
+  if (text.length * 3 <= max) return undefined;
+  const bytes = utf8Bytes(text);
+  return bytes > max ? bytes : undefined;
+}
+
+/**
+ * Decodes a text frame and checks its size and version. A decoded value (an in-process caller,
+ * a test) goes through JSON first, so it is judged exactly as it would be on the wire.
+ */
 function frameOf(data: unknown, maxBytes: number | null): api.Parsed<Record<string, unknown>> {
-  let value = data;
-  if (typeof data === "string") {
-    // UTF-8 takes at least one byte per UTF-16 unit and at most three.
-    if (maxBytes !== null && data.length * 3 > maxBytes) {
-      const bytes = data.length > maxBytes ? data.length : utf8Bytes(data);
-      if (bytes > maxBytes) return fail("too_large", `frame is ${bytes} bytes; the limit is ${maxBytes}`);
-    }
-    try {
-      value = JSON.parse(data);
-    } catch {
-      return fail("invalid", "frame is not JSON");
-    }
+  let text: string | undefined;
+  try {
+    text = typeof data === "string" ? data : JSON.stringify(data);
+  } catch {
+    // A cycle or a BigInt: nothing a socket could have carried.
+  }
+  if (text === undefined) return fail("invalid", "frame is not JSON");
+  const bytes = maxBytes === null ? undefined : overLimit(text, maxBytes);
+  if (bytes !== undefined) return fail("too_large", `frame is ${bytes} bytes; the limit is ${maxBytes}`);
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return fail("invalid", "frame is not JSON");
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) return fail("invalid", "frame is not a JSON object");
   const frame = value as Record<string, unknown>;
@@ -301,7 +313,11 @@ export function parseServerFrame(data: unknown): api.Parsed<api.ReceivedFrame | 
 
 export function mutation<N extends api.MutationName>(name: N, args: api.MutationArgs[N], key: api.MutationKey): api.Mutation<N> {
   // Mutation<N> is a distributive conditional, which TypeScript cannot match against a generic N.
-  return { v: SYNC_VERSION, t: "mutation", clientId: key.clientId, n: key.n, name, args } as api.Mutation<N>;
+  const frame = { v: SYNC_VERSION, t: "mutation", clientId: key.clientId, n: key.n, name, args } as api.Mutation<N>;
+  // Too large to parse means no key to ack: queued, it would be re-sent forever.
+  const bytes = overLimit(JSON.stringify(frame), LIMITS.frameBytes);
+  if (bytes !== undefined) throw new RangeError(`${name} is ${bytes} bytes; a frame may be at most ${LIMITS.frameBytes}`);
+  return frame;
 }
 
 const OWNER_PREFIX = "austere-owner.";

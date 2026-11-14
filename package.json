@@ -36,7 +36,7 @@
   },
   "scripts": {
     "build": "node scripts/build.ts",
-    "pretest": "node scripts/build.ts spec",
+    "pretest": "node scripts/build.ts spec sync",
     "test": "node --test test/*.test.ts",
     "test:browser": "node scripts/build.ts packs runtime spec chrome && node --test test/browser/*.test.ts",
     "signatures": "node scripts/signatures.ts",
