@@ -14,8 +14,32 @@ import { implicitPacks, pagePacks } from "./packs.ts";
 
 const PACKED_TYPE = "application/x-austere-gzip";
 
-/** Runs each packed script in page order; a failure replaces the page with the reason. */
-const LOADER = `(async()=>{const b=[...document.querySelectorAll('script[type="${PACKED_TYPE}"]')];if(typeof DecompressionStream!="function")throw new Error("this browser cannot unpack the page (no DecompressionStream)");const c=await Promise.all(b.map(e=>{const s=atob(e.textContent.trim()),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream("gzip"))).text()}));for(const t of c){const s=document.createElement("script");s.textContent=t;document.head.appendChild(s)}})().catch(e=>{document.documentElement.textContent="This page could not start: "+(e&&e.message||e)})`;
+/**
+ * Browser code, inlined into the exported page as its source text (so it uses only its
+ * argument): runs each packed script in page order; a failure replaces the page with the reason.
+ */
+async function unpackAndRun(type: string): Promise<void> {
+  try {
+    if (typeof DecompressionStream !== "function") throw new Error("this browser cannot unpack the page (no DecompressionStream)");
+    const blocks = Array.from(document.querySelectorAll<HTMLScriptElement>(`script[type="${type}"]`));
+    const codes = await Promise.all(
+      blocks.map((block) => {
+        const bin = atob((block.textContent ?? "").trim());
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+      }),
+    );
+    for (const code of codes) {
+      const script = document.createElement("script");
+      script.textContent = code;
+      document.head.appendChild(script);
+    }
+  } catch (err) {
+    document.documentElement.textContent = `This page could not start: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+const LOADER = `(${unpackAndRun})(${JSON.stringify(PACKED_TYPE)})`;
 
 function packedScript(name: string, code: string): string {
   const b64 = zlib.gzipSync(Buffer.from(code, "utf8"), { level: 9 }).toString("base64");
