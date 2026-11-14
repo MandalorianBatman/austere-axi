@@ -238,7 +238,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   export: {
     usage: "export <file> [--out path]",
-    summary: "one self-contained HTML file that works offline",
+    summary: "one self-contained HTML file that works offline; keep reviewing and patching the source page, not the copy",
     flags: { out: "output path (default: <file>.export.html)" },
     example: "export plan.html --out review.html",
   },

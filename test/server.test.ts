@@ -167,6 +167,30 @@ test("serves the artifact with a local runtime and confines sibling files", asyn
   assert.equal((await req("GET", `/s/${id}/a/plan.html`, undefined, { host: "evil.example" })).status, 403);
 });
 
+test("an exported copy is served as it is, without a second runtime", async () => {
+  const file = path.join(path.dirname(FILE), "plan.export.html");
+  const html = fs.readFileSync(FILE, "utf8").replace(/<script src="[^"]*"><\/script>/, '<script type="application/x-austere-gzip" data-austere-inline="austere.js">AAAA</script>');
+  fs.writeFileSync(file, html);
+  const id = (await req("POST", "/api/open", { file })).data.session.id;
+  const page = await req<string>("GET", `/s/${id}/a/plan.export.html`, undefined, { host: `127.0.0.1:${PORT}` });
+  assert.equal(page.status, 200);
+  assert.equal(page.data, html);
+});
+
+test("runtime assets: gzip when accepted, 304 when unchanged", async () => {
+  const host = { host: `127.0.0.1:${PORT}` };
+  const plain = await bare<string>("GET", "/__austere/spec.json", undefined, host);
+  assert.equal(plain.status, 200);
+  assert.equal(plain.headers["content-encoding"], undefined);
+  const gz = await bare<string>("GET", "/__austere/spec.json", undefined, { ...host, "accept-encoding": "gzip, br" });
+  assert.equal(gz.headers["content-encoding"], "gzip");
+  assert.ok(Number(gz.headers["content-length"]) < Number(plain.headers["content-length"]));
+  assert.notEqual(gz.headers.etag, plain.headers.etag);
+  const again = await bare<string>("GET", "/__austere/spec.json", undefined, { ...host, "accept-encoding": "gzip", "if-none-match": String(gz.headers.etag) });
+  assert.equal(again.status, 304);
+  assert.equal(again.data, "");
+});
+
 // ── the owner key on loopback ──
 
 const posix = process.platform !== "win32";

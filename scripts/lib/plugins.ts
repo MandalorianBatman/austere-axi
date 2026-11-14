@@ -148,6 +148,24 @@ export const slimHighlighterPlugin: Plugin = {
   },
 };
 
+/**
+ * zod exports every locale (about 250 KB minified) through `z.locales`, and esbuild keeps them all
+ * because the namespace is reachable. Nothing here switches locale: keep English only.
+ */
+export const zodLocalesPlugin: Plugin = {
+  name: "austere-zod-locales",
+  setup(build) {
+    build.onResolve({ filter: /^\.\.\/locales\/index\.js$/ }, (args) =>
+      /[\\/]zod[\\/]v4[\\/]/.test(args.importer) ? { path: path.join(path.dirname(args.importer), "../locales/en.js"), namespace: "austere-zod-locales" } : undefined,
+    );
+    build.onLoad({ filter: /.*/, namespace: "austere-zod-locales" }, (args) => ({
+      contents: `export { default as en } from ${JSON.stringify(args.path)};`,
+      loader: "js",
+      resolveDir: path.dirname(args.path),
+    }));
+  },
+};
+
 // Keep node_modules external when bundling for Node, except OpenUI component
 // subpaths whose ESM uses extensionless imports Node cannot load.
 const nodeExternals: Plugin = {

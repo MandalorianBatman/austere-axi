@@ -181,7 +181,7 @@ austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narro
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
 austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
-austere-axi export <file>        one self-contained HTML file, works offline
+austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
 austere-axi hub on|off|status|list|notes|open   home page with every page and note
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
@@ -232,6 +232,7 @@ A page names its packs in the head, so it renders anywhere:
 ```
 
 - Under review, the server serves an installed pack only while it matches its hash in `~/.austere-axi/packs.json`. Opened directly, the page loads packs from jsDelivr with Subresource Integrity. `export` inlines them.
+- `export` inlines the runtime and packs gzipped (base64), and a short loader unpacks them with `DecompressionStream` (Chrome 80, Firefox 113, Safari 16.4). Review and patch the source page; the exported copy is for sharing. `check` flags an exported copy, and review serves it as it is, with no second runtime.
 - A pack component with no pack tag is a `missing-pack` error. `check --fix` repairs it.
 - **Bundled packs** need no tag and load only when used:
   - `shadcn`: `Progress`, `Avatar`, `AvatarGroup`, `Tooltip`, `HoverCard`, `Breadcrumb` (`BreadcrumbItem`), `Kbd`, `Skeleton`, `Calendar` and `Timeline` (`TimelineItem`). Read-only.

@@ -25,6 +25,7 @@ import { reviewerItem } from "./items.ts";
 import { hubPage, notesPage } from "./hub-page.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
 import crypto from "node:crypto";
+import zlib from "node:zlib";
 
 // ── what the control routes answer (client.ts request() reads these) ──
 
@@ -896,19 +897,49 @@ export async function runServer({
     });
   }
 
-  function serveAsset(res: http.ServerResponse, rel: string, url: URL): void {
+  // The runtime is 3 MB and compresses to a quarter: gzip once per build (kept
+  // here, keyed by size and mtime) and answer a repeat request with 304, so a frame reload
+  // after each revision does not fetch it again.
+  const gzipped = new Map<string, { key: string; body: Promise<Buffer> }>();
+  const COMPRESSIBLE = new Set([".js", ".css", ".json", ".md", ".svg"]);
+  function gzipOf(file: string, key: string): Promise<Buffer> {
+    const hit = gzipped.get(file);
+    if (hit && hit.key === key) return hit.body;
+    const body = fs.promises.readFile(file).then((buf) => new Promise<Buffer>((resolve, reject) => zlib.gzip(buf, { level: 9 }, (e, out) => (e ? reject(e) : resolve(out)))));
+    body.catch(() => gzipped.delete(file));
+    gzipped.set(file, { key, body });
+    return body;
+  }
+
+  function serveAsset(req: http.IncomingMessage, res: http.ServerResponse, rel: string, url: URL): void {
     if (rel.startsWith("installed-packs/")) return serveInstalledPack(res, rel, url);
     const clean = path.normalize(rel).replace(/^(\.\.[/\\])+/, "");
     const file = path.join(ASSET_DIR, clean);
     if (!file.startsWith(ASSET_DIR + path.sep)) return send(res, 404, "not found");
     fs.stat(file, (err, st) => {
       if (err || !st.isFile()) return send(res, 404, "not found");
-      streamFile(res, file, {
+      const key = `${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}`;
+      const gzip = COMPRESSIBLE.has(path.extname(file)) && st.size > 1024 && /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""));
+      const etag = `"${key}${gzip ? "-gz" : ""}"`;
+      const headers: http.OutgoingHttpHeaders = {
         "content-type": MIME[path.extname(file)] || "application/octet-stream",
-        "content-length": st.size,
         "cache-control": "no-cache",
+        etag,
+        vary: "accept-encoding",
         "x-content-type-options": "nosniff",
-      });
+      };
+      if (req.headers["if-none-match"] === etag) {
+        res.writeHead(304, headers);
+        return res.end();
+      }
+      if (!gzip) return streamFile(res, file, { ...headers, "content-length": st.size });
+      gzipOf(file, key).then(
+        (body) => {
+          res.writeHead(200, { ...headers, "content-encoding": "gzip", "content-length": body.length });
+          res.end(body);
+        },
+        () => send(res, 404, "not found"),
+      );
     });
   }
 
@@ -1058,7 +1089,7 @@ export async function runServer({
       return send(res, 403, "host not allowed");
     }
     if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
-    if (url.pathname.startsWith("/__austere/")) return serveAsset(res, url.pathname.slice("/__austere/".length), url);
+    if (url.pathname.startsWith("/__austere/")) return serveAsset(req, res, url.pathname.slice("/__austere/".length), url);
     // The owner's remote link: trade the key for the owner cookie, then drop it from the URL.
     const key = url.searchParams.get("key");
     if (key != null) {

@@ -21,6 +21,7 @@ import {
   loadLibrary,
   registryPlugin,
   slimHighlighterPlugin,
+  zodLocalesPlugin,
 } from "./lib/plugins.ts";
 
 const DIST = path.join(ROOT, "dist");
@@ -47,7 +48,12 @@ async function buildRuntime() {
       "process.env.NODE_ENV": '"production"',
       __AUSTERE_VERSION__: JSON.stringify(pkg.version),
     },
-    plugins: [fontPlugin, registryPlugin, slimHighlighterPlugin, bundledPacksPlugin(DIST)],
+    plugins: [fontPlugin, registryPlugin, slimHighlighterPlugin, zodLocalesPlugin, bundledPacksPlugin(DIST)],
+    // One runtime per page: a second copy (an exported page, which inlines one, opened for
+    // review) would render the page twice and open two annotate boxes. The first sets
+    // window.__austere; any later copy does nothing.
+    banner: { js: "if(!window.__austere){" },
+    footer: { js: "}" },
     outfile: path.join(DIST, "austere.js"),
     metafile: true,
     logLevel: "warning",

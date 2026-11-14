@@ -142,3 +142,10 @@ b = TextContent("b")
   assert.doesNotMatch(fs.readFileSync(file, "utf8"), /^b = /m);
   fs.rmSync(state, { recursive: true, force: true });
 });
+
+test("an exported copy is flagged: review the source page instead", () => {
+  const html = page('root = Stack([a])\na = TextContent("x")').replace(/<script src="[^"]*"><\/script>/, '<script type="application/x-austere-gzip" data-austere-inline="austere.js">AAAA</script>');
+  const codes = checkHtml(html).warnings.map((w) => w.code);
+  assert.ok(codes.includes("exported-copy"), codes.join(", "));
+  assert.ok(!codes.includes("no-runtime-tag"));
+});

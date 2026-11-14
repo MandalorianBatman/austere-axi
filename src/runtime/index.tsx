@@ -423,5 +423,7 @@ function boot() {
 
 window.__austere = { version: VERSION, library: austereLibrary, packs: registeredPacks };
 
+// Run late (an exported page's loader runs this script after the page has loaded): wait a
+// task, so the pack scripts the loader runs right after this one have registered.
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
-else boot();
+else setTimeout(boot, 0);

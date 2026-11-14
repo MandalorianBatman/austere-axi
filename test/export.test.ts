@@ -3,8 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { exportHtml } from "../src/cli/export.ts";
-import { readArtifact } from "../src/cli/artifact.ts";
+import { exportHtml, packedScripts } from "../src/cli/export.ts";
+import { hasInlineRuntime, readArtifact, rewriteRuntime } from "../src/cli/artifact.ts";
+import { assetPath } from "../src/cli/paths.ts";
 
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "austere-export-"));
 const PAGE = path.join(ROOT, "page");
@@ -79,4 +80,25 @@ test("comments and line breaks between an Image call's arguments do not hide its
   assert.deepEqual(out.notices, []);
   assert.equal(out.program.split(uri("image/png")).length - 1, 2);
   assert.ok(out.program.includes(`"alt, // not a comment"`), "a string stays as written");
+});
+
+test("the runtime is inlined packed: whole, under 1.5 MB, and once", () => {
+  const out = exportHtml(page('root = Stack([t])\nt = TextContent("hi")'), PAGE);
+  const packed = packedScripts(out.html);
+  assert.deepEqual(packed.map((x) => x.name), ["austere.js"]);
+  assert.equal(packed[0].code, fs.readFileSync(assetPath("austere.js"), "utf8"), "unpacks to the runtime as built");
+  assert.ok(out.html.length < 1.5 * 1024 * 1024, `exported page is ${out.html.length} bytes`);
+  assert.match(out.html, /<script data-austere-inline="loader">[^<]*DecompressionStream/, "a loader unpacks it");
+  assert.doesNotMatch(out.html, /<script[^>]*\bsrc=/, "no network fetch");
+  assert.ok(hasInlineRuntime(out.html));
+  // Exporting the copy, or serving it for review, adds no second runtime.
+  assert.equal(exportHtml(out.html, PAGE).html, out.html);
+  assert.equal(rewriteRuntime(out.html, '<script src="/__austere/austere.js"></script>'), out.html);
+});
+
+test("an export from before packing counts as an exported copy", () => {
+  const legacy = page("root = Stack([])").replace(/<script src="[^"]*"><\/script>/, "<script>(()=>{window.__austere={version:\"0.4.1\"}})()</script>");
+  assert.ok(hasInlineRuntime(legacy));
+  assert.equal(rewriteRuntime(legacy, '<script src="/__austere/austere.js"></script>'), legacy);
+  assert.ok(!hasInlineRuntime(page("root = Stack([])")), "a page with a runtime tag is not");
 });
