@@ -16,6 +16,7 @@ import { lockStateDir } from "./lock.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
 import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, RevokeResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
 import { format, print } from "./output.ts";
@@ -114,6 +115,7 @@ COMMANDS
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} trust list              packs and scopes the user lets you add without --trust
   ${BIN} registry list           private registries the user mapped npm scopes to
+  ${BIN} publish <file>          hosted share link (austere.kasat.xyz), only when the user asks
   ${BIN} <command> --help        one command's flags and an example
   ${BIN} help all                every command, notes and environment
 `;
@@ -135,7 +137,7 @@ ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1  AUSTERE_AXI_DISCONNECT_GRACE_MS (300000)
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
-  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)
+  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)  AUSTERE_AXI_CLOUD_URL (https://austere.kasat.xyz)
   A scope's token variable (registry add --token-env), sent only to that scope's registry
 `;
 }
@@ -253,6 +255,13 @@ const COMMANDS: Record<string, CommandSpec> = {
     summary: "invite link for a teammate on your tailnet; their notes wait for you unless --auto",
     flags: { as: "the reviewer's name", auto: "send this reviewer's notes straight to the agent", links: "show the links (list)" },
     example: 'share plan.html --as "Ana"',
+  },
+  publish: {
+    usage: "publish <file> [--auto] [--new] | publish list | publish rm <file|id>",
+    summary:
+      "hosted share link on austere.kasat.xyz: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. The only command that contacts the service; run it only when the user asks to share a page. Pages are invite-only and this version cannot invite reviewers yet, and hosted notes do not reach poll or feedback yet",
+    flags: { auto: "record reviewers' notes as sent straight to the agent instead of held (applies to this publish)", new: "a fresh link instead of updating this file's" },
+    example: "publish plan.html",
   },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
   server: {
@@ -1181,6 +1190,47 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
   });
 }
 
+// ── publish (hosted share links) ──
+
+/** `publish`: the one command that talks to the hosted service. */
+async function cmdPublish(args: string[], flags: Flags): Promise<void> {
+  const [sub, ...more] = args;
+  try {
+    if (sub === "list") {
+      const pages = await cloud.listPages();
+      if (!pages.length) return print({ pages: "none", next: `${BIN} publish <file>` });
+      return print({
+        pages: pages.map((p) => ({ id: p.id, title: p.title, file: p.file, url: p.url, expires: shortDate(p.expiresAt), notes: p.notes })),
+        next: `${BIN} publish rm <file|id> deletes one now.`,
+      });
+    }
+    if (sub === "rm") {
+      const key = more.join(" ");
+      if (!key) return usage(`rm needs a file or page id: ${BIN} publish rm <file|id> (see ${BIN} publish list)`, "publish");
+      const asFile = canonicalFile(key);
+      const r = await cloud.removePage(cloud.readCloud().pages[asFile] ? asFile : key);
+      return print({ status: "removed", id: r.id, file: r.file, note: r.gone ? "It was already gone from the service (expired or deleted)." : "The link stops working at once." });
+    }
+    const abs = needFile(sub, "publish");
+    if (!abs || !sub) return;
+    const r = await cloud.publish(abs, { auto: !!flags.auto, fresh: !!flags.new });
+    print({
+      status: r.updated ? "updated" : "published",
+      file: abs,
+      url: r.url,
+      mode: r.auto ? "auto" : "hold",
+      expires: r.expiresAt === null ? undefined : shortDate(r.expiresAt),
+      packs: r.packs || undefined,
+      images: r.images || undefined,
+      note: "The page is invite-only, and this version of austere-axi cannot invite reviewers yet. Notes on hosted pages do not reach poll or feedback yet. The page expires 30 days after the last publish.",
+      next: `${BIN} publish ${quote(sub)}${r.auto ? " --auto" : ""} again updates this link; ${BIN} publish rm ${quote(sub)} deletes it.`,
+    });
+  } catch (caught) {
+    const err = caught as { message: string; status?: number; code?: string };
+    fail(err.message, { http: err.status, code: err.code });
+  }
+}
+
 async function cmdStop(): Promise<void> {
   // A server from before the health proof is stopped too (without the key).
   const h = await serverIfRunning({ legacy: true });
@@ -1286,6 +1336,8 @@ async function main(): Promise<unknown> {
       return cmdExport(rest[0], flags);
     case "share":
       return cmdShare(rest, flags);
+    case "publish":
+      return cmdPublish(rest, flags);
     case "stop":
       return cmdStop();
     case "server":

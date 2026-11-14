@@ -144,16 +144,13 @@ function imageSources(src: string): Literal[] {
 /**
  * Replace each relative `Image` src in an OpenUI program with a data URI of the file next to the
  * page. A file that cannot be read (missing, hidden, outside `dir`, too big, not an image type)
- * stays as it was, with a notice that names it.
+ * stays as it was and is passed to `warn` with the reason; `export` turns that into a notice,
+ * `publish` into an error. Shared so both read sibling images by the same rules.
  */
-function inlineImages(program: string, dir: string, notices: string[]): string {
+export function inlineImages(program: string, dir: string, warn: (src: string, why: string) => void): { program: string; inlined: number } {
   let out = "";
   let at = 0;
-  const seen = new Set<string>();
-  const warn = (src: string, why: string) => {
-    if (!seen.has(src)) notices.push(`Image "${src}" is not inlined: ${why}. Keep it next to the exported file.`);
-    seen.add(src);
-  };
+  const inlined = new Set<string>();
   for (const lit of imageSources(program)) {
     if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(lit.value)) continue; // http:, data:, blob:, //host
     let rel = lit.value.replace(/[?#].*$/, "");
@@ -182,8 +179,9 @@ function inlineImages(program: string, dir: string, notices: string[]): string {
     }
     out += program.slice(at, lit.start) + JSON.stringify(`data:${type};base64,${bytes.toString("base64")}`);
     at = lit.end;
+    inlined.add(lit.value);
   }
-  return out + program.slice(at);
+  return { program: out + program.slice(at), inlined: inlined.size };
 }
 
 /** @param dir the folder the page's relative image paths are read from */
@@ -202,7 +200,11 @@ export function exportHtml(html: string, dir: string): { html: string; notices: 
   for (const p of [...packs.missing, ...packs.mismatched]) {
     notices.push(`Pack ${p.name}@${p.version} is not installed here, so the exported page loads it from the CDN (needs network).`);
   }
-  const inlined = inlineImages(art.program, dir, notices);
+  const seen = new Set<string>();
+  const { program: inlined } = inlineImages(art.program, dir, (src, why) => {
+    if (!seen.has(src)) notices.push(`Image "${src}" is not inlined: ${why}. Keep it next to the exported file.`);
+    seen.add(src);
+  });
   const withImages = inlined === art.program ? html : html.slice(0, art.programStart) + inlined + html.slice(art.programEnd);
   // Function replacement: the bundles contain "$&"-like sequences.
   return { html: rewriteRuntime(withImages, () => tags), notices };

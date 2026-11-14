@@ -64,9 +64,9 @@ reviewer's browser ◄───────────────────�
 
 `publish` reuses `readArtifact` and `rewriteRuntime` (see `src/cli/export.ts`):
 
-1. Replace the runtime `<script>` tag with `<script src="/rt/<cliVersion>/austere.js"></script>`. Bundled `@austere-axi/*` packs need no tag from the CLI: the runtime resolves them itself to `/rt/<cliVersion>/packs/<id>/pack.js` (`packSource` in `src/runtime/packs.ts`).
-2. Each installed third-party pack is uploaded as a blob and referenced as `/pk/<sha256>.js`. A pack that is missing locally or doesn't match is an error, because the hosted page can't fetch it from a CDN.
-3. Relative-path images are inlined as `data:` URLs.
+1. Replace the runtime `<script>` tag with `<script src="/rt/<cliVersion>/austere.js"></script>`, followed by `<script src="/rt/<cliVersion>/packs/<id>.js"></script>` for each bundled `@austere-axi/*` pack the program calls (`implicitPacks`). The runtime's own fallback, `/rt/<cliVersion>/packs/<id>/pack.js` (`packSource` in `src/runtime/packs.ts`), is not on the Worker's asset allow-list, so the tag must have registered the pack first.
+2. Each installed third-party pack is uploaded as an object and gets a `<script src="/pk/<sha256>.js"></script>` tag after the runtime, so it registers before the runtime looks for it (it would otherwise try the npm CDN, which the frame CSP blocks). `sha256` is the hex SHA-256 of the UTF-8 `pack.js`. A pack that is missing locally, installed at another version, or rebuilt since the page's hash was written is an error, because the hosted page can't fetch it from a CDN.
+3. Relative `Image(alt, src)` paths are inlined as `data:` URLs by the same code and rules as `export` (`inlineImages` in `src/cli/export.ts`, `resolveSibling` in `src/cli/assets.ts`): only files in the page's own folder, after symlinks, no dotfiles. Where `export` leaves an unreadable image as it is with a notice, `publish` stops with an error, before any request.
 4. Everything else in the file is byte-for-byte unchanged. Inlining relative images (step 3) is the one explicit exception beyond runtime tags: the hosted page has no file system to resolve them against. Otherwise this keeps the AGENTS.md rule that the served artifact equals the file except for runtime tags.
 
 > **Replaced** (Q13): the single JSON upload body (`{ cliVersion, title, html, packs, auto, thirdPartyPacks }` to `PUT /api/pages/:id`). The page HTML and each pack are now uploaded as content-addressed objects, then named by a `publish` mutation; see [Objects and pages](#objects-and-pages-http).
@@ -136,7 +136,7 @@ Owner routes need `Authorization: Bearer <token>`. They return JSON and are not 
 | `POST /api/owners` | Creates an owner and returns `{ token }`. Rate-limited per IP. |
 | `POST /api/pages` | Creates an empty page object and returns `{ id, url }`. The page is served after its first `publish` mutation. |
 | `PUT /api/objects/:sha256` | Uploads one object (page HTML or pack JS); see [Objects and pages](#objects-and-pages-http). |
-| `GET /api/pages` | Lists the owner's pages: `{ id, title, url, expiresAt, notes }`. |
+| `GET /api/pages` | Lists the owner's live pages, newest first: `{ pages: [{ id, title, url, expiresAt, notes }] }` (the shape austere-cloud has served since RLM-264). |
 | `GET /api/pages/:id/sync` | The owner peer's WebSocket; see [WebSocket endpoints](#websocket-endpoints). |
 
 Reviewer routes are same-origin from the hosted chrome, and a foreign `Origin` is rejected:
@@ -168,7 +168,9 @@ New state: `~/.austere-axi/cloud.json` (mode 0600)
 { "url": "https://austere.kasat.xyz", "token": "…", "pages": { "/abs/path/plan.html": { "id": "…", "auto": false } } }
 ```
 
-The service URL defaults to `https://austere.kasat.xyz`, and `AUSTERE_AXI_CLOUD_URL` overrides it for tests and self-hosting. Copying `cloud.json` to another machine makes that machine a peer of the same pages (Q14). It holds no [idempotency](#idempotency) `clientId`: those belong to one queue each.
+The service URL defaults to `https://austere.kasat.xyz`, and `AUSTERE_AXI_CLOUD_URL` overrides it for tests and self-hosting. A token belongs to the `url` it was created on: when `AUSTERE_AXI_CLOUD_URL` names another service, `publish` stops with an error instead of sending the token there. Copying `cloud.json` to another machine makes that machine a peer of the same pages (Q14). It holds no [idempotency](#idempotency) `clientId`: those belong to one queue each.
+
+A publish, in order: bundle the page (any error stops here, before a request); `POST /api/owners` on the first publish (the token is saved at once); `PUT /api/objects/:sha256` for the page HTML and each pack; `POST /api/pages` unless `cloud.json` already maps the file (or `--new`); then the owner socket: the `publish` mutation with a fresh `clientId` and `n: 1`, its `ack`, and `pull { after: 0 }` for the `page` row, whose `expiresAt` the command prints. `publish rm` sends `delete` the same way. `unlisted` is `false` and `presence` is `true` until the access and presence tickets add their flags. A republish whose handshake answers 404 points at `--new`; `rm` of a page the service no longer has still drops it from `cloud.json`. A `rate_limited` ack is reported with its `retryAfter`, not waited out, since `publish` is a one-shot command.
 
 Commands:
 
