@@ -136,7 +136,7 @@ Owner routes need `Authorization: Bearer <token>`. They return JSON and are not 
 | `POST /api/owners` | Creates an owner and returns `{ token }`. Rate-limited per IP. |
 | `POST /api/pages` | Creates an empty page object and returns `{ id, url }`. The page is served after its first `publish` mutation. |
 | `PUT /api/objects/:sha256` | Uploads one object (page HTML or pack JS); see [Objects and pages](#objects-and-pages-http). |
-| `GET /api/pages` | Lists the owner's live pages, newest first: `{ pages: [{ id, title, url, expiresAt, notes }] }` (the shape austere-cloud has served since RLM-264). |
+| `GET /api/pages` | Lists the owner's live pages, newest first: `{ pages: [{ id, title, url, expiresAt, notes }] }`. `notes` comes with the page object (RLM-268); `publish list` leaves it out until the service sends it. |
 | `GET /api/pages/:id/sync` | The owner peer's WebSocket; see [WebSocket endpoints](#websocket-endpoints). |
 
 Reviewer routes are same-origin from the hosted chrome, and a foreign `Origin` is rejected:

@@ -54,6 +54,8 @@ const stub = {
   ackError: null as SyncError | null,
   /** The next handshake is refused like this. */
   refuse: null as { status: number; code: string; message: string } | null,
+  /** Close the socket right after the next ack, before the page row is pulled. */
+  closeAfterAck: false,
   seq: 0,
 };
 let CLOUD = "";
@@ -108,7 +110,10 @@ function ownerSocket(ws: WebSocket, id: string) {
       stub.publishes.push(args);
       const now = Date.now();
       p.row = { v: SYNC_VERSION, type: "page", id, seq: ++stub.seq, ...args, publishedAt: now, expiresAt: now + 30 * 86400000, deleted: false };
-      return send(ws, ack);
+      send(ws, ack);
+      if (stub.closeAfterAck) ws.close(1001);
+      stub.closeAfterAck = false;
+      return;
     }
     if (f.name === "delete") {
       stub.pages.delete(id);
@@ -322,6 +327,20 @@ test("service errors print the service's message: HTTP, handshake and mutation a
   r = await cli(["publish", file]);
   assert.equal(r.code, 1);
   assert.ok(r.out.includes("rejected publish: rate_limited: 20 publishes a day (retry after 3600s)"), r.out);
+});
+
+test("a socket lost after the publish ack still records the page, without an expiry", async () => {
+  const file = path.join(WORK, "lost.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  stub.closeAfterAck = true;
+  let r = await cli(["publish", file]);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(field(r.out, "status"), "published");
+  assert.equal(field(r.out, "expires"), undefined);
+  const id = cloudState().pages[fs.realpathSync(file)].id;
+  r = await cli(["publish", file]);
+  assert.equal(field(r.out, "status"), "updated", "the next publish reuses the page instead of making another");
+  assert.equal(field(r.out, "url"), `${CLOUD}/p/${id}`);
 });
 
 test("a token for another service URL is not sent there", async () => {

@@ -242,8 +242,10 @@ async function sendMutation<N extends MutationName>(
     ws.removeAllListeners("close");
     ws.on("error", () => {}); // a late error while closing is not ours to report
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000);
-    if (err) reject(err);
-    else resolve(value);
+    // After the ack the mutation is applied: a failure reading the page row back only loses the expiry,
+    // and the caller must still record the page.
+    if (err && !acked) reject(err);
+    else resolve(value ?? page);
   };
   const timer = setTimeout(() => finish(new CloudError(`${base} did not answer ${name} within ${SOCKET_TIMEOUT_MS / 1000}s`)), SOCKET_TIMEOUT_MS);
   const failWith = (e: SyncError, where: string) => {
