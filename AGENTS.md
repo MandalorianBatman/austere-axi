@@ -31,6 +31,7 @@ npm run social       # re-render docs/social-preview.png, 1200x630 (after build;
 
 - Released component props are positional and append-only (`test/fixtures/signatures.json`).
 - Third-party packs build against `src/runtime/pack-api.ts` (what `austere-axi/pack` exports) and the catalog format in `src/shared/catalog.ts`. Change either additively; a breaking change bumps `PACK_API` or `CATALOG_FORMAT`.
+- austere-cloud builds against `austere-axi/sync` (`src/shared/sync.ts`, typed by `types/sync.d.ts`). Change it additively and bump `SYNC_VERSION`, by the rules in `docs/hosted-share-links.md` ("Versioning and compatibility"). Keep it free of Node APIs; the chrome and the Worker run it too.
 - The component reference has a token budget (`test/library.test.ts`). Raise it only deliberately.
 - The served artifact must equal the file on disk, except for the runtime `<script>` tag.
 - The server binds to loopback, plus the Tailscale IP when Tailscale is up, and never to `0.0.0.0`.
