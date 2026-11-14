@@ -1,0 +1,191 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  LIMITS,
+  MIN_SYNC_VERSION,
+  SUBPROTOCOL,
+  SYNC_VERSION,
+  mutation,
+  parseClientFrame,
+  parseServerFrame,
+  readProtocols,
+  syncProtocols,
+} from "../src/shared/sync.ts";
+import type { MutationArgs, MutationName, Parsed } from "../src/shared/sync.ts";
+
+const key = { clientId: "cli_8f3Kq2", n: 1 };
+const sha = "a".repeat(64);
+const tokenHash = "b".repeat(43);
+
+const valid: { [N in MutationName]: MutationArgs[N] } = {
+  publish: { title: "Plan", cliVersion: "0.9.0", html: sha, packs: [{ sha256: sha, name: "@acme/charts", version: "1.2.0" }], auto: false, unlisted: false, presence: true },
+  addNote: { items: [{ kind: "annotation", target: "intro", note: "why?", detail: { rowIndex: 2 } }, { kind: "message", text: "looks good" }] },
+  releaseNote: { note: "n1" },
+  discardNote: { note: "n1" },
+  addReply: { text: "Fixed in the next version." },
+  grant: { name: "Ana", tokenHash, expiresAt: null },
+  revoke: { name: "Ana" },
+  delete: {},
+};
+
+// One wrong field per mutation, and where the error must point.
+const invalid: { [N in MutationName]: [Record<string, unknown>, RegExp] } = {
+  publish: [{ ...valid.publish, html: "not-a-sha" }, /^publish\.args\.html:/],
+  addNote: [{ items: [{ kind: "annotation", target: 7 }] }, /^addNote\.args\.items\.0\.target:/],
+  releaseNote: [{ note: "" }, /^releaseNote\.args\.note:/],
+  discardNote: [{}, /^discardNote\.args\.note:/],
+  addReply: [{ text: 42 }, /^addReply\.args\.text:/],
+  grant: [{ ...valid.grant, name: "x".repeat(LIMITS.nameChars + 1) }, /^grant\.args\.name:/],
+  revoke: [{ name: "" }, /^revoke\.args\.name:/],
+  delete: [[] as unknown as Record<string, unknown>, /^delete\.args:/],
+};
+
+function error<T>(r: Parsed<T>): { code: string; message: string; key?: { clientId: string; n: number } } {
+  if (r.ok) assert.fail(`expected a parse error, got ${JSON.stringify(r.value)}`);
+  return { ...r.error, key: r.key };
+}
+
+function value<T>(r: Parsed<T>): T {
+  if (!r.ok) assert.fail(`${r.error.code}: ${r.error.message}`);
+  return r.value;
+}
+
+for (const name of Object.keys(valid) as MutationName[]) {
+  test(`${name}: a valid mutation round-trips through a text frame`, () => {
+    const frame = mutation(name, valid[name], key);
+    assert.equal(frame.v, SYNC_VERSION);
+    assert.deepEqual(value(parseClientFrame(JSON.stringify(frame))), frame);
+  });
+
+  test(`${name}: an invalid argument is rejected with its path and key`, () => {
+    const [args, where] = invalid[name];
+    const e = error(parseClientFrame({ v: 1, t: "mutation", ...key, name, args }));
+    assert.equal(e.code, "invalid");
+    assert.match(e.message, where);
+    assert.deepEqual(e.key, key, "the server acks it so the sender drops it");
+  });
+}
+
+test("a mutation needs a well-formed idempotency key; without one there is nothing to ack", () => {
+  for (const bad of [{ clientId: "short", n: 1 }, { clientId: key.clientId, n: 0 }, { clientId: key.clientId, n: 1.5 }, { clientId: key.clientId }]) {
+    const e = error(parseClientFrame({ v: 1, t: "mutation", name: "delete", args: {}, ...bad }));
+    assert.equal(e.code, "invalid");
+    assert.match(e.message, /^mutation\.(clientId|n):/);
+    assert.equal(e.key, undefined);
+  }
+});
+
+test("an unknown mutation or frame type from a client is invalid", () => {
+  const unknown = error(parseClientFrame({ v: 1, t: "mutation", ...key, name: "rename", args: {} }));
+  assert.match(unknown.message, /^mutation\.name:/);
+  assert.deepEqual(unknown.key, key);
+  assert.match(error(parseClientFrame({ v: 1, t: "mutation", ...key, name: "__proto__", args: {} })).message, /^mutation\.name:/);
+  assert.equal(error(parseClientFrame({ v: 1, t: "toString" })).code, "invalid");
+  assert.equal(error(parseClientFrame({ v: 1, t: "subscribe" })).code, "invalid");
+});
+
+test("unknown fields are kept on mutations, args, items and frames", () => {
+  const sent = { v: 1, t: "mutation", ...key, name: "addNote", trace: "t1", args: { items: [{ kind: "message", text: "hi", lang: "en" }], draft: true } };
+  assert.deepEqual(value(parseClientFrame(sent)), sent);
+  const pull = { v: 1, t: "pull", after: 0, since: "x" };
+  assert.deepEqual(value(parseClientFrame(pull)), pull);
+});
+
+test("version: below MIN_SYNC_VERSION needs an upgrade, a newer version is read as far as known", () => {
+  const old = MIN_SYNC_VERSION - 1;
+  assert.equal(error(parseClientFrame({ ...mutation("delete", {}, key), v: old })).code, "upgrade_required");
+  assert.equal(error(parseServerFrame({ v: old, t: "bye", viewer: "x" })).code, "upgrade_required");
+  assert.equal(error(parseClientFrame({ v: "1", t: "pull", after: 0 })).code, "invalid");
+  assert.equal(error(parseClientFrame({ t: "pull", after: 0 })).code, "invalid");
+
+  const newer = { ...mutation("addReply", { text: "ok" }, key), v: SYNC_VERSION + 1, args: { text: "ok", format: "md" } };
+  assert.deepEqual(value(parseClientFrame(newer)), newer);
+});
+
+test("size limits answer too_large", () => {
+  const big = JSON.stringify(mutation("addReply", { text: "x".repeat(LIMITS.frameBytes) }, key));
+  assert.deepEqual(error(parseClientFrame(big)), { code: "too_large", message: `frame is ${big.length} bytes; the limit is ${LIMITS.frameBytes}`, key: undefined });
+  // Bytes, not characters: 1,500 "é" are 3,000 bytes; 3,000 are under 4,096 characters but 6,000 bytes.
+  const note = (n: number) => mutation("addNote", { items: [{ kind: "message", text: "é".repeat(n) }] }, key);
+  assert.equal(parseClientFrame(JSON.stringify(note(1500))).ok, true);
+  const e = error(parseClientFrame(JSON.stringify(note(3000))));
+  assert.equal(e.code, "too_large");
+  assert.match(e.message, /4096/);
+  assert.deepEqual(e.key, key);
+});
+
+test("a frame that is not a JSON object is invalid", () => {
+  for (const data of ["{", "[]", "null", "7", 7, null]) {
+    assert.equal(error(parseClientFrame(data)).code, "invalid");
+    assert.equal(error(parseServerFrame(data)).code, "invalid");
+  }
+});
+
+test("presence frames from a client", () => {
+  for (const frame of [
+    { v: 1, t: "hello", status: "viewing" },
+    { v: 1, t: "status", status: "writing" },
+    { v: 1, t: "focus", statement: "intro" },
+    { v: 1, t: "focus", statement: null },
+    { v: 1, t: "bye" },
+  ]) {
+    assert.deepEqual(value(parseClientFrame(frame)), frame);
+  }
+  assert.match(error(parseClientFrame({ v: 1, t: "status", status: "typing" })).message, /^status\.status:/);
+  assert.match(error(parseClientFrame({ v: 1, t: "focus", statement: "not an id" })).message, /^focus\.statement:/);
+  assert.match(error(parseClientFrame({ v: 1, t: "focus" })).message, /^focus\.statement:/);
+});
+
+test("presence frames from the server", () => {
+  const hello = { v: 1, t: "hello", viewer: { id: "c1", name: "Ana", colour: "#3b82f6", role: "reviewer" }, status: "viewing", focus: null, self: false };
+  assert.deepEqual(value(parseServerFrame(hello)), hello);
+  assert.deepEqual(value(parseServerFrame({ v: 1, t: "focus", viewer: "c1", statement: "intro" })), { v: 1, t: "focus", viewer: "c1", statement: "intro" });
+  assert.match(error(parseServerFrame({ ...hello, viewer: { ...hello.viewer, colour: "blue" } })).message, /^hello\.viewer\.colour:/);
+  assert.match(error(parseServerFrame({ v: 1, t: "bye" })).message, /^bye\.viewer:/);
+});
+
+const rows = {
+  page: { v: 1, type: "page", id: "p".repeat(22), seq: 1, title: "Plan", cliVersion: "0.9.0", html: sha, packs: [], auto: false, unlisted: false, presence: true, publishedAt: 1, expiresAt: 2, deleted: false },
+  note: { v: 1, type: "note", id: "n1", seq: 2, author: "Ana", items: [{ kind: "message", text: "hi" }], at: 3, state: "held" },
+  reply: { v: 1, type: "reply", id: "r1", seq: 3, text: "ok", at: 4 },
+  acl: { v: 1, type: "acl", id: "Ana", seq: 4, name: "Ana", grantedAt: 1, expiresAt: null, revoked: false },
+};
+
+test("changes: every row type parses; unknown rows are skipped but kept; the cursor stands", () => {
+  const future = { v: SYNC_VERSION + 1, type: "reaction", id: "x1", seq: 5, emoji: "+1" };
+  const withExtra = { ...rows.note, pinned: true };
+  const got = value(parseServerFrame(JSON.stringify({ v: 1, t: "changes", rows: [rows.page, withExtra, rows.reply, rows.acl, future], cursor: 5, more: false })));
+  assert.ok(got && got.t === "changes");
+  assert.deepEqual(got.rows, [rows.page, withExtra, rows.reply, rows.acl]);
+  assert.deepEqual(got.skipped, [future]);
+  assert.equal(got.cursor, 5);
+});
+
+test("changes: a malformed row fails the frame with the row's path", () => {
+  const bad = { ...rows.note, state: "pending" };
+  assert.match(error(parseServerFrame({ v: 1, t: "changes", rows: [rows.reply, bad], cursor: 2 })).message, /^changes\.rows\.1\.state:/);
+  assert.match(error(parseServerFrame({ v: 1, t: "changes", rows: [{ type: "reaction", id: "x" }], cursor: 2 })).message, /^changes\.rows\.0\./);
+  assert.equal(error(parseServerFrame({ v: 1, t: "changes", rows: [{ ...rows.reply, v: 0 }], cursor: 2 })).code, "upgrade_required");
+  assert.match(error(parseServerFrame({ v: 1, t: "changes", rows: [], cursor: -1 })).message, /^changes\.cursor:/);
+});
+
+test("server frames: ack, error, and an unknown type parses to null", () => {
+  const ack = { v: 1, t: "ack", ...key, error: { code: "rate_limited", message: "60 notes per hour", retryAfter: 120 } };
+  assert.deepEqual(value(parseServerFrame(ack)), ack);
+  assert.match(error(parseServerFrame({ ...ack, error: { code: "teapot", message: "" } })).message, /^ack\.error\.code:/);
+  const err = { v: 1, t: "error", code: "upgrade_required", message: "austere-axi 0.9.0 or later is required" };
+  assert.deepEqual(value(parseServerFrame(err)), err);
+  assert.equal(value(parseServerFrame({ v: 1, t: "cursor", at: 3 })), null);
+});
+
+test("handshake: credentials ride in Sec-WebSocket-Protocol", () => {
+  const owner = "o".repeat(43);
+  const invite = "i_-".repeat(10);
+  const protocols = syncProtocols({ owner, invite });
+  assert.equal(protocols[0], SUBPROTOCOL);
+  assert.deepEqual(readProtocols(protocols.join(", ")), { sync: true, owner, invite });
+  assert.deepEqual(readProtocols(`austere-owner.${owner}`), { sync: false, owner });
+  assert.deepEqual(readProtocols("austere-invite.bad token, austere-invite.a"), { sync: false });
+  assert.deepEqual(readProtocols(null), { sync: false });
+  assert.throws(() => syncProtocols({ invite: "has space in it......" }), /base64url/);
+});

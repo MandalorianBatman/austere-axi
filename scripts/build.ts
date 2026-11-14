@@ -8,6 +8,7 @@
 //   catalog.json     every component (signature, group, tier, examples) for `components`
 //   chrome/          review UI served by the local server
 //   cli.mjs          the CLI + server, dependencies bundled
+//   sync.mjs         hosted-page sync protocol ("austere-axi/sync"), zod bundled
 import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
@@ -96,6 +97,24 @@ async function buildPackKit() {
   console.log(`packkit  dist/pack-kit.mjs ${(fs.statSync(out).size / 1024).toFixed(0)} KB`);
 }
 
+// "austere-axi/sync" for austere-cloud and the CLI: platform-neutral ESM (Workers, browsers, Node), zod inside.
+async function buildSync() {
+  const out = path.join(DIST, "sync.mjs");
+  await esbuild.build({
+    entryPoints: [path.join(ROOT, "src/shared/sync.ts")],
+    bundle: true,
+    platform: "neutral",
+    format: "esm",
+    target: "es2022",
+    minify: true,
+    legalComments: "none",
+    plugins: [zodLocalesPlugin],
+    outfile: out,
+    logLevel: "warning",
+  });
+  console.log(`sync     dist/sync.mjs ${(fs.statSync(out).size / 1024).toFixed(0)} KB`);
+}
+
 async function buildSpec() {
   const lib = await loadLibrary();
   const prompt = lib.prompt();
@@ -144,6 +163,7 @@ async function buildCli() {
 
 if (want("packs") || (want("runtime") && !packsBuilt())) await buildPacks();
 if (want("packkit")) await buildPackKit();
+if (want("sync")) await buildSync();
 if (want("runtime")) await buildRuntime();
 if (want("spec")) await buildSpec();
 if (want("chrome") && fs.existsSync(path.join(ROOT, "src/chrome/chrome.ts"))) await buildChrome();

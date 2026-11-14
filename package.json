@@ -18,6 +18,10 @@
     "./pack-kit": {
       "types": "./types/pack-kit.d.ts"
     },
+    "./sync": {
+      "types": "./types/sync.d.ts",
+      "default": "./dist/sync.mjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [
