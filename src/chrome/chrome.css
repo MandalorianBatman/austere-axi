@@ -164,7 +164,7 @@ code {
     opacity: 0.35;
   }
 }
-/* Presence: one chip per other viewer, in their colour. Away is faded; writing gets a dot. */
+/* Presence: your own chip first (ringed), then one per other viewer, in their colour. Away is faded; writing gets a dot. */
 .viewers {
   display: inline-flex;
   align-items: center;
@@ -191,6 +191,11 @@ code {
 }
 .viewer:disabled {
   cursor: default;
+}
+.viewer.self {
+  cursor: default;
+  box-shadow: 0 0 0 1px var(--text);
+  margin-right: 6px;
 }
 .viewer.away {
   opacity: 0.45;
