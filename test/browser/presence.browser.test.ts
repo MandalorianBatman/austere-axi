@@ -18,6 +18,7 @@ import { launchBrowser } from "../../scripts/lib/browser.ts";
 
 const ID = "pg_presence";
 const BASE = `/p/${ID}`;
+const ASSET = "a".repeat(43);
 const SHELL_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const FRAME_CSP =
@@ -43,7 +44,7 @@ let gone = false;
 let upgrades = 0;
 
 function shell() {
-  const boot = { id: ID, title: "Plan", viewer: { role: "reviewer", name: "" }, hosted: { base: BASE } };
+  const boot = { id: ID, title: "Plan", artifactUrl: `${BASE}/a/`, viewer: { role: "reviewer", name: "" }, hosted: { base: BASE } };
   return `<!doctype html>
 <html lang="en" data-theme="dark"><head><meta charset="utf-8"><title>Plan · austere</title>
 <link rel="stylesheet" href="/rt/chrome/chrome.css">
@@ -59,7 +60,7 @@ function handle(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": SHELL_CSP });
     return res.end(shell());
   }
-  if (url.pathname === `${BASE}/a/`) {
+  if (url.pathname === `${BASE}/a/${ASSET}/`) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": FRAME_CSP });
     return res.end(ARTIFACT);
   }
@@ -68,10 +69,11 @@ function handle(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(200, { "content-type": asset.endsWith(".css") ? "text/css" : "text/javascript" });
     return res.end(fs.readFileSync(asset));
   }
-  // The chrome still polls the conversation; an empty one keeps it quiet.
-  if (url.pathname === `${BASE}/conversation`) {
+  // An unlisted page: the asset token comes without an invite, and without a name (the prompt names the viewer).
+  if (url.pathname === `${BASE}/asset-token` && req.method === "POST") {
+    if (gone) return res.writeHead(404).end("not found");
     res.writeHead(200, { "content-type": "application/json" });
-    return res.end(JSON.stringify({ publishedAt: 1, cursor: "0.0", notes: [], replies: [] }));
+    return res.end(JSON.stringify({ token: ASSET, expiresAt: Date.now() + 600_000, name: null }));
   }
   res.writeHead(404).end("not found");
 }
@@ -122,7 +124,10 @@ before(async () => {
     wss.handleUpgrade(req, sock, head, (ws) => {
       socket = ws;
       ws.on("message", (data) => {
-        received.push(JSON.parse(String(data)));
+        const frame = JSON.parse(String(data));
+        // The same socket carries the row feed: answer the pull with an empty page, record presence.
+        if (frame.t === "pull") return ws.send(JSON.stringify({ v: 1, t: "changes", rows: [], cursor: 0 }));
+        received.push(frame);
         wake?.();
       });
     });

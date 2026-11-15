@@ -63,12 +63,22 @@ export function msEnv(name: string, fallback: number): number {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+/**
+ * The real path of `file`. A file that no longer exists resolves through its nearest existing
+ * folder, so a path through a symlinked folder still names the file it was recorded under.
+ */
 export function canonicalFile(file: string): string {
   const abs = path.resolve(file);
-  try {
-    return fs.realpathSync(abs);
-  } catch {
-    return abs;
+  const rest: string[] = [];
+  for (let dir = abs; ; ) {
+    try {
+      return path.join(fs.realpathSync(dir), ...rest);
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) return abs;
+      rest.unshift(path.basename(dir));
+      dir = parent;
+    }
   }
 }
 

@@ -17,8 +17,8 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { freePort } from "./port.ts";
 import { ownerHeaders } from "./owner.ts";
-import { SUBPROTOCOL, SYNC_VERSION, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
-import type { MutationArgs, PageRow, ServerFrame, SyncError } from "../src/shared/sync.ts";
+import { SUBPROTOCOL, SYNC_VERSION, grantId, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
+import type { AclRow, MutationArgs, PageRow, ServerFrame, SyncError } from "../src/shared/sync.ts";
 import { format } from "../src/cli/output.ts";
 
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
@@ -40,6 +40,8 @@ interface StubPage {
   owner: string;
   row: PageRow | null;
   notes: number;
+  /** Invites by name: the acl row and the token hash the grant sent. */
+  acl: Map<string, { row: AclRow; tokenHash: string }>;
 }
 
 const stub = {
@@ -51,12 +53,19 @@ const stub = {
   publishes: [] as MutationArgs["publish"][],
   /** The next HTTP request gets this answer. */
   fail: null as { status: number; error: string } | null,
-  /** The next mutation is acked with this error. */
+  /** The next mutation (named `ackErrorOn`, or any) is acked with this error. */
   ackError: null as SyncError | null,
+  ackErrorOn: null as string | null,
   /** The next handshake is refused like this. */
   refuse: null as { status: number; code: string; message: string } | null,
   /** Close the socket right after the next ack, before the page row is pulled. */
   closeAfterAck: false,
+  /** Close the socket when the next pull arrives: every mutation is acked, no rows come back. */
+  closeBeforePull: false,
+  /** On the next pull, send the page row with more:true, then close before the rest. */
+  splitPull: false,
+  /** On the next pull, first re-grant this name with another token, as another machine would. */
+  regrantBeforePull: null as string | null,
   seq: 0,
 };
 let CLOUD = "";
@@ -90,18 +99,61 @@ function ownerSocket(ws: WebSocket, id: string) {
     const p = stub.pages.get(id) as StubPage;
     if (f.t === "pull") {
       stub.requests.push(`ws pull ${f.after}`);
+      if (stub.closeBeforePull) {
+        stub.closeBeforePull = false;
+        return ws.close(1001);
+      }
+      if (stub.regrantBeforePull) {
+        const a = p.acl.get(stub.regrantBeforePull)!;
+        const tokenHash = crypto.createHash("sha256").update("another machine").digest("base64url");
+        a.row = { ...a.row, grantedAt: Date.now() + 1, grant: grantId(tokenHash), seq: ++stub.seq };
+        a.tokenHash = tokenHash;
+        stub.regrantBeforePull = null;
+      }
+      if (stub.splitPull) {
+        stub.splitPull = false;
+        send(ws, { v: SYNC_VERSION, t: "changes", rows: [p.row], cursor: p.row!.seq, more: true });
+        return ws.close(1001);
+      }
       // A row type this CLI does not know is skipped, as the contract requires.
       const rows: unknown[] = [{ v: SYNC_VERSION + 1, type: "future", id: "x", seq: ++stub.seq }];
       if (p.row) rows.push(p.row);
+      for (const a of p.acl.values()) rows.push(a.row);
       return send(ws, { v: SYNC_VERSION, t: "changes", rows, cursor: stub.seq });
     }
     if (f.t !== "mutation") return;
     stub.requests.push(`ws ${f.name}`);
     const ack = { v: SYNC_VERSION, t: "ack" as const, clientId: f.clientId, n: f.n };
-    if (stub.ackError) {
+    if (stub.ackError && (stub.ackErrorOn === null || stub.ackErrorOn === f.name)) {
       const error = stub.ackError;
       stub.ackError = null;
+      stub.ackErrorOn = null;
       return send(ws, { ...ack, error });
+    }
+    if (f.name === "grant") {
+      const args = f.args as MutationArgs["grant"];
+      // As the service: grantedAt stays while the token stays the same.
+      const prev = p.acl.get(args.name);
+      const grantedAt = prev && prev.tokenHash === args.tokenHash ? prev.row.grantedAt : Date.now();
+      const row: AclRow = {
+        v: SYNC_VERSION,
+        type: "acl",
+        id: args.name,
+        seq: ++stub.seq,
+        name: args.name,
+        grantedAt,
+        expiresAt: args.expiresAt,
+        revoked: false,
+        grant: grantId(args.tokenHash),
+      };
+      p.acl.set(args.name, { row, tokenHash: args.tokenHash });
+      return send(ws, ack);
+    }
+    if (f.name === "revoke") {
+      const a = p.acl.get((f.args as MutationArgs["revoke"]).name);
+      if (!a) return send(ws, { ...ack, error: { code: "invalid", message: `invite ${(f.args as MutationArgs["revoke"]).name} does not exist` } });
+      a.row = { ...a.row, revoked: true, seq: ++stub.seq };
+      return send(ws, ack);
     }
     if (f.name === "publish") {
       const args = f.args as MutationArgs["publish"];
@@ -154,7 +206,7 @@ before(async () => {
       }
       if (req.method === "POST" && url === "/api/pages") {
         const id = crypto.randomBytes(16).toString("base64url");
-        stub.pages.set(id, { owner: auth, row: null, notes: 0 });
+        stub.pages.set(id, { owner: auth, row: null, notes: 0, acl: new Map() });
         return json(res, 201, { id, url: `${CLOUD}/p/${id}` });
       }
       if (req.method === "GET" && url === "/api/pages") {
@@ -199,7 +251,11 @@ beforeEach(() => {
   stub.publishes.length = 0;
   stub.fail = null;
   stub.ackError = null;
+  stub.ackErrorOn = null;
   stub.refuse = null;
+  stub.closeBeforePull = false;
+  stub.splitPull = false;
+  stub.regrantBeforePull = null;
 });
 
 function cli(args: string[], env: Record<string, string> = {}): Promise<{ code: number | null; out: string }> {
@@ -217,7 +273,7 @@ function cli(args: string[], env: Record<string, string> = {}): Promise<{ code: 
 interface CloudJson {
   url: string;
   token: string;
-  pages: Record<string, { id: string; auto: boolean }>;
+  pages: Record<string, { id: string; auto: boolean; unlisted: boolean; presence: boolean; invites: Record<string, { token: string; expiresAt: number | null }> }>;
 }
 const cloudState = (): CloudJson => JSON.parse(fs.readFileSync(path.join(STATE, "cloud.json"), "utf8"));
 /** A top-level output field, unquoted: a Windows path has backslashes, so the output JSON-quotes it. */
@@ -252,10 +308,13 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   assert.equal(stub.objects.get(sha256(html))?.data.toString(), html, "only the runtime tag changes");
   assert.match(stub.objects.get(sha256(html))?.type ?? "", /^text\/html/);
   assert.deepEqual(stub.publishes, [{ title: "Plan", cliVersion: VERSION, html: sha256(html), packs: [], auto: false, unlisted: false, presence: true }]);
-  assert.equal(field(r.out, "url"), `${CLOUD}/p/${id}`);
+  assert.equal(field(r.out, "id"), id);
+  assert.equal(field(r.out, "url"), undefined, "an invite-only page has no link to hand out without an invite");
+  assert.equal(field(r.out, "access"), "invite-only");
+  assert.match(r.out, /Nobody can open this page yet: add --invite <name>, or --unlisted/);
   assert.equal(first.url, CLOUD);
   assert.ok(first.token.length >= 43);
-  assert.deepEqual(first.pages[abs], { id, auto: false });
+  assert.deepEqual(first.pages[abs], { id, auto: false, unlisted: false, presence: true, invites: {} });
   if (process.platform !== "win32") assert.equal(fs.statSync(path.join(STATE, "cloud.json")).mode & 0o777, 0o600);
 
   // Republish: same id, no new page, the same token on the socket.
@@ -263,21 +322,21 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   r = await cli(["publish", file, "--auto", "--no-presence"]);
   assert.equal(r.code, 0, r.out);
   assert.equal(field(r.out, "status"), "updated");
-  assert.equal(field(r.out, "url"), `${CLOUD}/p/${id}`);
   assert.equal(field(r.out, "presence"), "off");
+  assert.equal(field(r.out, "id"), id);
   assert.ok(!stub.requests.includes("POST /api/pages"));
   assert.ok(stub.requests.includes(`WS /api/pages/${id}/sync`));
   assert.equal(stub.publishes.at(-1)?.auto, true);
   assert.equal(stub.publishes.at(-1)?.presence, false);
   assert.match(field(r.out, "next") ?? "", /--auto --no-presence again/);
-  assert.deepEqual(cloudState().pages[abs], { id, auto: true });
+  assert.deepEqual(cloudState().pages[abs], { id, auto: true, unlisted: false, presence: false, invites: {} });
 
   // --new: a fresh page, and the file now maps to it.
   r = await cli(["publish", file, "--new"]);
   assert.equal(field(r.out, "status"), "published");
   const second = cloudState().pages[abs].id;
   assert.notEqual(second, id);
-  assert.equal(field(r.out, "url"), `${CLOUD}/p/${second}`);
+  assert.equal(field(r.out, "id"), second);
 
   // list: both pages, the current one mapped back to the file.
   r = await cli(["publish", "list"]);
@@ -347,7 +406,7 @@ test("a socket lost after the publish ack still records the page, without an exp
   const id = cloudState().pages[fs.realpathSync(file)].id;
   r = await cli(["publish", file]);
   assert.equal(field(r.out, "status"), "updated", "the next publish reuses the page instead of making another");
-  assert.equal(field(r.out, "url"), `${CLOUD}/p/${id}`);
+  assert.equal(field(r.out, "id"), id);
 });
 
 test("a token for another service URL is not sent there", async () => {
@@ -370,6 +429,240 @@ test("a page that cannot be bundled fails before any request", async () => {
   assert.equal(r.code, 1);
   assert.match(r.out, /images the hosted page could not show: nope\.png \(no such file next to the page\)/);
   assert.deepEqual(stub.requests, []);
+});
+
+// ── invites ──
+
+const tokenHash = (token: string) => crypto.createHash("sha256").update(token).digest("base64url");
+/** The `name: …` / `link: …` pairs of the printed invites list. */
+const links = (out: string) =>
+  Object.fromEntries(
+    [...out.matchAll(/- name: (.+)\n((?: {4,}\S.*\n)*)/g)].flatMap((x) => {
+      const link = / link: (\S+)/.exec(x[2]);
+      // The printer quotes values it cannot leave bare (emoji, `: `); names come back as typed.
+      return link ? [[x[1].startsWith('"') ? JSON.parse(x[1]) : x[1], link[1]]] : [];
+    }),
+  );
+
+test("--invite grants each name on the publish socket and prints its own link; the same name keeps its link", async () => {
+  const file = path.join(WORK, "invite.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  const abs = fs.realpathSync(file);
+  const before = Date.now();
+  let r = await cli(["publish", file, "--invite", "Ana", "--invite", "Ben", "--expires", "7d"]);
+  assert.equal(r.code, 0, r.out);
+  const id = cloudState().pages[abs].id;
+  assert.deepEqual(stub.requests.filter((x) => x.startsWith("ws")), ["ws publish", "ws grant", "ws grant", "ws pull 0"]);
+  assert.equal(field(r.out, "access"), "invite-only");
+  assert.doesNotMatch(r.out, /Nobody can open/);
+  const first = links(r.out);
+  assert.deepEqual(Object.keys(first), ["Ana", "Ben"]);
+  const acl = stub.pages.get(id)!.acl;
+  for (const name of ["Ana", "Ben"]) {
+    const m = new RegExp(`^${CLOUD}/p/${id}#i=([A-Za-z0-9_-]{43})$`).exec(first[name]);
+    assert.ok(m, first[name]);
+    assert.equal(acl.get(name)!.tokenHash, tokenHash(m[1]), "only the token's SHA-256 is sent");
+    const expires = acl.get(name)!.row.expiresAt!;
+    assert.ok(expires >= before + 7 * 86400000 && expires <= Date.now() + 7 * 86400000);
+  }
+  assert.notEqual(first.Ana, first.Ben);
+  assert.deepEqual(Object.keys(cloudState().pages[abs].invites), ["Ana", "Ben"]);
+
+  // Again with Ana: the same link and expiry; Ben stays; no --invite sends no grant.
+  stub.requests.length = 0;
+  r = await cli(["publish", file, "--invite", " Ana "]);
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(links(r.out), { Ana: first.Ana });
+  assert.equal(acl.get("Ana")!.row.expiresAt, cloudState().pages[abs].invites.Ana.expiresAt);
+  assert.ok(cloudState().pages[abs].invites.Ana.expiresAt! > Date.now());
+  stub.requests.length = 0;
+  r = await cli(["publish", file]);
+  assert.deepEqual(stub.requests.filter((x) => x.startsWith("ws")), ["ws publish", "ws pull 0"]);
+  assert.doesNotMatch(r.out, /Nobody can open/, "earlier invites still open it");
+
+  // invites: both live, with this machine's links.
+  r = await cli(["publish", "invites", file]);
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(links(r.out), first);
+  assert.equal(r.out.match(/status: live/g)?.length, 2);
+
+  // revoke Ben: a revoke mutation; Ben is listed as revoked, without a link, and forgotten locally.
+  stub.requests.length = 0;
+  r = await cli(["publish", "revoke", file, "Ben"]);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(field(r.out, "status"), "revoked");
+  assert.deepEqual(stub.requests, [`WS /api/pages/${id}/sync`, "ws revoke"]);
+  assert.equal(acl.get("Ben")!.row.revoked, true);
+  assert.deepEqual(Object.keys(cloudState().pages[abs].invites), ["Ana"]);
+  r = await cli(["publish", "invites", file]);
+  assert.deepEqual(links(r.out), { Ana: first.Ana });
+  assert.match(r.out, /- name: Ben\n\s+status: revoked\n/);
+
+  r = await cli(["publish", "revoke", file, "Zoe"]);
+  assert.equal(r.code, 1);
+  assert.ok(r.out.includes("rejected revoke Zoe: invalid: invite Zoe does not exist"), r.out);
+});
+
+test("--unlisted publishes the open link and prints the page URL", async () => {
+  const file = path.join(WORK, "open.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  const r = await cli(["publish", file, "--unlisted"]);
+  assert.equal(r.code, 0, r.out);
+  const id = cloudState().pages[fs.realpathSync(file)].id;
+  assert.equal(stub.publishes.at(-1)?.unlisted, true);
+  assert.equal(field(r.out, "url"), `${CLOUD}/p/${id}`);
+  assert.match(field(r.out, "access") ?? "", /^"?unlisted/);
+  assert.match(field(r.out, "next") ?? "", /--unlisted again/);
+});
+
+test("invite flags are checked before any request; a failed grant still records the published page", async () => {
+  const file = path.join(WORK, "flags.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  for (const [args, msg] of [
+    [["--expires", "7d"], /--expires applies to the invites of this publish/],
+    [["--invite", "Ana", "--expires", "soon"], /use a duration like 30m, 12h, 7d or 2w/],
+    [["--invite", "  "], /must be 1-40 characters/],
+    [["--invite", "N".repeat(41)], /must be 1-40 characters/],
+    // The schema counts UTF-16 units: 21 emoji are 42, which the service would refuse after the publish.
+    [["--invite", "😀".repeat(21)], /must be 1-40 characters/],
+  ] as const) {
+    const r = await cli(["publish", file, ...args]);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, msg);
+  }
+  assert.deepEqual(stub.requests, []);
+  assert.match((await cli(["publish", "invites", file])).out, /has not been published from this machine/);
+
+  stub.ackError = { code: "invalid", message: "grant.tokenHash belongs to another invite" };
+  stub.ackErrorOn = "grant";
+  let r = await cli(["publish", file, "--invite", "Ana"]);
+  assert.equal(r.code, 1);
+  assert.ok(r.out.includes("rejected grant Ana: invalid: grant.tokenHash belongs to another invite"), r.out);
+  const id = cloudState().pages[fs.realpathSync(file)].id;
+  r = await cli(["publish", file, "--invite", "Ana"]);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(field(r.out, "status"), "updated");
+  assert.equal(cloudState().pages[fs.realpathSync(file)].id, id);
+});
+
+test("invite edge cases: special names keep their link, missing sources can still revoke, re-grants elsewhere hide stale links, dead invites warn", async () => {
+  const file = path.join(WORK, "edge.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  const abs = fs.realpathSync(file);
+  const emoji = "😀".repeat(20); // 40 UTF-16 units: the limit
+
+  // "__proto__" and "constructor" are names like any other: saved, and re-sent with the same link.
+  let r = await cli(["publish", file, "--invite", "__proto__", "--invite", "constructor", "--invite", emoji]);
+  assert.equal(r.code, 0, r.out);
+  const first = links(r.out);
+  assert.deepEqual(Object.keys(first), ["__proto__", "constructor", emoji]);
+  assert.deepEqual(Object.keys(cloudState().pages[abs].invites).sort(), ["__proto__", "constructor", emoji].sort());
+  r = await cli(["publish", file, "--invite", "__proto__", "--invite", "constructor"]);
+  assert.equal(r.code, 0, r.out);
+  // Entries, not object literals: `{ __proto__: … }` would set a prototype instead of a key.
+  assert.deepEqual(Object.entries(links(r.out)), [
+    ["__proto__", first["__proto__"]],
+    ["constructor", first["constructor"]],
+  ]);
+  const id = cloudState().pages[abs].id;
+  const acl = stub.pages.get(id)!.acl;
+
+  // Another machine re-grants "constructor" (a new token): this machine no longer shows its old link.
+  const other = acl.get("constructor")!;
+  acl.set("constructor", { row: { ...other.row, grantedAt: other.row.grantedAt + 1, grant: "x".repeat(16), seq: ++stub.seq }, tokenHash: "x".repeat(43) });
+  r = await cli(["publish", "invites", file]);
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(Object.entries(links(r.out)).sort(), [
+    ["__proto__", first["__proto__"]],
+    [emoji, first[emoji]],
+  ]);
+  assert.match(r.out, /- name: constructor\n\s+status: live\n/);
+
+  // The source is gone: invites and revoke still work from the saved page entry.
+  fs.renameSync(file, `${file}.moved`);
+  try {
+    r = await cli(["publish", "revoke", file, "constructor"]);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(field(r.out, "status"), "revoked");
+    r = await cli(["publish", "invites", file]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /- name: constructor\n\s+status: revoked\n/);
+  } finally {
+    fs.renameSync(`${file}.moved`, file);
+  }
+
+  // Every saved invite is revoked or expired: a publish without --invite warns that nobody can open the page.
+  acl.get("__proto__")!.row.expiresAt = Date.now() - 1;
+  acl.get(emoji)!.row.revoked = true;
+  r = await cli(["publish", file]);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Nobody can open this page yet/);
+});
+
+test("invites: the link shows only for the token the name has now, also when rows are lost or a re-grant races the pull", async () => {
+  const file = path.join(WORK, "grant-id.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  // An unlisted, auto page: the suggested commands must keep both, or they would close the open link.
+  let r = await cli(["publish", file, "--invite", "Ana", "--unlisted", "--auto"]);
+  assert.equal(r.code, 0, r.out);
+  const ana = links(r.out).Ana;
+  const id = cloudState().pages[fs.realpathSync(file)].id;
+  const acl = stub.pages.get(id)!.acl;
+  assert.equal(acl.get("Ana")!.row.grant, grantId(acl.get("Ana")!.tokenHash), "the row names its token by a hash prefix");
+
+  // Ben new, but the socket drops before the rows come back: the link is still the live one.
+  stub.closeBeforePull = true;
+  r = await cli(["publish", file, "--invite", "Ben", "--unlisted", "--auto"]);
+  assert.equal(r.code, 0, r.out);
+  const ben = links(r.out).Ben;
+  r = await cli(["publish", "invites", file]);
+  assert.deepEqual(links(r.out), { Ana: ana, Ben: ben });
+
+  // Another machine re-grants Ana between this run's ack and its pull: this machine's link is dead.
+  stub.regrantBeforePull = "Ana";
+  r = await cli(["publish", file, "--invite", "Ana", "--unlisted", "--auto"]);
+  assert.equal(r.code, 0, r.out);
+  r = await cli(["publish", "invites", file]);
+  assert.deepEqual(links(r.out), { Ben: ben });
+  // Output values are JSON-quoted when they hold quotes or backslashes (a Windows path does): decode before matching.
+  const raw = /- name: Ana\n\s+status: live\n\s+note: (.*)\n/.exec(r.out)?.[1] ?? "";
+  const note = raw.startsWith('"') ? (JSON.parse(raw) as string) : raw;
+  const again = /^granted again from another machine, which has the link; austere-axi publish (.+) --auto --unlisted --invite Ana makes this machine's link the live one again/.exec(note);
+  assert.ok(again, note);
+  assert.match(again[1], /grant-id\.html"?$/);
+  assert.match(field(r.out, "next") ?? "", /grant-id\.html"? --auto --unlisted --invite <name> adds one/);
+});
+
+test("a pull cut off after the page row leaves the invite count unknown: no false nobody-can-open warning", async () => {
+  const file = path.join(WORK, "split-pull.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  assert.equal((await cli(["publish", file, "--invite", "Ana"])).code, 0);
+  // The page row arrives with more:true, then the socket drops before the invites.
+  stub.splitPull = true;
+  const r = await cli(["publish", file]);
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /Nobody can open/);
+});
+
+test("revoke and invites find a deleted file published through a symlinked folder", { skip: process.platform === "win32" && "symlinks need privileges" }, async () => {
+  const real = fs.mkdtempSync(path.join(os.tmpdir(), "austere-publish-real-"));
+  const link = path.join(WORK, `linked-${process.pid}`);
+  fs.symlinkSync(real, link, "dir");
+  try {
+    const file = path.join(link, "plan.html");
+    fs.writeFileSync(file, page('root = TextContent("x")'));
+    assert.equal((await cli(["publish", file, "--invite", "Ana"])).code, 0);
+    fs.rmSync(path.join(real, "plan.html"));
+    let r = await cli(["publish", "invites", file]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /- name: Ana\n\s+status: live/);
+    r = await cli(["publish", "revoke", file, "Ana"]);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(field(r.out, "status"), "revoked");
+  } finally {
+    fs.rmSync(link, { force: true });
+    fs.rmSync(real, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
 });
 
 // ── bundling ──
