@@ -134,7 +134,38 @@ function clip(text: string | null | undefined, max: number): string {
   return t.length > max ? t.slice(0, max - 1) + "…" : t;
 }
 
+/**
+ * The client box of an element. A shape inside an SVG is measured from its geometry (getBBox
+ * through getScreenCTM): Firefox's getBoundingClientRect, and a Range over its contents, count a
+ * nested <svg> (a diagram node's icon) far wider than it draws, so the box ran off the node.
+ */
+function clientRect(el: Element): DOMRect {
+  if (el instanceof SVGGraphicsElement && el.ownerSVGElement) {
+    const m = el.getScreenCTM();
+    let b: DOMRect | null = null;
+    try {
+      b = el.getBBox();
+    } catch {
+      // Not rendered: Firefox throws where Chromium returns an empty box.
+    }
+    if (m && b) {
+      const corners = [
+        new DOMPoint(b.x, b.y),
+        new DOMPoint(b.x + b.width, b.y),
+        new DOMPoint(b.x, b.y + b.height),
+        new DOMPoint(b.x + b.width, b.y + b.height),
+      ].map((p) => p.matrixTransform(m));
+      const xs = corners.map((p) => p.x);
+      const ys = corners.map((p) => p.y);
+      const [left, top] = [Math.min(...xs), Math.min(...ys)];
+      return new DOMRect(left, top, Math.max(...xs) - left, Math.max(...ys) - top);
+    }
+  }
+  return el.getBoundingClientRect();
+}
+
 export function boxOf(node: Element): DOMRect {
+  if (node instanceof SVGGraphicsElement && node.ownerSVGElement) return clientRect(node);
   const r = document.createRange();
   r.selectNodeContents(node);
   const rect = r.getBoundingClientRect();
@@ -597,7 +628,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
    * rendered children are measured instead: their border boxes stop at what they show.
    */
   function renderedBox(el: Element): { left: number; top: number; right: number; bottom: number } {
-    if (getComputedStyle(el).display !== "contents") return el.getBoundingClientRect();
+    if (getComputedStyle(el).display !== "contents") return clientRect(el);
     let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
     const add = (r: DOMRect) => {
       if (!r.width && !r.height) return;
@@ -607,7 +638,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       for (const c of node.childNodes) {
         if (c instanceof Element) {
           if (getComputedStyle(c).display === "contents") walk(c);
-          else add(c.getBoundingClientRect());
+          else add(clientRect(c));
         } else if (c.nodeType === Node.TEXT_NODE && c.textContent?.trim()) {
           const range = document.createRange();
           range.selectNodeContents(c);

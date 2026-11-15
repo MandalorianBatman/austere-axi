@@ -171,12 +171,18 @@ test("hosted chrome presence: roster chips, focus outlines, own focus and status
     assert.deepEqual(await frameFrom("hello"), { v: 1, t: "hello", status: "viewing", name: "Ana" });
     assert.ok(await page.locator(".viewers").isHidden(), "no chips before the roster");
 
-    // The roster: Bo (focused on plan) and the owner, then this viewer (self, no chip).
+    // The roster: Bo (focused on plan) and the owner, then this viewer (self): its own chip first, named as the composer posts.
     play({ v: 1, t: "hello", viewer: BO, status: "viewing", focus: "plan", self: false });
     play({ v: 1, t: "hello", viewer: OWNER, status: "away", focus: null, self: false });
     play({ v: 1, t: "hello", viewer: { id: "v-ana", name: "Ana", colour: "#46a758", role: "reviewer" }, status: "viewing", focus: null, self: true });
-    await page.waitForFunction(() => document.querySelectorAll(".viewers .viewer").length === 2);
-    const chips = page.locator(".viewers .viewer");
+    await page.waitForFunction(() => document.querySelectorAll(".viewers .viewer").length === 3);
+    const me = page.locator(".viewers .viewer").first();
+    assert.equal(await me.innerText(), "A", "the header chip is this viewer, not the owner");
+    assert.equal(await me.getAttribute("title"), "You · Ana");
+    assert.match(await me.getAttribute("class") ?? "", /\bself\b/);
+    assert.match(await page.locator(".composer-hint").innerText(), /^Posting as Ana/);
+    const chips = page.locator(".viewers button.viewer");
+    assert.equal(await chips.count(), 2, "the others");
     assert.equal(await chips.nth(0).innerText(), "B");
     assert.match((await chips.nth(0).getAttribute("title")) ?? "", /^Bo · viewing · click to see where$/);
     assert.match((await chips.nth(1).getAttribute("class")) ?? "", /\baway\b/);
@@ -214,7 +220,7 @@ test("hosted chrome presence: roster chips, focus outlines, own focus and status
 
     // bye removes the chip and its outline.
     play({ v: 1, t: "bye", viewer: "v-owner" });
-    await page.waitForFunction(() => document.querySelectorAll(".viewers .viewer").length === 1);
+    await page.waitForFunction(() => document.querySelectorAll(".viewers .viewer").length === 2);
     await outlinesAre(page, []);
 
     // A dropped socket clears the roster; the reconnect joins again with the current focus.

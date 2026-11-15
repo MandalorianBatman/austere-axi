@@ -37,7 +37,7 @@ npm run build && npm test
 npm run test:browser      # when components, look or runtime changed
 ```
 
-`test:browser` needs Chrome, or `CHROME_PATH` pointing at a browser. If neither is available, say so in the report; do not silently skip it.
+`test:browser` needs Chrome, or `CHROME_PATH` pointing at a browser, and Firefox (`npx playwright-core install firefox`, or `FIREFOX_PATH`). If either is missing, say so in the report; do not silently skip it.
 
 Fix every failure before launching any agent. Agents are slow and cost tokens, so don't spend them on a red build.
 

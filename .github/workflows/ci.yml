@@ -46,6 +46,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Firefox for the checks that differ by engine (hover box on SVG).
+      - run: npx playwright-core install --with-deps firefox
       # The suite skips itself when no browser launches; fail instead of passing empty.
       - shell: bash
         run: |
