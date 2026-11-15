@@ -78,10 +78,14 @@ interface OpenRequest {
 }
 
 interface Draft {
-  /** The innermost statement clicked, the piece of it the box outlined (pieceOf), and how to find that piece again after a re-render. */
+  /**
+   * The innermost statement clicked, the piece of it the box outlined (pieceOf), how to find that
+   * piece again after a re-render, and its label as the note's detail names it.
+   */
   target: Element;
   piece: Element | null;
   relocate: ((target: Element) => Element | null) | null;
+  pieceLabel: string;
   targetId: string;
   component: string;
   path: PathEntry[];
@@ -291,6 +295,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     target: Element | null,
     piece: Element | null = null,
     locator: ((target: Element) => Element | null) | null = target && piece ? relocatorOf(target, piece) : null,
+    label = pieceLabel(piece),
   ) {
     hovered = target;
     hoveredPiece = piece;
@@ -300,7 +305,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       return;
     }
     placeHoverOn(target, piece);
-    hoverLabel.textContent = `${target.getAttribute("data-oui-id")} · ${target.getAttribute("data-oui-c")}${pieceLabel(piece)}`;
+    hoverLabel.textContent = `${target.getAttribute("data-oui-id")} · ${target.getAttribute("data-oui-c")}${label}`;
     hover.hidden = false;
   }
 
@@ -395,13 +400,20 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       b.addEventListener("click", () => {
         current.targetId = p.id;
         current.component = p.component;
-        // The box follows the chosen statement; only the innermost one keeps the piece (and its detail).
-        // placeHover finds them again if a re-render replaced them since the note opened.
+        // The box follows the chosen statement; only the innermost one keeps the piece (and its detail),
+        // labelled as when the note opened, since that is what the note sends.
+        // A re-render may have replaced the statements: start from the live innermost one.
         const innermost = i === current.path.length - 1;
+        if (!current.target.isConnected) {
+          const id = current.path[current.path.length - 1].id;
+          current.target = document.querySelector(`[data-oui-id="${CSS.escape(id)}"]`) ?? current.target;
+        }
+        const sel = `[data-oui-id="${CSS.escape(p.id)}"]`;
         showHover(
-          current.target.closest(`[data-oui-id="${CSS.escape(p.id)}"]`),
+          current.target.closest(sel) ?? document.querySelector(sel),
           innermost ? current.piece : null,
           innermost ? current.relocate : null,
+          innermost ? current.pieceLabel : "",
         );
         placeHover();
         renderPath();
@@ -435,6 +447,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       target,
       piece,
       relocate: piece && relocatorOf(target, piece),
+      pieceLabel: pieceLabel(piece),
       targetId: statement.id,
       component: statement.component,
       path,
@@ -449,7 +462,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     popText.value = "";
     hover.hidden = true;
     selBtn.hidden = true;
-    showHover(target, piece, draft.relocate);
+    showHover(target, piece, draft.relocate, draft.pieceLabel);
     hover.classList.add("locked");
     pop.hidden = false;
     positionPop(point);

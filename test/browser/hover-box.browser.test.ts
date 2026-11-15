@@ -278,6 +278,24 @@ plan = Table([Col("Binding", ["PAGES", "DB", "PAGE"]), Col("Kind", ["R2", "D1", 
     b = await settled(onRow);
     assert.ok(onRow(b), `the box ${JSON.stringify(b.hover)} did not come back to row 2`);
 
+    // A re-render that replaces the table's own statement wrapper: the parent chip still finds root.
+    await frame.evaluate(() => {
+      const wrapper = document.querySelector('[data-oui-id="plan"]') as HTMLElement;
+      wrapper.replaceWith(wrapper.cloneNode(true));
+    });
+    await frame.locator(".austere-chip", { hasText: "root" }).click();
+    b = await settled(onRoot);
+    assert.ok(onRoot(b), `the box ${JSON.stringify(b.hover)} did not move to root after the table was replaced`);
+
+    // A row inserted above moves the clicked row down; the label keeps the row number the note sends.
+    await frame.evaluate(() => {
+      const body = document.querySelector('[data-oui-id="plan"] tbody') as HTMLElement;
+      body.prepend(body.children[0].cloneNode(true));
+    });
+    await frame.locator(".austere-chip", { hasText: "plan" }).click();
+    b = await settled(() => true);
+    assert.equal(b.label, "plan · Table · row 2");
+
     await frame.locator(".austere-pop textarea").fill("D1 is the index");
     await frame.locator(".austere-pop textarea").press("Enter");
     await page.waitForFunction(() => (window as unknown as { annotations: unknown[] }).annotations.length > 0);
