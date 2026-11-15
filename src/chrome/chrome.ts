@@ -364,6 +364,7 @@ document.body.innerHTML = `
         <div class="menu-pop" hidden>
           <button type="button" data-cmd="copy-path">Copy file path</button>
           <button type="button" data-cmd="copy-link"${HOSTED ? " hidden" : ""}>${HOSTED ? "Copy page link" : "Copy review link"}</button>
+          <button type="button" data-cmd="copy-agent-prompt" title="A prompt that tells your agent to poll this page for feedback">Copy agent prompt</button>
           ${HOSTED ? '<div class="menu-note" data-share-note hidden>Only the owner can share this page. To invite someone, they run<code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.</div>' : ""}
           <button type="button" data-cmd="reload">Reload artifact</button>
           ${HOSTED ? '<button type="button" data-cmd="export">Download standalone HTML</button>' : `<a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>`}
@@ -407,7 +408,7 @@ document.body.innerHTML = `
 // RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
 // from all of them (RLM-322).
 if (!OWNER) {
-  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"];
+  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"];
   if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
   for (const sel of ownerOnly) $(sel)?.remove();
 }
@@ -1235,18 +1236,100 @@ $(".changes").addEventListener("click", () => {
 // ── menu ──
 
 const menuPop = $(".menu-pop");
+
+/**
+ * The agent prompt, fetched when the menu opens (the file may have been published since the page
+ * opened) so a click can copy it at once: Firefox allows a legacy copy only inside the click itself.
+ */
+let agentPrompt: Promise<string> | null = null;
+let agentPromptText: string | null = null;
+function loadAgentPrompt(): Promise<string> {
+  agentPromptText = null;
+  const p = fetch(`${BASE}/agent-prompt`).then((r) => {
+    if (!r.ok) throw new Error(String(r.status));
+    return r.text();
+  });
+  agentPrompt = p;
+  p.then(
+    (t) => {
+      if (agentPrompt === p) agentPromptText = t;
+    },
+    () => {},
+  );
+  return p;
+}
+
 $(".menu-btn").addEventListener("click", (e) => {
   e.stopPropagation();
   menuPop.hidden = !menuPop.hidden;
+  if (!menuPop.hidden && OWNER) void loadAgentPrompt();
 });
 document.addEventListener("click", () => (menuPop.hidden = true));
+
+/** A short confirmation in the banner that goes away by itself. */
+function flash(text: string) {
+  showBanner(text);
+  setTimeout(() => {
+    if (banner.textContent === text) showBanner("");
+  }, 4000);
+}
+
+/** Copies through a hidden textarea. Works where `navigator.clipboard` does not exist, but only while a click is being handled. */
+function copyLegacy(text: string): boolean {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    // refused
+  }
+  ta.remove();
+  return ok;
+}
+
+/**
+ * Copies `text` and says so. `navigator.clipboard` is there only in a secure context (https or
+ * localhost), and the review page is often opened at an http tailnet address, where it is undefined:
+ * the legacy copy covers that. When nothing can copy, the text is shown to copy by hand.
+ */
+async function copyText(text: string, what: string): Promise<void> {
+  let ok = false;
+  if (navigator.clipboard?.writeText) {
+    ok = await navigator.clipboard.writeText(text).then(
+      () => true,
+      () => false,
+    );
+  }
+  if (!ok) ok = copyLegacy(text);
+  if (ok) return flash(`${what} copied.`);
+  window.prompt(`Your browser blocked copying. Copy ${what.toLowerCase()} from here:`, text);
+}
+
+async function copyAgentPrompt() {
+  let text = agentPromptText;
+  if (text == null) {
+    try {
+      text = await (agentPrompt ?? loadAgentPrompt());
+    } catch {
+      return showBanner("Could not get the agent prompt from austere-axi. Check that it is still running.");
+    }
+  }
+  await copyText(text, "Agent prompt");
+}
+
 menuPop.addEventListener("click", async (e) => {
   const cmd = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd : undefined;
   // The share note stays open so its command can be selected.
   if (!cmd) return e.stopPropagation();
-  if (cmd === "copy-path") navigator.clipboard?.writeText(BOOT.file);
+  if (cmd === "copy-path") await copyText(BOOT.file, "File path");
   // Hosted, the URL without its fragment: the invite token is already out of the address bar.
-  if (cmd === "copy-link") navigator.clipboard?.writeText(HOSTED ? location.origin + location.pathname : state.links?.remote || location.href);
+  if (cmd === "copy-link") await copyText(HOSTED ? location.origin + location.pathname : state.links?.remote || location.href, HOSTED ? "Page link" : "Review link");
+  if (cmd === "copy-agent-prompt") await copyAgentPrompt();
   if (cmd === "reload") loadFrame();
   if (cmd === "export" && HOSTED) {
     // The menu stays open on "Preparing download…" until the file is saved or the banner says why not.

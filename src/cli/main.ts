@@ -22,7 +22,7 @@ import { renderCheck } from "./render-check.ts";
 import { format, print } from "./output.ts";
 import { describeItem, locator } from "../shared/feedback.ts";
 import type { FeedbackItem } from "../shared/feedback.ts";
-import { VERSION, assetPath, canonicalFile, port, stateDir } from "./paths.ts";
+import { VERSION, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
 import { listComponents, searchComponents, showComponents } from "./components.ts";
 import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
@@ -444,10 +444,6 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
     ? `Run \`${BIN} poll ${quote(file)}\` and leave it running until it returns.`
     : `Fix the errors above (the page renders what it can), then run \`${BIN} poll ${quote(file)}\`.`;
   print(out);
-}
-
-function quote(file: string): string {
-  return /[\s"'$`\\]/.test(file) ? JSON.stringify(file) : file;
 }
 
 function describeItems(abs: string, items: NoteItem[]): Printed[] {

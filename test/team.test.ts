@@ -604,6 +604,7 @@ test("reviewers add notes and nothing else", async () => {
   const h = { cookie: dee.cookie, origin: `http://127.0.0.1:${srv.port}` };
   assert.equal((await request(srv.port, "POST", `/s/${id}/end`, { body: {}, headers: h })).status, 403, "cannot end the review");
   assert.equal((await request(srv.port, "GET", `/s/${id}/export`, { headers: { cookie: dee.cookie } })).status, 403, "cannot export");
+  assert.equal((await request(srv.port, "GET", `/s/${id}/agent-prompt`, { headers: { cookie: dee.cookie } })).status, 403, "cannot read the agent prompt");
   assert.equal((await request(srv.port, "POST", `/s/${id}/release`, { body: { all: true }, headers: h })).status, 403, "cannot send held notes on");
   assert.equal((await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: h })).status, 403);
   assert.equal((await request(srv.port, "POST", `/s/${id}/render-errors`, { body: { revision: 0, errors: [{ message: "x" }] }, headers: h })).status, 403, "cannot report render errors");

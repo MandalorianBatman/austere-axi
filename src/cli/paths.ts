@@ -91,3 +91,8 @@ export function versionGt(a: unknown, b: unknown): boolean {
   }
   return false;
 }
+
+/** A file path as one word in a command line printed for an agent: double-quoted when it has spaces or shell characters. */
+export function quote(file: string): string {
+  return /[\s"'$`\\]/.test(file) ? JSON.stringify(file) : file;
+}
