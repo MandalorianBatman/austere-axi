@@ -50,6 +50,9 @@ const svc = {
   reports: [] as { body: unknown; invite: string }[],
   /** Called on each mutation the stub receives (mutationsReceived). */
   onMutation: null as (() => void) | null,
+  /** Refuse every socket handshake (403), and leave asset-token requests unanswered. */
+  refuseUpgrades: false,
+  stallAssetToken: false,
 };
 let stub: http.Server | undefined;
 let origin: string;
@@ -126,6 +129,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return res.end(fs.readFileSync(asset));
   }
   if (url.pathname === `${BASE}/asset-token` && req.method === "POST") {
+    if (svc.stallAssetToken) return; // never answered
     svc.inviteHeaders.push(invite);
     const name = svc.invites.get(invite);
     if (!name && !svc.unlisted) return json(res, 403, { error: { code: "forbidden", message: "invite required" } });
@@ -208,6 +212,7 @@ before(async () => {
     svc.upgrades++;
     if (url.pathname !== `${BASE}/sync`) return refuse(socket, 404, "invalid");
     if (!creds.sync) return refuse(socket, 426, "upgrade_required");
+    if (svc.refuseUpgrades) return refuse(socket, 403, "forbidden");
     if (req.headers.origin !== origin) return refuse(socket, 403, "forbidden");
     if (creds.invite ? !svc.invites.has(creds.invite) : !svc.unlisted) return refuse(socket, 403, "forbidden");
     wss.handleUpgrade(req, socket, head, (ws) => reviewerSocket({ ws, invite: creds.invite }));
@@ -377,36 +382,38 @@ test("hosted chrome: with sessionStorage writes failing, each note gets its own 
     await page.goto(`${origin}${BASE}#i=${ANA}`);
     await page.waitForSelector(".presence.hosted");
     await page.waitForSelector("text=Posting as Ana");
+    // Unacked and unsaved: the composer says a reload would lose it, until the ack comes.
+    svc.holdAcks = true;
+    await page.fill(".composer textarea", "held note");
+    await page.click(".composer .send");
+    await mutationsReceived(1);
+    await page.waitForSelector("text=could not keep a copy of your note");
+    svc.holdAcks = false;
+    for (const s of svc.sockets) s.ws.terminate(); // the reconnect re-sends it, and it is acked
+    await page.waitForFunction(() => !document.body.innerText.includes("could not keep a copy"), null, { timeout: 8000 });
+    svc.mutations.length = 0;
     for (const [i, text] of ["first note", "second note"].entries()) {
       await page.fill(".composer textarea", text);
       await page.click(".composer .send");
       await mutationsReceived(i + 1);
     }
-    await page.waitForFunction(() => [...document.querySelectorAll(".msg.user .receipt em")].filter((em) => em.textContent === "Sent to the page owner").length === 2);
+    await page.waitForFunction(() => [...document.querySelectorAll(".msg.user .receipt em")].filter((em) => em.textContent === "Sent to the page owner").length === 3);
     assert.equal(await page.locator(".receipt em:text('Sending…')").count(), 0, "both left the outbox");
     assert.deepEqual(
       svc.mutations.map((m) => m.n),
-      [1, 2],
+      [2, 3],
     );
     const saved = svc.rows.filter((r): r is NoteRow => r.type === "note").map((r) => r.items.map((x) => (x.kind === "message" ? x.text : "")).join());
-    assert.deepEqual(saved, ["first note", "second note"]);
+    assert.deepEqual(saved, ["held note", "first note", "second note"]);
     assert.deepEqual(errors, []);
   } finally {
     await ctx.close();
   }
 });
 
-test("hosted chrome: a note saved under a dropped clientId survives a reload and is sent once", async (t) => {
+test("hosted chrome: a held note survives a reload under its key; a duplicated tab numbers its own notes", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  // Only the counter fails to save (storage nearly full): the outbox is saved, the clientId is dropped.
-  await ctx.addInitScript(() => {
-    const setItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
-      if (this === window.sessionStorage && key === "austere:client:n") throw new DOMException("quota", "QuotaExceededError");
-      return setItem.call(this, key, value);
-    };
-  });
   try {
     const page = await ctx.newPage();
     const errors = watchErrors(page);
@@ -423,18 +430,56 @@ test("hosted chrome: a note saved under a dropped clientId survives a reload and
     await page.waitForSelector("text=Posting as Ana");
     // Re-sent under its original key after the reload, applied once, and out of the outbox.
     await page.waitForFunction(() => document.querySelectorAll(".msg.user .receipt em").length === 1 && document.querySelector(".msg.user .receipt em")?.textContent === "Sent to the page owner");
-    const resent = svc.mutations.filter((m) => m.clientId === held.clientId && m.n === held.n);
-    assert.equal(resent.length, 2, "first send, then the re-send after the reload");
+    assert.equal(svc.mutations.filter((m) => m.clientId === held.clientId && m.n === held.n).length, 2, "first send, then the re-send after the reload");
 
-    await page.fill(".composer textarea", "after reload");
-    await page.click(".composer .send");
-    await page.waitForFunction(() => [...document.querySelectorAll(".msg.user .receipt em")].filter((em) => em.textContent === "Sent to the page owner").length === 2);
-    const fresh = svc.mutations.at(-1)!;
-    assert.notEqual(fresh.clientId, held.clientId, "a new clientId after the old one was dropped");
+    // A duplicated tab starts with a copy of this tab's sessionStorage.
+    const copied: Record<string, string> = await page.evaluate(() => Object.fromEntries(Object.entries(sessionStorage)));
+    const twin = await ctx.newPage();
+    await twin.addInitScript((entries: Record<string, string>) => {
+      if (window === window.top) for (const [k, v] of Object.entries(entries)) sessionStorage.setItem(k, v);
+    }, copied);
+    await twin.goto(`${origin}${BASE}`);
+    await twin.waitForSelector("text=Posting as Ana");
+    for (const [p, text] of [
+      [page, "from the first tab"],
+      [twin, "from the copy"],
+    ] as const) {
+      const sent = svc.mutations.length;
+      await p.fill(".composer textarea", text);
+      await p.click(".composer .send");
+      await mutationsReceived(sent + 1);
+    }
+    const [a, b] = svc.mutations.slice(-2);
+    assert.notDeepEqual([a.clientId, a.n], [b.clientId, b.n], "two notes, two keys");
+    assert.notEqual(b.clientId, held.clientId);
+    await twin.waitForFunction(() => [...document.querySelectorAll(".msg.user .receipt em")].some((em) => em.textContent === "Sent to the page owner"));
     const saved = svc.rows.filter((r): r is NoteRow => r.type === "note").map((r) => r.items.map((x) => (x.kind === "message" ? x.text : "")).join());
-    assert.deepEqual(saved, ["before reload", "after reload"]);
+    assert.deepEqual(saved, ["before reload", "from the first tab", "from the copy"]);
     assert.deepEqual(errors, []);
   } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: a stalled asset-token check does not hold up the reconnect", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await ctx.newPage();
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.waitForSelector("text=Posting as Ana");
+    // Handshakes fail and the check behind them never answers.
+    svc.refuseUpgrades = true;
+    svc.stallAssetToken = true;
+    const before = svc.upgrades;
+    for (const s of svc.sockets) s.ws.terminate();
+    // Real time: the 5 s check timeout runs in the page, which the test cannot fast-forward.
+    const deadline = Date.now() + 12_000;
+    while (svc.upgrades < before + 2 && Date.now() < deadline) await page.waitForTimeout(250);
+    assert.ok(svc.upgrades >= before + 2, `retried past the stalled check (${svc.upgrades - before} attempts)`);
+  } finally {
+    svc.refuseUpgrades = false;
+    svc.stallAssetToken = false;
     await ctx.close();
   }
 });

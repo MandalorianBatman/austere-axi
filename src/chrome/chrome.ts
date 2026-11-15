@@ -206,34 +206,32 @@ let inviteName: string | null | undefined;
 // The local server names invited reviewers; a hosted reviewer is named once the service answers.
 let viewerName: string = HOSTED ? "" : VIEWER.name;
 
-// Hosted: notes go out as `addNote` mutations over the page's socket. Each tab numbers its own
-// (clientId, n); a note stays in the outbox until its ack and is re-sent after a reconnect.
+// Hosted: notes go out as `addNote` mutations over the page's socket. A note stays in the outbox
+// (sessionStorage) until its ack and is re-sent after a reconnect or a reload, under its own key.
 interface OutboxEntry {
   m: Mutation<"addNote">;
   at: number;
 }
+// New notes are numbered under a clientId made for this page load and kept only in memory, with a
+// counter from 1. Nothing about it is read back from storage, so a duplicated tab (which copies
+// sessionStorage) or a failed write can never number two different notes with the same (clientId, n).
 let CLIENT = "";
 if (HOSTED) {
-  const stored = SS.get<unknown>("austere:client");
-  if (typeof stored === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(stored)) CLIENT = stored;
-  else {
-    const bytes = crypto.getRandomValues(new Uint8Array(16));
-    CLIENT = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    SS.set("austere:client", CLIENT);
-  }
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  CLIENT = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 const OUTBOX_KEY = `austere:outbox:${SID}`;
 const savedOutbox = SS.get<unknown>(OUTBOX_KEY);
-// Saved notes keep the (clientId, n) they were numbered with, even when this load made a new CLIENT
-// (the old one was dropped after a failed counter save): re-sent under their own key, they are applied once.
+// Saved notes keep the (clientId, n) they were numbered with by an earlier load: re-sent under their
+// own key, they are applied once (also when a duplicated tab re-sends the same ones).
 const outbox: OutboxEntry[] = Array.isArray(savedOutbox)
   ? (savedOutbox as OutboxEntry[]).filter(
       (o) => o?.m?.name === "addNote" && typeof o.m.clientId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(o.m.clientId) && Number.isInteger(o.m.n) && o.m.n > 0,
     )
   : [];
-// The tab's mutation counter lives in memory; sessionStorage only seeds it on load, so a failed
-// write can never hand out the same (CLIENT, n) twice. The seed also covers notes still in the outbox.
-let clientN = Math.max(Number(SS.get("austere:client:n")) || 0, ...outbox.filter((o) => o.m.clientId === CLIENT).map((o) => o.m.n));
+let clientN = 0;
+// The outbox could not be saved: a reload before the acks would lose those notes, so the composer says so.
+let outboxUnsaved = false;
 let sync: SyncSocket | null = null;
 // Hosted: why nothing more can be sent (the page is gone, or the invite no longer works).
 let lockout: string | null = null;
@@ -1049,6 +1047,8 @@ function toNoteItem(item: QueueItem): NoteItem {
 }
 
 /** Hosted: queues the batch as one `addNote` and sends it if the socket is open; the ack settles it. */
+const UNSAVED_WARNING = "This browser could not keep a copy of your note: keep this tab open until it shows “Sent to the page owner”.";
+
 function sendHosted(queued: QueueItem[]) {
   if (lockout || inviteName === undefined) return;
   // Only an unlisted page without an invite takes a self-declared name; an invite names its reviewer.
@@ -1064,23 +1064,14 @@ function sendHosted(queued: QueueItem[]) {
     return;
   }
   const args: AddNoteArgs = inviteName === null ? { items, name: viewerName } : { items };
-  const n = ++clientN;
-  // An unsaved counter would seed a reload below n: drop the clientId so the reload numbers a fresh one.
-  if (!SS.set("austere:client:n", n)) {
-    try {
-      sessionStorage.removeItem("austere:client");
-    } catch {
-      // blocked storage: the reload makes a new clientId anyway
-    }
-  }
-  const m = mutation("addNote", args, { clientId: CLIENT, n });
+  const m = mutation("addNote", args, { clientId: CLIENT, n: ++clientN });
   outbox.push({ m, at: Date.now() });
-  SS.set(OUTBOX_KEY, outbox);
+  outboxUnsaved = !SS.set(OUTBOX_KEY, outbox);
   sync?.send(m);
   state.queue = [];
   saveQueue();
   textarea.value = "";
-  composerError("");
+  composerError(outboxUnsaved ? UNSAVED_WARNING : "");
   renderLog(true);
   renderDock();
 }
@@ -1464,8 +1455,8 @@ function refused(status: number): boolean {
 }
 
 /** POST {base}/asset-token: trades the invite (none on an unlisted page) for a 10-minute frame token. */
-async function requestAssetToken(): Promise<{ status: number; token?: string; name?: string | null }> {
-  const r = await fetch(`${BASE}/asset-token`, { method: "POST", headers: invite ? { "X-Austere-Invite": invite } : {} });
+async function requestAssetToken(signal?: AbortSignal): Promise<{ status: number; token?: string; name?: string | null }> {
+  const r = await fetch(`${BASE}/asset-token`, { method: "POST", headers: invite ? { "X-Austere-Invite": invite } : {}, signal });
   if (!r.ok) return { status: r.status };
   const d = (await r.json().catch(() => null)) as { token?: unknown; name?: unknown } | null;
   const token = typeof d?.token === "string" && /^[A-Za-z0-9_-]+$/.test(d.token) ? d.token : undefined;
@@ -1529,7 +1520,12 @@ function settle(ack: AckFrame) {
   const i = outbox.findIndex((o) => o.m.clientId === ack.clientId && o.m.n === ack.n);
   if (i < 0) return;
   const [done] = outbox.splice(i, 1);
-  SS.set(OUTBOX_KEY, outbox);
+  // Saved again, or every note acked: nothing is left to lose on a reload.
+  const saved = SS.set(OUTBOX_KEY, outbox);
+  if (outboxUnsaved && (saved || !outbox.length)) {
+    outboxUnsaved = false;
+    composerError("");
+  }
   if (ack.error) {
     for (const item of done.m.args.items) addToQueue({ ...item });
     const wait = ack.error.retryAfter ? `in ${ack.error.retryAfter} s` : "in a moment";
@@ -1568,6 +1564,8 @@ function onSyncClose(close: SyncClose, retrying: boolean) {
  * Hosted boot: trade for the frame's token, then open the page socket. It carries the rows, the
  * note mutations and presence (the server sends no presence on a --no-presence page).
  */
+const RETRY_CHECK_MS = 5_000;
+
 async function startHosted() {
   showBanner("");
   if (!(await loadHostedFrame()) || sync) return;
@@ -1578,7 +1576,8 @@ async function startHosted() {
     mayRetry: async (close) => {
       if (lockout) return false;
       if (close.opened) return true;
-      const answer = await requestAssetToken().catch(() => null);
+      // A stalled check must not hold up the next attempt: past 5 s it counts as offline, and the socket retries.
+      const answer = await requestAssetToken(AbortSignal.timeout(RETRY_CHECK_MS)).catch(() => null);
       return !(answer && refused(answer.status));
     },
   });
