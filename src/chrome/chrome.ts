@@ -1229,42 +1229,97 @@ $(".changes").addEventListener("click", () => {
 // ── menu ──
 
 const menuPop = $(".menu-pop");
+
+/**
+ * The agent prompt, fetched when the menu opens (the file may have been published since the page
+ * opened) so a click can copy it at once: Firefox allows a legacy copy only inside the click itself.
+ */
+let agentPrompt: Promise<string> | null = null;
+let agentPromptText: string | null = null;
+function loadAgentPrompt(): Promise<string> {
+  agentPromptText = null;
+  const p = fetch(`${BASE}/agent-prompt`).then((r) => {
+    if (!r.ok) throw new Error(String(r.status));
+    return r.text();
+  });
+  agentPrompt = p;
+  p.then(
+    (t) => {
+      if (agentPrompt === p) agentPromptText = t;
+    },
+    () => {},
+  );
+  return p;
+}
+
 $(".menu-btn").addEventListener("click", (e) => {
   e.stopPropagation();
   menuPop.hidden = !menuPop.hidden;
+  if (!menuPop.hidden && OWNER) void loadAgentPrompt();
 });
 document.addEventListener("click", () => (menuPop.hidden = true));
-/**
- * Copies the server's prompt for an agent that should poll this page. The text is fetched on click
- * (the file may have been published since the page opened); Safari only lets a promise stand in
- * for the text inside the click, so it goes to the clipboard as one.
- */
-async function copyAgentPrompt() {
-  const done = "Agent prompt copied. Paste it to your agent.";
+
+/** A short confirmation in the banner that goes away by itself. */
+function flash(text: string) {
+  showBanner(text);
+  setTimeout(() => {
+    if (banner.textContent === text) showBanner("");
+  }, 4000);
+}
+
+/** Copies through a hidden textarea. Works where `navigator.clipboard` does not exist, but only while a click is being handled. */
+function copyLegacy(text: string): boolean {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+  document.body.append(ta);
+  ta.select();
+  let ok = false;
   try {
-    const prompt = fetch(`${BASE}/agent-prompt`).then((r) => {
-      if (!r.ok) throw new Error(String(r.status));
-      return r.text();
-    });
-    if (typeof ClipboardItem === "function" && navigator.clipboard?.write) {
-      await navigator.clipboard.write([new ClipboardItem({ "text/plain": prompt.then((t) => new Blob([t], { type: "text/plain" })) })]);
-    } else {
-      await navigator.clipboard.writeText(await prompt);
-    }
-    showBanner(done);
-    setTimeout(() => {
-      if (banner.textContent === done) showBanner("");
-    }, 4000);
+    ok = document.execCommand("copy");
   } catch {
-    showBanner("Could not copy the agent prompt. Check that austere-axi is still running.");
+    // refused
   }
+  ta.remove();
+  return ok;
+}
+
+/**
+ * Copies `text` and says so. `navigator.clipboard` is there only in a secure context (https or
+ * localhost), and the review page is often opened at an http tailnet address, where it is undefined:
+ * the legacy copy covers that. When nothing can copy, the text is shown to copy by hand.
+ */
+async function copyText(text: string, what: string): Promise<void> {
+  let ok = false;
+  if (navigator.clipboard?.writeText) {
+    ok = await navigator.clipboard.writeText(text).then(
+      () => true,
+      () => false,
+    );
+  }
+  if (!ok) ok = copyLegacy(text);
+  if (ok) return flash(`${what} copied.`);
+  window.prompt(`Your browser blocked copying. Copy ${what.toLowerCase()} from here:`, text);
+}
+
+async function copyAgentPrompt() {
+  let text = agentPromptText;
+  if (text == null) {
+    try {
+      text = await (agentPrompt ?? loadAgentPrompt());
+    } catch {
+      return showBanner("Could not get the agent prompt from austere-axi. Check that it is still running.");
+    }
+  }
+  await copyText(text, "Agent prompt");
 }
 
 menuPop.addEventListener("click", async (e) => {
   const cmd = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd : undefined;
   if (!cmd) return;
-  if (cmd === "copy-path") navigator.clipboard?.writeText(BOOT.file);
-  if (cmd === "copy-link") navigator.clipboard?.writeText(state.links?.remote || location.href);
+  if (cmd === "copy-path") await copyText(BOOT.file, "File path");
+  if (cmd === "copy-link") await copyText(state.links?.remote || location.href, "Review link");
   if (cmd === "copy-agent-prompt") await copyAgentPrompt();
   if (cmd === "reload") loadFrame();
   if (cmd === "end") {

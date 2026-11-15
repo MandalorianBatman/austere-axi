@@ -594,3 +594,43 @@ test("the owner's menu copies an agent prompt that polls this file", async (t) =
     await context.close();
   }
 });
+
+test("the copy items work where navigator.clipboard is missing (a review page opened at an http tailnet address)", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "copy-insecure.html");
+  fs.writeFileSync(file, htmlPage("Copy", `root = TextContent("hello")`, CDN_RUNTIME_URL));
+  const { session } = await api("/api/open", { file });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // Outside a secure context the browser has no navigator.clipboard at all.
+  await context.addInitScript(() => Object.defineProperty(Navigator.prototype, "clipboard", { value: undefined }));
+  const page = await context.newPage();
+  try {
+    const { code } = await api("/api/login", {});
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
+    await page.waitForSelector("iframe.frame");
+    assert.equal(await page.evaluate(() => typeof navigator.clipboard), "undefined");
+    const pasted = async () => {
+      await page.evaluate(() => {
+        const ta = document.createElement("textarea");
+        ta.id = "paste-here";
+        document.body.append(ta);
+        ta.focus();
+      });
+      await page.keyboard.press("Control+V");
+      const v = await page.inputValue("#paste-here");
+      await page.evaluate(() => document.getElementById("paste-here")?.remove());
+      return v;
+    };
+    for (const [cmd, expect] of [
+      ["copy-agent-prompt", `austere-axi poll ${fs.realpathSync(file)}`],
+      ["copy-path", fs.realpathSync(file)],
+    ] as const) {
+      await page.locator(".menu-btn").click();
+      await page.locator(`[data-cmd="${cmd}"]`).click();
+      await page.waitForSelector(".banner:not([hidden])");
+      assert.ok((await pasted()).includes(expect), `${cmd} reaches the clipboard`);
+    }
+  } finally {
+    await context.close();
+  }
+});
