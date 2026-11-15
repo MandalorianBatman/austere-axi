@@ -190,8 +190,8 @@ before(async () => {
 after(() => {
   wss.close();
   server.close();
-  fs.rmSync(STATE, { recursive: true, force: true });
-  fs.rmSync(WORK, { recursive: true, force: true });
+  fs.rmSync(STATE, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 beforeEach(() => {
@@ -357,7 +357,7 @@ test("a token for another service URL is not sent there", async () => {
     assert.match(r.out, /holds an owner token for https:\/\/elsewhere\.test/);
     assert.deepEqual(stub.requests, []);
   } finally {
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -463,6 +463,6 @@ test("poll and feedback make no request to the service when nothing is published
     assert.deepEqual(stub.requests, []);
   } finally {
     await run("stop");
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
