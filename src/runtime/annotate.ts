@@ -605,6 +605,10 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   /** el's box cut to the ancestors that clip it (scrollers, overflow: hidden); null when nothing shows. */
   function visibleBox(el: Element): Box | null {
     let { left, top, right, bottom } = renderedBox(el);
+    // A straight diagram edge is a line, flat on one side; a side clipping took to zero shows nothing.
+    const flatX = right === left;
+    const flatY = bottom === top;
+    if (flatX && flatY) return null;
     for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
       const s = getComputedStyle(a);
       const clipX = s.overflowX !== "visible";
@@ -615,10 +619,9 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       if (clipX) [left, right] = [Math.max(left, c.left), Math.min(right, c.right)];
       if (clipY) [top, bottom] = [Math.max(top, c.top), Math.min(bottom, c.bottom)];
     }
-    // A straight diagram edge is a line: one side may be zero, but not both.
-    return right >= left && bottom >= top && (right > left || bottom > top)
-      ? { left, top, width: right - left, height: bottom - top }
-      : null;
+    const showsX = flatX ? right >= left : right > left;
+    const showsY = flatY ? bottom >= top : bottom > top;
+    return showsX && showsY ? { left, top, width: right - left, height: bottom - top } : null;
   }
 
   function flashElement(el: Element, tone: string) {
