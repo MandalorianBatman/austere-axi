@@ -253,6 +253,18 @@ plan = Table([Col("Binding", ["PAGES", "DB", "PAGE"]), Col("Kind", ["R2", "D1", 
     assert.ok(onRow(b), `the box ${JSON.stringify(b.hover)} is not on row 2 ${JSON.stringify(b.row)}`);
     assert.equal(b.label, "plan · Table · row 2");
 
+    // A re-render that drops the rows for a few frames: the box comes back to the new row 2.
+    await frame.evaluate(async () => {
+      const body = document.querySelector('[data-oui-id="plan"] tbody') as HTMLElement;
+      const table = body.parentElement as HTMLElement;
+      const fresh = body.cloneNode(true);
+      body.remove();
+      for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+      table.appendChild(fresh);
+    });
+    b = await settled(onRow);
+    assert.ok(onRow(b), `the box ${JSON.stringify(b.hover)} did not find row 2 again after the rows came back`);
+
     // Choosing the parent statement moves the box to it; choosing the row's statement again brings
     // it back, to the new row when a re-render replaced the rows in between.
     await frame.locator(".austere-chip", { hasText: "root" }).click();

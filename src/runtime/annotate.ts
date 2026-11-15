@@ -287,10 +287,14 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     if (box) placeBox(hover, box);
   }
 
-  function showHover(target: Element | null, piece: Element | null = null) {
+  function showHover(
+    target: Element | null,
+    piece: Element | null = null,
+    locator: ((target: Element) => Element | null) | null = target && piece ? relocatorOf(target, piece) : null,
+  ) {
     hovered = target;
     hoveredPiece = piece;
-    relocate = target && piece ? relocatorOf(target, piece) : null;
+    relocate = locator;
     if (!target) {
       hover.hidden = true;
       return;
@@ -392,13 +396,13 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
         current.targetId = p.id;
         current.component = p.component;
         // The box follows the chosen statement; only the innermost one keeps the piece (and its detail).
+        // placeHover finds them again if a re-render replaced them since the note opened.
         const innermost = i === current.path.length - 1;
-        if (innermost) {
-          // A re-render since the note opened may have replaced the statement or its rows.
-          if (!current.target.isConnected) current.target = document.querySelector(`[data-oui-id="${CSS.escape(p.id)}"]`) ?? current.target;
-          if (current.piece && !current.piece.isConnected) current.piece = current.relocate?.(current.target) ?? null;
-        }
-        showHover(current.target.closest(`[data-oui-id="${CSS.escape(p.id)}"]`), innermost ? current.piece : null);
+        showHover(
+          current.target.closest(`[data-oui-id="${CSS.escape(p.id)}"]`),
+          innermost ? current.piece : null,
+          innermost ? current.relocate : null,
+        );
         placeHover();
         renderPath();
         popText.focus();
@@ -445,7 +449,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     popText.value = "";
     hover.hidden = true;
     selBtn.hidden = true;
-    showHover(target, piece);
+    showHover(target, piece, draft.relocate);
     hover.classList.add("locked");
     pop.hidden = false;
     positionPop(point);
@@ -691,7 +695,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       const id = hovered.getAttribute("data-oui-id") as string;
       hovered = document.querySelector(`[data-oui-id="${CSS.escape(id)}"]`);
     }
-    if (hovered && hoveredPiece && !hoveredPiece.isConnected) hoveredPiece = relocate?.(hovered) ?? null;
+    // A piece missing for a frame stays detached (no box) and is looked for again on the next update.
+    if (hovered && hoveredPiece && !hoveredPiece.isConnected) hoveredPiece = relocate?.(hovered) ?? hoveredPiece;
     if (hovered) placeHoverOn(hovered, hoveredPiece);
     else hover.hidden = true;
   }
