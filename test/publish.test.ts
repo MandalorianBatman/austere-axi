@@ -260,14 +260,16 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
 
   // Republish: same id, no new page, the same token on the socket.
   stub.requests.length = 0;
-  r = await cli(["publish", file, "--auto"]);
+  r = await cli(["publish", file, "--auto", "--no-presence"]);
   assert.equal(r.code, 0, r.out);
   assert.equal(field(r.out, "status"), "updated");
   assert.equal(field(r.out, "url"), `${CLOUD}/p/${id}`);
+  assert.equal(field(r.out, "presence"), "off");
   assert.ok(!stub.requests.includes("POST /api/pages"));
   assert.ok(stub.requests.includes(`WS /api/pages/${id}/sync`));
   assert.equal(stub.publishes.at(-1)?.auto, true);
-  assert.match(field(r.out, "next") ?? "", /--auto again/);
+  assert.equal(stub.publishes.at(-1)?.presence, false);
+  assert.match(field(r.out, "next") ?? "", /--auto --no-presence again/);
   assert.deepEqual(cloudState().pages[abs], { id, auto: true });
 
   // --new: a fresh page, and the file now maps to it.

@@ -47,6 +47,9 @@ type FrameMessage = { austere: 1 } & (
   | { type: "annotate" | "action"; item: FeedbackItem }
   | { type: "runtime-error"; error?: { statementId?: string; message: string } }
   | { type: "toggle-mode" }
+  // Presence (hosted review): the playground has no other viewers, so it ignores these.
+  | { type: "focus"; id: string }
+  | { type: "writing"; on: boolean }
 );
 
 /** Messages the page posts to the frame. */
@@ -222,6 +225,9 @@ window.addEventListener("message", (event) => {
       break;
     case "toggle-mode":
       setMode(state.mode === "annotate" ? "explore" : "annotate");
+      break;
+    case "focus":
+    case "writing":
       break;
   }
 });

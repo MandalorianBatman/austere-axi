@@ -137,6 +137,8 @@ async function buildChrome() {
     target: "es2020",
     tsconfigRaw: IIFE_TSCONFIG,
     outdir: outDir,
+    // The hosted page socket reads frames with the sync module, which bundles zod.
+    plugins: [zodLocalesPlugin],
     logLevel: "warning",
   });
   console.log("chrome   dist/chrome/");

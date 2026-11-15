@@ -4,6 +4,10 @@
 // service's CSP forbids inline scripts, so it ships the same object as JSON in
 // <script type="application/json" id="austere-boot">.
 
+import { syncProtocols } from "../shared/sync.ts";
+import { Presence } from "./presence.ts";
+import { openPageSocket } from "./socket.ts";
+
 type Mode = "annotate" | "explore";
 
 /** The boot object the server hands the page. */
@@ -69,6 +73,8 @@ type FrameMessage = { austere: 1 } & (
   | { type: "scroll"; y?: number }
   | { type: "changes"; ids?: unknown }
   | { type: "toggle-mode" }
+  | { type: "focus"; id?: unknown }
+  | { type: "writing"; on?: unknown }
   | { type: "open-url"; url: unknown }
 );
 
@@ -78,6 +84,7 @@ type ChromeMessage =
   | { type: "reveal"; id: string | undefined }
   | { type: "mode"; mode: Mode }
   | { type: "highlight"; ids: string[]; scroll: boolean }
+  | { type: "presence"; marks: { statement: string; name: string; colour: string }[] }
   | { type: "source"; program: string };
 
 interface SessionInfo {
@@ -258,6 +265,7 @@ document.body.innerHTML = `
       <button type="button" class="changes" aria-pressed="false" hidden></button>
     </div>
     <div class="bar-right">
+      <span class="viewers" role="group" aria-label="On this page" hidden></span>
       <span class="presence"></span>
       <div class="menu">
         <button type="button" class="icon-btn menu-btn" aria-label="More">⋯</button>
@@ -338,6 +346,7 @@ if (nameForm) {
     LS.set("austere:name", name);
     nameForm.hidden = true;
     renderViewer();
+    presence.rename();
     sendAll(false);
   });
 }
@@ -408,6 +417,19 @@ const banner = $(".banner");
 $(".title").textContent = BOOT.title;
 if (OWNER) $(".file").textContent = BOOT.name;
 renderViewer();
+
+// Presence (Q17): chips for the others on the page and their last click in the frame. The
+// transport calls connect/handle/disconnect: the page socket when hosted, the server's relay locally.
+const presence = new Presence({
+  chips: $(".viewers"),
+  showFocus: (marks) => post({ type: "presence", marks }),
+  reveal: (id) => post({ type: "reveal", id }),
+  name: () => viewerName || undefined,
+});
+textarea.addEventListener("focus", () => presence.setWriting("composer", true));
+textarea.addEventListener("blur", () => presence.setWriting("composer", false));
+window.addEventListener("pagehide", () => presence.leave());
+
 $(".file").title = BOOT.file || "";
 document.title = `${BOOT.title} · austere`;
 
@@ -492,9 +514,19 @@ window.addEventListener("message", (e) => {
       }
       // A reloaded frame starts unmarked; it handles "highlight" from the start.
       if (state.highlight) postHighlight(false);
+      presence.redraw();
+      // The old frame's note box is gone, whether or not its blur arrived.
+      presence.setWriting("note", false);
       break;
     case "annotate":
       addToQueue(d.item);
+      break;
+    case "focus":
+      // The statement this viewer clicked is its focus for the others.
+      if (typeof d.id === "string") presence.setFocus(d.id);
+      break;
+    case "writing":
+      presence.setWriting("note", d.on === true);
       break;
     case "action":
       addToQueue(d.item);
@@ -1356,8 +1388,15 @@ renderPresence();
 renderLog();
 renderDock();
 loadFrame();
-if (HOSTED) startPolling();
-else connect();
+if (HOSTED) {
+  startPolling();
+  // The page socket. It carries presence; the server sends none on a --no-presence page.
+  openPageSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${BASE}/sync`, syncProtocols({}), BASE, {
+    open: (send) => presence.connect(send),
+    frame: (f) => {
+      if (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye") presence.handle(f);
+    },
+    closed: () => presence.disconnect(),
+  });
+} else connect();
 
-// A module, so its top-level names stay out of the global scope of the type check.
-export {};

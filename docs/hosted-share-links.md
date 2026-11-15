@@ -170,17 +170,17 @@ New state: `~/.austere-axi/cloud.json` (mode 0600)
 
 The service URL defaults to `https://austere.kasat.xyz`, and `AUSTERE_AXI_CLOUD_URL` overrides it for tests and self-hosting. A token belongs to the `url` it was created on: when `AUSTERE_AXI_CLOUD_URL` names another service, `publish` stops with an error instead of sending the token there. Copying `cloud.json` to another machine makes that machine a peer of the same pages (Q14). It holds no [idempotency](#idempotency) `clientId`: those belong to one queue each.
 
-A publish, in order: bundle the page (any error stops here, before a request); `POST /api/owners` on the first publish (the token is saved at once); `PUT /api/objects/:sha256` for the page HTML and each pack; `POST /api/pages` unless `cloud.json` already maps the file (or `--new`); then the owner socket: the `publish` mutation with a fresh `clientId` and `n: 1`, its `ack`, and `pull { after: 0 }` for the `page` row, whose `expiresAt` the command prints. `publish rm` sends `delete` the same way. `unlisted` is `false` and `presence` is `true` until the access and presence tickets add their flags. A republish whose handshake answers 404 points at `--new`; `rm` of a page the service no longer has still drops it from `cloud.json`. A `rate_limited` ack is reported with its `retryAfter`, not waited out, since `publish` is a one-shot command.
+A publish, in order: bundle the page (any error stops here, before a request); `POST /api/owners` on the first publish (the token is saved at once); `PUT /api/objects/:sha256` for the page HTML and each pack; `POST /api/pages` unless `cloud.json` already maps the file (or `--new`); then the owner socket: the `publish` mutation with a fresh `clientId` and `n: 1`, its `ack`, and `pull { after: 0 }` for the `page` row, whose `expiresAt` the command prints. `publish rm` sends `delete` the same way. `unlisted` is `false` until the access ticket adds its flag; `presence` is `true` unless `--no-presence` is given, per publish like `--auto`. A republish whose handshake answers 404 points at `--new`; `rm` of a page the service no longer has still drops it from `cloud.json`. A `rate_limited` ack is reported with its `retryAfter`, not waited out, since `publish` is a one-shot command.
 
 Commands:
 
 ```
-austere-axi publish <file> [--auto] [--new]   upload; prints the URL (and on republish, "updated")
+austere-axi publish <file> [--auto] [--no-presence] [--new]   upload; prints the URL (and on republish, "updated")
 austere-axi publish list                      your hosted pages, expiry, note counts
 austere-axi publish rm <file|id>              delete at once
 ```
 
-The access ticket adds `--invite <name>` (repeatable), `--expires`, `--unlisted`, `publish invites <file>` and `publish revoke <file> <name>`; the presence ticket adds `--no-presence`.
+The access ticket adds `--invite <name>` (repeatable), `--expires`, `--unlisted`, `publish invites <file>` and `publish revoke <file> <name>`.
 
 Sync into local sessions (Q8, Q14). This runs in the local server, which `poll` already starts:
 
@@ -351,12 +351,14 @@ After a 1008 close a client does not reconnect on its own. After any other close
 ### Presence (Q17)
 
 - Presence runs when the page's `presence` is true (`publish --no-presence` sets it false). Otherwise the server drops presence frames and sends none. A `publish` that turns it off sends `bye` for every viewer, then stops.
-- A socket becomes a viewer with its first `hello`; until then it gets no presence frames (the `publish` command never sends one). After opening the socket, a viewer sends `hello { status, name? }` (`name` only on an unlisted page, from the name prompt). The server answers with one `hello` per viewer present, its own marked `self: true`, and sends the newcomer's `hello` to everyone else. A `hello` from the server carries `viewer: { id, name, colour, role }`, `status` and `focus`. `id` is per socket; `name` is the invite name, the self-declared name on an unlisted page (truncated to 40 characters, `Reviewer` when empty), or `Owner`; `colour` is lowercase `#rrggbb`, picked by the server and stable per name on the page (clients only display it).
-- `status { status }`: `viewing`, `away` (tab hidden) or `writing` (composer open). It is also the heartbeat: send it at least every 30 s.
-- `focus { statement }`: the statement id the viewer last clicked in the frame, or `null` to clear. The chrome outlines that statement with the viewer's name.
-- `bye {}`: sent on leaving (`pagehide`). The server sends `bye { viewer }` to the others on `bye`, on close, or after 60 s without a frame from that viewer.
-- Server copies of `status`, `focus` and `bye` carry `viewer` (the viewer id). Presence is never stored, never in the op log or the row feed, and never acked. More than 10 presence frames a second from one socket are dropped.
-- The owner sees presence in the local review page: the local server's owner socket joins as a viewer (role `owner`), forwards every presence frame it receives unchanged to the local page as an SSE event `presence`, and sends the local page's own status and focus on.
+- A socket becomes a viewer with its first `hello`; until then it gets no presence frames (the `publish` command never sends one). After opening the socket, a viewer sends `hello { status, name? }` (`name` only on an unlisted page, from the name prompt). The server answers with one `hello` per other viewer present, then the joiner's own, marked `self: true`, and sends the newcomer's `hello` to everyone else. A `hello` from the server carries `viewer: { id, name, colour, role }`, `status` and `focus`. `id` is per socket; `name` is the invite name, the self-declared name on an unlisted page (truncated to 40 characters, `Reviewer` when empty), or `Owner`; `colour` is lowercase `#rrggbb`, picked by the server: the same for every socket under one name, and different from the other names present (clients only display it). Until invites land, a reviewer socket without one counts as "no invite": its name is `hello.name`.
+- `status { status }`: `viewing`, `away` (tab hidden) or `writing` (the composer or the frame's note box has the keyboard; the frame posts `writing` to the chrome). It is also the heartbeat: send it at least every 30 s (the chrome sends it every 25 s). The server passes on a change only; a repeated status is just the heartbeat.
+- `focus { statement }`: the statement id the viewer last clicked in Annotate mode (the frame posts `focus` when a click opens the note box), or `null` to clear. The chrome outlines that statement in the viewer's colour with their name; viewers on the same statement share one outline with a name tag each. Clicking a viewer's chip scrolls to their focus.
+- `bye {}`: sent on leaving (`pagehide`). The server sends `bye { viewer }` to the others on `bye`, on close, or after 60 s without a frame from that viewer. Any frame counts, not only presence. A viewer dropped for silence comes back under the same id, with a `hello` to the others, on its next frame.
+- Server copies of `status`, `focus` and `bye` carry `viewer` (the viewer id), and go to the other viewers only, never back to the sender. Presence is never stored, never in the op log or the row feed, and never acked. More than 10 presence frames a second from one socket are dropped.
+- A second `hello` keeps the viewer id and updates status and name: the chrome sends one when its name prompt is answered after joining, so the others see the name at once.
+- On a dropped socket the chrome clears its roster; after reconnecting it sends `hello` again, and `focus` if it has one. A browser cannot read a refused handshake's status, so when the socket closes before opening the chrome asks the page shell: 404 or 410 means the page is gone and it stops retrying.
+- The owner sees presence in the local review page: the local server's owner socket joins as a viewer (role `owner`), forwards every presence frame it receives unchanged to the local page as an SSE event `presence`, and sends the local page's own status and focus on. (Arrives with the local sync peer, RLM-270.)
 
 ### Self-host (Q18)
 

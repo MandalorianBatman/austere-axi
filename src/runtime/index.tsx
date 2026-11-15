@@ -12,7 +12,7 @@ import austereCss from "./austere.css";
 import fontCss from "./font.css";
 import { austereLibrary, buildLibrary } from "./library.tsx";
 import { createAnnotator } from "./annotate.ts";
-import type { Annotator, AnnotatorMessage, RefsTo } from "./annotate.ts";
+import type { Annotator, AnnotatorMessage, FocusMark, RefsTo } from "./annotate.ts";
 import { onRuntimeError, reportRuntimeError } from "./env.ts";
 import type { RuntimeErrorEntry } from "./env.ts";
 import { registeredPacks } from "./pack-api.ts";
@@ -47,6 +47,7 @@ export type ChromeToFrame =
   | { type: "source"; program: unknown }
   | { type: "reveal"; id: string }
   | { type: "highlight"; ids: unknown; scroll: unknown }
+  | { type: "presence"; marks: unknown }
   | { type: "init"; mode: unknown; state?: Record<string, unknown> | null; scrollY: number }
   | { type: "mode"; mode: unknown };
 
@@ -383,6 +384,14 @@ function boot() {
   // Registered here, not in App: the chrome may send it as soon as the frame is ready.
   bridge.on("highlight", ({ ids, scroll }) => {
     ann.highlight(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [], !!scroll);
+  });
+  // Other viewers' last clicks. Only well-formed marks are drawn; the colour goes into CSS.
+  bridge.on("presence", ({ marks }) => {
+    const ok = (m: unknown): m is FocusMark => {
+      const f = m as Partial<FocusMark> | null;
+      return !!f && typeof f.statement === "string" && typeof f.name === "string" && typeof f.colour === "string" && /^#[0-9a-f]{6}$/i.test(f.colour);
+    };
+    ann.focus(Array.isArray(marks) ? marks.filter(ok).slice(0, 50) : []);
   });
   // Links that would open a new window (markdown, URL cells) would get a
   // sandboxed popup that breaks most sites, so the chrome opens them instead.

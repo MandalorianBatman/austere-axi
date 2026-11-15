@@ -301,6 +301,7 @@ export interface Published {
   url: string;
   expiresAt: number | null;
   auto: boolean;
+  presence: boolean;
   packs: number;
   images: number;
 }
@@ -309,8 +310,9 @@ export interface Published {
  * Upload (or republish) a page.
  * @param abs canonical absolute path
  * @param fresh a new link even when the file has one
+ * @param presence viewers see each other on the page (Q17); false is `--no-presence`
  */
-export async function publish(abs: string, { auto = false, fresh = false } = {}): Promise<Published> {
+export async function publish(abs: string, { auto = false, fresh = false, presence = true } = {}): Promise<Published> {
   const base = cloudUrl();
   const state = stateFor(base);
   // Everything that can fail locally fails before the first request.
@@ -336,9 +338,9 @@ export async function publish(abs: string, { auto = false, fresh = false } = {})
     html: bundle.sha256,
     packs: bundle.packs.map(({ sha256, name, version }) => ({ sha256, name, version })),
     auto,
-    // Invite-only and presence-on are the defaults (Q16, Q17); their flags come with the access and presence tickets.
+    // Invite-only is the default (Q16); its flags come with the access ticket.
     unlisted: false,
-    presence: true,
+    presence,
   };
   let row: PageRow | null;
   try {
@@ -351,7 +353,7 @@ export async function publish(abs: string, { auto = false, fresh = false } = {})
   }
   state.pages[abs] = { id, auto };
   writeCloud(state);
-  return { updated: !!prev, id, url, expiresAt: row ? row.expiresAt : null, auto, packs: bundle.packs.length, images: bundle.images };
+  return { updated: !!prev, id, url, expiresAt: row ? row.expiresAt : null, auto, presence, packs: bundle.packs.length, images: bundle.images };
 }
 
 export interface ListedPage {
