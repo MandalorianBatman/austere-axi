@@ -30,8 +30,8 @@ export interface AnnotationItem {
   detail?: AnnotationDetail;
 }
 
-/** Messages the annotator posts to the chrome. */
-export type AnnotatorMessage = { type: "annotate"; item: AnnotationItem } | { type: "toggle-mode" };
+/** Messages the annotator posts to the chrome. `focus`: the statement this viewer clicked, for presence. */
+export type AnnotatorMessage = { type: "annotate"; item: AnnotationItem } | { type: "focus"; id: string } | { type: "toggle-mode" };
 
 /** Ids of the statements that reference `id` (shared/statements.ts referencesTo). */
 export type RefsTo = (map: StatementMap, id: string) => string[];
@@ -46,6 +46,15 @@ export interface Annotator {
   flash(ids: string[], tone?: string, map?: StatementMap, refsTo?: RefsTo): Element[];
   reveal(id: string, map?: StatementMap, refsTo?: RefsTo): boolean;
   highlight(ids: string[], scroll?: boolean): number;
+  focus(marks: FocusMark[]): void;
+}
+
+/** Another viewer's last click (presence): outlined in their colour, labelled with their name. */
+export interface FocusMark {
+  statement: string;
+  name: string;
+  /** `#rrggbb`. */
+  colour: string;
 }
 
 interface Point {
@@ -341,6 +350,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       if (part && excerpt === detail?.part) excerpt = undefined;
     }
     const statement = statementOf(target);
+    post({ type: "focus", id: statement.id });
     draft = {
       targetId: statement.id,
       component: statement.component,
@@ -555,6 +565,13 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   let marked: string[] | null = null; // statement ids
   let layoutRaf = 0;
 
+  // Other viewers' focus: one outline per statement, in the first viewer's colour, with a
+  // name tag per viewer. Redrawn with the marks, so it follows the statement.
+  const focusLayer = document.createElement("div");
+  focusLayer.setAttribute(UI_ATTR, "");
+  root.appendChild(focusLayer);
+  let focused: FocusMark[] = [];
+
   function drawMarks() {
     const [map, refsTo]: [StatementMap?, RefsTo?] = marked && lookup ? lookup() : [];
     // Statements that render nothing, or sit scrolled out of their container, get no mark.
@@ -586,10 +603,11 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   }
 
   function scheduleLayout() {
-    if (layoutRaf || (!marked && hover.hidden)) return;
+    if (layoutRaf || (!marked && hover.hidden && !focused.length)) return;
     layoutRaf = requestAnimationFrame(() => {
       layoutRaf = 0;
       if (marked) drawMarks();
+      if (focused.length) drawFocus();
       placeHover();
     });
   }
@@ -629,6 +647,37 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     return list.length;
   }
 
+  function drawFocus() {
+    const [map, refsTo]: [StatementMap?, RefsTo?] = focused.length && lookup ? lookup() : [];
+    const byStatement = new Map<string, FocusMark[]>();
+    for (const m of focused) byStatement.set(m.statement, [...(byStatement.get(m.statement) ?? []), m]);
+    const outlines: HTMLDivElement[] = [];
+    for (const [statement, viewers] of byStatement) {
+      const el = outermost([statement], map, refsTo)[0];
+      const box = el && visibleBox(el);
+      if (!box) continue;
+      const o = overlay(box, "austere-focus");
+      o.style.setProperty("--austere-viewer", viewers[0].colour);
+      const tags = document.createElement("div");
+      tags.className = "austere-focus-names";
+      for (const v of viewers) {
+        const tag = document.createElement("span");
+        tag.textContent = v.name;
+        tag.style.background = v.colour;
+        tags.appendChild(tag);
+      }
+      o.appendChild(tags);
+      outlines.push(o);
+    }
+    focusLayer.replaceChildren(...outlines);
+  }
+
+  /** Shows these viewers' focus until called again; an empty list clears. */
+  function focus(marks: FocusMark[]) {
+    focused = marks;
+    drawFocus();
+  }
+
   return {
     setMode(next: unknown) {
       mode = next === "annotate" ? "annotate" : "explore";
@@ -642,5 +691,6 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     flash,
     reveal,
     highlight,
+    focus,
   };
 }

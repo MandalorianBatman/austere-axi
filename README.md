@@ -185,7 +185,7 @@ austere-axi export <file>        one self-contained HTML file, works offline (~1
 austere-axi hub on|off|status|list|notes|open   home page with every page and note
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
-austere-axi publish <file>       hosted copy of the page on austere.kasat.xyz   [--auto] [--new]
+austere-axi publish <file>       hosted copy of the page on austere.kasat.xyz   [--auto] [--no-presence] [--new]
 austere-axi publish list|rm <file|id>   your hosted pages; delete one now
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out
@@ -364,6 +364,7 @@ austere-axi publish rm plan.html       # or the page id; the link stops working 
 - **What is uploaded:** the file with its runtime tag pointed at the service's copy of this CLI version, the installed packs it declares, and the images beside it, inlined by the same rules as `export`. A declared pack that is not installed at that version, or an image that cannot be inlined, is an error. Each upload is limited to 1 MB after gzip.
 - **Who can see it:** pages are invite-only. Inviting reviewers is not in this version yet, so for now nobody else can open a published page.
 - **Notes:** reviewers' notes will be held for you by default; `--auto` on a publish records that they go straight to the agent. They do not reach `poll` or `feedback` yet.
+- **Presence:** everyone on the page sees who else is there (a chip per viewer: viewing, away or writing) and the part each one last clicked in Annotate mode, outlined with their name. Nothing about it is stored. `--no-presence` on a publish turns it off for that page.
 - **Expiry:** 30 days after the last publish.
 - **Owner token:** created on the first `publish`, stored in `~/.austere-axi/cloud.json` (mode 0600). It only controls your pages. Copying the file to another machine lets that machine manage them too.
 

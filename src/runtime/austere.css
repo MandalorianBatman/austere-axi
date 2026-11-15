@@ -838,6 +838,28 @@ html.austere-annotating .austere-page :where(a, button, input, select, textarea,
   background: rgba(242, 196, 109, 0.06);
   box-shadow: 0 0 0 3px rgba(242, 196, 109, 0.12);
 }
+/* Another viewer's last click (presence); --austere-viewer is their colour. */
+.austere-focus {
+  position: absolute;
+  z-index: 2147482997;
+  pointer-events: none;
+  border-radius: 10px;
+  border: 2px solid var(--austere-viewer);
+}
+.austere-focus-names {
+  position: absolute;
+  top: -11px;
+  left: 8px;
+  display: flex;
+  gap: 4px;
+}
+.austere-focus-names > span {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font: 600 11px/16px system-ui, sans-serif;
+  color: #fff;
+  white-space: nowrap;
+}
 @keyframes austere-flash {
   0% {
     opacity: 0;

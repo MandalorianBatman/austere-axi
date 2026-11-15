@@ -164,6 +164,49 @@ code {
     opacity: 0.35;
   }
 }
+/* Presence: one chip per other viewer, in their colour. Away is faded; writing gets a dot. */
+.viewers {
+  display: inline-flex;
+  align-items: center;
+}
+.viewers[hidden] {
+  display: none;
+}
+.viewer {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  margin-left: -5px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--viewer);
+  color: #fff;
+  font: 600 11px/20px system-ui, sans-serif;
+  text-align: center;
+  padding: 0;
+  cursor: pointer;
+}
+.viewer:first-child {
+  margin-left: 0;
+}
+.viewer:disabled {
+  cursor: default;
+}
+.viewer.away {
+  opacity: 0.45;
+}
+.viewer.writing::after {
+  content: "";
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--amber);
+  animation: blink 1.2s infinite;
+}
 .icon-btn {
   border: 1px solid transparent;
   background: transparent;

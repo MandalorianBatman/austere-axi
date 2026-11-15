@@ -257,10 +257,14 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: 'share plan.html --as "Ana"',
   },
   publish: {
-    usage: "publish <file> [--auto] [--new] | publish list | publish rm <file|id>",
+    usage: "publish <file> [--auto] [--no-presence] [--new] | publish list | publish rm <file|id>",
     summary:
       "hosted share link on austere.kasat.xyz: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. The only command that contacts the service; run it only when the user asks to share a page. Pages are invite-only and this version cannot invite reviewers yet, and hosted notes do not reach poll or feedback yet",
-    flags: { auto: "record reviewers' notes as sent straight to the agent instead of held (applies to this publish)", new: "a fresh link instead of updating this file's" },
+    flags: {
+      auto: "record reviewers' notes as sent straight to the agent instead of held (applies to this publish)",
+      "no-presence": "viewers do not see who else is on the page or what they clicked (applies to this publish)",
+      new: "a fresh link instead of updating this file's",
+    },
     example: "publish plan.html",
   },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
@@ -1213,17 +1217,18 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
     }
     const abs = needFile(sub, "publish");
     if (!abs || !sub) return;
-    const r = await cloud.publish(abs, { auto: !!flags.auto, fresh: !!flags.new });
+    const r = await cloud.publish(abs, { auto: !!flags.auto, fresh: !!flags.new, presence: !flags["no-presence"] });
     print({
       status: r.updated ? "updated" : "published",
       file: abs,
       url: r.url,
       mode: r.auto ? "auto" : "hold",
+      presence: r.presence ? undefined : "off",
       expires: r.expiresAt === null ? undefined : shortDate(r.expiresAt),
       packs: r.packs || undefined,
       images: r.images || undefined,
       note: "The page is invite-only, and this version of austere-axi cannot invite reviewers yet. Notes on hosted pages do not reach poll or feedback yet. The page expires 30 days after the last publish.",
-      next: `${BIN} publish ${quote(sub)}${r.auto ? " --auto" : ""} again updates this link; ${BIN} publish rm ${quote(sub)} deletes it.`,
+      next: `${BIN} publish ${quote(sub)}${r.auto ? " --auto" : ""}${r.presence ? "" : " --no-presence"} again updates this link; ${BIN} publish rm ${quote(sub)} deletes it.`,
     });
   } catch (caught) {
     const err = caught as { message: string; status?: number; code?: string };
