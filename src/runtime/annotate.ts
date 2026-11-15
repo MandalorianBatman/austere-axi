@@ -78,9 +78,10 @@ interface OpenRequest {
 }
 
 interface Draft {
-  /** The innermost statement clicked, and the piece of it the box outlined (pieceOf). */
+  /** The innermost statement clicked, the piece of it the box outlined (pieceOf), and how to find that piece again after a re-render. */
   target: Element;
   piece: Element | null;
+  relocate: ((target: Element) => Element | null) | null;
   targetId: string;
   component: string;
   path: PathEntry[];
@@ -278,9 +279,12 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   let hoveredPiece: Element | null = null;
   let relocate: ((target: Element) => Element | null) | null = null;
 
-  // A piece is cut to its scrollers (a long diff line, a wide diagram): the box stops at what shows.
-  function hoverRect(target: Element, piece: Element | null): Box {
-    return (piece && visibleBox(piece)) || boxOf(target);
+  // A piece is cut to its scrollers (a long diff line, a wide diagram): the box stops at what shows,
+  // and hides while the piece is scrolled out of sight rather than growing to the whole statement.
+  function placeHoverOn(target: Element, piece: Element | null) {
+    const box = piece ? visibleBox(piece) : boxOf(target);
+    hover.style.visibility = box ? "" : "hidden";
+    if (box) placeBox(hover, box);
   }
 
   function showHover(target: Element | null, piece: Element | null = null) {
@@ -291,7 +295,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       hover.hidden = true;
       return;
     }
-    placeBox(hover, hoverRect(target, piece));
+    placeHoverOn(target, piece);
     hoverLabel.textContent = `${target.getAttribute("data-oui-id")} · ${target.getAttribute("data-oui-c")}${pieceLabel(piece)}`;
     hover.hidden = false;
   }
@@ -389,6 +393,11 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
         current.component = p.component;
         // The box follows the chosen statement; only the innermost one keeps the piece (and its detail).
         const innermost = i === current.path.length - 1;
+        if (innermost) {
+          // A re-render since the note opened may have replaced the statement or its rows.
+          if (!current.target.isConnected) current.target = document.querySelector(`[data-oui-id="${CSS.escape(p.id)}"]`) ?? current.target;
+          if (current.piece && !current.piece.isConnected) current.piece = current.relocate?.(current.target) ?? null;
+        }
         showHover(current.target.closest(`[data-oui-id="${CSS.escape(p.id)}"]`), innermost ? current.piece : null);
         placeHover();
         renderPath();
@@ -421,6 +430,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     draft = {
       target,
       piece,
+      relocate: piece && relocatorOf(target, piece),
       targetId: statement.id,
       component: statement.component,
       path,
@@ -676,7 +686,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       hovered = document.querySelector(`[data-oui-id="${CSS.escape(id)}"]`);
     }
     if (hovered && hoveredPiece && !hoveredPiece.isConnected) hoveredPiece = relocate?.(hovered) ?? null;
-    if (hovered) placeBox(hover, hoverRect(hovered, hoveredPiece));
+    if (hovered) placeHoverOn(hovered, hoveredPiece);
     else hover.hidden = true;
   }
 
