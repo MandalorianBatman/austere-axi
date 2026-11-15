@@ -587,8 +587,13 @@ test("rows lost after the grant acks keep a confirmed link; an unconfirmed new i
   r = await cli(["publish", "invites", file]);
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(links(r.out), { Ana: ana }, "Ana's confirmed link survives; Ben's is not shown unconfirmed");
-  assert.match(r.out, /- name: Ben\n\s+status: live\n\s+note: "?this machine's grant was not confirmed; .*lost-rows\.html --auto --unlisted --invite Ben re-sends it/);
-  assert.match(field(r.out, "next") ?? "", /lost-rows\.html --auto --unlisted --invite <name> adds one/);
+  // Output values are JSON-quoted when they hold quotes or backslashes (a Windows path does): decode before matching.
+  const benNote = /- name: Ben\n\s+status: live\n\s+note: (.*)\n/.exec(r.out)?.[1] ?? "";
+  const note = benNote.startsWith('"') ? (JSON.parse(benNote) as string) : benNote;
+  const resend = /^this machine's grant was not confirmed; austere-axi publish (.+) --auto --unlisted --invite Ben re-sends it and prints the link$/.exec(note);
+  assert.ok(resend, note);
+  assert.match(resend[1], /lost-rows\.html"?$/, "the suggested command names the published file");
+  assert.match(field(r.out, "next") ?? "", /lost-rows\.html"? --auto --unlisted --invite <name> adds one/);
 
   // Re-sending Ben (with the page's flags, as suggested) confirms the same link and keeps the page open.
   r = await cli(["publish", file, "--invite", "Ben", "--auto", "--unlisted"]);
