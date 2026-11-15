@@ -1,4 +1,5 @@
-// Opt-in browser suite (npm run test:browser; needs Chrome or CHROME_PATH).
+// Opt-in browser suite (npm run test:browser; needs Chrome or CHROME_PATH, and Firefox for
+// the engine check: npx playwright-core install firefox, or FIREFOX_PATH).
 // The dashed hover box locked under an open note stays on its statement while
 // the page moves under it: a window scroll, and a live update that re-lays out
 // the diagram the statement sits in. Inside a statement it outlines the row pointed at.
@@ -10,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Frame, Page } from "playwright-core";
-import { launchBrowser } from "../../scripts/lib/browser.ts";
+import { launchBrowser, launchFirefox } from "../../scripts/lib/browser.ts";
 import { CDN_RUNTIME_URL } from "../../src/cli/artifact.ts";
 import { htmlPage } from "../../scripts/lib/plugins.ts";
 import { ownerHeaders } from "../owner.ts";
@@ -187,6 +188,31 @@ test("the locked hover box follows its node through a scroll and a live update",
     assert.ok(Math.abs(moved.left - scrolled.left) + Math.abs(moved.top - scrolled.top) > 20, "the live update did not move the node");
   } finally {
     await context.close();
+  }
+});
+
+// Firefox measures an SVG group holding a nested <svg> (the node's icon) far wider than it
+// draws, by getBoundingClientRect and by a Range alike: the box ran off the node to the right.
+test("in Firefox the hover box fits a node that has an icon", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const launched = await launchFirefox();
+  if (!launched.browser) return t.skip(launched.reason);
+  const firefox = launched.browser;
+  writePage(false);
+  const { session } = await api("/api/open", { file: FILE });
+  try {
+    const page = await (await firefox.newContext({ viewport: { width: 1280, height: 700 } })).newPage();
+    const { code } = await api("/api/login", {});
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
+    const frame = (await (await page.waitForSelector("iframe.frame")).contentFrame()) as Frame;
+    await frame.waitForSelector('[data-oui-id="pg"] .austere-arch-node-box', { timeout: 15_000 });
+    await page.waitForTimeout(400);
+    // The node's label lies over the box's centre; a click there is still on the node.
+    await frame.locator('[data-oui-id="pg"] .austere-arch-node-box').click({ force: true });
+    await frame.locator(".austere-pop").waitFor({ state: "visible" });
+    await assertOnNode(page, frame, "on open");
+  } finally {
+    await firefox.close();
   }
 });
 
