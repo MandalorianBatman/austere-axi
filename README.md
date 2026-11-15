@@ -156,7 +156,7 @@ agent patches changes  ◄── austere-axi poll plan.html ◄─┘  (long-pol
 - **A page is a plain `.html` file:** one runtime `<script>` tag and one `<script type="text/openui">` block. Opened directly, it loads the runtime from the CDN. Under review, the server serves a local copy.
 - **Components:** 58 stock OpenUI components, plus `Architecture` (`Node`, `Edge`, `Group`), `Diff` and `FileTree`. Nine shadcn-style components come as a bundled [pack](#components-and-packs).
 - **Diagrams lay out automatically** ([dagre](https://github.com/dagrejs/dagre)); the agent never writes coordinates. Every node and edge is a click target. `lanes` puts each group in a column; `tone` colors a box or line to show risk.
-- **Notes** attach to the smallest named statement under the click, with detail where it exists: table row and column, `file:+line` in a diff, a diagram node, or selected text. The reviewer can move a note to a parent section.
+- **Notes** attach to the smallest named statement under the click, with detail where it exists: table row and column, `file:+line` in a diff, a diagram node, or selected text. The hover box outlines that row, line or node, not the whole statement. The reviewer can move a note to a parent section.
 - **Changes flash** after each agent turn, and the bar shows `N changed`. Click it to keep the last turn's changes outlined until you click again.
 - **Buttons and forms send feedback.** `@ToAssistant("…")` sends a message with the form values. A button with no action sends its label.
 - **Phone review:** with Tailscale running, the server also listens on the tailnet IP and prints a phone link. That link carries your owner key; keep it private. The review UI has a mobile layout.
