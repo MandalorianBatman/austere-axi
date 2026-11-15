@@ -615,7 +615,10 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       if (clipX) [left, right] = [Math.max(left, c.left), Math.min(right, c.right)];
       if (clipY) [top, bottom] = [Math.max(top, c.top), Math.min(bottom, c.bottom)];
     }
-    return right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null;
+    // A straight diagram edge is a line: one side may be zero, but not both.
+    return right >= left && bottom >= top && (right > left || bottom > top)
+      ? { left, top, width: right - left, height: bottom - top }
+      : null;
   }
 
   function flashElement(el: Element, tone: string) {
