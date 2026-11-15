@@ -265,6 +265,22 @@ code {
 .menu-pop .danger {
   color: var(--red);
 }
+.menu-pop button:disabled {
+  color: var(--muted);
+  cursor: progress;
+}
+.menu-note {
+  max-width: 280px;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: text;
+}
+.menu-note code {
+  color: var(--text);
+  user-select: all;
+}
 
 .banner {
   flex: none;

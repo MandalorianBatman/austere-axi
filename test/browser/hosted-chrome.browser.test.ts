@@ -16,6 +16,8 @@ import type { WebSocket } from "ws";
 import { launchBrowser } from "../../scripts/lib/browser.ts";
 import { SUBPROTOCOL, SYNC_VERSION, parseClientFrame, readProtocols } from "../../src/shared/sync.ts";
 import type { Mutation, NoteRow, PageRow, ReplyRow, Row, ServerFrame } from "../../src/shared/sync.ts";
+import { packedScripts } from "../../src/cli/export.ts";
+import { hasInlineRuntime } from "../../src/cli/artifact.ts";
 
 const ID = "pg_test";
 const BASE = `/p/${ID}`;
@@ -276,7 +278,7 @@ test("hosted chrome: invite link, asset-token frame, synced rows, addNote as the
     await page.frameLocator(".frame").locator("text=hello").waitFor();
 
     // Owner and local-only controls are gone; the footer is there.
-    for (const sel of ['[data-cmd="end"]', '[data-cmd="export"]', '[data-cmd="copy-path"]', ".send-end", ".held-bar"]) {
+    for (const sel of ['[data-cmd="end"]', '[data-cmd="copy-path"]', ".send-end", ".held-bar"]) {
       assert.equal(await page.locator(sel).count(), 0, `${sel} hidden`);
     }
     assert.equal(await page.locator(".hosted-foot a").innerText(), "Made with austere-axi");
@@ -345,6 +347,57 @@ test("hosted chrome: invite link, asset-token frame, synced rows, addNote as the
 
     // No local-server traffic and no old hosted routes.
     assert.ok(!svc.requests.some((r) => /\/events|\/bye|\/s\/|\/conversation|\/send/.test(r)), svc.requests.join("\n"));
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: the ⋯ menu downloads a standalone copy; only an open link offers its page link", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
+  await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+  try {
+    const page = await ctx.newPage();
+    const errors = watchErrors(page);
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.frameLocator(".frame").locator("text=hello").waitFor();
+
+    // An invite names one reviewer: no page link to pass on, and the menu says how the owner shares.
+    await page.click(".menu-btn");
+    assert.ok(await page.locator('[data-cmd="copy-link"]').isHidden(), "no page link with an invite");
+    assert.match(await page.locator("[data-share-note]").innerText(), /publish <file> --invite "Name"/);
+
+    // The download is the published page with its runtime packed in, as `export` writes it.
+    const [download] = await Promise.all([page.waitForEvent("download"), page.click('[data-cmd="export"]')]);
+    assert.equal(download.suggestedFilename(), "Plan.html");
+    const html = fs.readFileSync(await download.path(), "utf8");
+    assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/, "no script left to fetch");
+    const packed = packedScripts(html);
+    assert.deepEqual(packed.map((x) => x.name), ["/rt/austere.js"]);
+    assert.equal(packed[0].code, fs.readFileSync("dist/austere.js", "utf8"), "unpacks to the runtime as served");
+    assert.match(html, /intro = TextContent\("hello"\)/, "the program is kept");
+    assert.ok(hasInlineRuntime(html), "check sees an exported copy");
+    assert.equal(await page.locator(".banner").isHidden(), true);
+
+    // The copy opens on its own: the loader unpacks the runtime and it renders, with no request.
+    const offline = await ctx.newPage();
+    const requests: string[] = [];
+    offline.on("request", (r) => r.url().startsWith("http") && requests.push(r.url()));
+    await offline.setContent(html);
+    await offline.waitForSelector("text=hello");
+    assert.deepEqual(requests, []);
+
+    // Unlisted, without an invite: the page link is the URL, with no fragment.
+    svc.unlisted = true;
+    put(pageRow(1_000));
+    await page.evaluate((id) => localStorage.removeItem(`austere:invite:${id}`), ID);
+    await page.goto(`${origin}${BASE}`);
+    await page.waitForSelector('[data-cmd="copy-link"]:not([hidden])', { state: "attached" });
+    assert.ok(await page.locator("[data-share-note]").isHidden());
+    await page.click(".menu-btn");
+    await page.click('[data-cmd="copy-link"]');
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `${origin}${BASE}`);
     assert.deepEqual(errors, []);
   } finally {
     await ctx.close();

@@ -94,7 +94,9 @@ The shell holds no page content, so it is public. `viewer.name` stays empty in t
 Chrome hosted mode (an austere-axi change):
 
 - All `/s/${SID}/…` URLs come from one `base`, which defaults to `/s/${SID}`.
-- It hides owner and local-only controls: end review, export, held-note release, and the `bye` beacon.
+- It hides owner and local-only controls: end review, copy file path, held-note release, and the `bye` beacon.
+- The ⋯ menu keeps "Download standalone HTML": the chrome trades a fresh asset token, fetches the artifact, fetches each `/rt/…` and `/pk/…` script it names (all same-origin, so `connect-src 'self'` holds), and packs them in the format `export` writes (`src/shared/standalone.ts`). The result is a `blob:` download. Images are already inlined by `publish`.
+- On an open link (no invite: the asset-token answer has no name), "Copy page link" copies the URL without its fragment. With an invite, the menu shows how the owner invites someone (`publish <file> --invite "Name"`) instead: an invite link names its reviewer and must not be passed on.
 - It renders the footer: "Made with austere-axi" (links to the GitHub repo) and "Report".
 
 > **Replaced** (Q13, Q16): "polls `GET {base}/conversation?after=<cursor>` every 30 s, and on focus, instead of opening `EventSource`" — the chrome opens the reviewer socket instead. "asks for the reviewer's name before the first send … and sends it with every batch" — only on unlisted pages; invited reviewers are named by their invite.
