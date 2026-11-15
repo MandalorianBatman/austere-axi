@@ -353,7 +353,7 @@ test("hosted chrome: invite link, asset-token frame, synced rows, addNote as the
   }
 });
 
-test("hosted chrome: the ⋯ menu downloads a standalone copy; only an open link offers its page link", async (t) => {
+test("hosted chrome: the ⋯ menu downloads a standalone copy; sharing follows the page's unlisted flag", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
   await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
@@ -363,13 +363,26 @@ test("hosted chrome: the ⋯ menu downloads a standalone copy; only an open link
     await page.goto(`${origin}${BASE}#i=${ANA}`);
     await page.frameLocator(".frame").locator("text=hello").waitFor();
 
-    // An invite names one reviewer: no page link to pass on, and the menu says how the owner shares.
+    // Invite-only: each link names one reviewer, so no page link to pass on; the menu says how the owner shares.
+    await page.waitForSelector("[data-share-note]:not([hidden])", { state: "attached" });
     await page.click(".menu-btn");
-    assert.ok(await page.locator('[data-cmd="copy-link"]').isHidden(), "no page link with an invite");
+    assert.ok(await page.locator('[data-cmd="copy-link"]').isHidden(), "no page link on an invite-only page");
     assert.match(await page.locator("[data-share-note]").innerText(), /publish <file> --invite "Name"/);
 
-    // The download is the published page with its runtime packed in, as `export` writes it.
-    const [download] = await Promise.all([page.waitForEvent("download"), page.click('[data-cmd="export"]')]);
+    // While the copy is built the menu stays open and says so; it closes once the file is saved.
+    const { promise: slow, resolve: release } = Promise.withResolvers<void>();
+    await page.route("**/rt/austere.js", async (route) => {
+      await slow;
+      await route.continue();
+    });
+    const downloading = page.waitForEvent("download");
+    await page.click('[data-cmd="export"]');
+    await page.waitForSelector('.menu-pop:not([hidden]) [data-cmd="export"]:disabled:text("Preparing download…")');
+    release();
+    const download = await downloading;
+    await page.waitForSelector(".menu-pop", { state: "hidden" });
+    await page.unroute("**/rt/austere.js");
+    assert.equal(await page.locator('[data-cmd="export"]').innerText(), "Download standalone HTML");
     assert.equal(download.suggestedFilename(), "Plan.html");
     const html = fs.readFileSync(await download.path(), "utf8");
     assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/, "no script left to fetch");
@@ -388,13 +401,23 @@ test("hosted chrome: the ⋯ menu downloads a standalone copy; only an open link
     await offline.waitForSelector("text=hello");
     assert.deepEqual(requests, []);
 
-    // Unlisted, without an invite: the page link is the URL, with no fragment.
+    // Unlisted, opened with an invite: the plain URL lets anyone in, so the invited reviewer may share it too.
     svc.unlisted = true;
     put(pageRow(1_000));
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.waitForSelector('[data-cmd="copy-link"]:not([hidden])', { state: "attached" });
+    assert.match(await page.locator(".composer-hint").innerText(), /Posting as Ana/, "still the invite's reviewer");
+    assert.ok(await page.locator("[data-share-note]").isHidden(), "no owner-only note on an unlisted page");
+    await page.click(".menu-btn");
+    await page.click('[data-cmd="copy-link"]');
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `${origin}${BASE}`, "no invite token in the copied link");
+
+    // Unlisted, without an invite: the same page link.
     await page.evaluate((id) => localStorage.removeItem(`austere:invite:${id}`), ID);
     await page.goto(`${origin}${BASE}`);
     await page.waitForSelector('[data-cmd="copy-link"]:not([hidden])', { state: "attached" });
     assert.ok(await page.locator("[data-share-note]").isHidden());
+    await page.evaluate(() => navigator.clipboard.writeText(""));
     await page.click(".menu-btn");
     await page.click('[data-cmd="copy-link"]');
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `${origin}${BASE}`);

@@ -94,9 +94,9 @@ The shell holds no page content, so it is public. `viewer.name` stays empty in t
 Chrome hosted mode (an austere-axi change):
 
 - All `/s/${SID}/…` URLs come from one `base`, which defaults to `/s/${SID}`.
-- It hides owner and local-only controls: end review, copy file path, held-note release, and the `bye` beacon.
-- The ⋯ menu keeps "Download standalone HTML": the chrome trades a fresh asset token, fetches the artifact, fetches each `/rt/…` and `/pk/…` script it names (all same-origin, so `connect-src 'self'` holds), and packs them in the format `export` writes (`src/shared/standalone.ts`). The result is a `blob:` download. Images are already inlined by `publish`.
-- On an open link (no invite: the asset-token answer has no name), "Copy page link" copies the URL without its fragment. With an invite, the menu shows how the owner invites someone (`publish <file> --invite "Name"`) instead: an invite link names its reviewer and must not be passed on.
+- It hides owner and local-only controls: end review, close review, reopen review, Send & End, copy file path, held-note release, and the `bye` beacon. These were hidden with export and copy-link alike from RLM-265 (#29) on, when `OWNER` became `!HOSTED && role === "owner"`; RLM-322 brought the download and the page link back.
+- The ⋯ menu keeps "Download standalone HTML": the chrome trades a fresh asset token, fetches the artifact, fetches each `/rt/…` and `/pk/…` script it names (all same-origin, so `connect-src 'self'` holds), and packs them in the format `export` writes (`src/shared/standalone.ts`). The result is a `blob:` download. Images are already inlined by `publish`. The menu stays open and the item reads "Preparing download…" until the file is saved or the banner says why it failed.
+- Sharing follows the page, not the viewer: on an unlisted page (the page row's `unlisted`), "Copy page link" copies the URL without its fragment, for every viewer, invited or not, because the plain URL carries no invite. On an invite-only page the menu shows how the owner invites someone (`publish <file> --invite "Name"`) instead: an invite link names its reviewer and must not be passed on.
 - It renders the footer: "Made with austere-axi" (links to the GitHub repo) and "Report".
 
 > **Replaced** (Q13, Q16): "polls `GET {base}/conversation?after=<cursor>` every 30 s, and on focus, instead of opening `EventSource`" — the chrome opens the reviewer socket instead. "asks for the reviewer's name before the first send … and sends it with every batch" — only on unlisted pages; invited reviewers are named by their invite.
@@ -409,14 +409,14 @@ Over a socket, a 429 is `rate_limited` and a 413 is `too_large` (see [Errors](#e
 
 | Threat | Mitigation |
 |---|---|
-| Artifact JS steals reviewer data or calls the API as the reviewer | Opaque-origin sandbox, `connect-src 'none'` on the frame, no cookies anywhere on the domain. The invite token stays in the chrome; the frame only ever gets a short-lived, page-scoped `assetToken`. |
+| Artifact JS steals reviewer data or calls the API as the reviewer | Opaque-origin sandbox, `connect-src 'none'` on the frame, no cookies anywhere on the domain. The invite token stays in the chrome; the frame only ever gets a short-lived, page-scoped `assetToken`. The downloaded standalone copy is built from the artifact and its scripts only: no invite token, asset token or reviewer name is written into it. |
 | Prompt injection through public notes | Held by default (Q7). Remote notes are marked `remote: true`. `--auto` is an explicit opt-in. |
 | Phishing or malware hosting gets the domain flagged | Report and takedown, 30-day expiry, `noindex`, 1 MB cap, upload rate limits |
 | Owner token leak | The token only controls that owner's pages. A token can be rotated by deleting `cloud.json`, which loses control of existing pages until they expire. |
 | Invite link leak | Only that invite's name is affected: the owner revokes it (`publish revoke`), which closes its sockets at once. Tokens travel in the fragment and `Sec-WebSocket-Protocol`, never in a logged URL. |
 | Note spam | Per-IP (per-invite on invited pages) per-page limits, 4 KB cap, and holding |
 | Replayed or duplicated mutations | `(clientId, n)` idempotency keys: a repeat changes nothing |
-| Untrusted third-party pack code | Runs only in the sandboxed frame, as locally. The page shows the same third-party-pack warning. |
+| Untrusted third-party pack code | On the hosted page it runs only in the sandboxed frame, as locally, and the page shows the same third-party-pack warning. A downloaded standalone copy is an ordinary HTML file: opened from disk it runs that code with no sandbox, like any `export` of the page. That is the reviewer's choice, the same as saving any web page. |
 
 ## Build tickets
 

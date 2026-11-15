@@ -270,7 +270,7 @@ code {
   cursor: progress;
 }
 .menu-note {
-  max-width: 280px;
+  max-width: 300px;
   padding: 8px 10px;
   color: var(--muted);
   font-size: 12px;
@@ -278,6 +278,10 @@ code {
   cursor: text;
 }
 .menu-note code {
+  display: block;
+  margin: 4px 0;
+  font-size: 11px;
+  white-space: nowrap;
   color: var(--text);
   user-select: all;
 }

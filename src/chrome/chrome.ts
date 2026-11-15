@@ -364,7 +364,7 @@ document.body.innerHTML = `
         <div class="menu-pop" hidden>
           <button type="button" data-cmd="copy-path">Copy file path</button>
           <button type="button" data-cmd="copy-link"${HOSTED ? " hidden" : ""}>${HOSTED ? "Copy page link" : "Copy review link"}</button>
-          ${HOSTED ? '<div class="menu-note" data-share-note hidden>Only the owner can share this page: <code>austere-axi publish &lt;file&gt; --invite "Name"</code> prints a link for each person.</div>' : ""}
+          ${HOSTED ? '<div class="menu-note" data-share-note hidden>Only the owner can share this page. To invite someone, they run<code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.</div>' : ""}
           <button type="button" data-cmd="reload">Reload artifact</button>
           ${HOSTED ? '<button type="button" data-cmd="export">Download standalone HTML</button>' : `<a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>`}
           <button type="button" data-cmd="end" class="danger">End review</button>
@@ -403,7 +403,9 @@ document.body.innerHTML = `
   <button type="button" class="dock"></button>
 </div>`;
 
-// Hosted viewers keep the download and, on an open (unlisted) link, the page link; the rest is the local owner's.
+// Hosted viewers keep the download and, on an unlisted page, the page link; the rest is the local owner's.
+// RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
+// from all of them (RLM-322).
 if (!OWNER) {
   const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"];
   if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
@@ -1243,10 +1245,15 @@ menuPop.addEventListener("click", async (e) => {
   // The share note stays open so its command can be selected.
   if (!cmd) return e.stopPropagation();
   if (cmd === "copy-path") navigator.clipboard?.writeText(BOOT.file);
-  // Hosted, only an open link has one: the invite token is already out of the address bar.
+  // Hosted, the URL without its fragment: the invite token is already out of the address bar.
   if (cmd === "copy-link") navigator.clipboard?.writeText(HOSTED ? location.origin + location.pathname : state.links?.remote || location.href);
   if (cmd === "reload") loadFrame();
-  if (cmd === "export" && HOSTED) await downloadStandalone();
+  if (cmd === "export" && HOSTED) {
+    // The menu stays open on "Preparing download…" until the file is saved or the banner says why not.
+    e.stopPropagation();
+    await downloadStandalone();
+    menuPop.hidden = true;
+  }
   if (cmd === "end") {
     if (state.queue.length) return sendAll(true);
     if (!confirm("End this review? The agent will stop listening.")) return;
@@ -1566,9 +1573,6 @@ async function loadHostedFrame(): Promise<boolean> {
   }
   renderViewer();
   renderComposer();
-  // An invite is one person's link, not the page's: only an open link may be passed on.
-  $('[data-cmd="copy-link"]').hidden = inviteName !== null;
-  $("[data-share-note]").hidden = inviteName === null;
   frame.src = `${BOOT.artifactUrl ?? `${BASE}/a/`}${answer.token}/`;
   return true;
 }
@@ -1598,6 +1602,7 @@ async function downloadStandalone(): Promise<void> {
   if (item.disabled) return;
   item.disabled = true;
   item.textContent = "Preparing download…";
+  let url: string | undefined;
   try {
     const answer = await requestAssetToken();
     if (!answer.token) throw new Error(`HTTP ${answer.status}`);
@@ -1616,13 +1621,18 @@ async function downloadStandalone(): Promise<void> {
     // All blocks and the loader where the first tag was: the runtime first, then the packs, in page order.
     let i = 0;
     const out = html.replace(HOSTED_SCRIPT_RE, () => (i++ ? "" : [...packed, LOADER_TAG].join("\n")));
-    const url = URL.createObjectURL(new Blob([out], { type: "text/html" }));
+    url = URL.createObjectURL(new Blob([out], { type: "text/html" }));
     const slug = BOOT.title.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "page";
-    h("a", { href: url, download: `${slug}.html` }).click();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    // In the document while clicked: Firefox ignores a click on a detached download anchor.
+    const a = h("a", { href: url, download: `${slug}.html`, hidden: true });
+    document.body.append(a);
+    a.click();
+    a.remove();
   } catch (err) {
     showBanner(`Could not build the download: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
+    // Late enough for the browser to have read the blob, on every path that made one.
+    if (url) setTimeout(URL.revokeObjectURL, 60_000, url);
     item.disabled = false;
     item.textContent = "Download standalone HTML";
   }
@@ -1652,6 +1662,17 @@ function applyPage(row: PageRow) {
     showBanner("New version, reload", [h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() })]);
   }
   showPackNotice(row.packs.map((p) => p.name));
+  renderShare(row.unlisted);
+}
+
+/**
+ * Sharing follows the page, not the viewer: on an unlisted page the plain URL lets anyone in, so every
+ * viewer (invited or not) may copy it; on an invite-only page each link names one reviewer, so the menu
+ * says how the owner invites someone instead.
+ */
+function renderShare(unlisted: boolean) {
+  $('[data-cmd="copy-link"]').hidden = !unlisted;
+  $("[data-share-note]").hidden = unlisted;
 }
 
 /**
