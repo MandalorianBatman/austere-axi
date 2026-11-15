@@ -35,10 +35,11 @@ import type { PackRef } from "../shared/packs-meta.ts";
 /** A YAML-shaped result for print(), built up field by field. */
 type Printed = Record<string, unknown>;
 
-/** Parsed flags: a switch is `true`, a value flag its string, `--also-listen` every value given. */
+/** Parsed flags: a switch is `true`, a value flag its string, a repeatable flag every value given. */
 interface Flags {
   [flag: string]: string | true | string[] | undefined;
   "also-listen"?: string[];
+  invite?: string[];
 }
 
 /** A command's entry in COMMANDS. */
@@ -257,15 +258,19 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: 'share plan.html --as "Ana"',
   },
   publish: {
-    usage: "publish <file> [--auto] [--no-presence] [--new] | publish list | publish rm <file|id>",
+    usage:
+      "publish <file> [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new] | publish invites <file> | publish revoke <file> <name> | publish list | publish rm <file|id>",
     summary:
-      "hosted share link on austere.kasat.xyz: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. The only command that contacts the service; run it only when the user asks to share a page. Pages are invite-only and this version cannot invite reviewers yet, and hosted notes do not reach poll or feedback yet",
+      "hosted share link on austere.kasat.xyz: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. Pages are invite-only: each --invite prints that reviewer's own link, revocable with publish revoke. The only command that contacts the service; run it only when the user asks to share a page. Hosted notes do not reach poll or feedback yet",
     flags: {
+      invite: "invite a reviewer by name and print their link (repeatable); the same name again keeps its link",
+      expires: "the invites of this publish stop working after this long: 30m, 12h, 7d, 2w (default: with the page)",
+      unlisted: "anyone with the plain page URL may review, naming themselves (applies to this publish)",
       auto: "record reviewers' notes as sent straight to the agent instead of held (applies to this publish)",
       "no-presence": "viewers do not see who else is on the page or what they clicked (applies to this publish)",
       new: "a fresh link instead of updating this file's",
     },
-    example: "publish plan.html",
+    example: 'publish plan.html --invite "Ana" --invite "Ben"',
   },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
   server: {
@@ -279,7 +284,7 @@ const COMMANDS: Record<string, CommandSpec> = {
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -299,7 +304,7 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
         if (i + 1 >= argv.length) return { flags, pos, error: `--${key} needs a value` };
         val = argv[++i];
       }
-      if (key === "also-listen") (flags["also-listen"] ||= []).push(String(val));
+      if (key === "also-listen" || key === "invite") (flags[key] ||= []).push(String(val));
       else flags[key] = val;
     } else if (a === "-h") flags.help = true;
     else if (a === "-v" || a === "-V") flags.version = true;
@@ -1215,20 +1220,61 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
       const r = await cloud.removePage(cloud.readCloud().pages[asFile] ? asFile : key);
       return print({ status: "removed", id: r.id, file: r.file, note: r.gone ? "It was already gone from the service (expired or deleted)." : "The link stops working at once." });
     }
+    if (sub === "invites" || sub === "revoke") {
+      const [file, ...name] = more;
+      if (!file) return usage(`${sub} needs a file: ${BIN} publish ${sub} <file>${sub === "revoke" ? " <name>" : ""}`, "publish");
+      // The saved page entry is enough: the source may have been moved or deleted since it was published.
+      const abs = canonicalFile(file);
+      if (sub === "revoke") {
+        if (!name.length) return usage(`revoke needs an invite name: ${BIN} publish revoke <file> <name> (see ${BIN} publish invites <file>)`, "publish");
+        const r = await cloud.revokeInvite(abs, name.join(" "));
+        return print({ status: "revoked", invite: r.name, id: r.id, note: "That link stops working now, and any page open with it is disconnected." });
+      }
+      const r = await cloud.listInvites(abs);
+      // A publish sets auto, unlisted and presence every time: the suggested commands repeat the page's current ones.
+      const again = `${BIN} publish ${quote(file)}${r.auto ? " --auto" : ""}${r.unlisted ? " --unlisted" : ""}${r.presence ? "" : " --no-presence"}`;
+      return print({
+        id: r.id,
+        access: r.unlisted ? "unlisted (anyone with the page URL) and invites" : "invite-only",
+        invites: r.invites.length
+          ? r.invites.map((i) => ({
+              name: i.name,
+              status: i.status,
+              link: i.link,
+              expires: i.expiresAt === null ? undefined : shortDate(i.expiresAt),
+              note: i.unconfirmed ? `this machine's grant was not confirmed; ${again} --invite ${quote(i.name)} re-sends it and prints the link` : undefined,
+            }))
+          : "none",
+        next: `${again} --invite <name> adds one; ${BIN} publish revoke ${quote(file)} <name> revokes one.`,
+      });
+    }
     const abs = needFile(sub, "publish");
     if (!abs || !sub) return;
-    const r = await cloud.publish(abs, { auto: !!flags.auto, fresh: !!flags.new, presence: !flags["no-presence"] });
+    const r = await cloud.publish(abs, {
+      auto: !!flags.auto,
+      fresh: !!flags.new,
+      unlisted: !!flags.unlisted,
+      presence: !flags["no-presence"],
+      invite: flags.invite,
+      expiresAt: typeof flags.expires === "string" ? cloud.expiryOf(flags.expires) : undefined,
+    });
+    // Unknown (the rows did not arrive) is not "nobody": warn only when the service showed no live invite.
+    const nobody = !r.unlisted && !r.invites.length && r.otherInvites === 0;
+    const again = `${BIN} publish ${quote(sub)}${r.auto ? " --auto" : ""}${r.unlisted ? " --unlisted" : ""}${r.presence ? "" : " --no-presence"}`;
     print({
       status: r.updated ? "updated" : "published",
       file: abs,
-      url: r.url,
+      id: r.id,
+      url: r.unlisted ? r.url : undefined,
+      access: r.unlisted ? "unlisted: anyone with the url may review" : "invite-only",
+      invites: r.invites.length ? r.invites.map((i) => ({ name: i.name, link: i.link, expires: i.expiresAt === null ? undefined : shortDate(i.expiresAt) })) : undefined,
       mode: r.auto ? "auto" : "hold",
       presence: r.presence ? undefined : "off",
       expires: r.expiresAt === null ? undefined : shortDate(r.expiresAt),
       packs: r.packs || undefined,
       images: r.images || undefined,
-      note: "The page is invite-only, and this version of austere-axi cannot invite reviewers yet. Notes on hosted pages do not reach poll or feedback yet. The page expires 30 days after the last publish.",
-      next: `${BIN} publish ${quote(sub)}${r.auto ? " --auto" : ""}${r.presence ? "" : " --no-presence"} again updates this link; ${BIN} publish rm ${quote(sub)} deletes it.`,
+      note: `${nobody ? "Nobody can open this page yet: add --invite <name>, or --unlisted for an open link. " : ""}Send each reviewer only their own link. Notes on hosted pages do not reach poll or feedback yet. The page expires 30 days after the last publish.`,
+      next: `${again} again updates this link (earlier invites keep working); ${BIN} publish invites ${quote(sub)} lists invites; ${BIN} publish revoke ${quote(sub)} <name> revokes one; ${BIN} publish rm ${quote(sub)} deletes the page.`,
     });
   } catch (caught) {
     const err = caught as { message: string; status?: number; code?: string };

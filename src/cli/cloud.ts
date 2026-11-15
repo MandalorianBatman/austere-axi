@@ -6,7 +6,9 @@
 // schema module (src/shared/sync.ts); nothing here redefines them.
 //
 // State: <state>/cloud.json (mode 0600)
-//   { url, token, pages: { "<absolute path>": { id, auto } } }
+//   { url, token, pages: { "<absolute path>": { id, auto, unlisted, presence, invites: { "<name>": { token, expiresAt, grantedAt } } } } }
+// Invite tokens are kept so a republish or `publish invites` can print the same links; the service
+// only ever sees their SHA-256.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,8 +18,8 @@ import { readArtifact, rewriteRuntime } from "./artifact.ts";
 import { inlineImages } from "./export.ts";
 import { VERSION, stateDir } from "./paths.ts";
 import { bundledPacks, implicitPacks, pagePacks } from "./packs.ts";
-import { SYNC_VERSION, mutation, parseServerFrame, syncProtocols } from "../shared/sync.ts";
-import type { MutationArgs, MutationName, PackRef, PageRow, PullFrame, ReceivedFrame, SyncError } from "../shared/sync.ts";
+import { LIMITS, SYNC_VERSION, mutation, parseServerFrame, syncProtocols } from "../shared/sync.ts";
+import type { AclRow, MutationArgs, MutationName, PackRef, PageRow, PullFrame, ReceivedFrame, Row, SyncError } from "../shared/sync.ts";
 
 export const DEFAULT_CLOUD_URL = "https://austere.kasat.xyz";
 
@@ -35,10 +37,24 @@ export function cloudFile(): string {
   return path.join(stateDir(), "cloud.json");
 }
 
+export interface InviteEntry {
+  token: string;
+  expiresAt: number | null;
+  /** The service's `grantedAt` for the grant this token was sent in; null until a pull confirmed it. */
+  grantedAt: number | null;
+}
+
 export interface PageEntry {
   id: string;
   auto: boolean;
+  unlisted: boolean;
+  presence: boolean;
+  invites: Record<string, InviteEntry>;
 }
+
+/** An invite name: 1–40 UTF-16 units after trimming, the shared schema's `LIMITS.nameChars`. */
+const MAX_INVITE_NAME = LIMITS.nameChars;
+const INVITE_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
 export interface CloudState {
   url: string;
@@ -60,7 +76,23 @@ export function readCloud(): CloudState {
   if ("token" in raw && typeof raw.token === "string") state.token = raw.token;
   const pages = "pages" in raw && raw.pages && typeof raw.pages === "object" ? raw.pages : {};
   for (const [file, e] of Object.entries(pages)) {
-    if (e && typeof e === "object" && "id" in e && typeof e.id === "string") state.pages[file] = { id: e.id, auto: "auto" in e && e.auto === true };
+    if (!e || typeof e !== "object" || !("id" in e) || typeof e.id !== "string") continue;
+    // Names are user text ("__proto__" included): a dictionary without a prototype stores any of them.
+    const invites: Record<string, InviteEntry> = Object.create(null);
+    const raw = "invites" in e && e.invites && typeof e.invites === "object" ? e.invites : {};
+    for (const [name, i] of Object.entries(raw)) {
+      if (!i || typeof i !== "object" || !("token" in i) || typeof i.token !== "string" || !INVITE_TOKEN_RE.test(i.token)) continue;
+      const expiresAt = "expiresAt" in i && typeof i.expiresAt === "number" ? i.expiresAt : null;
+      const grantedAt = "grantedAt" in i && typeof i.grantedAt === "number" ? i.grantedAt : null;
+      invites[name] = { token: i.token, expiresAt, grantedAt };
+    }
+    state.pages[file] = {
+      id: e.id,
+      auto: "auto" in e && e.auto === true,
+      unlisted: "unlisted" in e && e.unlisted === true,
+      presence: !("presence" in e && e.presence === false),
+      invites,
+    };
   }
   return state;
 }
@@ -75,6 +107,8 @@ export function writeCloud(state: CloudState): void {
 export class CloudError extends Error {
   status: number | undefined;
   code: string | undefined;
+  /** How many of a session's mutations were acked (applied) before it failed. */
+  applied = 0;
   constructor(message: string, status?: number, code?: string) {
     super(message);
     this.status = status;
@@ -217,40 +251,47 @@ async function ensureToken(state: CloudState): Promise<string> {
 
 // ── owner socket ──
 
-/** A one-shot owner session: send one mutation, wait for its ack; optionally pull and return the page row. */
-async function sendMutation<N extends MutationName>(
-  base: string,
-  token: string,
-  id: string,
-  name: N,
-  args: MutationArgs[N],
-  { pullPage = false } = {},
-): Promise<PageRow | null> {
+type Send = { [N in MutationName]: { name: N; args: MutationArgs[N] } }[MutationName];
+
+/**
+ * A one-shot owner session: send `mutations` in order (n = 1, 2, …), wait for every ack, then
+ * optionally pull and return the rows. Resolves to the pulled rows (empty without `pull`).
+ * Once every mutation is acked they are applied: a failure while pulling still resolves, with
+ * whatever rows arrived.
+ */
+async function ownerSession(base: string, token: string, id: string, mutations: Send[], { pull = false } = {}): Promise<Row[]> {
   const url = `${base.replace(/^http/, "ws")}/api/pages/${encodeURIComponent(id)}/sync?cli=${encodeURIComponent(VERSION)}`;
-  // A one-shot command makes a fresh clientId per run (docs: Idempotency), so n is always 1.
-  const key = { clientId: crypto.randomBytes(16).toString("base64url"), n: 1 };
-  const frame = mutation(name, args, key);
-  const { promise, resolve, reject } = Promise.withResolvers<PageRow | null>();
+  // A one-shot command makes a fresh clientId per run (docs: Idempotency), so n counts from 1.
+  const clientId = crypto.randomBytes(16).toString("base64url");
+  const frames = mutations.map((m, i) => mutation(m.name, m.args as never, { clientId, n: i + 1 }));
+  const what = mutations.length ? mutations.map((m) => m.name).join(", ") : "pull";
+  const { promise, resolve, reject } = Promise.withResolvers<Row[]>();
   const ws = new WebSocket(url, syncProtocols({ owner: token }), { headers: { "user-agent": `austere-axi/${VERSION}` }, followRedirects: false });
   let settled = false;
-  let acked = false;
-  let page: PageRow | null = null;
-  const finish = (err: Error | null, value: PageRow | null = null) => {
+  let acked = 0;
+  const rows: Row[] = [];
+  const finish = (err: Error | null) => {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
     ws.removeAllListeners("close");
     ws.on("error", () => {}); // a late error while closing is not ours to report
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000);
-    // After the ack the mutation is applied: a failure reading the page row back only loses the expiry,
-    // and the caller must still record the page.
-    if (err && !acked) reject(err);
-    else resolve(value ?? page);
+    if (err && !(acked === mutations.length && mutations.length)) {
+      if (err instanceof CloudError) err.applied = acked;
+      reject(err);
+    } else resolve(rows);
   };
-  const timer = setTimeout(() => finish(new CloudError(`${base} did not answer ${name} within ${SOCKET_TIMEOUT_MS / 1000}s`)), SOCKET_TIMEOUT_MS);
+  const timer = setTimeout(() => finish(new CloudError(`${base} did not answer ${what} within ${SOCKET_TIMEOUT_MS / 1000}s`)), SOCKET_TIMEOUT_MS);
   const failWith = (e: SyncError, where: string) => {
     const retry = e.retryAfter !== undefined ? ` (retry after ${e.retryAfter}s)` : "";
     finish(new CloudError(`${base} rejected ${where}: ${e.code}: ${e.message}${retry}`, undefined, e.code));
+  };
+  const afterAcks = () => {
+    if (!pull) return finish(null);
+    // The ack only says applied; rows (the page's expiry, invites) arrive in the change feed.
+    const frame: PullFrame = { v: SYNC_VERSION, t: "pull", after: 0 };
+    ws.send(JSON.stringify(frame));
   };
 
   // A refused handshake is a plain HTTP response: its status and `{ error: { code, message } }`.
@@ -265,32 +306,89 @@ async function sendMutation<N extends MutationName>(
   });
   ws.on("error", (err) => finish(new CloudError(`could not reach ${base}: ${err.message}`)));
   ws.on("close", (code, reason) => {
-    finish(new CloudError(`${base} closed the connection (${code}${reason.length ? `: ${reason.toString()}` : ""}) before answering ${name}`));
+    finish(new CloudError(`${base} closed the connection (${code}${reason.length ? `: ${reason.toString()}` : ""}) before answering ${what}`));
   });
-  ws.on("open", () => ws.send(JSON.stringify(frame)));
+  ws.on("open", () => {
+    for (const f of frames) ws.send(JSON.stringify(f));
+    if (!frames.length) afterAcks();
+  });
   ws.on("message", (data, isBinary) => {
     if (isBinary) return;
     const parsed = parseServerFrame(data.toString());
     if (!parsed.ok) return failWith(parsed.error, "a frame from the service");
     const f: ReceivedFrame | null = parsed.value;
     if (!f) return; // a frame type this version does not know
-    if (f.t === "error") return failWith(f, name);
+    if (f.t === "error") return failWith(f, what);
     if (f.t === "ack") {
-      if (f.clientId !== key.clientId || f.n !== key.n) return;
-      if (f.error) return failWith(f.error, name);
-      acked = true;
-      if (!pullPage) return finish(null);
-      // The ack only says applied; the page row (expiry) arrives in the change feed.
-      const pull: PullFrame = { v: SYNC_VERSION, t: "pull", after: 0 };
-      ws.send(JSON.stringify(pull));
+      if (f.clientId !== clientId || f.n !== acked + 1) return;
+      const m = mutations[acked];
+      if (f.error) return failWith(f.error, m.name === "grant" || m.name === "revoke" ? `${m.name} ${m.args.name}` : m.name);
+      if (++acked === mutations.length) afterAcks();
       return;
     }
-    if (f.t === "changes" && acked) {
-      for (const row of f.rows) if (row.type === "page" && row.id === id) page = row;
-      if (!f.more) finish(null, page);
+    if (f.t === "changes" && acked === mutations.length && pull) {
+      rows.push(...f.rows);
+      if (!f.more) finish(null);
     }
   });
   return promise;
+}
+
+/** The latest row of each (type, id) among `rows`. */
+function latest(rows: Row[]): Row[] {
+  const by = new Map<string, Row>();
+  for (const r of rows) {
+    const k = `${r.type}\u0000${r.id}`;
+    const prev = by.get(k);
+    if (!prev || prev.seq < r.seq) by.set(k, r);
+  }
+  return [...by.values()];
+}
+
+// ── invites ──
+
+/** `name` trimmed, or an error for one the service would refuse (the same UTF-16 length rule as the schema). */
+export function inviteName(name: string): string {
+  const n = name.trim();
+  if (!n || n.length > MAX_INVITE_NAME) throw new CloudError(`invite name ${JSON.stringify(name)} must be 1-${MAX_INVITE_NAME} characters (emoji count as 2)`);
+  return n;
+}
+
+/** `30m`, `12h`, `7d` or `2w` from now, in epoch ms. */
+export function expiryOf(text: string, now = Date.now()): number {
+  const m = /^(\d{1,4})([mhdw])$/.exec(text.trim());
+  if (!m || Number(m[1]) === 0) throw new CloudError(`--expires ${JSON.stringify(text)}: use a duration like 30m, 12h, 7d or 2w`);
+  const unit = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[m[2] as "m" | "h" | "d" | "w"];
+  return now + Number(m[1]) * unit;
+}
+
+/** The token's SHA-256 as base64url: what `grant` sends (docs: Access). */
+function tokenHash(token: string): string {
+  return crypto.createHash("sha256").update(token, "utf8").digest("base64url");
+}
+
+/** An invite link: the token rides in the fragment, which browsers never send to the server. */
+export function inviteLink(base: string, id: string, token: string): string {
+  return `${base}/p/${id}#i=${token}`;
+}
+
+/** `grant`s for `names`, reusing each name's stored token so its link stays the same. */
+function grants(entry: PageEntry, names: string[], expiresAt: number | null | undefined): Send[] {
+  return names.map((name) => {
+    const prev = entry.invites[name];
+    const invite: InviteEntry = {
+      token: prev?.token ?? crypto.randomBytes(32).toString("base64url"),
+      expiresAt: expiresAt === undefined ? (prev?.expiresAt ?? null) : expiresAt,
+      grantedAt: prev?.grantedAt ?? null,
+    };
+    entry.invites[name] = invite;
+    return { name: "grant", args: { name, tokenHash: tokenHash(invite.token), expiresAt: invite.expiresAt } };
+  });
+}
+
+/** An `acl` row that still lets its invitee in. */
+function liveAcl(r: AclRow, now: number): boolean {
+  return !r.revoked && (r.expiresAt === null || r.expiresAt > now);
 }
 
 // ── commands ──
@@ -301,18 +399,38 @@ export interface Published {
   url: string;
   expiresAt: number | null;
   auto: boolean;
+  unlisted: boolean;
   presence: boolean;
+  /** The invites this publish granted, with their links. */
+  invites: { name: string; link: string; expiresAt: number | null }[];
+  /** Other live invites on the page (from its `acl` rows); null when the rows did not arrive. */
+  otherInvites: number | null;
   packs: number;
   images: number;
 }
 
+export interface PublishOptions {
+  auto?: boolean;
+  /** A new link even when the file has one. */
+  fresh?: boolean;
+  /** The open link: anyone with the URL may review. */
+  unlisted?: boolean;
+  /** Viewers see each other on the page (Q17); false is `--no-presence`. */
+  presence?: boolean;
+  /** Names to invite (or re-send, with the same link). */
+  invite?: string[];
+  /** Expiry for the invites named here, epoch ms. */
+  expiresAt?: number;
+}
+
 /**
- * Upload (or republish) a page.
+ * Upload (or republish) a page, then grant the invites it names.
  * @param abs canonical absolute path
- * @param fresh a new link even when the file has one
- * @param presence viewers see each other on the page (Q17); false is `--no-presence`
  */
-export async function publish(abs: string, { auto = false, fresh = false, presence = true } = {}): Promise<Published> {
+export async function publish(abs: string, opts: PublishOptions = {}): Promise<Published> {
+  const { auto = false, fresh = false, unlisted = false, presence = true } = opts;
+  const names = [...new Set((opts.invite ?? []).map(inviteName))];
+  if (opts.expiresAt !== undefined && !names.length) throw new CloudError("--expires applies to the invites of this publish: add --invite <name>");
   const base = cloudUrl();
   const state = stateFor(base);
   // Everything that can fail locally fails before the first request.
@@ -338,22 +456,102 @@ export async function publish(abs: string, { auto = false, fresh = false, presen
     html: bundle.sha256,
     packs: bundle.packs.map(({ sha256, name, version }) => ({ sha256, name, version })),
     auto,
-    // Invite-only is the default (Q16); its flags come with the access ticket.
-    unlisted: false,
+    // Invite-only unless --unlisted (Q16); presence on unless --no-presence (Q17).
+    unlisted,
     presence,
   };
-  let row: PageRow | null;
+  const entry: PageEntry = { id, auto, unlisted, presence, invites: Object.assign(Object.create(null), prev?.invites) };
+  const sends = [{ name: "publish", args } as Send, ...grants(entry, names, opts.expiresAt)];
+  let rows: Row[];
   try {
-    row = await sendMutation(base, token, id, "publish", args, { pullPage: true });
+    rows = await ownerSession(base, token, id, sends, { pull: true });
   } catch (err) {
     if (prev && err instanceof CloudError && err.status === 404) {
       throw new CloudError(`the hosted page for this file (${prev.id}) is gone from ${base}: it expired or was deleted. publish --new makes a new link.`, 404);
     }
+    // The page was published but an invite failed: keep the link, so a retry updates it.
+    if (err instanceof CloudError && err.applied > 0) {
+      state.pages[abs] = entry;
+      writeCloud(state);
+    }
     throw err;
   }
-  state.pages[abs] = { id, auto };
+  const latestRows = latest(rows);
+  const acl = latestRows.filter((r): r is AclRow => r.type === "acl");
+  // Tie each token to the grant the service recorded, so `publish invites` knows a later re-grant elsewhere replaced it.
+  // Rows lost after the acks keep what was confirmed before (the service keeps grantedAt for the same token).
+  for (const name of names) entry.invites[name].grantedAt = acl.find((r) => r.name === name)?.grantedAt ?? entry.invites[name].grantedAt;
+  state.pages[abs] = entry;
   writeCloud(state);
-  return { updated: !!prev, id, url, expiresAt: row ? row.expiresAt : null, auto, presence, packs: bundle.packs.length, images: bundle.images };
+  const row = latestRows.find((r): r is PageRow => r.type === "page" && r.id === id);
+  const now = Date.now();
+  return {
+    updated: !!prev,
+    id,
+    url,
+    expiresAt: row ? row.expiresAt : null,
+    auto,
+    unlisted,
+    presence,
+    invites: names.map((name) => ({ name, link: inviteLink(base, id, entry.invites[name].token), expiresAt: entry.invites[name].expiresAt })),
+    otherInvites: row ? acl.filter((r) => !names.includes(r.name) && liveAcl(r, now)).length : null,
+    packs: bundle.packs.length,
+    images: bundle.images,
+  };
+}
+
+export interface InviteInfo {
+  name: string;
+  /** The link, when this machine made the invite and it is live. */
+  link?: string;
+  /** Live, and this machine holds a token for the name whose grant it never saw confirmed: re-send it to get the link. */
+  unconfirmed?: boolean;
+  grantedAt: number;
+  expiresAt: number | null;
+  status: "live" | "expired" | "revoked";
+}
+
+/** The page entry of a published file, or an error naming what to do. */
+function entryOf(state: CloudState, abs: string): PageEntry {
+  const entry = state.pages[abs];
+  if (!entry) throw new CloudError(`${abs} has not been published from this machine (see austere-axi publish list)`);
+  if (!state.token) throw new CloudError("nothing has been published from this machine");
+  return entry;
+}
+
+/** The page's invites, as the service has them (`acl` rows), with this machine's links. */
+export async function listInvites(abs: string): Promise<{ id: string; unlisted: boolean; auto: boolean; presence: boolean; invites: InviteInfo[] }> {
+  const base = cloudUrl();
+  const state = stateFor(base);
+  const entry = entryOf(state, abs);
+  const rows = latest(await ownerSession(base, state.token, entry.id, [], { pull: true }));
+  const page = rows.find((r): r is PageRow => r.type === "page");
+  const now = Date.now();
+  const invites = rows
+    .filter((r): r is AclRow => r.type === "acl")
+    .sort((a, b) => a.grantedAt - b.grantedAt)
+    .map((r): InviteInfo => {
+      const status = r.revoked ? "revoked" : liveAcl(r, now) ? "live" : "expired";
+      // Only this machine's token for this very grant: a re-grant elsewhere gave the name another token.
+      const local = entry.invites[r.name];
+      const mine = status === "live" && local !== undefined && local.grantedAt === r.grantedAt;
+      const unconfirmed = status === "live" && local !== undefined && local.grantedAt === null ? true : undefined;
+      return { name: r.name, link: mine ? inviteLink(base, entry.id, local.token) : undefined, unconfirmed, grantedAt: r.grantedAt, expiresAt: r.expiresAt, status };
+    });
+  // `auto`, `unlisted` and `presence` as the page has them now, so a suggested re-publish keeps them.
+  return { id: entry.id, unlisted: page?.unlisted ?? entry.unlisted, auto: page?.auto ?? entry.auto, presence: page?.presence ?? entry.presence, invites };
+}
+
+/** Revoke invite `name`: its link stops working and its open pages are disconnected at once. */
+export async function revokeInvite(abs: string, name: string): Promise<{ id: string; name: string }> {
+  const base = cloudUrl();
+  const state = stateFor(base);
+  const entry = entryOf(state, abs);
+  const n = inviteName(name);
+  await ownerSession(base, state.token, entry.id, [{ name: "revoke", args: { name: n } }]);
+  delete entry.invites[n];
+  writeCloud(state);
+  return { id: entry.id, name: n };
 }
 
 export interface ListedPage {
@@ -390,7 +588,7 @@ export async function removePage(key: string): Promise<{ id: string; file?: stri
   if (!state.token) throw new CloudError("nothing has been published from this machine");
   let gone = false;
   try {
-    await sendMutation(base, state.token, id, "delete", {});
+    await ownerSession(base, state.token, id, [{ name: "delete", args: {} }]);
   } catch (err) {
     if (!(err instanceof CloudError && (err.status === 404 || err.status === 410))) throw err;
     gone = true;

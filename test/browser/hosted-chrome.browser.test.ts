@@ -1,47 +1,76 @@
 // Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH):
 // the review chrome in hosted mode, against a tiny stub of the austere-cloud
-// reviewer routes (docs/hosted-share-links.md) served with the service's CSP.
-// Covers the name prompt, a send carrying the name, a polled reply, the
-// "new version" banner, the footer and the report box.
+// reviewer routes (docs/hosted-share-links.md, "Sync, access and presence"),
+// served with the service's CSP: the shell, the asset-token trade, the token-scoped
+// frame, the reviewer socket (pull, changes, addNote acks, revocation) and the report.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { after, before, test } from "node:test";
-import type { Browser } from "playwright-core";
+import type { Duplex } from "node:stream";
+import { after, before, beforeEach, test } from "node:test";
+import type { Browser, Page } from "playwright-core";
+import { WebSocketServer } from "ws";
+import type { WebSocket } from "ws";
 import { launchBrowser } from "../../scripts/lib/browser.ts";
+import { SUBPROTOCOL, SYNC_VERSION, parseClientFrame, readProtocols } from "../../src/shared/sync.ts";
+import type { Mutation, NoteRow, PageRow, ReplyRow, Row, ServerFrame } from "../../src/shared/sync.ts";
 
 const ID = "pg_test";
 const BASE = `/p/${ID}`;
+const ANA = "ana-invite-token-0123456789";
 const SHELL_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const FRAME_CSP =
   "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'";
 
-/** A reviewer's send as the chrome posts it. */
-interface Send {
-  name: string;
-  items: unknown;
-}
-interface Note {
-  seq: number;
-  author: string;
-  items: unknown;
-  at: number;
-}
-interface Reply {
-  seq: number;
-  text: string;
-  at: number;
+interface Socket {
+  ws: WebSocket;
+  invite: string | undefined;
 }
 
 // What the stub service has seen and holds.
-const svc: { requests: string[]; sends: Send[]; reports: unknown[]; notes: Note[]; replies: Reply[]; publishedAt: number; gone: boolean } = { requests: [], sends: [], reports: [], notes: [], replies: [], publishedAt: 1_000, gone: false };
+const svc = {
+  requests: [] as string[],
+  /** The X-Austere-Invite header of each asset-token request ("" when absent). */
+  inviteHeaders: [] as string[],
+  assetTokens: new Set<string>(),
+  invites: new Map<string, string>(),
+  unlisted: false,
+  rows: [] as Row[],
+  seq: 0,
+  pulls: [] as number[],
+  mutations: [] as Mutation[],
+  /** (clientId, n) already applied: a repeat gets the same ack and changes nothing. */
+  applied: new Set<string>(),
+  holdAcks: false,
+  upgrades: 0,
+  sockets: new Set<Socket>(),
+  reports: [] as { body: unknown; invite: string }[],
+  /** Called on each mutation the stub receives (mutationsReceived). */
+  onMutation: null as (() => void) | null,
+};
 let stub: http.Server | undefined;
 let origin: string;
 let browser: Browser;
 let skipReason: string | undefined;
+const wss = new WebSocketServer({ noServer: true, handleProtocols: (protocols) => (protocols.has(SUBPROTOCOL) ? SUBPROTOCOL : false) });
+
+function pageRow(publishedAt: number, deleted = false): PageRow {
+  return { v: 1, type: "page", id: ID, seq: 0, title: "Plan", cliVersion: "0.8.1", html: "a".repeat(64), packs: [], auto: false, unlisted: svc.unlisted, presence: true, publishedAt, expiresAt: publishedAt + 1e9, deleted };
+}
+
+/** Gives the row the next seq and sends it to every open socket. */
+function put(row: Row) {
+  row.seq = ++svc.seq;
+  svc.rows = [...svc.rows.filter((r) => !(r.type === row.type && r.id === row.id)), row];
+  for (const s of svc.sockets) send(s.ws, { v: SYNC_VERSION, t: "changes", rows: [row], cursor: svc.seq });
+}
+
+function send(ws: WebSocket, frame: ServerFrame) {
+  ws.send(JSON.stringify(frame));
+}
 
 function body(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve) => {
@@ -56,8 +85,13 @@ function json(res: ServerResponse, status: number, value: unknown) {
   res.end(JSON.stringify(value));
 }
 
+function refuse(socket: Duplex, status: number, code: string) {
+  const text = JSON.stringify({ error: { code, message: code } });
+  socket.end(`HTTP/1.1 ${status} ${http.STATUS_CODES[status]}\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(text)}\r\nconnection: close\r\n\r\n${text}`);
+}
+
 function shell() {
-  const boot = { id: ID, title: "Plan", viewer: { role: "reviewer", name: "" }, hosted: { base: BASE, report: `${BASE}/report` } };
+  const boot = { id: ID, title: "Plan", artifactUrl: `${BASE}/a/`, version: "0.8.1", viewer: { role: "reviewer", name: "" }, hosted: { base: BASE, report: `${BASE}/report`, publishedAt: 1_000 } };
   return `<!doctype html>
 <html lang="en" data-theme="dark"><head><meta charset="utf-8"><title>Plan · austere</title>
 <link rel="stylesheet" href="/rt/chrome/chrome.css">
@@ -74,13 +108,15 @@ intro = TextContent("hello")
 
 async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "", origin);
+  const invite = String(req.headers["x-austere-invite"] ?? "");
   svc.requests.push(`${req.method} ${url.pathname}${url.search}`);
-  if (req.method === "POST" && req.headers.origin && req.headers.origin !== origin) return json(res, 403, { error: "foreign origin" });
+  if (req.method === "POST" && req.headers.origin && req.headers.origin !== origin) return json(res, 403, { error: { code: "forbidden", message: "foreign origin" } });
   if (url.pathname === BASE) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": SHELL_CSP });
     return res.end(shell());
   }
-  if (url.pathname === `${BASE}/a/`) {
+  const framed = /^\/p\/pg_test\/a\/([^/]+)\/$/.exec(url.pathname);
+  if (framed && svc.assetTokens.has(framed[1])) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": FRAME_CSP });
     return res.end(ARTIFACT);
   }
@@ -89,27 +125,67 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(200, { "content-type": asset.endsWith(".css") ? "text/css" : "text/javascript" });
     return res.end(fs.readFileSync(asset));
   }
-  if (url.pathname === `${BASE}/conversation` && req.method === "GET") {
-    if (svc.gone) return json(res, 410, { error: "gone" });
-    const [n, r] = (url.searchParams.get("after") || "0.0").split(".").map(Number);
-    return json(res, 200, {
-      publishedAt: svc.publishedAt,
-      cursor: `${svc.notes.length}.${svc.replies.length}`,
-      notes: svc.notes.filter((x) => x.seq > n),
-      replies: svc.replies.filter((x) => x.seq > r),
-    });
-  }
-  if (url.pathname === `${BASE}/send` && req.method === "POST") {
-    const b = (await body(req)) as Send;
-    svc.sends.push(b);
-    svc.notes.push({ seq: svc.notes.length + 1, author: b.name, items: b.items, at: Date.now() });
-    return json(res, 200, { ok: true });
+  if (url.pathname === `${BASE}/asset-token` && req.method === "POST") {
+    svc.inviteHeaders.push(invite);
+    const name = svc.invites.get(invite);
+    if (!name && !svc.unlisted) return json(res, 403, { error: { code: "forbidden", message: "invite required" } });
+    const token = `at${svc.assetTokens.size}x${Math.random().toString(36).slice(2)}`;
+    svc.assetTokens.add(token);
+    return json(res, 200, { token, expiresAt: Date.now() + 600_000, name: name ?? null });
   }
   if (url.pathname === `${BASE}/report` && req.method === "POST") {
-    svc.reports.push(await body(req));
+    svc.reports.push({ body: await body(req), invite });
     return json(res, 200, { ok: true });
   }
   res.writeHead(404).end("not found");
+}
+
+/** The reviewer socket: pull answered from the rows, addNote applied once per (clientId, n) and acked. */
+function reviewerSocket(s: Socket) {
+  svc.sockets.add(s);
+  s.ws.on("close", () => svc.sockets.delete(s));
+  s.ws.on("message", (data) => {
+    const parsed = parseClientFrame(String(data));
+    assert.ok(parsed.ok, JSON.stringify(parsed));
+    const frame = parsed.value;
+    if (frame.t === "pull") {
+      svc.pulls.push(frame.after);
+      send(s.ws, { v: SYNC_VERSION, t: "changes", rows: svc.rows.filter((r) => r.seq > frame.after), cursor: svc.seq });
+    } else if (frame.t === "mutation" && frame.name === "addNote") {
+      svc.mutations.push(frame);
+      svc.onMutation?.();
+      if (svc.holdAcks) return;
+      const key = `${frame.clientId}:${frame.n}`;
+      if (!svc.applied.has(key)) {
+        svc.applied.add(key);
+        const author = (s.invite && svc.invites.get(s.invite)) || frame.args.name || "Reviewer";
+        put({ v: 1, type: "note", id: `n${svc.seq + 1}`, seq: 0, author, items: frame.args.items, at: Date.now(), state: "held" } satisfies NoteRow);
+      }
+      send(s.ws, { v: SYNC_VERSION, t: "ack", clientId: frame.clientId, n: frame.n });
+    }
+  });
+}
+
+/** Resolves once the stub has received `count` mutations in all. */
+function mutationsReceived(count: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  svc.onMutation = () => {
+    if (svc.mutations.length < count) return;
+    svc.onMutation = null;
+    resolve();
+  };
+  svc.onMutation();
+  return promise;
+}
+
+/** Revokes an invite: its sockets get `error` `forbidden`, then close 1008. */
+function revoke(token: string) {
+  svc.invites.delete(token);
+  for (const s of svc.sockets) {
+    if (s.invite !== token) continue;
+    send(s.ws, { v: SYNC_VERSION, t: "error", code: "forbidden", message: "invite revoked" });
+    s.ws.close(1008, "forbidden");
+  }
 }
 
 before(async () => {
@@ -126,97 +202,288 @@ before(async () => {
   }
   browser = launched.browser;
   const server = http.createServer((req, res) => handle(req, res).catch((err) => json(res, 500, { error: String(err) })));
+  server.on("upgrade", (req, socket, head) => {
+    const url = new URL(req.url ?? "", origin);
+    const creds = readProtocols(req.headers["sec-websocket-protocol"]);
+    svc.upgrades++;
+    if (url.pathname !== `${BASE}/sync`) return refuse(socket, 404, "invalid");
+    if (!creds.sync) return refuse(socket, 426, "upgrade_required");
+    if (req.headers.origin !== origin) return refuse(socket, 403, "forbidden");
+    if (creds.invite ? !svc.invites.has(creds.invite) : !svc.unlisted) return refuse(socket, 403, "forbidden");
+    wss.handleUpgrade(req, socket, head, (ws) => reviewerSocket({ ws, invite: creds.invite }));
+  });
   stub = server;
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
 after(async () => {
+  for (const s of svc.sockets) s.ws.terminate();
   await browser?.close();
   await new Promise<void>((r) => (stub ? stub.close(() => r()) : r()));
 });
 
-test("hosted chrome: name prompt, named send, polled reply, new version, footer and report", async (t) => {
+beforeEach(() => {
+  for (const s of svc.sockets) s.ws.terminate();
+  Object.assign(svc, { requests: [], inviteHeaders: [], rows: [], seq: 0, pulls: [], mutations: [], holdAcks: false, upgrades: 0, reports: [], unlisted: false });
+  svc.invites = new Map([[ANA, "Ana"]]);
+  put(pageRow(1_000));
+});
+
+/** Collects CSP violations and page errors: the hosted shell allows no inline script and no eval. */
+function watchErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("console", (m) => m.type() === "error" && /Content Security Policy/.test(m.text()) && errors.push(m.text()));
+  page.on("pageerror", (err) => errors.push(String(err)));
+  return errors;
+}
+
+test("hosted chrome: invite link, asset-token frame, synced rows, addNote as the invite, reconnect, revoke", async (t) => {
   if (skipReason) return t.skip(skipReason);
+  put({ v: 1, type: "note", id: "n-bo", seq: 0, author: "Bo", items: [{ kind: "message", text: "from Bo" }], at: Date.now(), state: "released" } satisfies NoteRow);
+  put({ v: 1, type: "note", id: "n-gone", seq: 0, author: "Cy", items: [{ kind: "message", text: "discarded note" }], at: Date.now(), state: "discarded" } satisfies NoteRow);
+  put({ v: 1, type: "reply", id: "r1", seq: 0, text: "Welcome, **Ana**.", at: Date.now() } satisfies ReplyRow);
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   try {
     const page = await ctx.newPage();
-    const cspErrors: string[] = [];
-    page.on("console", (m) => m.type() === "error" && /Content Security Policy/.test(m.text()) && cspErrors.push(m.text()));
-    page.on("pageerror", (err) => cspErrors.push(String(err)));
-    await page.goto(`${origin}${BASE}`);
+    const errors = watchErrors(page);
+    await page.goto(`${origin}${BASE}?x=1#i=${ANA}`);
     await page.waitForSelector(".presence.hosted");
-    // The artifact renders through the runtime inside the sandboxed frame.
+
+    // The fragment is stored for this page and taken out of the address bar.
+    assert.equal(page.url(), `${origin}${BASE}?x=1`);
+    assert.equal(await page.evaluate((id) => JSON.parse(localStorage.getItem(`austere:invite:${id}`) as string), ID), ANA);
+    assert.deepEqual(svc.inviteHeaders, [ANA]);
+
+    // The frame loads from the artifact prefix plus the traded asset token, and renders.
+    assert.equal(await page.locator(".frame").getAttribute("src"), `${BASE}/a/${[...svc.assetTokens].at(-1)}/`);
     await page.frameLocator(".frame").locator("text=hello").waitFor();
 
     // Owner and local-only controls are gone; the footer is there.
     for (const sel of ['[data-cmd="end"]', '[data-cmd="export"]', '[data-cmd="copy-path"]', ".send-end", ".held-bar"]) {
       assert.equal(await page.locator(sel).count(), 0, `${sel} hidden`);
     }
-    const made = page.locator(".hosted-foot a");
-    assert.equal(await made.innerText(), "Made with austere-axi");
-    assert.equal(await made.getAttribute("href"), "https://github.com/MandalorianBatman/austere-axi");
+    assert.equal(await page.locator(".hosted-foot a").innerText(), "Made with austere-axi");
 
-    // The first send asks for a name, then goes out carrying it.
+    // The pull from 0 brings the rows: notes and replies render, discarded notes stay hidden.
+    assert.deepEqual(svc.pulls, [0]);
+    await page.waitForSelector("text=from Bo");
+    assert.match(await page.locator(".msg.agent .md").innerText(), /Welcome, Ana\./);
+    assert.equal(await page.locator("text=discarded note").count(), 0);
+
+    // An invited reviewer is named by the invite: no prompt, and addNote carries no name.
+    assert.match(await page.locator(".composer-hint").innerText(), /Posting as Ana/);
     await page.fill(".composer textarea", "tighten the intro");
     await page.click(".composer .send");
-    await page.waitForSelector(".name-ask:not([hidden])");
-    assert.equal(svc.sends.length, 0, "nothing sent before a name is given");
-    await page.fill(".name-ask input", "  Ana  ");
-    await page.press(".name-ask input", "Enter");
-    await page.waitForSelector(".msg.user");
-    assert.deepEqual(svc.sends, [{ name: "Ana", items: [{ kind: "message", text: "tighten the intro" }] }]);
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("austere:name") as string)), "Ana");
-    assert.match(await page.locator(".msg.user .who").innerText(), /^You/);
-    assert.match(await page.locator(".composer-hint").innerText(), /Posting as Ana/);
+    await mutationsReceived(1);
+    await page.waitForSelector(".msg.user .receipt em:text('Sent to the page owner')");
     assert.ok(await page.locator(".name-ask").isHidden());
+    assert.equal(svc.mutations.length, 1);
+    const [m] = svc.mutations;
+    assert.equal(m.name, "addNote");
+    assert.match(m.clientId, /^[A-Za-z0-9_-]{22}$/);
+    assert.equal(m.n, 1);
+    assert.deepEqual(m.args, { items: [{ kind: "message", text: "tighten the intro" }] });
+    assert.match(await page.locator(".msg.user:has-text('tighten the intro') .who").innerText(), /^You/);
 
-    // A reply on the service shows up on the next check (focus triggers one) after the last cursor.
-    svc.replies.push({ seq: 1, text: "Done, **tightened**.", at: Date.now() });
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await page.waitForSelector(".msg.agent");
-    assert.match(await page.locator(".msg.agent .md").innerText(), /Done, tightened\./);
-    assert.ok(svc.requests.includes(`GET ${BASE}/conversation?after=1.0`), svc.requests.join("\n"));
+    // A dropped connection reconnects, pulls after its cursor, and re-sends the unacked note once.
+    svc.holdAcks = true;
+    await page.fill(".composer textarea", "and the outro");
+    await page.click(".composer .send");
+    await page.waitForSelector(".msg.user .receipt em:text('Sending…')");
+    await mutationsReceived(2);
+    svc.holdAcks = false;
+    const cursor = svc.seq;
+    for (const s of svc.sockets) s.ws.terminate();
+    await page.waitForFunction(() => [...document.querySelectorAll(".msg.user .receipt em")].filter((em) => em.textContent === "Sent to the page owner").length === 2);
+    assert.equal(await page.locator(".receipt em:text('Sending…')").count(), 0);
+    assert.equal(svc.pulls.at(-1), cursor);
+    const outro = svc.mutations.filter((x) => x.n === 2);
+    assert.equal(outro.length, 2, "re-sent after the reconnect");
+    assert.equal(svc.rows.filter((r) => r.type === "note" && r.items.some((i) => i.kind === "message" && i.text === "and the outro")).length, 1);
 
-    // A republish changes publishedAt: offer a reload.
+    // A republish arrives live: offer a reload.
     assert.ok(await page.locator(".banner").isHidden());
-    svc.publishedAt = 2_000;
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    put(pageRow(2_000));
     await page.waitForSelector(".banner:not([hidden])");
     assert.match(await page.locator(".banner").innerText(), /New version, reload/);
 
-    // Report opens a reason box and posts it to BOOT.hosted.report.
+    // Report posts to BOOT.hosted.report with the invite header.
     await page.click(".hosted-foot .report-open");
     await page.fill(".report-box textarea", "phishing page");
     await page.click(".report-box >> text=Send report");
     await page.waitForSelector(".hosted-foot .report-done");
-    assert.deepEqual(svc.reports, [{ reason: "phishing page" }]);
+    assert.deepEqual(svc.reports, [{ body: { reason: "phishing page" }, invite: ANA }]);
 
-    // A second visit remembers the name: sends go straight out.
-    await page.reload();
-    await page.waitForSelector(".presence.hosted");
-    await page.fill(".composer textarea", "and the outro");
-    await page.click(".composer .send");
-    await page.waitForFunction(() => document.querySelectorAll(".msg.user").length === 2);
-    assert.equal(svc.sends[1].name, "Ana");
-
-    // No local-server traffic: no event stream, no bye beacon, nothing under /s/.
-    assert.ok(!svc.requests.some((r) => /\/events|\/bye|\/s\//.test(r)), svc.requests.join("\n"));
-
-    // Malformed note items from the service are dropped, not fatal.
-    svc.notes.push({ seq: svc.notes.length + 1, author: "Bo", items: [null, 7, { kind: "message", text: "ok from Bo" }], at: Date.now() });
-    svc.notes.push({ seq: svc.notes.length + 1, author: "Cy", items: "nope", at: Date.now() });
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await page.waitForSelector("text=ok from Bo");
-
-    // The page is removed (410): presence says so and the composer locks.
-    svc.gone = true;
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    // The invite is revoked: say so, lock the composer, and do not reconnect.
+    const upgrades = svc.upgrades;
+    revoke(ANA);
     await page.waitForSelector(".presence.ended");
-    assert.match(await page.locator(".presence").innerText(), /Page removed/);
+    assert.match(await page.locator(".presence").innerText(), /Invite no longer valid/);
+    assert.match(await page.locator(".banner").innerText(), /no longer valid/);
     assert.ok(await page.locator(".composer textarea").isDisabled());
     assert.ok(await page.locator(".composer .send").isDisabled());
-    assert.deepEqual(cspErrors, []);
+    // The absence of a reconnect has no event to await: wait past the first backoff (1 s) in real time.
+    await page.waitForTimeout(1500);
+    assert.equal(svc.upgrades, upgrades, "no reconnect after a revoked invite");
+
+    // No local-server traffic and no old hosted routes.
+    assert.ok(!svc.requests.some((r) => /\/events|\/bye|\/s\/|\/conversation|\/send/.test(r)), svc.requests.join("\n"));
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: with localStorage writes failing, the link's invite is still used", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+      if (this === window.localStorage) throw new DOMException("quota", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  try {
+    const page = await ctx.newPage();
+    const errors = watchErrors(page);
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.waitForSelector("text=Posting as Ana");
+    assert.equal(page.url(), `${origin}${BASE}`, "the fragment is still stripped");
+    assert.deepEqual(svc.inviteHeaders, [ANA]);
+    await page.frameLocator(".frame").locator("text=hello").waitFor();
+    assert.equal(await page.locator(".presence.ended").count(), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: with sessionStorage writes failing, each note gets its own n and both are saved", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // Quota exceeded or blocked storage: every sessionStorage write throws; localStorage still works.
+  await ctx.addInitScript(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+      if (this === window.sessionStorage) throw new DOMException("quota", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  try {
+    const page = await ctx.newPage();
+    const errors = watchErrors(page);
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.waitForSelector(".presence.hosted");
+    await page.waitForSelector("text=Posting as Ana");
+    for (const [i, text] of ["first note", "second note"].entries()) {
+      await page.fill(".composer textarea", text);
+      await page.click(".composer .send");
+      await mutationsReceived(i + 1);
+    }
+    await page.waitForFunction(() => [...document.querySelectorAll(".msg.user .receipt em")].filter((em) => em.textContent === "Sent to the page owner").length === 2);
+    assert.equal(await page.locator(".receipt em:text('Sending…')").count(), 0, "both left the outbox");
+    assert.deepEqual(
+      svc.mutations.map((m) => m.n),
+      [1, 2],
+    );
+    const saved = svc.rows.filter((r): r is NoteRow => r.type === "note").map((r) => r.items.map((x) => (x.kind === "message" ? x.text : "")).join());
+    assert.deepEqual(saved, ["first note", "second note"]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: a note saved under a dropped clientId survives a reload and is sent once", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // Only the counter fails to save (storage nearly full): the outbox is saved, the clientId is dropped.
+  await ctx.addInitScript(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+      if (this === window.sessionStorage && key === "austere:client:n") throw new DOMException("quota", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  try {
+    const page = await ctx.newPage();
+    const errors = watchErrors(page);
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.waitForSelector("text=Posting as Ana");
+    svc.holdAcks = true; // offline in effect: the note stays in the outbox
+    await page.fill(".composer textarea", "before reload");
+    await page.click(".composer .send");
+    await mutationsReceived(1);
+    const [held] = svc.mutations;
+    svc.holdAcks = false;
+
+    await page.reload();
+    await page.waitForSelector("text=Posting as Ana");
+    // Re-sent under its original key after the reload, applied once, and out of the outbox.
+    await page.waitForFunction(() => document.querySelectorAll(".msg.user .receipt em").length === 1 && document.querySelector(".msg.user .receipt em")?.textContent === "Sent to the page owner");
+    const resent = svc.mutations.filter((m) => m.clientId === held.clientId && m.n === held.n);
+    assert.equal(resent.length, 2, "first send, then the re-send after the reload");
+
+    await page.fill(".composer textarea", "after reload");
+    await page.click(".composer .send");
+    await page.waitForFunction(() => [...document.querySelectorAll(".msg.user .receipt em")].filter((em) => em.textContent === "Sent to the page owner").length === 2);
+    const fresh = svc.mutations.at(-1)!;
+    assert.notEqual(fresh.clientId, held.clientId, "a new clientId after the old one was dropped");
+    const saved = svc.rows.filter((r): r is NoteRow => r.type === "note").map((r) => r.items.map((x) => (x.kind === "message" ? x.text : "")).join());
+    assert.deepEqual(saved, ["before reload", "after reload"]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: invite-only without an invite, then unlisted with the name prompt, then removed", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await ctx.newPage();
+    const errors = watchErrors(page);
+
+    // Invite-only and no invite: the asset-token trade is refused, no socket is tried.
+    await page.goto(`${origin}${BASE}`);
+    await page.waitForSelector(".presence.ended");
+    assert.match(await page.locator(".presence").innerText(), /Invite required/);
+    assert.deepEqual(svc.inviteHeaders, [""]);
+    assert.equal(svc.upgrades, 0);
+
+    // Unlisted: anyone with the URL gets in, and names themself once before the first note.
+    svc.unlisted = true;
+    put(pageRow(1_000));
+    await page.reload();
+    await page.waitForSelector(".presence.hosted");
+    await page.frameLocator(".frame").locator("text=hello").waitFor();
+    await page.fill(".composer textarea", "tighten the intro");
+    await page.click(".composer .send");
+    await page.waitForSelector(".name-ask:not([hidden])");
+    assert.equal(svc.mutations.length, 0, "nothing sent before a name is given");
+    await page.fill(".name-ask input", "  Cy  ");
+    await page.press(".name-ask input", "Enter");
+    await page.waitForSelector(".msg.user >> text=tighten the intro");
+    assert.deepEqual(
+      svc.mutations.map((x) => x.args),
+      [{ items: [{ kind: "message", text: "tighten the intro" }], name: "Cy" }],
+    );
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("austere:name") as string)), "Cy");
+    assert.match(await page.locator(".composer-hint").innerText(), /Posting as Cy/);
+    assert.ok(await page.locator(".name-ask").isHidden());
+
+    // The page is deleted: its row comes with deleted: true, then close 1000. No reconnect.
+    const upgrades = svc.upgrades;
+    put(pageRow(1_000, true));
+    for (const s of svc.sockets) s.ws.close(1000);
+    await page.waitForSelector(".presence.ended");
+    assert.match(await page.locator(".presence").innerText(), /Page removed/);
+    assert.ok(await page.locator(".composer .send").isDisabled());
+    await page.waitForTimeout(1500); // past the first reconnect backoff, as above
+    assert.equal(svc.upgrades, upgrades);
+    assert.deepEqual(errors, []);
   } finally {
     await ctx.close();
   }

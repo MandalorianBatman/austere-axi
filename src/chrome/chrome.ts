@@ -4,9 +4,12 @@
 // service's CSP forbids inline scripts, so it ships the same object as JSON in
 // <script type="application/json" id="austere-boot">.
 
-import { syncProtocols } from "../shared/sync.ts";
+import "./zod-jitless.ts";
+import { LIMITS, SYNC_VERSION, mutation, syncProtocols } from "../shared/sync.ts";
+import type { AckFrame, AddNoteArgs, Mutation, NoteAnnotation, NoteItem, PageRow, ReceivedChanges, ReceivedFrame } from "../shared/sync.ts";
 import { Presence } from "./presence.ts";
-import { openPageSocket } from "./socket.ts";
+import { openSyncSocket } from "./sync-socket.ts";
+import type { SyncClose, SyncSocket } from "./sync-socket.ts";
 
 type Mode = "annotate" | "explore";
 
@@ -18,7 +21,7 @@ interface Boot {
   file: string;
   version?: string;
   artifactUrl?: string;
-  hosted?: { base?: string; report?: string } | null;
+  hosted?: { base?: string; report?: string; publishedAt?: number } | null;
   viewer?: { role: string; name: string; auto?: boolean };
 }
 
@@ -53,6 +56,8 @@ interface Entry {
   workAt?: number;
   doneAt?: number;
   discarded?: boolean;
+  /** Hosted: a note still waiting for its ack. */
+  pending?: boolean;
 }
 
 /** A parser or render error the frame reports. */
@@ -117,14 +122,6 @@ interface ChangedEvent {
   thirdPartyPacks?: string[];
 }
 
-interface HostedConversation {
-  notes?: { seq: number; author?: string; items?: unknown; at: number }[];
-  replies?: { seq: number; text?: string; at: number }[];
-  publishedAt?: unknown;
-  cursor?: string | number | null;
-  thirdPartyPacks?: string[];
-}
-
 interface ItemOptions {
   queued?: boolean;
   held?: boolean;
@@ -135,13 +132,13 @@ type Child = Node | string | number | null | undefined | false;
 
 const BOOT: Boot = (window as Window & { __AUSTERE__?: Boot }).__AUSTERE__ ?? JSON.parse(document.getElementById("austere-boot")?.textContent || "{}");
 const SID = BOOT.id;
-// Hosted mode (austere-cloud, docs/hosted-share-links.md): a public reviewer
-// page that polls instead of streaming and has no owner controls.
+// Hosted mode (austere-cloud, docs/hosted-share-links.md): a reviewer page that syncs over the
+// page's WebSocket instead of the local event stream and has no owner controls.
 const HOSTED = BOOT.hosted || null;
 const BASE = BOOT.hosted?.base ?? `/s/${SID}`;
 const VIEWER = BOOT.viewer || { role: "owner", name: "" };
 const OWNER = !HOSTED && VIEWER.role === "owner";
-const NAME_MAX = 40;
+const NAME_MAX = LIMITS.nameChars;
 const LS = {
   get<T>(key: string, fallback: T): T {
     try {
@@ -158,6 +155,13 @@ const LS = {
       // storage full or blocked; state stays in memory
     }
   },
+  remove(key: string) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // blocked storage
+    }
+  },
 };
 const SS = {
   get<T = unknown>(key: string): T | null {
@@ -167,16 +171,72 @@ const SS = {
       return null;
     }
   },
-  set(key: string, value: unknown) {
+  /** False when the write failed (blocked storage, quota). */
+  set(key: string, value: unknown): boolean {
     try {
       sessionStorage.setItem(key, JSON.stringify(value));
+      return true;
     } catch {
-      // ignore
+      return false;
     }
   },
 };
-// A hosted reviewer names themself once; the local server names invited reviewers.
-let viewerName: string = HOSTED ? String(LS.get("austere:name", "") || "").slice(0, NAME_MAX) : VIEWER.name;
+
+// Hosted pages are invite-only by default (Q16). An invite link carries its token in the fragment,
+// `#i=<token>`, which never reaches the server: keep it for this page and take it out of the address
+// bar. Same-origin calls send it as X-Austere-Invite, the socket as a subprotocol.
+const INVITE_KEY = `austere:invite:${SID}`;
+const TOKEN = /^[A-Za-z0-9_-]{16,256}$/;
+let invite: string | null = null;
+if (HOSTED) {
+  const fromLink = new URLSearchParams(location.hash.slice(1)).get("i");
+  if (fromLink !== null) history.replaceState(null, "", location.pathname + location.search);
+  if (fromLink !== null && TOKEN.test(fromLink)) {
+    // The link's token is used as given; storing it only lets a reload without the fragment reuse it.
+    invite = fromLink;
+    LS.set(INVITE_KEY, fromLink);
+  } else {
+    const stored = LS.get<unknown>(INVITE_KEY, null);
+    invite = typeof stored === "string" && TOKEN.test(stored) ? stored : null;
+  }
+}
+// Hosted: the invite's name from the asset-token answer; null on an unlisted page without a valid
+// invite (the reviewer names themself once, with the prompt); undefined until the service answers.
+let inviteName: string | null | undefined;
+// The local server names invited reviewers; a hosted reviewer is named once the service answers.
+let viewerName: string = HOSTED ? "" : VIEWER.name;
+
+// Hosted: notes go out as `addNote` mutations over the page's socket. Each tab numbers its own
+// (clientId, n); a note stays in the outbox until its ack and is re-sent after a reconnect.
+interface OutboxEntry {
+  m: Mutation<"addNote">;
+  at: number;
+}
+let CLIENT = "";
+if (HOSTED) {
+  const stored = SS.get<unknown>("austere:client");
+  if (typeof stored === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(stored)) CLIENT = stored;
+  else {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    CLIENT = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    SS.set("austere:client", CLIENT);
+  }
+}
+const OUTBOX_KEY = `austere:outbox:${SID}`;
+const savedOutbox = SS.get<unknown>(OUTBOX_KEY);
+// Saved notes keep the (clientId, n) they were numbered with, even when this load made a new CLIENT
+// (the old one was dropped after a failed counter save): re-sent under their own key, they are applied once.
+const outbox: OutboxEntry[] = Array.isArray(savedOutbox)
+  ? (savedOutbox as OutboxEntry[]).filter(
+      (o) => o?.m?.name === "addNote" && typeof o.m.clientId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(o.m.clientId) && Number.isInteger(o.m.n) && o.m.n > 0,
+    )
+  : [];
+// The tab's mutation counter lives in memory; sessionStorage only seeds it on load, so a failed
+// write can never hand out the same (CLIENT, n) twice. The seed also covers notes still in the outbox.
+let clientN = Math.max(Number(SS.get("austere:client:n")) || 0, ...outbox.filter((o) => o.m.clientId === CLIENT).map((o) => o.m.n));
+let sync: SyncSocket | null = null;
+// Hosted: why nothing more can be sent (the page is gone, or the invite no longer works).
+let lockout: string | null = null;
 
 const state: {
   mode: Mode;
@@ -396,7 +456,8 @@ if (HOSTED) {
       if (!reason) return $("textarea", reportForm).focus();
       status.textContent = "Sending…";
       try {
-        const r = await fetch(HOSTED.report as string, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason }) });
+        const headers: Record<string, string> = { "content-type": "application/json", ...(invite ? { "X-Austere-Invite": invite } : {}) };
+        const r = await fetch(HOSTED.report as string, { method: "POST", headers, body: JSON.stringify({ reason }) });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         $<HTMLTextAreaElement>("textarea", reportForm).value = "";
         reportForm.hidden = true;
@@ -490,7 +551,9 @@ function post(msg: ChromeMessage) {
 
 function loadFrame() {
   state.frameReady = false;
-  frame.src = `${BOOT.artifactUrl ?? `${BASE}/a/`}?r=${Date.now()}`;
+  // Hosted: the frame's URL carries a short-lived asset token, traded again on every load.
+  if (HOSTED) void loadHostedFrame();
+  else frame.src = `${BOOT.artifactUrl ?? `${BASE}/a/`}?r=${Date.now()}`;
 }
 
 window.addEventListener("message", (e) => {
@@ -755,7 +818,10 @@ async function heldAction(kind: string, ids?: string[]) {
 
 function receipt(entry: Entry): HTMLElement | null {
   // Hosted notes have no delivery receipts: the owner's agent sees them after a sync.
-  if (HOSTED) return entry.author === viewerName ? h("div", { class: "receipt" }, h("em", { text: "Sent to the page owner" })) : null;
+  if (HOSTED) {
+    if (entry.pending) return h("div", { class: "receipt" }, h("em", { text: "Sending…" }));
+    return entry.author === viewerName ? h("div", { class: "receipt" }, h("em", { text: "Sent to the page owner" })) : null;
+  }
   if (entry.held) {
     const row = h("div", { class: "receipt held" }, h("span", { class: "held-label", text: OWNER ? "Held · not sent to the agent" : "Waiting for the owner to send it on" }));
     if (OWNER) {
@@ -818,7 +884,10 @@ function renderLog(scrollToEnd = false) {
   if (state.more) {
     log.append(h("button", { type: "button", class: "btn tiny ghost load-earlier", text: "Load earlier messages", onclick: loadEarlier }));
   }
-  if (!state.transcript.length && !state.queue.length) {
+  // Hosted: notes waiting for their ack follow the conversation.
+  const pending = outbox.map((o): Entry => ({ id: `out:${o.m.clientId}:${o.m.n}`, role: "user", author: viewerName, items: o.m.args.items, at: o.at, pending: true }));
+  const entries = pending.length ? [...state.transcript, ...pending] : state.transcript;
+  if (!entries.length && !state.queue.length) {
     log.append(
       h(
         "div",
@@ -830,7 +899,7 @@ function renderLog(scrollToEnd = false) {
       ),
     );
   }
-  for (const entry of state.transcript) {
+  for (const entry of entries) {
     if (entry.role === "agent") {
       log.append(
         h(
@@ -891,7 +960,7 @@ function renderLog(scrollToEnd = false) {
     const who = state.endedBy === "agent" ? "The agent ended this review." : OWNER ? "You ended this review." : "The owner ended this review.";
     log.append(h("div", { class: "ended-note", text: `${who} Notes you send now reach the agent the next time it polls.` }));
   }
-  const count = state.transcript.length + state.queue.length;
+  const count = entries.length + state.queue.length;
   if (scrollToEnd || atBottom || count !== lastLogCount) log.scrollTop = log.scrollHeight;
   lastLogCount = count;
   renderComposer();
@@ -899,14 +968,12 @@ function renderLog(scrollToEnd = false) {
 
 // ── composer / sending ──
 
-// Hosted: set once the service answers 404/410 for this page; nothing more can be sent.
-let gone = false;
-
 function renderComposer() {
   const closed = state.closed;
   const n = state.queue.length;
-  textarea.disabled = closed || gone || state.sending;
-  $<HTMLButtonElement>(".send").disabled = closed || gone || state.sending;
+  textarea.disabled = closed || !!lockout || state.sending;
+  // Hosted: nothing goes out until the service has said who this reviewer is.
+  $<HTMLButtonElement>(".send").disabled = closed || !!lockout || state.sending || (!!HOSTED && inviteName === undefined);
   if ($(".send-end")) $<HTMLButtonElement>(".send-end").disabled = closed || state.sending;
   $(".send").textContent = state.sending ? "Sending…" : n ? `Send ${n}` : "Send";
   textarea.placeholder = closed ? "Review closed" : n ? "Add a message (optional)…" : "Message the agent…";
@@ -929,11 +996,7 @@ async function sendAll(end = false) {
   }
   if (end && !OWNER) return;
   if (end && !items.length && !confirm("End this review? The agent will stop listening; notes you send later still reach it.")) return;
-  if (HOSTED && !viewerName && nameForm) {
-    nameForm.hidden = false;
-    $("input", nameForm).focus();
-    return;
-  }
+  if (HOSTED) return sendHosted(items);
   state.sending = true;
   composerError("");
   renderComposer();
@@ -941,7 +1004,7 @@ async function sendAll(end = false) {
     const r = await fetch(`${BASE}/send`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(HOSTED ? { name: viewerName, items } : { items, end }),
+      body: JSON.stringify({ items, end }),
     });
     const data: { error?: string; entry?: Entry } = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
@@ -950,7 +1013,6 @@ async function sendAll(end = false) {
     textarea.value = "";
     const entry = data.entry;
     if (entry && !state.transcript.some((e) => e.id === entry.id)) state.transcript.push(entry);
-    if (HOSTED) pollConversation();
   } catch (err) {
     composerError(`Not sent: ${(err as Error).message}. Your notes are still queued.`);
   } finally {
@@ -958,6 +1020,69 @@ async function sendAll(end = false) {
     renderLog(true);
     renderDock();
   }
+}
+
+/**
+ * The service takes messages and annotations only (NoteItem): a button press goes as a message,
+ * a render issue as an annotation on its statement. Fields the frame gave as anything but strings are dropped.
+ */
+function toNoteItem(item: QueueItem): NoteItem {
+  if (item.kind === "message") return { kind: "message", text: str(item.text) };
+  if (item.kind === "action") return { kind: "message", text: [str(item.message), item.form ? flatForm(item.form).join(" · ") : ""].filter(Boolean).join(" · ") };
+  const out: NoteAnnotation = { kind: "annotation" };
+  const target = item.kind === "render-error" ? item.statement : item.target;
+  if (typeof target === "string" && target) out.target = target;
+  for (const k of ["component", "selection", "excerpt", "note"] as const) {
+    const v = item[k];
+    if (typeof v === "string" && v) out[k] = v;
+  }
+  if (item.kind === "render-error" && typeof item.message === "string") out.excerpt = item.message;
+  if (Array.isArray(item.path)) out.path = item.path.filter((p): p is string => typeof p === "string");
+  const d = item.detail;
+  if (d && typeof d === "object") {
+    const detail: NonNullable<NoteAnnotation["detail"]> = {};
+    for (const k of ["part", "row", "column"] as const) if (typeof d[k] === "string") detail[k] = d[k];
+    if (Number.isInteger(d.rowIndex)) detail.rowIndex = d.rowIndex as number;
+    if (Object.keys(detail).length) out.detail = detail;
+  }
+  return out;
+}
+
+/** Hosted: queues the batch as one `addNote` and sends it if the socket is open; the ack settles it. */
+function sendHosted(queued: QueueItem[]) {
+  if (lockout || inviteName === undefined) return;
+  // Only an unlisted page without an invite takes a self-declared name; an invite names its reviewer.
+  if (inviteName === null && !viewerName && nameForm) {
+    nameForm.hidden = false;
+    $("input", nameForm).focus();
+    return;
+  }
+  const items = queued.map(toNoteItem);
+  const bytes = new TextEncoder().encode(JSON.stringify(items)).length;
+  if (bytes > LIMITS.noteItemsBytes) {
+    composerError(`Too long to send: ${bytes} bytes, the limit is ${LIMITS.noteItemsBytes}. Shorten or remove a note.`);
+    return;
+  }
+  const args: AddNoteArgs = inviteName === null ? { items, name: viewerName } : { items };
+  const n = ++clientN;
+  // An unsaved counter would seed a reload below n: drop the clientId so the reload numbers a fresh one.
+  if (!SS.set("austere:client:n", n)) {
+    try {
+      sessionStorage.removeItem("austere:client");
+    } catch {
+      // blocked storage: the reload makes a new clientId anyway
+    }
+  }
+  const m = mutation("addNote", args, { clientId: CLIENT, n });
+  outbox.push({ m, at: Date.now() });
+  SS.set(OUTBOX_KEY, outbox);
+  sync?.send(m);
+  state.queue = [];
+  saveQueue();
+  textarea.value = "";
+  composerError("");
+  renderLog(true);
+  renderDock();
 }
 
 $(".composer").addEventListener("submit", (e) => {
@@ -999,7 +1124,7 @@ function renderPresence() {
   let label: string;
   let cls: string;
   if (state.closed) [label, cls] = ["Review closed", "ended"];
-  else if (gone) [label, cls] = ["Page removed", "ended"];
+  else if (lockout) [label, cls] = [lockout, "ended"];
   else if (!state.connected) [label, cls] = ["Reconnecting…", "off"];
   else if (HOSTED) [label, cls] = ["Shared page", "hosted"];
   else if (state.presence === "listening") [label, cls] = ["Agent listening", "listening"];
@@ -1015,7 +1140,7 @@ function renderPresence() {
       : cls === "working"
         ? "The agent has your last batch."
         : cls === "hosted"
-          ? "Notes go to the page owner. Replies show up within 30 seconds."
+          ? "Notes go to the page owner. Replies show up here as they are posted."
           : "";
   document.documentElement.classList.toggle("is-ended", state.closed);
   if (OWNER) {
@@ -1311,67 +1436,167 @@ function connect() {
   });
 }
 
-// Hosted: no live stream. Check {base}/conversation every 30 s and on focus.
-const POLL_MS = 30_000;
-let cursor: string | number | null = null;
-let publishedAt: unknown = null;
-let polling: Promise<void> | null = null;
-let pollAgain = false;
+// ── hosted: asset token and the page socket (docs/hosted-share-links.md, "Sync, access and presence") ──
 
-/** Maps the service's notes and replies onto transcript entries. */
-function hostedEntries(d: HostedConversation): Entry[] {
-  const notes = (d.notes || []).map((n): Entry => ({ id: `n${n.seq}`, role: "user", author: String(n.author || "").slice(0, NAME_MAX), items: Array.isArray(n.items) ? n.items.filter((x: unknown): x is QueueItem => !!x && typeof x === "object") : [], at: n.at }));
-  const replies = (d.replies || []).map((r): Entry => ({ id: `r${r.seq}`, role: "agent", text: String(r.text || ""), at: r.at }));
-  return [...notes, ...replies];
+// The page row's publishedAt the shell was built for; a later one offers a reload.
+let publishedAt = HOSTED?.publishedAt;
+// Highest row seq applied, kept for the tab: a reconnect pulls after it.
+let cursor = 0;
+
+/** Nothing more can be sent: say why in the presence label and the banner, and stop syncing. */
+function lock(label: string, message: string, actions: HTMLElement[] = []) {
+  lockout = label;
+  state.connected = false;
+  sync?.stop();
+  showBanner(message, actions);
+  renderPresence();
+  renderComposer();
 }
 
-async function pollConversation(): Promise<void> {
-  if (gone) return;
-  if (polling) {
-    pollAgain = true;
-    return polling;
+/** Locks on an answer that means this reviewer cannot get in (403) or the page is gone (404, 410). */
+function refused(status: number): boolean {
+  if (status === 403) {
+    if (invite) lock("Invite no longer valid", "This invite is no longer valid. Ask the page owner for a new link.");
+    else lock("Invite required", "This page is invite-only. Open it from the link the page owner sent you.");
+  } else if (status === 404 || status === 410) lock("Page removed", "This page is no longer available.");
+  else return false;
+  return true;
+}
+
+/** POST {base}/asset-token: trades the invite (none on an unlisted page) for a 10-minute frame token. */
+async function requestAssetToken(): Promise<{ status: number; token?: string; name?: string | null }> {
+  const r = await fetch(`${BASE}/asset-token`, { method: "POST", headers: invite ? { "X-Austere-Invite": invite } : {} });
+  if (!r.ok) return { status: r.status };
+  const d = (await r.json().catch(() => null)) as { token?: unknown; name?: unknown } | null;
+  const token = typeof d?.token === "string" && /^[A-Za-z0-9_-]+$/.test(d.token) ? d.token : undefined;
+  return { status: r.status, token, name: typeof d?.name === "string" && d.name ? d.name.slice(0, NAME_MAX) : null };
+}
+
+/** Loads the frame from `${artifactUrl}<assetToken>/` and learns who the reviewer is. */
+async function loadHostedFrame(): Promise<boolean> {
+  const answer = await requestAssetToken().catch(() => null);
+  if (answer && refused(answer.status)) return false;
+  if (!answer?.token) {
+    showBanner(`Could not load this page${answer ? ` (HTTP ${answer.status})` : ""}.`, [
+      h("button", { type: "button", class: "btn tiny", text: "Retry", onclick: () => startHosted() }),
+    ]);
+    return false;
   }
-  polling = (async () => {
-    try {
-      const r = await fetch(`${BASE}/conversation${cursor == null ? "" : `?after=${encodeURIComponent(cursor)}`}`, { cache: "no-store" });
-      if (r.status === 404 || r.status === 410) {
-        gone = true;
-        state.connected = false;
-        showBanner("This page is no longer available.");
-        renderPresence();
-        renderComposer();
-        return;
-      }
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const d: HostedConversation = await r.json();
-      state.connected = true;
-      if (publishedAt == null) publishedAt = d.publishedAt;
-      else if (d.publishedAt !== publishedAt) {
-        showBanner("New version, reload", [h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() })]);
-      }
-      if (d.cursor != null) cursor = d.cursor;
-      mergeEntries(hostedEntries(d));
-      showPackNotice(d.thirdPartyPacks);
-    } catch {
-      state.connected = false;
-    } finally {
-      polling = null;
-      renderPresence();
-      renderLog();
-      renderDock();
+  inviteName = answer.name ?? null;
+  if (inviteName) viewerName = inviteName;
+  else {
+    // An unlisted page answered without a name: the stored invite is not valid here, so stop sending it.
+    if (invite) {
+      invite = null;
+      LS.remove(INVITE_KEY);
     }
-    if (pollAgain) {
-      pollAgain = false;
-      await pollConversation();
-    }
-  })();
-  return polling;
+    viewerName = String(LS.get("austere:name", "") || "").slice(0, NAME_MAX);
+  }
+  renderViewer();
+  renderComposer();
+  frame.src = `${BOOT.artifactUrl ?? `${BASE}/a/`}${answer.token}/`;
+  return true;
 }
 
-function startPolling() {
-  pollConversation();
-  setInterval(pollConversation, POLL_MS);
-  window.addEventListener("focus", () => pollConversation());
+/** Applies rows as upserts by (type, id), then stores the cursor. */
+function applyChanges(changes: ReceivedChanges) {
+  if (changes.reset) state.transcript = [];
+  const entries: Entry[] = [];
+  for (const row of changes.rows) {
+    if (row.type === "page") applyPage(row);
+    // Reviewers see notes in every state; discarded ones are hidden.
+    else if (row.type === "note") entries.push({ id: `note:${row.id}`, role: "user", author: row.author.slice(0, NAME_MAX), items: row.items, at: row.at, discarded: row.state === "discarded" });
+    else if (row.type === "reply") entries.push({ id: `reply:${row.id}`, role: "agent", text: row.text, at: row.at });
+  }
+  mergeEntries(entries);
+  cursor = changes.cursor;
+  renderLog();
+  renderDock();
+}
+
+function applyPage(row: PageRow) {
+  // The server closes the socket (1000) after a deleted page's row.
+  if (row.deleted) return lock("Page removed", "The owner removed this page.");
+  publishedAt ??= row.publishedAt;
+  if (row.publishedAt !== publishedAt) {
+    showBanner("New version, reload", [h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() })]);
+  }
+  showPackNotice(row.packs.map((p) => p.name));
+}
+
+/** An ack settles one queued note; on an error its items go back to the queue to be sent again. */
+function settle(ack: AckFrame) {
+  const i = outbox.findIndex((o) => o.m.clientId === ack.clientId && o.m.n === ack.n);
+  if (i < 0) return;
+  const [done] = outbox.splice(i, 1);
+  SS.set(OUTBOX_KEY, outbox);
+  if (ack.error) {
+    for (const item of done.m.args.items) addToQueue({ ...item });
+    const wait = ack.error.retryAfter ? `in ${ack.error.retryAfter} s` : "in a moment";
+    composerError(
+      ack.error.code === "rate_limited"
+        ? `Not sent: too many notes for now. Send again ${wait}; your notes are back in the queue.`
+        : `Not sent: ${ack.error.message}. Your notes are back in the queue.`,
+    );
+  }
+  renderLog();
+  renderDock();
+}
+
+function onSyncFrame(frame: ReceivedFrame) {
+  if (frame.t === "changes") applyChanges(frame);
+  else if (frame.t === "ack") settle(frame);
+  // `forbidden` and `upgrade_required` come before the server closes the socket: onSyncClose says why.
+  else if (frame.t === "error" && frame.code !== "forbidden" && frame.code !== "upgrade_required") composerError(frame.message);
+}
+
+function onSyncClose(close: SyncClose, retrying: boolean) {
+  state.connected = false;
+  if (!retrying && !lockout) {
+    if (close.error?.code === "upgrade_required") {
+      lock("Update needed", "This page needs a newer review page. Reload to get it.", [
+        h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() }),
+      ]);
+    } else if (close.code === 1000 && !close.error) lock("Page removed", "This page is no longer available.");
+    // `forbidden` and close 1008: the invite was revoked or expired, or the page is no longer unlisted.
+    else refused(403);
+  }
+  renderPresence();
+}
+
+/**
+ * Hosted boot: trade for the frame's token, then open the page socket. It carries the rows, the
+ * note mutations and presence (the server sends no presence on a --no-presence page).
+ */
+async function startHosted() {
+  showBanner("");
+  if (!(await loadHostedFrame()) || sync) return;
+  const socket = openSyncSocket({
+    url: `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${BASE}/sync`,
+    protocols: () => syncProtocols(invite ? { invite } : {}),
+    // A refused handshake shows no status to the page: ask the asset-token route why.
+    mayRetry: async (close) => {
+      if (lockout) return false;
+      if (close.opened) return true;
+      const answer = await requestAssetToken().catch(() => null);
+      return !(answer && refused(answer.status));
+    },
+  });
+  sync = socket;
+  socket.onOpen(() => {
+    state.connected = true;
+    socket.send({ v: SYNC_VERSION, t: "pull", after: cursor });
+    // Unacked notes go again, in order; the server answers a repeat (clientId, n) with the same ack.
+    for (const o of outbox) socket.send(o.m);
+    renderPresence();
+  });
+  socket.onFrame(onSyncFrame);
+  socket.onClose(onSyncClose);
+  socket.onOpen(() => presence.connect((frame) => void socket.send(frame)));
+  socket.onFrame((f) => {
+    if (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye") presence.handle(f);
+  });
+  socket.onClose(() => presence.disconnect());
 }
 
 if (!HOSTED) {
@@ -1387,16 +1612,8 @@ if (isNarrow() && state.sheetOpen) setSheet(true);
 renderPresence();
 renderLog();
 renderDock();
-loadFrame();
-if (HOSTED) {
-  startPolling();
-  // The page socket. It carries presence; the server sends none on a --no-presence page.
-  openPageSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${BASE}/sync`, syncProtocols({}), BASE, {
-    open: (send) => presence.connect(send),
-    frame: (f) => {
-      if (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye") presence.handle(f);
-    },
-    closed: () => presence.disconnect(),
-  });
-} else connect();
-
+if (HOSTED) startHosted();
+else {
+  loadFrame();
+  connect();
+}

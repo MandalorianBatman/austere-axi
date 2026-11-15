@@ -185,7 +185,8 @@ austere-axi export <file>        one self-contained HTML file, works offline (~1
 austere-axi hub on|off|status|list|notes|open   home page with every page and note
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
-austere-axi publish <file>       hosted copy of the page on austere.kasat.xyz   [--auto] [--no-presence] [--new]
+austere-axi publish <file>       hosted copy of the page on austere.kasat.xyz   [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new]
+austere-axi publish invites|revoke <file> [name]   see a page's invites, cut one off
 austere-axi publish list|rm <file|id>   your hosted pages; delete one now
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out
@@ -351,18 +352,22 @@ Send the link to the teammate. It needs Tailscale (or `AUSTERE_AXI_HOST`); witho
 
 ## Hosted pages
 
-`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints its link. It is the only command that contacts the service, and nothing is sent until you run it.
+`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. It is the only command that contacts the service, and nothing is sent until you run it.
 
 ```sh
-austere-axi publish plan.html          # prints https://austere.kasat.xyz/p/<id>
-austere-axi publish plan.html          # again: same link, new version
-austere-axi publish plan.html --new    # a fresh link
-austere-axi publish list               # your pages, expiry, note counts
-austere-axi publish rm plan.html       # or the page id; the link stops working at once
+austere-axi publish plan.html --invite Ana --invite Ben   # prints https://austere.kasat.xyz/p/<id>#i=<token> for each
+austere-axi publish plan.html                    # again: same page, new version; Ana's and Ben's links keep working
+austere-axi publish plan.html --invite Cy --expires 7d   # one more reviewer, for a week
+austere-axi publish invites plan.html            # who is invited (live, expired, revoked), with their links
+austere-axi publish revoke plan.html Ben         # Ben's link stops working; his open page is disconnected
+austere-axi publish plan.html --unlisted         # opt-in open link: anyone with the plain URL may review
+austere-axi publish plan.html --new              # a fresh page
+austere-axi publish list                         # your pages, expiry, note counts
+austere-axi publish rm plan.html                 # or the page id; every link stops working at once
 ```
 
 - **What is uploaded:** the file with its runtime tag pointed at the service's copy of this CLI version, the installed packs it declares, and the images beside it, inlined by the same rules as `export`. A declared pack that is not installed at that version, or an image that cannot be inlined, is an error. Each upload is limited to 1 MB after gzip.
-- **Who can see it:** pages are invite-only. Inviting reviewers is not in this version yet, so for now nobody else can open a published page.
+- **Who can see it:** pages are invite-only. Each `--invite <name>` gets its own link; the token is in the URL fragment (`#i=…`), which browsers never send to the server, and the reviewer's notes carry that name. Send each person only their link. `--unlisted` opts a page into an open link where reviewers name themselves.
 - **Notes:** reviewers' notes will be held for you by default; `--auto` on a publish records that they go straight to the agent. They do not reach `poll` or `feedback` yet.
 - **Presence:** everyone on the page sees who else is there (a chip per viewer: viewing, away or writing) and the part each one last clicked in Annotate mode, outlined with their name. Nothing about it is stored. `--no-presence` on a publish turns it off for that page.
 - **Expiry:** 30 days after the last publish.
@@ -462,7 +467,7 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. Never 
 - Image attachments in feedback.
 - Live data: `Query` and `Mutation` are off, so pages are static.
 - Themes: one dark theme only.
-- Hosted pages (`publish`): inviting reviewers, and their notes reaching `poll` and `feedback`.
+- Hosted pages (`publish`): reviewers' notes reaching `poll` and `feedback`.
 
 ## Development
 
