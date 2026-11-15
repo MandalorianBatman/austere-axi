@@ -140,7 +140,7 @@ export function notesPage(
       const when = `${day(n.at)} ${time(n.at)}`;
       return `<li class="n"><a href="/hub/open/${escapeHtml(n.artifact_id)}" title="${escapeHtml(n.file)}">
   <p class="note">${escapeHtml(n.text || "(no text)")}</p>
-  <span class="note-t">${n.author ? `<b class="by">${escapeHtml(n.author)}</b> · ` : ""}${n.target ? `on ${escapeHtml(n.target)} · ` : ""}<strong>${escapeHtml(n.title || path.basename(n.file))}</strong> · ${escapeHtml(path.basename(n.project) || n.project)} · ${escapeHtml(when)} · <span class="st ${waiting ? "waiting" : "done"}">${STATUS_LABEL[n.status] || escapeHtml(n.status)}</span></span>
+  <span class="note-t">${n.author ? `<b class="by">${escapeHtml(n.author)}</b> · ` : ""}${n.remote ? "hosted page · " : ""}${n.target ? `on ${escapeHtml(n.target)} · ` : ""}<strong>${escapeHtml(n.title || path.basename(n.file))}</strong> · ${escapeHtml(path.basename(n.project) || n.project)} · ${escapeHtml(when)} · <span class="st ${waiting ? "waiting" : "done"}">${STATUS_LABEL[n.status] || escapeHtml(n.status)}</span></span>
 </a></li>`;
     })
     .join("");

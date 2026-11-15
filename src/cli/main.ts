@@ -171,7 +171,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   reply: {
     usage: "reply <file> --agent-reply text | --agent-reply-file path|- [--cursor n]",
-    summary: "post a reply without polling; acknowledges feedback up to the cursor",
+    summary: "post a reply without polling; acknowledges feedback up to the cursor. On a published file the reply is also posted to the hosted page (a warning says when it is queued)",
     flags: {
       "agent-reply": "reply text: a small Markdown subset, a line or two",
       "agent-reply-file": "read the reply from a file, or - for stdin",
@@ -261,12 +261,12 @@ const COMMANDS: Record<string, CommandSpec> = {
     usage:
       "publish <file> [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new] | publish invites <file> | publish revoke <file> <name> | publish list | publish rm <file|id>",
     summary:
-      "hosted share link on austere.kasat.xyz: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. Pages are invite-only: each --invite prints that reviewer's own link, revocable with publish revoke. The only command that contacts the service; run it only when the user asks to share a page. Hosted notes do not reach poll or feedback yet",
+      "hosted share link on austere.kasat.xyz: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. Pages are invite-only: each --invite prints that reviewer's own link, revocable with publish revoke. The only command that publishes a page; run it only when the user asks to share a page. Afterwards the local server syncs the page: its notes reach poll and feedback marked remote: true, held for the owner unless --auto, and replies and the owner's Send/Discard go to the hosted page",
     flags: {
       invite: "invite a reviewer by name and print their link (repeatable); the same name again keeps its link",
       expires: "the invites of this publish stop working after this long: 30m, 12h, 7d, 2w (default: with the page)",
       unlisted: "anyone with the plain page URL may review, naming themselves (applies to this publish)",
-      auto: "record reviewers' notes as sent straight to the agent instead of held (applies to this publish)",
+      auto: "reviewers' notes go straight to the agent instead of held (applies to this publish)",
       "no-presence": "viewers do not see who else is on the page or what they clicked (applies to this publish)",
       new: "a fresh link instead of updating this file's",
     },
@@ -468,7 +468,7 @@ function describeItems(abs: string, items: NoteItem[]): Printed[] {
       // one malformed item must not hide the rest of the delivery, which the server already marked received
       o = { malformed: `could not read this ${typeof it?.kind === "string" ? it.kind : "feedback"} item` };
     }
-    return it?.author ? { from: it.author, ...o } : o;
+    return it?.author ? { from: it.author, ...(it.remote === true ? { remote: true } : {}), ...o } : o;
   });
 }
 
@@ -566,9 +566,9 @@ async function cmdReply(file: string | undefined, flags: Flags): Promise<void> {
   const text = await replyText(flags);
   if (!text) return usage('reply needs text: --agent-reply "..." or --agent-reply-file <path|->', "reply");
   await ensureServer();
-  const r = await request("POST", "/api/reply", { file: abs, text, cursor: seqFlag(flags, "cursor") }, { timeoutMs: 10_000 });
+  const r = await request<{ ok?: boolean; warning?: string; error?: string }>("POST", "/api/reply", { file: abs, text, cursor: seqFlag(flags, "cursor") }, { timeoutMs: 15_000 });
   if (r.status !== 200) return fail(r.data?.error || `reply failed (${r.status})`);
-  print({ status: "replied", file: abs });
+  print({ status: "replied", file: abs, warning: r.data?.warning });
 }
 
 async function cmdEnd(file: string | undefined): Promise<void> {
@@ -978,8 +978,10 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
   const opts = { all: !!flags.all, peek: !!flags.peek };
   let entries: FeedbackEntry[] | null = null;
   let status: string | null = null;
+  // A published file's hosted notes come in through the server: start it so it can catch up.
+  if (cloud.readCloud().pages[abs]) await ensureServer();
   if (await serverIfRunning()) {
-    const r = await request<FeedbackResponse>("POST", "/api/feedback", { file: abs, ...opts }, { timeoutMs: 10_000 });
+    const r = await request<FeedbackResponse>("POST", "/api/feedback", { file: abs, ...opts }, { timeoutMs: 15_000 });
     if (r.status === 200) {
       entries = r.data.entries;
       status = r.data.session.status;
@@ -1010,7 +1012,7 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
   }
   const items: Printed[] = [];
   for (const e of entries) {
-    for (const it of describeItems(abs, (e.items || []).map((x) => (e.author ? { ...x, author: e.author } : x)))) {
+    for (const it of describeItems(abs, (e.items || []).map((x) => (e.author ? { ...x, author: e.author, ...(e.remote ? { remote: true } : {}) } : x)))) {
       items.push(opts.all ? { sent: shortDate(e.at), status: e.status, ...it } : { sent: shortDate(e.at), ...it });
     }
   }
@@ -1273,7 +1275,7 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
       expires: r.expiresAt === null ? undefined : shortDate(r.expiresAt),
       packs: r.packs || undefined,
       images: r.images || undefined,
-      note: `${nobody ? "Nobody can open this page yet: add --invite <name>, or --unlisted for an open link. " : ""}Send each reviewer only their own link. Notes on hosted pages do not reach poll or feedback yet. The page expires 30 days after the last publish.`,
+      note: `${nobody ? "Nobody can open this page yet: add --invite <name>, or --unlisted for an open link. " : ""}Send each reviewer only their own link. Reviewers' notes reach poll and feedback marked remote: true${r.auto ? "" : ", held until the owner sends them on in the review page"}. The page expires 30 days after the last publish.`,
       next: `${again} again updates this link (earlier invites keep working); ${BIN} publish invites ${quote(sub)} lists invites; ${BIN} publish revoke ${quote(sub)} <name> revokes one; ${BIN} publish rm ${quote(sub)} deletes the page.`,
     });
   } catch (caught) {

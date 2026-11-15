@@ -352,7 +352,7 @@ Send the link to the teammate. It needs Tailscale (or `AUSTERE_AXI_HOST`); witho
 
 ## Hosted pages
 
-`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. It is the only command that contacts the service, and nothing is sent until you run it.
+`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. Nothing is sent until you run it; after that, the local server keeps your published pages in sync (below).
 
 ```sh
 austere-axi publish plan.html --invite Ana --invite Ben   # prints https://austere.kasat.xyz/p/<id>#i=<token> for each
@@ -368,10 +368,11 @@ austere-axi publish rm plan.html                 # or the page id; every link st
 
 - **What is uploaded:** the file with its runtime tag pointed at the service's copy of this CLI version, the installed packs it declares, and the images beside it, inlined by the same rules as `export`. A declared pack that is not installed at that version, or an image that cannot be inlined, is an error. Each upload is limited to 1 MB after gzip.
 - **Who can see it:** pages are invite-only. Each `--invite <name>` gets its own link; the token is in the URL fragment (`#i=…`), which browsers never send to the server, and the reviewer's notes carry that name. Send each person only their link. `--unlisted` opts a page into an open link where reviewers name themselves.
-- **Notes:** reviewers' notes will be held for you by default; `--auto` on a publish records that they go straight to the agent. They do not reach `poll` or `feedback` yet.
-- **Presence:** everyone on the page sees who else is there (a chip per viewer: viewing, away or writing) and the part each one last clicked in Annotate mode, outlined with their name. Nothing about it is stored. `--no-presence` on a publish turns it off for that page.
+- **Notes:** reviewers' notes reach `poll` and `feedback` like any other, from the reviewer's name and with `remote: true`. They are held for you by default: press Send (or Discard) in the review page. With `--auto` on the publish they go straight to the agent. The local server picks them up while a `poll` listens, when it starts, and when you run `feedback`; offline, it keeps retrying (up to every 60 s) and local review goes on.
+- **Replies:** `reply` (and `poll --agent-reply`) on a published file also posts the reply to the hosted page. If the service cannot be reached, `reply` warns and the reply is sent when it can.
+- **Presence:** everyone on the page sees who else is there (a chip per viewer: viewing, away or writing) and the part each one last clicked in Annotate mode, outlined with their name. You are on the page too while your local review page is open: hosted viewers show as chips there, and your clicks show as an outline for them. Nothing about it is stored. `--no-presence` on a publish turns it off for that page.
 - **Expiry:** 30 days after the last publish.
-- **Owner token:** created on the first `publish`, stored in `~/.austere-axi/cloud.json` (mode 0600). It only controls your pages. Copying the file to another machine lets that machine manage them too.
+- **Owner token:** created on the first `publish`, stored in `~/.austere-axi/cloud.json` (mode 0600). It only controls your pages. Copying the file to another machine makes that machine a peer: it gets the same notes, and a note you send on one machine arrives sent on the other. `cloud.json` maps pages by absolute path, so the file must sit at the same path on both machines.
 
 The protocol is in [docs/hosted-share-links.md](docs/hosted-share-links.md).
 
@@ -434,6 +435,7 @@ Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them, except scopes mapped with `registry add` |
 | `AUSTERE_AXI_CLOUD_URL` | `https://austere.kasat.xyz` | the service `publish` talks to (self-hosting, tests) |
+| `AUSTERE_AXI_SYNC_RETRY_MS` | `1000` | first wait before the local server reconnects to a hosted page; it doubles up to 60 s |
 | `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
 
 ## Security
@@ -467,7 +469,7 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. Never 
 - Image attachments in feedback.
 - Live data: `Query` and `Mutation` are off, so pages are static.
 - Themes: one dark theme only.
-- Hosted pages (`publish`): reviewers' notes reaching `poll` and `feedback`.
+
 
 ## Development
 

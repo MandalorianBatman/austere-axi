@@ -1,5 +1,6 @@
-// `publish`: hosted share links on austere-cloud (docs/hosted-share-links.md). The only module
-// that talks to the service, and only `publish` calls it.
+// Hosted share links on austere-cloud (docs/hosted-share-links.md): `publish` and its owner
+// socket, and cloud.json. The local server's sync peer (peer.ts) opens the same owner socket;
+// nothing else talks to the service.
 //
 // A publish uploads the page HTML and its packs as SHA-256-addressed objects, then sends the
 // `publish` mutation over the owner socket. Frames, mutations and rows come from the shared
@@ -248,6 +249,29 @@ async function ensureToken(state: CloudState): Promise<string> {
 
 // ── owner socket ──
 
+/** A new owner socket to page `id`: the credential rides in the subprotocols, the CLI version in `?cli=`. */
+export function ownerSocket(base: string, token: string, id: string): WebSocket {
+  const url = `${base.replace(/^http/, "ws")}/api/pages/${encodeURIComponent(id)}/sync?cli=${encodeURIComponent(VERSION)}`;
+  return new WebSocket(url, syncProtocols({ owner: token }), { headers: { "user-agent": `austere-axi/${VERSION}` }, followRedirects: false });
+}
+
+/**
+ * Calls `done` when the handshake is refused: a plain HTTP response with its status and
+ * `{ error: { code, message } }`, and `retryAfter` (seconds) from a 429's Retry-After.
+ */
+export function onRefusal(ws: WebSocket, base: string, done: (err: CloudError, retryAfter?: number) => void): void {
+  ws.on("unexpected-response", (_req, res) => {
+    let text = "";
+    res.setEncoding("utf8");
+    res.on("data", (c: string) => (text += c));
+    res.on("end", () => {
+      const e = errorOf(text, res.statusMessage || "");
+      const retry = Number(res.headers["retry-after"]);
+      done(new CloudError(`${base} answered ${res.statusCode}: ${e.message}`, res.statusCode, e.code), Number.isFinite(retry) && retry >= 0 ? retry : undefined);
+    });
+  });
+}
+
 type Send = { [N in MutationName]: { name: N; args: MutationArgs[N] } }[MutationName];
 
 /**
@@ -257,13 +281,12 @@ type Send = { [N in MutationName]: { name: N; args: MutationArgs[N] } }[Mutation
  * pulling still resolves, with whatever rows arrived and `complete: false`.
  */
 async function ownerSession(base: string, token: string, id: string, mutations: Send[], { pull = false } = {}): Promise<{ rows: Row[]; complete: boolean }> {
-  const url = `${base.replace(/^http/, "ws")}/api/pages/${encodeURIComponent(id)}/sync?cli=${encodeURIComponent(VERSION)}`;
   // A one-shot command makes a fresh clientId per run (docs: Idempotency), so n counts from 1.
   const clientId = crypto.randomBytes(16).toString("base64url");
   const frames = mutations.map((m, i) => mutation(m.name, m.args as never, { clientId, n: i + 1 }));
   const what = mutations.length ? mutations.map((m) => m.name).join(", ") : "pull";
   const { promise, resolve, reject } = Promise.withResolvers<{ rows: Row[]; complete: boolean }>();
-  const ws = new WebSocket(url, syncProtocols({ owner: token }), { headers: { "user-agent": `austere-axi/${VERSION}` }, followRedirects: false });
+  const ws = ownerSocket(base, token, id);
   let settled = false;
   let acked = 0;
   let complete = false;
@@ -292,16 +315,7 @@ async function ownerSession(base: string, token: string, id: string, mutations: 
     ws.send(JSON.stringify(frame));
   };
 
-  // A refused handshake is a plain HTTP response: its status and `{ error: { code, message } }`.
-  ws.on("unexpected-response", (_req, res) => {
-    let text = "";
-    res.setEncoding("utf8");
-    res.on("data", (c: string) => (text += c));
-    res.on("end", () => {
-      const e = errorOf(text, res.statusMessage || "");
-      finish(new CloudError(`${base} answered ${res.statusCode}: ${e.message}`, res.statusCode, e.code));
-    });
-  });
+  onRefusal(ws, base, (err) => finish(err));
   ws.on("error", (err) => finish(new CloudError(`could not reach ${base}: ${err.message}`)));
   ws.on("close", (code, reason) => {
     finish(new CloudError(`${base} closed the connection (${code}${reason.length ? `: ${reason.toString()}` : ""}) before answering ${what}`));

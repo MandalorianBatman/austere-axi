@@ -36,6 +36,9 @@ export interface UserEntry {
   discarded?: boolean;
   workAt?: number;
   releasedAt?: number;
+  /** From a hosted page (peer.ts); `remoteId` is `<pageId>/<noteId>`. */
+  remote?: true;
+  remoteId?: string;
 }
 
 /** A note that can reach the agent: it has a seq. */
@@ -80,6 +83,7 @@ export interface FeedbackEntry {
   author?: string;
   items: NoteItem[];
   status: NoteStatus;
+  remote?: true;
 }
 
 /** A note paired with the fields it changes to. */
@@ -99,6 +103,7 @@ interface NoteRow {
   seen_at: number | null;
   work_at: number | null;
   done_at: number | null;
+  remote_id: string | null;
 }
 
 /** A row of `replies`. */
@@ -183,8 +188,8 @@ export class SessionStore {
       note: db.prepare(`SELECT 1 FROM notes WHERE id = ?`),
       hasNotes: db.prepare(`SELECT 1 FROM notes WHERE artifact_id = ? LIMIT 1`),
       saveNote: db.prepare(`
-        INSERT INTO notes (id, artifact_id, seq, state, author, items, ends, at, released_at, seen_at, work_at, done_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO notes (id, artifact_id, seq, state, author, items, ends, at, released_at, seen_at, work_at, done_at, remote_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET seq = excluded.seq, state = excluded.state, released_at = excluded.released_at,
           seen_at = excluded.seen_at, work_at = excluded.work_at, done_at = excluded.done_at`),
       maxSeq: db.prepare(`SELECT COALESCE(MAX(seq), 0) AS n FROM notes`),
@@ -204,15 +209,19 @@ export class SessionStore {
     this.db.close();
   }
 
-  /** Run `fn` in one transaction: all of it is on disk, or none of it. */
+  /**
+   * Run `fn` in one transaction: all of it is on disk, or none of it. Inside another `tx` it is a
+   * savepoint, so a caller can commit a change and what it causes (a queued mutation) together.
+   */
   tx<T>(fn: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
+    const nested = this.db.isTransaction;
+    this.db.exec(nested ? "SAVEPOINT tx" : "BEGIN IMMEDIATE");
     try {
       const out = fn();
-      this.db.exec("COMMIT");
+      this.db.exec(nested ? "RELEASE tx" : "COMMIT");
       return out;
     } catch (err) {
-      this.db.exec("ROLLBACK");
+      this.db.exec(nested ? "ROLLBACK TO tx; RELEASE tx" : "ROLLBACK");
       throw err;
     }
   }
@@ -266,7 +275,7 @@ export class SessionStore {
 
   saveNote(s: Session, e: UserEntry): void {
     const state = e.discarded ? "discarded" : e.held ? "held" : "queued";
-    this.q.saveNote.run(e.id, s.id, e.seq ?? null, state, e.author || "", JSON.stringify(e.items || []), e.end ? 1 : 0, e.at, e.releasedAt ?? null, e.seenAt ?? null, e.workAt ?? null, e.doneAt ?? null);
+    this.q.saveNote.run(e.id, s.id, e.seq ?? null, state, e.author || "", JSON.stringify(e.items || []), e.end ? 1 : 0, e.at, e.releasedAt ?? null, e.seenAt ?? null, e.workAt ?? null, e.doneAt ?? null, e.remoteId ?? null);
   }
 
   /** Index each item of a note for the hub, with where the note stands. */
@@ -300,21 +309,32 @@ export class SessionStore {
   /**
    * Reviewer sent a batch of items. Returns the transcript entry, already on disk.
    * `author` is a team reviewer's name (empty: the owner). `hold` keeps it from the
-   * agent until the owner releases it.
+   * agent until the owner releases it. `remote` is the note's row on a hosted page
+   * (`<pageId>/<noteId>`), and `at` when it was written there.
    */
-  addUserBatch(s: Session, items: NoteItem[], { end = false, author = "", hold = false }: { end?: boolean; author?: string; hold?: boolean } = {}): UserEntry {
-    const entry: UserEntry = { id: newId("u"), role: "user", at: Date.now(), items, end: end || undefined, seenAt: null, doneAt: null, seq: null };
+  addUserBatch(
+    s: Session,
+    items: NoteItem[],
+    { end = false, author = "", hold = false, remote = "", at = Date.now() }: { end?: boolean; author?: string; hold?: boolean; remote?: string; at?: number } = {},
+  ): UserEntry {
+    const entry: UserEntry = { id: newId("u"), role: "user", at, items, end: end || undefined, seenAt: null, doneAt: null, seq: null };
     if (author) entry.author = author;
     if (hold) entry.held = true;
+    if (remote) Object.assign(entry, { remote: true, remoteId: remote });
     this.tx(() => {
       if (!hold) entry.seq = this.nextSeq();
       this.saveNote(s, entry);
       this.indexNote(s, entry);
-      s.updatedAt = entry.at;
+      s.updatedAt = Math.max(s.updatedAt, entry.at);
       this.saveSession(s);
     });
     s.transcript.push(entry);
     return entry;
+  }
+
+  /** The note that came from a hosted page's row `remoteId`, if this session has it. */
+  byRemote(s: Session, remoteId: string): UserEntry | null {
+    return s.transcript.find((e): e is UserEntry => e.role === "user" && e.remoteId === remoteId) ?? null;
   }
 
   /** Held entries, oldest first. */
@@ -427,6 +447,7 @@ export class SessionStore {
       author: e.author || undefined,
       items: e.items,
       status: noteStatus(e, s.ackedSeq),
+      remote: e.remote,
     }));
     const fresh = picked.filter((e) => e.seq > s.ackedSeq);
     if (fresh.length && !peek) this.ack(s, Math.max(...fresh.map((e) => e.seq)));
@@ -552,6 +573,7 @@ function noteEntry(row: NoteRow): UserEntry {
   if (row.author) e.author = row.author;
   if (row.work_at != null) e.workAt = row.work_at;
   if (row.released_at != null) e.releasedAt = row.released_at;
+  if (row.remote_id) Object.assign(e, { remote: true, remoteId: row.remote_id });
   if (row.state === "held") e.held = true;
   if (row.state === "discarded") {
     e.held = false;

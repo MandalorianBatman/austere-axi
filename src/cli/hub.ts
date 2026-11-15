@@ -43,6 +43,8 @@ export interface HubNoteRow {
   text: string | null;
   status: string;
   author: string;
+  /** 1 when the note came from a hosted page. */
+  remote: number;
   title: string | null;
   file: string;
   project: string;
@@ -170,6 +172,31 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS notes_artifact ON notes(artifact_id, at);
 `;
 
+// Hosted pages (cloud.json, peer.ts). cloud_rows and cloud_pages are a cache of what the page
+// objects hold, dropped and pulled again from 0 when the sync version they were filled under
+// changes. cloud_meta holds that version, the outgoing queue's clientId and its next n;
+// cloud_queue the mutations not yet acknowledged. notes.remote_id ties a note to its row.
+const CLOUD = `
+CREATE TABLE IF NOT EXISTS cloud_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cloud_pages (page_id TEXT PRIMARY KEY, cursor INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS cloud_rows (
+  page_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  PRIMARY KEY (page_id, type, id)
+);
+CREATE TABLE IF NOT EXISTS cloud_queue (
+  n INTEGER PRIMARY KEY,
+  page_id TEXT NOT NULL,
+  file TEXT NOT NULL,
+  name TEXT NOT NULL,
+  args TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+`;
+
 function migrate(db: sqlite.DatabaseSync): void {
   db.exec(SCHEMA);
   const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
@@ -180,6 +207,10 @@ function migrate(db: sqlite.DatabaseSync): void {
   if (!has("artifacts", "closed_at")) db.exec("ALTER TABLE artifacts ADD COLUMN closed_at INTEGER");
   if (!has("artifacts", "acked_seq")) db.exec("ALTER TABLE artifacts ADD COLUMN acked_seq INTEGER NOT NULL DEFAULT 0");
   db.exec(NOTES);
+  // Notes from before hosted pages have no remote row.
+  if (!has("notes", "remote_id")) db.exec("ALTER TABLE notes ADD COLUMN remote_id TEXT");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS notes_remote ON notes(remote_id)");
+  db.exec(CLOUD);
 }
 
 /** A bindable SQLite text value from untrusted item data: strings pass, other shapes become JSON, empty is null. */
@@ -267,8 +298,8 @@ export class Hub {
     return this.db
       .prepare(
         `SELECT i.id, i.artifact_id, i.at, i.kind, i.target, i.text, i.status, i.author,
-                a.title, a.file, a.project
-         FROM items i JOIN artifacts a ON a.id = i.artifact_id
+                n.remote_id IS NOT NULL AS remote, a.title, a.file, a.project
+         FROM items i JOIN artifacts a ON a.id = i.artifact_id LEFT JOIN notes n ON n.id = i.entry_id
          WHERE i.kind IN ('annotation', 'message') AND i.status != 'discarded'
            AND (? = 'all' OR i.author = ?)
            AND (? = '' OR i.text LIKE ? ESCAPE '\\' OR i.target LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')
