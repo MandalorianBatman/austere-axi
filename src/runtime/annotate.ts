@@ -78,6 +78,9 @@ interface OpenRequest {
 }
 
 interface Draft {
+  /** The innermost statement clicked, and the piece of it the box outlined (pieceOf). */
+  target: Element;
+  piece: Element | null;
   targetId: string;
   component: string;
   path: PathEntry[];
@@ -158,6 +161,12 @@ function partOf(target: Element, el: Element): Element | null {
   return part && target.contains(part) ? part : null;
 }
 
+/** A table row's 1-based place in its tbody; undefined for header and footer rows. */
+function rowIndexOf(row: Element): number | undefined {
+  const body = row.parentElement;
+  return body?.tagName === "TBODY" ? Array.prototype.indexOf.call(body.children, row) + 1 : undefined;
+}
+
 function detailOf(target: Element, el: Element): AnnotationDetail | undefined {
   const detail: AnnotationDetail = {};
   const part = partOf(target, el);
@@ -173,13 +182,45 @@ function detailOf(target: Element, el: Element): AnnotationDetail | undefined {
     const headRow = table?.querySelector("thead tr");
     const head = headRow?.children[idx];
     if (head) detail.column = clip(head.textContent, 60);
-    if (row.parentElement?.tagName === "TBODY") {
+    const rowIndex = rowIndexOf(row);
+    if (rowIndex) {
       const first = row.children[0];
       if (first && first !== cell) detail.row = clip(first.textContent, 60);
-      detail.rowIndex = Array.prototype.indexOf.call(row.parentElement.children, row) + 1;
+      detail.rowIndex = rowIndex;
     }
   }
   return Object.keys(detail).length ? detail : undefined;
+}
+
+/**
+ * The innermost thing under the pointer inside its statement, which the hover box outlines
+ * instead of the whole statement: a marked part (a diagram node or edge, a diff line), else a
+ * table row. It is what detailOf describes, so the box shows what the note will point at.
+ */
+function pieceOf(target: Element, el: Element): Element | null {
+  const part = partOf(target, el);
+  if (part) return part;
+  // A row only through one of its cells, as detailOf reads it: a row border or a selection across cells carries no row.
+  const row = el.closest("td, th")?.parentElement;
+  return row && target.contains(row) ? row : null;
+}
+
+/** The hover label's suffix naming the piece: the part, or the row number feedback carries. */
+function pieceLabel(piece: Element | null): string {
+  if (!piece) return "";
+  const part = piece.getAttribute("data-austere-part");
+  if (part !== null) return ` · ${clip(part, 40)}`;
+  const rowIndex = rowIndexOf(piece);
+  if (rowIndex) return ` · row ${rowIndex}`;
+  return piece.parentElement?.tagName === "THEAD" ? " · header" : "";
+}
+
+/** Finds the same piece again inside a re-rendered statement, by its place among its kind (part values repeat). */
+function relocatorOf(target: Element, piece: Element): (target: Element) => Element | null {
+  const part = piece.getAttribute("data-austere-part");
+  const sel = part !== null ? `[data-austere-part="${CSS.escape(part)}"]` : "tr";
+  const at = Array.prototype.indexOf.call(target.querySelectorAll(sel), piece);
+  return (t) => t.querySelectorAll(sel)[at] ?? null;
 }
 
 /** lookup() returns [statementMap, referencesTo] for the program on screen; marks resolve ids through it. */
@@ -224,24 +265,34 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   const isOurs = (el: EventTarget | null) => el instanceof Element && !!el.closest(`[${UI_ATTR}]`);
   const targetOf = (el: EventTarget | null) => (el instanceof Element && el.closest("[data-oui-id]")) || null;
 
-  function placeBox(box: HTMLElement, rect: DOMRect, pad = 4) {
+  function placeBox(box: HTMLElement, rect: Box, pad = 4) {
     box.style.left = `${rect.left - pad}px`;
     box.style.top = `${rect.top - pad}px`;
     box.style.width = `${rect.width + pad * 2}px`;
     box.style.height = `${rect.height + pad * 2}px`;
   }
 
-  // The statement the hover box was last placed on; layout changes re-measure it.
+  // What the hover box was last placed on: a statement, and the piece of it the box outlines
+  // instead of the whole (pieceOf); layout changes re-measure it.
   let hovered: Element | null = null;
+  let hoveredPiece: Element | null = null;
+  let relocate: ((target: Element) => Element | null) | null = null;
 
-  function showHover(target: Element | null) {
+  // A piece is cut to its scrollers (a long diff line, a wide diagram): the box stops at what shows.
+  function hoverRect(target: Element, piece: Element | null): Box {
+    return (piece && visibleBox(piece)) || boxOf(target);
+  }
+
+  function showHover(target: Element | null, piece: Element | null = null) {
     hovered = target;
+    hoveredPiece = piece;
+    relocate = target && piece ? relocatorOf(target, piece) : null;
     if (!target) {
       hover.hidden = true;
       return;
     }
-    placeBox(hover, boxOf(target));
-    hoverLabel.textContent = `${target.getAttribute("data-oui-id")} · ${target.getAttribute("data-oui-c")}`;
+    placeBox(hover, hoverRect(target, piece));
+    hoverLabel.textContent = `${target.getAttribute("data-oui-id")} · ${target.getAttribute("data-oui-c")}${pieceLabel(piece)}`;
     hover.hidden = false;
   }
 
@@ -251,8 +302,10 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     if (hoverRaf) return;
     hoverRaf = requestAnimationFrame(() => {
       hoverRaf = 0;
-      if (isOurs(lastHoverEl)) return;
-      showHover(targetOf(lastHoverEl));
+      const el = lastHoverEl;
+      if (!(el instanceof Element) || isOurs(el)) return;
+      const target = targetOf(el);
+      showHover(target, target && pieceOf(target, el));
     });
   }
 
@@ -334,6 +387,10 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       b.addEventListener("click", () => {
         current.targetId = p.id;
         current.component = p.component;
+        // The box follows the chosen statement; only the innermost one keeps the piece (and its detail).
+        const innermost = i === current.path.length - 1;
+        showHover(current.target.closest(`[data-oui-id="${CSS.escape(p.id)}"]`), innermost ? current.piece : null);
+        placeHover();
         renderPath();
         popText.focus();
       });
@@ -351,6 +408,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     const path = pathOf(target);
     const detail = detailOf(target, el);
     const part = partOf(target, el);
+    const piece = pieceOf(target, el);
     let excerpt: string | undefined;
     if (!selection) {
       const node = part || el;
@@ -361,6 +419,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     const statement = statementOf(target);
     post({ type: "focus", id: statement.id });
     draft = {
+      target,
+      piece,
       targetId: statement.id,
       component: statement.component,
       path,
@@ -375,7 +435,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     popText.value = "";
     hover.hidden = true;
     selBtn.hidden = true;
-    showHover(target);
+    showHover(target, piece);
     hover.classList.add("locked");
     pop.hidden = false;
     positionPop(point);
@@ -429,9 +489,12 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     if (draft.detail && draft.targetId === draft.path[draft.path.length - 1].id) item.detail = draft.detail;
     post({ type: "annotate", item });
     const id = draft.targetId;
+    // A note on a piece (a row, a node) flashes that piece, as the box outlined it.
+    const piece = item.detail ? hoveredPiece : null;
     close();
     window.getSelection()?.removeAllRanges();
-    flash([id], "queued");
+    if (piece?.isConnected) flashElement(piece, "queued");
+    else flash([id], "queued");
   }
 
   pop.addEventListener("click", (e) => {
@@ -545,15 +608,17 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     return right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : null;
   }
 
+  function flashElement(el: Element, tone: string) {
+    const box = visibleBox(el);
+    if (!box) return;
+    const f = overlay(box, `austere-flash ${tone}`);
+    document.body.appendChild(f);
+    setTimeout(() => f.remove(), 2400);
+  }
+
   function flash(ids: string[], tone = "changed", map?: StatementMap, refsTo?: RefsTo): Element[] {
     const list = outermost(ids, map, refsTo);
-    for (const el of list) {
-      const box = visibleBox(el);
-      if (!box) continue;
-      const f = overlay(box, `austere-flash ${tone}`);
-      document.body.appendChild(f);
-      setTimeout(() => f.remove(), 2400);
-    }
+    for (const el of list) flashElement(el, tone);
     return list;
   }
 
@@ -600,8 +665,9 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
 
   /**
    * A shown hover box (locked under an open note, or under a resting pointer) stays on its
-   * statement when the page moves it: a live update re-lays out a diagram, a scroller scrolls.
-   * A re-render may replace the element, so a detached one is found again by its id.
+   * statement or piece when the page moves it: a live update re-lays out a diagram, a scroller
+   * scrolls. A re-render may replace the elements, so a detached statement is found again by
+   * its id and a detached piece by its place in it.
    */
   function placeHover() {
     if (hover.hidden || !hovered) return;
@@ -609,7 +675,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       const id = hovered.getAttribute("data-oui-id") as string;
       hovered = document.querySelector(`[data-oui-id="${CSS.escape(id)}"]`);
     }
-    if (hovered) placeBox(hover, boxOf(hovered));
+    if (hovered && hoveredPiece && !hoveredPiece.isConnected) hoveredPiece = relocate?.(hovered) ?? null;
+    if (hovered) placeBox(hover, hoverRect(hovered, hoveredPiece));
     else hover.hidden = true;
   }
 
