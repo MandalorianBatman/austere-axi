@@ -19,6 +19,7 @@ import { freePort } from "./port.ts";
 import { ownerHeaders } from "./owner.ts";
 import { SUBPROTOCOL, SYNC_VERSION, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
 import type { MutationArgs, PageRow, ServerFrame, SyncError } from "../src/shared/sync.ts";
+import { format } from "../src/cli/output.ts";
 
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const STATE = tmp("austere-publish-state-");
@@ -219,7 +220,11 @@ interface CloudJson {
   pages: Record<string, { id: string; auto: boolean }>;
 }
 const cloudState = (): CloudJson => JSON.parse(fs.readFileSync(path.join(STATE, "cloud.json"), "utf8"));
-const field = (out: string, name: string) => new RegExp(`^${name}: (.*)$`, "m").exec(out)?.[1];
+/** A top-level output field, unquoted: a Windows path has backslashes, so the output JSON-quotes it. */
+const field = (out: string, name: string) => {
+  const v = new RegExp(`^${name}: (.*)$`, "m").exec(out)?.[1];
+  return v?.startsWith('"') ? (JSON.parse(v) as string) : v;
+};
 
 // ── the command ──
 
@@ -276,7 +281,7 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   r = await cli(["publish", "list"]);
   assert.equal(r.code, 0, r.out);
   assert.equal(r.out.match(/^ {2}- id: /gm)?.length, 2);
-  assert.ok(r.out.includes(`file: ${abs}`));
+  assert.ok(r.out.includes(format({ file: abs })), r.out);
 
   // rm by id (the first page, no longer mapped), then by file: each a delete mutation.
   stub.requests.length = 0;
