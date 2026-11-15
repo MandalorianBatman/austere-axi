@@ -87,6 +87,7 @@ section.block > .wrap > p { color: var(--muted); max-width: 66ch; margin: 0 0 24
 
 .installs { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .install { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; min-width: 0; }
+.install.wide { grid-column: 1 / -1; }
 .install h3 { margin: 0 0 4px; font-size: 1.05rem; }
 .install > p { margin: 0 0 12px; color: var(--muted); font-size: 0.95rem; }
 .install .cmd + .cmd { margin-top: 8px; }
