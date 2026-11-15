@@ -1386,7 +1386,7 @@ export async function runServer({
       // The owner's only (reviewers are refused above). cloud.json is read again: `publish` may have run since the page opened.
       const state = readCloud();
       const entry = state.token ? state.pages[s.file] : undefined;
-      const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: entry.auto } : undefined;
+      const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: peer.liveAuto(entry.id, entry.auto) } : undefined;
       return send(res, 200, agentPrompt({ file: s.file, hosted }));
     }
     if (sub === "/bye" && req.method === "POST") {

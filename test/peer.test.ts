@@ -15,6 +15,7 @@ import type { AddressInfo } from "node:net";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { freePort } from "./port.ts";
+import { quote } from "../src/cli/paths.ts";
 import { ownerHeaders } from "./owner.ts";
 import { SUBPROTOCOL, SYNC_VERSION, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
 import type { AckFrame, ClientPresence, MutationArgs, NoteItem, NoteRow, PageRow, PresenceStatus, ReplyRow, Row, ServerPresence, ViewerHello } from "../src/shared/sync.ts";
@@ -587,9 +588,13 @@ test("the agent prompt names the file and the poll command, the shared page when
   const held = file("prompt-held.html");
   const auto = file("prompt-auto.html");
   const plain = file("prompt local's.html");
+  const live = file("prompt-live.html");
   const heldPage = newPage();
   const autoPage = newPage();
-  const m = await machine({ [held]: { id: heldPage, auto: false }, [auto]: { id: autoPage, auto: true } });
+  const livePage = newPage();
+  // Published without --auto on this machine, but the page now releases at once (a publish from another machine).
+  put(livePage, { type: "page", id: livePage, title: "x", cliVersion: "0.9.0", html: "0".repeat(64), packs: [], auto: true, unlisted: false, presence: true, publishedAt: Date.now(), expiresAt: Date.now() + 86400000, deleted: false });
+  const m = await machine({ [held]: { id: heldPage, auto: false }, [auto]: { id: autoPage, auto: true }, [live]: { id: livePage, auto: false } });
   try {
     const prompt = async (f: string) => {
       const sid = await open(m, f);
@@ -599,8 +604,10 @@ test("the agent prompt names the file and the poll command, the shared page when
     };
 
     const h = await prompt(held);
-    assert.ok(h.includes(`austere-axi poll ${held}`), h);
-    assert.ok(h.includes(`austere-axi poll ${held} --cursor <n> --agent-reply`), h);
+    assert.ok(h.includes(`austere-axi poll ${quote(held)}`), h);
+    assert.ok(h.includes(`austere-axi poll ${quote(held)} --cursor <n> --agent-reply`), h);
+    assert.match(h, /listener_active/);
+    assert.match(h, /--takeover/);
     assert.ok(h.includes(`Shared page: ${CLOUD}/p/${heldPage}`), h);
     assert.match(h, /only after I send them on/);
 
@@ -609,14 +616,24 @@ test("the agent prompt names the file and the poll command, the shared page when
     assert.match(a, /as they are posted/);
     assert.doesNotMatch(a, /only after I send them on/);
 
+    // The page's live mode decides, not cloud.json's copy: the pull that caches its row may land just after the page opens.
+    const sid = await open(m, live);
+    const l: string = await until("the live mode in the prompt", async (): Promise<string> => {
+      const res = await fetch(`http://127.0.0.1:${m.port}/s/${sid}/agent-prompt`, { headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` } });
+      const text = await res.text();
+      return /as they are posted/.test(text) ? text : "";
+    });
+    assert.doesNotMatch(l, /only after I send them on/);
+
     // Not published: the file and the command only, and a path with a quote stays one shell word.
     const p = await prompt(plain);
-    assert.ok(p.includes(`austere-axi poll '${plain.replace(/'/g, `'\\''`)}'`), p);
+    assert.ok(p.includes(`austere-axi poll ${quote(plain)}`), p);
+    assert.match(p, /austere-axi poll "/, "a path with a space or quote is double-quoted");
     assert.doesNotMatch(p, /Shared page|remote: true/);
 
     // The owner token, the owner key and invite or login parameters never reach the text.
     const key = fs.readFileSync(path.join(m.state, "owner.key"), "utf8").trim();
-    for (const text of [h, a, p]) {
+    for (const text of [h, a, l, p]) {
       assert.ok(!text.includes(TOKEN) && !text.includes(key), "no secret");
       assert.doesNotMatch(text, /[?&#](key|invite|login|i)=/);
     }

@@ -2,12 +2,9 @@
 // "Copy agent prompt" menu item fetches it from the server (`GET /s/:id/agent-prompt`), which
 // knows the file and whether it is published. It names the page and the poll commands the CLI
 // documents (`austere-axi --help`); it carries no key, token or invite link.
-const BIN = "austere-axi";
+import { quote } from "./paths.ts";
 
-/** A path as one shell word: bare when plain, otherwise in single quotes (nothing inside them expands). */
-export function shellWord(s: string): string {
-  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
-}
+const BIN = "austere-axi";
 
 export interface AgentPromptInput {
   /** The review's file (canonical path); `poll` takes it, and a peer machine finds the same page by it. */
@@ -17,7 +14,7 @@ export interface AgentPromptInput {
 }
 
 export function agentPrompt({ file, hosted }: AgentPromptInput): string {
-  const f = shellWord(file);
+  const f = quote(file);
   const lines = [
     `Listen for feedback on my austere-axi review page and revise it as notes arrive.`,
     ``,
@@ -26,9 +23,9 @@ export function agentPrompt({ file, hosted }: AgentPromptInput): string {
   if (hosted) lines.push(`Shared page: ${hosted.url}`);
   lines.push(
     ``,
-    `1. Run \`${BIN} poll ${f}\` in the foreground and leave it running until it returns. If the call times out, run it again.`,
+    `1. Run \`${BIN} poll ${f}\` in the foreground and leave it running until it returns. If the call times out (status: timeout), run it again.`,
     `2. When it returns feedback, change the page with \`${BIN} patch ${f}\` (send only the changed statements on stdin), then run \`${BIN} poll ${f} --cursor <n> --agent-reply "<one line: what changed>"\` with the cursor it printed. That acknowledges the feedback, posts your reply and listens again.`,
-    `3. When it returns status: ended, stop polling and continue in chat.`,
+    `3. When it returns status: ended, stop polling and continue in chat. When it returns status: listener_active, another poll is already listening on this page: leave it, and add \`--takeover\` only if I ask you to replace it.`,
   );
   if (hosted) {
     lines.push(

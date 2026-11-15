@@ -473,6 +473,17 @@ export class Peer {
     return parsed.presence !== false;
   }
 
+  /**
+   * Whether the page releases notes at once, as its cached page row has it; `fallback` (cloud.json's
+   * copy, from the last publish on this machine) until the first pull has cached one.
+   */
+  liveAuto(page: string, fallback: boolean): boolean {
+    const row = this.host.store.db.prepare("SELECT body FROM cloud_rows WHERE page_id = ? AND type = 'page' AND id = ?").get(page, page) as { body: string } | undefined;
+    if (!row) return fallback;
+    const parsed = JSON.parse(row.body) as { auto?: unknown };
+    return typeof parsed.auto === "boolean" ? parsed.auto : fallback;
+  }
+
   // ── frames ──
 
   private message(link: Link, text: string): void {
