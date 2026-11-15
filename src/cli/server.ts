@@ -24,6 +24,9 @@ import type { Invite } from "./invites.ts";
 import { reviewerItem } from "./items.ts";
 import { hubPage, notesPage } from "./hub-page.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
+import { Peer } from "./peer.ts";
+import { parseClientFrame } from "../shared/sync.ts";
+import type { ServerPresence } from "../shared/sync.ts";
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 
@@ -271,6 +274,24 @@ export async function runServer({
   const graceTimers = new Map<string, ReturnType<typeof setTimeout>>(); // id -> timeout
   const byeAt = new Map<string, number>(); // id -> ms of last explicit tab close
   const browserSeen = new Set<string>();
+  // Hosted pages in cloud.json: their notes come in, the owner's Send/Discard and the agent's replies go out.
+  const peer = new Peer({
+    store,
+    log,
+    listening: (s) => {
+      const poll = polls.get(s.id);
+      return !!poll && !poll.done;
+    },
+    changed: (s, entries) => {
+      broadcastTranscript(s, entries);
+      wake(s);
+      broadcastPresence(s);
+    },
+    viewing: (s) => Array.from(clients.get(s.id) || []).some((c) => c.viewer.role === "owner"),
+    relay: (s, frame) => {
+      for (const c of Array.from(clients.get(s.id) || [])) if (c.viewer.role === "owner") sseWrite(clients.get(s.id) as Set<SseClient>, c, viewerEvent(frame));
+    },
+  });
   // Render errors already sent per session, for one revision; a repeat or a second tab adds nothing.
   const renderReported = new Map<string, { revision: number; keys: Set<string> }>();
   let tailnet: Tailnet | null = null;
@@ -449,6 +470,11 @@ export async function runServer({
     broadcast(s.id, "presence", { presence: presence(s), status: s.status, endedBy: s.endedBy, closed: Boolean(s.closedAt), unread: store.unread(s).length });
   }
 
+  /** A hosted viewer's presence frame for the owner's review page, unchanged. */
+  function viewerEvent(frame: ServerPresence): string {
+    return `event: viewer\ndata: ${JSON.stringify(frame)}\n\n`;
+  }
+
   function broadcastTranscript(s: Session, entries: TranscriptEntry[]): void {
     const set = clients.get(s.id);
     if (!set) return;
@@ -538,7 +564,7 @@ export async function runServer({
     const items: NoteItem[] = [];
     let end = false;
     for (const e of entries) {
-      for (const it of e.items || []) items.push(e.author ? { ...it, author: e.author } : it);
+      for (const it of e.items || []) items.push(e.author ? { ...it, author: e.author, ...(e.remote ? { remote: true } : {}) } : it);
       if (e.end) end = true;
     }
     // Ended only if it still is: a reviewer's end batch, the reviewer's end, or the owner's close. A replay to an agent that ended is not final.
@@ -599,6 +625,7 @@ export async function runServer({
     clearTimeout(graceTimers.get(s.id));
     graceTimers.delete(s.id);
     if (polls.get(s.id) === poll) polls.delete(s.id);
+    peer.unwatch(s);
     poll.res.on("finish", () => onDelivered?.());
     send(poll.res, 200, body);
     broadcastPresence(s);
@@ -751,6 +778,8 @@ export async function runServer({
       } satisfies OpenResponse);
     }
 
+    // A published page's notes may be waiting on the service: catch up first (for a file never opened here too).
+    if (route === "feedback") await peer.pull(file);
     const s = store.byFile(file);
     if (!s) return send(res, 404, { error: "no session for this file; open it first" });
 
@@ -758,11 +787,18 @@ export async function runServer({
       const text = String(body.text || "").trim();
       if (!text) return send(res, 400, { error: "reply text is empty" });
       const acked = acknowledge(s, body, true);
-      const entry = store.addAgentReply(s, text);
+      // The reply and its addReply for a published file's hosted page commit together; when the page cannot take it yet, the reply stands here and the agent is told.
+      let pushed: Promise<string | undefined> = Promise.resolve(undefined);
+      const entry = store.tx(() => {
+        const e = store.addAgentReply(s, text);
+        pushed = peer.reply(s, text, { wait: true });
+        return e;
+      });
       s.workingSince = null;
       broadcastTranscript(s, [...acked, entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at && !acked.includes(e))]);
       broadcastPresence(s);
-      return send(res, 200, { ok: true });
+      const warning = await pushed;
+      return send(res, 200, { ok: true, warning });
     }
 
     if (route === "feedback") {
@@ -801,7 +837,11 @@ export async function runServer({
       const after = seqParam(body.after);
       const acked = acknowledge(s, body, !!body.agentReply);
       if (body.agentReply) {
-        const entry = store.addAgentReply(s, String(body.agentReply).trim());
+        const entry = store.tx(() => {
+          const e = store.addAgentReply(s, String(body.agentReply).trim());
+          void peer.reply(s, e.text);
+          return e;
+        });
         broadcastTranscript(s, [...acked, entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at && !acked.includes(e))]);
       } else if (acked.length) broadcastTranscript(s, acked);
       s.workingSince = null;
@@ -830,10 +870,12 @@ export async function runServer({
       if (fresh.length) return deliver(s, poll);
       if (s.status === "ended") return send(res, 200, { status: "ended", endedBy: s.endedBy, closed: Boolean(s.closedAt) || undefined } satisfies PollResponse);
       polls.set(s.id, poll);
+      peer.watch(s);
       res.on("close", () => {
         if (!poll.done) {
           poll.done = true;
           if (polls.get(s.id) === poll) polls.delete(s.id);
+          peer.unwatch(s);
           clearTimeout(graceTimers.get(s.id));
           broadcastPresence(s);
         }
@@ -1221,6 +1263,11 @@ export async function runServer({
       let set = clients.get(s.id);
       if (!set) clients.set(s.id, (set = new Set()));
       set.add(client);
+      // The owner sees who is on the hosted page (Q17): the roster so far, then each change.
+      if (!reviewer) {
+        for (const hello of peer.roster(s)) res.write(viewerEvent(hello));
+        peer.watch(s);
+      }
       browserSeen.add(s.id);
       clearTimeout(graceTimers.get(s.id));
       graceTimers.delete(s.id);
@@ -1228,6 +1275,7 @@ export async function runServer({
       res.on("close", () => {
         clearInterval(hb);
         clients.get(s.id)?.delete(client);
+        if (!reviewer) peer.unwatch(s);
         armGrace(s);
       });
       return;
@@ -1292,7 +1340,12 @@ export async function runServer({
     if ((sub === "/release" || sub === "/discard") && req.method === "POST") {
       const body = await readBody(req);
       const ids: string[] | null = Array.isArray(body.ids) ? body.ids.map(String) : sub === "/discard" && body.all ? null : [];
-      const done = sub === "/release" ? store.release(s, ids) : store.discard(s, ids);
+      // Notes from a hosted page: the page hears it too, so the owner's other machines follow. The change and its mutation commit together.
+      const done = store.tx(() => {
+        const d = sub === "/release" ? store.release(s, ids) : store.discard(s, ids);
+        peer.settled(d, sub === "/release" ? "releaseNote" : "discardNote", s);
+        return d;
+      });
       if (done.length) broadcastTranscript(s, done);
       if (sub === "/release") wake(s);
       broadcastPresence(s);
@@ -1319,6 +1372,13 @@ export async function runServer({
         broadcastPresence(s);
       }
       return send(res, 200, { ok: true });
+    }
+    if (sub === "/presence" && req.method === "POST") {
+      // The owner's own status and focus for the hosted page's viewers; nothing happens when the file is not published.
+      const parsed = parseClientFrame(await readBody(req, 4096));
+      if (!parsed.ok || parsed.value.t === "mutation" || parsed.value.t === "pull") return send(res, 400, { error: "a presence frame is expected" });
+      peer.presenceFrom(s, parsed.value);
+      return send(res, 204, "");
     }
     if (sub === "/bye" && req.method === "POST") {
       byeAt.set(s.id, Date.now());
@@ -1405,6 +1465,7 @@ export async function runServer({
       if (s && !poll.done) finishPoll(s, poll, { status: "interrupted", reason });
     }
     for (const id of watchers.keys()) unwatch(id);
+    peer.close();
     for (const server of listeners.values()) server.close();
     // Everything is already on disk; let a replacement server take the state dir at once.
     releaseLock();
@@ -1424,5 +1485,6 @@ export async function runServer({
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   log("started", `v${VERSION}`, `pid=${process.pid}`);
+  peer.start();
   return { port, shutdown };
 }

@@ -5,8 +5,8 @@
 // <script type="application/json" id="austere-boot">.
 
 import "./zod-jitless.ts";
-import { LIMITS, SYNC_VERSION, mutation, syncProtocols } from "../shared/sync.ts";
-import type { AckFrame, AddNoteArgs, Mutation, NoteAnnotation, NoteItem, PageRow, ReceivedChanges, ReceivedFrame } from "../shared/sync.ts";
+import { LIMITS, SYNC_VERSION, mutation, parseServerFrame, syncProtocols } from "../shared/sync.ts";
+import type { AckFrame, AddNoteArgs, ClientPresence, Mutation, NoteAnnotation, NoteItem, PageRow, ReceivedChanges, ReceivedFrame } from "../shared/sync.ts";
 import { Presence } from "./presence.ts";
 import { openSyncSocket } from "./sync-socket.ts";
 import type { SyncClose, SyncSocket } from "./sync-socket.ts";
@@ -1385,6 +1385,20 @@ function connect() {
       }
     }, 4000);
   });
+  if (OWNER) {
+    // A published page's hosted viewers, relayed by the server (Q17), and the owner's own status and focus sent back.
+    // The server keeps them for the page's socket; an unpublished page ignores them.
+    const sendPresence = (frame: ClientPresence) => {
+      fetch(`${BASE}/presence`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(frame) }).catch(() => {});
+    };
+    source.addEventListener("open", () => presence.connect(sendPresence));
+    source.addEventListener("error", () => presence.disconnect());
+    source.addEventListener("viewer", (e) => {
+      const parsed = parseServerFrame(e.data);
+      const f = parsed.ok ? parsed.value : null;
+      if (f && (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye")) presence.handle(f);
+    });
+  }
   source.addEventListener("snapshot", (e) => {
     const d: SnapshotEvent = JSON.parse(e.data);
     state.transcript = (d.transcript || []).filter((e) => !e.discarded);
