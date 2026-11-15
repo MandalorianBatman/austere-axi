@@ -89,8 +89,14 @@ strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big ba
           <div class="cmd"><code>npm install -g austere-axi</code><button type="button" data-copy="npm install -g austere-axi">Copy</button></div>
           <div class="cmd"><code>npx skills add MandalorianBatman/austere-axi --skill austere</code><button type="button" data-copy="npx skills add MandalorianBatman/austere-axi --skill austere">Copy</button></div>
         </div>
+        <div class="install wide">
+          <h3>Claude Code plugin or any MCP client</h3>
+          <p>The plugin bundles both skills and the MCP server. Other clients (Claude Desktop, Cursor, Codex) run the same server: <code>npx -y austere-axi mcp</code>.</p>
+          <div class="cmd"><code>claude plugin marketplace add MandalorianBatman/austere-axi</code><button type="button" data-copy="claude plugin marketplace add MandalorianBatman/austere-axi">Copy</button></div>
+          <div class="cmd"><code>claude plugin install austere@austere-axi</code><button type="button" data-copy="claude plugin install austere@austere-axi">Copy</button></div>
+        </div>
       </div>
-      <p class="note">Then: <code>austere-axi spec</code> prints the component reference, <code>austere-axi plan.html</code> validates and opens the page, <code>austere-axi poll plan.html</code> waits until you press Send.</p>
+      <p class="note">Then: <code>austere-axi spec</code> prints the component reference, <code>austere-axi plan.html</code> validates and opens the page, <code>austere-axi poll plan.html</code> waits until you press Send. MCP client setup is in the <a href="https://github.com/MandalorianBatman/austere-axi#mcp">README</a>; the output-token comparison with lavish-axi is in the <a href="https://github.com/MandalorianBatman/austere-axi/blob/main/docs/benchmark.md">benchmark</a>.</p>
     </div>
   </section>
 
