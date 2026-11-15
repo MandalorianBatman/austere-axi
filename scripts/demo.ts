@@ -109,9 +109,9 @@ const startPoll = (extra: string[] = []) => {
 /**
  * Terminal text as the reader should see it. Nothing is rewritten: lines that do not fit
  * the pane are cut with an ellipsis, and the long hints (next:, source:, file paths,
- * the --no-open note) are left out so the notes stay readable.
+ * the --no-open and sign-in notes) are left out so the notes stay readable.
  */
-const SKIP = /^\s*(browser: not opened|next:|source:|file:|line:|excerpt:)/;
+const SKIP = /^\s*(browser: not opened|sign_in:|next:|source:|file:|line:|excerpt:)/;
 const tidy = (s: string): string =>
   s
     .split("\n")
@@ -213,10 +213,24 @@ if (!browser) {
 let exit = 0;
 let poll: ReturnType<typeof startPoll> | undefined;
 try {
-  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  // Reviews are owner-only (SameSite=Lax cookie). Sign this browser in with the single-use
+  // link `austere-axi login` prints, as a reviewer's browser is, and serve the stage from the
+  // server's own origin so the review iframe is same-site and carries the cookie.
+  // Starting the server and the session here is off screen; the recording runs the same command again.
+  const prep = cli(["plan.html", "--no-open"]);
+  const login = cli(["login", "plan.html"]);
+  const loginUrl = /(https?:\/\/\S+)/.exec(login.stdout)?.[1];
+  if (prep.status !== 0 || login.status !== 0 || !loginUrl) throw new Error(`could not sign in: ${prep.stdout}${prep.stderr}${login.stdout}${login.stderr}`);
+  const auth = await context.newPage();
+  await auth.goto(loginUrl);
+  await auth.close();
+  const page = await context.newPage();
   const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(e.message));
-  await page.setContent(STAGE);
+  const stageUrl = `http://127.0.0.1:${PORT}/demo-stage`;
+  await page.route(stageUrl, (route) => route.fulfill({ contentType: "text/html", body: STAGE }));
+  await page.goto(stageUrl);
   const stop = await startRecording(page);
   const pause = (ms: number) => page.waitForTimeout(ms);
   // Inside page.evaluate, T is the stage page's window.T (same methods).
@@ -246,8 +260,9 @@ try {
   await pause(350);
   const opened = cli(["plan.html", "--no-open"]);
   if (opened.status !== 0) throw new Error(`austere-axi plan.html failed: ${opened.stdout}${opened.stderr}`);
-  const url = /^url: (\S+)/m.exec(opened.stdout)?.[1];
   await T.out(tidy(opened.stdout));
+  const url = /^url: (\S+)/m.exec(opened.stdout)?.[1];
+  if (!url) throw new Error(`no url in: ${opened.stdout}`);
   await page.evaluate((u) => openReview(u), url);
   await artifact.locator("[data-oui-id]").first().waitFor({ timeout: 20_000 });
   await artifact.locator("[data-oui-id='pg']").first().waitFor();
@@ -326,8 +341,11 @@ try {
 
   // 6. The agent replies and goes back to polling; the reply lands in the conversation.
   await T.raw("", "");
-  await T.type(`austere-axi poll plan.html --agent-reply "${REPLY}"`, 60);
-  poll = startPoll(["--agent-reply", REPLY]);
+  // 0.8 polls hand back a cursor; the next poll acknowledges it.
+  const pollCursor = /^cursor: (\d+)/m.exec(feedback)?.[1];
+  if (!pollCursor) throw new Error(`poll printed no cursor:\n${feedback}`);
+  await T.type(`austere-axi poll plan.html --cursor ${pollCursor} --agent-reply "${REPLY}"`, 60);
+  poll = startPoll(["--cursor", pollCursor, "--agent-reply", REPLY]);
   await review.locator(".msg, .bubble, .reply").filter({ hasText: REPLY }).first().waitFor({ timeout: 10_000 }).catch(() => {});
   await pause(3200);
 
