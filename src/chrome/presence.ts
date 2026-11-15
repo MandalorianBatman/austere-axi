@@ -141,6 +141,20 @@ export class Presence {
     return this.others().flatMap((p) => (p.focus ? [{ statement: p.focus, name: p.viewer.name, colour: p.viewer.colour }] : []));
   }
 
+  /** The chip of this viewer: first, ringed, no status, nothing to scroll to. */
+  private selfChip(me: Present): HTMLElement {
+    const chip = document.createElement("span");
+    chip.dataset.viewer = me.viewer.id;
+    chip.className = "viewer self";
+    chip.style.setProperty("--viewer", me.viewer.colour);
+    chip.textContent = [...me.viewer.name][0]?.toUpperCase() ?? "?";
+    const label = `You · ${me.viewer.name}`;
+    chip.title = label;
+    chip.setAttribute("role", "img");
+    chip.setAttribute("aria-label", label);
+    return chip;
+  }
+
   private render(): void {
     // Chips are rebuilt on every change: keep the keyboard on the same viewer's chip.
     const active = document.activeElement;
@@ -159,9 +173,11 @@ export class Presence {
       chip.addEventListener("click", () => p.focus && this.host.reveal(p.focus));
       return chip;
     });
-    this.host.chips.replaceChildren(...chips);
+    // This viewer's own entry, as the server named it (the name the composer posts under).
+    const me = this.self ? this.roster.get(this.self) : undefined;
+    this.host.chips.replaceChildren(...(me ? [this.selfChip(me)] : []), ...chips);
     chips.find((c) => c.dataset.viewer === focusedId)?.focus();
-    this.host.chips.hidden = !chips.length;
+    this.host.chips.hidden = !me && !chips.length;
     this.redraw();
   }
 }
