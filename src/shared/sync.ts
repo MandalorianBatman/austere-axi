@@ -83,6 +83,7 @@ const CLIENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 const TOKEN = /^[A-Za-z0-9_-]{16,256}$/;
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const COLOUR = /^#[0-9a-f]{6}$/;
+const GRANT_ID = /^[A-Za-z0-9_-]{16}$/;
 
 // Every object is loose: fields this version does not know are kept on the parsed value.
 const seq = z.int().positive();
@@ -167,7 +168,15 @@ const ROWS: { [T in api.RowType]: z.ZodType<Extract<api.Row, { type: T }>> } = {
     state: z.enum(["held", "released", "discarded"]),
   }),
   reply: z.looseObject({ ...rowBase, type: z.literal("reply"), text: z.string(), at: ms }),
-  acl: z.looseObject({ ...rowBase, type: z.literal("acl"), name: z.string(), grantedAt: ms, expiresAt: ms.nullable(), revoked: z.boolean() }),
+  acl: z.looseObject({
+    ...rowBase,
+    type: z.literal("acl"),
+    name: z.string(),
+    grantedAt: ms,
+    expiresAt: ms.nullable(),
+    revoked: z.boolean(),
+    grant: z.string().regex(GRANT_ID).optional(),
+  }),
 };
 
 const CLIENT_FRAMES: { [T in Exclude<api.ClientFrame["t"], "mutation">]: z.ZodType<Extract<api.ClientFrame, { t: T }>> } = {
@@ -348,6 +357,11 @@ export function readProtocols(header: string | null | undefined): api.Credential
   return out;
 }
 
+export function grantId(tokenHash: string): string {
+  // 96 bits of a hash of a 256-bit random token: names the grant, reveals nothing usable.
+  return tokenHash.slice(0, 16);
+}
+
 // This file implements every value types/sync.d.ts declares, with the declared types.
 ({
   SYNC_VERSION,
@@ -363,4 +377,5 @@ export function readProtocols(header: string | null | undefined): api.Credential
   parseServerFrame,
   syncProtocols,
   readProtocols,
+  grantId,
 }) satisfies typeof api;

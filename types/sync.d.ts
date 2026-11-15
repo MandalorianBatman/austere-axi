@@ -208,9 +208,16 @@ export interface AclRow {
   id: string;
   seq: number;
   name: string;
+  /** When the name's current token was first granted. */
   grantedAt: number;
   expiresAt: number | null;
   revoked: boolean;
+  /**
+   * Which token the name currently has: `grantId(tokenHash)`, a prefix of the token's SHA-256, never
+   * the token. An owner peer compares it with its own token's to know whether its link is the live
+   * one. Absent from servers before it was added (additive, Q15).
+   */
+  grant?: string;
 }
 
 export type Row = PageRow | NoteRow | ReplyRow | AclRow;
@@ -377,3 +384,6 @@ export declare function syncProtocols(credentials: Credentials): string[];
 
 /** Reads a Sec-WebSocket-Protocol request header. `sync` is false when SUBPROTOCOL is missing. */
 export declare function readProtocols(header: string | null | undefined): Credentials & { sync: boolean };
+
+/** The `acl` row's `grant` for a token hash (`GrantArgs.tokenHash`, base64url SHA-256): its first 16 characters. */
+export declare function grantId(tokenHash: string): string;

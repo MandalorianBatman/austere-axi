@@ -20,6 +20,7 @@ import type { Mutation, NoteRow, PageRow, ReplyRow, Row, ServerFrame } from "../
 const ID = "pg_test";
 const BASE = `/p/${ID}`;
 const ANA = "ana-invite-token-0123456789";
+const BO = "bo-invite-token-0123456789";
 const SHELL_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const FRAME_CSP =
@@ -53,6 +54,8 @@ const svc = {
   /** Refuse every socket handshake (403), and leave asset-token requests unanswered. */
   refuseUpgrades: false,
   stallAssetToken: false,
+  /** Answer this many coming addNotes with `rate_limited` (retryAfter 1), unapplied and unstored. */
+  rateLimit: 0,
 };
 let stub: http.Server | undefined;
 let origin: string;
@@ -159,6 +162,10 @@ function reviewerSocket(s: Socket) {
       svc.mutations.push(frame);
       svc.onMutation?.();
       if (svc.holdAcks) return;
+      if (svc.rateLimit > 0) {
+        svc.rateLimit--;
+        return send(s.ws, { v: SYNC_VERSION, t: "ack", clientId: frame.clientId, n: frame.n, error: { code: "rate_limited", message: "slow down", retryAfter: 1 } });
+      }
       const key = `${frame.clientId}:${frame.n}`;
       if (!svc.applied.has(key)) {
         svc.applied.add(key);
@@ -230,7 +237,7 @@ after(async () => {
 
 beforeEach(() => {
   for (const s of svc.sockets) s.ws.terminate();
-  Object.assign(svc, { requests: [], inviteHeaders: [], rows: [], seq: 0, pulls: [], mutations: [], holdAcks: false, upgrades: 0, reports: [], unlisted: false });
+  Object.assign(svc, { requests: [], inviteHeaders: [], rows: [], seq: 0, pulls: [], mutations: [], holdAcks: false, upgrades: 0, reports: [], unlisted: false, rateLimit: 0 });
   svc.invites = new Map([[ANA, "Ana"]]);
   put(pageRow(1_000));
 });
@@ -456,6 +463,73 @@ test("hosted chrome: a held note survives a reload under its key; a duplicated t
     const saved = svc.rows.filter((r): r is NoteRow => r.type === "note").map((r) => r.items.map((x) => (x.kind === "message" ? x.text : "")).join());
     assert.deepEqual(saved, ["before reload", "from the first tab", "from the copy"]);
     assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: a held note is never sent under another invite opened in the same tab", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  svc.invites.set(BO, "Bo");
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await ctx.newPage();
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.waitForSelector("text=Posting as Ana");
+    svc.holdAcks = true; // offline in effect: Ana's note stays in the outbox
+    await page.fill(".composer textarea", "Ana's note");
+    await page.click(".composer .send");
+    await mutationsReceived(1);
+    svc.holdAcks = false;
+
+    // Bo's link in the same tab (a full load): the outbox carries over in sessionStorage, but not to Bo.
+    await page.goto("about:blank");
+    await page.goto(`${origin}${BASE}#i=${BO}`);
+    await page.waitForSelector("text=Posting as Bo");
+    await page.waitForFunction(() => document.querySelector(".presence")?.className.includes("hosted"));
+    const sent = svc.mutations.length;
+    await page.fill(".composer textarea", "Bo's note");
+    await page.click(".composer .send");
+    await mutationsReceived(sent + 1);
+    await page.waitForSelector(".msg.user .receipt em:text('Sent to the page owner')");
+    assert.equal(await page.locator("text=Ana's note").count(), 0, "Ana's pending note is not shown as Bo's");
+    const authors = svc.rows.filter((r): r is NoteRow => r.type === "note").map((r) => [r.author, r.items.map((x) => (x.kind === "message" ? x.text : "")).join()]);
+    assert.deepEqual(authors, [["Bo", "Bo's note"]], "nothing of Ana's went out on Bo's socket");
+
+    // Back as Ana by opening her link in the open page (only the fragment changes): her note goes out, under her invite.
+    await page.evaluate((hash) => (location.hash = hash), `i=${ANA}`);
+    await page.waitForSelector("text=Posting as Ana");
+    await page.waitForFunction(() => [...document.querySelectorAll(".msg.user")].some((m) => m.textContent?.includes("Ana's note") && m.textContent.includes("Sent to the page owner")));
+    const all = svc.rows.filter((r): r is NoteRow => r.type === "note").map((r) => [r.author, r.items.map((x) => (x.kind === "message" ? x.text : "")).join()]);
+    assert.deepEqual(all, [
+      ["Bo", "Bo's note"],
+      ["Ana", "Ana's note"],
+    ]);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: a rate-limited note stays queued and goes again by itself after Retry-After", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await ctx.newPage();
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.waitForSelector("text=Posting as Ana");
+    svc.rateLimit = 1;
+    await page.fill(".composer textarea", "patience");
+    await page.click(".composer .send");
+    await page.waitForSelector("text=sending again in 1 s");
+    assert.equal(await page.locator(".receipt em:text('Sending…')").count(), 1, "still in the outbox");
+    // The retry after Retry-After (1 s) uses the same key; no resend from the reviewer.
+    await page.waitForSelector(".msg.user .receipt em:text('Sent to the page owner')");
+    const keys = svc.mutations.map((m) => `${m.clientId}:${m.n}`);
+    assert.equal(keys.length, 2);
+    assert.equal(keys[0], keys[1], "the same mutation, re-sent");
+    assert.equal(svc.rows.filter((r) => r.type === "note").length, 1);
+    assert.equal(await page.locator(".composer textarea").inputValue(), "", "nothing went back to the composer");
+    assert.ok(!(await page.locator(".composer-error").isVisible()), "the wait message is cleared once sent");
   } finally {
     await ctx.close();
   }

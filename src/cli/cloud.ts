@@ -6,7 +6,7 @@
 // schema module (src/shared/sync.ts); nothing here redefines them.
 //
 // State: <state>/cloud.json (mode 0600)
-//   { url, token, pages: { "<absolute path>": { id, auto, unlisted, presence, invites: { "<name>": { token, expiresAt, grantedAt } } } } }
+//   { url, token, pages: { "<absolute path>": { id, auto, unlisted, presence, invites: { "<name>": { token, expiresAt } } } } }
 // Invite tokens are kept so a republish or `publish invites` can print the same links; the service
 // only ever sees their SHA-256.
 import crypto from "node:crypto";
@@ -18,7 +18,7 @@ import { readArtifact, rewriteRuntime } from "./artifact.ts";
 import { inlineImages } from "./export.ts";
 import { VERSION, stateDir } from "./paths.ts";
 import { bundledPacks, implicitPacks, pagePacks } from "./packs.ts";
-import { LIMITS, SYNC_VERSION, mutation, parseServerFrame, syncProtocols } from "../shared/sync.ts";
+import { LIMITS, SYNC_VERSION, grantId, mutation, parseServerFrame, syncProtocols } from "../shared/sync.ts";
 import type { AclRow, MutationArgs, MutationName, PackRef, PageRow, PullFrame, ReceivedFrame, Row, SyncError } from "../shared/sync.ts";
 
 export const DEFAULT_CLOUD_URL = "https://austere.kasat.xyz";
@@ -40,8 +40,6 @@ export function cloudFile(): string {
 export interface InviteEntry {
   token: string;
   expiresAt: number | null;
-  /** The service's `grantedAt` for the grant this token was sent in; null until a pull confirmed it. */
-  grantedAt: number | null;
 }
 
 export interface PageEntry {
@@ -83,8 +81,7 @@ export function readCloud(): CloudState {
     for (const [name, i] of Object.entries(raw)) {
       if (!i || typeof i !== "object" || !("token" in i) || typeof i.token !== "string" || !INVITE_TOKEN_RE.test(i.token)) continue;
       const expiresAt = "expiresAt" in i && typeof i.expiresAt === "number" ? i.expiresAt : null;
-      const grantedAt = "grantedAt" in i && typeof i.grantedAt === "number" ? i.grantedAt : null;
-      invites[name] = { token: i.token, expiresAt, grantedAt };
+      invites[name] = { token: i.token, expiresAt };
     }
     state.pages[file] = {
       id: e.id,
@@ -255,20 +252,21 @@ type Send = { [N in MutationName]: { name: N; args: MutationArgs[N] } }[Mutation
 
 /**
  * A one-shot owner session: send `mutations` in order (n = 1, 2, …), wait for every ack, then
- * optionally pull and return the rows. Resolves to the pulled rows (empty without `pull`).
- * Once every mutation is acked they are applied: a failure while pulling still resolves, with
- * whatever rows arrived.
+ * optionally pull. Resolves to the pulled rows (empty without `pull`) and whether the pull finished
+ * (a frame without `more` arrived). Once every mutation is acked they are applied: a failure while
+ * pulling still resolves, with whatever rows arrived and `complete: false`.
  */
-async function ownerSession(base: string, token: string, id: string, mutations: Send[], { pull = false } = {}): Promise<Row[]> {
+async function ownerSession(base: string, token: string, id: string, mutations: Send[], { pull = false } = {}): Promise<{ rows: Row[]; complete: boolean }> {
   const url = `${base.replace(/^http/, "ws")}/api/pages/${encodeURIComponent(id)}/sync?cli=${encodeURIComponent(VERSION)}`;
   // A one-shot command makes a fresh clientId per run (docs: Idempotency), so n counts from 1.
   const clientId = crypto.randomBytes(16).toString("base64url");
   const frames = mutations.map((m, i) => mutation(m.name, m.args as never, { clientId, n: i + 1 }));
   const what = mutations.length ? mutations.map((m) => m.name).join(", ") : "pull";
-  const { promise, resolve, reject } = Promise.withResolvers<Row[]>();
+  const { promise, resolve, reject } = Promise.withResolvers<{ rows: Row[]; complete: boolean }>();
   const ws = new WebSocket(url, syncProtocols({ owner: token }), { headers: { "user-agent": `austere-axi/${VERSION}` }, followRedirects: false });
   let settled = false;
   let acked = 0;
+  let complete = false;
   const rows: Row[] = [];
   const finish = (err: Error | null) => {
     if (settled) return;
@@ -280,7 +278,7 @@ async function ownerSession(base: string, token: string, id: string, mutations: 
     if (err && !(acked === mutations.length && mutations.length)) {
       if (err instanceof CloudError) err.applied = acked;
       reject(err);
-    } else resolve(rows);
+    } else resolve({ rows, complete });
   };
   const timer = setTimeout(() => finish(new CloudError(`${base} did not answer ${what} within ${SOCKET_TIMEOUT_MS / 1000}s`)), SOCKET_TIMEOUT_MS);
   const failWith = (e: SyncError, where: string) => {
@@ -328,7 +326,9 @@ async function ownerSession(base: string, token: string, id: string, mutations: 
     }
     if (f.t === "changes" && acked === mutations.length && pull) {
       rows.push(...f.rows);
-      if (!f.more) finish(null);
+      if (f.more) return;
+      complete = true;
+      finish(null);
     }
   });
   return promise;
@@ -379,7 +379,6 @@ function grants(entry: PageEntry, names: string[], expiresAt: number | null | un
     const invite: InviteEntry = {
       token: prev?.token ?? crypto.randomBytes(32).toString("base64url"),
       expiresAt: expiresAt === undefined ? (prev?.expiresAt ?? null) : expiresAt,
-      grantedAt: prev?.grantedAt ?? null,
     };
     entry.invites[name] = invite;
     return { name: "grant", args: { name, tokenHash: tokenHash(invite.token), expiresAt: invite.expiresAt } };
@@ -462,9 +461,9 @@ export async function publish(abs: string, opts: PublishOptions = {}): Promise<P
   };
   const entry: PageEntry = { id, auto, unlisted, presence, invites: Object.assign(Object.create(null), prev?.invites) };
   const sends = [{ name: "publish", args } as Send, ...grants(entry, names, opts.expiresAt)];
-  let rows: Row[];
+  let session: { rows: Row[]; complete: boolean };
   try {
-    rows = await ownerSession(base, token, id, sends, { pull: true });
+    session = await ownerSession(base, token, id, sends, { pull: true });
   } catch (err) {
     if (prev && err instanceof CloudError && err.status === 404) {
       throw new CloudError(`the hosted page for this file (${prev.id}) is gone from ${base}: it expired or was deleted. publish --new makes a new link.`, 404);
@@ -476,11 +475,8 @@ export async function publish(abs: string, opts: PublishOptions = {}): Promise<P
     }
     throw err;
   }
-  const latestRows = latest(rows);
+  const latestRows = latest(session.rows);
   const acl = latestRows.filter((r): r is AclRow => r.type === "acl");
-  // Tie each token to the grant the service recorded, so `publish invites` knows a later re-grant elsewhere replaced it.
-  // Rows lost after the acks keep what was confirmed before (the service keeps grantedAt for the same token).
-  for (const name of names) entry.invites[name].grantedAt = acl.find((r) => r.name === name)?.grantedAt ?? entry.invites[name].grantedAt;
   state.pages[abs] = entry;
   writeCloud(state);
   const row = latestRows.find((r): r is PageRow => r.type === "page" && r.id === id);
@@ -494,7 +490,8 @@ export async function publish(abs: string, opts: PublishOptions = {}): Promise<P
     unlisted,
     presence,
     invites: names.map((name) => ({ name, link: inviteLink(base, id, entry.invites[name].token), expiresAt: entry.invites[name].expiresAt })),
-    otherInvites: row ? acl.filter((r) => !names.includes(r.name) && liveAcl(r, now)).length : null,
+    // Only a finished pull says how many invites there are: a partial one could be missing some.
+    otherInvites: session.complete ? acl.filter((r) => !names.includes(r.name) && liveAcl(r, now)).length : null,
     packs: bundle.packs.length,
     images: bundle.images,
   };
@@ -504,8 +501,8 @@ export interface InviteInfo {
   name: string;
   /** The link, when this machine made the invite and it is live. */
   link?: string;
-  /** Live, and this machine holds a token for the name whose grant it never saw confirmed: re-send it to get the link. */
-  unconfirmed?: boolean;
+  /** Live, but under a token this machine does not hold (granted again from another machine). */
+  replaced?: boolean;
   grantedAt: number;
   expiresAt: number | null;
   status: "live" | "expired" | "revoked";
@@ -524,7 +521,7 @@ export async function listInvites(abs: string): Promise<{ id: string; unlisted: 
   const base = cloudUrl();
   const state = stateFor(base);
   const entry = entryOf(state, abs);
-  const rows = latest(await ownerSession(base, state.token, entry.id, [], { pull: true }));
+  const rows = latest((await ownerSession(base, state.token, entry.id, [], { pull: true })).rows);
   const page = rows.find((r): r is PageRow => r.type === "page");
   const now = Date.now();
   const invites = rows
@@ -532,11 +529,12 @@ export async function listInvites(abs: string): Promise<{ id: string; unlisted: 
     .sort((a, b) => a.grantedAt - b.grantedAt)
     .map((r): InviteInfo => {
       const status = r.revoked ? "revoked" : liveAcl(r, now) ? "live" : "expired";
-      // Only this machine's token for this very grant: a re-grant elsewhere gave the name another token.
+      // The link only for the token the name has now: the row's `grant` names it (a hash prefix, never the token).
       const local = entry.invites[r.name];
-      const mine = status === "live" && local !== undefined && local.grantedAt === r.grantedAt;
-      const unconfirmed = status === "live" && local !== undefined && local.grantedAt === null ? true : undefined;
-      return { name: r.name, link: mine ? inviteLink(base, entry.id, local.token) : undefined, unconfirmed, grantedAt: r.grantedAt, expiresAt: r.expiresAt, status };
+      const mine = local !== undefined && r.grant !== undefined && r.grant === grantId(tokenHash(local.token));
+      const link = status === "live" && mine ? inviteLink(base, entry.id, local.token) : undefined;
+      const replaced = status === "live" && local !== undefined && !mine ? true : undefined;
+      return { name: r.name, link, replaced, grantedAt: r.grantedAt, expiresAt: r.expiresAt, status };
     });
   // `auto`, `unlisted` and `presence` as the page has them now, so a suggested re-publish keeps them.
   return { id: entry.id, unlisted: page?.unlisted ?? entry.unlisted, auto: page?.auto ?? entry.auto, presence: page?.presence ?? entry.presence, invites };

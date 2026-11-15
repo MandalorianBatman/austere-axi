@@ -7,6 +7,7 @@ import {
   MIN_SYNC_VERSION,
   SUBPROTOCOL,
   SYNC_VERSION,
+  grantId,
   mutation,
   parseClientFrame,
   parseServerFrame,
@@ -181,6 +182,17 @@ test("changes: every row type parses; unknown rows are skipped but kept; the cur
   assert.deepEqual(got.rows, [rows.page, withExtra, rows.reply, rows.acl]);
   assert.deepEqual(got.skipped, [future, inherited]);
   assert.equal(got.cursor, 6);
+});
+
+test("acl rows: `grant` is optional, a 16-character grantId of the token hash, and nothing else", () => {
+  const tokenHash = "Abc_-123456789012345678901234567890123456789".slice(0, 43);
+  assert.equal(grantId(tokenHash), tokenHash.slice(0, 16));
+  const withGrant = { ...rows.acl, grant: grantId(tokenHash) };
+  const got = value(parseServerFrame({ v: 1, t: "changes", rows: [withGrant, rows.acl], cursor: 4 }));
+  assert.ok(got && got.t === "changes");
+  assert.deepEqual(got.rows, [withGrant, rows.acl]);
+  // The whole hash is not a grant id: a server that sent it would be sending more than it should.
+  assert.match(error(parseServerFrame({ v: 1, t: "changes", rows: [{ ...rows.acl, grant: tokenHash }], cursor: 4 })).message, /^changes\.rows\.0\.grant:/);
 });
 
 test("changes: a malformed row fails the frame with the row's path", () => {

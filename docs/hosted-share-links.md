@@ -169,10 +169,10 @@ New state: `~/.austere-axi/cloud.json` (mode 0600)
 ```json
 { "url": "https://austere.kasat.xyz", "token": "…",
   "pages": { "/abs/path/plan.html": { "id": "…", "auto": false, "unlisted": false, "presence": true,
-                                       "invites": { "Ana": { "token": "…", "expiresAt": null, "grantedAt": 1794728906803 } } } } }
+                                       "invites": { "Ana": { "token": "…", "expiresAt": null } } } } }
 ```
 
-`invites` keeps each invite's token so a republish with the same `--invite` name, and `publish invites`, print the same link. Only the token's SHA-256 is ever sent. `grantedAt` is the `acl` row's `grantedAt` for the grant that sent this token: `publish invites` shows the link only while the service's row still has that `grantedAt`, so a re-grant from another machine hides a stale link. The service keeps `grantedAt` while the token stays the same, so re-sending a name keeps it. If the rows do not arrive after a publish, the saved `grantedAt` is kept; a new invite then stays unconfirmed, and `publish invites` lists it without a link and says to re-send it with `--invite`. `publish revoke` drops the name. `publish invites` and `publish revoke` work from this entry, even after the source file is moved or deleted. Invite names are 1–40 UTF-16 units (the schema's `LIMITS.nameChars`), checked before any request.
+`invites` keeps each invite's token so a republish with the same `--invite` name, and `publish invites`, print the same link. Only the token's SHA-256 is ever sent. `publish invites` shows a name's link only while the service's `acl` row names this token: its `grant` equals `grantId(tokenHash)` of the saved token. A re-grant from another machine changes `grant`, so this machine then lists the name as live without a link, with a note that re-sending it from here makes this machine's link the live one again. Lost rows after a publish change nothing, since the check runs on every `publish invites`. `publish revoke` drops the name. `publish invites` and `publish revoke` work from this entry, even after the source file is moved or deleted, also through a symlinked folder (the path resolves through its nearest existing folder). Invite names are 1–40 UTF-16 units (the schema's `LIMITS.nameChars`), checked before any request.
 
 The service URL defaults to `https://austere.kasat.xyz`, and `AUSTERE_AXI_CLOUD_URL` overrides it for tests and self-hosting. A token belongs to the `url` it was created on: when `AUSTERE_AXI_CLOUD_URL` names another service, `publish` stops with an error instead of sending the token there. Copying `cloud.json` to another machine makes that machine a peer of the same pages (Q14). It holds no [idempotency](#idempotency) `clientId`: those belong to one queue each.
 
@@ -191,7 +191,7 @@ austere-axi publish rm <file|id>              delete at once
 ```
 
 - `--invite` is repeatable. A name already invited from this machine keeps its token, so its link stays the same; `--expires` (`30m`, `12h`, `7d`, `2w`) applies to the invites of that run, and without it a re-sent invite keeps its expiry.
-- A publish that is not `--unlisted` and has no invites, now or from earlier, prints that nobody can open the page yet.
+- A publish that is not `--unlisted` and has no live invites, now or from earlier, prints that nobody can open the page yet. The count comes from the `acl` rows of a finished pull (a frame without `more`); when the pull is cut off, the count is unknown and nothing is printed.
 
 Sync into local sessions (Q8, Q14). This runs in the local server, which `poll` already starts:
 
@@ -227,7 +227,7 @@ import type { Mutation, Row } from "austere-axi/sync";
 
 - It is platform-neutral ESM with no imports: it runs in Workers, browsers and Node. zod 4 is bundled inside and never appears in the API, so a zod upgrade on either side changes nothing for the other.
 - `types/sync.d.ts` is the contract. The source checks itself against it at compile time (`npm run typecheck`), so the published types cannot drift from what the validators accept.
-- Exports: `SYNC_VERSION`, `MIN_SYNC_VERSION`, `SUBPROTOCOL`, `LIMITS`, `ERROR_CODES`, `MUTATIONS`, `MUTATION_ROLE`, `ROW_TYPES`; `parseClientFrame` (server side), `parseServerFrame` (client side), `mutation` (builds a mutation frame at `SYNC_VERSION`), `syncProtocols` / `readProtocols` (handshake); and a type for every frame, mutation, row and presence message.
+- Exports: `SYNC_VERSION`, `MIN_SYNC_VERSION`, `SUBPROTOCOL`, `LIMITS`, `ERROR_CODES`, `MUTATIONS`, `MUTATION_ROLE`, `ROW_TYPES`; `parseClientFrame` (server side), `parseServerFrame` (client side), `mutation` (builds a mutation frame at `SYNC_VERSION`), `syncProtocols` / `readProtocols` (handshake), `grantId` (the `acl` row's `grant` for a token hash); and a type for every frame, mutation, row and presence message.
 - A parse returns `{ ok: true, value }` or `{ ok: false, error: { code, message }, key? }`. `key` is the mutation's `(clientId, n)` when it could be read, so the server can answer with an `ack`.
 
 ### Versioning and compatibility
@@ -303,7 +303,7 @@ A reviewer session, start to first note:
 
 ### Idempotency
 
-- A `clientId` belongs to exactly one outgoing queue, the one that numbers its `n`, and is never copied or shared. The local server's queue lives in hub.db with its own `clientId`, made with hub.db and dropped with it. A one-shot command (`publish`, `publish rm`) makes a fresh `clientId` per run. The chrome makes one per page load and keeps it in memory, numbering from 1, so a reload or a duplicated tab (which copies sessionStorage) never reuses a key; notes still unacked are saved with their own `(clientId, n)` in sessionStorage and re-sent under it after a reload. If that save fails, the composer warns that a reload before the ack would lose the note. A `clientId` is 16 random bytes, base64url.
+- A `clientId` belongs to exactly one outgoing queue, the one that numbers its `n`, and is never copied or shared. The local server's queue lives in hub.db with its own `clientId`, made with hub.db and dropped with it. A one-shot command (`publish`, `publish rm`) makes a fresh `clientId` per run. The chrome makes one per page load and keeps it in memory, numbering from 1, so a reload or a duplicated tab (which copies sessionStorage) never reuses a key; notes still unacked are saved with their own `(clientId, n)` in sessionStorage and re-sent under it after a reload. Each saved note records who sent it (the invite name, or the open link) and is re-sent and shown only while the page is that same reviewer: opening another invite in the same tab never sends one reviewer's note under another's name. If that save fails, the composer warns that a reload before the ack would lose the note. A `clientId` is 16 random bytes, base64url.
 - `n` starts at 1 and grows by one per new mutation; it is stored with the queue so a restart continues the count.
 - The page object stores the answer it gave each `(clientId, n)`, applied or rejected, for the life of the page, except `rate_limited`, which is not stored. The same `(clientId, n)` again gets the same `ack` and changes nothing.
 - A client keeps each mutation until its `ack` arrives and, after a reconnect, re-sends the unacknowledged ones in order. On a `rate_limited` ack it waits `retryAfter` seconds and re-sends the same mutation; on any other error ack it drops the mutation and reports the error.
@@ -316,7 +316,7 @@ A reviewer session, start to first note:
 | `page` | `title`, `cliVersion`, `html`, `packs`, `auto`, `unlisted`, `presence`, `publishedAt`, `expiresAt`, `deleted`; `id` = page id | yes | yes |
 | `note` | `author`, `items`, `at`, `state` (`held` / `released` / `discarded`) | yes | yes |
 | `reply` | `text`, `at` | yes | yes |
-| `acl` | `name`, `grantedAt`, `expiresAt`, `revoked`; `id` = invite name. The token hash never leaves the server. | yes | no |
+| `acl` | `name`, `grantedAt`, `expiresAt`, `revoked`, `grant`; `id` = invite name. `grant` (`grantId(tokenHash)`, the first 16 characters of the base64url SHA-256) names which token the name has now, so an owner peer can tell whether its own link is the live one. It is a prefix of a hash of a 256-bit random token, so it reveals nothing usable; the full hash and the token never leave the server. `grant` was added before the first deploy, so `v` stays 1; readers treat it as optional. | yes | no |
 
 - The op log is private: clients never see operations, only the current state of rows.
 - Each page object has one counter. Every change to a row (created or updated) gives that row the next `seq`. Rows are only removed with the whole page.
@@ -352,7 +352,7 @@ After a 1008 close a client does not reconnect on its own. After any other close
 ### Access (Q16)
 
 - `grant` makes an invite: the CLI generates the token (32 random bytes, base64url), sends only its SHA-256 (`tokenHash`), and prints `https://austere.kasat.xyz/p/<id>#i=<token>`. The fragment is never sent to the server, so the token stays out of server logs and `Referer`.
-- The chrome reads `#i=`, stores it in localStorage under `austere:invite:<id>`, and removes it from the address bar (`history.replaceState`). It sends the token as `X-Austere-Invite` on same-origin HTTP calls and as `austere-invite.<token>` on the socket. The server hashes it and looks the hash up among the page's live invites.
+- The chrome reads `#i=`, stores it in localStorage under `austere:invite:<id>`, and removes it from the address bar (`history.replaceState`). Another invite link opened in the same tab changes only the fragment, so the chrome reloads on `hashchange` to take it. It sends the token as `X-Austere-Invite` on same-origin HTTP calls and as `austere-invite.<token>` on the socket. The server hashes it and looks the hash up among the page's live invites.
 - `GET /p/:id` (the shell) holds no content and needs no invite. The artifact, the row feed and `addNote` need a live invite, unless the page is unlisted. The owner token is not accepted on reviewer routes; the owner reviews through the local server.
 - The frame cannot carry a header or a cookie. The chrome trades its invite for an `assetToken` with `POST /p/:id/asset-token` (answer `{ token, expiresAt, name }`, valid 10 minutes, for this page only) and loads the frame from `/p/:id/a/<assetToken>/`, the pattern the local server uses for `/s/:id/a/<token>/<file>`. `name` is the invite name, or `null` on the open link (the chrome then shows the name prompt). Without a live invite on a page that is not unlisted the answer is 403 `forbidden`. An asset token stops working when it expires, when its invite is revoked, replaced or expires, or (on the open link) when a publish clears `unlisted`; the artifact then answers 403.
 - `grant` with a name's current token only moves its expiry and keeps the `acl` row's `grantedAt`; a new token sets `grantedAt` to now and closes the sockets that came in with the old one (`error` `forbidden`, 1008). A past `expiresAt`, or a `tokenHash` another name holds, is `invalid`. An expired invite's sockets are closed when it expires.

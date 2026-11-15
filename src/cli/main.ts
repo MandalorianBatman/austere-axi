@@ -1242,7 +1242,7 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
               status: i.status,
               link: i.link,
               expires: i.expiresAt === null ? undefined : shortDate(i.expiresAt),
-              note: i.unconfirmed ? `this machine's grant was not confirmed; ${again} --invite ${quote(i.name)} re-sends it and prints the link` : undefined,
+              note: i.replaced ? `granted again from another machine, which has the link; ${again} --invite ${quote(i.name)} makes this machine's link the live one again (the other machine's stops)` : undefined,
             }))
           : "none",
         next: `${again} --invite <name> adds one; ${BIN} publish revoke ${quote(file)} <name> revokes one.`,

@@ -199,6 +199,11 @@ if (HOSTED) {
     const stored = LS.get<unknown>(INVITE_KEY, null);
     invite = typeof stored === "string" && TOKEN.test(stored) ? stored : null;
   }
+  // Another invite link opened in this tab changes only the fragment, so the page does not load
+  // again by itself: reload, keeping the fragment, so the intake above takes it (and strips it).
+  window.addEventListener("hashchange", () => {
+    if (new URLSearchParams(location.hash.slice(1)).has("i")) location.reload();
+  });
 }
 // Hosted: the invite's name from the asset-token answer; null on an unlisted page without a valid
 // invite (the reviewer names themself once, with the prompt); undefined until the service answers.
@@ -211,6 +216,8 @@ let viewerName: string = HOSTED ? "" : VIEWER.name;
 interface OutboxEntry {
   m: Mutation<"addNote">;
   at: number;
+  /** Who sent it (`sender()`): a note is only ever re-sent by that same reviewer. */
+  as: string;
 }
 // New notes are numbered under a clientId made for this page load and kept only in memory, with a
 // counter from 1. Nothing about it is read back from storage, so a duplicated tab (which copies
@@ -223,15 +230,36 @@ if (HOSTED) {
 const OUTBOX_KEY = `austere:outbox:${SID}`;
 const savedOutbox = SS.get<unknown>(OUTBOX_KEY);
 // Saved notes keep the (clientId, n) they were numbered with by an earlier load: re-sent under their
-// own key, they are applied once (also when a duplicated tab re-sends the same ones).
+// own key, they are applied once (also when a duplicated tab re-sends the same ones). They are kept
+// for every reviewer this tab has been, but sent and shown only for the current one (`mine`).
 const outbox: OutboxEntry[] = Array.isArray(savedOutbox)
   ? (savedOutbox as OutboxEntry[]).filter(
-      (o) => o?.m?.name === "addNote" && typeof o.m.clientId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(o.m.clientId) && Number.isInteger(o.m.n) && o.m.n > 0,
+      (o) =>
+        o?.m?.name === "addNote" &&
+        typeof o.as === "string" &&
+        typeof o.m.clientId === "string" &&
+        /^[A-Za-z0-9_-]{8,64}$/.test(o.m.clientId) &&
+        Number.isInteger(o.m.n) &&
+        o.m.n > 0,
     )
   : [];
+/**
+ * The reviewer this page sends as: the invite's name (the service names the note by it), or the
+ * open link (the note carries its own self-declared name). Known once the asset token is traded.
+ */
+function sender(): string {
+  return inviteName ? `invite:${inviteName}` : "open";
+}
+/** The outbox notes of the reviewer this page is now: another reviewer's notes are never sent under this one's socket. */
+function mine(): OutboxEntry[] {
+  const as = sender();
+  return outbox.filter((o) => o.as === as);
+}
 let clientN = 0;
 // The outbox could not be saved: a reload before the acks would lose those notes, so the composer says so.
 let outboxUnsaved = false;
+// A note is waiting out a `rate_limited` answer: the composer says when it goes again.
+let rateLimited = false;
 let sync: SyncSocket | null = null;
 // Hosted: why nothing more can be sent (the page is gone, or the invite no longer works).
 let lockout: string | null = null;
@@ -883,7 +911,7 @@ function renderLog(scrollToEnd = false) {
     log.append(h("button", { type: "button", class: "btn tiny ghost load-earlier", text: "Load earlier messages", onclick: loadEarlier }));
   }
   // Hosted: notes waiting for their ack follow the conversation.
-  const pending = outbox.map((o): Entry => ({ id: `out:${o.m.clientId}:${o.m.n}`, role: "user", author: viewerName, items: o.m.args.items, at: o.at, pending: true }));
+  const pending = mine().map((o): Entry => ({ id: `out:${o.m.clientId}:${o.m.n}`, role: "user", author: viewerName, items: o.m.args.items, at: o.at, pending: true }));
   const entries = pending.length ? [...state.transcript, ...pending] : state.transcript;
   if (!entries.length && !state.queue.length) {
     log.append(
@@ -1065,7 +1093,7 @@ function sendHosted(queued: QueueItem[]) {
   }
   const args: AddNoteArgs = inviteName === null ? { items, name: viewerName } : { items };
   const m = mutation("addNote", args, { clientId: CLIENT, n: ++clientN });
-  outbox.push({ m, at: Date.now() });
+  outbox.push({ m, at: Date.now(), as: sender() });
   outboxUnsaved = !SS.set(OUTBOX_KEY, outbox);
   sync?.send(m);
   state.queue = [];
@@ -1515,10 +1543,28 @@ function applyPage(row: PageRow) {
   showPackNotice(row.packs.map((p) => p.name));
 }
 
-/** An ack settles one queued note; on an error its items go back to the queue to be sent again. */
+/**
+ * An ack settles one queued note. `rate_limited` keeps it in the outbox and sends the same mutation
+ * again after `retryAfter` (the service does not store that answer). Any other error puts its items
+ * back in the queue to be edited and sent again.
+ */
 function settle(ack: AckFrame) {
   const i = outbox.findIndex((o) => o.m.clientId === ack.clientId && o.m.n === ack.n);
   if (i < 0) return;
+  if (ack.error?.code === "rate_limited") {
+    const entry = outbox[i];
+    const wait = Math.max(1, ack.error.retryAfter ?? 5);
+    rateLimited = true;
+    composerError(`Too many notes for now: sending again in ${wait} s.`);
+    setTimeout(() => {
+      if (outbox.includes(entry) && entry.as === sender()) sync?.send(entry.m);
+    }, wait * 1000);
+    return;
+  }
+  if (rateLimited) {
+    rateLimited = false;
+    composerError("");
+  }
   const [done] = outbox.splice(i, 1);
   // Saved again, or every note acked: nothing is left to lose on a reload.
   const saved = SS.set(OUTBOX_KEY, outbox);
@@ -1528,12 +1574,7 @@ function settle(ack: AckFrame) {
   }
   if (ack.error) {
     for (const item of done.m.args.items) addToQueue({ ...item });
-    const wait = ack.error.retryAfter ? `in ${ack.error.retryAfter} s` : "in a moment";
-    composerError(
-      ack.error.code === "rate_limited"
-        ? `Not sent: too many notes for now. Send again ${wait}; your notes are back in the queue.`
-        : `Not sent: ${ack.error.message}. Your notes are back in the queue.`,
-    );
+    composerError(`Not sent: ${ack.error.message}. Your notes are back in the queue.`);
   }
   renderLog();
   renderDock();
@@ -1586,7 +1627,7 @@ async function startHosted() {
     state.connected = true;
     socket.send({ v: SYNC_VERSION, t: "pull", after: cursor });
     // Unacked notes go again, in order; the server answers a repeat (clientId, n) with the same ack.
-    for (const o of outbox) socket.send(o.m);
+    for (const o of mine()) socket.send(o.m);
     renderPresence();
   });
   socket.onFrame(onSyncFrame);
