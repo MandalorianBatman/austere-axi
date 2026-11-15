@@ -10,6 +10,7 @@ import type { AckFrame, AddNoteArgs, ClientPresence, Mutation, NoteAnnotation, N
 import { Presence } from "./presence.ts";
 import { openSyncSocket } from "./sync-socket.ts";
 import type { SyncClose, SyncSocket } from "./sync-socket.ts";
+import { LOADER_TAG, packedTag } from "../shared/standalone.ts";
 
 type Mode = "annotate" | "explore";
 
@@ -362,9 +363,10 @@ document.body.innerHTML = `
         <button type="button" class="icon-btn menu-btn" aria-label="More">⋯</button>
         <div class="menu-pop" hidden>
           <button type="button" data-cmd="copy-path">Copy file path</button>
-          <button type="button" data-cmd="copy-link">Copy review link</button>
+          <button type="button" data-cmd="copy-link"${HOSTED ? " hidden" : ""}>${HOSTED ? "Copy page link" : "Copy review link"}</button>
+          ${HOSTED ? '<div class="menu-note" data-share-note hidden>Only the owner can share this page. To invite someone, they run<code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.</div>' : ""}
           <button type="button" data-cmd="reload">Reload artifact</button>
-          <a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>
+          ${HOSTED ? '<button type="button" data-cmd="export">Download standalone HTML</button>' : `<a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>`}
           <button type="button" data-cmd="end" class="danger">End review</button>
           <button type="button" data-cmd="close" class="danger">Close review</button>
           <button type="button" data-cmd="reopen">Reopen review</button>
@@ -401,8 +403,13 @@ document.body.innerHTML = `
   <button type="button" class="dock"></button>
 </div>`;
 
+// Hosted viewers keep the download and, on an unlisted page, the page link; the rest is the local owner's.
+// RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
+// from all of them (RLM-322).
 if (!OWNER) {
-  for (const sel of ['[data-cmd="copy-path"]', '[data-cmd="copy-link"]', '[data-cmd="export"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"]) $(sel)?.remove();
+  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"];
+  if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
+  for (const sel of ownerOnly) $(sel)?.remove();
 }
 
 function renderViewer() {
@@ -1235,10 +1242,18 @@ $(".menu-btn").addEventListener("click", (e) => {
 document.addEventListener("click", () => (menuPop.hidden = true));
 menuPop.addEventListener("click", async (e) => {
   const cmd = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd : undefined;
-  if (!cmd) return;
+  // The share note stays open so its command can be selected.
+  if (!cmd) return e.stopPropagation();
   if (cmd === "copy-path") navigator.clipboard?.writeText(BOOT.file);
-  if (cmd === "copy-link") navigator.clipboard?.writeText(state.links?.remote || location.href);
+  // Hosted, the URL without its fragment: the invite token is already out of the address bar.
+  if (cmd === "copy-link") navigator.clipboard?.writeText(HOSTED ? location.origin + location.pathname : state.links?.remote || location.href);
   if (cmd === "reload") loadFrame();
+  if (cmd === "export" && HOSTED) {
+    // The menu stays open on "Preparing download…" until the file is saved or the banner says why not.
+    e.stopPropagation();
+    await downloadStandalone();
+    menuPop.hidden = true;
+  }
   if (cmd === "end") {
     if (state.queue.length) return sendAll(true);
     if (!confirm("End this review? The agent will stop listening.")) return;
@@ -1562,6 +1577,67 @@ async function loadHostedFrame(): Promise<boolean> {
   return true;
 }
 
+/** Base64 of `bytes`, in chunks (spreading a whole runtime into fromCharCode overflows the stack). */
+function base64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+async function gzipBase64(code: string): Promise<string> {
+  const stream = new Blob([code]).stream().pipeThrough(new CompressionStream("gzip"));
+  return base64(new Uint8Array(await new Response(stream).arrayBuffer()));
+}
+
+// The published page's script tags: the pinned runtime and bundled packs (/rt/), and installed packs
+// (/pk/). The service refuses any other `src`, so these are all the page runs.
+const HOSTED_SCRIPT_RE = /<script\b[^>]*\bsrc\s*=\s*["'](\/(?:rt|pk)\/[^"']+)["'][^>]*>\s*<\/script\s*>/gi;
+
+/**
+ * Hosted "Download standalone HTML": the published page with its scripts packed in, in the format
+ * `export` writes (src/shared/standalone.ts), so it opens offline. Images are already inlined by `publish`.
+ */
+async function downloadStandalone(): Promise<void> {
+  const item = $<HTMLButtonElement>('[data-cmd="export"]');
+  if (item.disabled) return;
+  item.disabled = true;
+  item.textContent = "Preparing download…";
+  let url: string | undefined;
+  try {
+    const answer = await requestAssetToken();
+    if (!answer.token) throw new Error(`HTTP ${answer.status}`);
+    const r = await fetch(`${BOOT.artifactUrl ?? `${BASE}/a/`}${answer.token}/`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const html = await r.text();
+    const tags = [...html.matchAll(HOSTED_SCRIPT_RE)];
+    if (!tags.length) throw new Error("the page has no runtime script");
+    const packed = await Promise.all(
+      tags.map(async (m) => {
+        const s = await fetch(m[1]);
+        if (!s.ok) throw new Error(`${m[1]}: HTTP ${s.status}`);
+        return packedTag(m[1].replace(/^\/rt\/[^/]+\//, ""), await gzipBase64(await s.text()));
+      }),
+    );
+    // All blocks and the loader where the first tag was: the runtime first, then the packs, in page order.
+    let i = 0;
+    const out = html.replace(HOSTED_SCRIPT_RE, () => (i++ ? "" : [...packed, LOADER_TAG].join("\n")));
+    url = URL.createObjectURL(new Blob([out], { type: "text/html" }));
+    const slug = BOOT.title.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "page";
+    // In the document while clicked: Firefox ignores a click on a detached download anchor.
+    const a = h("a", { href: url, download: `${slug}.html`, hidden: true });
+    document.body.append(a);
+    a.click();
+    a.remove();
+  } catch (err) {
+    showBanner(`Could not build the download: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    // Late enough for the browser to have read the blob, on every path that made one.
+    if (url) setTimeout(URL.revokeObjectURL, 60_000, url);
+    item.disabled = false;
+    item.textContent = "Download standalone HTML";
+  }
+}
+
 /** Applies rows as upserts by (type, id), then stores the cursor. */
 function applyChanges(changes: ReceivedChanges) {
   if (changes.reset) state.transcript = [];
@@ -1586,6 +1662,17 @@ function applyPage(row: PageRow) {
     showBanner("New version, reload", [h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() })]);
   }
   showPackNotice(row.packs.map((p) => p.name));
+  renderShare(row.unlisted);
+}
+
+/**
+ * Sharing follows the page, not the viewer: on an unlisted page the plain URL lets anyone in, so every
+ * viewer (invited or not) may copy it; on an invite-only page each link names one reviewer, so the menu
+ * says how the owner invites someone instead.
+ */
+function renderShare(unlisted: boolean) {
+  $('[data-cmd="copy-link"]').hidden = !unlisted;
+  $("[data-share-note]").hidden = unlisted;
 }
 
 /**
