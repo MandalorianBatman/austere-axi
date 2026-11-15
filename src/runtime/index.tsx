@@ -10,6 +10,7 @@ import uiDefaultsCss from "@openuidev/react-ui/defaults.css";
 import uiCss from "@openuidev/react-ui/styles/index.css";
 import austereCss from "./austere.css";
 import fontCss from "./font.css";
+import t3SkinCss from "./skins/t3.css";
 import { austereLibrary, buildLibrary } from "./library.tsx";
 import { createAnnotator } from "./annotate.ts";
 import type { Annotator, AnnotatorMessage, RefsTo } from "./annotate.ts";
@@ -21,6 +22,9 @@ import type { WantedPack } from "./packs.ts";
 import type { PackRef } from "../shared/packs-meta.ts";
 import { changedStatementIds, referencesTo, statementMap } from "../shared/statements.ts";
 import type { StatementMap } from "../shared/statements.ts";
+
+/** Skins a page may pick with <meta name="austere-skin" content="…">; any other value keeps the default look. */
+const SKIN_CSS: Record<string, string> = { t3: t3SkinCss };
 
 /** A button press queued for the agent. */
 export interface ActionItem {
@@ -91,7 +95,9 @@ function injectStyles() {
   if (document.getElementById("austere-styles")) return;
   const style = document.createElement("style");
   style.id = "austere-styles";
-  style.textContent = [fontCss, uiDefaultsCss, uiCss, austereCss].join("\n");
+  const skin = document.querySelector<HTMLMetaElement>('meta[name="austere-skin"]')?.content.trim() ?? "";
+  const skinCss = Object.hasOwn(SKIN_CSS, skin) ? SKIN_CSS[skin] : "";
+  style.textContent = [fontCss, uiDefaultsCss, uiCss, austereCss, skinCss].join("\n");
   document.head.appendChild(style);
   if (!document.querySelector('meta[name="viewport"]')) {
     const meta = document.createElement("meta");
@@ -100,6 +106,7 @@ function injectStyles() {
     document.head.appendChild(meta);
   }
   document.documentElement.classList.add("austere");
+  if (skinCss) document.documentElement.dataset.austereSkin = skin;
   document.documentElement.style.colorScheme = "dark";
 }
 
