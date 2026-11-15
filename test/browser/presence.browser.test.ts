@@ -38,6 +38,9 @@ let skipReason: string | undefined;
 let socket: WebSocket | null = null;
 const received: ClientPresence[] = [];
 let wake: (() => void) | null = null;
+/** The page was deleted: the shell answers 404 and upgrades are refused. Upgrade attempts, counted. */
+let gone = false;
+let upgrades = 0;
 
 function shell() {
   const boot = { id: ID, title: "Plan", viewer: { role: "reviewer", name: "" }, hosted: { base: BASE } };
@@ -52,6 +55,7 @@ function shell() {
 function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "", origin);
   if (url.pathname === BASE) {
+    if (gone) return res.writeHead(404).end("not found");
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": SHELL_CSP });
     return res.end(shell());
   }
@@ -113,6 +117,8 @@ before(async () => {
   const wss = new WebSocketServer({ noServer: true, handleProtocols: (protocols) => (protocols.has(SUBPROTOCOL) ? SUBPROTOCOL : false) });
   server.on("upgrade", (req, sock, head) => {
     if (req.url !== `${BASE}/sync`) return sock.destroy();
+    upgrades++;
+    if (gone) return sock.end("HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n");
     wss.handleUpgrade(req, sock, head, (ws) => {
       socket = ws;
       ws.on("message", (data) => {
@@ -189,11 +195,13 @@ test("hosted chrome presence: roster chips, focus outlines, own focus and status
     await chips.nth(1).click();
     await page.frameLocator(".frame").locator(".austere-flash").first().waitFor();
 
-    // This viewer's click in Annotate mode is its focus; the composer open is "writing".
+    // This viewer's click in Annotate mode is its focus; typing in the note box or the composer is "writing".
     await page.click('[data-mode="annotate"]');
     await page.frameLocator(".frame").locator("text=Intro paragraph").click();
     assert.deepEqual(await frameFrom("focus"), { v: 1, t: "focus", statement: "intro" });
+    assert.deepEqual(await frameFrom("status"), { v: 1, t: "status", status: "writing" });
     await page.keyboard.press("Escape");
+    assert.deepEqual(await frameFrom("status"), { v: 1, t: "status", status: "viewing" });
     await page.focus(".composer textarea");
     assert.deepEqual(await frameFrom("status"), { v: 1, t: "status", status: "writing" });
     await page.locator(".composer textarea").blur();
@@ -210,7 +218,36 @@ test("hosted chrome presence: roster chips, focus outlines, own focus and status
     await page.waitForSelector(".viewers", { state: "hidden" });
     assert.deepEqual(await frameFrom("hello", 10_000), { v: 1, t: "hello", status: "viewing", name: "Ana" });
     assert.deepEqual(await frameFrom("focus"), { v: 1, t: "focus", statement: "intro" });
+
+    // The page is deleted: the handshake is refused, the shell answers 404, and the chrome stops.
+    gone = true;
+    const before = upgrades;
+    socket?.terminate();
+    await page.waitForSelector(".viewers", { state: "hidden" });
+    // A deliberate real wait: the next retry would come 2 s after the refused one.
+    await new Promise((r) => setTimeout(r, 4000));
+    assert.equal(upgrades - before, 1, "one refused attempt, then no more");
+    gone = false;
     assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome presence: a first visit joins unnamed, then rejoins under the name it gives", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    received.length = 0;
+    const page = await ctx.newPage();
+    await page.goto(`${origin}${BASE}`);
+    assert.deepEqual(await frameFrom("hello"), { v: 1, t: "hello", status: "viewing" });
+    // The name prompt comes with the first send.
+    await page.fill(".composer textarea", "hi");
+    await page.click(".composer .send");
+    await page.fill(".name-ask input", "Cy");
+    await page.press(".name-ask input", "Enter");
+    assert.deepEqual(await frameFrom("hello"), { v: 1, t: "hello", status: "viewing", name: "Cy" });
   } finally {
     await ctx.close();
   }

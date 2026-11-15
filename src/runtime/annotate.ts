@@ -30,8 +30,15 @@ export interface AnnotationItem {
   detail?: AnnotationDetail;
 }
 
-/** Messages the annotator posts to the chrome. `focus`: the statement this viewer clicked, for presence. */
-export type AnnotatorMessage = { type: "annotate"; item: AnnotationItem } | { type: "focus"; id: string } | { type: "toggle-mode" };
+/**
+ * Messages the annotator posts to the chrome. For presence: `focus` is the statement this viewer
+ * clicked, `writing` whether the note box has the keyboard.
+ */
+export type AnnotatorMessage =
+  | { type: "annotate"; item: AnnotationItem }
+  | { type: "focus"; id: string }
+  | { type: "writing"; on: boolean }
+  | { type: "toggle-mode" };
 
 /** Ids of the statements that reference `id` (shared/statements.ts referencesTo). */
 export type RefsTo = (map: StatementMap, id: string) => string[];
@@ -206,6 +213,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   const popPath = root.querySelector(".austere-pop-path") as HTMLDivElement;
   const popQuote = root.querySelector(".austere-pop-quote") as HTMLQuoteElement;
   const popText = root.querySelector("textarea") as HTMLTextAreaElement;
+  popText.addEventListener("focus", () => post({ type: "writing", on: true }));
+  popText.addEventListener("blur", () => post({ type: "writing", on: false }));
 
   let draft: Draft | null = null;
   let pendingSelection: OpenRequest | null = null;
@@ -391,6 +400,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   }
 
   function close() {
+    // A hidden textarea may keep focus; blur it so "writing" ends with the note box.
+    if (document.activeElement === popText) popText.blur();
     pop.hidden = true;
     hover.classList.remove("locked");
     hover.hidden = true;

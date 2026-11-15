@@ -74,6 +74,7 @@ type FrameMessage = { austere: 1 } & (
   | { type: "changes"; ids?: unknown }
   | { type: "toggle-mode" }
   | { type: "focus"; id?: unknown }
+  | { type: "writing"; on?: unknown }
   | { type: "open-url"; url: unknown }
 );
 
@@ -345,6 +346,7 @@ if (nameForm) {
     LS.set("austere:name", name);
     nameForm.hidden = true;
     renderViewer();
+    presence.rename();
     sendAll(false);
   });
 }
@@ -424,8 +426,8 @@ const presence = new Presence({
   reveal: (id) => post({ type: "reveal", id }),
   name: () => viewerName || undefined,
 });
-textarea.addEventListener("focus", () => presence.setWriting(true));
-textarea.addEventListener("blur", () => presence.setWriting(false));
+textarea.addEventListener("focus", () => presence.setWriting("composer", true));
+textarea.addEventListener("blur", () => presence.setWriting("composer", false));
 window.addEventListener("pagehide", () => presence.leave());
 
 $(".file").title = BOOT.file || "";
@@ -520,6 +522,9 @@ window.addEventListener("message", (e) => {
     case "focus":
       // The statement this viewer clicked is its focus for the others.
       if (typeof d.id === "string") presence.setFocus(d.id);
+      break;
+    case "writing":
+      presence.setWriting("note", d.on === true);
       break;
     case "action":
       addToQueue(d.item);
@@ -1384,7 +1389,7 @@ loadFrame();
 if (HOSTED) {
   startPolling();
   // The page socket. It carries presence; the server sends none on a --no-presence page.
-  openPageSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${BASE}/sync`, syncProtocols({}), {
+  openPageSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${BASE}/sync`, syncProtocols({}), BASE, {
     open: (send) => presence.connect(send),
     frame: (f) => {
       if (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye") presence.handle(f);

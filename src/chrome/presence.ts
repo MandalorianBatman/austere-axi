@@ -36,12 +36,15 @@ const V: typeof SYNC_VERSION = 1;
 const HEARTBEAT_MS = 25_000;
 const STATUS_TEXT: Record<PresenceStatus, string> = { viewing: "viewing", away: "away", writing: "writing a note" };
 
+export type WritingIn = "composer" | "note";
+
 export class Presence {
   private readonly roster = new Map<string, Present>();
   private self: string | null = null;
   private send: ((frame: ClientPresence) => void) | null = null;
   private heartbeat: number | undefined;
-  private writing = false;
+  /** Where this viewer is typing: the chrome's composer, the frame's note box. */
+  private readonly writing = new Set<WritingIn>();
   private focus: string | null = null;
   private readonly host: PresenceHost;
 
@@ -52,14 +55,13 @@ export class Presence {
 
   private status(): PresenceStatus {
     if (document.visibilityState === "hidden") return "away";
-    return this.writing ? "writing" : "viewing";
+    return this.writing.size ? "writing" : "viewing";
   }
 
   /** The socket is open: join as a viewer. */
   connect(send: (frame: ClientPresence) => void): void {
     this.send = send;
-    const name = this.host.name();
-    send(name ? { v: V, t: "hello", status: this.status(), name } : { v: V, t: "hello", status: this.status() });
+    this.hello();
     if (this.focus) send({ v: V, t: "focus", statement: this.focus });
     window.clearInterval(this.heartbeat);
     this.heartbeat = window.setInterval(() => this.send?.({ v: V, t: "status", status: this.status() }), HEARTBEAT_MS);
@@ -74,9 +76,19 @@ export class Presence {
     this.render();
   }
 
+  /** The name prompt was answered: join again under the name (same viewer id). */
+  rename(): void {
+    if (this.send) this.hello();
+  }
+
   /** Leaving the page (`pagehide`). */
   leave(): void {
     this.send?.({ v: V, t: "bye" });
+  }
+
+  private hello(): void {
+    const name = this.host.name();
+    this.send?.(name ? { v: V, t: "hello", status: this.status(), name } : { v: V, t: "hello", status: this.status() });
   }
 
   handle(frame: ServerPresence): void {
@@ -103,11 +115,12 @@ export class Presence {
     this.send?.({ v: V, t: "focus", statement });
   }
 
-  /** The composer is open (focused) or closed. */
-  setWriting(writing: boolean): void {
-    if (writing === this.writing) return;
-    this.writing = writing;
-    this.sendStatus();
+  /** Typing started or stopped in the composer or the frame's note box. */
+  setWriting(where: WritingIn, on: boolean): void {
+    const before = this.status();
+    if (on) this.writing.add(where);
+    else this.writing.delete(where);
+    if (this.status() !== before) this.sendStatus();
   }
 
   /** A reloaded frame starts without marks. */
