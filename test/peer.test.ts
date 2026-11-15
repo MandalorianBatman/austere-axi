@@ -582,3 +582,45 @@ test("presence relay: hosted viewers reach the owner's review page; the owner's 
     await cleanup(m);
   }
 });
+
+test("the agent prompt names the file and the poll command, the shared page when published, and never a secret", async () => {
+  const held = file("prompt-held.html");
+  const auto = file("prompt-auto.html");
+  const plain = file("prompt local's.html");
+  const heldPage = newPage();
+  const autoPage = newPage();
+  const m = await machine({ [held]: { id: heldPage, auto: false }, [auto]: { id: autoPage, auto: true } });
+  try {
+    const prompt = async (f: string) => {
+      const sid = await open(m, f);
+      const res = await fetch(`http://127.0.0.1:${m.port}/s/${sid}/agent-prompt`, { headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` } });
+      assert.equal(res.status, 200);
+      return res.text();
+    };
+
+    const h = await prompt(held);
+    assert.ok(h.includes(`austere-axi poll ${held}`), h);
+    assert.ok(h.includes(`austere-axi poll ${held} --cursor <n> --agent-reply`), h);
+    assert.ok(h.includes(`Shared page: ${CLOUD}/p/${heldPage}`), h);
+    assert.match(h, /only after I send them on/);
+
+    const a = await prompt(auto);
+    assert.ok(a.includes(`Shared page: ${CLOUD}/p/${autoPage}`), a);
+    assert.match(a, /as they are posted/);
+    assert.doesNotMatch(a, /only after I send them on/);
+
+    // Not published: the file and the command only, and a path with a quote stays one shell word.
+    const p = await prompt(plain);
+    assert.ok(p.includes(`austere-axi poll '${plain.replace(/'/g, `'\\''`)}'`), p);
+    assert.doesNotMatch(p, /Shared page|remote: true/);
+
+    // The owner token, the owner key and invite or login parameters never reach the text.
+    const key = fs.readFileSync(path.join(m.state, "owner.key"), "utf8").trim();
+    for (const text of [h, a, p]) {
+      assert.ok(!text.includes(TOKEN) && !text.includes(key), "no secret");
+      assert.doesNotMatch(text, /[?&#](key|invite|login|i)=/);
+    }
+  } finally {
+    await cleanup(m);
+  }
+});

@@ -10,6 +10,8 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { readArtifact, rewriteRuntime, escapeHtml } from "./artifact.ts";
+import { agentPrompt } from "./agent-prompt.ts";
+import { cloudUrl, readCloud } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
 import type { Tailnet } from "./net.ts";
@@ -1379,6 +1381,13 @@ export async function runServer({
       if (!parsed.ok || parsed.value.t === "mutation" || parsed.value.t === "pull") return send(res, 400, { error: "a presence frame is expected" });
       peer.presenceFrom(s, parsed.value);
       return send(res, 204, "");
+    }
+    if (sub === "/agent-prompt" && req.method === "GET") {
+      // The owner's only (reviewers are refused above). cloud.json is read again: `publish` may have run since the page opened.
+      const state = readCloud();
+      const entry = state.token ? state.pages[s.file] : undefined;
+      const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: entry.auto } : undefined;
+      return send(res, 200, agentPrompt({ file: s.file, hosted }));
     }
     if (sub === "/bye" && req.method === "POST") {
       byeAt.set(s.id, Date.now());

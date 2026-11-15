@@ -575,3 +575,22 @@ test("a lasting highlight stays inside a statement's own scroller and never wide
     await context.close();
   }
 });
+
+test("the owner's menu copies an agent prompt that polls this file", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "agent-prompt.html");
+  fs.writeFileSync(file, htmlPage("Prompt", `root = TextContent("hello")`, CDN_RUNTIME_URL));
+  const { context, page, problems } = await openReview(file, VIEWPORTS[0]);
+  try {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${port}` });
+    await page.locator(".menu-btn").click();
+    await page.locator('[data-cmd="copy-agent-prompt"]').click();
+    await page.waitForSelector(".banner:not([hidden])");
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    assert.ok(copied.includes(`austere-axi poll ${fs.realpathSync(file)}`), copied);
+    assert.match(await page.locator(".banner").innerText(), /Agent prompt copied/);
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});

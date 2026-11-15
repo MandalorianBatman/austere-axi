@@ -363,6 +363,7 @@ document.body.innerHTML = `
         <div class="menu-pop" hidden>
           <button type="button" data-cmd="copy-path">Copy file path</button>
           <button type="button" data-cmd="copy-link">Copy review link</button>
+          <button type="button" data-cmd="copy-agent-prompt" title="A prompt that tells your agent to poll this page for feedback">Copy agent prompt</button>
           <button type="button" data-cmd="reload">Reload artifact</button>
           <a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>
           <button type="button" data-cmd="end" class="danger">End review</button>
@@ -402,7 +403,7 @@ document.body.innerHTML = `
 </div>`;
 
 if (!OWNER) {
-  for (const sel of ['[data-cmd="copy-path"]', '[data-cmd="copy-link"]', '[data-cmd="export"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"]) $(sel)?.remove();
+  for (const sel of ['[data-cmd="copy-path"]', '[data-cmd="copy-link"]', '[data-cmd="copy-agent-prompt"]', '[data-cmd="export"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"]) $(sel)?.remove();
 }
 
 function renderViewer() {
@@ -1233,11 +1234,38 @@ $(".menu-btn").addEventListener("click", (e) => {
   menuPop.hidden = !menuPop.hidden;
 });
 document.addEventListener("click", () => (menuPop.hidden = true));
+/**
+ * Copies the server's prompt for an agent that should poll this page. The text is fetched on click
+ * (the file may have been published since the page opened); Safari only lets a promise stand in
+ * for the text inside the click, so it goes to the clipboard as one.
+ */
+async function copyAgentPrompt() {
+  const done = "Agent prompt copied. Paste it to your agent.";
+  try {
+    const prompt = fetch(`${BASE}/agent-prompt`).then((r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      return r.text();
+    });
+    if (typeof ClipboardItem === "function" && navigator.clipboard?.write) {
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": prompt.then((t) => new Blob([t], { type: "text/plain" })) })]);
+    } else {
+      await navigator.clipboard.writeText(await prompt);
+    }
+    showBanner(done);
+    setTimeout(() => {
+      if (banner.textContent === done) showBanner("");
+    }, 4000);
+  } catch {
+    showBanner("Could not copy the agent prompt. Check that austere-axi is still running.");
+  }
+}
+
 menuPop.addEventListener("click", async (e) => {
   const cmd = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd : undefined;
   if (!cmd) return;
   if (cmd === "copy-path") navigator.clipboard?.writeText(BOOT.file);
   if (cmd === "copy-link") navigator.clipboard?.writeText(state.links?.remote || location.href);
+  if (cmd === "copy-agent-prompt") await copyAgentPrompt();
   if (cmd === "reload") loadFrame();
   if (cmd === "end") {
     if (state.queue.length) return sendAll(true);

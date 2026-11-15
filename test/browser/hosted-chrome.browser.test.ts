@@ -276,7 +276,7 @@ test("hosted chrome: invite link, asset-token frame, synced rows, addNote as the
     await page.frameLocator(".frame").locator("text=hello").waitFor();
 
     // Owner and local-only controls are gone; the footer is there.
-    for (const sel of ['[data-cmd="end"]', '[data-cmd="export"]', '[data-cmd="copy-path"]', ".send-end", ".held-bar"]) {
+    for (const sel of ['[data-cmd="end"]', '[data-cmd="copy-agent-prompt"]', '[data-cmd="export"]', '[data-cmd="copy-path"]', ".send-end", ".held-bar"]) {
       assert.equal(await page.locator(sel).count(), 0, `${sel} hidden`);
     }
     assert.equal(await page.locator(".hosted-foot a").innerText(), "Made with austere-axi");

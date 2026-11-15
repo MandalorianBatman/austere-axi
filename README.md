@@ -198,6 +198,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 ### Session rules
 
 - **One listener:** one `poll` listens on a session at a time.
+- **Hand the page to an agent:** **Copy agent prompt** in the review page's `⋯` menu (the owner's only) copies a prompt for an agent that should listen on this page: the file, the shared page's address when it is published, and the `poll` / `patch` loop. It holds no owner key, token or invite link. The agent needs the file at the same path, so it works on another machine too once that machine has your `cloud.json`.
 - **No lost notes:** every note is written to `~/.austere-axi/hub.db` before the page is told it was sent, so it survives a server crash or restart. Feedback sent while no agent listens waits for the next poll.
 - **Acknowledge with the cursor:** `poll` prints a `cursor`. Passing it back (`--cursor n` on the next `poll` or `reply`), or replying at all, acknowledges everything up to it. Without it, `poll` returns the same feedback again, so a crash or timed-out tool call loses nothing. `--after n` replays from any point.
 - **End is soft:** ending a review (the agent's `end`, or **End review** in the page) means the agent stopped. The reviewer can still send notes. The next `poll` returns every unacknowledged note, including ones sent before the end or released from hold after it, and reopens the review. A batch the reviewer sent together with end stays final.
