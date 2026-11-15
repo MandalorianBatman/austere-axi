@@ -533,7 +533,8 @@ test("hosted chrome: a rate-limited note stays queued and goes again by itself a
     assert.equal(keys[0], keys[1], "the same mutation, re-sent");
     assert.equal(svc.rows.filter((r) => r.type === "note").length, 1);
     assert.equal(await page.locator(".composer textarea").inputValue(), "", "nothing went back to the composer");
-    assert.ok(!(await page.locator(".composer-error").isVisible()), "the wait message is cleared once sent");
+    // The row can arrive before its ack, which is what clears the notice: wait for it, bounded.
+    await page.locator(".composer-error").waitFor({ state: "hidden", timeout: 5000 });
   } finally {
     await ctx.close();
   }
@@ -586,7 +587,8 @@ test("hosted chrome: the unsaved-copy warning stays while a note waits out Retry
     const notice = await page.locator(".composer-error").innerText();
     assert.match(notice, /could not keep a copy of your note/, notice);
     await page.waitForSelector(".msg.user .receipt em:text('Sent to the page owner')");
-    assert.ok(!(await page.locator(".composer-error").isVisible()), "both notices clear once it is sent");
+    // The row can arrive before its ack, which is what clears the notices: wait for it, bounded.
+    await page.locator(".composer-error").waitFor({ state: "hidden", timeout: 5000 });
   } finally {
     await ctx.close();
   }
