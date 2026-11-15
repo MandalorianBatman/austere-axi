@@ -664,21 +664,28 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     for (const m of focused) byStatement.set(m.statement, [...(byStatement.get(m.statement) ?? []), m]);
     const outlines: HTMLDivElement[] = [];
     for (const [statement, viewers] of byStatement) {
-      const el = outermost([statement], map, refsTo)[0];
-      const box = el && visibleBox(el);
-      if (!box) continue;
-      const o = overlay(box, "austere-focus");
-      o.style.setProperty("--austere-viewer", viewers[0].colour);
-      const tags = document.createElement("div");
-      tags.className = "austere-focus-names";
-      for (const v of viewers) {
-        const tag = document.createElement("span");
-        tag.textContent = v.name;
-        tag.style.background = v.colour;
-        tags.appendChild(tag);
+      // Every visible element of the statement is outlined (an edge's line and label, a reused
+      // component); the first one carries the name tags.
+      let tagged = false;
+      for (const el of outermost([statement], map, refsTo)) {
+        const box = visibleBox(el);
+        if (!box) continue;
+        const o = overlay(box, "austere-focus");
+        o.style.setProperty("--austere-viewer", viewers[0].colour);
+        if (!tagged) {
+          tagged = true;
+          const tags = document.createElement("div");
+          tags.className = "austere-focus-names";
+          for (const v of viewers) {
+            const tag = document.createElement("span");
+            tag.textContent = v.name;
+            tag.style.background = v.colour;
+            tags.appendChild(tag);
+          }
+          o.appendChild(tags);
+        }
+        outlines.push(o);
       }
-      o.appendChild(tags);
-      outlines.push(o);
     }
     focusLayer.replaceChildren(...outlines);
   }

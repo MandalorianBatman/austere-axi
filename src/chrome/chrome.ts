@@ -515,6 +515,8 @@ window.addEventListener("message", (e) => {
       // A reloaded frame starts unmarked; it handles "highlight" from the start.
       if (state.highlight) postHighlight(false);
       presence.redraw();
+      // The old frame's note box is gone, whether or not its blur arrived.
+      presence.setWriting("note", false);
       break;
     case "annotate":
       addToQueue(d.item);

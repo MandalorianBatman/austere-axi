@@ -21,7 +21,8 @@ const MAX_BACKOFF_MS = 60_000;
  */
 async function pageGone(pageUrl: string): Promise<boolean> {
   try {
-    const r = await fetch(pageUrl, { method: "HEAD", cache: "no-store" });
+    // A stalled check must not hold up the next attempt: past 5 s it counts as offline.
+    const r = await fetch(pageUrl, { method: "HEAD", cache: "no-store", signal: AbortSignal.timeout(5_000) });
     return r.status === 404 || r.status === 410;
   } catch {
     return false; // offline: retry

@@ -142,8 +142,12 @@ export class Presence {
   }
 
   private render(): void {
+    // Chips are rebuilt on every change: keep the keyboard on the same viewer's chip.
+    const active = document.activeElement;
+    const focusedId = active instanceof HTMLElement && this.host.chips.contains(active) ? active.dataset.viewer : undefined;
     const chips = this.others().map((p) => {
       const chip = document.createElement("button");
+      chip.dataset.viewer = p.viewer.id;
       chip.type = "button";
       chip.className = `viewer ${p.status}`;
       chip.style.setProperty("--viewer", p.viewer.colour);
@@ -156,6 +160,7 @@ export class Presence {
       return chip;
     });
     this.host.chips.replaceChildren(...chips);
+    chips.find((c) => c.dataset.viewer === focusedId)?.focus();
     this.host.chips.hidden = !chips.length;
     this.redraw();
   }
