@@ -54,8 +54,11 @@ const svc = {
   /** Refuse every socket handshake (403), and leave asset-token requests unanswered. */
   refuseUpgrades: false,
   stallAssetToken: false,
-  /** Answer this many coming addNotes with `rate_limited` (retryAfter 1), unapplied and unstored. */
+  /** Answer this many coming addNotes with `rate_limited` (`retryAfter` seconds), unapplied and unstored. */
   rateLimit: 0,
+  retryAfter: 1,
+  /** When each mutation arrived (epoch ms), in step with `mutations`. */
+  mutationTimes: [] as number[],
 };
 let stub: http.Server | undefined;
 let origin: string;
@@ -160,11 +163,12 @@ function reviewerSocket(s: Socket) {
       send(s.ws, { v: SYNC_VERSION, t: "changes", rows: svc.rows.filter((r) => r.seq > frame.after), cursor: svc.seq });
     } else if (frame.t === "mutation" && frame.name === "addNote") {
       svc.mutations.push(frame);
+      svc.mutationTimes.push(Date.now());
       svc.onMutation?.();
       if (svc.holdAcks) return;
       if (svc.rateLimit > 0) {
         svc.rateLimit--;
-        return send(s.ws, { v: SYNC_VERSION, t: "ack", clientId: frame.clientId, n: frame.n, error: { code: "rate_limited", message: "slow down", retryAfter: 1 } });
+        return send(s.ws, { v: SYNC_VERSION, t: "ack", clientId: frame.clientId, n: frame.n, error: { code: "rate_limited", message: "slow down", retryAfter: svc.retryAfter } });
       }
       const key = `${frame.clientId}:${frame.n}`;
       if (!svc.applied.has(key)) {
@@ -237,7 +241,7 @@ after(async () => {
 
 beforeEach(() => {
   for (const s of svc.sockets) s.ws.terminate();
-  Object.assign(svc, { requests: [], inviteHeaders: [], rows: [], seq: 0, pulls: [], mutations: [], holdAcks: false, upgrades: 0, reports: [], unlisted: false, rateLimit: 0 });
+  Object.assign(svc, { requests: [], inviteHeaders: [], rows: [], seq: 0, pulls: [], mutations: [], holdAcks: false, upgrades: 0, reports: [], unlisted: false, rateLimit: 0, retryAfter: 1, mutationTimes: [] });
   svc.invites = new Map([[ANA, "Ana"]]);
   put(pageRow(1_000));
 });
@@ -530,6 +534,59 @@ test("hosted chrome: a rate-limited note stays queued and goes again by itself a
     assert.equal(svc.rows.filter((r) => r.type === "note").length, 1);
     assert.equal(await page.locator(".composer textarea").inputValue(), "", "nothing went back to the composer");
     assert.ok(!(await page.locator(".composer-error").isVisible()), "the wait message is cleared once sent");
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: a reconnect during Retry-After does not send the note early, and it goes once when due", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await ctx.newPage();
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.waitForSelector("text=Posting as Ana");
+    svc.rateLimit = 1;
+    svc.retryAfter = 3;
+    await page.fill(".composer textarea", "wait for it");
+    await page.click(".composer .send");
+    await page.waitForSelector("text=sending again in 3 s");
+    const refusedAt = svc.mutationTimes[0];
+    const upgrades = svc.upgrades;
+    for (const s of svc.sockets) s.ws.terminate(); // reconnects after ~1 s, inside the wait
+    await page.waitForSelector(".msg.user .receipt em:text('Sent to the page owner')", { timeout: 10_000 });
+    assert.ok(svc.upgrades > upgrades, "it reconnected during the wait");
+    assert.equal(svc.mutations.length, 2, "one refused send, then exactly one re-send");
+    assert.ok(svc.mutationTimes[1] - refusedAt >= 2900, `re-sent ${svc.mutationTimes[1] - refusedAt} ms after the refusal, not before Retry-After`);
+    assert.equal(svc.rows.filter((r) => r.type === "note").length, 1);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: the unsaved-copy warning stays while a note waits out Retry-After", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+      if (this === window.sessionStorage) throw new DOMException("quota", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  try {
+    const page = await ctx.newPage();
+    await page.goto(`${origin}${BASE}#i=${ANA}`);
+    await page.waitForSelector("text=Posting as Ana");
+    svc.rateLimit = 1;
+    svc.retryAfter = 2;
+    await page.fill(".composer textarea", "fragile");
+    await page.click(".composer .send");
+    await page.waitForSelector("text=sending again in 2 s");
+    const notice = await page.locator(".composer-error").innerText();
+    assert.match(notice, /could not keep a copy of your note/, notice);
+    await page.waitForSelector(".msg.user .receipt em:text('Sent to the page owner')");
+    assert.ok(!(await page.locator(".composer-error").isVisible()), "both notices clear once it is sent");
   } finally {
     await ctx.close();
   }

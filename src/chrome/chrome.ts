@@ -218,6 +218,8 @@ interface OutboxEntry {
   at: number;
   /** Who sent it (`sender()`): a note is only ever re-sent by that same reviewer. */
   as: string;
+  /** Epoch ms before which it must not be sent again (a `rate_limited` answer's `retryAfter`). */
+  retryAt?: number;
 }
 // New notes are numbered under a clientId made for this page load and kept only in memory, with a
 // counter from 1. Nothing about it is read back from storage, so a duplicated tab (which copies
@@ -240,7 +242,8 @@ const outbox: OutboxEntry[] = Array.isArray(savedOutbox)
         typeof o.m.clientId === "string" &&
         /^[A-Za-z0-9_-]{8,64}$/.test(o.m.clientId) &&
         Number.isInteger(o.m.n) &&
-        o.m.n > 0,
+        o.m.n > 0 &&
+        (o.retryAt === undefined || typeof o.retryAt === "number"),
     )
   : [];
 /**
@@ -259,7 +262,9 @@ let clientN = 0;
 // The outbox could not be saved: a reload before the acks would lose those notes, so the composer says so.
 let outboxUnsaved = false;
 // A note is waiting out a `rate_limited` answer: the composer says when it goes again.
-let rateLimited = false;
+let rateLimited: string | null = null;
+/** The one pending timed re-send per waiting note. */
+const retryTimers = new Map<OutboxEntry, number>();
 let sync: SyncSocket | null = null;
 // Hosted: why nothing more can be sent (the page is gone, or the invite no longer works).
 let lockout: string | null = null;
@@ -1077,6 +1082,32 @@ function toNoteItem(item: QueueItem): NoteItem {
 /** Hosted: queues the batch as one `addNote` and sends it if the socket is open; the ack settles it. */
 const UNSAVED_WARNING = "This browser could not keep a copy of your note: keep this tab open until it shows “Sent to the page owner”.";
 
+/** The composer's outbox notice: a rate-limit wait and the unsaved-copy warning, each while it holds. */
+function showOutboxNotice() {
+  composerError([rateLimited, outboxUnsaved ? UNSAVED_WARNING : ""].filter(Boolean).join(" "));
+}
+
+/**
+ * Sends an outbox note now, or, while it waits out `retryAfter`, once its deadline passes. One
+ * timer per note: a reconnect or a second refusal never schedules an earlier or a second send.
+ */
+function sendWhenDue(entry: OutboxEntry) {
+  const wait = (entry.retryAt ?? 0) - Date.now();
+  if (wait <= 0) {
+    delete entry.retryAt;
+    sync?.send(entry.m);
+    return;
+  }
+  if (retryTimers.has(entry)) return;
+  retryTimers.set(
+    entry,
+    window.setTimeout(() => {
+      retryTimers.delete(entry);
+      if (outbox.includes(entry) && entry.as === sender()) sendWhenDue(entry);
+    }, wait),
+  );
+}
+
 function sendHosted(queued: QueueItem[]) {
   if (lockout || inviteName === undefined) return;
   // Only an unlisted page without an invite takes a self-declared name; an invite names its reviewer.
@@ -1099,7 +1130,7 @@ function sendHosted(queued: QueueItem[]) {
   state.queue = [];
   saveQueue();
   textarea.value = "";
-  composerError(outboxUnsaved ? UNSAVED_WARNING : "");
+  showOutboxNotice();
   renderLog(true);
   renderDock();
 }
@@ -1554,24 +1585,20 @@ function settle(ack: AckFrame) {
   if (ack.error?.code === "rate_limited") {
     const entry = outbox[i];
     const wait = Math.max(1, ack.error.retryAfter ?? 5);
-    rateLimited = true;
-    composerError(`Too many notes for now: sending again in ${wait} s.`);
-    setTimeout(() => {
-      if (outbox.includes(entry) && entry.as === sender()) sync?.send(entry.m);
-    }, wait * 1000);
+    // The deadline is saved with the note, so a reconnect or a reload waits it out too.
+    entry.retryAt = Date.now() + wait * 1000;
+    outboxUnsaved = !SS.set(OUTBOX_KEY, outbox);
+    rateLimited = `Too many notes for now: sending again in ${wait} s.`;
+    showOutboxNotice();
+    sendWhenDue(entry);
     return;
-  }
-  if (rateLimited) {
-    rateLimited = false;
-    composerError("");
   }
   const [done] = outbox.splice(i, 1);
   // Saved again, or every note acked: nothing is left to lose on a reload.
   const saved = SS.set(OUTBOX_KEY, outbox);
-  if (outboxUnsaved && (saved || !outbox.length)) {
-    outboxUnsaved = false;
-    composerError("");
-  }
+  if (outboxUnsaved && (saved || !outbox.length)) outboxUnsaved = false;
+  if (!outbox.some((o) => o.retryAt)) rateLimited = null;
+  showOutboxNotice();
   if (ack.error) {
     for (const item of done.m.args.items) addToQueue({ ...item });
     composerError(`Not sent: ${ack.error.message}. Your notes are back in the queue.`);
@@ -1627,7 +1654,7 @@ async function startHosted() {
     state.connected = true;
     socket.send({ v: SYNC_VERSION, t: "pull", after: cursor });
     // Unacked notes go again, in order; the server answers a repeat (clientId, n) with the same ack.
-    for (const o of mine()) socket.send(o.m);
+    for (const o of mine()) sendWhenDue(o);
     renderPresence();
   });
   socket.onFrame(onSyncFrame);
