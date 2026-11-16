@@ -7,6 +7,7 @@ import path from "node:path";
 import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.ts";
 import { ownerKey } from "./invites.ts";
 import type { HealthInfo, LoginResponse } from "./server.ts";
+import { restartCommand } from "./service.ts";
 
 /** The `error` a control route answers with when it refuses. */
 export interface ApiError {
@@ -135,7 +136,11 @@ export async function ensureServer(): Promise<ServerHealth> {
   if (h && h.stateDir !== stateDir()) {
     throw new Error(`port ${port} is served by an austere-axi with another state dir (${h.stateDir}); set AUSTERE_AXI_PORT`);
   }
-  if (h && (h.legacy || versionGt(VERSION, h.version))) {
+  const action = h ? serverAction(h, VERSION) : null;
+  if (h?.supervised && action === "restart-unit") {
+    // A supervised server is never replaced: two would fight over the port and the state dir. It still serves.
+    process.stderr.write(`[austere-axi] the server runs v${h.version} under ${h.supervised} and this CLI is v${VERSION}; restart it to update: ${restartCommand(h.supervised)}\n`);
+  } else if (h && action === "replace") {
     // A newer CLI replaces an older server; sessions are on disk. The new one listens where the old one did and keeps --persist.
     const { tailnet } = h;
     const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!tailnet || x !== tailnet.ip));
@@ -163,6 +168,15 @@ export async function ensureServer(): Promise<ServerHealth> {
     throw new Error(`server did not start on port ${port}; see ${path.join(stateDir(), "server.log")}`);
   }
   return h;
+}
+
+/**
+ * What a CLI of `version` does about the running server `h`: use it, replace it (it is older), or,
+ * when a service manager runs that older server, leave it running and tell the owner to restart the unit.
+ */
+export function serverAction(h: ServerHealth, version: string): "use" | "replace" | "restart-unit" {
+  if (!h.legacy && !versionGt(version, h.version)) return "use";
+  return !h.legacy && h.supervised ? "restart-unit" : "replace";
 }
 
 /**

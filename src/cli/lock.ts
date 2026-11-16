@@ -4,33 +4,39 @@
 import fs from "node:fs";
 import path from "node:path";
 import { health } from "./client.ts";
+import type { Supervisor } from "./service.ts";
 
 // A process that has held the lock for less than this may still be starting (a server
 // that does not answer on its port yet) or finishing (a command). Older and silent: it died.
 const STARTING_MS = 60_000;
 
-/** What server.lock holds: `{ pid, port?, at }`, or a bare pid (the old format); anything else when corrupt. */
-type LockFile = { pid?: unknown; port?: unknown; at?: unknown } | number | null;
+/** What server.lock holds: `{ pid, port?, at, supervised? }`, or a bare pid (the old format); anything else when corrupt. */
+type LockFile = { pid?: unknown; port?: unknown; at?: unknown; supervised?: unknown } | number | null;
 
-/** A live holder of the lock. `serving`: a server that answered on its port. */
-interface LockHolder {
+/** A live holder of the lock. `serving`: a server that answered on its port. `supervised`: the service manager that runs it (`server install`). */
+export interface LockHolder {
   pid: number;
   port?: number;
   serving: boolean;
+  supervised?: Supervisor;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Take the state dir's lock. A server passes its `port`; another process then asks that
- * port whether the server still runs, which a reused pid cannot fake. `wait` is how long
- * to wait for a holder that is starting or finishing. Returns the function that lets go.
+ * port whether the server still runs, which a reused pid cannot fake. A server a service
+ * manager runs passes `supervised`. `wait` is how long to wait for a holder that is
+ * starting or finishing. Returns the function that lets go.
  */
-export async function lockStateDir(dir: string, { port = null, wait = 0 }: { port?: number | null; wait?: number } = {}): Promise<() => void> {
+export async function lockStateDir(
+  dir: string,
+  { port = null, wait = 0, supervised = null }: { port?: number | null; wait?: number; supervised?: Supervisor | null } = {},
+): Promise<() => void> {
   const file = path.join(dir, "server.lock");
   const deadline = Date.now() + wait;
   for (let stale = 0; stale < 3; ) {
-    const mine = JSON.stringify(port ? { pid: process.pid, port, at: Date.now() } : { pid: process.pid, at: Date.now() });
+    const mine = JSON.stringify(port ? { pid: process.pid, port, at: Date.now(), ...(supervised ? { supervised } : {}) } : { pid: process.pid, at: Date.now() });
     try {
       fs.writeFileSync(file, mine, { flag: "wx" });
       let held = true;
@@ -67,6 +73,12 @@ export async function lockStateDir(dir: string, { port = null, wait = 0 }: { por
   throw new Error(`could not lock ${dir} (${file})`);
 }
 
+/** Who holds `dir`'s lock now, or null when no one does (a stale lock counts as none). */
+export async function stateDirHolder(dir: string): Promise<LockHolder | null> {
+  const text = readFile(path.join(dir, "server.lock"));
+  return text == null ? null : lockHolder(text, dir);
+}
+
 function readFile(file: string): string | null {
   try {
     return fs.readFileSync(file, "utf8");
@@ -93,13 +105,14 @@ async function lockHolder(text: string, dir: string): Promise<LockHolder | null>
   const pid = Number(lock?.pid);
   if (!lock || !Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null;
   const port = typeof lock.port === "number" && Number.isInteger(lock.port) && lock.port > 0 ? lock.port : undefined;
-  if (port && (await serves(port, pid, dir))) return { pid, port, serving: true };
+  const supervised = lock.supervised === "systemd" || lock.supervised === "launchd" ? lock.supervised : undefined;
+  if (port && (await serves(port, pid, dir))) return { pid, port, serving: true, supervised };
   if (!processAlive(pid)) return null;
   // An old-format lock cannot be checked on a port. A live pid keeps it, as before: wrongly
   // taking a lock a server still holds would put two writers on hub.db, while wrongly
   // keeping one only blocks with a message that says to delete the file.
   if (lock.at == null) return { pid, port, serving: false };
-  return Date.now() - Number(lock.at) < STARTING_MS ? { pid, port, serving: false } : null;
+  return Date.now() - Number(lock.at) < STARTING_MS ? { pid, port, serving: false, supervised } : null;
 }
 
 /** Whether the server on `port` proves it holds this state dir's owner key (no key is sent) and is that pid on that dir. */

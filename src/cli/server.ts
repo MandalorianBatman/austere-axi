@@ -19,6 +19,8 @@ import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.ts";
 import { SessionStore, newId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
+import { supervisor } from "./service.ts";
+import type { Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub } from "./hub.ts";
 import { findProject } from "./projects.ts";
@@ -48,6 +50,8 @@ export interface HealthInfo {
   tailnet?: Tailnet;
   remote?: string;
   persist: boolean;
+  /** The service manager that runs this server (`server install`); a CLI never replaces it. */
+  supervised?: Supervisor;
 }
 
 /** Whether an agent listens on a session, works on its notes, or neither. */
@@ -214,6 +218,19 @@ export function persistEnv() {
   return /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_PERSIST || "");
 }
 
+// Reasons the idle exit waits even with no page open and no poll (RLM-345: a run is active; RLM-346: attach is on).
+const idleHolds: (() => boolean)[] = [];
+
+/** Keep an unsupervised server from idling out while `held()` is true. */
+export function holdIdleExit(held: () => boolean): void {
+  idleHolds.push(held);
+}
+
+/** Whether something holds the idle exit off now. */
+export function idleExitSuspended(): boolean {
+  return idleHolds.some((held) => held());
+}
+
 /** How long a login code from `austere-axi login` (or the CLI opening a browser) works. */
 const LOGIN_TTL_MS = 60_000;
 const OWNER: OwnerViewer = Object.freeze({ role: "owner", name: "" });
@@ -254,8 +271,10 @@ export async function runServer({
   };
 
   // Notes commit to hub.db before any request that adds them is answered. The lock names
-  // the port, so a later process can tell this server from an unrelated one with its pid.
-  const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000 });
+  // the port, so a later process can tell this server from an unrelated one with its pid,
+  // and the supervisor, so `server install` can tell a server it started from one it did not.
+  const supervised = supervisor();
+  const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000, supervised });
   process.on("exit", releaseLock);
   let store: SessionStore;
   try {
@@ -301,7 +320,8 @@ export async function runServer({
   const linkBase = linkUrl(); // throws on a bad AUSTERE_AXI_LINK_URL: better to stop here than print wrong links
   let lastActivity = Date.now();
   const longGraceMs = msEnv("AUSTERE_AXI_DISCONNECT_GRACE_MS", 5 * 60_000);
-  const idleMs = persist || persistEnv() ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
+  // A supervised server is always on: its supervisor decides when it stops.
+  const idleMs = persist || persistEnv() || supervised ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
 
   const activity = () => {
     lastActivity = Date.now();
@@ -687,6 +707,7 @@ export async function runServer({
         tailnet: tailnet || undefined,
         remote: remoteBase() || undefined,
         persist: idleMs === 0,
+        supervised: supervised ?? undefined,
       } satisfies HealthInfo);
     }
     if (route === "sessions") {
@@ -1490,7 +1511,7 @@ export async function runServer({
 
   if (idleMs > 0) {
     setInterval(() => {
-      const busy = polls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0);
+      const busy = polls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || idleExitSuspended();
       if (busy) activity();
       else if (Date.now() - lastActivity > idleMs) shutdown("idle");
     }, Math.min(60_000, idleMs)).unref();
