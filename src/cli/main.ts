@@ -146,7 +146,7 @@ ENV
 /**
  * Every command: usage line, one-line summary, the flags it accepts (name → help) and an example.
  * main() rejects any flag a command does not list, and `<command> --help` prints its entry.
- * Keep in step with HELP above and the README's CLI section.
+ * Keep in step with HELP above and docs/cli.md.
  */
 const COMMANDS: Record<string, CommandSpec> = {
   open: {

@@ -1,6 +1,6 @@
 // Turns bench/results/results.json into the summary tables (bench/results/summary.md,
 // and the results section of docs/benchmark.md), the chart (docs/benchmark.svg) and
-// the README headline. Runs at the end of every bench run; `npm run bench:report`
+// the headline in docs/how-it-works.md. Runs at the end of every bench run; `npm run bench:report`
 // re-renders without calling any model.
 import fs from "node:fs";
 import path from "node:path";
@@ -331,7 +331,7 @@ export function writeReport(): void {
   fs.mkdirSync(path.join(ROOT, "docs"), { recursive: true });
   fs.writeFileSync(path.join(ROOT, "docs", "benchmark.svg"), chart(s));
   replaceBetween(path.join(ROOT, "docs", "benchmark.md"), "<!-- results:start -->", "<!-- results:end -->", body);
-  replaceBetween(path.join(ROOT, "README.md"), "<!-- bench:start -->", "<!-- bench:end -->", headline(s));
+  replaceBetween(path.join(ROOT, "docs", "how-it-works.md"), "<!-- bench:start -->", "<!-- bench:end -->", headline(s));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

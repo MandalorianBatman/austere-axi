@@ -1,493 +1,133 @@
 # austere-axi
 
 [![npm version](https://img.shields.io/npm/v/austere-axi)](https://www.npmjs.com/package/austere-axi)
-[![npm downloads](https://img.shields.io/npm/dm/austere-axi)](https://www.npmjs.com/package/austere-axi)
-[![jsDelivr hits](https://img.shields.io/jsdelivr/npm/hm/austere-axi)](https://www.jsdelivr.com/package/npm/austere-axi)
-[![skills.sh](https://skills.sh/b/mandalorianbatman/austere-axi)](https://skills.sh/mandalorianbatman/austere-axi)
 [![CI](https://github.com/MandalorianBatman/austere-axi/actions/workflows/ci.yml/badge.svg)](https://github.com/MandalorianBatman/austere-axi/actions/workflows/ci.yml)
-[![node](https://img.shields.io/node/v/austere-axi)](https://www.npmjs.com/package/austere-axi)
 [![license](https://img.shields.io/npm/l/austere-axi)](LICENSE)
 
-Review pages for coding agents.
+**Review what your AI coding agent proposes on a page you can click, instead of in a wall of chat text.**
 
-1. The agent writes a short [OpenUI Lang](https://github.com/thesysdev/openui) program, not HTML.
-2. You open it in the browser, click any part, and write a note.
-3. The agent gets each note with the name of the statement it points at, edits only those statements, and the page updates in place.
+![An agent writes a page, the reviewer clicks a table cell and a diagram box and sends two notes, and the page updates in place with the changed parts flashing](docs/demo.gif)
 
-![An agent writes a page, the reviewer clicks a table cell and a diagram node and sends two notes, and the page patches in place with the changed statements flashing](docs/demo.gif)
+<sub>A real review, about 30 seconds: [MP4](docs/demo.mp4) · [WebM](docs/demo.webm).</sub>
 
-<sub>The real loop, about 30 s: [MP4](docs/demo.mp4) · [WebM](docs/demo.webm).</sub>
+**See it without installing anything:** [example pages](https://mandalorianbatman.github.io/austere-axi/gallery/) · [try it in your browser](https://mandalorianbatman.github.io/austere-axi/play/) · [website](https://mandalorianbatman.github.io/austere-axi/)
 
-**[Website](https://mandalorianbatman.github.io/austere-axi/)** · **[Playground](https://mandalorianbatman.github.io/austere-axi/play/)** (no install) · **[Gallery](https://mandalorianbatman.github.io/austere-axi/gallery/)** · **[Benchmark](docs/benchmark.md)** · **[Writing a pack](docs/writing-a-pack.md)**
+## The problem
 
-```
-root = Stack([intro, flow, options, decide], "column", "l")
-intro = Card([CardHeader("Session storage migration", "Redis → Postgres"), introText])
-introText = MarkDownRenderer("Sessions are lost on failover. **Goal:** durable sessions, no forced logout.")
-flow = Card([CardHeader("Request path"), flowDiagram])
-flowDiagram = Architecture([client, api, pg], [toApi, toPg])
-client = Node("Client", "external")
-api = Node("API", "backend", "Node :8080")
-pg = Node("Postgres", "database", "sessions table", "new")
-toApi = Edge(client, api, "HTTPS", "emphasis")
-toPg = Edge(api, pg, "SQL")
-options = Card([CardHeader("Rollout options"), optionTable])
-optionTable = Table([Col("Option", ["Big bang", "Dual-write"]), Col("Risk", [Tag("high", null, "sm", "danger"), Tag("low", null, "sm", "success")])])
-decide = Form("rollout", Buttons([Button("Send decision", @ToAssistant("Decision: rollout"), "primary")]), [strategyField])
-strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big bang", "", "bigbang"), RadioItem("Dual-write", "", "dualwrite")]))
-```
+You ask an AI coding agent (Claude Code, Codex, Cursor and the like) for a plan, a comparison, or a summary of what it changed. The answer comes back as a long chat message.
 
-A full page (KPIs, diagram, table, chart, diff, decision form) is about 1,000 tokens: [`examples/session-migration.html`](examples/session-migration.html).
+Reviewing that message is slow:
 
-**See it without installing:** the [gallery](https://mandalorianbatman.github.io/austere-axi/gallery/) shows example pages next to their source and token counts. The [playground](https://mandalorianbatman.github.io/austere-axi/play/) lets you edit OpenUI Lang and see the page live.
+- You have to describe which part you mean ("the second option in the rollout table") before you can say what is wrong with it.
+- The agent guesses what you pointed at, then often rewrites the whole answer, so you read all of it again to find what changed.
+- A diagram or a side-by-side comparison would make the decision easy, and chat gives you paragraphs.
 
-## Quick start
+## What austere-axi does
 
-Needs Node.js 22.18 or later. Your agent runs:
+The agent puts its answer on a page: sections, tables, diagrams, charts, code changes, and a form for the decision it needs from you.
 
-```sh
-npx -y austere-axi spec              # component reference (read once per session)
-npx -y austere-axi plan.html         # validate and open the page for review
-npx -y austere-axi poll plan.html    # wait until the reviewer presses Send
-```
+You click the exact thing you want changed and write a note, the way you would comment on a shared document. The agent changes only that part, and the page updates while you watch.
 
-`--help` prints the file skeleton and the loop (about 900 tokens); `help all` adds the rarer commands and the environment. The agent does not look at the page itself: the reviewer judges how it looks, and render failures come back through `poll`. To have agents reach for it on their own, use the [skill, plugin or MCP server](#install).
+## How you use it
 
-## Why
+1. **Ask your agent for a page.** Say "show me this plan as a page", or type `/austere` followed by what you want to see. The page opens in your browser.
+2. **Click what you want changed and write a note.** Anything on the page works: a section, one cell of a table, one box in a diagram, one line of a code change, or a sentence you select. Where the page offers choices, pick one or fill in the form.
+3. **Press Send.** The agent gets each note attached to the part you clicked and changes only those parts. The page updates in place and highlights what changed, so you don't have to hunt for it.
 
-Same loop as [lavish-axi](https://github.com/kunchenguid/lavish-axi). The difference: the agent never writes HTML, CSS or layout.
+Repeat until it is right. When you are done, press **Send & End** and carry on in the chat.
 
-| | lavish-axi | austere-axi |
-|---|---|---|
-| Agent writes | Full HTML + CSS + SVG | OpenUI Lang statements |
-| After feedback | Edits the HTML; the page reloads | Edits the named statements; the page patches in place |
-| Feedback points at | CSS selector + text | Statement name and line, plus table cell, diff line, diagram node or selected text |
-| Validation | Layout audit in the browser | `austere-axi check`, in Node, no browser |
-| Look | Different for each agent | One dark design |
+## What people review with it
 
-Fewer output tokens: faster pages, lower cost. From the [benchmark](docs/benchmark.md):
+| | Example |
+|---|---|
+| A plan, before any work starts | [Moving a database, with a diagram, rollout options and a decision form](https://mandalorianbatman.github.io/austere-axi/gallery/session-migration.html) |
+| A design, with alternatives to choose from | [API design review](https://mandalorianbatman.github.io/austere-axi/gallery/api-design-review.html) |
+| A summary of what the agent changed | [Pull request summary](https://mandalorianbatman.github.io/austere-axi/gallery/pr-summary.html) |
+| A report on something that went wrong | [Outage postmortem](https://mandalorianbatman.github.io/austere-axi/gallery/incident-postmortem.html) |
+| A plan for the team | [Sprint plan](https://mandalorianbatman.github.io/austere-axi/gallery/sprint-plan.html) |
 
-<!-- bench:start -->
-Across 36 paired runs (6 review pages, 2 models), lavish-axi spent a median **3.2×** the output tokens of austere-axi to produce the same page, took **2.4×** as long and cost **2.5×** as much. Answering one reviewer note took **2.7×** the output tokens.
-<!-- bench:end -->
+## What else it does
 
-lavish-axi does better in some cases. Read the benchmark caveats before you quote the numbers.
+- **Bring in a teammate.** Ask your agent to publish the page and invite someone by name. Each person gets their own link, and their notes appear under their name. You see their notes first and decide which ones go to the agent. [More on sharing](docs/hosted-pages.md).
+- **Review from your phone.** The review page has a phone layout. This needs [Tailscale](https://tailscale.com) on your computer and phone. [How it works](docs/how-it-works.md#the-review-loop).
+- **Send someone a copy.** "Download standalone HTML" in the page's ⋯ menu saves the page as one file that opens in any browser, offline.
+- **Nothing gets lost.** Every note is saved the moment you send it. If the agent is busy or your computer restarts, the notes are waiting when the agent comes back.
+- **Find old reviews.** Turn on the hub for a home page that lists every page and every note, with search. [More on the hub](docs/hub.md).
 
-## Install
+## Get started
 
-Needs Node.js 22.18 or later.
+You need two things:
 
-**Let your agent do it.** Install the setup skill, then ask your agent to "set up austere-axi":
+- An AI coding agent, such as Claude Code, Codex or Cursor.
+- [Node.js](https://nodejs.org) version 22.18 or later. It is free, and you install it once.
 
-```sh
-npx skills add MandalorianBatman/austere-axi --skill austere-setup
-```
+Then:
 
-It checks Node, installs the `austere` skill, offers the optional items below, and opens a test page.
+1. Run this once in a terminal:
 
-**Or do it yourself.** Agents can run the CLI with no install (`-y` skips the npm prompt):
+   ```sh
+   npx skills add MandalorianBatman/austere-axi --skill austere-setup
+   ```
 
-```sh
-npx -y austere-axi --help
-```
+2. Tell your agent: **"set up austere-axi"**. It checks your computer, installs the rest, and opens a test page so you can see it work.
 
-Optional:
+After that, ask for a page whenever an answer would be easier to review as one.
 
-```sh
-npm install -g austere-axi                                     # `austere-axi` command, no npx
-npx skills add MandalorianBatman/austere-axi --skill austere   # tells agents when to make a page; adds /austere
-```
-
-The `austere` skill only points at `--help` and `spec`, so it never goes stale. A global install stays on its version until `npm update -g austere-axi`.
-
-### Claude Code plugin
-
-Bundles the `austere` skill (and `/austere`), the `austere-setup` skill and the MCP server:
+Using Claude Code? You can install it as a plugin instead:
 
 ```sh
 claude plugin marketplace add MandalorianBatman/austere-axi
 claude plugin install austere@austere-axi
 ```
 
-In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/plugin install austere@austere-axi`. The MCP server runs `npx -y austere-axi mcp` (needs Node 22.18+ and npm access). `claude plugin update austere` updates the skill text; the CLI comes from npm each time.
+Claude Desktop, Cursor, Codex and manual setup are covered in the [install guide](docs/install.md).
 
-### MCP
+## Why it is quick
 
-`austere-axi mcp` is an MCP server on stdio. Tools: `spec`, `check`, `open`, `poll`, `reply`, `patch`, `end`, `components`. Each one runs the CLI command of the same name, so the loop is the same as on the command line.
+Other tools have the agent hand-write a whole web page, which is slow, costs more, and looks different every time.
 
-- `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer calls. The agent polls again; nothing is lost. `timeout_ms: 0` waits until feedback arrives.
-- `poll` and `reply` take the `cursor` a poll returned, like `--cursor`.
-- `components` takes `command` (`search`, `show`, `list` or `add`) and `args`; `show` also takes `pack`, like `--pack`. `add` takes only an npm package name, never a folder or `.tgz`, and has no `trust`: a third-party pack the user has not trusted is refused, and the agent asks the user to install it.
-- Pass absolute file paths. The server resolves relative paths against its own working directory, which depends on the client.
-- No screen? Set `AUSTERE_AXI_NO_OPEN=1` in the server's `env` so `open` prints the link instead. Other [environment variables](#environment) work the same way.
+With austere-axi the agent writes a short outline that names what goes on the page, and austere-axi draws it. Three things follow:
 
-**Claude Desktop** (`claude_desktop_config.json`) and **Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project):
+- **Pages arrive sooner and cost less.** In our [benchmark](docs/benchmark.md), an agent hand-writing the same pages as full web pages took more than twice as long and cost more than twice as much. The benchmark also lists the cases where the other approach did better.
+- **Every page looks the same.** One clean, dark design, so you learn where things are once.
+- **Changes are small.** The agent edits the one part you pointed at instead of rebuilding the page.
 
-```json
-{
-  "mcpServers": {
-    "austere": {
-      "command": "npx",
-      "args": ["-y", "austere-axi", "mcp"]
-    }
-  }
-}
-```
+## Private by default
 
-**Codex** (`~/.codex/config.toml`), or `codex mcp add austere -- npx -y austere-axi mcp`:
+- It runs on your own computer. There is no account and no sign-up.
+- Your pages and notes stay on your computer unless you choose to publish a page.
+- A published page is invite-only unless you ask for an open link, and it expires 30 days after you last published it.
+- It is free and open source (MIT license).
 
-```toml
-[mcp_servers.austere]
-command = "npx"
-args = ["-y", "austere-axi", "mcp"]
-```
+The details are in the [security guide](docs/security.md).
 
-## How it works
+## What it does not do yet
 
-```
-agent writes plan.html ──► austere-axi plan.html ──► local server + browser review
-                                                        │  reviewer annotates, picks options,
-                                                        │  types, presses Send
-agent patches changes  ◄── austere-axi poll plan.html ◄─┘  (long-poll returns the batch)
-          │
-          └─► page updates in place and flashes the changed statements
-```
+- You cannot attach an image to a note.
+- A page is a snapshot. It does not show live data.
+- There is one look: the dark theme.
 
-- **A page is a plain `.html` file:** one runtime `<script>` tag and one `<script type="text/openui">` block. Opened directly, it loads the runtime from the CDN. Under review, the server serves a local copy.
-- **Components:** 58 stock OpenUI components, plus `Architecture` (`Node`, `Edge`, `Group`), `Diff` and `FileTree`. Nine shadcn-style components come as a bundled [pack](#components-and-packs).
-- **Diagrams lay out automatically** ([dagre](https://github.com/dagrejs/dagre)); the agent never writes coordinates. Every node and edge is a click target. `lanes` puts each group in a column; `tone` colors a box or line to show risk.
-- **Notes** attach to the smallest named statement under the click, with detail where it exists: table row and column, `file:+line` in a diff, a diagram node, or selected text. The hover box outlines that row, line or node, not the whole statement. The reviewer can move a note to a parent section.
-- **Changes flash** after each agent turn, and the bar shows `N changed`. Click it to keep the last turn's changes outlined until you click again.
-- **Buttons and forms send feedback.** `@ToAssistant("…")` sends a message with the form values. A button with no action sends its label.
-- **Phone review:** with Tailscale running, the server also listens on the tailnet IP and prints a phone link. That link carries your owner key; keep it private. The review UI has a mobile layout.
+## Documentation
 
-## CLI
+The reference material lives in [`docs/`](docs/README.md).
 
-Usage errors (unknown command or flag, missing argument) exit 2 before anything runs; failures exit 1. `<command> --help` prints that command's flags and an example.
-
-```
-austere-axi                      sessions + command list
-austere-axi <file>               validate + open a review   [--no-open] [--reopen]
-austere-axi poll <file>          long-poll for feedback      [--cursor n] [--agent-reply "..."] [--after n] [--takeover]
-austere-axi reply <file>         post a reply without polling   [--cursor n]
-austere-axi end <file>           stop as the agent; the reviewer can still add notes
-austere-axi close <file>         close the review: no more notes until reopen
-austere-axi reopen <file>        reopen an ended or closed review
-austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
-austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
-austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]
-austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
-austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
-austere-axi components ...       list | search | show | add | remove | new | build
-austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
-austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
-austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
-austere-axi hub on|off|status|list|notes|open   home page with every page and note
-austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
-austere-axi share list|revoke           see invites, cut one off
-austere-axi publish <file>       hosted copy of the page on austere.kasat.xyz   [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new]
-austere-axi publish invites|revoke <file> [name]   see a page's invites, cut one off
-austere-axi publish list|rm <file|id>   your hosted pages; delete one now
-austere-axi stop                 stop the background server
-austere-axi server --persist     run the server in the foreground and never idle out
-austere-axi mcp                  MCP server on stdio (see MCP)
-```
-
-Output is compact YAML for agents. Each `poll` item has its statement and that statement's line and source, so the agent does not read the file again. Agents revise with `patch` only: they send the changed statements, never the whole file.
-
-### Session rules
-
-- **One listener:** one `poll` listens on a session at a time.
-- **Hand the page to an agent:** **Copy agent prompt** in the review page's `⋯` menu (the owner's only) copies a prompt for an agent that should listen on this page: the file, the shared page's address when it is published, and the `poll` / `patch` loop. It holds no owner key, token or invite link. The agent needs the file at the same path, so it works on another machine too once that machine has your `cloud.json`.
-- **No lost notes:** every note is written to `~/.austere-axi/hub.db` before the page is told it was sent, so it survives a server crash or restart. Feedback sent while no agent listens waits for the next poll.
-- **Acknowledge with the cursor:** `poll` prints a `cursor`. Passing it back (`--cursor n` on the next `poll` or `reply`), or replying at all, acknowledges everything up to it. Without it, `poll` returns the same feedback again, so a crash or timed-out tool call loses nothing. `--after n` replays from any point.
-- **End is soft:** ending a review (the agent's `end`, or **End review** in the page) means the agent stopped. The reviewer can still send notes. The next `poll` returns every unacknowledged note, including ones sent before the end or released from hold after it, and reopens the review. A batch the reviewer sent together with end stays final.
-- **Close is hard:** only the owner's **close** (`close <file>`, or **Close review** in the page) locks the composer. `reopen <file>` or **Reopen review** unlocks it.
-- A review the user ended or closed opens again only with `--reopen`.
-- An `Image` src that is a path relative to the page (png, jpg, gif, webp, svg, avif) loads under review for the owner and for invited reviewers, and `export` inlines it as a data URI. Both read only regular files in the page's own folder, never dotfiles or links that leave it; `export` skips an image over 10 MB. A file `export` cannot read stays as written, and the output names it in `notices`.
-- **Tabs closed:** `poll` returns `browser_disconnected` 10 s after the last review tab closes, or 5 min after a dropped connection (for example, a locked phone). The review stays open, so later notes reach the next `poll`.
-- `feedback <file>` returns notes no agent has answered, from any day. Reading them acknowledges them; `reply` marks them answered.
-- **Render failures reach the agent without a click:** an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px, opens each tab in turn, and prints render errors and the statements that make the page scroll sideways, as text, with no screenshot. Agents run it only when the user asks for a check.
-
-## Components and packs
-
-`spec` covers the common components (~5.8k tokens). Rare ones (area and scatter charts, sliders, switches, editable tables, …) are in the library but not in `spec`. Find them with `components`:
-
-```sh
-austere-axi components                  # every component, by group
-austere-axi components search scatter   # search by name, group, description; also packs on npm
-austere-axi components show AreaChart   # signature, notes, example
-austere-axi components show Milestones --pack austere-pack-orbit   # one pack's, when several share the name
-```
-
-**Packs** add components. A pack is an npm package with `dist/pack.js` (the components, a few KB) and `dist/catalog.json` (signatures, examples, schema).
-
-```sh
-austere-axi components add austere-pack-gantt --trust   # npm name, folder, or .tgz
-austere-axi check --fix plan.html                       # adds the pack tag to the page
-```
-
-`components search` and `components show` also cover packs on npm that are not installed, meaning any package with the keyword `austere-axi-pack`. Search lists up to 8 core and installed components under `results`, then up to 3 from packs on npm under `npm`, so a pack on npm never pushes a core component out. A result names its pack, says `not installed`, and says whether the pack is first-party, `trusted` (on your trust list) or third-party; `show` cuts such a component's description, example and notes short. `show <Name>` returns the first component by that name, core and installed packs first; `--pack <pack>` looks only in that pack, and search names it for an npm result whose name another result or a local component shares. The CLI reads the pack's catalog from its tarball, checked against the registry's integrity hash, and runs none of its code. It caches the pack list for an hour, under `~/.austere-axi/npm-packs/`. It caches each pack version for good once it is read, fails the install checks, or the registry answers 404 or 410 for it; any other failure is tried again on the next search. For a third-party pack, the agent is told to ask you to review it and run `components add <pack> --trust`. With the registry unreachable, search shows local results, says so, and tries the registry again after 5 minutes. A pack the registry fails to serve is left out, and search says how many were.
-
-A page names its packs in the head, so it renders anywhere:
-
-```html
-<meta name="austere-packs" content="austere-pack-gantt@1.2.0 sha384-…">
-```
-
-- Under review, the server serves an installed pack only while it matches its hash in `~/.austere-axi/packs.json`. Opened directly, the page loads packs from jsDelivr with Subresource Integrity. `export` inlines them.
-- `export` inlines the runtime and packs gzipped (base64), and a short loader unpacks them with `DecompressionStream` (Chrome 80, Firefox 113, Safari 16.4). Review and patch the source page; the exported copy is for sharing. `check` flags an exported copy, and review serves it as it is, with no second runtime.
-- A pack component with no pack tag is a `missing-pack` error. `check --fix` repairs it.
-- **Bundled packs** need no tag and load only when used:
-  - `shadcn`: `Progress`, `Avatar`, `AvatarGroup`, `Tooltip`, `HoverCard`, `Breadcrumb` (`BreadcrumbItem`), `Kbd`, `Skeleton`, `Calendar` and `Timeline` (`TimelineItem`). Read-only.
-  ```
-  rollout = Progress(64, "Rows migrated")
-  freeze = Calendar("2026-11", ["2026-11-04 Code freeze"])
-  ```
-
-**Trust.** Pack code runs inside your review pages, where notes and button presses also come from. Packs under `@austere-axi/` on npm install directly. Other npm packs and any `.tgz` need `--trust`, so read them first. A local folder counts as your own. A page with third-party packs shows a warning, and `poll` tells the agent.
-
-Your trust list, `~/.austere-axi/trusted.json`, names npm packs your agent may install without `--trust`:
-
-```sh
-austere-axi trust add austere-pack-gantt@1.2.0   # pins that version and the hash of its pack.js
-austere-axi trust add @acme                      # every pack in a scope on the current registry, e.g. your company's
-austere-axi trust list
-austere-axi trust remove @acme
-```
-
-- A pin trusts one exact version with the same `pack.js`. A later publish, or the same version with other code, still needs `--trust`. `components add <pack>` with no version installs the pinned one.
-- A scope is bound to the registry it was added from: its private registry when the scope is mapped to one (see Private registries), else the default (`AUSTERE_AXI_NPM_REGISTRY`, else `npm_config_registry`, else npmjs). Pointed at another registry, packs in that scope are third-party again, since anyone may own the same scope name there.
-- Search marks packs on the list `trusted` and tells the agent it may add them.
-- `trust add` asks you to confirm at a terminal and refuses when stdin is not one, which is how agents run commands. That stops an agent adding a search hit to the list by accident. It does not stop an agent set on editing the file.
-- Only this file in your home folder counts. A project cannot ship its own list.
-- If the file is unreadable, search counts every npm pack third-party and says so, and `trust` refuses until you fix or delete it. `components add` refuses only the installs the list would decide: a third-party npm pack without `--trust`. First-party packs, local folders and `--trust` installs are unaffected.
-
-**Private registries.** Packs your team publishes to Verdaccio, Artifactory or GitHub Packages are found and installed once you map their npm scope to that registry, in `~/.austere-axi/registries.json`:
-
-```sh
-austere-axi registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN
-austere-axi registry list
-austere-axi registry remove @acme
-```
-
-- `components search` and `show` query the default registry and each mapped one, with the same `austere-axi-pack` keyword search. A hit from a mapped registry names its host, e.g. `npm @acme/pack-flows@0.3.0 (npm.acme.dev), not installed, third-party`. If one registry does not answer, the others still do and the result says which one was unavailable.
-- `components add @acme/<pack>` installs from @acme's registry. A mapped registry counts only for its own scope: packs it lists under other names are ignored, and the default registry's packs in that scope are left out.
-- `--token-env` names an environment variable that holds a bearer token. The file stores the name, never the token. The token goes only to that registry's own origin, never to the default registry or to a tarball on another host.
-- The URL must be https, or http on localhost. `@austere-axi` cannot be mapped.
-- `registry add` runs only at a terminal, like `trust add`: a mapping decides which host receives the token, so an agent without a terminal is told to ask you. `registry remove` works anywhere.
-- Mapping a scope grants no trust: its packs stay third-party until you trust the scope (`trust add @acme`, which records the mapped registry) or pin a pack.
-- Only this file in your home folder counts. If it is unreadable, search covers the default registry only and says so, while `components add`, `trust add` and `registry` refuse until you fix it.
-
-**Write a pack:** [Writing a pack](docs/writing-a-pack.md) goes from scaffold to `npm publish`, with [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as the example. Short version:
-
-```sh
-austere-axi components new austere-pack-milestones
-cd austere-pack-milestones && npm install && npm run build
-austere-axi components add .
-```
-
-Each component uses `austereComponent` from `austere-axi/pack`: a PascalCase name, zod props in positional order (append-only after you publish), a one-line description and an example. The build loads the pack in Node, so build only code you trust.
-
-## Hub
-
-The server starts when needed and stops after 30 idle minutes. Every review is kept in `~/.austere-axi/hub.db` (SQLite) either way. `hub on` adds a home page over it and indexes every page you `check` or `patch`:
-
-```sh
-austere-axi hub on      # http://127.0.0.1:4388/: pages by project and day, with search
-austere-axi hub list    # the same, for an agent: [words] [--project dir]
-austere-axi hub notes   # every note, same for an agent: [words] [--project dir] [--unanswered]
-austere-axi hub off     # back to the plain session list; the database stays
-```
-
-The home page shows which reviews are live and how much feedback the agent answered. `/notes` lists every note, newest first, with search, status and project filters.
-
-- Session files from before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`.
-- One server runs per state dir; a second one refuses to start. `server.lock` holds the running server's pid and port. If that server no longer answers on the port, the lock is stale and is taken over.
-
-### Always on, behind a reverse proxy
-
-Run the server under a supervisor with `--persist` so it never idles out, and point the proxy at it:
-
-```ini
-# ~/.config/systemd/user/austere-axi.service
-[Unit]
-Description=austere-axi review server
-
-[Service]
-ExecStart=/usr/bin/env npx -y austere-axi server --persist
-Environment=AUSTERE_AXI_LINK_URL=https://austere.example.com
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-```
-
-Then `systemctl --user enable --now austere-axi`. CLI commands on the same machine use the running server. A newer CLI that replaces an older server also starts it with `--persist`. `AUSTERE_AXI_PERSIST=1` is the same as `--persist`.
-
-Read the [trust model](#team-review) first: behind a proxy on the same machine, every request looks local.
-
-## Team review
-
-Teammates on your tailnet can review a page and leave notes under their own name. The server still runs on your machine. No accounts, no hosted service.
-
-```sh
-austere-axi share plan.html --as "Ana"           # prints a link; notes wait for you
-austere-axi share plan.html --as "Bo" --auto     # Bo's notes go straight to the agent
-austere-axi share list [--links]                 # who has a link
-austere-axi share revoke Ana                     # name or id; takes effect at once
-```
-
-Send the link to the teammate. It needs Tailscale (or `AUSTERE_AXI_HOST`); without one, `share` stops with an error.
-
-- **Hold (default):** a teammate's note waits in your side panel. **Send** one note, **Send all**, or **Discard**. The agent does not see held notes (`poll` and `feedback` skip them) until you send them. Up to 200 held notes per teammate; more are refused until you send or discard some.
-- **Auto:** the note goes to the agent without your approval.
-- **Author:** `poll` and `feedback` show `from: <name>` on a teammate's note. Your own notes have no `from`. The hub Notes view shows the author and can filter on it.
-- **Reviewers can** read the page and the conversation, and add notes. They cannot end the review, export, or send held notes.
-
-**Trust model.** Anyone with the link who can reach your machine on the tailnet can post notes under that name until you revoke it. Share only with people you trust, and revoke when the review is done.
-
-- The link holds a random 192-bit token. Opening it shows a "Continue as <name>" button. Pressing it (a same-origin POST) trades the token for a cookie and removes it from the address bar, so a link opened from another site cannot turn your browser into a reviewer.
-- A request without a valid invite or the owner key is refused, on loopback too. The hub and its Notes view are yours only. A reverse proxy on the same machine gets no owner rights from looking local.
-- Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To revoke all old phone links and owner cookies, delete that file and restart the server.
-
-## Hosted pages
-
-`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. Nothing is sent until you run it; after that, the local server keeps your published pages in sync (below).
-
-```sh
-austere-axi publish plan.html --invite Ana --invite Ben   # prints https://austere.kasat.xyz/p/<id>#i=<token> for each
-austere-axi publish plan.html                    # again: same page, new version; Ana's and Ben's links keep working
-austere-axi publish plan.html --invite Cy --expires 7d   # one more reviewer, for a week
-austere-axi publish invites plan.html            # who is invited (live, expired, revoked), with their links
-austere-axi publish revoke plan.html Ben         # Ben's link stops working; his open page is disconnected
-austere-axi publish plan.html --unlisted         # opt-in open link: anyone with the plain URL may review
-austere-axi publish plan.html --new              # a fresh page
-austere-axi publish list                         # your pages, expiry, note counts
-austere-axi publish rm plan.html                 # or the page id; every link stops working at once
-```
-
-- **What is uploaded:** the file with its runtime tag pointed at the service's copy of this CLI version, the installed packs it declares, and the images beside it, inlined by the same rules as `export`. A declared pack that is not installed at that version, or an image that cannot be inlined, is an error. Each upload is limited to 1 MB after gzip.
-- **Who can see it:** pages are invite-only. Each `--invite <name>` gets its own link; the token is in the URL fragment (`#i=…`), which browsers never send to the server, and the reviewer's notes carry that name. Send each person only their link. `--unlisted` opts a page into an open link where reviewers name themselves.
-- **Notes:** reviewers' notes reach `poll` and `feedback` like any other, from the reviewer's name and with `remote: true`. They are held for you by default: press Send (or Discard) in the review page. With `--auto` on the publish they go straight to the agent. The local server picks them up while a `poll` listens, when it starts, and when you run `feedback`; offline, it keeps retrying (up to every 60 s) and local review goes on.
-- **Replies:** `reply` (and `poll --agent-reply`) on a published file also posts the reply to the hosted page. If the service cannot be reached, `reply` warns and the reply is sent when it can.
-- **The ⋯ menu on a hosted page:** "Download standalone HTML" saves the published page with its runtime and packs inlined, the same file `export` writes. On an `--unlisted` page, "Copy page link" copies the open link for every viewer, invited or not. On an invite-only page each link is one reviewer's alone, so the menu says how the owner invites someone instead.
-- **Presence:** everyone on the page sees who is there: your own chip first, ringed, with the name you post under, then a chip per other viewer (viewing, away or writing) and the part each one last clicked in Annotate mode, outlined with their name. You are on the page too while your local review page is open: hosted viewers show as chips there, and your clicks show as an outline for them. Nothing about it is stored. `--no-presence` on a publish turns it off for that page.
-- **Expiry:** 30 days after the last publish.
-- **Owner token:** created on the first `publish`, stored in `~/.austere-axi/cloud.json` (mode 0600). It only controls your pages. Copying the file to another machine makes that machine a peer: it gets the same notes, and a note you send on one machine arrives sent on the other. `cloud.json` maps pages by absolute path, so the file must sit at the same path on both machines.
-
-The protocol is in [docs/hosted-share-links.md](docs/hosted-share-links.md).
-
-## GitHub Action
-
-Posts an austere review page on every pull request: runs `austere-axi check` on the pages you commit, exports each with `austere-axi export`, uploads them as a workflow artifact, and posts or updates **one** PR comment with a summary and a download link.
-
-```yaml
-# .github/workflows/austere.yml
-name: austere review
-on: pull_request
-
-permissions:
-  contents: read
-  pull-requests: write   # to post the comment
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: MandalorianBatman/austere-axi/action@v0.7.0
-        with:
-          pages: reviews/*.html
-```
-
-| Input | Default | |
-|---|---|---|
-| `pages` | required | paths or globs, one per line, relative to the workspace |
-| `version` | `latest` | austere-axi version from npm; pin it for reproducible runs |
-| `artifact-name` | `austere-review` | workflow artifact that holds the exported pages |
-| `retention-days` | repository default | artifact retention |
-| `comment` | `true` | `false` leaves only the artifact and the job summary |
-| `comment-tag` | `default` | names the sticky comment; use one per use of the action in the same PR |
-| `github-token` | `github.token` | needs `pull-requests: write` to comment |
-
-Outputs: `ok` (`true` when every page passed) and `artifact-url`.
-
-- **A failing check fails the job.** The log and the job summary show each error with its statement and line. Pages that passed are still exported.
-- **Fork PRs** get a read-only token, so the comment is skipped with a warning. The job summary and the artifact still carry the report.
-- **Sticky comment:** the action updates only a marked comment posted by its own token's account (a bot account for `github.token`). If someone else posts a comment with the same marker, the action leaves it alone and posts its own.
-- **Triggers:** use `pull_request`. Do not use `pull_request_target` to run pages from a fork.
-- **Artifact:** GitHub zips it and needs a login to download. Unzip and open the HTML in a browser; it works offline. No Pages preview.
-- The action lives in this repo under `action/`, so one ref pins both the action and the CLI contract it calls. `version` still picks the CLI.
-
-## Environment
-
-| Variable | Default | |
-|---|---|---|
-| `AUSTERE_AXI_PORT` | `4388` | server port |
-| `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | sessions, owner key, server log (mode 0700 on macOS and Linux) |
-| `AUSTERE_AXI_NO_OPEN` | | `1` = never open a browser |
-| `AUSTERE_AXI_HOST` | | extra bind address (never `0.0.0.0`) |
-| `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |
-| `AUSTERE_AXI_LINK_HOST` | | host in the printed remote link (`http://<host>:<port>`) |
-| `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS` |
-| `AUSTERE_AXI_ALLOWED_HOSTS` | | extra `Host` headers to accept (reverse proxy) |
-| `AUSTERE_AXI_DISCONNECT_GRACE_MS` | `300000` | how long a dropped connection can stay away before `poll` returns; `0` disables |
-| `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
-| `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
-| `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them, except scopes mapped with `registry add` |
-| `AUSTERE_AXI_CLOUD_URL` | `https://austere.kasat.xyz` | the service `publish` talks to (self-hosting, tests) |
-| `AUSTERE_AXI_SYNC_RETRY_MS` | `1000` | first wait before the local server reconnects to a hosted page; it doubles up to 60 s |
-| `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
-
-## Security
-
-The server binds to loopback, plus the Tailscale IP when Tailscale is up. Never to all interfaces.
-
-**Loopback is not the owner.** Other OS users on the machine can reach loopback too. The owner key (`owner.key`) is what proves ownership.
-
-- **API:** `/api/*` answers only loopback callers that send the owner key, and refuses browser requests. `/api/health` needs no key. It proves the server holds the key with an HMAC of its port and the CLI's nonce, so the CLI never talks to, or hands the key to, another program on its port.
-- **Browser sign-in:** when the CLI opens your browser, it gets a single-use login code from the server and opens the page with it. The server swaps the code for the owner cookie and removes it from the address bar. The key never appears on a command line or in output. A code works once, for 60 seconds. Another local user who reads it from the process list in that window can use it first; your browser then shows "used already", and `austere-axi login` gives you a new one.
-- **Other browsers:** a printed `url` works in a browser that already has the cookie. For any other browser (SSH with a forwarded port, `--no-open`, a second browser), run `austere-axi login [file]` and open the link it prints.
-- **Owner cookie** is an HMAC of the key, not the key. Browsers share `127.0.0.1` cookies across ports, so a program on another local port that your browser visits can read it. With it, that program can open your pages and the hub as you in a browser, but cannot call `/api/*`, which needs the key.
-
-**Files.** On macOS and Linux the state dir is set to mode 0700 on every run. New files in it (`owner.key`, `server.log`, and `hub.db`, which holds every note) are mode 0600. Files an older version created keep their old mode, behind the 0700 dir. On Windows, file modes do not apply; only your user profile's permissions protect the state dir.
-
-**Requests.**
-
-- `Host` headers must be on an allowlist (DNS-rebinding defense).
-- Browser routes that change state refuse a foreign `Origin`.
-- Invite tokens are random, compared in constant time, and kept out of the log. A reviewer link can only add notes to its own page. See [Team review](#team-review).
-- The server serves files only from the page's own directory, with no dotfiles.
-
-**Page sandbox.** The page runs in a sandboxed iframe with no same-origin access; packs run there too. Page files are also served with `Content-Security-Policy: sandbox`, so a page opened in a popup or its own tab stays sandboxed. In review, the review page opens new-window links only if they are external `http(s):` or `mailto:` links. A popup the frame opens any other way stays sandboxed.
-
-**Packs.** Third-party packs need `--trust` unless your trust list names them. Installed packs must match their lockfile hash; CDN loads use Subresource Integrity.
-
-**Telemetry.** OpenUI's Node side has PostHog telemetry; the CLI sets `OPENUI_TELEMETRY_DISABLED=1`. The browser runtime sends none.
-
-## Not in v1
-
-- Image attachments in feedback.
-- Live data: `Query` and `Mutation` are off, so pages are static.
-- Themes: one dark theme only.
-
-
-## Development
-
-```sh
-npm install
-npm run build     # dist/: runtime, packs, pack kit, spec, catalog, review UI, cli.mjs
-npm test
-npm run typecheck # tsc over src/cli, src/shared and the pack types
-node dist/cli.mjs examples/session-migration.html
-```
-
-Repo layout, website, playground, benchmark, CI and release: [CONTRIBUTING.md](CONTRIBUTING.md).
+| Guide | What is in it |
+|---|---|
+| [Install and quick start](docs/install.md) | Setup skill, Claude Code plugin, Claude Desktop, Cursor, Codex |
+| [How it works](docs/how-it-works.md) | What the agent writes, the review loop, how it compares with lavish-axi |
+| [CLI reference](docs/cli.md) | Every command, the rules of a review session, settings |
+| [Components and packs](docs/components-and-packs.md) | What can go on a page, and how to add more |
+| [Writing a pack](docs/writing-a-pack.md) | Build and publish your own components |
+| [Team review](docs/team-review.md) | Invite teammates over your own private network |
+| [Hosted pages](docs/hosted-pages.md) | Publish a page and invite reviewers by link |
+| [Hub](docs/hub.md) | A home page with every review and note; running it all the time |
+| [GitHub Action](docs/github-action.md) | Post a review page on every pull request |
+| [Security](docs/security.md) | Who can reach your pages, and how they are protected |
+| [Benchmark](docs/benchmark.md) | The speed and cost comparison, with its caveats |
 
 ## Contributing
 
-Bug reports, examples, docs fixes and packs are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) has setup and the rules. Issues labelled [`good first issue`](https://github.com/MandalorianBatman/austere-axi/labels/good%20first%20issue) are small and have a clear finish line. Security problems: [report privately](https://github.com/MandalorianBatman/austere-axi/security/advisories/new), not in an issue.
+Bug reports, examples, docs fixes and packs are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup and the rules. Issues labelled [`good first issue`](https://github.com/MandalorianBatman/austere-axi/labels/good%20first%20issue) are small and have a clear finish line. Security problems: [report them privately](https://github.com/MandalorianBatman/austere-axi/security/advisories/new), not in an issue.
 
 ## License
 
