@@ -59,7 +59,7 @@ Choices made while writing this note, where the issues are silent or ambiguous.
 
 | # | Assumption |
 |---|---|
-| A1 | The Copilot CLI adapter flags (RLM-344) come from `copilot --help` and its docs, not from observed runs: `copilot` is not installed on the planning machine. They are corrected from RLM-342 before RLM-344 merges. |
+| A1 | Before RLM-342, the Copilot CLI adapter flags (RLM-344) came from `copilot --help` and its docs, not from observed runs: `copilot` is not installed on the planning machine. The spike then ran Copilot CLI 1.0.112 through `npx -y @github/copilot@latest`. The flags in [Harness facts](#harness-facts-rlm-342) are observed. |
 | A2 | The wiki package `austere-wiki` lives in its own GitHub repo, `MandalorianBatman/austere-wiki`. Nothing of it is in the austere-axi npm package. |
 | A3 | PRs are per stage: one PR per top-level sub-issue of RLM-329 (RLM-332, RLM-337, RLM-341, RLM-348, RLM-355, RLM-359), bundling its child issues. The PR lists the child issues it closes. This replaces "one PR per sub-issue" in the epic rules. |
 | A4 | `hub status` goes with `hub on|off` (RLM-335 says `on|off|status`; RLM-331 says `on|off`). `hub list|notes|open` stay. |
@@ -71,6 +71,10 @@ Choices made while writing this note, where the issues are silent or ambiguous.
 | A10 | `hub.json` (`hubConfigFile`) is ignored after the upgrade and left on disk. Nothing reads `enabled`. |
 | A11 | The release that removes the session verbs is 0.11.0. The wire format of hosted pages does not change (`src/shared/sync.ts`, no `SYNC_VERSION` bump). |
 | A12 | The chip label of a worktree root reads `HEAD` as a file. Packed refs and reftables are not read; when `HEAD` names a ref, the label is the ref name with `refs/heads/` stripped and the ref is not resolved. |
+| A13 | No permission-bypass flag is added by default. L7 means what the harness configuration already allows. omp print mode denies bash unless the configuration or a flag allows it (`--approval-mode always-ask` and `write` deny it, with exit 0). Copilot denies writing commands without `--allow-all`, with exit 0. The owner grants it once, at a terminal: `adapter set omp --extra-args "--approval-mode yolo"`, `adapter set copilot --extra-args "--allow-all"`. `attach status` and the attach popover warn when the adapter has no such grant and the harness is known to deny writes. `docs/attach.md` (RLM-346) says so. This differs from the spike's advice to always pass `--approval-mode yolo` and `--allow-all`. |
+| A14 | omp `--resume` on a session that is open elsewhere does not fail: it continues in a new session whose header has `continuationOf`. The omp adapter always reads the session id from the first `--mode json` line. When it differs from the requested id, the registry records the new session (`agent_sessions.parent_id` = the old one) and links it to the page with role `editor`. Copilot answers `SessionInUseError` with exit 1: the run fails with `runs.reason = session_in_use`. It does not fall back to `new` (the spike's advice). The dispatcher ladder already waits while a session is alive, so this is only the race case. |
+| A15 | Copilot always gets `--model` (default `auto`), because the session saves the last model and a bad one breaks later resumes. Copilot has no wall-clock flag. omp `--max-time` works, but one limit for both harnesses is simpler: the dispatcher's own 15 min timeout (kill the process tree) is the limit, and `--max-time` is not passed. `--max-cost` (omp) and `--max-ai-credits` (Copilot) are passed when set in `attach.json`. |
+| A16 | omp runs get `--wait-async`, so a background job the agent starts finishes inside the run. Copilot has no equivalent: its detached jobs keep running after the run exits and wake nothing. |
 
 ## Data model
 
@@ -109,6 +113,7 @@ pages         (id TEXT PRIMARY KEY,                 -- sha1(project_id + "\0" + 
 ```sql
 agent_sessions  (id TEXT PRIMARY KEY, harness TEXT NOT NULL, session_id TEXT NOT NULL,
                  session_file TEXT, cwd TEXT, model TEXT,
+                 parent_id TEXT,                    -- the agent_sessions.id it continues or forks (A14)
                  pid INTEGER, pid_start TEXT,       -- for liveness: alive | exited | unknown
                  first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
                  UNIQUE (harness, session_id))
@@ -131,6 +136,8 @@ runs            (id TEXT PRIMARY KEY,
                  started_at INTEGER, ended_at INTEGER, exit_code INTEGER,
                  status TEXT NOT NULL,              -- queued | waiting_for_session | running
                                                     -- | done | failed | stopped | interrupted
+                 reason TEXT,                       -- why failed or stopped: exit | timeout | no_reply
+                                                    -- | session_in_use (A14) | cost_cap | stopped
                  log_file TEXT)                     -- <state>/runs/<id>.log, 0600, ≤ 1 MB, 30 days
 trigger_state   (trigger_id TEXT PRIMARY KEY,       -- A8; RLM-360
                  last_cursor INTEGER NOT NULL DEFAULT 0,
@@ -208,9 +215,9 @@ wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
 | New | `project list|add|merge|rename|forget-root` | RLM-333 | new `src/cli/projects.ts` |
 | New | `archive <file>`, `unarchive <file>` | RLM-335 | `main.ts`, `Hub` |
 | New | `sessions list [<file>|--project]` | RLM-343 | `main.ts` |
-| New | `attach status` (anywhere), `attach on|off` (TTY only) | RLM-346 | `main.ts` |
+| New | `attach status` (anywhere; warns when the adapter has no write grant, A13), `attach on|off` (TTY only) | RLM-346 | `main.ts` |
 | New | `run list`, `run log <id>`, `run stop <file>` | RLM-345 | new `src/cli/dispatch.ts` |
-| New | `adapter set <harness> --extra-args "…"` (TTY only) | RLM-344 | new `src/cli/adapters/` |
+| New | `adapter set <harness> --extra-args "…"` (TTY only; the owner's permission grant, A13) | RLM-344 | new `src/cli/adapters/` |
 | New | `history <file> [--statement n] [--since rev]` | RLM-349 | `recordRevision` in `hub.ts` |
 | New | `show <file> [statement…] [--rev n] [--text|--source] [--deps]` | RLM-349, RLM-351 | `main.ts` |
 | New | `restore <file> --rev n [statement…]` | RLM-349 | through the `cmdPatch` path |
@@ -236,7 +243,7 @@ The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, 
 | RLM-339 | the `poll` route in `server.ts` (listener registry keyed by page, project fallback); `SessionStore.nextSeq` as the project cursor; `cmdPoll`, `cmdFeedback`; MCP `poll` |
 | RLM-340 | `main.ts` (`server install`); the idle exit (`idleMs`) in `server.ts`; `docs/hub.md` "Always on" |
 | RLM-343 | `cmdOpen`, `cmdPatch`, `cmdPoll`, `cmdFeedback`, `reply`; new caller detection module; `export.ts` and the `publish` payload must not carry session ids |
-| RLM-344 | new `src/cli/adapters/types.ts`, `omp.ts`, `copilot.ts`, `command.ts` |
+| RLM-344 | new `src/cli/adapters/types.ts`, `omp.ts`, `copilot.ts`, `command.ts`; argv as in [Harness facts](#harness-facts-rlm-342) |
 | RLM-345 | new `src/cli/dispatch.ts`; the `send` and `release` paths of `server.ts`; route `POST /s/:id/run/stop` |
 | RLM-346 | owner header in `src/chrome/chrome.ts`; new owner routes in `server.ts`; new `docs/attach.md` |
 | RLM-349 | `recordRevision` in `hub.ts`; `cmdPatch`; `onFileChange` in `server.ts` (`Session.revision` seeded from the stored `rev`); `cmdOpen` and `check` |
@@ -278,6 +285,7 @@ The invariants in `AGENTS.md` stay unchanged:
 New rules in this design:
 
 - **Configuration that runs a command is set at a terminal only.** `attach on|off`, `adapter set`, `trigger add|remove` and `server install` refuse without a TTY, as `trust add` does. `adapters.json`, `attach.json` and `triggers.json` are read only from the state dir, never from a project or a page. Attach can also be turned on from the owner's review page (Q4); never by an agent, a reviewer or a hosted page.
+- **No permission bypass by default** (A13). An adapter adds no `--approval-mode yolo`, `--allow-all` or similar flag on its own. The owner grants it at a terminal with `adapter set`, and `attach status` warns while a harness that denies writes has no grant.
 - **Session ids never leave the machine.** They are absent from `publish`, `export`, hosted sync and printed links.
 - **A reviewer's note never starts a run until the owner releases it.** A run starts only from a note that has a `seq` because the owner sent it or released it (RLM-345).
 - **Attach and `publish --auto` are mutually exclusive** (Q3). Each refuses while the other is on.
@@ -287,23 +295,70 @@ New rules in this design:
 
 ## Harness facts (RLM-342)
 
-**Placeholder.** The RLM-342 spike has not reported yet. The table below holds the claims from the omp and Copilot CLI docs that the adapters (RLM-343, RLM-344, RLM-345) are written against. The integrator replaces this section with the observed table: each row with the command run, the tool version and the output.
+Observed on Sid's machine on 2026-11-16, in scratch folders under `/dev/shm/spike342`. `S` is the scratch `--session-dir`; `C` is `npx -y @github/copilot@latest`. omp ran with `--model haiku` (claude-haiku-4-5). Copilot ran with `--model auto`, already signed in. The scratch sessions were deleted afterwards.
 
-| Harness | Question | Claimed (docs) | Observed |
+### omp 18.13.3
+
+| Check | Command | Version | Observed | Conclusion |
+|---|---|---|---|---|
+| Session id in the bash tool (TUI, subagent) | `env \| grep ^PI_` | 18.13.3 | `PI_SESSION_ID=01a1e322-03e0-…`, `PI_SESSION_FILE=…/Spike342.jsonl`, `OMPCODE=1` | Both variables exist. In a subagent the file name is the agent name, not the id. |
+| Session id in the bash tool (print mode) | `omp -p --model haiku --session-dir $S --approval-mode yolo --mode json 'Use bash to run: echo "$PI_SESSION_ID\|$PI_SESSION_FILE"…'` | 18.13.3 | `01a1e325-0a25-…\|$S/<ts>_01a1e325-0a25-….jsonl`, equal to the JSON header id | Print-mode tool calls see their own session id and file. |
+| New: where the id appears | `omp -p --model haiku --session-dir $S --mode json "say ok"` | 18.13.3 | line 1 `{"type":"session","version":3,"id":"01a1e322-390d-…",…}`; exit 0; file `$S/<ts>_<id>.jsonl` | The id is on line 1 of `--mode json` stdout. Text mode prints no id. |
+| Resume a closed session | `omp -p --model haiku --session-dir $S --resume 01a1e322-390d-… "say ok2"` | 18.13.3 | `ok2`; exit 0; the same file grew from 9 to 13 lines; no new file. An id prefix works too. | Appends to the same file. |
+| Resume an unknown id | `omp -p … --resume nonexist "x"` | 18.13.3 | `Error: Session "nonexist" not found.`; exit 1 | Clean error. |
+| Resume while another process has it open | in the background `omp -p --resume $ID --approval-mode yolo "…sleep 20…"`; after 6 s `omp -p --model haiku --session-dir $S --resume $ID "reply exactly: concurrent-ok"` | 18.13.3 | `Warning: Session ….jsonl is open for writing in another omp process, so this session now saves to …_01a1e322-ce00-….jsonl …`, then `concurrent-ok`; exit 0. The first process finished normally. New header: `"parentSession":"…390d…","continuationOf":"…390d…"`. A false line about an unfinished tool call came first. | No error and no interleaving: the second run silently continues in a new session. Read the id from the header (A14). |
+| Fork a closed session | `omp -p --fork $ID --session-dir $S --model haiku "say ok"` | 18.13.3 | `ok`; exit 0; new file with `"parentSession":"…390d…"`; original unchanged | `--fork` works, though it is not in `omp --help`. |
+| Fork while the original is open | in the background a resume with `sleep 15`; after 6 s `omp -p --model haiku --session-dir $S --fork $ID --mode json "reply fork-ok"` | 18.13.3 | line 1 `{"type":"session","id":"01a1e324-d797-…","parentSession":"01a1e322-390d-…",…}`; exit 0 | Fine. New id = line 1 `id`; `parentSession` = the source. |
+| Prompt on stdin | `echo "reply exactly: stdin-ok" \| omp -p --model haiku --no-session` | 18.13.3 | `stdin-ok` | Works with `-p` and no positional prompt. |
+| What is denied in print mode | `omp -p --model haiku --no-session --approval-mode always-ask "Use the bash tool to run: echo hi…"` (also `write`) | 18.13.3 | `The bash tool requires approval… tools.approvalMode is not set and bash isn't in the allowed tools list`; exit 0 in both modes | `always-ask` and `write` deny every bash call, `austere-axi patch` too. The run still exits 0 (A13). |
+| Default approval | `omp -p --model haiku --no-session "Use the bash tool to run: echo hi…"`; `omp config get tools.approvalMode` | 18.13.3 | `hi`; config = `yolo` | Bash ran only because Sid's configuration is `yolo`. |
+| `--max-time` | `omp -p --model haiku --no-session --approval-mode yolo --max-time 5 "Use bash to run: sleep 30…"` | 18.13.3 | `Deadline exceeded`; exit 1 | Works in print mode (not passed, A15). |
+| `--max-cost` | `omp -p --model haiku --no-session --approval-mode yolo --max-cost 0.000001 "Use bash to run: echo one. Then say done."` | 18.13.3 | `Cost cap reached: this session spent $0.0071 of its $0.0000 cap …`; exit 3 | Checked between requests; the first request always goes out. Exit 3 → `reason = cost_cap`. |
+| Background job, no `--wait-async` | `omp -p --model haiku --no-session --approval-mode yolo "Start a background bash job… sleep 8; echo BGDONE… reply 'woke: '…"` | 18.13.3 | `started`; exit 0 before the job finished | No wake; the process exits when the turn ends. |
+| Background job, `--wait-async` | the same with `--session-dir $S --wait-async --max-time 90` | 18.13.3 | `woke: BGDONE`; exit 0 | `--wait-async` waits for jobs and wakes the session with each result (A16). With no `--max-time` it has no limit. |
+| Wake a TUI with `austere-axi poll` | none | none | not run: it needs an interactive TUI and a note sent by hand | Not observed. The `--wait-async` row shows how a print session is woken. |
+
+### Copilot CLI 1.0.112
+
+| Check | Command | Version | Observed | Conclusion |
+|---|---|---|---|---|
+| Version | `$C --version` | 1.0.112 | `GitHub Copilot CLI 1.0.112.` | |
+| Session id in the environment | `$C help environment` | 1.0.112 | `COPILOT_AGENT_SESSION_ID: the current session's ID, in the agent's shell commands.`; also `COPILOT_SESSION_CWD`, `COPILOT_ALLOW_ALL`, `COPILOT_DISABLE_RESUME_AUTO_CD` | The id is exposed to shell commands. |
+| Session id inside a session | `$C -p 'Run the shell command: printenv COPILOT_AGENT_SESSION_ID' --resume=$N --model auto -s --allow-all` | 1.0.112 | `22222222-2222-4333-8444-555555555555` | Confirmed. The model refused prompts that dumped the environment or wrote the id to a file. |
+| New with a chosen id | `$C -p "say ok" --session-id 11111111-2222-4333-8444-555555555555 --no-ask-user` | 1.0.112 | `ok`; footer `Resume  copilot --resume=11111111-…`; exit 0; `~/.copilot/session-state/<uuid>/events.jsonl` created | A UUID we choose creates the session. |
+| The same `--session-id` again | `$C -p 'Run the shell command: echo hi' --session-id $ID --model auto -s` | 1.0.112 | `hi`; `events.jsonl` gained `session.resume` and a user message | The same id resumes; the transcript grows. |
+| `--resume=<id>` with `--model` | `$C -p "…" --resume=$ID --allow-all -s --model gpt-5-mini` | 1.0.112 | `Execution failed: Model "gpt-5-mini" is not available.`; exit 1. The next run without `--model` failed the same way. | The session saves the model, even a failed one. Always pass `--model` (A15). |
+| Fork flag | `$C --help` | 1.0.112 | no fork flag | No fork. |
+| `-p "/fork"` | `$C -p '/fork' --resume=$N --model auto` | 1.0.112 | `… I can't switch sessions from this non-interactive interface, so no fork was created.`; exit 0; no new session | `/fork` is plain text to the model in `-p` mode. |
+| New id without `--session-id` | `$C -p 'say ok' --model auto --output-format json` | 1.0.112 | line 1 `{"type":"session.start","data":{"sessionId":"d260d4ef-…","selectedModel":"auto",…,"alreadyInUse":false}}`; last line `{"type":"result","sessionId":"d260d4ef-…","exitCode":0,…}` | The id is `data.sessionId` on line 1, or `sessionId` on the `result` line. |
+| Resume while open elsewhere | in the background `$C -p 'Run the shell command: sleep 20; echo LONG' --resume=$N --allow-all -s`; after 12 s `$C -p 'reply exactly: concurrent-ok' --resume=$N --model auto --output-format json` | 1.0.112 | `Error: Session '2222…' was found but could not be loaded. SessionInUseError: Session … is in use by another Copilot process…`; exit 1, plain text, not JSON. The background run finished. | Refused. The run fails with `session_in_use` (A14). |
+| Write without `--allow-all` | `$C -p 'Run the shell command: touch made.txt' --session-id $N --model auto -s` | 1.0.112 | `both the touch command and a file-creation alternative were denied because approval wasn't available.`; exit 0; no file | Writing commands are denied, with exit 0 (A13). |
+| `austere-axi patch` without `--allow-all` | `$C -p 'Run the shell command: austere-axi patch --help' --resume=$N --model auto -s` | 1.0.112 | `execution was denied because approval wasn't available.`; exit 0 | Denied, even `--help`. Needs `--allow-all` or `--allow-tool='shell(austere-axi:*)'`. |
+| Read-only command without `--allow-all` | `$C -p 'Run the shell command: echo hi' --session-id $ID --model auto -s` | 1.0.112 | `hi` | Commands it judges read-only run. |
+| `--no-ask-user` | `$C --help` | 1.0.112 | `Disable the ask_user tool (the agent can still ask in its replies, but not through the question form)` | No effect on permissions. Pass it so `-p` never blocks. |
+| Limits | `$C --help` | 1.0.112 | `--max-ai-credits <credits>`, `--max-autopilot-continues <count>`; no time or cost flag | Pass `--max-ai-credits` when set; time is the dispatcher's timeout (A15). |
+| Prompt on stdin | `echo "reply exactly: stdin-ok" \| $C -s --model auto --no-ask-user` | 1.0.112 | `stdin-ok`; exit 0 | Piped stdin works as the prompt, without `-p`. |
+| Background job wakes the session | `$C -p "Start this shell command in the background…: sleep 10; echo BGDONE > bg.txt. … reply 'started'…" --model auto --allow-all --output-format json` | 1.0.112 | `started`; exit 0 after 12 s; `bg.txt` appeared later; no second assistant message | No wake in `-p` mode, and no `--wait-async` equivalent (A16). |
+| Delete saved sessions | `$C sessions --help` | 1.0.112 | only `import` | No delete command. |
+
+### Adapter argv (RLM-344)
+
+`<extra>` is the owner's `--extra-args` from `adapters.json` (A13), for example `--approval-mode yolo` or `--allow-all`. Nothing grants permissions by default. `[--max-cost c]` and `[--max-ai-credits n]` come from `attach.json` (A15). omp reads the 0600 prompt file on stdin.
+
+| Harness | Mode | argv | Session id of the run |
 |---|---|---|---|
-| omp | Session id inside a session | `PI_SESSION_ID`, `PI_SESSION_FILE` in the bash tool's environment | pending |
-| omp | Resume a closed session | `omp -p --resume <id> --model <m>` appends to the same file | pending |
-| omp | Resume while open in a TUI | unknown | pending |
-| omp | Fork | `omp -p --fork <id>`; new id from the `--mode json` header | pending |
-| omp | New | `omp -p`; the session id appears in the output | pending |
-| omp | Background job wakes the session | unknown (TUI and `-p --wait-async`) | pending |
-| omp | Limits in print mode | `--max-time`, `--max-cost`, `--approval-mode` | pending |
-| Copilot CLI | Session id inside a session | unknown (`copilot help environment`) | pending |
-| Copilot CLI | New with a chosen id | `copilot -p <prompt> --session-id <uuid>`; the same id resumes | pending |
-| Copilot CLI | Resume | `copilot -p <prompt> --resume=<id> [--model m]` | pending |
-| Copilot CLI | Fork | no documented flag | pending |
-| Copilot CLI | Permissions | without `--allow-all`, some shell calls are denied; `--no-ask-user` | pending |
-| Copilot CLI | Background job wakes the session | unknown | pending |
+| omp | same | `omp -p --mode json --wait-async --resume <id> --model <m> [--max-cost c] <extra>` | line 1 `id`. If it differs from `<id>`, a new session with `continuationOf` (A14). |
+| omp | fork | `omp -p --mode json --wait-async --fork <id> --model <m> [--max-cost c] <extra>` | line 1 `id`; `parentSession` = `<id>` |
+| omp | new | `omp -p --mode json --wait-async --model <m> [--max-cost c] <extra>` | line 1 `id` |
+| Copilot CLI | same | `copilot -p <prompt> --resume=<id> --model <m or auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>` | `<id>`. `SessionInUseError`, exit 1 → `session_in_use` (A14). |
+| Copilot CLI | fork | unavailable: no flag, and `-p "/fork"` does nothing. The popover disables it and says why. | |
+| Copilot CLI | new | `copilot -p <prompt> --session-id <uuid we mint> --model <m or auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>` | the minted UUID; line 1 `data.sessionId` confirms it |
+
+Copilot takes the prompt as the `-p` argument, so a Copilot run reads the prompt file into argv. Piped stdin also works, but only without `-p`.
+
+Caller detection (RLM-343): omp `PI_SESSION_ID` and `PI_SESSION_FILE`; Copilot CLI `COPILOT_AGENT_SESSION_ID` (no session file).
+
+Exit codes are not enough. A denied tool call still ends with exit 0, so "no reply posted" stays a failure condition (RLM-345, `reason = no_reply`).
 
 ## Wiki: free and paid
 
