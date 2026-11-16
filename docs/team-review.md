@@ -14,7 +14,7 @@ Send the link to the teammate. It needs Tailscale (or `AUSTERE_AXI_HOST`); witho
 - **Hold (default):** a teammate's note waits in your side panel. **Send** one note, **Send all**, or **Discard**. The agent does not see held notes (`poll` and `feedback` skip them) until you send them. Up to 200 held notes per teammate; more are refused until you send or discard some.
 - **Auto:** the note goes to the agent without your approval.
 - **Author:** `poll` and `feedback` show `from: <name>` on a teammate's note. Your own notes have no `from`. The hub Notes view shows the author and can filter on it.
-- **Reviewers can** read the page and the conversation, and add notes. They cannot end the review, export, or send held notes.
+- **Reviewers can** read the page and the conversation, and add notes. They cannot archive the page, export, or send held notes.
 
 **Trust model.** Anyone with the link who can reach your machine on the tailnet can post notes under that name until you revoke it. Share only with people you trust, and revoke when the review is done.
 

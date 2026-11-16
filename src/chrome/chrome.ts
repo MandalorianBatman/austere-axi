@@ -94,9 +94,7 @@ type ChromeMessage =
   | { type: "source"; program: string };
 
 interface SessionInfo {
-  status: string;
-  endedBy: string | null;
-  closed?: boolean;
+  archived?: boolean;
   unread?: number;
 }
 
@@ -275,9 +273,7 @@ const state: {
   queue: QueueItem[];
   transcript: Entry[];
   presence: string;
-  status: string;
-  endedBy: string | null;
-  closed: boolean;
+  archived: boolean;
   unread: number;
   more: boolean;
   program: string | null;
@@ -303,9 +299,7 @@ const state: {
   queue: LS.get<QueueItem[]>(`austere:queue:${SID}`, []),
   transcript: [],
   presence: "idle",
-  status: "open",
-  endedBy: null,
-  closed: false,
+  archived: false,
   unread: 0,
   more: false,
   program: null,
@@ -368,9 +362,8 @@ document.body.innerHTML = `
           ${HOSTED ? '<div class="menu-note" data-share-note hidden>Only the owner can share this page. To invite someone, they run<code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.</div>' : ""}
           <button type="button" data-cmd="reload">Reload artifact</button>
           ${HOSTED ? '<button type="button" data-cmd="export">Download standalone HTML</button>' : `<a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>`}
-          <button type="button" data-cmd="end" class="danger">End review</button>
-          <button type="button" data-cmd="close" class="danger">Close review</button>
-          <button type="button" data-cmd="reopen">Reopen review</button>
+          <button type="button" data-cmd="archive">Archive page</button>
+          <button type="button" data-cmd="unarchive">Unarchive page</button>
         </div>
       </div>
     </div>
@@ -408,7 +401,7 @@ document.body.innerHTML = `
 // RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
 // from all of them (RLM-322).
 if (!OWNER) {
-  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', '[data-cmd="end"]', '[data-cmd="close"]', '[data-cmd="reopen"]', ".send-end"];
+  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end"];
   if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
   for (const sel of ownerOnly) $(sel)?.remove();
 }
@@ -603,7 +596,7 @@ window.addEventListener("message", (e) => {
     case "hello":
       post({
         type: "init",
-        mode: state.closed ? "explore" : state.mode,
+        mode: state.archived ? "explore" : state.mode,
         state: SS.get(`austere:form:${SID}`),
         scrollY: state.scrollY,
       });
@@ -690,7 +683,7 @@ function saveQueue() {
 }
 
 function addToQueue(raw: unknown) {
-  if (state.closed || !raw || typeof raw !== "object" || typeof (raw as { kind?: unknown }).kind !== "string") return;
+  if (state.archived || !raw || typeof raw !== "object" || typeof (raw as { kind?: unknown }).kind !== "string") return;
   // Frame code is untrusted: the item is rendered here and saved to localStorage, so its text fields must be strings.
   const fields = raw as Record<string, unknown>;
   for (const k of ["target", "component", "note", "text", "selection", "excerpt", "message", "statement"]) if (k in fields) fields[k] = str(fields[k]);
@@ -708,7 +701,7 @@ function addToQueue(raw: unknown) {
 let renderReportTimer: ReturnType<typeof setTimeout> | undefined;
 function reportRenderErrors() {
   // Third-party pack code runs in the frame and could forge errors: the owner queues those by hand.
-  if (!OWNER || state.closed || state.thirdParty) return;
+  if (!OWNER || state.archived || state.thirdParty) return;
   clearTimeout(renderReportTimer);
   renderReportTimer = setTimeout(async () => {
     const errors = [...state.parserErrors, ...state.runtimeErrors].map((e) => ({ statement: str(e.statementId), message: str(e.message) }));
@@ -906,7 +899,7 @@ function renderLog(scrollToEnd = false) {
           { class: "issue" },
           h("div", { class: "issue-text" }, err.statementId ? h("code", { text: err.statementId }) : null, " ", err.message),
           // Once the owner's page has sent it to the agent (reportRenderErrors), there is nothing to queue.
-          state.closed || sent
+          state.archived || sent
             ? null
             : h("button", {
                 type: "button",
@@ -949,7 +942,7 @@ function renderLog(scrollToEnd = false) {
         ),
       );
     } else {
-      const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${whoLabel(entry)} · ${fmtTime(entry.at)}${entry.end ? " · ended review" : ""}` }));
+      const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${whoLabel(entry)} · ${fmtTime(entry.at)}${entry.end ? " · Send & End" : ""}` }));
       for (const it of entry.items || []) bubble.append(itemBody(it, { held: !!entry.held }));
       const r = receipt(entry);
       if (r) bubble.append(r);
@@ -993,11 +986,8 @@ function renderLog(scrollToEnd = false) {
     }
     log.append(q);
   }
-  if (state.closed) {
-    log.append(h("div", { class: "ended-note", text: OWNER ? "You closed this review." : "The owner closed this review." }));
-  } else if (state.status === "ended") {
-    const who = state.endedBy === "agent" ? "The agent ended this review." : OWNER ? "You ended this review." : "The owner ended this review.";
-    log.append(h("div", { class: "ended-note", text: `${who} Notes you send now reach the agent the next time it polls.` }));
+  if (state.archived) {
+    log.append(h("div", { class: "archived-note", text: OWNER ? "This page is archived. Unarchive it from the ⋯ menu to add notes." : "The owner archived this page." }));
   }
   const count = entries.length + state.queue.length;
   if (scrollToEnd || atBottom || count !== lastLogCount) log.scrollTop = log.scrollHeight;
@@ -1008,14 +998,14 @@ function renderLog(scrollToEnd = false) {
 // ── composer / sending ──
 
 function renderComposer() {
-  const closed = state.closed;
+  const archived = state.archived;
   const n = state.queue.length;
-  textarea.disabled = closed || !!lockout || state.sending;
+  textarea.disabled = archived || !!lockout || state.sending;
   // Hosted: nothing goes out until the service has said who this reviewer is.
-  $<HTMLButtonElement>(".send").disabled = closed || !!lockout || state.sending || (!!HOSTED && inviteName === undefined);
-  if ($(".send-end")) $<HTMLButtonElement>(".send-end").disabled = closed || state.sending;
+  $<HTMLButtonElement>(".send").disabled = archived || !!lockout || state.sending || (!!HOSTED && inviteName === undefined);
+  if ($(".send-end")) $<HTMLButtonElement>(".send-end").disabled = archived || state.sending || (!n && !textarea.value.trim());
   $(".send").textContent = state.sending ? "Sending…" : n ? `Send ${n}` : "Send";
-  textarea.placeholder = closed ? "Review closed" : n ? "Add a message (optional)…" : "Message the agent…";
+  textarea.placeholder = archived ? "Page archived" : n ? "Add a message (optional)…" : "Message the agent…";
 }
 
 function composerError(text: string) {
@@ -1025,16 +1015,15 @@ function composerError(text: string) {
 }
 
 async function sendAll(end = false) {
-  if (state.sending || state.closed) return;
+  if (state.sending || state.archived) return;
   const text = textarea.value.trim();
   const items: QueueItem[] = state.queue.map(({ qid, ...rest }) => rest);
   if (text) items.push({ kind: "message", text });
-  if (!items.length && !end) {
+  if (!items.length) {
     textarea.focus();
     return;
   }
   if (end && !OWNER) return;
-  if (end && !items.length && !confirm("End this review? The agent will stop listening; notes you send later still reach it.")) return;
   if (HOSTED) return sendHosted(items);
   state.sending = true;
   composerError("");
@@ -1148,6 +1137,7 @@ $(".composer").addEventListener("submit", (e) => {
   sendAll(false);
 });
 $(".send-end")?.addEventListener("click", () => sendAll(true));
+textarea.addEventListener("input", renderComposer);
 textarea.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
@@ -1167,7 +1157,7 @@ function setMode(mode: string | undefined) {
   html.classList.toggle("exploring", state.mode === "explore");
   if (wasExploring && state.mode === "annotate") log.scrollTop = log.scrollHeight;
   for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) b.classList.toggle("on", b.dataset.mode === state.mode);
-  post({ type: "mode", mode: state.closed ? "explore" : state.mode });
+  post({ type: "mode", mode: state.archived ? "explore" : state.mode });
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) b.addEventListener("click", () => setMode(b.dataset.mode));
 document.addEventListener("keydown", (e) => {
@@ -1181,13 +1171,12 @@ function renderPresence() {
   const el = $(".presence");
   let label: string;
   let cls: string;
-  if (state.closed) [label, cls] = ["Review closed", "ended"];
+  if (state.archived) [label, cls] = ["Page archived", "ended"];
   else if (lockout) [label, cls] = [lockout, "ended"];
   else if (!state.connected) [label, cls] = ["Reconnecting…", "off"];
   else if (HOSTED) [label, cls] = ["Shared page", "hosted"];
   else if (state.presence === "listening") [label, cls] = ["Agent listening", "listening"];
   else if (state.presence === "working") [label, cls] = ["Agent working", "working"];
-  else if (state.status === "ended") [label, cls] = ["Agent stopped", "idle"];
   else [label, cls] = ["Agent not listening", "idle"];
   if (cls === "idle" && state.unread) label += ` · ${state.unread} waiting`;
   el.className = `presence ${cls}`;
@@ -1200,11 +1189,10 @@ function renderPresence() {
         : cls === "hosted"
           ? "Notes go to the page owner. Replies show up here as they are posted."
           : "";
-  document.documentElement.classList.toggle("is-ended", state.closed);
+  document.documentElement.classList.toggle("is-archived", state.archived);
   if (OWNER) {
-    $('[data-cmd="end"]').hidden = state.status === "ended";
-    $('[data-cmd="close"]').hidden = state.closed;
-    $('[data-cmd="reopen"]').hidden = !state.closed && state.status !== "ended";
+    $('[data-cmd="archive"]').hidden = state.archived;
+    $('[data-cmd="unarchive"]').hidden = !state.archived;
   }
   renderDock();
 }
@@ -1337,16 +1325,11 @@ menuPop.addEventListener("click", async (e) => {
     await downloadStandalone();
     menuPop.hidden = true;
   }
-  if (cmd === "end") {
-    if (state.queue.length) return sendAll(true);
-    if (!confirm("End this review? The agent will stop listening.")) return;
-    await fetch(`${BASE}/end`, { method: "POST" }).catch(() => {});
+  if (cmd === "archive") {
+    if (!confirm("Archive this page? It leaves the hub's lists and no one can add notes until you unarchive it.")) return;
+    await fetch(`${BASE}/archive`, { method: "POST" }).catch(() => {});
   }
-  if (cmd === "close") {
-    if (!confirm("Close this review? No one can add notes until you reopen it.")) return;
-    await fetch(`${BASE}/close`, { method: "POST" }).catch(() => {});
-  }
-  if (cmd === "reopen") await fetch(`${BASE}/reopen`, { method: "POST" }).catch(() => {});
+  if (cmd === "unarchive") await fetch(`${BASE}/unarchive`, { method: "POST" }).catch(() => {});
 });
 
 // ── mobile sheet ──
@@ -1501,9 +1484,7 @@ function connect() {
     const d: SnapshotEvent = JSON.parse(e.data);
     state.transcript = (d.transcript || []).filter((e) => !e.discarded);
     state.presence = d.presence;
-    state.status = d.session.status;
-    state.endedBy = d.session.endedBy;
-    state.closed = !!d.session.closed;
+    state.archived = !!d.session.archived;
     state.unread = d.session.unread || 0;
     state.more = !!d.more;
     state.links = d.links;
@@ -1545,9 +1526,7 @@ function connect() {
   source.addEventListener("presence", (e) => {
     const d: PresenceEvent = JSON.parse(e.data);
     state.presence = d.presence;
-    state.status = d.status;
-    state.endedBy = d.endedBy;
-    state.closed = !!d.closed;
+    state.archived = !!d.archived;
     state.unread = d.unread || 0;
     setMode(state.mode);
     renderPresence();
@@ -1571,17 +1550,6 @@ function connect() {
       state.program = d.program;
       post({ type: "source", program: d.program });
     }
-    renderLog();
-  });
-  source.addEventListener("ended", (e) => {
-    const d: { by: string | null; closed?: boolean } = JSON.parse(e.data);
-    state.status = "ended";
-    state.endedBy = d.by;
-    if (d.closed) {
-      state.closed = true;
-      post({ type: "mode", mode: "explore" });
-    }
-    renderPresence();
     renderLog();
   });
   source.addEventListener("server", (e) => {
@@ -1850,11 +1818,6 @@ async function startHosted() {
   socket.onClose(() => presence.disconnect());
 }
 
-if (!HOSTED) {
-  window.addEventListener("pagehide", (e) => {
-    if (!e.persisted) navigator.sendBeacon?.(`${BASE}/bye`);
-  });
-}
 
 // ── boot ──
 

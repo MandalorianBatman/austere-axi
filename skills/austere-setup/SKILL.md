@@ -67,7 +67,7 @@ Then:
 1. `npx -y austere-axi check austere-setup-test.html` must report no errors.
 2. `npx -y austere-axi austere-setup-test.html` opens the review. Give the user the printed link. If it did not open a browser (`browser: not opened`), run `npx -y austere-axi login austere-setup-test.html` and give the user that link instead.
 3. `npx -y austere-axi poll austere-setup-test.html` waits for the user. Ask them to press **It works**. The poll returns an item for the button.
-4. `npx -y austere-axi end austere-setup-test.html`, then delete the file.
+4. `npx -y austere-axi archive austere-setup-test.html` puts the test page away from the hub's lists, then delete the file.
 
 If the user cannot open the page, read the server log in `~/.austere-axi/` and report it.
 

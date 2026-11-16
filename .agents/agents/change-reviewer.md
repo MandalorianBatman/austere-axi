@@ -41,7 +41,7 @@ You get a base ref, an optional head ref, and the list of changed files.
 ### Review UI (`src/chrome/`)
 
 - Queued notes survive a reload and a failed send.
-- An ended session disables feedback.
+- An archived page disables feedback.
 - The phone layout (below 860px) still reaches the composer.
 
 ### CLI and server (`src/cli/`)
@@ -49,7 +49,7 @@ You get a base ref, an optional head ref, and the list of changed files.
 Check every safety rule in `AGENTS.md`: loopback-only `/api/*`, the Host allowlist, Origin checks on browser POSTs, no wildcard bind, artifact-directory confinement, and the served artifact equal to the file on disk except for the runtime tag.
 
 - Output stays compact and always tells the agent its next step.
-- Poll semantics hold: one listener per session, feedback queued while nobody listens, and no reopening of a session the user ended.
+- Poll semantics hold: the newest poll on a page replaces the older one, feedback queues while nobody listens, a page always takes notes, and only an archived page refuses them.
 
 ### Agent-facing text (`--help` in `src/cli/main.ts`, `src/runtime/prompt.ts`, stock and component notes, descriptions)
 

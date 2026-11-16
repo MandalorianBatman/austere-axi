@@ -254,64 +254,10 @@ test("archive hides a page until unarchive; a deleted file is listed as missing"
     r = await cliWith(env, "archive", path.join(work, "never.html"));
     assert.equal(r.code, 1);
     assert.match(r.out, /not in the hub/);
-
-    // A closed review is archived, and unarchive reopens it: never listed while locked.
-    r = await cliWith(env, "close", keep);
-    assert.match(r.out, /status: closed/);
-    r = await cliWith(env, "hub", "list");
-    assert.doesNotMatch(r.out, /keep\.html/, "close archives");
-    r = await cliWith(env, "unarchive", keep);
-    assert.match(r.out, /status: unarchived/);
-    assert.match(r.out, /reopened/);
-    r = await cliWith(env, "hub", "list");
-    assert.match(r.out, /keep\.html/);
-    r = await cliWith(env, keep);
-    assert.doesNotMatch(r.out, /refused/, r.out);
-    assert.match(r.out, /status: open/, "unlocked: it opens without --reopen");
-
-    // close → reopen: reopening a closed review brings the page back too.
-    r = await cliWith(env, "close", keep);
-    assert.match(r.out, /status: closed/);
-    r = await cliWith(env, "reopen", keep);
-    assert.match(r.out, /status: open/);
-    r = await cliWith(env, "hub", "list");
-    assert.match(r.out, /keep\.html/, "reopen unarchives a closed review");
-
-    // close → stop → unarchive: the server that unarchive starts must not archive it again.
-    r = await cliWith(env, "close", keep);
-    assert.match(r.out, /status: closed/);
-    r = await cliWith(env, "stop");
-    assert.match(r.out, /status: stopped/);
-    r = await cliWith(env, "unarchive", keep);
-    assert.match(r.out, /reopened/);
-    r = await cliWith(env, "hub", "list");
-    assert.match(r.out, /keep\.html/, "unarchive with no server running");
   } finally {
     await cliWith(env, "stop");
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-  }
-});
-
-test("reopen unarchives a closed review only; an ended one stays archived where the owner put it", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-reopen-"));
-  const file = path.join(dir, "plan.html");
-  fs.copyFileSync(FILE, file);
-  const store = await SessionStore.open(dir);
-  try {
-    const hub = new Hub(store.db);
-    const s = store.ensure(file);
-    store.end(s, "agent");
-    assert.ok(hub.setArchived(s.id, 1));
-    store.reopen(s);
-    assert.equal(hub.artifact(s.id)?.archived_at, 1, "an ended review reopened: the owner's archive stays");
-    store.closeReview(s);
-    assert.ok(hub.artifact(s.id)?.archived_at);
-    store.reopen(s);
-    assert.deepEqual([hub.artifact(s.id)?.closed_at, hub.artifact(s.id)?.archived_at], [null, null], "a closed review reopened is listed again");
-  } finally {
-    store.close();
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -509,7 +455,7 @@ test("a page's title opens a copy that is still there, the newest one when every
 });
 
 test("hubPage escapes project names, labels and paths", () => {
-  const copy = (id: string, label: string) => ({ id, file: `/w/${label}/a.html`, root: `/w/${label}`, label, title: null, updated_at: 1, reviewed: 1, status: "open", ended_by: null, archived_at: null, missing: false, open: 0, received: 0, addressed: 0, held: 0 });
+  const copy = (id: string, label: string) => ({ id, file: `/w/${label}/a.html`, root: `/w/${label}`, label, title: null, updated_at: 1, reviewed: 1, archived_at: null, missing: false, open: 0, received: 0, addressed: 0, held: 0 });
   const html = hubPage(
     [{ id: "p1", project_id: "x", project: "<img src=x>", rel_path: "<b>.html", title: '"><i>', updated_at: 1, open: 0, received: 0, addressed: 0, held: 0, copies: [copy("aaaaaaaaaaaa", "<u>"), copy("bbbbbbbbbbbb", "ok")] }],
     { version: "1", q: "", project: "", projects: [{ id: "x", name: "<img src=x>", roots: ["/w/<s>"] }], stats: { pages: 1, projects: 1 } },
@@ -571,5 +517,32 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
     } catch (err) {
       if (process.platform !== "win32") throw err;
     }
+  }
+});
+
+test("a 0.11.0 hub.db opens: a review closed under 0.11.0 is archived once", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-migrate-closed-"));
+  const file = path.join(dir, "hub.db");
+  try {
+    // 0.11.0 already has archived_at, so the column check no longer copies closed_at.
+    const db = await openDatabase(file);
+    const insert = db.prepare("INSERT INTO artifacts (id, file, project, created_at, updated_at, reviewed, closed_at, archived_at) VALUES (?, ?, '', 1, 1, 1, ?, ?)");
+    insert.run("closed", "/x/closed.html", 5, null);
+    insert.run("both", "/x/both.html", 6, 7);
+    insert.run("open", "/x/open.html", null, null);
+    db.close();
+
+    const hub = await Hub.open(file);
+    try {
+      const rows = hub.db.prepare("SELECT id, closed_at, archived_at FROM artifacts ORDER BY id").all();
+      assert.deepEqual(
+        rows.map((r) => [r.id, r.closed_at, r.archived_at]),
+        [["both", null, 7], ["closed", null, 5], ["open", null, null]],
+      );
+    } finally {
+      hub.close();
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });

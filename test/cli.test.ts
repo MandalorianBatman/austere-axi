@@ -24,9 +24,25 @@ test("an unknown flag is a usage error (exit 2) and the command does not run", (
 
 test("a flag from another command is rejected, a command without flags says so", () => {
   assert.match(cli("check", "test/fixtures/action/ok.html", "--trust").out, /unknown flag for check: --trust/);
-  const r = cli("end", "test/fixtures/action/ok.html", "--fix");
+  const r = cli("login", "--fix");
   assert.equal(r.code, 2);
   assert.match(r.out, /it takes no flags/);
+});
+
+test("removed session verbs and flags exit 2 with their replacement and run nothing", () => {
+  const file = "test/fixtures/action/ok.html";
+  for (const [args, pointer] of [
+    [["end", file], /nothing to end.*continue in chat/],
+    [["close", file], /austere-axi archive <file>/],
+    [["reopen", file], /austere-axi unarchive <file>/],
+    [[file, "--reopen"], /--reopen was removed.*unarchive/],
+    [["poll", file, "--takeover"], /--takeover was removed.*newest poll replaces/],
+  ] as const) {
+    const r = cli(...args);
+    assert.equal(r.code, 2, args.join(" "));
+    assert.match(r.out, /code: REMOVED/);
+    assert.match(r.out, pointer);
+  }
 });
 
 test("usage errors exit 2; failures while running exit 1", () => {

@@ -65,10 +65,8 @@ export interface Session {
   title: string;
   createdAt: number;
   updatedAt: number;
-  status: "open" | "ended";
-  endedBy: string | null;
-  endedAt: number | null;
-  closedAt: number | null;
+  /** When the owner archived the page: the composer is locked until `unarchive`. Null for a live page. */
+  archivedAt: number | null;
   ackedSeq: number;
   transcript: TranscriptEntry[];
   deliveredSeq: number;
@@ -85,6 +83,8 @@ export interface FeedbackEntry {
   items: NoteItem[];
   status: NoteStatus;
   remote?: true;
+  /** Sent with Send & End. */
+  end?: true;
 }
 
 /** A note paired with the fields it changes to. */
@@ -125,9 +125,6 @@ interface LegacySession {
   title?: string;
   createdAt?: number;
   updatedAt?: number;
-  status?: "open" | "ended";
-  endedBy?: string | null;
-  endedAt?: number | null;
   transcript?: unknown;
   pending?: unknown;
 }
@@ -177,16 +174,14 @@ export class SessionStore {
     this.sessions = new Map();
     this.q = {
       ensure: db.prepare(`
-        INSERT INTO artifacts (id, file, project, title, created_at, updated_at, reviewed, status, project_id, root, page_id)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 'open', ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET reviewed = 1, status = COALESCE(artifacts.status, 'open'),
+        INSERT INTO artifacts (id, file, project, title, created_at, updated_at, reviewed, project_id, root, page_id)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET reviewed = 1,
           project_id = COALESCE(artifacts.project_id, excluded.project_id), root = COALESCE(artifacts.root, excluded.root),
           page_id = COALESCE(artifacts.page_id, excluded.page_id)`),
       session: db.prepare(`SELECT * FROM artifacts WHERE id = ?`),
       sessions: db.prepare(`SELECT * FROM artifacts WHERE reviewed = 1`),
-      save: db.prepare(`
-        UPDATE artifacts SET title = ?, updated_at = ?, status = ?, ended_by = ?, ended_at = ?, closed_at = ?, acked_seq = ?
-        WHERE id = ?`),
+      save: db.prepare(`UPDATE artifacts SET title = ?, updated_at = ?, acked_seq = ? WHERE id = ?`),
       notes: db.prepare(`SELECT * FROM notes ORDER BY at, rowid`),
       note: db.prepare(`SELECT 1 FROM notes WHERE id = ?`),
       hasNotes: db.prepare(`SELECT 1 FROM notes WHERE artifact_id = ? LIMIT 1`),
@@ -271,9 +266,9 @@ export class SessionStore {
     return s;
   }
 
-  /** Write the session row (title, status, cursor) after changing it in memory. */
+  /** Write the session row (title, cursor) after changing it in memory. */
   saveSession(s: Session): void {
-    this.q.save.run(s.title, s.updatedAt, s.status, s.endedBy, s.endedAt, s.closedAt, s.ackedSeq, s.id);
+    this.q.save.run(s.title, s.updatedAt, s.ackedSeq, s.id);
   }
 
   touch(s: Session): void {
@@ -448,7 +443,10 @@ export class SessionStore {
    * Unless `peek`, reading acknowledges them, so a later poll does not deliver them again.
    */
   feedback(s: Session, { all = false, peek = false }: { all?: boolean; peek?: boolean } = {}): { entries: FeedbackEntry[]; fresh: QueuedEntry[] } {
-    const picked = s.transcript.filter((e): e is QueuedEntry => deliverable(e) && (e.items || []).length > 0 && (all || e.seq > s.ackedSeq || !e.doneAt));
+    const picked = s.transcript
+      .filter((e): e is QueuedEntry => deliverable(e) && (e.items || []).length > 0 && (all || e.seq > s.ackedSeq || !e.doneAt))
+      // Delivery order, not transcript order: a held note released later has a newer seq but sits earlier in the transcript.
+      .sort((a, b) => a.seq - b.seq);
     const entries = picked.map((e): FeedbackEntry => ({
       id: e.id,
       at: e.at,
@@ -456,6 +454,7 @@ export class SessionStore {
       items: e.items,
       status: noteStatus(e, s.ackedSeq),
       remote: e.remote,
+      end: e.end || undefined,
     }));
     const fresh = picked.filter((e) => e.seq > s.ackedSeq);
     if (fresh.length && !peek) this.ack(s, Math.max(...fresh.map((e) => e.seq)));
@@ -468,33 +467,6 @@ export class SessionStore {
     this.updateNotes(s, entries.map((e): NoteChange => [e, { workAt: now }]));
   }
 
-  /** The agent stopped (or the reviewer ended it). Notes are still accepted; the next poll that finds new ones reopens it. */
-  end(s: Session, by: string): void {
-    Object.assign(s, { status: "ended", endedBy: by, endedAt: Date.now() });
-    this.touch(s);
-  }
-
-  /** The owner locks the review: no more notes until it is reopened. Archive replaces close, so it is archived too. */
-  closeReview(s: Session): void {
-    const now = Date.now();
-    if (s.status !== "ended") Object.assign(s, { status: "ended", endedBy: "user", endedAt: now });
-    s.closedAt = now;
-    // One transaction: the lock and the archive land together.
-    this.tx(() => {
-      this.touch(s);
-      this.db.prepare("UPDATE artifacts SET archived_at = COALESCE(archived_at, ?) WHERE id = ?").run(now, s.id);
-    });
-  }
-
-  /** Unlock a closed review, or reopen an ended one. Only a closed review was archived by close: an ended one stays where the owner put it. */
-  reopen(s: Session): void {
-    const closed = s.closedAt !== null;
-    Object.assign(s, { status: "open", endedBy: null, endedAt: null, closedAt: null });
-    this.tx(() => {
-      this.touch(s);
-      if (closed) this.db.prepare("UPDATE artifacts SET archived_at = NULL WHERE id = ?").run(s.id);
-    });
-  }
 
   // ── session files from before the database ──
 
@@ -535,20 +507,12 @@ export class SessionStore {
   importSession(d: LegacySession): void {
     const now = Date.now();
     // Notes on record mean an earlier import (whose rename failed) or a server has used this
-    // session since: its status in the database is newer than the file's.
+    // session since: the database is newer than the file.
     const known = !!this.q.hasNotes.get(d.id);
     const loc = resolveProject(this.db, d.file);
     this.q.ensure.run(d.id, d.file, loc.root, d.title || path.basename(d.file), d.createdAt || now, d.updatedAt || now, loc.projectId, loc.root, loc.pageId);
     const s = hydrate(this.q.session.get(d.id) as unknown as ArtifactRow);
-    if (!known) {
-      Object.assign(s, {
-        title: d.title || s.title,
-        updatedAt: Math.max(s.updatedAt, d.updatedAt || 0),
-        status: d.status || "open",
-        endedBy: d.endedBy || null,
-        endedAt: d.endedAt || null,
-      });
-    }
+    if (!known) Object.assign(s, { title: d.title || s.title, updatedAt: Math.max(s.updatedAt, d.updatedAt || 0) });
     const transcript: LegacyEntry[] = Array.isArray(d.transcript) ? d.transcript : [];
     const pending = new Set<string>(Array.isArray(d.pending) ? d.pending : []);
     type Note = NonNullable<LegacyEntry> & { id: string };
@@ -607,10 +571,7 @@ function hydrate(row: ArtifactRow): Session {
     title: row.title || path.basename(row.file),
     createdAt: row.created_at || Date.now(),
     updatedAt: row.updated_at || Date.now(),
-    status: row.status === "ended" ? "ended" : "open",
-    endedBy: row.ended_by || null,
-    endedAt: row.ended_at || null,
-    closedAt: row.closed_at || null,
+    archivedAt: row.archived_at || null,
     ackedSeq: Number(row.acked_seq || 0),
     transcript: [],
     // runtime-only

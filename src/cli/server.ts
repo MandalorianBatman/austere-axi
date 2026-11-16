@@ -15,8 +15,8 @@ import { cloudUrl, readCloud } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
 import type { Tailnet } from "./net.ts";
-import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.ts";
-import { SessionStore, newId } from "./sessions.ts";
+import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
+import { SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
 import { detectSupervisor } from "./service.ts";
@@ -68,9 +68,8 @@ export interface PublicSession {
   id: string;
   file: string;
   title: string;
-  status: Session["status"];
-  endedBy: string | null;
-  closed: boolean;
+  /** The owner archived the page: the composer is locked. */
+  archived: boolean;
   unread: number;
 }
 
@@ -89,23 +88,26 @@ export interface SessionsResponse {
 }
 
 /** /api/open. */
-export type OpenResponse =
-  | { status: "refused"; session: PublicSession; links: SessionLinks }
-  | { status: "open"; session: PublicSession; links: SessionLinks; browsers: number; pending: number; held: number };
+export interface OpenResponse {
+  session: PublicSession;
+  links: SessionLinks;
+  browsers: number;
+  pending: number;
+  held: number;
+}
 
-/** /api/poll, and how a listening poll ends. */
+/**
+ * /api/poll, and how a listening poll ends. `replaced`: a newer poll took over this page. `interrupted`: the server stopped.
+ */
 export interface PollResponse {
-  status: "feedback" | "ended" | "timeout" | "replaced" | "browser_disconnected" | "interrupted" | "listener_active";
+  status: "feedback" | "timeout" | "replaced" | "interrupted";
   /** feedback: the notes' items, and the cursor that acknowledges them */
   items?: NoteItem[];
   cursor?: number;
-  ended?: true;
-  endedBy?: string | null;
-  closed?: true;
+  /** feedback: the reviewer pressed Send & End on one of these notes; the agent stops listening after applying them */
+  final?: true;
   /** interrupted: why the server stopped */
   reason?: string;
-  /** listener_active: the `owner` the listening poll gave */
-  owner?: unknown;
   error?: string;
 }
 
@@ -165,7 +167,6 @@ interface SseClient {
 /** An agent's poll waiting for notes. */
 interface Poll {
   res: http.ServerResponse;
-  owner: unknown;
   startedAt: number;
   done: boolean;
   from: number;
@@ -212,7 +213,6 @@ const MIME: Record<string, string> = {
   ".webm": "video/webm",
 };
 
-const SHORT_GRACE_MS = 10_000;
 /** Whether AUSTERE_AXI_PERSIST asks the server to stay up with no one using it. */
 export function persistEnv() {
   return /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_PERSIST || "");
@@ -285,9 +285,6 @@ export async function runServer({
   const polls = new Map<string, Poll>(); // id -> poll
   const watchers = new Map<string, Watcher>(); // id -> { html, program, shell }
   const listeners = new Map<string, http.Server>(); // host -> http.Server
-  const graceTimers = new Map<string, ReturnType<typeof setTimeout>>(); // id -> timeout
-  const byeAt = new Map<string, number>(); // id -> ms of last explicit tab close
-  const browserSeen = new Set<string>();
   // Hosted pages in cloud.json: their notes come in, the owner's Send/Discard and the agent's replies go out.
   const peer = new Peer({
     store,
@@ -311,7 +308,6 @@ export async function runServer({
   let tailnet: Tailnet | null = null;
   const linkBase = linkUrl(); // throws on a bad AUSTERE_AXI_LINK_URL: better to stop here than print wrong links
   let lastActivity = Date.now();
-  const longGraceMs = msEnv("AUSTERE_AXI_DISCONNECT_GRACE_MS", 5 * 60_000);
   // A supervised server is always on: its supervisor decides when it stops.
   const idleMs = persist || persistEnv() || supervisorName ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
 
@@ -453,7 +449,7 @@ export async function runServer({
   }
 
   function publicSession(s: Session): PublicSession {
-    return { id: s.id, file: s.file, title: s.title, status: s.status, endedBy: s.endedBy, closed: Boolean(s.closedAt), unread: store.unread(s).length };
+    return { id: s.id, file: s.file, title: s.title, archived: Boolean(s.archivedAt), unread: store.unread(s).length };
   }
 
   /**
@@ -482,7 +478,7 @@ export async function runServer({
   }
 
   function broadcastPresence(s: Session): void {
-    broadcast(s.id, "presence", { presence: presence(s), status: s.status, endedBy: s.endedBy, closed: Boolean(s.closedAt), unread: store.unread(s).length });
+    broadcast(s.id, "presence", { presence: presence(s), archived: Boolean(s.archivedAt), unread: store.unread(s).length });
   }
 
   /** A hosted viewer's presence frame for the owner's review page, unchanged. */
@@ -577,20 +573,12 @@ export async function runServer({
   function deliver(s: Session, poll: Poll): void {
     const entries = store.after(s, poll.from);
     const items: NoteItem[] = [];
-    let end = false;
     for (const e of entries) {
       for (const it of e.items || []) items.push(e.author ? { ...it, author: e.author, ...(e.remote ? { remote: true } : {}) } : it);
-      if (e.end) end = true;
     }
-    // Ended only if it still is: a reviewer's end batch, the reviewer's end, or the owner's close. A replay to an agent that ended is not final.
-    const ended = s.status === "ended" && (s.endedBy === "user" || Boolean(s.closedAt) || end);
-    const body: PollResponse = {
-      status: "feedback",
-      items,
-      cursor: entries[entries.length - 1].seq,
-      ended: ended || undefined,
-      endedBy: ended ? s.endedBy || "user" : undefined,
-    };
+    // A page always takes notes: final only tells the agent the newest batch was sent with Send & End, so it stops listening after applying it. A later plain note in the same answer means the reviewer carries on.
+    const final = Boolean(entries[entries.length - 1].end);
+    const body: PollResponse = { status: "feedback", items, cursor: entries[entries.length - 1].seq, final: final || undefined };
     finishPoll(s, poll, body, () => {
       store.markDelivered(s, entries);
       s.workingSince = Date.now();
@@ -624,21 +612,21 @@ export async function runServer({
     return replying ? store.ack(s, s.deliveredSeq) : [];
   }
 
-  /** The owner locks the review: the composer closes and a listening poll ends. */
-  function closeReview(s: Session): void {
-    store.closeReview(s);
-    s.workingSince = null;
-    const poll = polls.get(s.id);
-    if (poll && !poll.done) finishPoll(s, poll, { status: "ended", endedBy: s.endedBy, closed: true });
-    broadcast(s.id, "ended", { by: s.endedBy, closed: true });
-    broadcastPresence(s);
+  /** The owner puts a page away, or brings it back: the composer locks or opens, nothing else changes. False when the hub does not know the page. */
+  function setArchived(file: string, at: number | null): boolean {
+    const id = sessionId(file);
+    if (!hub.setArchived(id, at)) return false;
+    const s = store.get(id);
+    if (s) {
+      s.archivedAt = at;
+      broadcastPresence(s);
+    }
+    return true;
   }
 
   function finishPoll(s: Session, poll: Poll, body: PollResponse, onDelivered?: () => void): void {
     if (poll.done) return;
     poll.done = true;
-    clearTimeout(graceTimers.get(s.id));
-    graceTimers.delete(s.id);
     if (polls.get(s.id) === poll) polls.delete(s.id);
     peer.unwatch(s);
     poll.res.on("finish", () => onDelivered?.());
@@ -650,24 +638,6 @@ export async function runServer({
     return clients.get(id)?.size || 0;
   }
 
-  function armGrace(s: Session): void {
-    clearTimeout(graceTimers.get(s.id));
-    graceTimers.delete(s.id);
-    const poll = polls.get(s.id);
-    if (!poll || clientCount(s.id) > 0 || !browserSeen.has(s.id)) return;
-    const closedOnPurpose = Date.now() - (byeAt.get(s.id) || 0) < 5_000;
-    const ms = closedOnPurpose ? Math.min(SHORT_GRACE_MS, longGraceMs || SHORT_GRACE_MS) : longGraceMs;
-    if (!ms) return;
-    graceTimers.set(
-      s.id,
-      setTimeout(() => {
-        if (clientCount(s.id) === 0 && polls.get(s.id) === poll) {
-          log("poll", s.id, "browser_disconnected");
-          finishPoll(s, poll, { status: "browser_disconnected" });
-        }
-      }, ms),
-    );
-  }
 
   // ── routes ──
 
@@ -709,7 +679,6 @@ export async function runServer({
           presence: presence(s),
           browsers: clientCount(s.id),
           pending: store.unread(s).length,
-          closed: Boolean(s.closedAt),
           held: store.heldEntries(s).length,
           links: links(s.id),
         })),
@@ -743,7 +712,8 @@ export async function runServer({
       log("share-revoke", gone.map((i) => `${i.name}(${inviteId(i)})`).join(","));
       return send(res, 200, { revoked: gone.map((i) => ({ id: inviteId(i), name: i.name, file: i.file })) } satisfies RevokeResponse);
     }
-    const file = typeof body.file === "string" ? body.file : "";
+    // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
+    const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
     if (!file) return send(res, 400, { error: "file is required" });
 
     if (route === "share") {
@@ -771,26 +741,20 @@ export async function runServer({
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
       await ensureTailnetListener();
       const s = store.ensure(file);
-      if (s.closedAt && !body.reopen) {
-        return send(res, 200, { status: "refused", session: publicSession(s), links: links(s.id) } satisfies OpenResponse);
-      }
-      if (s.status === "ended") {
-        if (s.endedBy === "user" && !body.reopen) {
-          return send(res, 200, { status: "refused", session: publicSession(s), links: links(s.id) } satisfies OpenResponse);
-        }
-        store.reopen(s);
-        broadcastPresence(s);
-      }
       watch(s);
       store.touch(s);
       return send(res, 200, {
-        status: "open",
         session: publicSession(s),
         links: links(s.id),
         browsers: clientCount(s.id),
         pending: store.unread(s).length,
         held: store.heldEntries(s).length,
       } satisfies OpenResponse);
+    }
+
+    if (route === "archive" || route === "unarchive") {
+      if (!setArchived(file, route === "archive" ? Date.now() : null)) return send(res, 404, { error: "not in the hub" });
+      return send(res, 200, { ok: true });
     }
 
     // A published page's notes may be waiting on the service: catch up first (for a file never opened here too).
@@ -827,27 +791,6 @@ export async function runServer({
       return send(res, 200, { session: publicSession(s), entries } satisfies FeedbackResponse);
     }
 
-    if (route === "end") {
-      store.end(s, "agent");
-      s.workingSince = null;
-      const poll = polls.get(s.id);
-      if (poll) finishPoll(s, poll, { status: "ended", endedBy: "agent" });
-      broadcast(s.id, "ended", { by: "agent" });
-      broadcastPresence(s);
-      return send(res, 200, { ok: true });
-    }
-
-    if (route === "close") {
-      closeReview(s);
-      return send(res, 200, { ok: true });
-    }
-
-    if (route === "reopen") {
-      store.reopen(s);
-      broadcastPresence(s);
-      return send(res, 200, { ok: true, session: publicSession(s) });
-    }
-
     if (route === "poll") {
       const after = seqParam(body.after);
       const acked = acknowledge(s, body, !!body.agentReply);
@@ -860,30 +803,11 @@ export async function runServer({
         broadcastTranscript(s, [...acked, entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at && !acked.includes(e))]);
       } else if (acked.length) broadcastTranscript(s, acked);
       s.workingSince = null;
+      // The newest listener wins: the older poll is told to stop.
       const existing = polls.get(s.id);
-      if (existing && !existing.done) {
-        if (!body.takeover) {
-          return send(res, 409, {
-            status: "listener_active",
-            owner: existing.owner,
-            error: "another poll is already listening on this session; pass --takeover to replace it",
-          } satisfies PollResponse);
-        }
-        finishPoll(s, existing, { status: "replaced" });
-      }
-      const poll: Poll = { res, owner: body.owner || null, startedAt: Date.now(), done: false, from: after ?? s.ackedSeq };
-      const fresh = store.after(s, poll.from);
-      // An unread note reopens an ended review (ending means the agent stopped, not that the reviewer is done):
-      // one sent before the end but never acknowledged, or held and released after it. A batch sent with end
-      // stays final, so only notes after the last one count; --after replays of acknowledged notes do not.
-      const unread = fresh.filter((e) => e.seq > s.ackedSeq);
-      const lastEnd = unread.reduce((n, e) => (e.end ? e.seq : n), 0);
-      if (s.status === "ended" && !s.closedAt && unread.some((e) => !e.end && e.seq > lastEnd)) {
-        store.reopen(s);
-        log("reopen", s.id, "unread notes");
-      }
-      if (fresh.length) return deliver(s, poll);
-      if (s.status === "ended") return send(res, 200, { status: "ended", endedBy: s.endedBy, closed: Boolean(s.closedAt) || undefined } satisfies PollResponse);
+      if (existing && !existing.done) finishPoll(s, existing, { status: "replaced" });
+      const poll: Poll = { res, startedAt: Date.now(), done: false, from: after ?? s.ackedSeq };
+      if (store.after(s, poll.from).length) return deliver(s, poll);
       polls.set(s.id, poll);
       peer.watch(s);
       res.on("close", () => {
@@ -891,7 +815,6 @@ export async function runServer({
           poll.done = true;
           if (polls.get(s.id) === poll) polls.delete(s.id);
           peer.unwatch(s);
-          clearTimeout(graceTimers.get(s.id));
           broadcastPresence(s);
         }
       });
@@ -902,7 +825,6 @@ export async function runServer({
         }, timeoutMs);
       }
       broadcastPresence(s);
-      armGrace(s);
       return;
     }
     return send(res, 404, { error: `unknown route ${route}` });
@@ -1233,7 +1155,7 @@ export async function runServer({
     }
     // Reviewers read the page and the conversation and add notes. Everything else is the owner's.
     const reviewer = who.role === "reviewer";
-    if (reviewer && !(sub === "" || sub === "/" || sub.startsWith("/a/") || sub === "/events" || sub === "/transcript" || sub === "/send" || sub === "/bye")) {
+    if (reviewer && !(sub === "" || sub === "/" || sub.startsWith("/a/") || sub === "/events" || sub === "/transcript" || sub === "/send")) {
       return send(res, 403, { error: "reviewers can only read the page and add notes" });
     }
 
@@ -1289,15 +1211,11 @@ export async function runServer({
         for (const hello of peer.roster(s)) res.write(viewerEvent(hello));
         peer.watch(s);
       }
-      browserSeen.add(s.id);
-      clearTimeout(graceTimers.get(s.id));
-      graceTimers.delete(s.id);
       const hb = setInterval(() => res.write(": hb\n\n"), 20_000);
       res.on("close", () => {
         clearInterval(hb);
         clients.get(s.id)?.delete(client);
         if (!reviewer) peer.unwatch(s);
-        armGrace(s);
       });
       return;
     }
@@ -1307,26 +1225,17 @@ export async function runServer({
       const end = !reviewer && !!body.end;
       let items: NoteItem[] = Array.isArray(body.items) ? body.items.filter((x: unknown) => x && typeof x === "object").slice(0, reviewer ? 50 : 200) : [];
       if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind)).map(reviewerItem);
-      if (s.closedAt) return send(res, 409, { error: "the owner closed this review" });
-      if (!items.length && !end) return send(res, 400, { error: "nothing to send" });
+      if (s.archivedAt) return send(res, 409, { error: "this page is archived; unarchive it to add notes" });
+      if (!items.length) return send(res, 400, { error: "nothing to send" });
       // The server decides who wrote a note. A reviewer's own item id could overwrite another note in the hub.
       for (const it of items) {
         delete it.author;
         it.id = reviewer || !it.id ? newId("i") : it.id;
       }
       const hold = reviewer && !who.auto;
-      if (hold && items.length && store.heldEntries(s).filter((e) => e.author === who.name).length >= MAX_HELD_PER_REVIEWER) return send(res, 429, { error: "too many notes awaiting the owner; wait for them to be released" });
-      let entry: UserEntry | null = null;
-      if (items.length) entry = store.addUserBatch(s, items, { end, author: who.name, hold });
-      if (end) {
-        store.end(s, "user");
-        broadcast(s.id, "ended", { by: "user" });
-      }
-      if (entry) broadcastTranscript(s, [entry]);
-      if (end) {
-        const poll = polls.get(s.id);
-        if (poll && !poll.done && !store.after(s, poll.from).length) finishPoll(s, poll, { status: "ended", endedBy: "user" });
-      }
+      if (hold && store.heldEntries(s).filter((e) => e.author === who.name).length >= MAX_HELD_PER_REVIEWER) return send(res, 429, { error: "too many notes awaiting the owner; wait for them to be released" });
+      const entry = store.addUserBatch(s, items, { end, author: who.name, hold });
+      broadcastTranscript(s, [entry]);
       wake(s);
       broadcastPresence(s);
       return send(res, 200, { ok: true, entry });
@@ -1334,7 +1243,7 @@ export async function runServer({
     if (sub === "/render-errors" && req.method === "POST") {
       const body = await readBody(req);
       // A report for an older revision describes a program the agent has already replaced.
-      if (s.closedAt || body.revision !== s.revision) return send(res, 200, { ok: true, count: 0, stale: true });
+      if (s.archivedAt || body.revision !== s.revision) return send(res, 200, { ok: true, count: 0, stale: true });
       // Third-party pack code runs in the frame and could forge errors; those wait for the owner's "Queue fix".
       if (thirdPartyPacks(watchers.get(s.id)?.html).length) return send(res, 409, { error: "this page uses third-party packs; queue render errors by hand" });
       let seen = renderReported.get(s.id);
@@ -1370,26 +1279,8 @@ export async function runServer({
       broadcastPresence(s);
       return send(res, 200, { ok: true, count: done.length });
     }
-    if (sub === "/end" && req.method === "POST") {
-      if (s.status !== "ended") {
-        store.end(s, "user");
-        broadcast(s.id, "ended", { by: "user" });
-        const poll = polls.get(s.id);
-        if (poll && !poll.done && !store.after(s, poll.from).length) finishPoll(s, poll, { status: "ended", endedBy: "user" });
-        wake(s);
-        broadcastPresence(s);
-      }
-      return send(res, 200, { ok: true });
-    }
-    if (sub === "/close" && req.method === "POST") {
-      if (!s.closedAt) closeReview(s);
-      return send(res, 200, { ok: true });
-    }
-    if (sub === "/reopen" && req.method === "POST") {
-      if (s.closedAt || s.status === "ended") {
-        store.reopen(s);
-        broadcastPresence(s);
-      }
+    if ((sub === "/archive" || sub === "/unarchive") && req.method === "POST") {
+      setArchived(s.file, sub === "/archive" ? Date.now() : null);
       return send(res, 200, { ok: true });
     }
     if (sub === "/presence" && req.method === "POST") {
@@ -1405,10 +1296,6 @@ export async function runServer({
       const entry = state.token ? state.pages[s.file] : undefined;
       const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: peer.liveAuto(entry.id, entry.auto) } : undefined;
       return send(res, 200, agentPrompt({ file: s.file, hosted }));
-    }
-    if (sub === "/bye" && req.method === "POST") {
-      byeAt.set(s.id, Date.now());
-      return send(res, 204, "");
     }
     if (sub === "/export") {
       const html = readFileSafe(s.file);

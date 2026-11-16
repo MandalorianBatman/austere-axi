@@ -472,14 +472,14 @@ test("Discard goes out as discardNote, a row discarded upstream never reaches th
   }
 });
 
-test("a closed review holds remote notes, released rows too, and a replayed row does not release them", async () => {
-  const f = file("closed.html");
+test("an archived page holds remote notes, released rows too, and a replayed row does not release them", async () => {
+  const f = file("archived.html");
   const id = newPage();
   const m = await machine({ [f]: { id, auto: true } });
   try {
     const sid = await open(m, f);
-    await m.api("POST", `/s/${sid}/close`, {});
-    addNote(id, "Ana", [{ kind: "message", text: "after close" }], "released");
+    await m.api("POST", `/s/${sid}/archive`, {});
+    addNote(id, "Ana", [{ kind: "message", text: "after archive" }], "released");
     await m.run("feedback", f, "--peek");
     assert.equal((await remoteNotes(m, sid))[0]?.held, true);
 
@@ -490,7 +490,7 @@ test("a closed review holds remote notes, released rows too, and a replayed row 
     db.close();
     // feedback starts the server for a published file, and the server pulls from 0.
     const r = await m.run("feedback", f, "--peek");
-    assert.doesNotMatch(r.out, /after close/, r.out);
+    assert.doesNotMatch(r.out, /after archive/, r.out);
     assert.equal((await remoteNotes(m, sid))[0]?.held, true);
   } finally {
     await cleanup(m);
@@ -606,8 +606,8 @@ test("the agent prompt names the file and the poll command, the shared page when
     const h = await prompt(held);
     assert.ok(h.includes(`austere-axi poll ${quote(held)}`), h);
     assert.ok(h.includes(`austere-axi poll ${quote(held)} --cursor <n> --agent-reply`), h);
-    assert.match(h, /listener_active/);
-    assert.match(h, /--takeover/);
+    assert.match(h, /final: true/);
+    assert.match(h, /status: replaced/);
     assert.ok(h.includes(`Shared page: ${CLOUD}/p/${heldPage}`), h);
     assert.match(h, /only after I send them on/);
 

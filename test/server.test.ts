@@ -23,9 +23,9 @@ const OWNER = ownerHeaders(STATE);
 /** The JSON bodies the server answers with, as far as these tests read them. */
 interface ApiData {
   status: string;
-  session: { id: string };
+  session: { id: string; archived: boolean };
   items: { kind: string; text?: string }[];
-  endedBy?: string;
+  cursor?: number;
   links: { local: string; remote?: string };
   proof?: string;
 }
@@ -100,16 +100,16 @@ after(async () => {
   fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
-test("open, poll, send, reply, end", async () => {
+test("open, poll, send, reply, archive", async () => {
   const open = await req("POST", "/api/open", { file: FILE });
   assert.equal(open.status, 200);
-  assert.equal(open.data.status, "open");
+  assert.equal(open.data.session.archived, false);
   const id = open.data.session.id;
 
-  const pollP = req("POST", "/api/poll", { file: FILE });
+  const older = req("POST", "/api/poll", { file: FILE });
   await new Promise((r) => setTimeout(r, 100));
-  const second = await req("POST", "/api/poll", { file: FILE });
-  assert.equal(second.status, 409, "a second poll is refused while one listens");
+  const pollP = req("POST", "/api/poll", { file: FILE });
+  assert.equal((await older).data.status, "replaced", "the newest listener wins");
 
   const host = { host: `127.0.0.1:${PORT}`, origin: `http://127.0.0.1:${PORT}` };
   const sent = await req(
@@ -129,19 +129,18 @@ test("open, poll, send, reply, end", async () => {
   const reply = await req("POST", "/api/reply", { file: FILE, text: "Made it louder." });
   assert.equal(reply.status, 200);
 
-  const crossOrigin = await req("POST", `/s/${id}/end`, {}, { ...host, origin: "http://evil.example" });
+  const crossOrigin = await req("POST", `/s/${id}/archive`, {}, { ...host, origin: "http://evil.example" });
   assert.equal(crossOrigin.status, 403);
 
-  const end = await req("POST", `/s/${id}/end`, {}, host);
-  assert.equal(end.status, 200);
-  const after = await req("POST", "/api/poll", { file: FILE });
-  assert.equal(after.data.status, "ended");
-  assert.equal(after.data.endedBy, "user");
-
-  const refused = await req("POST", "/api/open", { file: FILE });
-  assert.equal(refused.data.status, "refused", "a user-ended review is not reopened uninvited");
-  const reopened = await req("POST", "/api/open", { file: FILE, reopen: true });
-  assert.equal(reopened.data.status, "open");
+  assert.equal((await req("POST", `/s/${id}/archive`, {}, host)).status, 200);
+  assert.equal((await req("POST", `/s/${id}/send`, { items: [{ kind: "message", text: "late" }] }, host)).status, 409, "an archived page refuses notes");
+  const reopened = await req("POST", "/api/open", { file: FILE });
+  assert.equal(reopened.data.session.archived, true, "open leaves it archived");
+  assert.equal((await req("POST", "/api/unarchive", { file: FILE })).status, 200);
+  assert.equal((await req("POST", `/s/${id}/send`, { items: [{ kind: "message", text: "back" }] }, host)).status, 200);
+  const back = await req("POST", "/api/poll", { file: FILE });
+  assert.equal(back.data.items[0].text, "back");
+  await req("POST", "/api/reply", { file: FILE, text: "ok", cursor: back.data.cursor }); // acknowledge it, so later tests start clean
 });
 
 test("feedback sent while no agent listens waits for the next poll", async () => {
@@ -233,7 +232,6 @@ test("another local process without the owner key cannot read files, sessions or
   assert.match((await bare<string>("GET", `/s/${id}`, undefined, host)).data, /austere-axi login/, "the owner is told how to get in");
   assert.match((await req<string>("GET", `/s/${id}/a/credentials`, undefined, host)).data, /DUMMY-SECRET/, "the owner still can");
   assert.equal((await req("GET", "/api/sessions")).status, 200);
-  await req("POST", "/api/end", { file: secret });
 });
 
 test("health proves the server holds the owner key without giving it away", async () => {

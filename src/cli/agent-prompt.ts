@@ -25,7 +25,7 @@ export function agentPrompt({ file, hosted }: AgentPromptInput): string {
     ``,
     `1. Run \`${BIN} poll ${f}\` in the foreground and leave it running until it returns. If the call times out (status: timeout), run it again.`,
     `2. When it returns feedback, change the page with \`${BIN} patch ${f}\` (send only the changed statements on stdin), then run \`${BIN} poll ${f} --cursor <n> --agent-reply "<one line: what changed>"\` with the cursor it printed. That acknowledges the feedback, posts your reply and listens again.`,
-    `3. When it returns status: ended, stop polling and continue in chat. When it returns status: listener_active, another poll is already listening on this page: leave it, and add \`--takeover\` only if I ask you to replace it.`,
+    `3. When the batch has \`final: true\`, I pressed Send & End: apply it, reply, then stop polling and continue in chat. A note I send later waits for your next poll. When it returns status: replaced, a newer poll took over this page: stop polling here.`,
   );
   if (hosted) {
     lines.push(
