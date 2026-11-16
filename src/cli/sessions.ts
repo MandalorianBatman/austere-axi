@@ -474,17 +474,26 @@ export class SessionStore {
     this.touch(s);
   }
 
-  /** The owner locks the review: no more notes until it is reopened. */
+  /** The owner locks the review: no more notes until it is reopened. Archive replaces close, so it is archived too. */
   closeReview(s: Session): void {
     const now = Date.now();
     if (s.status !== "ended") Object.assign(s, { status: "ended", endedBy: "user", endedAt: now });
     s.closedAt = now;
-    this.touch(s);
+    // One transaction: the lock and the archive land together.
+    this.tx(() => {
+      this.touch(s);
+      this.db.prepare("UPDATE artifacts SET archived_at = COALESCE(archived_at, ?) WHERE id = ?").run(now, s.id);
+    });
   }
 
+  /** Unlock a closed review, or reopen an ended one. Only a closed review was archived by close: an ended one stays where the owner put it. */
   reopen(s: Session): void {
+    const closed = s.closedAt !== null;
     Object.assign(s, { status: "open", endedBy: null, endedAt: null, closedAt: null });
-    this.touch(s);
+    this.tx(() => {
+      this.touch(s);
+      if (closed) this.db.prepare("UPDATE artifacts SET archived_at = NULL WHERE id = ?").run(s.id);
+    });
   }
 
   // ── session files from before the database ──

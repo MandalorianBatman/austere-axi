@@ -139,9 +139,13 @@ export async function openDatabase(file = hubDbFile()): Promise<sqlite.DatabaseS
   return db;
 }
 
-const SCHEMA = `
+// journal_mode cannot change inside a transaction: set before migrate() opens one.
+const PRAGMAS = `
 PRAGMA journal_mode = WAL;
 PRAGMA busy_timeout = 3000;
+`;
+
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS artifacts (
   id TEXT PRIMARY KEY,
   file TEXT NOT NULL UNIQUE,
@@ -231,33 +235,36 @@ CREATE INDEX IF NOT EXISTS project_roots_project ON project_roots(project_id);
 CREATE TABLE IF NOT EXISTS pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, rel_path TEXT NOT NULL, UNIQUE (project_id, rel_path));
 `;
 
+/** Bring hub.db to the current schema in one transaction; a second run changes nothing. */
 function migrate(db: sqlite.DatabaseSync): void {
-  db.exec(SCHEMA);
-  const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
-  // Indexes made before team review have no author column.
-  if (!has("items", "author")) db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
-  // Before sessions moved into the database, artifacts had no review state of their own.
-  if (!has("artifacts", "ended_at")) db.exec("ALTER TABLE artifacts ADD COLUMN ended_at INTEGER");
-  if (!has("artifacts", "closed_at")) db.exec("ALTER TABLE artifacts ADD COLUMN closed_at INTEGER");
-  if (!has("artifacts", "acked_seq")) db.exec("ALTER TABLE artifacts ADD COLUMN acked_seq INTEGER NOT NULL DEFAULT 0");
-  db.exec(NOTES);
-  // Notes from before hosted pages have no remote row.
-  if (!has("notes", "remote_id")) db.exec("ALTER TABLE notes ADD COLUMN remote_id TEXT");
-  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS notes_remote ON notes(remote_id)");
-  db.exec(CLOUD);
-  db.exec(PROJECTS);
-  if (!has("project_roots", "prefix")) db.exec("ALTER TABLE project_roots ADD COLUMN prefix TEXT NOT NULL DEFAULT ''");
-  if (!has("artifacts", "project_id")) db.exec("ALTER TABLE artifacts ADD COLUMN project_id TEXT");
-  if (!has("artifacts", "page_id")) db.exec("ALTER TABLE artifacts ADD COLUMN page_id TEXT");
-  if (!has("artifacts", "root")) db.exec("ALTER TABLE artifacts ADD COLUMN root TEXT");
-  if (!has("artifacts", "archived_at")) {
-    // Archive replaces close: a review the owner closed is put away.
-    db.exec("ALTER TABLE artifacts ADD COLUMN archived_at INTEGER");
-    db.exec("UPDATE artifacts SET archived_at = closed_at WHERE closed_at IS NOT NULL");
-  }
-  db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
-  db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
-  backfillProjects(db);
+  db.exec(PRAGMAS);
+  inTransaction(db, () => {
+    db.exec(SCHEMA);
+    const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    // Indexes made before team review have no author column.
+    if (!has("items", "author")) db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
+    // Before sessions moved into the database, artifacts had no review state of their own.
+    if (!has("artifacts", "ended_at")) db.exec("ALTER TABLE artifacts ADD COLUMN ended_at INTEGER");
+    if (!has("artifacts", "closed_at")) db.exec("ALTER TABLE artifacts ADD COLUMN closed_at INTEGER");
+    if (!has("artifacts", "acked_seq")) db.exec("ALTER TABLE artifacts ADD COLUMN acked_seq INTEGER NOT NULL DEFAULT 0");
+    db.exec(NOTES);
+    // Notes from before hosted pages have no remote row.
+    if (!has("notes", "remote_id")) db.exec("ALTER TABLE notes ADD COLUMN remote_id TEXT");
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS notes_remote ON notes(remote_id)");
+    db.exec(CLOUD);
+    db.exec(PROJECTS);
+    if (!has("project_roots", "prefix")) db.exec("ALTER TABLE project_roots ADD COLUMN prefix TEXT NOT NULL DEFAULT ''");
+    if (!has("artifacts", "project_id")) db.exec("ALTER TABLE artifacts ADD COLUMN project_id TEXT");
+    if (!has("artifacts", "page_id")) db.exec("ALTER TABLE artifacts ADD COLUMN page_id TEXT");
+    if (!has("artifacts", "root")) db.exec("ALTER TABLE artifacts ADD COLUMN root TEXT");
+    if (!has("artifacts", "archived_at")) db.exec("ALTER TABLE artifacts ADD COLUMN archived_at INTEGER");
+    // Archive replaces close: a review the owner closed is put away. On every open, as a 0.10.4 CLI
+    // sharing this hub.db can still close one.
+    db.exec("UPDATE artifacts SET archived_at = closed_at WHERE closed_at IS NOT NULL AND archived_at IS NULL");
+    db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
+    backfillProjects(db);
+  });
 }
 
 /** A bindable SQLite text value from untrusted item data: strings pass, other shapes become JSON, empty is null. */
