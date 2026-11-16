@@ -9,7 +9,7 @@ austere-axi poll <file>          long-poll for feedback      [--cursor n] [--age
 austere-axi reply <file>         post a reply without polling   [--cursor n]
 austere-axi end <file>           stop as the agent; the reviewer can still add notes
 austere-axi close <file>         close the review: no more notes until reopen; the page is archived
-austere-axi reopen <file>        reopen an ended or closed review
+austere-axi reopen <file>        reopen an ended or closed review (a closed one comes back into the hub's lists)
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]

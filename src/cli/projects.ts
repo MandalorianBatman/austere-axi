@@ -350,21 +350,22 @@ function settlePrefixes(db: sqlite.DatabaseSync, projectId: string): void {
     else if (r.kind === "assigned" || !roots.some((w) => w !== r && pathKey(mainRepoOf(w.root) ?? "") === pathKey(r.root) && (w.kind === "assigned" || assignedHolder(roots, w.root)))) update(r, "");
   }
   // Worktrees whose repository is not in the project: one prefix per repository, an assigned
-  // worktree's (the owner placed it), else the first one's.
+  // worktree's (the owner placed it), else the first held one's; one held by no assigned root has none.
   const byMain = new Map<string, string>();
   for (const r of roots) {
     const main = r.kind === "assigned" ? mainRepoOf(r.root) : null;
     if (main && !byMain.has(pathKey(main))) byMain.set(pathKey(main), r.prefix);
   }
-  for (const r of roots) {
-    if (r.kind !== "worktree") continue;
+  // Held worktrees first, so a repository's shared prefix comes from one under an assigned root.
+  const worktrees = roots.filter((r) => r.kind === "worktree").map((r) => ({ r, holder: assignedHolder(roots, r.root) }));
+  worktrees.sort((a, b) => Number(!a.holder) - Number(!b.holder));
+  for (const { r, holder } of worktrees) {
     const main = mainRepoOf(r.root);
     const mainRow = main ? roots.find((m) => pathKey(m.root) === pathKey(main)) : undefined;
     const shared = main ? byMain.get(pathKey(main)) : undefined;
-    const holder = assignedHolder(roots, r.root);
     if (mainRow) update(r, mainRow.prefix);
     else if (shared !== undefined) update(r, shared);
-    else if (holder) update(r, prefixUnder(holder, r.root));
+    else update(r, holder ? prefixUnder(holder, r.root) : "");
     if (main && !mainRow && shared === undefined) byMain.set(pathKey(main), r.prefix);
   }
 }

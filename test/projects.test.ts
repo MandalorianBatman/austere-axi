@@ -323,6 +323,23 @@ test("forget-root settles the other roots' prefixes and re-keys their pages", as
     assert.deepEqual(paths(), before, "nothing left for the next project add to re-key");
   }));
 
+test("forget-root: a worktree whose repository is in another project loses the prefix its assigned root gave it", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const main = repo(path.join(dir, "repos", "shop"));
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(main, "docs", "plan.html")) });
+    const work = path.join(dir, "work");
+    fs.mkdirSync(work, { recursive: true });
+    addRoot(db, work, "W");
+    const wt = worktree(main, path.join(work, "wt"), "ref: refs/heads/feat");
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(wt, "docs", "plan.html")) });
+    const prefix = (): string => (db.prepare("SELECT prefix FROM project_roots WHERE root = ?").get(wt) as { prefix: string }).prefix;
+    assert.equal(prefix(), "wt");
+    forgetRoot(db, work);
+    assert.equal(prefix(), "", "no assigned root holds it any more");
+    assert.equal(hub.list({ all: true }).find((p) => p.copies.some((c) => c.id === "bbbbbbbbbbbb"))?.rel_path, "docs/plan.html");
+  }));
+
 test("a path through a symlink resolves to the same project and page", () =>
   withDb((db, dir) => {
     const r = repo(path.join(dir, "real"));

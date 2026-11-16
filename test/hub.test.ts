@@ -268,10 +268,50 @@ test("archive hides a page until unarchive; a deleted file is listed as missing"
     r = await cliWith(env, keep);
     assert.doesNotMatch(r.out, /refused/, r.out);
     assert.match(r.out, /status: open/, "unlocked: it opens without --reopen");
+
+    // close → reopen: reopening a closed review brings the page back too.
+    r = await cliWith(env, "close", keep);
+    assert.match(r.out, /status: closed/);
+    r = await cliWith(env, "reopen", keep);
+    assert.match(r.out, /status: open/);
+    r = await cliWith(env, "hub", "list");
+    assert.match(r.out, /keep\.html/, "reopen unarchives a closed review");
+
+    // close → stop → unarchive: the server that unarchive starts must not archive it again.
+    r = await cliWith(env, "close", keep);
+    assert.match(r.out, /status: closed/);
+    r = await cliWith(env, "stop");
+    assert.match(r.out, /status: stopped/);
+    r = await cliWith(env, "unarchive", keep);
+    assert.match(r.out, /reopened/);
+    r = await cliWith(env, "hub", "list");
+    assert.match(r.out, /keep\.html/, "unarchive with no server running");
   } finally {
     await cliWith(env, "stop");
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("reopen unarchives a closed review only; an ended one stays archived where the owner put it", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-reopen-"));
+  const file = path.join(dir, "plan.html");
+  fs.copyFileSync(FILE, file);
+  const store = await SessionStore.open(dir);
+  try {
+    const hub = new Hub(store.db);
+    const s = store.ensure(file);
+    store.end(s, "agent");
+    assert.ok(hub.setArchived(s.id, 1));
+    store.reopen(s);
+    assert.equal(hub.artifact(s.id)?.archived_at, 1, "an ended review reopened: the owner's archive stays");
+    store.closeReview(s);
+    assert.ok(hub.artifact(s.id)?.archived_at);
+    store.reopen(s);
+    assert.deepEqual([hub.artifact(s.id)?.closed_at, hub.artifact(s.id)?.archived_at], [null, null], "a closed review reopened is listed again");
+  } finally {
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 

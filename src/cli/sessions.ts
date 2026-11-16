@@ -483,9 +483,12 @@ export class SessionStore {
     this.db.prepare("UPDATE artifacts SET archived_at = COALESCE(archived_at, ?) WHERE id = ?").run(now, s.id);
   }
 
+  /** Unlock a closed review, or reopen an ended one. Only a closed review was archived by close: an ended one stays where the owner put it. */
   reopen(s: Session): void {
+    const closed = s.closedAt !== null;
     Object.assign(s, { status: "open", endedBy: null, endedAt: null, closedAt: null });
     this.touch(s);
+    if (closed) this.db.prepare("UPDATE artifacts SET archived_at = NULL WHERE id = ?").run(s.id);
   }
 
   // ── session files from before the database ──
