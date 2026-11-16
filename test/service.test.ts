@@ -502,6 +502,8 @@ test("only a unit that runs the austere server counts as the server's unit", () 
   assert.equal(runsTheServer("/usr/bin/node /home/ana/other/cli.mjs serve", cli), false);
   // Another project's cli.mjs runs `server`: not ours, even when an austere server sits in its unit.
   assert.equal(runsTheServer("/usr/bin/node /home/ana/other/dist/cli.mjs server", cli), false);
+  // A foreign unit referencing austere-axi only in an argument path is not ours.
+  assert.equal(runsTheServer("/usr/bin/node /home/ana/other/dist/cli.mjs server --config /home/ana/austere-axi/settings.json", cli), false);
   // A dev checkout in a folder with any name: the unit runs this very script, so it is ours.
   const dev = "/home/ana/src/axi-fork/dist/cli.mjs";
   assert.equal(runsTheServer(`/usr/bin/node ${dev} server --persist --port 4388`, dev), true);

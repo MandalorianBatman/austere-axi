@@ -68,14 +68,16 @@ function launchdJob(label: string | undefined): Job | null {
   return { supervisor: "launchd", command: text, pid: positivePid(/\bpid = (\d+)/.exec(text)?.[1]) };
 }
 
+const BIN_COMMAND = /(?:^|[\s"'])(?:[^\s"']*[/\\])?austere-axi(?:\.[a-zA-Z0-9]+)?(?:[\s"']|$)/;
+
 /**
  * Whether a command line is the austere server: `server` run by a command that names
- * austere-axi (the package, as npx and a global install run it) or the very script this
- * process runs (a dev checkout, whatever its folder is called). Another project's
- * `cli.mjs server` is neither.
+ * austere-axi as its executable or package, or runs the very script this process runs
+ * (a dev checkout, whatever its folder is called). Another project's `cli.mjs server`
+ * or a command mentioning austere-axi only in a flag argument is neither.
  */
 export function runsTheServer(command: string, cli: string = CLI_ENTRY): boolean {
-  return (command.includes(BIN) || command.includes(cli)) && /(^|[\s"'])server([\s"']|$)/.test(command);
+  return (BIN_COMMAND.test(command) || command.includes(cli)) && /(^|[\s"'])server([\s"']|$)/.test(command);
 }
 
 /** Whether `ancestor` is `pid` itself or one of its parents. */
