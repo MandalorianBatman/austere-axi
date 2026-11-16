@@ -9,8 +9,8 @@ import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
 import { ensureServer, loginUrl, openBrowser, request, serverIfRunning, shutdownServer } from "./client.ts";
-import { Hub, hubDbFile, registerWithHub } from "./hub.ts";
-import type { HubNoteRow, HubPage } from "./hub.ts";
+import { Hub, hubDbFile, registerWithHub, unanswered } from "./hub.ts";
+import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
 import { lockStateDir } from "./lock.ts";
@@ -1067,8 +1067,8 @@ function projectFlag(hub: Hub, flags: Flags): string {
   return p.id;
 }
 
-function feedbackText(c: { open: number; received: number; addressed: number }): string | undefined {
-  const waiting = c.open + c.received;
+function feedbackText(c: HubCounts): string | undefined {
+  const waiting = unanswered(c);
   return [waiting ? `${waiting} unanswered` : "", c.addressed ? `${c.addressed} answered` : ""].filter(Boolean).join(", ") || undefined;
 }
 

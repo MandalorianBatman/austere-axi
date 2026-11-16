@@ -10,7 +10,7 @@ import { after, before, test } from "node:test";
 import type { IncomingHttpHeaders } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { SessionStore } from "../src/cli/sessions.ts";
-import { Hub, openDatabase } from "../src/cli/hub.ts";
+import { Hub, openDatabase, unanswered } from "../src/cli/hub.ts";
 import { hubPage, notesPage } from "../src/cli/hub-page.ts";
 import { findProject } from "../src/cli/projects.ts";
 import { ownerHeaders } from "./owner.ts";
@@ -67,11 +67,11 @@ function cliWith(env: NodeJS.ProcessEnv, ...args: string[]): Promise<CliResult> 
 }
 
 /** As the owner of `state` (STATE by default): other ports here are only asked for their health, which needs no key. */
-function req(method: string, route: string, body?: unknown, port = PORT, state = STATE): Promise<Res> {
+function req(method: string, route: string, body?: unknown, port = PORT, state = STATE, extra: Record<string, string> = {}): Promise<Res> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const r = http.request(
-      { host: "127.0.0.1", port, method, path: route, headers: { "content-type": "application/json", host: `127.0.0.1:${port}`, ...ownerHeaders(state) } },
+      { host: "127.0.0.1", port, method, path: route, headers: { "content-type": "application/json", host: `127.0.0.1:${port}`, ...ownerHeaders(state), ...extra } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -99,8 +99,8 @@ intro = TextContent("hello")
 
 after(async () => {
   await cli("stop");
-  fs.rmSync(STATE, { recursive: true, force: true });
-  fs.rmSync(WORK, { recursive: true, force: true });
+  fs.rmSync(STATE, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 test("feedback: what no agent has acknowledged or answered; reading it acknowledges it", async () => {
@@ -124,7 +124,7 @@ test("feedback: what no agent has acknowledged or answered; reading it acknowled
     assert.deepEqual(store.feedback(s).entries, []);
   } finally {
     store.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -153,6 +153,10 @@ test("hub: always on; check-only pages hidden until --all; hands feedback to a l
   assert.equal(open.status, 302);
   assert.equal(open.headers.location, `/s/${id}`);
   assert.equal((await req("GET", "/hub/open/000000000000")).status, 404);
+  // Another site cannot make the owner's browser post to the hub (or any page route).
+  const foreign = await req("POST", `/hub/open/${id}`, {}, PORT, STATE, { origin: "https://evil.example" });
+  assert.equal(foreign.status, 403);
+  assert.equal((await req("POST", `/hub/open/${id}`, {})).status, 405, "the hub takes GET only");
 
   // The reviewer sends feedback while no agent listens; a later session reads it.
   await req("POST", `/s/${id}/send`, { items: [{ kind: "annotation", target: "intro", component: "TextContent", note: "say more" }] });
@@ -252,8 +256,8 @@ test("archive hides a page until unarchive; a deleted file is listed as missing"
     assert.match(r.out, /not in the hub/);
   } finally {
     await cliWith(env, "stop");
-    fs.rmSync(state, { recursive: true, force: true });
-    fs.rmSync(work, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -285,7 +289,7 @@ test("the server idles out unless it persists", async () => {
     assert.equal(await up(), false, "idled out");
   } finally {
     await cliWith(env, "stop");
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -318,7 +322,7 @@ test("Hub.notes: newest first, filters by text, target, title, status and projec
     assert.equal(hub.notes({ limit: 1 }).length, 1);
   } finally {
     hub.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -336,7 +340,7 @@ test("notesPage escapes note text, target, title and filters", async () => {
     assert.ok(html.includes('href="/hub/open/aaaaaaaaaaaa"'));
   } finally {
     hub.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -350,7 +354,7 @@ test("hub index: an item field that is not a string does not stop later notes fr
     assert.deepEqual(new Hub(store.db).notes().map((n) => n.id).sort(), ["bad", "good"]);
   } finally {
     store.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -383,6 +387,7 @@ test("two worktrees holding docs/plan.html: one row, two chips, notes per copy, 
     const so = store.ensure(other);
     store.addUserBatch(sa, [{ kind: "message", text: "only on main" }]);
     store.addUserBatch(sb, [{ kind: "annotation", target: "intro", note: "only on feat" }]);
+    store.addUserBatch(sb, [{ kind: "message", text: "held for the owner" }], { author: "Ana", hold: true });
     // The page with no notes had the latest activity, and still comes after the one with unanswered notes.
     store.db.prepare("UPDATE artifacts SET updated_at = ? WHERE id = ?").run(Date.now() + 60_000, so.id);
     const hub = new Hub(store.db);
@@ -391,23 +396,25 @@ test("two worktrees holding docs/plan.html: one row, two chips, notes per copy, 
     const plan = pages.find((p) => p.rel_path === "docs/plan.html");
     assert.ok(plan);
     assert.deepEqual(plan.copies.map((c) => [c.label, c.file]).sort(), [["feat", b], ["main", a]]);
-    assert.equal(plan.open + plan.received, 2, "summed across copies");
-    assert.deepEqual(plan.copies.map((c) => c.open + c.received), [1, 1]);
+    assert.equal(unanswered(plan), 3, "summed across copies, held notes included");
+    assert.deepEqual(plan.copies.map((c) => [c.label, unanswered(c)]).sort(), [["feat", 2], ["main", 1]]);
+    assert.deepEqual(hub.list({ limit: 1 }).map((p) => p.rel_path), ["docs/plan.html"], "the limit applies after the order");
     assert.equal(pages.find((p) => p.rel_path === "docs/other.html")?.project_id, plan.project_id, "one project");
 
     // Notes stay per copy.
     const notes = hub.notes();
     assert.deepEqual(notes.filter((n) => n.artifact_id === sa.id).map((n) => [n.text, n.label]), [["only on main", "main"]]);
-    assert.deepEqual(notes.filter((n) => n.artifact_id === sb.id).map((n) => [n.text, n.label]), [["only on feat", "feat"]]);
-    assert.equal(hub.notes({ project: plan.project_id }).length, 2);
+    assert.deepEqual(notes.filter((n) => n.artifact_id === sb.id).map((n) => [n.text, n.label]).sort(), [["held for the owner", "feat"], ["only on feat", "feat"]]);
+    assert.equal(hub.notes({ project: plan.project_id }).length, 3);
+    assert.equal(hub.notes({ status: "unanswered" }).length, 3, "the Notes view counts held notes as unanswered too");
 
     const html = hubPage(pages, { version: "1", q: "", project: "", projects: hub.projects(), stats: hub.stats() });
     assert.equal(html.match(/<section>/g)?.length, 1, "one section for the project");
     assert.equal(html.match(/<li>/g)?.length, 2, "one row per page");
     assert.equal(html.match(/class="chip[ "]/g)?.length, 2, "a chip per copy; none for a page with one copy");
     assert.ok(html.includes(`href="/hub/open/${sb.id}"`), "a chip opens its copy");
-    assert.match(html, />feat <span>1 unanswered<\/span>/);
-    assert.match(html, /<b class="open">2 unanswered<\/b>/);
+    assert.match(html, />feat <span>2 unanswered<\/span>/);
+    assert.match(html, /<b class="open">3 unanswered<\/b>/);
     assert.ok(html.indexOf("docs/plan.html") < html.indexOf("docs/other.html"), "unanswered first, then by last activity");
     assert.doesNotMatch(html, /<h3>/, "no per-day headings");
     assert.ok(html.includes(`title="${main}\n${wt}"`), "roots in the tooltip");
@@ -417,7 +424,7 @@ test("two worktrees holding docs/plan.html: one row, two chips, notes per copy, 
     assert.match(notesHtml, /shop · feat/);
   } finally {
     store.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -464,6 +471,6 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
     }
     (await Hub.open(file)).close(); // opening again does not fail
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });

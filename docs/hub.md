@@ -17,7 +17,7 @@ A project is a name and a list of root folders. A page is a path inside a root, 
 The hub finds a page's project without git; it never runs it. Walking up from the page's folder it takes the first of:
 
 1. a root it already knows (a folder it guessed from a page, rule 3, counts only for pages directly in it);
-2. a folder with a `.git` entry: a `.git` directory is a repository; a `.git` file of a worktree joins the project of its main repository; a submodule is its own project. An assigned root above it wins;
+2. a folder with a `.git` entry: a `.git` directory is a repository; a `.git` file of a worktree joins the project of its main repository; a submodule is its own project. Inside a root you assigned (`project add`), the repository or worktree joins that root's project, and page paths stay relative to the repository, so its worktrees elsewhere share its pages;
 3. the page's own folder.
 
 What it finds is stored, so it does not look again. Change it with `project`:
@@ -30,7 +30,7 @@ austere-axi project rename shop storefront
 austere-axi project forget-root ~/old/clone  # its pages are filed again
 ```
 
-`project add` refuses a folder inside another project's root, or around one, and names that project; `project merge` is the way to join them. `--project` (on `hub list` and `hub notes`) and the home page's project link take a name, an id, or any folder inside a root.
+`project add` takes in the folders it guessed below the new root, and refuses a folder inside another project's root, or around one, naming that project; `project merge` is the way to join them. `--project` (on `hub list` and `hub notes`) and the home page's project link take a name, an id, or any folder inside a root.
 
 ## What the lists leave out
 

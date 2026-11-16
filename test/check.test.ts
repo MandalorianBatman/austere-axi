@@ -140,7 +140,7 @@ b = TextContent("b")
   assert.equal(deleted.status, 0, deleted.stderr);
   assert.doesNotMatch(deleted.stdout, /^(dropped|warning):/m);
   assert.doesNotMatch(fs.readFileSync(file, "utf8"), /^b = /m);
-  fs.rmSync(state, { recursive: true, force: true });
+  fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 test("an exported copy is flagged: review the source page instead", () => {

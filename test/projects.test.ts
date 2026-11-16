@@ -44,7 +44,7 @@ async function withDb(fn: (db: sqlite.DatabaseSync, dir: string) => void | Promi
     await fn(db, dir);
   } finally {
     db.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 }
 
@@ -115,31 +115,54 @@ test("a submodule (a .git file with no commondir) is its own project", () =>
     assert.equal(copyLabel(sub), "trunk", "a relative gitdir resolves from the folder holding .git");
   }));
 
-test("an assigned parent root wins over a nested .git", () =>
+test("an assigned parent root wins over a nested .git: its project, the repository's paths", () =>
   withDb((db, dir) => {
     const work = path.join(dir, "work");
-    repo(path.join(work, "inner"));
+    const inner = repo(path.join(work, "inner"));
     const { project } = addRoot(db, work, "everything");
-    const loc = resolveProject(db, write(path.join(work, "inner", "docs", "x.html")));
+    const loc = resolveProject(db, write(path.join(inner, "docs", "x.html")));
     assert.equal(loc.projectId, project.id);
-    assert.equal(loc.root, work);
-    assert.equal(loc.kind, "assigned");
-    assert.equal(loc.relPath, "inner/docs/x.html");
+    assert.equal(loc.root, inner);
+    assert.equal(loc.kind, "git");
+    assert.equal(loc.relPath, "docs/x.html");
+    const loose = resolveProject(db, write(path.join(work, "notes", "y.html")));
+    assert.equal(loose.projectId, project.id);
+    assert.equal(loose.root, work, "a page outside any repository is under the assigned root");
+    assert.equal(loose.relPath, "notes/y.html");
   }));
 
-test("a worktree outside an assigned root joins the project of its main repository inside it", () =>
-  withDb((db, dir) => {
-    const work = path.join(dir, "work");
-    const main = repo(path.join(work, "shop"));
-    const wt = worktree(main, path.join(dir, "elsewhere", "shop-feat"), "ref: refs/heads/feat");
-    const { project } = addRoot(db, work, "work");
-    const b = resolveProject(db, write(path.join(wt, "docs", "plan.html")));
-    const a = resolveProject(db, write(path.join(main, "docs", "plan.html")));
-    assert.equal(b.projectId, project.id);
-    assert.equal(b.kind, "worktree");
-    assert.equal(a.projectId, project.id);
-    assert.equal(a.root, work, "the repository stays under its assigned root");
-    assert.deepEqual(listProjects(db).map((p) => [p.name, p.roots.map((r) => r.kind).sort()]), [["work", ["assigned", "worktree"]]]);
+for (const order of ["worktree first", "repository first"]) {
+  test(`a worktree outside an assigned root holding its repository: one project, one page (${order})`, () =>
+    withDb((db, dir) => {
+      const work = path.join(dir, "work");
+      const main = repo(path.join(work, "shop"));
+      const wt = worktree(main, path.join(dir, "elsewhere", "shop-feat"), "ref: refs/heads/feat");
+      const { project } = addRoot(db, work, "work");
+      const files = [write(path.join(wt, "docs", "plan.html")), write(path.join(main, "docs", "plan.html"))];
+      if (order === "repository first") files.reverse();
+      const [first, second] = files.map((f) => resolveProject(db, f));
+      const [b, a] = order === "worktree first" ? [first, second] : [second, first];
+      assert.equal(b.projectId, project.id);
+      assert.equal(b.kind, "worktree");
+      assert.equal(a.projectId, project.id);
+      assert.equal(a.root, main, "the copy root is the repository, inside the assigned root");
+      assert.deepEqual([a.relPath, b.relPath], ["docs/plan.html", "docs/plan.html"]);
+      assert.equal(a.pageId, b.pageId, "one page, two copies");
+      assert.deepEqual(listProjects(db).map((p) => [p.name, p.roots.map((r) => r.kind).sort()]), [["work", ["assigned", "git", "worktree"]]]);
+    }));
+}
+
+test("project add absorbs a guessed folder root below it, even of the project it names", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const plans = path.join(dir, "plans");
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(plans, "sub", "plan.html")) });
+    assert.equal(findProject(db, "sub")?.name, "sub", "the guessed project is named after its folder");
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(plans, "plan.html")) });
+    addRoot(db, plans, "sub");
+    const pages = hub.list({ all: true });
+    assert.deepEqual(pages.map((p) => [p.rel_path, p.copies.length]).sort(), [["plan.html", 1], ["sub/plan.html", 1]], "two pages, not two copies of one");
+    assert.deepEqual(listProjects(db).map((p) => [p.name, p.roots.map((r) => r.kind)]), [["sub", ["assigned"]]]);
   }));
 
 test("project add <folder>: pages in two subfolders become one project", async () =>

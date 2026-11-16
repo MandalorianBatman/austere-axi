@@ -2,6 +2,7 @@
 import os from "node:os";
 import path from "node:path";
 import { escapeHtml } from "./artifact.ts";
+import { unanswered } from "./hub.ts";
 import type { HubCopy, HubNoteRow, HubPage, HubProject } from "./hub.ts";
 
 function day(ms: number): string {
@@ -22,9 +23,6 @@ function tilde(p: string): string {
   const home = os.homedir();
   return p === home || p.startsWith(home + path.sep) ? "~" + p.slice(home.length) : p;
 }
-
-/** Notes no agent has answered (yet): open or received. */
-const unanswered = (c: { open: number; received: number }): number => c.open + c.received;
 
 /** Feedback in the reviewer's terms: answered by the agent or not (yet). */
 function counts(a: HubPage): string {
@@ -103,8 +101,9 @@ b.by{color:#e8e8ec}
 export type HubView = "default" | "archived" | "all";
 
 /**
- * The home page: one section per project (newest activity first), one row per page inside it
- * (pages with unanswered notes first, then by last activity), a chip per copy when a page has several.
+ * The home page: one section per project, one row per page inside it, a chip per copy when a page
+ * has several. The order is Hub.list()'s: projects by newest activity; pages with unanswered notes
+ * first, then by last activity.
  * @param pages Hub.list() pages
  */
 export function hubPage(
@@ -128,7 +127,6 @@ export function hubPage(
   const info = new Map(projects.map((p) => [p.id, p]));
   const sections = [...byProject.entries()]
     .map(([id, list]) => {
-      list.sort((a, b) => Number(unanswered(b) > 0) - Number(unanswered(a) > 0) || b.updated_at - a.updated_at);
       const roots = info.get(id)?.roots || [];
       const name = list[0].project;
       const waiting = list.reduce((n, p) => n + unanswered(p), 0);

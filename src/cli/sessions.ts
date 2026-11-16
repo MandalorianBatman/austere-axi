@@ -259,9 +259,13 @@ export class SessionStore {
     let s = this.sessions.get(id);
     if (!s) {
       const now = Date.now();
-      const loc = resolveProject(this.db, file);
-      this.q.ensure.run(id, file, loc.root, path.basename(file), now, now, loc.projectId, loc.root, loc.pageId);
-      s = hydrate(this.q.session.get(id) as unknown as ArtifactRow);
+      // One transaction: a merge or forget-root in another process cannot prune the page between the two.
+      const row = this.tx(() => {
+        const loc = resolveProject(this.db, file);
+        this.q.ensure.run(id, file, loc.root, path.basename(file), now, now, loc.projectId, loc.root, loc.pageId);
+        return this.q.session.get(id) as unknown as ArtifactRow;
+      });
+      s = hydrate(row);
       this.sessions.set(id, s);
     }
     return s;

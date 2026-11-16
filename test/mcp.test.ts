@@ -88,10 +88,10 @@ after(async () => {
   mcp.stdin.end();
   await exited;
   await api("POST", "/api/shutdown", {}).catch(() => {});
-  fs.rmSync(WORK, { recursive: true, force: true });
+  fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   // The server may still be flushing its state when it acknowledges shutdown.
   await new Promise((r) => setTimeout(r, 300));
-  fs.rmSync(STATE, { recursive: true, force: true });
+  fs.rmSync(STATE, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 test("initializes and lists the review tools", async () => {

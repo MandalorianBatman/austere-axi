@@ -1136,6 +1136,8 @@ export async function runServer({
     }
     if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
     if (url.pathname.startsWith("/__austere/")) return serveAsset(req, res, url.pathname.slice("/__austere/".length), url);
+    // A browser POST from another site never reaches a page route, the hub's included.
+    if (req.method === "POST" && !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
     // The owner's remote link: trade the key for the owner cookie, then drop it from the URL.
     const key = url.searchParams.get("key");
     if (key != null) {
@@ -1151,6 +1153,8 @@ export async function runServer({
     // The hub lists every page and every note: the owner's only.
     const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
     if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
+    // The hub only shows pages and opens reviews by link: nothing to post to it.
+    if (ownerOnly && req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
     if (url.pathname === "/") return send(res, 200, hubHome(url), { "content-type": "text/html; charset=utf-8" });
     if (url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
     if (url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
@@ -1282,8 +1286,6 @@ export async function runServer({
       });
       return;
     }
-
-    if (req.method === "POST" && !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
 
     if (sub === "/send" && req.method === "POST") {
       const body = await readBody(req, 4 * 1024 * 1024);

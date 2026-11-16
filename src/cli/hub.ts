@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type * as sqlite from "node:sqlite";
 import { stateDir } from "./paths.ts";
-import { backfillProjects, copyLabel, resolveProject } from "./projects.ts";
+import { backfillProjects, copyLabel, inTransaction, resolveProject } from "./projects.ts";
 import type { NoteItem } from "./sessions.ts";
 
 /** A row of `artifacts`: every artifact reviewed or checked on this machine (a copy of a page), and its review state. */
@@ -29,6 +29,11 @@ export interface ArtifactRow {
   closed_at: number | null;
   archived_at: number | null;
   acked_seq: number;
+}
+
+/** Notes no agent has answered: open, received, or held for the owner (as Hub.notes "unanswered" and Hub.stats count them). */
+export function unanswered(c: HubCounts): number {
+  return c.open + c.received + c.held;
 }
 
 /** How many items of a note stand where. */
@@ -301,8 +306,11 @@ export class Hub {
 
   /** An artifact `check` or `patch` saw (not necessarily reviewed). */
   register({ id, file, title, at = Date.now() }: { id: string; file: string; title?: string | null; at?: number }): void {
-    const loc = resolveProject(this.db, file);
-    this.q.upsertArtifact.run(id, file, loc.root, title || null, at, at, 0, null, null, loc.projectId, loc.root, loc.pageId);
+    // One transaction: a merge or forget-root in another process cannot prune the page between the two.
+    inTransaction(this.db, () => {
+      const loc = resolveProject(this.db, file);
+      this.q.upsertArtifact.run(id, file, loc.root, title || null, at, at, 0, null, null, loc.projectId, loc.root, loc.pageId);
+    });
   }
 
   artifact(id: string): ArtifactRow | null {
@@ -315,7 +323,8 @@ export class Hub {
   }
 
   /**
-   * Pages, newest activity first, each with its copies and their feedback counts summed.
+   * Pages grouped by project (the project with the newest activity first); inside a project, pages
+   * with unanswered notes first, then by last activity. Each has its copies and their counts summed.
    * `q` filters on title, file, path inside the root and project name; `project` is a project id.
    * By default a copy that was only checked (never opened for review) or is archived is left out,
    * and a page with no copy left is too; `archived` lists archived copies instead, `all` every copy.
@@ -375,7 +384,12 @@ export class Hub {
       page.addressed += copy.addressed;
       page.held += copy.held;
     }
-    return [...pages.values()].slice(0, limit);
+    // Projects by their newest activity (rows come newest first), then the order inside a project.
+    const rank = new Map<string, number>();
+    for (const p of pages.values()) if (!rank.has(p.project_id)) rank.set(p.project_id, rank.size);
+    return [...pages.values()]
+      .sort((a, b) => (rank.get(a.project_id) ?? 0) - (rank.get(b.project_id) ?? 0) || Number(unanswered(b) > 0) - Number(unanswered(a) > 0) || b.updated_at - a.updated_at)
+      .slice(0, limit);
   }
 
   /** Every project and its root folders. */

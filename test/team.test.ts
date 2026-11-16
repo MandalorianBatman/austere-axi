@@ -48,7 +48,7 @@ test("an invite token maps to its reviewer, and revoking removes it", () => {
     assert.equal(store.revoke("BO")[0].name, "Bo", "by name, any case");
     assert.equal(store.list().length, 0);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -103,7 +103,7 @@ test("held notes stay out of the agent's queue and feedback until the owner send
     }
   } finally {
     store.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -135,7 +135,7 @@ test("the hub records the author and held status, and filters on the author", as
     assert.equal(hub.notes({ author: "Ana" })[0].status, "open", "sent on, now open");
   } finally {
     store.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -162,7 +162,7 @@ test("an index made before team review gains the author column", async () => {
     }
     (await Hub.open(file)).close(); // opening again does not fail
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -332,7 +332,7 @@ async function stop(s: Server) {
     s.child.kill();
     await exited;
   }
-  fs.rmSync(s.state, { recursive: true, force: true });
+  fs.rmSync(s.state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
 
 const WORK = tmp("austere-team-work-");
@@ -356,7 +356,7 @@ intro = TextContent("hello")
 
 after(async () => {
   await stop(srv);
-  fs.rmSync(WORK, { recursive: true, force: true });
+  fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 const share = (name: string, auto = false) => request(srv.port, "POST", "/api/share", { body: { file: FILE, name, auto } });
@@ -456,7 +456,7 @@ test("a bad AUSTERE_AXI_LINK_URL stops the server instead of printing links that
     const bad = await startServer({ AUSTERE_AXI_LINK_URL: value });
     const code = await new Promise((resolve) => bad.child.once("exit", resolve));
     assert.notEqual(code, 0, value);
-    fs.rmSync(bad.state, { recursive: true, force: true });
+    fs.rmSync(bad.state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -669,7 +669,7 @@ test("a reviewer cannot read through a symlink out of the page's directory", asy
     assert.ok(!String(dir.data).includes("DUMMY-OUTSIDE-SECRET"));
   } finally {
     for (const l of [...links, path.join(WORK, "inside.txt")]) fs.rmSync(l, { force: true });
-    fs.rmSync(outside, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Gal" } });
   }
 });
@@ -763,7 +763,7 @@ test("relative files load in the sandboxed frame for the owner and for an invite
     assert.equal((await request(srv.port, "GET", `${owner.dir}fossil.svg`, { headers: NO_COOKIE })).status, 200);
   } finally {
     for (const f of made) fs.rmSync(f, { force: true });
-    fs.rmSync(outside, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ana" } });
   }
 });
@@ -1042,6 +1042,6 @@ test("a long transcript loses nothing: every entry, held and waiting notes too, 
     assert.deepEqual(store.unread(s).map((e) => e.id), [waiting.id]);
     store.close();
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });

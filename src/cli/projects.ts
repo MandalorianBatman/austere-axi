@@ -148,22 +148,21 @@ function storeRoot(db: sqlite.DatabaseSync, root: string, kind: RootKind, projec
  * itself, so the next lookup finds it stored. First match, walking up from `dir`:
  *  1. a stored root (the nearest is the longest). A `folder` root, a guess from a page's own
  *     folder, matches only that folder: a page in `~/a/b` does not join a project made for `~/a`;
- *  2. a `.git` entry, unless an assigned root contains it: a directory makes a `git` root; a file
- *     points at a git dir, and a `commondir` there leads to the main repository, whose project
- *     this `worktree` root joins (no `commondir`: a submodule, its own project);
+ *  2. a `.git` entry: a directory makes a `git` root; a file points at a git dir, and a `commondir`
+ *     there leads to the main repository, whose project this `worktree` root joins (no
+ *     `commondir`: a submodule, its own project). Inside an assigned root, the folder holding
+ *     `.git` is a root of the assigned root's project: the project comes from the assigned root,
+ *     page paths from the repository, so a repository and its worktrees elsewhere share pages;
  *  3. `dir` itself, a `folder` root.
  */
 export function resolveDir(db: sqlite.DatabaseSync, dir: string): Place {
   const roots = allRoots(db);
   const byKey = new Map(roots.map((r) => [pathKey(r.root), r]));
-  const assigned = roots.some((r) => r.kind === "assigned" && within(r.root, dir));
   for (let d = dir; ; ) {
     const row = byKey.get(pathKey(d));
     if (row && (row.kind !== "folder" || d === dir)) return { projectId: row.project_id, root: row.root, kind: row.kind };
-    if (!assigned) {
-      const git = dotGit(d);
-      if (git) return gitPlace(db, d, git, byKey);
-    }
+    const git = dotGit(d);
+    if (git) return gitPlace(db, d, git, roots);
     const up = path.dirname(d);
     if (up === d) break;
     d = up;
@@ -171,7 +170,16 @@ export function resolveDir(db: sqlite.DatabaseSync, dir: string): Place {
   return { projectId: storeRoot(db, dir, "folder"), root: dir, kind: "folder" };
 }
 
-function gitPlace(db: sqlite.DatabaseSync, dir: string, git: "dir" | "file", byKey: Map<string, RootRow>): Place {
+/** The nearest assigned root holding `dir`: the owner said everything under it is one project. */
+function assignedHolder(roots: RootRow[], dir: string): RootRow | null {
+  let best: RootRow | null = null;
+  for (const r of roots) if (r.kind === "assigned" && within(r.root, dir) && (!best || r.root.length > best.root.length)) best = r;
+  return best;
+}
+
+function gitPlace(db: sqlite.DatabaseSync, dir: string, git: "dir" | "file", roots: RootRow[]): Place {
+  // Inside an assigned root: that root's project, whatever the repository.
+  const assigned = assignedHolder(roots, dir);
   if (git === "file") {
     const gitDir = gitdirOf(dir);
     const common = gitDir ? readText(path.join(gitDir, "commondir")) : null;
@@ -179,16 +187,19 @@ function gitPlace(db: sqlite.DatabaseSync, dir: string, git: "dir" | "file", byK
       const commonDir = canonicalFile(path.resolve(gitDir, common.trim()));
       const main = path.basename(commonDir) === ".git" ? path.dirname(commonDir) : commonDir;
       if (pathKey(main) !== pathKey(dir)) {
-        // The main repository's project: its own stored root, else the nearest stored root holding
-        // it (an assigned parent, say; a `folder` guess holds only its own pages), else a new one.
-        let holder = byKey.get(pathKey(main));
-        if (!holder) for (const r of byKey.values()) if (r.kind !== "folder" && within(r.root, main) && (!holder || r.root.length > holder.root.length)) holder = r;
-        const projectId = holder ? holder.project_id : storeRoot(db, main, "git");
+        // The main repository's project: its own stored root, else the root holding it (an
+        // assigned parent, which the repository then joins as a root), else a new one.
+        let projectId = assigned?.project_id;
+        if (!projectId) {
+          const known = roots.find((r) => pathKey(r.root) === pathKey(main));
+          const holder = known ? null : assignedHolder(roots, main);
+          projectId = known ? known.project_id : storeRoot(db, main, "git", holder?.project_id);
+        }
         return { projectId: storeRoot(db, dir, "worktree", projectId), root: dir, kind: "worktree" };
       }
     }
   }
-  return { projectId: storeRoot(db, dir, "git"), root: dir, kind: "git" };
+  return { projectId: storeRoot(db, dir, "git", assigned?.project_id), root: dir, kind: "git" };
 }
 
 /** Insert the page row for a path in a project; its id. */
@@ -293,7 +304,8 @@ function rekeyUnder(db: sqlite.DatabaseSync, root: string): void {
 /**
  * `project add <dir> [--name n]`: make `dir` an assigned root, of the project named `name` (made if
  * there is none) or else of its own project. Roots guessed from a page's folder inside `dir` are
- * absorbed; any other root of another project above or below `dir` is an error naming it.
+ * absorbed, whatever their project, and their pages re-keyed under `dir`; any other root of another
+ * project above or below `dir` is an error naming it (a guessed folder above holds only its own pages).
  */
 export function addRoot(db: sqlite.DatabaseSync, dir: string, name?: string): { project: ProjectRow; root: string } {
   const root = canonicalFile(dir);
@@ -309,13 +321,15 @@ export function addRoot(db: sqlite.DatabaseSync, dir: string, name?: string): { 
     } else projectId = existing ? existing.project_id : createProject(db, path.basename(root) || root);
     const absorbed: string[] = [];
     for (const r of roots) {
-      if (r.project_id === projectId || pathKey(r.root) === pathKey(root)) continue;
+      if (pathKey(r.root) === pathKey(root)) continue;
+      if (r.kind === "folder") {
+        if (within(root, r.root)) absorbed.push(r.root);
+        continue;
+      }
+      if (r.project_id === projectId) continue;
       const projectName = (db.prepare("SELECT name FROM projects WHERE id = ?").get(r.project_id) as { name: string } | undefined)?.name || r.project_id;
       if (within(r.root, root)) throw new Error(`${root} is inside ${r.root}, a root of project ${projectName}`);
-      if (within(root, r.root)) {
-        if (r.kind !== "folder") throw new Error(`${r.root}, a root of project ${projectName}, is inside ${root}; \`project merge\` joins the two projects`);
-        absorbed.push(r.root);
-      }
+      if (within(root, r.root)) throw new Error(`${r.root}, a root of project ${projectName}, is inside ${root}; \`project merge\` joins the two projects`);
     }
     for (const r of absorbed) db.prepare("DELETE FROM project_roots WHERE root = ?").run(r);
     db.prepare(
