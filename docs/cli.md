@@ -4,11 +4,11 @@ Usage errors (unknown command or flag, missing argument) exit 2 before anything 
 
 ```
 austere-axi                      sessions + command list
-austere-axi <file>               validate + open a review   [--no-open]
-austere-axi poll <file>          long-poll for feedback      [--cursor n] [--agent-reply "..."] [--after n]
+austere-axi <file>               validate + register + open a review   [--no-open]
+austere-axi poll [file]          long-poll for feedback; no file: every page of this folder's project   [--project p] [--cursor n] [--agent-reply "..."] [--after n]
 austere-axi reply <file>         post a reply without polling   [--cursor n]
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
-austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
+austere-axi feedback [file]      feedback no agent has answered yet; no file: every page of the project   [--project p] [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]
 austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
@@ -37,6 +37,8 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 
 - **Pages are permanent:** a registered page always takes notes. Nothing starts, ends, closes or reopens a review. `poll`, `reply` and `feedback` need only the page; the page's state is derived: `listening` (a poll waits), `working` (an agent has a batch), `idle`, or `archived`.
 - **Newest listener wins:** a new `poll` on a page answers the older one with `status: replaced`, and its `next:` says to stop. There is no `--takeover`; a poll waits for notes or for `--timeout-ms`, however many tabs are open.
+- **One poll per project:** `poll` with no file listens to every page of the project of the current folder (`--project <dir|name|id>` names another). Pages are not opened first or registered one by one: any registered page takes notes while the server runs, and a page registered after the poll started is covered too. The answer lists `batches`, one per page, each with its `file`, its `copy` label (the branch or folder of its root), `final` and the usual `items`. A poll on one page wins for that page; the project poll gets the rest. A newer project poll replaces the older one.
+- **The project cursor:** note seqs are one counter for the whole database, so the `cursor` of a project poll is the highest seq it returned. `poll --cursor n` acknowledges every note up to `n` on the pages it covers, and unacknowledged notes come back. Replies stay per page: `reply <file> --cursor n` or `--agent-reply` after patching each file, then `poll --cursor n`; `--agent-reply` on a project poll is a usage error. `feedback` with no file reads every page of the project the same way (`--peek` acknowledges nothing).
 - **Hand the page to an agent:** **Copy agent prompt** in the review page's `⋯` menu (the owner's only) copies a prompt for an agent that should listen on this page: the file, the shared page's address when it is published, and the `poll` / `patch` loop. It holds no owner key, token or invite link. The agent needs the file at the same path, so it works on another machine too once that machine has your `cloud.json`.
 - **No lost notes:** every note is written to `~/.austere-axi/hub.db` before the page is told it was sent, so it survives a server crash or restart. Feedback sent while no agent listens waits for the next poll.
 - **Acknowledge with the cursor:** `poll` prints a `cursor`. Passing it back (`--cursor n` on the next `poll` or `reply`), or replying at all, acknowledges everything up to it. Without it, `poll` returns the same feedback again, so a crash or timed-out tool call loses nothing. `--after n` replays from any point.

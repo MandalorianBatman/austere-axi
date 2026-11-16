@@ -129,7 +129,7 @@ interface LegacySession {
   pending?: unknown;
 }
 
-type Statement = "ensure" | "session" | "sessions" | "save" | "notes" | "note" | "hasNotes" | "saveNote" | "maxSeq" | "replies" | "saveReply" | "indexItem" | "itemStatus";
+type Statement = "ensure" | "session" | "sessions" | "save" | "notes" | "note" | "hasNotes" | "saveNote" | "maxSeq" | "replies" | "saveReply" | "indexItem" | "itemStatus" | "projectOf" | "inProject";
 
 export function sessionId(file: string): string {
   return crypto.createHash("sha1").update(file).digest("hex").slice(0, 12);
@@ -198,6 +198,8 @@ export class SessionStore {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET status = excluded.status, text = excluded.text, data = excluded.data, author = excluded.author`),
       itemStatus: db.prepare(`UPDATE items SET status = ? WHERE entry_id = ?`),
+      projectOf: db.prepare(`SELECT project_id FROM artifacts WHERE id = ?`),
+      inProject: db.prepare(`SELECT id FROM artifacts WHERE project_id = ? AND reviewed = 1 ORDER BY id`),
     };
     this.importSessionFiles(path.join(dir, "sessions"));
     this.load();
@@ -301,6 +303,16 @@ export class SessionStore {
       }
     });
     for (const [e, patch] of changes) Object.assign(e, patch);
+  }
+
+  /** The project a page belongs to, read from hub.db each time: `project merge` in another process can move it. */
+  projectIdOf(s: Session): string | null {
+    return (this.q.projectOf.get(s.id) as { project_id: string | null } | undefined)?.project_id ?? null;
+  }
+
+  /** Every review session of a project. */
+  inProject(projectId: string): Session[] {
+    return (this.q.inProject.all(projectId) as { id: string }[]).map((r) => this.sessions.get(r.id)).filter((s): s is Session => Boolean(s));
   }
 
   nextSeq(): number {
