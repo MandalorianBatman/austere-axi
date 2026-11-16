@@ -475,11 +475,11 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
   }
 });
 
-test("a 0.11.0 hub.db opens: a review closed under 0.11.0 is archived once", async () => {
+test("a hub.db from a pre-release build opens: a review closed after archived_at was added is archived once", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-migrate-closed-"));
   const file = path.join(dir, "hub.db");
   try {
-    // 0.11.0 already has archived_at, so the column check no longer copies closed_at.
+    // A build of main before 0.11.0 already has archived_at, so the column check alone no longer copies closed_at.
     const db = await openDatabase(file);
     const insert = db.prepare("INSERT INTO artifacts (id, file, project, created_at, updated_at, reviewed, closed_at, archived_at) VALUES (?, ?, '', 1, 1, 1, ?, ?)");
     insert.run("closed", "/x/closed.html", 5, null);

@@ -249,7 +249,7 @@ function migrate(db: sqlite.DatabaseSync): void {
   if (!has("artifacts", "page_id")) db.exec("ALTER TABLE artifacts ADD COLUMN page_id TEXT");
   if (!has("artifacts", "root")) db.exec("ALTER TABLE artifacts ADD COLUMN root TEXT");
   if (!has("artifacts", "archived_at")) db.exec("ALTER TABLE artifacts ADD COLUMN archived_at INTEGER");
-  // Archive replaces close: a review the owner closed is put away. Runs on every open, not only when the column is added, because 0.11.0 added `archived_at` without copying `closed_at`.
+  // Archive replaces close: a review the owner closed is put away. Runs on every open, not only when the column is added, because a build of main between #66 and the 0.11.0 release added `archived_at` without copying `closed_at`.
   db.exec("UPDATE artifacts SET archived_at = COALESCE(archived_at, closed_at), closed_at = NULL WHERE closed_at IS NOT NULL");
   db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
   db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
