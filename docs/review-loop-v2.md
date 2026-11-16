@@ -49,7 +49,7 @@ Each row is: Accepted 2026-11-16 (owner away, proceed-with-assumptions instructi
 | Q8 | P8 | The wiki's files folder is a root of the project, so core `find`, `show` and `outline` read the wiki. `project_roots.root` is unique, so a files folder is a root of one project only: the first project the wiki was set up for. A second project that shares the wiki (`project_wikis`) reads it with `find --project <first project>`, or the owner merges the two projects; `austere-wiki doctor` says so. | RLM-363 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q9 | P9 | Activity triggers are generic and in the core, configured only at a terminal. | RLM-360 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q10 | P10 | A wiki block is "reviewed" only by an explicit action, per block or for all. A block with an open note stays unreviewed until the owner has seen the fix. | RLM-365 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
-| Q11 | P11 | The project default session is "author": the session that wrote each page. When the author session has continuations (A14), "author" means the newest session in its `parent_id` chain linked to the page, so the default run resumes where omp actually continued. No author registered → `new` with the project's default harness. | RLM-346 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
+| Q11 | P11 | The project default session is "author": the session that wrote each page. When the author session has continuations (A14), "author" means the newest session linked to the page through `parent_kind = continuation` edges, never a fork, so the default run resumes where omp actually continued. No author registered → `new` with the project's default harness. | RLM-346 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 
 Sid can reverse any Q row when he is back. A reversal is a change to this note first, then to the issue.
 
@@ -114,6 +114,7 @@ pages         (id TEXT PRIMARY KEY,                 -- sha1(project_id + "\0" + 
 agent_sessions  (id TEXT PRIMARY KEY, harness TEXT NOT NULL, session_id TEXT NOT NULL,
                  session_file TEXT, cwd TEXT, model TEXT,
                  parent_id TEXT,                    -- the agent_sessions.id it continues or forks (A14)
+                 parent_kind TEXT,                  -- continuation | fork; Q11 follows continuation edges only
                  pid INTEGER, pid_start TEXT,       -- for liveness: alive | exited | unknown
                  first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL,
                  UNIQUE (harness, session_id))
