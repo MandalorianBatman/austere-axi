@@ -188,7 +188,8 @@ interface Poll {
   /** A project poll: the project it listens for, the pages it watches, and `--after` (null: each page's own cursor). */
   project?: string;
   after?: number | null;
-  watched?: Session[];
+  /** A project poll's refresh of its pages' hosted connections (membership can change under it: `project merge`). */
+  refresh?: ReturnType<typeof setInterval>;
 }
 
 /** A watched artifact file and what it held last. */
@@ -254,6 +255,8 @@ const SSE_HARD_MAX = 32 << 20;
 const SSE_MAX_PER_REVIEWER = 4;
 const MAX_HELD_PER_REVIEWER = 200;
 const SSE_MAX_PER_SESSION = 16;
+// How often a waiting project poll re-reads which pages it covers, to keep their hosted connections right.
+const PROJECT_REFRESH_MS = 30_000;
 
 export async function runServer({
   port,
@@ -703,15 +706,32 @@ export async function runServer({
     broadcastPresence(s);
   }
 
-  function finishProjectPoll(poll: Poll, body: PollResponse, onDelivered?: () => void): void {
-    if (poll.done) return;
+  /** A project poll has ended (answered, replaced, timed out or its client left): its pages stop being covered. */
+  function retireProjectPoll(poll: Poll): void {
     poll.done = true;
+    clearInterval(poll.refresh);
     const project = poll.project as string;
     if (projectPolls.get(project) === poll) projectPolls.delete(project);
-    for (const s of poll.watched ?? []) peer.unwatch(s);
+    refreshWatch(project);
+  }
+
+  function finishProjectPoll(poll: Poll, body: PollResponse, onDelivered?: () => void): void {
+    if (poll.done) return;
+    retireProjectPoll(poll);
     poll.res.on("finish", () => onDelivered?.());
     send(poll.res, 200, body);
-    for (const s of store.inProject(project)) broadcastPresence(s);
+    for (const s of store.inProject(poll.project as string)) broadcastPresence(s);
+  }
+
+  /**
+   * Keep each page's hosted connection as the listeners say: open while a poll (its own or its project's) covers the page,
+   * closed once none does. Peer derives "wanted" from the same registry, so this only has to run when coverage may have changed.
+   */
+  function refreshWatch(projectId: string): void {
+    for (const s of store.inProject(projectId)) {
+      if (listener(s)) peer.watch(s);
+      else peer.unwatch(s);
+    }
   }
 
   function clientCount(id: string): number {
@@ -720,11 +740,8 @@ export async function runServer({
 
   /** A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll. */
   function joinProjectPoll(s: Session): void {
-    const poll = listener(s);
-    if (poll?.watched && !poll.watched.includes(s)) {
-      poll.watched.push(s);
-      peer.watch(s);
-    }
+    const pid = store.projectIdOf(s);
+    if (pid && projectPolls.has(pid)) refreshWatch(pid);
   }
 
   /**
@@ -770,19 +787,16 @@ export async function runServer({
     for (const s of mine) s.workingSince = null;
     const existing = projectPolls.get(projectId);
     if (existing && !existing.done) finishProjectPoll(existing, { status: "replaced" });
-    const poll: Poll = { res, startedAt: Date.now(), done: false, from: 0, project: projectId, after, watched: [] };
+    const poll: Poll = { res, startedAt: Date.now(), done: false, from: 0, project: projectId, after };
     const batches = projectBatches(poll);
     if (batches.length) return deliverProject(poll, batches);
     projectPolls.set(projectId, poll);
-    for (const s of mine) {
-      peer.watch(s);
-      poll.watched?.push(s);
-    }
+    refreshWatch(projectId);
+    // Pages can join the project without this server hearing of it (`project merge` in another process): look again now and then.
+    poll.refresh = setInterval(() => refreshWatch(projectId), PROJECT_REFRESH_MS);
     res.on("close", () => {
       if (poll.done) return;
-      poll.done = true;
-      if (projectPolls.get(projectId) === poll) projectPolls.delete(projectId);
-      for (const s of poll.watched ?? []) peer.unwatch(s);
+      retireProjectPoll(poll);
       for (const s of store.inProject(projectId)) broadcastPresence(s);
     });
     const timeoutMs = Number(body.timeoutMs);

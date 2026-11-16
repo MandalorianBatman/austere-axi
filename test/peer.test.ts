@@ -584,6 +584,34 @@ test("presence relay: hosted viewers reach the owner's review page; the owner's 
   }
 });
 
+test("a project poll keeps the hosted socket of every published page in the project open, and releases them when it ends", async () => {
+  const a = file("proj-a.html");
+  const b = file("proj-b.html");
+  const idA = newPage();
+  const idB = newPage();
+  const m = await machine({ [a]: { id: idA, auto: true }, [b]: { id: idB, auto: true } });
+  try {
+    const sidA = await open(m, a);
+    const sidB = await open(m, b);
+    const pa = stub.pages.get(idA) as StubPage;
+    const pb = stub.pages.get(idB) as StubPage;
+    // Opening only pulls: wait for the sockets to settle shut.
+    await until("no socket held for an idle page", () => pa.live.size === 0 && pb.live.size === 0);
+
+    const polling = m.run("poll", "--project", WORK, "--timeout-ms", "4000");
+    await until("both pages' sockets open for the project poll", () => pa.live.size > 0 && pb.live.size > 0);
+
+    // A hosted note on either page reaches the one project poll.
+    addNote(idB, "Ana", [{ kind: "message", text: "hosted note on b" }], "released");
+    const r = await polling;
+    assert.ok(r.out.includes(`file: ${b}`) && /message: hosted note on b/.test(r.out), r.out);
+    await until("sockets released once the project poll is over", () => pa.live.size === 0 && pb.live.size === 0);
+    assert.ok(sidA && sidB);
+  } finally {
+    await cleanup(m);
+  }
+});
+
 test("the agent prompt names the file and the poll command, the shared page when published, and never a secret", async () => {
   const held = file("prompt-held.html");
   const auto = file("prompt-auto.html");

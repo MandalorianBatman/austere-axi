@@ -505,6 +505,23 @@ test("a page registered after the project poll started is included", () =>
     assert.match(got.out, /message: from the new page/);
   }));
 
+test("a project cursor never acknowledges a note no poll delivered, so a --after replay loses nothing", () =>
+  withServer(async ({ port, state, id }) => {
+    // Fresh database: the notes are seq 1 and 2.
+    await send(port, id, "first, skipped by --after");
+    await send(port, id, "second");
+    const replay = await cliIn(WORK, port, state, "poll", "--project", WORK, "--after", "1", "--timeout-ms", "2000");
+    assert.match(replay.out, /message: second/);
+    assert.doesNotMatch(replay.out, /first, skipped/);
+    assert.match(replay.out, /^cursor: 2$/m);
+
+    // The cursor of that answer must not consume the note nobody was handed.
+    await cliIn(WORK, port, state, "poll", "--project", WORK, "--cursor", "2", "--timeout-ms", "300");
+    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 2, "nothing acknowledged past the skipped note");
+    const again = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "2000");
+    assert.match(again.out, /message: first, skipped by --after/, "the skipped note comes back");
+  }));
+
 test("notes of another project never reach a project poll", () =>
   withServer(async ({ port, state }) => {
     const otherId = await open(port, OTHER);
