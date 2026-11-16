@@ -7,6 +7,7 @@ austere-axi                      sessions + command list
 austere-axi <file>               validate + register + open a review   [--no-open]
 austere-axi poll [file]          long-poll for feedback; no file: every page of this folder's project   [--project p] [--cursor n] [--agent-reply "..."] [--after n]
 austere-axi reply <file>         post a reply without polling   [--cursor n]
+
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback [file]      feedback no agent has answered yet; no file: every page of the project   [--project p] [--all] [--peek]
 austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]
@@ -26,6 +27,7 @@ austere-axi publish invites|revoke <file> [name]   see a page's invites, cut one
 austere-axi publish list|rm <file|id>   your hosted pages; delete one now
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out
+austere-axi server install|uninstall|status   always-on server as a per-user systemd or launchd service (see Hub)   [--port n] [--link-url u]
 austere-axi mcp                  MCP server on stdio (see MCP)
 ```
 
@@ -44,7 +46,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 - **Acknowledge with the cursor:** `poll` prints a `cursor`. Passing it back (`--cursor n` on the next `poll` or `reply`), or replying at all, acknowledges everything up to it. Without it, `poll` returns the same feedback again, so a crash or timed-out tool call loses nothing. `--after n` replays from any point.
 - **Send & End is a hint, not a state:** the reviewer's **Send & End** marks that batch. `poll` and `feedback` return `final: true` on it, and `next:` tells the agent to apply it and stop listening. The page still takes notes: a later one waits in the inbox for the next `poll`, days later and after a server restart too.
 - **Archive is the only lock:** `archive <file>` (or **Archive page** in the page's `⋯` menu) leaves the hub's lists and locks the composer: `/send` answers 409. `unarchive <file>` or **Unarchive page** restores both. A running server makes the change, so an open page updates at once; `open` leaves an archived page archived.
-- **Removed in 0.11:** `end`, `close`, `reopen`, `open --reopen`, `poll --takeover` and `poll --owner` exit 2 with one line that names the replacement, or says the flag is gone when there is none (`--owner`). In 0.12 they are unknown.
+- **Removed in 0.12:** `end`, `close`, `reopen`, `open --reopen`, `poll --takeover` and `poll --owner` exit 2 with one line that names the replacement, or says the flag is gone when there is none (`--owner`). In 0.13 they are unknown.
 - An `Image` src that is a path relative to the page (png, jpg, gif, webp, svg, avif) loads under review for the owner and for invited reviewers, and `export` inlines it as a data URI. Both read only regular files in the page's own folder, never dotfiles or links that leave it; `export` skips an image over 10 MB. A file `export` cannot read stays as written, and the output names it in `notices`.
 - `feedback <file>` returns notes no agent has answered, from any day. Reading them acknowledges them; `reply` marks them answered.
 - **Render failures reach the agent without a click:** an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px, opens each tab in turn, and prints render errors and the statements that make the page scroll sideways, as text, with no screenshot. Agents run it only when the user asks for a check.

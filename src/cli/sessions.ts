@@ -492,6 +492,7 @@ export class SessionStore {
     this.updateNotes(s, entries.map((e): NoteChange => [e, { workAt: now }]));
   }
 
+
   // ── session files from before the database ──
 
   /**

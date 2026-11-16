@@ -19,8 +19,10 @@ import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
 import { SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
+import { detectSupervisor } from "./service.ts";
+import type { Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
-import { Hub } from "./hub.ts";
+import { Hub, activeWorkNow } from "./hub.ts";
 import { copyLabel, findProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
@@ -48,6 +50,8 @@ export interface HealthInfo {
   tailnet?: Tailnet;
   remote?: string;
   persist: boolean;
+  /** The service manager that runs this server (`server install`); a CLI never replaces it. */
+  supervised?: Supervisor;
 }
 
 /** Whether an agent listens on a session, works on its notes, or neither. */
@@ -263,11 +267,14 @@ export async function runServer({
   verbose = false,
   alsoListen = [],
   persist = false,
+  supervised,
 }: {
   port: number;
   verbose?: boolean;
   alsoListen?: string[];
   persist?: boolean;
+  /** The supervisor that runs this server; read from the system when it is not given. */
+  supervised?: Supervisor | null;
 }): Promise<{ port: number; shutdown: (reason: string) => void }> {
   const log = (...a: unknown[]): void => {
     const line = `${new Date().toISOString()} ${a.join(" ")}`;
@@ -280,8 +287,12 @@ export async function runServer({
   };
 
   // Notes commit to hub.db before any request that adds them is answered. The lock names
-  // the port, so a later process can tell this server from an unrelated one with its pid.
-  const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000 });
+  // the port, so a later process can tell this server from an unrelated one with its pid,
+  // and the supervisor, so `server install` can tell a server it started from one it did not.
+  // Who runs this server: systemd or launchd, when one does. A supervised server is the
+  // unit's, so a CLI never replaces it (RLM-311).
+  const supervisorName: Supervisor | null = supervised ?? detectSupervisor();
+  const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000, supervised: supervisorName });
   process.on("exit", releaseLock);
   let store: SessionStore;
   try {
@@ -321,7 +332,8 @@ export async function runServer({
   let tailnet: Tailnet | null = null;
   const linkBase = linkUrl(); // throws on a bad AUSTERE_AXI_LINK_URL: better to stop here than print wrong links
   let lastActivity = Date.now();
-  const idleMs = persist || persistEnv() ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
+  // A supervised server is always on: its supervisor decides when it stops.
+  const idleMs = persist || persistEnv() || supervisorName ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
 
   const activity = () => {
     lastActivity = Date.now();
@@ -839,6 +851,7 @@ export async function runServer({
         tailnet: tailnet || undefined,
         remote: remoteBase() || undefined,
         persist: idleMs === 0,
+        supervised: supervisorName ?? undefined,
       } satisfies HealthInfo);
     }
     if (route === "sessions") {
@@ -1563,10 +1576,21 @@ export async function runServer({
   }
 
   if (idleMs > 0) {
+    let checking = false;
     setInterval(() => {
-      const busy = polls.size > 0 || projectPolls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0);
-      if (busy) activity();
-      else if (Date.now() - lastActivity > idleMs) shutdown("idle");
+      // A run or an attach is written by another process, so the check reads the database with
+      // a connection of its own; the server's own connection may hold an older snapshot.
+      if (checking) return;
+      checking = true;
+      void activeWorkNow()
+        .then((working) => {
+          const busy = polls.size > 0 || projectPolls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || working;
+          if (busy) activity();
+          else if (Date.now() - lastActivity > idleMs) shutdown("idle");
+        })
+        .finally(() => {
+          checking = false;
+        });
     }, Math.min(60_000, idleMs)).unref();
   }
   process.on("SIGINT", () => shutdown("SIGINT"));
