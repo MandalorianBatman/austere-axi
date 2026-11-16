@@ -137,9 +137,13 @@ export async function openDatabase(file = hubDbFile()): Promise<sqlite.DatabaseS
   return db;
 }
 
-const SCHEMA = `
+// journal_mode cannot change inside a transaction: set before migrate() opens one.
+const PRAGMAS = `
 PRAGMA journal_mode = WAL;
 PRAGMA busy_timeout = 3000;
+`;
+
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS artifacts (
   id TEXT PRIMARY KEY,
   file TEXT NOT NULL UNIQUE,
@@ -229,31 +233,37 @@ CREATE INDEX IF NOT EXISTS project_roots_project ON project_roots(project_id);
 CREATE TABLE IF NOT EXISTS pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, rel_path TEXT NOT NULL, UNIQUE (project_id, rel_path));
 `;
 
+/** Bring hub.db to the current schema in one transaction; a second run changes nothing. */
 function migrate(db: sqlite.DatabaseSync): void {
-  db.exec(SCHEMA);
-  const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
-  // Indexes made before team review have no author column.
-  if (!has("items", "author")) db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
-  // Before sessions moved into the database, artifacts had no review state of their own.
-  if (!has("artifacts", "ended_at")) db.exec("ALTER TABLE artifacts ADD COLUMN ended_at INTEGER");
-  if (!has("artifacts", "closed_at")) db.exec("ALTER TABLE artifacts ADD COLUMN closed_at INTEGER");
-  if (!has("artifacts", "acked_seq")) db.exec("ALTER TABLE artifacts ADD COLUMN acked_seq INTEGER NOT NULL DEFAULT 0");
-  db.exec(NOTES);
-  // Notes from before hosted pages have no remote row.
-  if (!has("notes", "remote_id")) db.exec("ALTER TABLE notes ADD COLUMN remote_id TEXT");
-  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS notes_remote ON notes(remote_id)");
-  db.exec(CLOUD);
-  db.exec(PROJECTS);
-  if (!has("project_roots", "prefix")) db.exec("ALTER TABLE project_roots ADD COLUMN prefix TEXT NOT NULL DEFAULT ''");
-  if (!has("artifacts", "project_id")) db.exec("ALTER TABLE artifacts ADD COLUMN project_id TEXT");
-  if (!has("artifacts", "page_id")) db.exec("ALTER TABLE artifacts ADD COLUMN page_id TEXT");
-  if (!has("artifacts", "root")) db.exec("ALTER TABLE artifacts ADD COLUMN root TEXT");
-  if (!has("artifacts", "archived_at")) db.exec("ALTER TABLE artifacts ADD COLUMN archived_at INTEGER");
-  // Archive replaces close: a review the owner closed is put away. Runs on every open, not only when the column is added, because 0.11.0 added `archived_at` without copying `closed_at`.
-  db.exec("UPDATE artifacts SET archived_at = COALESCE(archived_at, closed_at), closed_at = NULL WHERE closed_at IS NOT NULL");
-  db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
-  db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
-  backfillProjects(db);
+  db.exec(PRAGMAS);
+  inTransaction(db, () => {
+    db.exec(SCHEMA);
+    const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    // Indexes made before team review have no author column.
+    if (!has("items", "author")) db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
+    // Before sessions moved into the database, artifacts had no review state of their own.
+    if (!has("artifacts", "ended_at")) db.exec("ALTER TABLE artifacts ADD COLUMN ended_at INTEGER");
+    if (!has("artifacts", "closed_at")) db.exec("ALTER TABLE artifacts ADD COLUMN closed_at INTEGER");
+    if (!has("artifacts", "acked_seq")) db.exec("ALTER TABLE artifacts ADD COLUMN acked_seq INTEGER NOT NULL DEFAULT 0");
+    db.exec(NOTES);
+    // Notes from before hosted pages have no remote row.
+    if (!has("notes", "remote_id")) db.exec("ALTER TABLE notes ADD COLUMN remote_id TEXT");
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS notes_remote ON notes(remote_id)");
+    db.exec(CLOUD);
+    db.exec(PROJECTS);
+    if (!has("project_roots", "prefix")) db.exec("ALTER TABLE project_roots ADD COLUMN prefix TEXT NOT NULL DEFAULT ''");
+    if (!has("artifacts", "project_id")) db.exec("ALTER TABLE artifacts ADD COLUMN project_id TEXT");
+    if (!has("artifacts", "page_id")) db.exec("ALTER TABLE artifacts ADD COLUMN page_id TEXT");
+    if (!has("artifacts", "root")) db.exec("ALTER TABLE artifacts ADD COLUMN root TEXT");
+    if (!has("artifacts", "archived_at")) db.exec("ALTER TABLE artifacts ADD COLUMN archived_at INTEGER");
+    // Archive replaces close: a review the owner closed is put away. On every open, not only when the
+    // column is added: 0.11.0 added `archived_at` without copying `closed_at`, and a 0.10.4 CLI sharing
+    // this hub.db can still close one.
+    db.exec("UPDATE artifacts SET archived_at = COALESCE(archived_at, closed_at), closed_at = NULL WHERE closed_at IS NOT NULL");
+    db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
+    db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
+    backfillProjects(db);
+  });
 }
 
 /** A bindable SQLite text value from untrusted item data: strings pass, other shapes become JSON, empty is null. */
@@ -440,6 +450,45 @@ export class Hub {
                 (SELECT COUNT(*) FROM items WHERE status IN ('open', 'received', 'held')) AS unanswered`,
       )
       .get() as unknown as HubStats;
+  }
+}
+
+/**
+ * Whether work is going on: a run is active, or an agent is attached to a page somewhere.
+ * The idle exit waits while this is true (RLM-340). The tables come with the dispatcher and
+ * the attach settings (RLM-345, RLM-346); before they exist there is no run and no attach,
+ * so the answer is false.
+ */
+export function hasActiveWork(db: sqlite.DatabaseSync): boolean {
+  const table = (name: string): boolean => db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name) != null;
+  try {
+    if (table("runs") && db.prepare(`SELECT 1 FROM runs WHERE status IN ('queued', 'waiting_for_session', 'running') LIMIT 1`).get()) return true;
+    if (table("attach_settings") && db.prepare(`SELECT 1 FROM attach_settings WHERE state = 'on' LIMIT 1`).get()) return true;
+  } catch {
+    // The table is there but not shaped as expected: treat it as no work.
+  }
+  return false;
+}
+
+/**
+ * Whether work is going on, read with a connection of its own. The server's own connection can
+ * hold a read snapshot that predates a row another process wrote, so a fresh one is what sees
+ * the truth. False when the database is not there yet.
+ */
+export async function activeWorkNow(file = hubDbFile()): Promise<boolean> {
+  const Database = await loadSqlite();
+  let db: sqlite.DatabaseSync | null = null;
+  try {
+    db = new Database(file, { readOnly: true });
+    return hasActiveWork(db);
+  } catch {
+    return false;
+  } finally {
+    try {
+      db?.close();
+    } catch {
+      // already closed
+    }
   }
 }
 

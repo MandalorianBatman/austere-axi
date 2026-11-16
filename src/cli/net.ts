@@ -72,7 +72,12 @@ export function allowedHosts(extra: (string | null | undefined)[] = []): Set<str
  * (the server answers at the root only, so a path prefix would give links that redirect to the wrong place).
  */
 export function linkUrl(): { base: string; host: string } | null {
-  const raw = String(process.env.AUSTERE_AXI_LINK_URL || "").trim();
+  return parseLinkUrl(String(process.env.AUSTERE_AXI_LINK_URL || ""));
+}
+
+/** linkUrl() for a value given some other way (`server install --link-url`). */
+export function parseLinkUrl(value: string): { base: string; host: string } | null {
+  const raw = value.trim();
   if (!raw) return null;
   let u: URL;
   try {
