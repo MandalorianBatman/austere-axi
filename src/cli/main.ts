@@ -121,6 +121,7 @@ COMMANDS
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} trust list              packs and scopes the user lets you add without --trust
   ${BIN} registry list           private registries the user mapped npm scopes to
+  ${BIN} server install          the server as a service of your user account: always on (owner only)
   ${BIN} publish <file>          hosted share link (austere.kasat.xyz), only when the user asks
   ${BIN} <command> --help        one command's flags and an example
   ${BIN} help all                every command, notes and environment
