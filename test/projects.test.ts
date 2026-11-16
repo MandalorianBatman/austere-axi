@@ -194,6 +194,21 @@ test("project add around a repository of the same project re-keys its pages unde
     assert.deepEqual(hub.list({ all: true }).map((p) => [p.project, p.rel_path]).sort(), [["shop", "plan.html"], ["shop", "shop/plan.html"]]);
   }));
 
+test("two worktrees under an assigned root of another project than their repository: one page, two copies", () =>
+  withDb((db, dir) => {
+    const main = repo(path.join(dir, "repos", "shop"));
+    const indexed = resolveProject(db, write(path.join(main, "docs", "plan.html")));
+    const work = path.join(dir, "work");
+    fs.mkdirSync(work, { recursive: true });
+    const { project } = addRoot(db, work, "work");
+    const a = resolveProject(db, write(path.join(worktree(main, path.join(work, "feat-a"), "ref: refs/heads/a"), "docs", "plan.html")));
+    const b = resolveProject(db, write(path.join(worktree(main, path.join(work, "feat-b"), "ref: refs/heads/b"), "docs", "plan.html")));
+    assert.notEqual(indexed.projectId, project.id);
+    assert.deepEqual([a.projectId, b.projectId], [project.id, project.id]);
+    assert.equal(a.pageId, b.pageId);
+    assert.notEqual(a.pageId, resolveProject(db, write(path.join(work, "docs", "plan.html"))).pageId);
+  }));
+
 test("project add absorbs a guessed folder root below it, even of the project it names", async () =>
   withDb(async (db, dir) => {
     const hub = new Hub(db);
