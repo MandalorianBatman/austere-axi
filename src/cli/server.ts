@@ -22,7 +22,7 @@ import { lockStateDir } from "./lock.ts";
 import { supervisor } from "./service.ts";
 import type { Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
-import { Hub } from "./hub.ts";
+import { Hub, hasActiveWork } from "./hub.ts";
 import { findProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
@@ -216,19 +216,6 @@ const SHORT_GRACE_MS = 10_000;
 /** Whether AUSTERE_AXI_PERSIST asks the server to stay up with no one using it. */
 export function persistEnv() {
   return /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_PERSIST || "");
-}
-
-// Reasons the idle exit waits even with no page open and no poll (RLM-345: a run is active; RLM-346: attach is on).
-const idleHolds: (() => boolean)[] = [];
-
-/** Keep an unsupervised server from idling out while `held()` is true. */
-export function holdIdleExit(held: () => boolean): void {
-  idleHolds.push(held);
-}
-
-/** Whether something holds the idle exit off now. */
-export function idleExitSuspended(): boolean {
-  return idleHolds.some((held) => held());
 }
 
 /** How long a login code from `austere-axi login` (or the CLI opening a browser) works. */
@@ -1511,7 +1498,7 @@ export async function runServer({
 
   if (idleMs > 0) {
     setInterval(() => {
-      const busy = polls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || idleExitSuspended();
+      const busy = polls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || hasActiveWork(store.db);
       if (busy) activity();
       else if (Date.now() - lastActivity > idleMs) shutdown("idle");
     }, Math.min(60_000, idleMs)).unref();

@@ -458,6 +458,23 @@ export class Hub {
   }
 }
 
+/**
+ * Whether work is going on: a run is active, or an agent is attached to a page somewhere.
+ * The idle exit waits while this is true (RLM-340). The tables come with the dispatcher and
+ * the attach settings (RLM-345, RLM-346); before they exist there is no run and no attach,
+ * so the answer is false.
+ */
+export function hasActiveWork(db: sqlite.DatabaseSync): boolean {
+  const table = (name: string): boolean => db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name) != null;
+  try {
+    if (table("runs") && db.prepare(`SELECT 1 FROM runs WHERE status IN ('queued', 'waiting_for_session', 'running') LIMIT 1`).get()) return true;
+    if (table("attach_settings") && db.prepare(`SELECT 1 FROM attach_settings WHERE state = 'on' LIMIT 1`).get()) return true;
+  } catch {
+    // The table is there but not shaped as expected: treat it as no work.
+  }
+  return false;
+}
+
 /** Register an artifact with the hub from a CLI command. Never fails the command. */
 export async function registerWithHub(file: string, title: string | null | undefined, id: string): Promise<void> {
   try {

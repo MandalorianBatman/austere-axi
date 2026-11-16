@@ -8,6 +8,7 @@ import { after, test } from "node:test";
 import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
 import { stateDirHolder } from "../src/cli/lock.ts";
+import { hasActiveWork, openDatabase } from "../src/cli/hub.ts";
 import { installService, launchdPlist, npxWarning, restartCommand, serviceStatus, systemdUnit, uninstallService } from "../src/cli/service.ts";
 import type { RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
 import { freePort } from "./port.ts";
@@ -269,6 +270,31 @@ test("a supervised server says so in server.lock and /api/health, never idles ou
     const r = await installService({}, ctx);
     assert.equal(r.status, "installed");
     assert.ok(calls.includes("systemctl --user restart austere-axi.service"));
+  } finally {
+    await stop(child);
+  }
+});
+
+test("an unsupervised server waits out the idle exit while a run is active or an agent is attached", async () => {
+  // The tables come with the dispatcher and the attach settings (RLM-345, RLM-346); the
+  // idle exit waits for them when they are there (RLM-340).
+  const { child, port } = await startServer({ AUSTERE_AXI_IDLE_TIMEOUT_MS: "100" });
+  try {
+    const db = await openDatabase(path.join(STATE, "hub.db"));
+    db.exec("CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, status TEXT NOT NULL)");
+    db.exec("CREATE TABLE IF NOT EXISTS attach_settings (scope TEXT NOT NULL, scope_id TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY (scope, scope_id))");
+    assert.equal(hasActiveWork(db), false);
+    db.exec("INSERT INTO runs (id, status) VALUES ('r1', 'running')");
+    assert.equal(hasActiveWork(db), true);
+    db.exec("UPDATE runs SET status = 'done'");
+    assert.equal(hasActiveWork(db), false);
+    db.exec("INSERT INTO attach_settings (scope, scope_id, state) VALUES ('page', 'p1', 'on')");
+    assert.equal(hasActiveWork(db), true);
+    db.exec("UPDATE attach_settings SET state = 'off'");
+    assert.equal(hasActiveWork(db), false);
+    db.close();
+    // The server is still up: the idle exit waited.
+    assert.ok(await health(port));
   } finally {
     await stop(child);
   }
