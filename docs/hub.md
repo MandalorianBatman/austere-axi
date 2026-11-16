@@ -35,7 +35,7 @@ austere-axi project forget-root ~/old/clone  # its pages are filed again
 ## What the lists leave out
 
 - Pages only `check`ed or `patch`ed, never opened for review. `hub list --all` (or **All, with checked-only** on the home page) shows them.
-- Archived pages: `austere-axi archive <file>` puts a page away, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. A review closed in an older version is archived when its `hub.db` is first opened.
+- Archived pages: `austere-axi archive <file>` puts a page away and locks its composer, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. A review closed in an older version is archived the next time its `hub.db` is opened by this version, however late it was closed.
 - Nothing else: a page whose file is gone stays listed, marked `missing`, with its notes.
 
 ## Notes

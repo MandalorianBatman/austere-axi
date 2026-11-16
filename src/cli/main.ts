@@ -465,9 +465,13 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   if (d.pending) out.queued_feedback = d.pending;
   if (d.held) out.held_notes = `${d.held} from teammates, waiting for the owner to send them`;
   if (d.session.archived) out.archived = "notes are locked until the owner unarchives this page";
-  out.next = check.ok
-    ? `Run \`${BIN} poll ${quote(file)}\` and leave it running until it returns.`
-    : `Fix the errors above (the page renders what it can), then run \`${BIN} poll ${quote(file)}\`.`;
+  if (d.session.archived) {
+    out.next = `The page is archived, so it takes no notes. Only if the user asks, run \`${BIN} unarchive ${quote(file)}\`, then \`${BIN} poll ${quote(file)}\`.`;
+  } else {
+    out.next = check.ok
+      ? `Run \`${BIN} poll ${quote(file)}\` and leave it running until it returns.`
+      : `Fix the errors above (the page renders what it can), then run \`${BIN} poll ${quote(file)}\`.`;
+  }
   print(out);
 }
 
@@ -1163,7 +1167,11 @@ async function cmdArchive(file: string | undefined, archive: boolean): Promise<v
   const done = () => print({ status: archive ? "archived" : "unarchived", file: abs, note: archive ? `Notes are refused until \`${BIN} unarchive ${quote(file)}\`.` : undefined });
   if (await serverIfRunning()) {
     const r = await request("POST", `/api/${cmd}`, { file: abs }, { timeoutMs: 10_000 });
-    if (r.status === 404) return fail(`not in the hub: ${abs}`);
+    if (r.status === 404) {
+      // An older server answers "unknown route": it predates this CLI and must be restarted to know archive.
+      if (/unknown route/.test(String(r.data?.error))) return fail(`the running server is older than this CLI and does not know ${cmd}: run \`${BIN} stop\`, then ${cmd} again`);
+      return fail(`not in the hub: ${abs}`);
+    }
     if (r.status !== 200) return fail(r.data?.error || `${cmd} failed (${r.status})`);
     return done();
   }
