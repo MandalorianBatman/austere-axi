@@ -390,16 +390,37 @@ export function isOurUnit(file: string): boolean {
   }
 }
 
+/** The installed service for this state dir and port, when there is one. */
+export function installedServiceFor(dir: string, port: number): { supervisor: Supervisor; file: string } | null {
+  const ctx = serviceContext(async () => null);
+  const target = unitFile(ctx);
+  if (!target || !fs.existsSync(target.file)) return null;
+  if (path.resolve(unitStateDir(target.file)) !== path.resolve(dir)) return null;
+  const unitPortNumber = unitPort(target.file);
+  if (unitPortNumber != null && unitPortNumber !== port) return null;
+  return target;
+}
+
 /** The state dir an installed unit runs with: its own setting, or the default. */
 export function unitStateDir(file: string): string {
-  const m = /^Environment=AUSTERE_AXI_STATE_DIR="?(.*?)"?$/m.exec(fs.readFileSync(file, "utf8"));
-  return m ? path.resolve(m[1]) : path.join(os.homedir(), ".austere-axi");
+  const text = fs.readFileSync(file, "utf8");
+  // systemd: Environment=AUSTERE_AXI_STATE_DIR=/path, or the whole assignment quoted.
+  const systemd = /^Environment="?AUSTERE_AXI_STATE_DIR=(.*?)"?$/m.exec(text);
+  if (systemd) return path.resolve(systemd[1]);
+  // launchd: <key>AUSTERE_AXI_STATE_DIR</key><string>/path</string>
+  const plist = /<key>AUSTERE_AXI_STATE_DIR<\/key>\s*<string>(.*?)<\/string>/.exec(text);
+  if (plist) return path.resolve(plist[1]);
+  return path.join(os.homedir(), ".austere-axi");
 }
 
 /** The port an installed unit listens on, or null when its command does not name one. */
 export function unitPort(file: string): number | null {
-  const m = /--port\s+(\d+)/.exec(fs.readFileSync(file, "utf8"));
-  const port = m ? Number(m[1]) : NaN;
+  const text = fs.readFileSync(file, "utf8");
+  // systemd: ExecStart=... --port 5000
+  const systemd = /--port\s+(\d+)/.exec(text);
+  // launchd: <string>--port</string><string>5000</string>
+  const plist = /<string>--port<\/string>\s*<string>(\d+)<\/string>/.exec(text);
+  const port = Number(systemd?.[1] ?? plist?.[1] ?? NaN);
   return Number.isInteger(port) && port > 0 ? port : null;
 }
 

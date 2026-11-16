@@ -9,7 +9,7 @@ import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
 import { stateDirHolder } from "../src/cli/lock.ts";
 import { hasActiveWork, openDatabase } from "../src/cli/hub.ts";
-import { installService, launchdPlist, npxWarning, restartCommand, serviceStatus, startInstalledService, systemdUnit, uninstallService } from "../src/cli/service.ts";
+import { installService, launchdPlist, npxWarning, restartCommand, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitPort, unitStateDir } from "../src/cli/service.ts";
 import type { RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
 import { freePort } from "./port.ts";
 
@@ -404,4 +404,21 @@ test("a CLI starts the installed service instead of one of its own", () => {
   fs.writeFileSync(unitPath(other.home), systemdUnit({ ...SPEC, stateDir: "/home/ana/other-state" }));
   assert.equal(startInstalledService(other, STATE, 4388), false);
   assert.deepEqual(otherCalls, []);
+});
+
+test("the state dir and port are read out of a systemd unit and a launchd agent alike", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-unit-"));
+  HOMES.push(dir);
+  const systemd = path.join(dir, "austere-axi.service");
+  fs.writeFileSync(systemd, systemdUnit({ ...SPEC, stateDir: "/home/ana/My State" }));
+  assert.equal(unitStateDir(systemd), path.resolve("/home/ana/My State"));
+  assert.equal(unitPort(systemd), 4388);
+  const plain = path.join(dir, "plain.service");
+  fs.writeFileSync(plain, systemdUnit({ ...SPEC, port: 5000 }));
+  assert.equal(unitStateDir(plain), path.join(os.homedir(), ".austere-axi"));
+  assert.equal(unitPort(plain), 5000);
+  const plist = path.join(dir, "austere-axi.plist");
+  fs.writeFileSync(plist, launchdPlist({ ...SPEC, port: 5000, stateDir: "/home/ana/other" }, "/tmp/server.log"));
+  assert.equal(unitStateDir(plist), path.resolve("/home/ana/other"));
+  assert.equal(unitPort(plist), 5000);
 });

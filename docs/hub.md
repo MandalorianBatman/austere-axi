@@ -65,7 +65,7 @@ It refuses without a terminal, so an agent or a page cannot set it up, and while
 
 `--port n` sets the port the service listens on; CLI commands then find it with `AUSTERE_AXI_PORT=n`. `--link-url` sets `AUSTERE_AXI_LINK_URL` in the unit (see below). Run `server install` again to change either; it restarts the service.
 
-A server the service runs never idles out, and a CLI never replaces it. After upgrading austere-axi, the old server keeps running, and every CLI command says it needs a restart and how: `systemctl --user restart austere-axi.service`, or `launchctl kickstart -k gui/<uid>/xyz.kasat.austere-axi`. `austere-axi stop` stops it until your next login. A server started any other way is still replaced by a newer CLI, which starts the new one with `--persist` if the old one had it. `AUSTERE_AXI_PERSIST=1` is the same as `--persist`.
+A server the service runs never idles out, and a CLI never replaces it. After upgrading austere-axi, the old server keeps running, and every CLI command says it needs a restart and how: `systemctl --user restart austere-axi.service`, or `launchctl kickstart -k gui/<uid>/xyz.kasat.austere-axi`. `austere-axi stop` stops the server; the next command that needs one starts the service again, which is what "always on" means. `austere-axi server uninstall` takes the service away for good. A server started any other way is still replaced by a newer CLI, which starts the new one with `--persist` if the old one had it. `AUSTERE_AXI_PERSIST=1` is the same as `--persist`.
 
 ### Behind a reverse proxy
 

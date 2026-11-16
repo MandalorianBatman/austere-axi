@@ -50,7 +50,10 @@ export async function lockStateDir(
         try {
           const current = JSON.parse(fs.readFileSync(file, "utf8")) as { pid?: unknown };
           if (Number(current.pid) !== process.pid) return; // another process took it
-          fs.writeFileSync(file, JSON.stringify({ ...lock, at: Date.now() }));
+          // Write and rename: a reader must never see a half-written lock and take it over.
+          const tmp = `${file}.${process.pid}.tmp`;
+          fs.writeFileSync(tmp, JSON.stringify({ ...lock, at: Date.now() }));
+          fs.renameSync(tmp, file);
         } catch {
           // the file is gone or unreadable: the release will sort it out
         }

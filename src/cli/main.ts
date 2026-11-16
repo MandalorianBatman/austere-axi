@@ -15,7 +15,7 @@ import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
 import { lockStateDir, stateDirHolder } from "./lock.ts";
-import { installService, runCommand, serviceStatus, uninstallService } from "./service.ts";
+import { installService, installedServiceFor, runCommand, serviceStatus, uninstallService } from "./service.ts";
 import type { ServiceContext } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
@@ -1375,7 +1375,7 @@ async function cmdStop(): Promise<void> {
   print({
     status: "stopped",
     port: port(),
-    note: h.supervised ? `It runs under ${h.supervised} and starts again at your next login; \`${BIN} server uninstall\` removes the service.` : undefined,
+    note: h.supervised ? `It runs under ${h.supervised}; the next command that needs a server starts the service again. \`${BIN} server uninstall\` takes the service away for good.` : undefined,
   });
 }
 
@@ -1412,6 +1412,12 @@ async function cmdServer(sub: string | undefined, flags: Flags): Promise<void> {
   if (p !== undefined && !(Number.isInteger(p) && p > 0 && p < 65536)) return usage(`--port must be a port number: ${flags.port}`, "server");
   if (sub === undefined) {
     if (flags["link-url"] !== undefined) return usage("--link-url is for `server install`; a foreground server reads AUSTERE_AXI_LINK_URL", "server");
+    // A foreground server and an installed service want the same port and the same state
+    // dir: the service would restart in a loop while this one holds them.
+    const installed = installedServiceFor(stateDir(), p ?? port());
+    if (installed) {
+      process.stderr.write(`a service for this state dir is installed (${installed.file}); it will keep restarting while this server holds the port. Stop it with \`${BIN} server uninstall\`, or run this server on another port.\n`);
+    }
     const { runServer } = await import("./server.ts");
     return void (await runServer({ port: p ?? port(), verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist }));
   }
