@@ -65,7 +65,16 @@ It refuses without a terminal, so an agent or a page cannot set it up, and while
 
 `--port n` sets the port the service listens on; CLI commands then find it with `AUSTERE_AXI_PORT=n`. `--link-url` sets `AUSTERE_AXI_LINK_URL` in the unit (see below). Run `server install` again to change either; it restarts the service.
 
-A server the service runs never idles out, and a CLI never replaces it. What counts as a service is what the system says, and it is checked: the server asks systemd (or launchd) whether it is the process that unit runs. No variable can claim a supervisor that is not there, so a server you start by hand is an ordinary one. After upgrading austere-axi, the old server keeps running, and every CLI command says it needs a restart and how: `systemctl --user restart austere-axi.service`, or `launchctl kickstart -k gui/<uid>/xyz.kasat.austere-axi`. A command that needs a server starts the service rather than one of its own, so the two never fight over the port. `austere-axi stop` stops the server; the next command that needs one starts the service again, which is what "always on" means. `austere-axi server uninstall` takes the service away for good. A server started any other way is still replaced by a newer CLI, which starts the new one with `--persist` if the old one had it. `AUSTERE_AXI_PERSIST=1` is the same as `--persist`.
+A server the service runs never idles out, and a CLI never replaces it. What counts as a service is what the system says, and it is checked: the server asks systemd (or launchd) whether the unit that owns it runs the austere server, and whether that unit runs this process. A unit whose command is `npx -y austere-axi server --persist` counts too, although the server sits below the unit's main process. No variable can claim a supervisor that is not there, so a server you start by hand is an ordinary one. After upgrading austere-axi, the old server keeps running, and every CLI command says it needs a restart and how: `systemctl --user restart austere-axi.service`, or `launchctl kickstart -k gui/<uid>/xyz.kasat.austere-axi`. A command that needs a server starts the service rather than one of its own, so the two never fight over the port. `austere-axi stop` stops the server; the next command that needs one starts the service again, which is what "always on" means. `austere-axi server uninstall` takes the service away for good. A server started any other way is still replaced by a newer CLI, which starts the new one with `--persist` if the old one had it. `AUSTERE_AXI_PERSIST=1` is the same as `--persist`.
+
+### From a unit you wrote yourself
+
+`server install` will not overwrite a unit it did not write, and `server uninstall` leaves one alone: yours may carry settings only you know about. To move to the one this command writes:
+
+1. read your unit and note what it carries that the new one does not — a proxy url (`AUSTERE_AXI_LINK_URL`), a `Restart=always`, a wait for the network or for Tailscale before the server starts;
+2. move your unit aside (`mv ~/.config/systemd/user/austere-axi.service ~/.config/systemd/user/austere-axi.service.mine`), then `systemctl --user daemon-reload`;
+3. install the new one with the settings you want to keep: `austere-axi server install --link-url https://austere.example.com`;
+4. check the new unit against your old one (`systemctl --user cat austere-axi.service`), and keep the old file until you are happy.
 
 ### Behind a reverse proxy
 

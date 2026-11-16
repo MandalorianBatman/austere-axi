@@ -345,8 +345,9 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
  * goes with it, so a harness that reads stdout sees it.
  */
 function print(obj: Printed): void {
+  // The server's note goes with the command's own note, not instead of it.
   const note = takeServerNote();
-  printOutput(note && !obj.note ? { ...obj, note } : obj);
+  printOutput(note ? { ...obj, server_note: note } : obj);
 }
 
 /** A failure while running: exit 1. */

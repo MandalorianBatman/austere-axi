@@ -10,7 +10,7 @@ import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
 import { stateDirHolder } from "../src/cli/lock.ts";
 import { hasActiveWork, openDatabase } from "../src/cli/hub.ts";
-import { childEnv, detectSupervisor, installService, launchdPlist, npxWarning, restartCommand, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitPort, unitStateDir } from "../src/cli/service.ts";
+import { childEnv, detectSupervisor, installService, isAncestor, launchdPlist, npxWarning, restartCommand, runsTheServer, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitPort, unitStateDir } from "../src/cli/service.ts";
 import type { RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
 import { freePort } from "./port.ts";
 
@@ -470,4 +470,20 @@ test("uninstall removes the unit even when the service manager fails, and says s
   const r = uninstallService(ctx);
   assert.equal(fs.existsSync(unitPath(ctx.home)), false);
   assert.match(String(r.problems), /disable --now/);
+});
+
+test("a server below the unit's main process is supervised too, as npx runs it", () => {
+  // The old guide's unit was `ExecStart=/usr/bin/env npx -y austere-axi server --persist`:
+  // npx runs the server below the unit's main process, and that server is supervised.
+  assert.equal(isAncestor(process.pid, process.pid), true);
+  assert.equal(isAncestor(process.ppid, process.pid), true); // my parent is an ancestor of me
+  assert.equal(isAncestor(process.pid, process.ppid), false); // and not the other way round
+});
+
+test("only a unit that runs the austere server counts as the server's unit", () => {
+  const unit = "austere-axi.service";
+  assert.equal(runsTheServer("/usr/bin/node /home/ana/.npm-global/lib/node_modules/austere-axi/dist/cli.mjs server --persist --port 4388"), true);
+  assert.equal(runsTheServer("/usr/bin/env npx -y austere-axi server --persist"), true);
+  assert.equal(runsTheServer("/usr/bin/node /home/ana/multica/daemon/index.js"), false);
+  assert.equal(runsTheServer("/usr/bin/node /home/ana/other/cli.mjs serve"), false);
 });

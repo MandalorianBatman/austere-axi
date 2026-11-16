@@ -27,23 +27,75 @@ const DEFAULT_PORT = 4388;
 /**
  * The supervisor this process runs under, or null when nobody runs it.
  *
- * The evidence is the system's own, and it is checked: a systemd service runs one process,
- * the unit's main one, and the process's cgroup names the unit. A variable a process sets for
- * itself proves nothing (a CLI hands its environment to the server it starts, and so does
- * every shell), so the answer is: is this process the one the unit runs?
+ * The evidence is the system's own, and it is checked: the unit that owns this process's
+ * cgroup runs a main process, and this process is it or a child of it. A unit whose command
+ * is `npx -y austere-axi server --persist` runs the server below its main process, and that
+ * server is supervised too. A variable a process sets for itself proves nothing (a CLI hands
+ * its environment to the server it starts, and so does every shell), so the answer is: does
+ * the unit run this process?
  */
 export function detectSupervisor(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): Supervisor | null {
   if (platform === "linux") {
     const unit = systemdUnitName();
     if (!unit) return null;
-    return systemdMainPid(unit) === process.pid ? "systemd" : null;
+    if (!unitRunsServer(unit)) return null; // a unit that runs something else is not our server's
+    const mainPid = systemdMainPid(unit);
+    return mainPid != null && isAncestor(mainPid, process.pid) ? "systemd" : null;
   }
   if (platform === "darwin") {
     const label = env.XPC_SERVICE_NAME;
     if (!label) return null;
-    return launchdPid(label) === process.pid ? "launchd" : null;
+    if (!launchdRunsServer(label)) return null;
+    const jobPid = launchdPid(label);
+    return jobPid != null && isAncestor(jobPid, process.pid) ? "launchd" : null;
   }
   return null;
+}
+
+/** Whether a systemd unit's command runs the austere server. */
+export function unitRunsServer(unit: string): boolean {
+  const r = spawnSync("systemctl", ["--user", "show", unit, "--property=ExecStart", "--value"], { encoding: "utf8", timeout: 5000 });
+  return runsTheServer(r.stdout || "");
+}
+
+/** Whether a launchd job's command runs the austere server. */
+export function launchdRunsServer(label: string): boolean {
+  const r = spawnSync("launchctl", ["print", `gui/${os.userInfo().uid}/${label}`], { encoding: "utf8", timeout: 5000 });
+  return runsTheServer(r.stdout || "");
+}
+
+/** Whether a command line is the austere server. */
+export function runsTheServer(command: string): boolean {
+  return /austere-axi|cli\.mjs/.test(command) && /(^|[\s"'])server([\s"']|$)/.test(command);
+}
+
+/** Whether `ancestor` is `pid` itself or one of its parents. */
+export function isAncestor(ancestor: number, pid: number): boolean {
+  let current = pid;
+  for (let i = 0; i < 20; i++) {
+    if (current === ancestor) return true;
+    if (current <= 1) return false;
+    const parent = parentPid(current);
+    if (parent == null || parent === current) return false;
+    current = parent;
+  }
+  return false;
+}
+
+/** The parent of a process, or null when it has none we can see. */
+export function parentPid(pid: number): number | null {
+  try {
+    // Linux: /proc/<pid>/stat, whose second field is the command in parentheses.
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    const ppid = Number(fields[1]);
+    return Number.isInteger(ppid) && ppid > 0 ? ppid : null;
+  } catch {
+    // Not Linux (or the process is gone): ask the system.
+    const r = spawnSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8", timeout: 5000 });
+    const ppid = Number((r.stdout || "").trim());
+    return Number.isInteger(ppid) && ppid > 0 ? ppid : null;
+  }
 }
 
 /** The systemd unit that owns this process, from its cgroup. */
