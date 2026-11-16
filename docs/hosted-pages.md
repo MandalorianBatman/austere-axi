@@ -4,7 +4,7 @@
 
 ```sh
 austere-axi publish plan.html --invite Ana --invite Ben   # prints https://austere.kasat.xyz/p/<id>#i=<token> for each
-austere-axi publish plan.html                    # again: same page, new version; Ana's and Ben's links keep working
+austere-axi publish plan.html                    # again: same page, new version; Ana's and Ben's links keep working. Repeat --unlisted or --no-presence, or they reset.
 austere-axi publish plan.html --invite Cy --expires 7d   # one more reviewer, for a week
 austere-axi publish invites plan.html            # who is invited (live, expired, revoked), with their links
 austere-axi publish revoke plan.html Ben         # Ben's link stops working; his open page is disconnected
