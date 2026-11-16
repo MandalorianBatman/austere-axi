@@ -24,6 +24,7 @@ The [project README](../README.md) says what austere-axi is and how to start. Th
 | [Benchmark](benchmark.md) | austere-axi against lavish-axi: output tokens, time, cost, and the caveats |
 | [Hosted share links](hosted-share-links.md) | Design and wire protocol of hosted pages, sync and presence |
 | [Durable notes](durable-notes.md) | Design of note storage and the cursor that acknowledges feedback |
+| [Review loop v2](review-loop-v2.md) | Design of projects, pages without sessions, attach, history and reuse, the dashboard shell and the wiki; the settled decisions and the build order |
 
 ## Contributing
 
