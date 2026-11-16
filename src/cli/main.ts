@@ -1,7 +1,6 @@
 process.env.OPENUI_TELEMETRY_DISABLED = process.env.OPENUI_TELEMETRY_DISABLED || "1";
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { mergeStatements } from "@openuidev/lang-core";
@@ -14,9 +13,8 @@ import { Hub, hubDbFile, registerWithHub, unanswered } from "./hub.ts";
 import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
-import { lockStateDir, stateDirHolder } from "./lock.ts";
-import { installService, installedServiceFor, runCommand, serviceStatus, uninstallService } from "./service.ts";
-import type { ServiceContext } from "./service.ts";
+import { lockStateDir } from "./lock.ts";
+import { installService, installedServiceFor, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
 import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, RevokeResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
@@ -26,7 +24,7 @@ import { renderCheck } from "./render-check.ts";
 import { format, print as printOutput } from "./output.ts";
 import { describeItem, locator } from "../shared/feedback.ts";
 import type { FeedbackItem } from "../shared/feedback.ts";
-import { CLI_ENTRY, VERSION, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
+import { VERSION, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
 import { listComponents, searchComponents, showComponents } from "./components.ts";
 import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
@@ -1424,7 +1422,7 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
     if (flags["link-url"] !== undefined) return usage("--link-url is for `server install`; a foreground server reads AUSTERE_AXI_LINK_URL", "server");
     // A foreground server and an installed service want the same port and the same state
     // dir: the service would restart in a loop while this one holds them.
-    const installed = installedServiceFor(stateDir(), p ?? port());
+    const installed = installedServiceFor(serviceContext(probePort), stateDir(), p ?? port());
     if (installed) {
       process.stderr.write(`a service for this state dir is installed (${installed.file}); it will keep restarting while this server holds the port. Stop it with \`${BIN} server uninstall\`, or run this server on another port.\n`);
     }
@@ -1435,19 +1433,7 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
   if (rest.length > 1) return usage(`server ${sub} takes no arguments; it got ${rest.slice(1).map((a) => `"${a}"`).join(" ")}`, "server");
   const extra = Object.keys(flags).filter((k) => !(sub === "install" ? ["port", "link-url"] : sub === "status" ? ["port"] : []).includes(k));
   if (extra.length) return usage(`server ${sub} does not take ${extra.map((k) => `--${k}`).join(" ")}`, "server");
-  const ctx: ServiceContext = {
-    platform: process.platform,
-    home: os.homedir(),
-    env: process.env,
-    run: runCommand,
-    isTTY: !!process.stdin.isTTY,
-    node: process.execPath,
-    cli: CLI_ENTRY,
-    stateDir: stateDir(),
-    uid: process.getuid?.() ?? null,
-    holder: stateDirHolder,
-    probe: probePort,
-  };
+  const ctx = serviceContext(probePort);
   try {
     if (sub === "install") {
       const linkUrl = typeof flags["link-url"] === "string" ? flags["link-url"] : undefined;

@@ -15,8 +15,6 @@ import { CLI_ENTRY, stateDir } from "./paths.ts";
 /** The service manager that runs a server. */
 export type Supervisor = "systemd" | "launchd";
 
-/** Set by the unit `server install` writes, to the supervisor's name. */
-export const SUPERVISED_ENV = "AUSTERE_AXI_SUPERVISED";
 export const SYSTEMD_UNIT = "austere-axi.service";
 /** The line both units carry, so the command knows a unit is its own. */
 export const UNIT_MARKER = "Written by `austere-axi server install`";
@@ -35,33 +33,39 @@ const DEFAULT_PORT = 4388;
  * the unit run this process?
  */
 export function detectSupervisor(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): Supervisor | null {
-  if (platform === "linux") {
-    const unit = systemdUnitName();
-    if (!unit) return null;
-    if (!unitRunsServer(unit)) return null; // a unit that runs something else is not our server's
-    const mainPid = systemdMainPid(unit);
-    return mainPid != null && isAncestor(mainPid, process.pid) ? "systemd" : null;
-  }
-  if (platform === "darwin") {
-    const label = env.XPC_SERVICE_NAME;
-    if (!label) return null;
-    if (!launchdRunsServer(label)) return null;
-    const jobPid = launchdPid(label);
-    return jobPid != null && isAncestor(jobPid, process.pid) ? "launchd" : null;
-  }
-  return null;
+  const job = platform === "linux" ? systemdJob() : platform === "darwin" ? launchdJob(env.XPC_SERVICE_NAME) : null;
+  // A unit that runs something else is not our server's, even when this process sits in it.
+  if (!job || !runsTheServer(job.command) || job.pid == null) return null;
+  return isAncestor(job.pid, process.pid) ? job.supervisor : null;
 }
 
-/** Whether a systemd unit's command runs the austere server. */
-export function unitRunsServer(unit: string): boolean {
-  const r = spawnSync("systemctl", ["--user", "show", unit, "--property=ExecStart", "--value"], { encoding: "utf8", timeout: 5000 });
-  return runsTheServer(r.stdout || "");
+/** A job a service manager runs: its command line and its main pid. */
+interface Job {
+  supervisor: Supervisor;
+  command: string;
+  pid: number | null;
 }
 
-/** Whether a launchd job's command runs the austere server. */
-export function launchdRunsServer(label: string): boolean {
+const positivePid = (s: string | undefined): number | null => {
+  const n = Number(s);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+/** The systemd unit that owns this process's cgroup, as systemd describes it (one `systemctl show`). */
+function systemdJob(): Job | null {
+  const unit = systemdUnitName();
+  if (!unit) return null;
+  const r = spawnSync("systemctl", ["--user", "show", unit, "--property=ExecStart", "--property=MainPID"], { encoding: "utf8", timeout: 5000 });
+  const prop = (key: string): string | undefined => new RegExp(`^${key}=(.*)$`, "m").exec(r.stdout || "")?.[1];
+  return { supervisor: "systemd", command: prop("ExecStart") ?? "", pid: positivePid(prop("MainPID")) };
+}
+
+/** The launchd job named `label`, as launchd describes it (one `launchctl print`). */
+function launchdJob(label: string | undefined): Job | null {
+  if (!label) return null;
   const r = spawnSync("launchctl", ["print", `gui/${os.userInfo().uid}/${label}`], { encoding: "utf8", timeout: 5000 });
-  return runsTheServer(r.stdout || "");
+  const text = r.stdout || "";
+  return { supervisor: "launchd", command: text, pid: positivePid(/\bpid = (\d+)/.exec(text)?.[1]) };
 }
 
 /** Whether a command line is the austere server. */
@@ -87,14 +91,11 @@ export function parentPid(pid: number): number | null {
   try {
     // Linux: /proc/<pid>/stat, whose second field is the command in parentheses.
     const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
-    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-    const ppid = Number(fields[1]);
-    return Number.isInteger(ppid) && ppid > 0 ? ppid : null;
+    return positivePid(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
   } catch {
     // Not Linux (or the process is gone): ask the system.
     const r = spawnSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8", timeout: 5000 });
-    const ppid = Number((r.stdout || "").trim());
-    return Number.isInteger(ppid) && ppid > 0 ? ppid : null;
+    return positivePid((r.stdout || "").trim());
   }
 }
 
@@ -111,23 +112,9 @@ export function systemdUnitName(): string | null {
   return units.filter((u) => !/^user@/.test(u)).pop() ?? null;
 }
 
-/** The pid a systemd unit runs, or null when it runs none. */
-export function systemdMainPid(unit: string): number | null {
-  const r = spawnSync("systemctl", ["--user", "show", unit, "--property=MainPID", "--value"], { encoding: "utf8", timeout: 5000 });
-  const pid = Number((r.stdout || "").trim());
-  return Number.isInteger(pid) && pid > 0 ? pid : null;
-}
-
-/** The pid a launchd job runs, or null. */
-export function launchdPid(label: string): number | null {
-  const r = spawnSync("launchctl", ["print", `gui/${os.userInfo().uid}/${label}`], { encoding: "utf8", timeout: 5000 });
-  const pid = Number(/\bpid = (\d+)/.exec(r.stdout || "")?.[1] ?? NaN);
-  return Number.isInteger(pid) && pid > 0 ? pid : null;
-}
-
-/** The environment a CLI hands to the server it starts: it may not claim a supervisor. */
+/** The environment a CLI hands to the server it starts, without the service manager's job markers. */
 export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const { INVOCATION_ID, XPC_SERVICE_NAME, [SUPERVISED_ENV]: _claimed, ...rest } = env;
+  const { INVOCATION_ID, XPC_SERVICE_NAME, ...rest } = env;
   return rest;
 }
 
@@ -153,23 +140,17 @@ function serverArgs(spec: ServiceSpec): string[] {
 }
 
 function serverEnv(spec: ServiceSpec): [string, string][] {
-  // The supervisor does not need to be told: systemd sets INVOCATION_ID for a service and
-  // launchd sets XPC_SERVICE_NAME for a job, and that is the evidence the server reads.
+  // The supervisor is not named here: the server asks the system who runs it (detectSupervisor).
   const env: [string, string][] = [];
   if (spec.linkUrl) env.push(["AUSTERE_AXI_LINK_URL", spec.linkUrl]);
   if (spec.stateDir) env.push(["AUSTERE_AXI_STATE_DIR", spec.stateDir]);
   return env;
 }
 
-/** One systemd word: `%` is a specifier, `$` a variable in ExecStart; quote what has spaces or quotes. */
-function systemdWord(s: string): string {
-  const v = s.replace(/%/g, "%%").replace(/\$/g, "$$$$");
+/** Quote a systemd value that has spaces, quotes, backslashes or `;`; `%` is always a specifier. */
+function systemdQuote(s: string): string {
+  const v = s.replace(/%/g, "%%");
   return /[\s"'\\;]/.test(v) ? `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : v;
-}
-
-function systemdEnv(key: string, value: string): string {
-  const v = `${key}=${value}`.replace(/%/g, "%%");
-  return /[\s"'\\]/.test(v) ? `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : v;
 }
 
 /** The systemd user unit. */
@@ -180,8 +161,9 @@ export function systemdUnit(spec: ServiceSpec): string {
     "Description=austere-axi review server",
     "",
     "[Service]",
-    `ExecStart=${serverArgs(spec).map(systemdWord).join(" ")}`,
-    ...serverEnv(spec).map(([k, v]) => `Environment=${systemdEnv(k, v)}`),
+    // `$` is a variable in ExecStart, not in Environment=.
+    `ExecStart=${serverArgs(spec).map((a) => systemdQuote(a.replace(/\$/g, "$$$$"))).join(" ")}`,
+    ...serverEnv(spec).map(([k, v]) => `Environment=${systemdQuote(`${k}=${v}`)}`),
     "Restart=on-failure",
     "RestartSec=5",
     "",
@@ -294,13 +276,30 @@ function installCommand(o: InstallOptions): string {
   return [`${BIN} server install`, o.port ? `--port ${o.port}` : "", o.linkUrl ? `--link-url ${o.linkUrl}` : ""].filter(Boolean).join(" ");
 }
 
-/** Run a service manager command, record it in `ran`, and throw when it fails. */
-function runChecked(ctx: ServiceContext, ran: string[], cmd: string, args: string[]): RunResult {
-  const r = ctx.run(cmd, args);
+/** launchd's name for the agent, in the user's GUI domain. */
+function launchdTarget(uid: number | null): string {
+  return `gui/${uid ?? 0}/${LAUNCHD_LABEL}`;
+}
+
+/** What a failed command said, for an error message. */
+function commandOutput(r: RunResult): string {
+  return (r.stderr || r.stdout).trim() || "no output";
+}
+
+/** Run a service manager command and record it in `ran`. `failure` says what went wrong, or is null. */
+function runRecorded(ctx: ServiceContext, ran: string[], cmd: string, args: string[]): { result: RunResult; failure: string | null } {
+  const result = ctx.run(cmd, args);
   const line = [cmd, ...args].join(" ");
   ran.push(line);
-  if (r.code !== 0) throw new Error(`\`${line}\` failed${r.code == null ? "" : ` (exit ${r.code})`}: ${(r.stderr || r.stdout).trim() || "no output"}`);
-  return r;
+  const failure = result.code === 0 ? null : `\`${line}\` failed${result.code == null ? "" : ` (exit ${result.code})`}: ${commandOutput(result)}`;
+  return { result, failure };
+}
+
+/** runRecorded, and throw when the command fails. */
+function runChecked(ctx: ServiceContext, ran: string[], cmd: string, args: string[]): RunResult {
+  const { result, failure } = runRecorded(ctx, ran, cmd, args);
+  if (failure) throw new Error(failure);
+  return result;
 }
 
 /**
@@ -372,10 +371,8 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
     if (ctx.uid == null) throw new Error("no user id to install the launchd agent for");
     fs.writeFileSync(target.file, launchdPlist(spec, path.join(stateDir, "server.log")), { mode: 0o644 });
     // Unload an earlier copy (it may not be loaded: ignore the answer), then load this one; RunAtLoad starts it.
-    const domain = `gui/${ctx.uid}`;
-    ctx.run("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
-    ran.push(`launchctl bootout ${domain}/${LAUNCHD_LABEL}`);
-    runChecked(ctx, ran, "launchctl", ["bootstrap", domain, target.file]);
+    runRecorded(ctx, ran, "launchctl", ["bootout", launchdTarget(ctx.uid)]);
+    runChecked(ctx, ran, "launchctl", ["bootstrap", `gui/${ctx.uid}`, target.file]);
   }
   if (port !== defaultPort(ctx.env)) notes.push(`It listens on port ${port}: CLI commands find it with AUSTERE_AXI_PORT=${port}.`);
   // The service has to answer: a unit that dies at once (a port taken, a bad path) would
@@ -387,7 +384,7 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
     if (!up) await new Promise((r) => setTimeout(r, 100));
   }
   if (!up) {
-    throw new Error(`the service was written to ${target.file} but does not answer on port ${port}; look at it: ${target.supervisor === "systemd" ? `systemctl --user status ${SYSTEMD_UNIT}` : `launchctl print gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`}`);
+    throw new Error(`the service was written to ${target.file} but does not answer on port ${port}; look at it: ${target.supervisor === "systemd" ? `systemctl --user status ${SYSTEMD_UNIT}` : `launchctl print ${launchdTarget(ctx.uid)}`}`);
   }
   return {
     status: "installed",
@@ -430,13 +427,8 @@ function manualSteps(spec: ServiceSpec, ctx: ServiceContext, warning: string | u
  * unit behind it.
  */
 function bootoutAgent(ctx: ServiceContext, ran: string[]): void {
-  const domain = `gui/${ctx.uid ?? 0}`;
-  const line = `launchctl bootout ${domain}/${LAUNCHD_LABEL}`;
-  const r = ctx.run("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
-  ran.push(line);
-  if (r.code !== 0 && !/Could not find service|No such process|not loaded/i.test(r.stderr || "")) {
-    throw new Error(`\`${line}\` failed (exit ${r.code}): ${(r.stderr || r.stdout).trim() || "no output"}`);
-  }
+  const { result, failure } = runRecorded(ctx, ran, "launchctl", ["bootout", launchdTarget(ctx.uid)]);
+  if (failure && !/Could not find service|No such process|not loaded/i.test(result.stderr)) throw new Error(failure);
 }
 
 /** Stop the service and remove its unit. */
@@ -459,13 +451,10 @@ export function uninstallService(ctx: ServiceContext): Record<string, unknown> {
   if (target.supervisor === "systemd") {
     // The unit goes either way: a service manager that fails must not leave a file that
     // starts the server again at the next login.
-    const disable = ctx.run("systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]);
-    ran.push(`systemctl --user disable --now ${SYSTEMD_UNIT}`);
-    if (disable.code !== 0) problems.push(`systemctl --user disable --now ${SYSTEMD_UNIT} failed (exit ${disable.code}): ${(disable.stderr || disable.stdout).trim() || "no output"}`);
+    const disable = runRecorded(ctx, ran, "systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]).failure;
     fs.rmSync(target.file, { force: true });
-    const reload = ctx.run("systemctl", ["--user", "daemon-reload"]);
-    ran.push(`systemctl --user daemon-reload`);
-    if (reload.code !== 0) problems.push(`systemctl --user daemon-reload failed (exit ${reload.code}): ${(reload.stderr || reload.stdout).trim() || "no output"}`);
+    const reload = runRecorded(ctx, ran, "systemctl", ["--user", "daemon-reload"]).failure;
+    problems.push(...[disable, reload].filter((p): p is string => p != null));
   } else {
     // The agent has to be gone before the file goes, or the server keeps running with no unit.
     bootoutAgent(ctx, ran);
@@ -508,14 +497,13 @@ export function isOurUnit(file: string): boolean {
   }
 }
 
-/** The installed service for this state dir and port, when there is one. */
-export function installedServiceFor(dir: string, port: number): { supervisor: Supervisor; file: string } | null {
-  const ctx = serviceContext(async () => null);
+/** The installed service, when it is the one for this state dir and port. */
+export function installedServiceFor(ctx: Pick<ServiceContext, "platform" | "home" | "env">, dir: string, port: number): { supervisor: Supervisor; file: string } | null {
   const target = unitFile(ctx);
   if (!target || !fs.existsSync(target.file)) return null;
-  if (path.resolve(unitStateDir(target.file)) !== path.resolve(dir)) return null;
+  if (path.resolve(unitStateDir(target.file)) !== path.resolve(dir)) return null; // another state dir's service
   const unitPortNumber = unitPort(target.file);
-  if (unitPortNumber != null && unitPortNumber !== port) return null;
+  if (unitPortNumber != null && unitPortNumber !== port) return null; // it serves another port
   return target;
 }
 
@@ -548,20 +536,13 @@ export function unitPort(file: string): number | null {
  * unit, and the unit could never come back (RLM-311). Returns whether a service was started.
  */
 export function startInstalledService(ctx: ServiceContext, dir: string, port: number): boolean {
-  const target = unitFile(ctx);
-  if (!target || !fs.existsSync(target.file)) return false;
-  if (path.resolve(unitStateDir(target.file)) !== path.resolve(dir)) return false; // it is another state dir's service
-  const unitPortNumber = unitPort(target.file);
-  if (unitPortNumber != null && unitPortNumber !== port) return false; // it serves another port
-  if (target.supervisor === "systemd") {
-    const r = ctx.run("systemctl", ["--user", "start", SYSTEMD_UNIT]);
-    if (r.code !== 0) throw new Error(`the installed service did not start: ${(r.stderr || r.stdout).trim() || "no output"} (${restartCommand("systemd", ctx.uid)})`);
-  } else {
-    const r = ctx.run("launchctl", ["kickstart", "-k", `gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`]);
-    if (r.code !== 0) throw new Error(`the installed service did not start: ${(r.stderr || r.stdout).trim() || "no output"} (${restartCommand("launchd", ctx.uid)})`);
-  }
+  const target = installedServiceFor(ctx, dir, port);
+  if (!target) return false;
+  const r = target.supervisor === "systemd" ? ctx.run("systemctl", ["--user", "start", SYSTEMD_UNIT]) : ctx.run("launchctl", ["kickstart", "-k", launchdTarget(ctx.uid)]);
+  if (r.code !== 0) throw new Error(`the installed service did not start: ${commandOutput(r)} (${restartCommand(target.supervisor, ctx.uid)})`);
   return true;
 }
+
 /** Whether the unit is installed and running, and which server answers on `port`. */
 export function serviceStatus(ctx: ServiceContext, server: RunningServer | null, version: string): Record<string, unknown> {
   const target = unitFile(ctx);
@@ -577,7 +558,7 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
         const word = (args: string[]): string => ctx.run("systemctl", ["--user", ...args, SYSTEMD_UNIT]).stdout.trim() || "unknown";
         Object.assign(out, { enabled: word(["is-enabled"]), active: word(["is-active"]) });
       } else {
-        const r = ctx.run("launchctl", ["print", `gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`]);
+        const r = ctx.run("launchctl", ["print", launchdTarget(ctx.uid)]);
         Object.assign(out, { loaded: r.code === 0, state: r.code === 0 ? /^\s*state = (.+)$/m.exec(r.stdout)?.[1]?.trim() : undefined });
       }
     }
@@ -591,7 +572,7 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
     out.next = `${BIN} server install sets it up (at a terminal).`;
   } else if (target && out.installed && !server) {
     // Installed but not answering: say how to start it, and on which port.
-    const start = target.supervisor === "systemd" ? `systemctl --user start ${SYSTEMD_UNIT}` : `launchctl kickstart -k gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`;
+    const start = target.supervisor === "systemd" ? `systemctl --user start ${SYSTEMD_UNIT}` : `launchctl kickstart -k ${launchdTarget(ctx.uid)}`;
     out.next = `The service is installed but no server answers. Start it: ${start}${out.port ? ` (it listens on port ${out.port}; CLI commands find it with AUSTERE_AXI_PORT=${out.port})` : ""}`;
   }
   return out;
