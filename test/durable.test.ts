@@ -30,6 +30,7 @@ interface SessionRow {
   id: string;
   archived: boolean;
   pending: number;
+  presence: string;
 }
 
 /** Every response body field these tests read; each route fills in its own. */
@@ -535,11 +536,14 @@ test("notes of another project never reach a project poll", () =>
 
 test("a page merged into the project while its poll waits is handed over with the notes it already holds", () =>
   withServer(
-    async ({ port, state }) => {
+    async ({ port, state, id }) => {
       const otherId = await open(port, OTHER);
       await send(port, otherId, "waiting in elsewhere");
       const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "5000");
-      await settle(500);
+      // The plan is covered once the project poll is registered: only then can a merge test the look again, not the poll's first read.
+      const listening = async () => (await request(port, "GET", "/api/sessions")).data.sessions.some((s) => s.id === id && s.presence === "listening");
+      for (let i = 0; i < 50 && !(await listening()); i++) await settle(100);
+      assert.ok(await listening(), "the project poll is registered");
       // Another process moves the page into this project: no note is sent, so only the poll's own look again finds it.
       const merged = await cliIn(WORK, port, state, "project", "merge", WORK, OTHER_DIR);
       assert.equal(merged.code, 0, merged.out);
@@ -550,6 +554,19 @@ test("a page merged into the project while its poll waits is handed over with th
     },
     { AUSTERE_AXI_PROJECT_REFRESH_MS: "200" },
   ));
+
+test("a reply without a cursor after an --after replay leaves the skipped note unread", () =>
+  withServer(async ({ port, state, id }) => {
+    // Fresh database: the notes are seq 1 and 2.
+    await send(port, id, "first, skipped by --after");
+    await send(port, id, "second");
+    const replay = await cliIn(WORK, port, state, "poll", "--project", WORK, "--after", "1", "--timeout-ms", "2000");
+    assert.match(replay.out, /message: second/);
+    // The project loop: reply per page, no cursor. It answers what was handed over, not the note it skipped.
+    assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status, 200);
+    const again = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "2000");
+    assert.match(again.out, /message: first, skipped by --after/, again.out);
+  }));
 
 test("an agent reply on a project poll is a usage error that names reply; feedback with no file reads the project", () =>
   withServer(async ({ port, state, id }) => {

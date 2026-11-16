@@ -687,13 +687,13 @@ export async function runServer({
 
   /**
    * The agent acknowledges what it got: up to `cursor`, or, when it replies without one,
-   * up to what the last poll handed it. A bare poll acknowledges nothing, so an agent
-   * that lost an answer gets it again.
+   * the notes the last poll handed it, stopping at one it was never handed (an `--after` replay skips some).
+   * A bare poll acknowledges nothing, so an agent that lost an answer gets it again.
    */
   function acknowledge(s: Session, body: RequestBody, replying: boolean): UserEntry[] {
     const cursor = seqParam(body.cursor);
     if (cursor != null) return store.ack(s, cursor);
-    return replying ? store.ack(s, s.deliveredSeq) : [];
+    return replying ? store.ackDelivered(s, s.deliveredSeq) : [];
   }
 
   /** The owner puts a page away, or brings it back: the composer locks or opens, nothing else changes. False when the hub does not know the page. */
