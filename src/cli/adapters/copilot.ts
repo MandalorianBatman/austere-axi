@@ -1,11 +1,11 @@
 // Copilot CLI adapter. argv (docs/review-loop-v2.md, "Adapter argv (RLM-344)"):
-//   same  copilot -p <prompt> --resume=<id>          --model <m|auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>
-//   new   copilot -p <prompt> --session-id <minted>  --model <m|auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>
+//   same  copilot --resume=<id>          --model <m|auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>
+//   new   copilot --session-id <minted>  --model <m|auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>
+// The prompt file goes on stdin, never in argv (piped stdin is the prompt when there is no -p).
 // Fork is unavailable. `--model` is always passed, because the session saves the last model and a bad one
 // breaks later resumes (A15). A resume of a session open elsewhere fails with SessionInUseError, exit 1:
 // the run fails with `session_in_use` and does not fall back to `new` (A14).
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import { requireMode, requireSession } from "./types.ts";
 import type { Adapter, BuildInput, BuiltCommand, CallerSession, Env, ReadResultInput, RunResult } from "./types.ts";
 
@@ -25,16 +25,12 @@ export const copilot: Adapter = {
   build(input: BuildInput): BuiltCommand {
     requireMode(copilot, input.mode);
     const resume = input.mode === "same" ? requireSession(copilot, input) : undefined;
-    // Copilot takes the prompt as the -p argument; piped stdin works only without -p.
-    const prompt = fs.readFileSync(input.promptFile, "utf8");
     const sessionId = resume ?? randomUUID();
-    const args = ["-p", prompt];
-    if (resume) args.push(`--resume=${resume}`);
-    else args.push("--session-id", sessionId);
+    const args = resume ? [`--resume=${resume}`] : ["--session-id", sessionId];
     args.push("--model", input.model || COPILOT_DEFAULT_MODEL, "--no-ask-user", "--output-format", "json");
     if (input.limits?.maxAiCredits != null) args.push("--max-ai-credits", String(input.limits.maxAiCredits));
     args.push(...(input.extraArgs ?? []));
-    return { bin: copilot.bin, args, env: {}, cwd: input.cwd, sessionId };
+    return { bin: copilot.bin, args, env: {}, cwd: input.cwd, stdin: input.promptFile, sessionId };
   },
 
   readResult(input: ReadResultInput): RunResult {
@@ -48,8 +44,9 @@ export const copilot: Adapter = {
   },
 };
 
-/** `data.sessionId` on the `session.start` line, else `sessionId` on the `result` line. */
+/** `sessionId` on the last `result` line, else `data.sessionId` on the `session.start` line. */
 function sessionIdFromJson(stdout: string): string | undefined {
+  let fromStart: string | undefined;
   let fromResult: string | undefined;
   for (const line of stdout.split("\n")) {
     const text = line.trim();
@@ -61,8 +58,8 @@ function sessionIdFromJson(stdout: string): string | undefined {
       continue;
     }
     if (!event || typeof event !== "object") continue;
-    if (event.type === "session.start" && typeof event.data?.sessionId === "string") return event.data.sessionId;
+    if (event.type === "session.start" && typeof event.data?.sessionId === "string") fromStart ??= event.data.sessionId;
     if (event.type === "result" && typeof event.sessionId === "string") fromResult = event.sessionId;
   }
-  return fromResult;
+  return fromResult ?? fromStart;
 }

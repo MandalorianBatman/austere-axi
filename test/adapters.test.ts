@@ -80,29 +80,43 @@ test("omp same and fork need a session id", () => {
   assert.throws(() => omp.build(input("fork", { sessionId: "" })), AdapterError);
 });
 
-test("copilot argv: same and new, with and without a model; prompt in argv; always --model", () => {
+test("copilot argv: same and new, with and without a model; prompt on stdin; always --model", () => {
   const tail = (model: string) => ["--model", model, "--no-ask-user", "--output-format", "json"];
   for (const model of [undefined, "gpt-5"]) {
     const same = copilot.build(input("same", { model }));
-    assert.deepEqual(same, { bin: "copilot", args: ["-p", PROMPT, `--resume=${ID}`, ...tail(model ?? "auto")], env: {}, cwd: tmp, sessionId: ID });
+    assert.deepEqual(same, { bin: "copilot", args: [`--resume=${ID}`, ...tail(model ?? "auto")], env: {}, cwd: tmp, stdin: promptFile, sessionId: ID });
 
     const fresh = copilot.build(input("new", { model }));
     assert.match(fresh.sessionId ?? "", UUID_RE);
     assert.deepEqual(fresh, {
       bin: "copilot",
-      args: ["-p", PROMPT, "--session-id", fresh.sessionId, ...tail(model ?? "auto")],
+      args: ["--session-id", fresh.sessionId, ...tail(model ?? "auto")],
       env: {},
       cwd: tmp,
+      stdin: promptFile,
       sessionId: fresh.sessionId,
     });
-    assert.equal(fresh.stdin, undefined);
   }
   assert.notEqual(copilot.build(input("new")).sessionId, copilot.build(input("new")).sessionId);
 });
 
+test("no adapter puts the prompt text in argv", () => {
+  const cmd = commandAdapter("ingest", { bin: "wiki", args: ["ingest"] });
+  for (const adapter of [omp, copilot, cmd]) {
+    for (const mode of ["same", "fork", "new"] as const) {
+      if (adapter.capabilities[mode] !== true) continue;
+      const built = adapter.build(input(mode, { model: "m", limits: { maxCost: 1, maxAiCredits: 1 }, extraArgs: ["--x"] }));
+      assert.equal(built.stdin, promptFile, `${adapter.id} ${mode}`);
+      for (const arg of [built.bin, ...built.args]) {
+        assert.ok(!arg.includes(PROMPT) && !arg.includes("Reply to the note"), `${adapter.id} ${mode}: ${arg}`);
+      }
+    }
+  }
+});
+
 test("copilot argv: --max-ai-credits when set, then extra args last", () => {
   const built = copilot.build(input("same", { limits: { maxCost: 1, maxAiCredits: 20 }, extraArgs: ["--allow-all"] }));
-  assert.deepEqual(built.args, ["-p", PROMPT, `--resume=${ID}`, "--model", "auto", "--no-ask-user", "--output-format", "json", "--max-ai-credits", "20", "--allow-all"]);
+  assert.deepEqual(built.args, [`--resume=${ID}`, "--model", "auto", "--no-ask-user", "--output-format", "json", "--max-ai-credits", "20", "--allow-all"]);
 });
 
 test("copilot fork is rejected with the reason", () => {
@@ -145,11 +159,13 @@ test("omp readResult: id from the first JSON line, continuation and fork parents
   assert.deepEqual(omp.readResult({ stdout: `${line({ type: "message", id: "x" })}\n${line({ type: "session", id: ID })}\n`, exitCode: 0 }), {});
 });
 
-test("copilot readResult: session.start, result line, minted id, SessionInUseError", () => {
+test("copilot readResult: last result line, then session.start, then minted id; SessionInUseError", () => {
   const start = JSON.stringify({ type: "session.start", data: { sessionId: ID, selectedModel: "auto", alreadyInUse: false } });
-  const result = JSON.stringify({ type: "result", sessionId: ID, exitCode: 0 });
-  assert.deepEqual(copilot.readResult({ stdout: `${start}\n{"type":"assistant.message"}\n${result}\n`, exitCode: 0 }), { sessionId: ID });
-  assert.deepEqual(copilot.readResult({ stdout: `${result}\n`, exitCode: 0 }), { sessionId: ID });
+  const other = "d260d4ef-0000-4000-8000-000000000003";
+  const result = JSON.stringify({ type: "result", sessionId: other, exitCode: 0 });
+  assert.deepEqual(copilot.readResult({ stdout: `${start}\n{"type":"assistant.message"}\n${result}\n`, exitCode: 0 }), { sessionId: other });
+  assert.deepEqual(copilot.readResult({ stdout: `${result}\n`, exitCode: 0 }), { sessionId: other });
+  assert.deepEqual(copilot.readResult({ stdout: `${start}\n{"type":"assistant.message"}\n`, exitCode: 0 }), { sessionId: ID });
   const built: BuiltCommand = { bin: "copilot", args: [], env: {}, cwd: tmp, sessionId: "minted" };
   assert.deepEqual(copilot.readResult({ stdout: "", exitCode: 0, built }), { sessionId: "minted" });
   const inUse = `Error: Session '${ID}' was found but could not be loaded. SessionInUseError: Session ${ID} is in use by another Copilot process`;
