@@ -68,9 +68,16 @@ function launchdJob(label: string | undefined): Job | null {
   return { supervisor: "launchd", command: text, pid: positivePid(/\bpid = (\d+)/.exec(text)?.[1]) };
 }
 
-/** Whether a command line is the austere server. */
-export function runsTheServer(command: string): boolean {
-  return /austere-axi|cli\.mjs/.test(command) && /(^|[\s"'])server([\s"']|$)/.test(command);
+const BIN_COMMAND = /(?:^|[\s"'])(?:[^\s"']*[/\\])?austere-axi(?:\.[a-zA-Z0-9]+)?(?:[\s"']|$)/;
+
+/**
+ * Whether a command line is the austere server: `server` run by a command that names
+ * austere-axi as its executable or package, or runs the very script this process runs
+ * (a dev checkout, whatever its folder is called). Another project's `cli.mjs server`
+ * or a command mentioning austere-axi only in a flag argument is neither.
+ */
+export function runsTheServer(command: string, cli: string = CLI_ENTRY): boolean {
+  return (BIN_COMMAND.test(command) || command.includes(cli)) && /(^|[\s"'])server([\s"']|$)/.test(command);
 }
 
 /** Whether `ancestor` is `pid` itself or one of its parents. */
@@ -121,6 +128,11 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
 /** The command that restarts the server under `s`. */
 export function restartCommand(s: Supervisor, uid: number | null = process.getuid?.() ?? null): string {
   return s === "systemd" ? `systemctl --user restart ${SYSTEMD_UNIT}` : `launchctl kickstart -k gui/${uid ?? "$(id -u)"}/${LAUNCHD_LABEL}`;
+}
+
+/** The command that shows the state of the server's unit under `s`, and why it failed. */
+export function statusCommand(s: Supervisor, uid: number | null = process.getuid?.() ?? null): string {
+  return s === "systemd" ? `systemctl --user status ${SYSTEMD_UNIT}` : `launchctl print gui/${uid ?? "$(id -u)"}/${LAUNCHD_LABEL}`;
 }
 
 /** What the unit runs. */
@@ -539,7 +551,7 @@ export function startInstalledService(ctx: ServiceContext, dir: string, port: nu
   const target = installedServiceFor(ctx, dir, port);
   if (!target) return false;
   const r = target.supervisor === "systemd" ? ctx.run("systemctl", ["--user", "start", SYSTEMD_UNIT]) : ctx.run("launchctl", ["kickstart", "-k", launchdTarget(ctx.uid)]);
-  if (r.code !== 0) throw new Error(`the installed service did not start: ${commandOutput(r)} (${restartCommand(target.supervisor, ctx.uid)})`);
+  if (r.code !== 0) throw new Error(`the installed service did not start: ${commandOutput(r)} (see why: ${statusCommand(target.supervisor, ctx.uid)}; remove it: ${BIN} server uninstall)`);
   return true;
 }
 
