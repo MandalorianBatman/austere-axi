@@ -12,7 +12,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type * as sqlite from "node:sqlite";
-import { bindText, itemText, openDatabase, projectOf } from "./hub.ts";
+import { bindText, itemText, openDatabase } from "./hub.ts";
+import { resolveProject } from "./projects.ts";
 import type { ArtifactRow } from "./hub.ts";
 
 /** One piece of a note (an annotation, a message, an action, a render error): what the page sent, untrusted. */
@@ -176,9 +177,11 @@ export class SessionStore {
     this.sessions = new Map();
     this.q = {
       ensure: db.prepare(`
-        INSERT INTO artifacts (id, file, project, title, created_at, updated_at, reviewed, status)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 'open')
-        ON CONFLICT(id) DO UPDATE SET reviewed = 1, status = COALESCE(artifacts.status, 'open')`),
+        INSERT INTO artifacts (id, file, project, title, created_at, updated_at, reviewed, status, project_id, root, page_id)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 'open', ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET reviewed = 1, status = COALESCE(artifacts.status, 'open'),
+          project_id = COALESCE(artifacts.project_id, excluded.project_id), root = COALESCE(artifacts.root, excluded.root),
+          page_id = COALESCE(artifacts.page_id, excluded.page_id)`),
       session: db.prepare(`SELECT * FROM artifacts WHERE id = ?`),
       sessions: db.prepare(`SELECT * FROM artifacts WHERE reviewed = 1`),
       save: db.prepare(`
@@ -256,8 +259,13 @@ export class SessionStore {
     let s = this.sessions.get(id);
     if (!s) {
       const now = Date.now();
-      this.q.ensure.run(id, file, projectOf(file), path.basename(file), now, now);
-      s = hydrate(this.q.session.get(id) as unknown as ArtifactRow);
+      // One transaction: a merge or forget-root in another process cannot prune the page between the two.
+      const row = this.tx(() => {
+        const loc = resolveProject(this.db, file);
+        this.q.ensure.run(id, file, loc.root, path.basename(file), now, now, loc.projectId, loc.root, loc.pageId);
+        return this.q.session.get(id) as unknown as ArtifactRow;
+      });
+      s = hydrate(row);
       this.sessions.set(id, s);
     }
     return s;
@@ -520,7 +528,8 @@ export class SessionStore {
     // Notes on record mean an earlier import (whose rename failed) or a server has used this
     // session since: its status in the database is newer than the file's.
     const known = !!this.q.hasNotes.get(d.id);
-    this.q.ensure.run(d.id, d.file, projectOf(d.file), d.title || path.basename(d.file), d.createdAt || now, d.updatedAt || now);
+    const loc = resolveProject(this.db, d.file);
+    this.q.ensure.run(d.id, d.file, loc.root, d.title || path.basename(d.file), d.createdAt || now, d.updatedAt || now, loc.projectId, loc.root, loc.pageId);
     const s = hydrate(this.q.session.get(d.id) as unknown as ArtifactRow);
     if (!known) {
       Object.assign(s, {

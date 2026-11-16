@@ -66,8 +66,8 @@ ${program}
 </script></body></html>`;
 
 after(() => {
-  fs.rmSync(STATE, { recursive: true, force: true });
-  fs.rmSync(WORK, { recursive: true, force: true });
+  fs.rmSync(STATE, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 // ── pure parts ──
@@ -511,7 +511,7 @@ test("search and show find packs on npm that are not installed, without installi
     assert.match(r.out, /\[\w+; pack austere-pack-orbit@0\.2\.0\]/);
     assert.doesNotMatch(r.out, /npm austere-pack-orbit/);
   } finally {
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -628,7 +628,7 @@ test("the user's trust list: a pin trusts one version and pack.js, a scope trust
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /format 1 does not record which registry a scope was trusted on/);
   } finally {
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -675,7 +675,7 @@ test("trust add keeps changes made to the list while it waited for the user", as
     assert.deepEqual(Object.keys(list.pins).sort(), ["austere-pack-other", "austere-pack-raced"], "a pin added at the prompt is kept");
     assert.deepEqual(list.scopes, [], "a scope removed at the prompt stays removed");
   } finally {
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -710,7 +710,7 @@ test("a trusted scope covers versions its pin does not, and search names the ver
     const lock = JSON.parse(fs.readFileSync(path.join(state, "packs.json"), "utf8")) as PacksLock;
     assert.equal(lock.packs["@acme/pack-versions"].trust, "trust-list");
   } finally {
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -727,7 +727,7 @@ test("with the registry down, search returns local results and says npm was not 
     assert.match(r.out, /unknown/);
     assert.match(r.out, /remote: .*unavailable/);
   } finally {
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -745,7 +745,7 @@ test("a pack installed at an older version than npm's shows once, as installed",
     assert.equal(r.out.match(/austere-pack-comet@/g)?.length, 1, r.out);
   } finally {
     delete npm.keywordsOf["austere-pack-comet"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -770,7 +770,7 @@ test("a pack npm fails to serve is left out and counted, not cached; the other p
     npm.tarballFailures.clear();
     delete npm.keywordsOf["austere-pack-nova"];
     delete npm.keywordsOf["austere-pack-nova-down"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -795,7 +795,7 @@ test("only a failure that cannot change is cached: a 408 is tried again on the n
     npm.tarballFailures.clear();
     delete npm.keywordsOf["austere-pack-tardy"];
     delete npm.keywordsOf["austere-pack-gone"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -838,7 +838,7 @@ test("show --pack picks one of several components with the same name, and search
     delete npm.keywordsOf["austere-pack-twin-a"];
     delete npm.keywordsOf["austere-pack-twin-b"];
     delete npm.keywordsOf["austere-pack-tablet"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -858,7 +858,7 @@ test("a pack the registry refuses (401/403) is not cached as broken; the next se
   } finally {
     npm.tarballFailures.clear();
     delete npm.keywordsOf["austere-pack-gated"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -880,7 +880,7 @@ test("a pack with a malformed catalog is left out of search and refused by add",
     assert.match(r.out, /bad component entry \\?"Milestones\\?" \(needs a name, signature and group\)/);
   } finally {
     delete npm.keywordsOf["austere-pack-nogroup"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -900,7 +900,7 @@ test("a pack that inflates past the unpacked cap is left out of search and refus
     assert.match(r.out, /austere-pack-bomb@1\.0\.0 unpacks to more than 32 MB/);
   } finally {
     delete npm.keywordsOf["austere-pack-bomb"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -919,7 +919,7 @@ test("a pack whose component name is not a string is left out of search", async 
     assert.doesNotMatch(r.out, /austere-pack-arrayname/);
   } finally {
     delete npm.keywordsOf["austere-pack-arrayname"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -944,7 +944,7 @@ test("an npm pack's oversized signature and group are capped in search and show"
     for (const line of r.out.split("\n")) assert.ok(line.length < 700, `show line of ${line.length} chars`);
   } finally {
     delete npm.keywordsOf["austere-pack-huge"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -961,7 +961,7 @@ test("search still answers when the npm cache cannot be written", async () => {
     assert.doesNotMatch(r.out, /remote:/);
   } finally {
     delete npm.keywordsOf["austere-pack-lumen"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -985,7 +985,7 @@ test("after one search, npm results come from the cache when the registry goes d
   } finally {
     npm.down = false;
     delete npm.keywordsOf["austere-pack-halo"];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -1090,7 +1090,7 @@ test("a scope mapped to a private registry: search, add and trust use it, and it
     assert.match(r.out, /remote: .*@acme registry unavailable \(/);
 
     // The mapped registry stalls until the budget runs out: the default registry's packs, not yet cached, are still read.
-    fs.rmSync(path.join(state, "npm-packs"), { recursive: true, force: true });
+    fs.rmSync(path.join(state, "npm-packs"), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     mapAcme(acme.url);
     acme.searchStalled = true;
     publish("austere-pack-meteor", "1.0.0", await described("austere-pack-meteor", "1.0.0", "Meteorshower"));
@@ -1101,7 +1101,7 @@ test("a scope mapped to a private registry: search, add and trust use it, and it
     acme.searchStalled = false;
 
     // The mapped registry lists first and its downloads stall: they must not hold every fetch slot, so the default registry's uncached pack is still read.
-    fs.rmSync(path.join(state, "npm-packs"), { recursive: true, force: true });
+    fs.rmSync(path.join(state, "npm-packs"), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     for (const n of [1, 2, 3, 4, 5]) {
       const name = `@acme/pack-slow${n}`;
       publish(name, "1.0.0", await described(name, "1.0.0", "Slowpoke"), acme);
@@ -1138,7 +1138,7 @@ test("a scope mapped to a private registry: search, add and trust use it, and it
   } finally {
     acme.server.close();
     for (const name of ["@acme/pack-rocket", "austere-pack-skyline", "austere-pack-meteor"]) delete npm.keywordsOf[name];
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 

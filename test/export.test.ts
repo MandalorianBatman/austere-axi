@@ -12,7 +12,7 @@ const PAGE = path.join(ROOT, "page");
 const OUTSIDE = path.join(ROOT, "outside");
 fs.mkdirSync(path.join(PAGE, "img"), { recursive: true });
 fs.mkdirSync(OUTSIDE);
-after(() => fs.rmSync(ROOT, { recursive: true, force: true }));
+after(() => fs.rmSync(ROOT, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 const BYTES = Buffer.from([1, 2, 3, 250, 251]);
 const uri = (type: string) => `data:${type};base64,${BYTES.toString("base64")}`;

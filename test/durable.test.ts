@@ -172,7 +172,7 @@ intro = TextContent("hello")
   );
 });
 
-after(() => fs.rmSync(WORK, { recursive: true, force: true }));
+after(() => fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 /** A server of its own for one test, with the plan open. */
 async function withServer(fn: (ctx: Ctx) => Promise<void>, extraEnv?: Record<string, string>) {
@@ -185,7 +185,7 @@ async function withServer(fn: (ctx: Ctx) => Promise<void>, extraEnv?: Record<str
     await fn({ port, state, id, proc });
   } finally {
     await kill(proc);
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 }
 
@@ -228,7 +228,7 @@ test("a note survives the server being killed between send and poll", async () =
     assert.equal(poll.data.items[0].text, "do not lose me");
   } finally {
     await kill(proc);
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -366,7 +366,7 @@ test("a lock left by a dead server does not block a start when its pid now belon
     assert.deepEqual([lock.pid, lock.port], [(await request(port, "GET", "/api/health")).data.pid, port]);
   } finally {
     await kill(proc);
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -463,6 +463,6 @@ test("session files from before the database are imported once, every state inta
     check(store, "open");
     store.close();
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });

@@ -1,6 +1,6 @@
 ---
 name: austere-setup
-description: Set up austere-axi on this machine for the user. Checks Node, installs the `austere` skill, optionally installs the CLI globally and turns on the hub, then proves the review loop works with a test page. Use when the user asks to install, set up or configure austere-axi.
+description: Set up austere-axi on this machine for the user. Checks Node, installs the `austere` skill, optionally installs the CLI globally, then proves the review loop works with a test page. Use when the user asks to install, set up or configure austere-axi.
 license: MIT
 ---
 
@@ -42,7 +42,6 @@ If the `skills` tool asks which agents to install for, pick the agent the user w
 Ask the user about each item. Default: no.
 
 - **Global command.** `npm install -g austere-axi`. Then `austere-axi` works without `npx -y`. Update it later with `npm update -g austere-axi`.
-- **Hub.** `npx -y austere-axi hub on`. It keeps the server running and lists every page at `http://127.0.0.1:4388/`. `npx -y austere-axi hub open` opens it signed in; for another browser, `npx -y austere-axi login` prints a single-use sign-in link to it.
 - **Phone review.** If Tailscale is running, the server also listens on the tailnet, and `open` prints a phone link. Nothing to install. Run `tailscale status` to check.
 
 On a machine with no screen (SSH, CI, container), tell the user to set `AUSTERE_AXI_NO_OPEN=1`, so the CLI prints links and does not try to open a browser. A browser the CLI did not open gets "403" at a printed link until it signs in: run `npx -y austere-axi login <file>` and give the user the link it prints. It works once, within 60 seconds.

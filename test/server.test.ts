@@ -96,8 +96,8 @@ after(async () => {
     server.kill();
     await exited;
   }
-  fs.rmSync(STATE, { recursive: true, force: true });
-  fs.rmSync(WORK, { recursive: true, force: true });
+  fs.rmSync(STATE, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 test("open, poll, send, reply, end", async () => {
@@ -293,7 +293,7 @@ test("the CLI refuses a port squatter that cannot prove it holds the owner key",
       assert.equal(mode(path.join(state, "owner.key")), 0o600);
     }
   } finally {
-    fs.rmSync(path.dirname(state), { recursive: true, force: true });
+    fs.rmSync(path.dirname(state), { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -342,7 +342,7 @@ test("stop stops a server from before the proof, without the key", async () => {
     );
   } finally {
     await fake.close();
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -353,7 +353,7 @@ test("a state dir from an older version is made the owner's only", { skip: !posi
     await cli({ AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(await freePort()) }, "stop");
     assert.equal(mode(state), 0o700);
   } finally {
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -369,7 +369,7 @@ test("a squatter that claims to be an old server and will not stop never gets th
     assert.ok(fake.seen.every((x) => x.key === undefined), "the key never went to the squatter");
   } finally {
     await fake.close();
-    fs.rmSync(state, { recursive: true, force: true });
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
@@ -398,7 +398,7 @@ test("the CLI opens the browser with a single-use login code, never with the key
     assert.equal(signIn.headers.location, u.pathname, "the code leaves the address bar");
     assert.equal(String(signIn.headers["set-cookie"]), `${OWNER_COOKIE}=${/austere_owner=([^;]+)/.exec(OWNER.cookie)?.[1]}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`);
   } finally {
-    fs.rmSync(bin, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 

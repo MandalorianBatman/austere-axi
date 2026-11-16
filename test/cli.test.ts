@@ -12,7 +12,7 @@ const cli = (...args: string[]) => {
   return { code: r.status, out: r.stdout };
 };
 
-test.after(() => fs.rmSync(STATE, { recursive: true, force: true }));
+test.after(() => fs.rmSync(STATE, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 test("an unknown flag is a usage error (exit 2) and the command does not run", () => {
   const r = cli("check", "test/fixtures/action/ok.html", "--bogus");
