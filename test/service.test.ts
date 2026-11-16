@@ -476,6 +476,7 @@ test("a server below the unit's main process is supervised too, as npx runs it",
   // The old guide's unit was `ExecStart=/usr/bin/env npx -y austere-axi server --persist`:
   // npx runs the server below the unit's main process, and that server is supervised.
   assert.equal(isAncestor(process.pid, process.pid), true);
+  if (process.platform === "win32") return; // Windows has no cheap way to read a parent pid
   assert.equal(isAncestor(process.ppid, process.pid), true); // my parent is an ancestor of me
   assert.equal(isAncestor(process.pid, process.ppid), false); // and not the other way round
 });
