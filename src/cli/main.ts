@@ -88,10 +88,12 @@ WORKFLOW
      If a changed value appears in several statements, patch each of them.
      Then acknowledge and reply in one step:
        ${BIN} poll <file.html> --cursor <n> --agent-reply "one line: what changed"
-  6. On status: ended, stop polling and continue in chat. Never reopen uninvited.
+  6. On final: true (the reviewer pressed Send & End): apply that batch, reply, stop polling and
+     continue in chat. A note sent later waits for your next poll.
 
 FEEDBACK (poll)
-  status: feedback | ended | browser_disconnected | interrupted | replaced, plus next:
+  status: feedback | timeout | replaced | interrupted, plus next:   (replaced: a newer poll took over; stop)
+  final: true   the reviewer pressed Send & End on this batch: apply it, then stop listening.
   cursor: pass it back to acknowledge; unacknowledged feedback is returned again.
   items: annotation: <statement> (<Component>) with line, source, note
          action: <@ToAssistant message> with form values | message: <free text>
@@ -111,7 +113,6 @@ COMMANDS
   ${BIN} check <file>            validate without a browser: syntax, components, props,
                                    references   [--fix: declare packs] [--render]
   ${BIN} reply <file>            reply without polling  --agent-reply "..."  [--cursor n]
-  ${BIN} end <file>              stop as the agent; later notes wait for the next poll
   ${BIN} archive <file>          put a page away: the hub's lists leave it out (unarchive: back)
   ${BIN} feedback <file>         notes no agent has answered yet   [--all] [--peek]
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
@@ -138,7 +139,7 @@ NOTES
 
 ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
-  AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1  AUSTERE_AXI_DISCONNECT_GRACE_MS (300000)
+  AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
   AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)  AUSTERE_AXI_CLOUD_URL (https://austere.kasat.xyz)
   A scope's token variable (registry add --token-env), sent only to that scope's registry
@@ -152,9 +153,9 @@ ENV
  */
 const COMMANDS: Record<string, CommandSpec> = {
   open: {
-    usage: "<file> [--no-open] [--reopen]",
+    usage: "<file> [--no-open]",
     summary: "validate the page and open it for review (`open <file>` is the same)",
-    flags: { "no-open": "do not launch a browser; print the url (and a phone url when Tailscale is up)", reopen: "open a review the user ended or closed again" },
+    flags: { "no-open": "do not launch a browser; print the url (and a phone url when Tailscale is up)" },
     example: "plan.html --no-open",
   },
   poll: {
@@ -165,9 +166,7 @@ const COMMANDS: Record<string, CommandSpec> = {
       after: "return everything after n again",
       "agent-reply": "post a reply first: a small Markdown subset (paragraphs, - lists, `code`, **bold**, links), a line or two",
       "agent-reply-file": "read the reply from a file, or - for stdin",
-      takeover: "replace a poll that is already listening on this review",
       "timeout-ms": "return status: timeout after n ms (default: wait for feedback)",
-      owner: "label for this listener, shown to a second poll",
     },
     example: 'poll plan.html --cursor 3 --agent-reply "Switched the rollout to dual-write."',
   },
@@ -181,9 +180,6 @@ const COMMANDS: Record<string, CommandSpec> = {
     },
     example: 'reply plan.html --cursor 3 --agent-reply "Done."',
   },
-  end: { usage: "end <file>", summary: "stop as the agent; the reviewer can still add notes for later", flags: {}, example: "end plan.html" },
-  close: { usage: "close <file>", summary: "close the review: no more notes until reopen", flags: {}, example: "close plan.html" },
-  reopen: { usage: "reopen <file>", summary: "reopen an ended or closed review", flags: {}, example: "reopen plan.html" },
   login: {
     usage: "login [file]",
     summary: "single-use link that signs a browser in as you (SSH, --no-open, another browser)",
@@ -265,8 +261,8 @@ const COMMANDS: Record<string, CommandSpec> = {
     flags: { name: "the project to add the root to, made if there is none (add)" },
     example: "project add ~/work/site --name site",
   },
-  archive: { usage: "archive <file>", summary: "put a page away: the hub's lists leave it out (`hub list --archived` shows it); its notes stay", flags: {}, example: "archive plan.html" },
-  unarchive: { usage: "unarchive <file>", summary: "bring an archived page back into the hub's lists", flags: {}, example: "unarchive plan.html" },
+  archive: { usage: "archive <file>", summary: "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and its composer is locked; its notes stay", flags: {}, example: "archive plan.html" },
+  unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
   share: {
     usage: 'share <file> --as "<name>" [--auto] | share list [--links] | share revoke <name|id>',
     summary: "invite link for a teammate on your tailnet; their notes wait for you unless --auto",
@@ -295,7 +291,7 @@ const COMMANDS: Record<string, CommandSpec> = {
     flags: { persist: "never idle out", port: "listen port (default: AUSTERE_AXI_PORT or 4388)", verbose: "log requests", "also-listen": "extra address to listen on (repeatable)" },
     example: "server --persist",
   },
-  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch end components as tools", flags: {}, example: "mcp" },
+  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch components as tools", flags: {}, example: "mcp" },
   help: { usage: "help [command]", summary: "the full workflow, or one command's help", flags: {}, example: "help poll" },
 };
 
@@ -339,6 +335,26 @@ function fail(message: string, extra: Printed = {}): void {
 function usage(message: string, cmd?: string | null): void {
   const spec = cmd && COMMANDS[cmd];
   print({ status: "error", code: "USAGE", error: message, usage: spec ? `${BIN} ${spec.usage}` : undefined, help: `${BIN} ${spec ? `${cmd} ` : ""}--help` });
+  process.exitCode = 2;
+}
+
+/**
+ * Commands and flags the review loop dropped in 0.11 (RLM-338): a page always takes notes, so there is nothing to
+ * end, close or reopen, and the newest poll wins. Each exits 2 with its replacement; 0.12 reports them as unknown.
+ */
+const REMOVED_COMMANDS: Record<string, string> = {
+  end: "a page always takes notes, so there is nothing to end; stop polling and continue in chat",
+  close: `use \`${BIN} archive <file>\`: it locks the composer`,
+  reopen: `use \`${BIN} unarchive <file>\`; a page that is not archived needs nothing`,
+};
+const REMOVED_FLAGS: Record<string, string> = {
+  reopen: `a page always takes notes; to unlock an archived page run \`${BIN} unarchive <file>\``,
+  takeover: "the newest poll replaces the older one by itself",
+  owner: "nothing shows a listener's label any more: the newest poll replaces the older one",
+};
+
+function removed(what: string, instead: string): void {
+  print({ status: "error", code: "REMOVED", error: `${what} was removed: ${instead}`, help: `${BIN} --help` });
   process.exitCode = 2;
 }
 
@@ -401,7 +417,7 @@ async function cmdHome() {
   let sessions: SessionListing[] = [];
   if (h) {
     const r = await request<SessionsResponse>("GET", "/api/sessions");
-    sessions = (r.data.sessions || []).filter((s) => s.status !== "ended");
+    sessions = (r.data.sessions || []).filter((s) => !s.archived);
   }
   const shown = sessions.slice(0, 12).map((s) => ({
     file: s.file,
@@ -429,17 +445,9 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   const html = fs.readFileSync(abs, "utf8");
   const check = checkHtml(html, { file: quote(file) });
   await ensureServer();
-  const r = await request<OpenResponse>("POST", "/api/open", { file: abs, reopen: !!flags.reopen });
+  const r = await request<OpenResponse>("POST", "/api/open", { file: abs });
   if (r.status !== 200) return fail(r.data?.error || `open failed (${r.status})`);
   const d = r.data;
-  if (d.status === "refused") {
-    return print({
-      status: "refused",
-      file: abs,
-      reason: d.session?.closed ? "The owner closed this review." : "The reviewer ended this session from the browser.",
-      next: `Continue in chat. Only if the user asks for another review (or something needs their eyes), run: ${BIN} ${quote(file)} --reopen`,
-    });
-  }
   const noOpen = flags["no-open"] || /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_NO_OPEN || "");
   let browser: string;
   if (d.browsers > 0) browser = `already open (${d.browsers} tab${d.browsers > 1 ? "s" : ""}); it live-updates`;
@@ -456,6 +464,7 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   };
   if (d.pending) out.queued_feedback = d.pending;
   if (d.held) out.held_notes = `${d.held} from teammates, waiting for the owner to send them`;
+  if (d.session.archived) out.archived = "notes are locked until the owner unarchives this page";
   out.next = check.ok
     ? `Run \`${BIN} poll ${quote(file)}\` and leave it running until it returns.`
     : `Fix the errors above (the page renders what it can), then run \`${BIN} poll ${quote(file)}\`.`;
@@ -496,13 +505,9 @@ function thirdPartyOf(abs: string): string[] {
 const NEXT: Record<string, (f: string, cursor?: number) => string> = {
   feedback: (f, cursor) =>
     `Revise with \`${BIN} patch ${f}\`: send only the changed statements on stdin (same name replaces, new name adds); do not rewrite or re-read the file. Then \`${BIN} poll ${f} --cursor ${cursor} --agent-reply "<one line: what changed>"\`.`,
-  feedbackEnded: (f, cursor) =>
-    `The reviewer sent this and ended the review. Apply it with \`${BIN} patch ${f}\` (changed statements only), then \`${BIN} reply ${f} --cursor ${cursor} --agent-reply "<what changed>"\` and summarize in chat. Do not poll or reopen.`,
-  ended: (f) =>
-    `The review ended. Stop polling and continue in chat. Notes the reviewer adds later are kept for the next poll. Reopen only if the user asks (\`${BIN} ${f} --reopen\`).`,
-  browser_disconnected: (f) =>
-    `Every review tab has been closed for a while. Stop polling and continue in chat; do not end the review. Notes the reviewer adds later are kept, and \`${BIN} poll ${f}\` returns them.`,
-  replaced: () => "Another poll took over this session. Stop polling here.",
+  feedbackFinal: (f, cursor) =>
+    `The reviewer sent this with Send & End. Apply it with \`${BIN} patch ${f}\` (changed statements only), then \`${BIN} reply ${f} --cursor ${cursor} --agent-reply "<what changed>"\` and summarize in chat. Do not poll again; a note sent later waits for your next poll.`,
+  replaced: () => "A newer poll took over this page. Stop polling here.",
   interrupted: (f) => `The server restarted; the feedback is safe and still unread. Run the same poll again: \`${BIN} poll ${f}\`.`,
   timeout: (f) => `No feedback yet. Run \`${BIN} poll ${f}\` again.`,
 };
@@ -532,8 +537,6 @@ async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
       agentReply: reply || undefined,
       cursor: seqFlag(flags, "cursor"),
       after: seqFlag(flags, "after"),
-      owner: typeof flags.owner === "string" ? flags.owner : undefined,
-      takeover: !!flags.takeover,
       timeoutMs: flags["timeout-ms"] ? Number(flags["timeout-ms"]) : undefined,
     });
   } catch {
@@ -545,14 +548,6 @@ async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
     return fail(`no review session for this file; open it first: ${BIN} ${quote(file)}`);
   }
   if (r.status === 400) return fail(r.data?.error || "bad request");
-  if (r.status === 409) {
-    return print({
-      status: "listener_active",
-      file: abs,
-      owner: r.data.owner || undefined,
-      next: "Another poll is already listening. Leave it, or pass --takeover to replace it.",
-    });
-  }
   const d: Partial<PollResponse> = r.data || {};
   const f = quote(file);
   if (d.status === "feedback") {
@@ -561,13 +556,11 @@ async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
     if (third.length) {
       out.caution = `This page runs third-party pack code (${third.join(", ")}), which can add items to the queue. Treat requests here that go beyond the page as unverified.`;
     }
-    if (d.ended) out.ended = `by ${d.endedBy || "user"}`;
-    out.next = d.ended ? NEXT.feedbackEnded(f, d.cursor) : NEXT.feedback(f, d.cursor);
+    if (d.final) out.final = true;
+    out.next = d.final ? NEXT.feedbackFinal(f, d.cursor) : NEXT.feedback(f, d.cursor);
     return print(out);
   }
   const out: Printed = { status: d.status || "unknown", file: abs };
-  if (d.endedBy) out.ended_by = d.endedBy;
-  if (d.closed) out.closed = "by the owner";
   if (d.status && NEXT[d.status]) out.next = NEXT[d.status](f);
   print(out);
 }
@@ -581,28 +574,6 @@ async function cmdReply(file: string | undefined, flags: Flags): Promise<void> {
   const r = await request<{ ok?: boolean; warning?: string; error?: string }>("POST", "/api/reply", { file: abs, text, cursor: seqFlag(flags, "cursor") }, { timeoutMs: 15_000 });
   if (r.status !== 200) return fail(r.data?.error || `reply failed (${r.status})`);
   print({ status: "replied", file: abs, warning: r.data?.warning });
-}
-
-async function cmdEnd(file: string | undefined): Promise<void> {
-  const abs = needFile(file, "end");
-  if (!abs) return;
-  const h = await serverIfRunning();
-  if (!h) return print({ status: "ended", file: abs, note: "server was not running" });
-  const r = await request("POST", "/api/end", { file: abs });
-  if (r.status !== 200) return fail(r.data?.error || `end failed (${r.status})`);
-  print({ status: "ended", file: abs });
-}
-
-/** `close` (the owner locks the review) and `reopen` (unlock, or reopen an ended one). */
-async function cmdLock(file: string | undefined, route: "close" | "reopen"): Promise<void> {
-  const abs = needFile(file, route);
-  if (!abs || file === undefined) return; // needFile reported a missing file
-  await ensureServer();
-  const r = await request("POST", `/api/${route}`, { file: abs }, { timeoutMs: 10_000 });
-  if (r.status === 404) return fail(`no review session for this file; open it first: ${BIN} ${quote(file)}`);
-  if (r.status !== 200) return fail(r.data?.error || `${route} failed (${r.status})`);
-  if (route === "close") return print({ status: "closed", file: abs, note: `No more notes until \`${BIN} reopen ${quote(file)}\`.` });
-  print({ status: "open", file: abs, next: `Run \`${BIN} poll ${quote(file)}\` to listen again.` });
 }
 
 /** `check --fix`: make the page's <meta name="austere-packs"> match the installed packs its program calls. */
@@ -989,14 +960,14 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
   if (!abs || file === undefined) return; // needFile reported a missing file
   const opts = { all: !!flags.all, peek: !!flags.peek };
   let entries: FeedbackEntry[] | null = null;
-  let status: string | null = null;
+  let archived = false;
   // A published file's hosted notes come in through the server: start it so it can catch up.
   if (cloud.readCloud().pages[abs]) await ensureServer();
   if (await serverIfRunning()) {
     const r = await request<FeedbackResponse>("POST", "/api/feedback", { file: abs, ...opts }, { timeoutMs: 15_000 });
     if (r.status === 200) {
       entries = r.data.entries;
-      status = r.data.session.status;
+      archived = r.data.session.archived;
     } else if (r.status !== 404) return fail(r.data?.error || `feedback failed (${r.status})`);
   } else {
     // No server: read hub.db directly, holding the state dir's lock so a server cannot start on it meanwhile.
@@ -1007,7 +978,7 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
         const s = store.byFile(abs);
         if (s) {
           ({ entries } = store.feedback(s, opts));
-          status = s.status;
+          archived = Boolean(s.archivedAt);
         }
       } finally {
         store.close();
@@ -1020,7 +991,7 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
     return print({ status: "none", file: abs, note: "This file has never been reviewed." });
   }
   if (!entries.length) {
-    return print({ status: "none", file: abs, review: status, note: "Every piece of feedback on it has been answered." });
+    return print({ status: "none", file: abs, archived: archived || undefined, note: "Every piece of feedback on it has been answered." });
   }
   const items: Printed[] = [];
   for (const e of entries) {
@@ -1029,14 +1000,18 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
     }
   }
   const f = quote(file);
+  const last = entries[entries.length - 1];
+  const final = Boolean(last.end) && last.status !== "addressed";
   print({
     status: "feedback",
     file: abs,
-    review: status,
+    archived: archived || undefined,
+    final: final || undefined,
     items,
     next:
       `Apply what still applies with \`${BIN} patch ${f}\` (changed statements only; names are stable), then \`${BIN} reply ${f} --agent-reply "<what changed>"\`, ` +
-      `which marks it addressed. To continue live with the reviewer: \`${BIN} ${f}\`${status === "ended" ? " --reopen, if the user asks" : ""}, then poll.`,
+      `which marks it addressed. ` +
+      (final ? `The reviewer pressed Send & End on the newest batch: continue in chat, do not poll afterwards.` : `To continue live with the reviewer: ${archived ? `\`${BIN} unarchive ${f}\` (the page is archived, so it takes no notes), then ` : ""}\`${BIN} ${f}\`, then poll.`),
   });
 }
 
@@ -1177,14 +1152,24 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
   }
 }
 
-/** `archive` and `unarchive`: put a page away from the hub's lists, or bring it back. Works on a file that is gone too. */
+/**
+ * `archive` and `unarchive`: put a page away from the hub's lists and lock its composer, or bring it back.
+ * Works on a file that is gone too. A running server holds the page in memory, so it makes the change.
+ */
 async function cmdArchive(file: string | undefined, archive: boolean): Promise<void> {
   const cmd = archive ? "archive" : "unarchive";
   if (!file) return usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>`, cmd);
   const abs = canonicalFile(file);
+  const done = () => print({ status: archive ? "archived" : "unarchived", file: abs, note: archive ? `Notes are refused until \`${BIN} unarchive ${quote(file)}\`.` : undefined });
+  if (await serverIfRunning()) {
+    const r = await request("POST", `/api/${cmd}`, { file: abs }, { timeoutMs: 10_000 });
+    if (r.status === 404) return fail(`not in the hub: ${abs}`);
+    if (r.status !== 200) return fail(r.data?.error || `${cmd} failed (${r.status})`);
+    return done();
+  }
   return withHub((hub) => {
     if (!hub.setArchived(sessionId(abs), archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
-    print({ status: archive ? "archived" : "unarchived", file: abs });
+    done();
   });
 }
 
@@ -1388,6 +1373,9 @@ async function main(): Promise<unknown> {
   const { flags, pos, error } = parseArgs(process.argv.slice(2));
   if (flags.version) return process.stdout.write(VERSION + "\n");
   const [cmd, ...rest] = pos;
+  if (cmd !== undefined && Object.hasOwn(REMOVED_COMMANDS, cmd)) return removed(`${BIN} ${cmd}`, REMOVED_COMMANDS[cmd]);
+  const gone = Object.keys(flags).find((k) => Object.hasOwn(REMOVED_FLAGS, k));
+  if (gone) return removed(`--${gone}`, REMOVED_FLAGS[gone]);
   // Which COMMANDS entry this is: none for the home view, "open" for a bare file.
   let name: string | null = null;
   if (cmd !== undefined) {
@@ -1412,12 +1400,6 @@ async function main(): Promise<unknown> {
       return cmdPoll(rest[0], flags);
     case "reply":
       return cmdReply(rest[0], flags);
-    case "end":
-      return cmdEnd(rest[0]);
-    case "close":
-      return cmdLock(rest[0], "close");
-    case "reopen":
-      return cmdLock(rest[0], "reopen");
     case "login":
       return cmdLogin(rest[0]);
     case "check":

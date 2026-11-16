@@ -1,6 +1,6 @@
 // Durable notes: hub.db is the record, poll is a cursor read with at-least-once
-// delivery, ending a review stops the agent but not the reviewer, and only the
-// owner's close locks the review.
+// delivery, a page always takes notes (a final batch only tells the agent to stop
+// listening), and only an archived page refuses them.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -27,19 +27,18 @@ interface Note {
 
 interface SessionRow {
   id: string;
-  status: string;
+  archived: boolean;
   pending: number;
 }
 
 /** Every response body field these tests read; each route fills in its own. */
 interface Body {
   status: string;
-  closed: boolean;
-  ended: boolean;
+  final: boolean;
   cursor: number;
   items: Note[];
   entry: Note;
-  session: { id: string };
+  session: { id: string; archived: boolean };
   sessions: SessionRow[];
   link: string;
   pid: number;
@@ -189,27 +188,32 @@ async function withServer(fn: (ctx: Ctx) => Promise<void>, extraEnv?: Record<str
   }
 }
 
-test("a note sent after the agent ended is kept, and the next poll returns it and reopens the review", () =>
-  withServer(async ({ port, id }) => {
-    assert.equal((await request(port, "POST", "/api/end", { file: FILE })).status, 200);
-    const sent = await request(port, "POST", `/s/${id}/send`, message("one more thing"), page(port));
-    assert.equal(sent.status, 200, "an ended review still takes notes");
-    const sessions = (await request(port, "GET", "/api/sessions")).data.sessions;
-    assert.equal(sessions.find((s) => s.id === id)?.pending, 1, "waiting for the agent");
-
-    const poll = await request(port, "POST", "/api/poll", { file: FILE });
-    assert.equal(poll.data.status, "feedback");
-    assert.equal(poll.data.items[0].text, "one more thing");
-    assert.equal(poll.data.ended, undefined, "not handed over as a final batch");
-    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.status, "open");
-
-    // A batch sent with end stays final: delivered with ended, and the review stays ended.
+test("a note sent after a final batch is kept, and the next poll returns it", () =>
+  withServer(async ({ port, state, id }) => {
+    // The reviewer's Send & End: the batch is final, the agent stops listening after it.
     await request(port, "POST", `/s/${id}/send`, { ...message("last words"), end: true }, page(port));
-    const last = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
+    const last = await request(port, "POST", "/api/poll", { file: FILE });
     assert.equal(last.data.status, "feedback");
-    assert.equal(last.data.ended, true);
-    const after = await request(port, "POST", "/api/poll", { file: FILE, cursor: last.data.cursor });
-    assert.equal(after.data.status, "ended");
+    assert.equal(last.data.final, true);
+    const peeked = await cli(port, state, "feedback", FILE, "--peek");
+    assert.match(peeked.out, /^final: true$/m, "the catch-up read says the same");
+    assert.equal(last.data.items[0].text, "last words");
+
+    // The page still takes notes; the next poll gets them, and that batch is not final.
+    const sent = await request(port, "POST", `/s/${id}/send`, message("one more thing"), page(port));
+    assert.equal(sent.status, 200, "a page always takes notes");
+    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.pending, 2, "last words still unacknowledged, one more thing waiting");
+    const poll = await request(port, "POST", "/api/poll", { file: FILE, cursor: last.data.cursor });
+    assert.equal(poll.data.status, "feedback");
+    assert.deepEqual(poll.data.items.map((i) => i.text), ["one more thing"]);
+    assert.equal(poll.data.final, undefined, "not handed over as a final batch");
+
+    // A plain note that follows an end batch in the same answer means the reviewer carries on.
+    await request(port, "POST", `/s/${id}/send`, { ...message("wrap up"), end: true }, page(port));
+    await request(port, "POST", `/s/${id}/send`, message("actually, one more"), page(port));
+    const mixed = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
+    assert.deepEqual(mixed.data.items.map((i) => i.text), ["wrap up", "actually, one more"]);
+    assert.equal(mixed.data.final, undefined);
   }));
 
 test("a note survives the server being killed between send and poll", async () => {
@@ -285,66 +289,100 @@ test("a held note released after the cursor moved past its time still reaches th
     assert.ok(released.data.cursor > got.data.cursor);
   }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
 
-test("unread notes reopen an ended review even when they are older than the end: held and released after it", () =>
+test("a held note released after a final batch reaches the next poll", () =>
   withServer(async ({ port, id }) => {
     const invited = await invite(port, id, "Ana");
-    const session = async () => (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id);
 
-    // The agent ends, then the owner releases a note held from before.
-    const first = await request(port, "POST", `/s/${id}/send`, message("held before the agent ended"), { ...page(port), cookie: invited });
-    await request(port, "POST", "/api/end", { file: FILE });
-    await request(port, "POST", `/s/${id}/release`, { ids: [first.data.entry.id] }, page(port));
-    const poll = await request(port, "POST", "/api/poll", { file: FILE });
+    const held = await request(port, "POST", `/s/${id}/send`, message("held before the end"), { ...page(port), cookie: invited });
+    await request(port, "POST", `/s/${id}/send`, { ...message("final words"), end: true }, page(port));
+    const final = await request(port, "POST", "/api/poll", { file: FILE });
+    assert.equal(final.data.final, true);
+    assert.deepEqual(final.data.items.map((i) => i.text), ["final words"]);
+
+    await request(port, "POST", `/s/${id}/release`, { ids: [held.data.entry.id] }, page(port));
+    const poll = await request(port, "POST", "/api/poll", { file: FILE, cursor: final.data.cursor });
     assert.equal(poll.data.status, "feedback");
-    assert.equal(poll.data.items[0].text, "held before the agent ended");
-    assert.equal(poll.data.ended, undefined);
-    assert.equal((await session())?.status, "open");
-
-    // The same when the reviewer ended it from the page.
-    const second = await request(port, "POST", `/s/${id}/send`, message("held before the reviewer ended"), { ...page(port), cookie: invited });
-    await request(port, "POST", `/s/${id}/end`, {}, page(port));
-    await request(port, "POST", `/s/${id}/release`, { ids: [second.data.entry.id] }, page(port));
-    const again = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
-    assert.equal(again.data.items[0].text, "held before the reviewer ended");
-    assert.equal(again.data.ended, undefined);
-    assert.equal((await session())?.status, "open");
-
-    // A replay of acknowledged notes does not reopen an ended review.
-    await request(port, "POST", "/api/end", { file: FILE });
-    const replay = await request(port, "POST", "/api/poll", { file: FILE, cursor: again.data.cursor, after: 0 });
-    assert.equal(replay.data.status, "feedback");
-    assert.equal((await session())?.status, "ended");
+    assert.deepEqual(poll.data.items.map((i) => i.text), ["held before the end"]);
+    assert.equal(poll.data.final, undefined);
   }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
 
-test("ending keeps the composer open; only the owner's close refuses notes, until reopen", () =>
-  withServer(async ({ port, id }) => {
-    // Closing ends a listening poll.
-    const listening = request(port, "POST", "/api/poll", { file: FILE });
+test("archiving locks the composer for everyone and unarchive restores it; no other state refuses notes", () =>
+  withServer(async ({ port, state, id }) => {
+    const listed = async () => (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id);
+    assert.equal((await listed())?.archived, false);
+
+    // Archiving leaves a listening poll alone: it still waits for the next note.
+    const listening = request(port, "POST", "/api/poll", { file: FILE, timeoutMs: 600 });
     await new Promise((r) => setTimeout(r, 100));
-    assert.equal((await request(port, "POST", "/api/close", { file: FILE })).status, 200);
-    const closed = await listening;
-    assert.equal(closed.data.status, "ended");
-    assert.equal(closed.data.closed, true);
-    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after close"), page(port))).status, 409);
-    assert.equal((await request(port, "POST", "/api/open", { file: FILE })).data.status, "refused");
-    assert.equal((await request(port, "POST", "/api/reopen", { file: FILE })).status, 200);
+    const archived = await request(port, "POST", "/api/archive", { file: FILE });
+    assert.equal(archived.status, 200);
+    assert.equal((await listed())?.archived, true);
+    assert.equal((await request(port, "POST", `/s/${id}/send`, message("while archived"), page(port))).status, 409);
+    assert.equal((await listening).data.status, "timeout");
 
-    // Ending does not refuse notes.
-    await request(port, "POST", `/s/${id}/end`, {}, page(port));
-    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after end"), page(port))).status, 200);
-    await request(port, "POST", `/s/${id}/close`, {}, page(port));
-    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after close"), page(port))).status, 409);
+    // open leaves an archived page archived.
+    assert.equal((await request(port, "POST", "/api/open", { file: FILE })).data.session.archived, true, "open does not unarchive");
+    assert.equal((await request(port, "POST", `/s/${id}/unarchive`, {}, page(port))).status, 200);
+    assert.equal((await listed())?.archived, false);
+    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after unarchive"), page(port))).status, 200);
 
-    // A note sent before the close still reaches the agent, as the last of the review.
-    const poll = await request(port, "POST", "/api/poll", { file: FILE });
-    assert.equal(poll.data.items[0].text, "after end");
-    assert.equal(poll.data.ended, true);
-    const next = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
-    assert.deepEqual([next.data.status, next.data.closed], ["ended", true]);
-
-    assert.equal((await request(port, "POST", `/s/${id}/reopen`, {}, page(port))).status, 200);
-    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after reopen"), page(port))).status, 200);
+    // From the owner's menu.
+    assert.equal((await request(port, "POST", `/s/${id}/archive`, {}, page(port))).status, 200);
+    assert.equal((await request(port, "POST", `/s/${id}/send`, message("archived again"), page(port))).status, 409);
+    const cliOut = await cli(port, state, "unarchive", FILE);
+    assert.match(cliOut.out, /status: unarchived/);
+    assert.equal((await listed())?.archived, false, "the CLI went through the running server");
   }));
+
+test("a page archived while no server runs is still archived when the next server starts", async () => {
+  const port = await freePort();
+  const state = tmp("austere-durable-archive-");
+  let proc: ServerProc | undefined;
+  try {
+    assert.match((await cli(port, state, "check", FILE)).out, /status: ok/);
+    const archived = await cli(port, state, "archive", FILE);
+    assert.match(archived.out, /status: archived/);
+    proc = startServer(port, state);
+    await up(port);
+    const open = await request(port, "POST", "/api/open", { file: FILE });
+    assert.equal(open.data.session.archived, true);
+    assert.equal((await request(port, "POST", `/s/${open.data.session.id}/send`, message("locked"), page(port))).status, 409);
+    assert.match((await cli(port, state, "unarchive", FILE)).out, /status: unarchived/);
+    assert.equal((await request(port, "POST", `/s/${open.data.session.id}/send`, message("open again"), page(port))).status, 200);
+  } finally {
+    if (proc) await kill(proc);
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("a newer poll replaces the older one; the older returns replaced", () =>
+  withServer(async ({ port, id }) => {
+    const older = request(port, "POST", "/api/poll", { file: FILE });
+    await new Promise((r) => setTimeout(r, 100));
+    const newer = request(port, "POST", "/api/poll", { file: FILE });
+    assert.equal((await older).data.status, "replaced");
+    await request(port, "POST", `/s/${id}/send`, message("for the newer"), page(port));
+    const got = await newer;
+    assert.equal(got.data.status, "feedback");
+    assert.equal(got.data.items[0].text, "for the newer");
+  }));
+
+test("closing every tab does not end a poll: it waits for a note", () =>
+  withServer(
+    async ({ port, id }) => {
+      const listening = request(port, "POST", "/api/poll", { file: FILE });
+      let settled = false;
+      void listening.then(() => (settled = true));
+      const tab = http.get({ host: "127.0.0.1", port, path: `/s/${id}/events`, headers: { host: `127.0.0.1:${port}`, ...ownerHeaders(stateOf.get(port) as string) } });
+      await new Promise<void>((resolve) => tab.once("response", (res) => res.once("data", () => resolve())));
+      tab.destroy();
+      await new Promise((r) => setTimeout(r, 700)); // well past the grace the old server allowed here
+      assert.equal(settled, false, "the poll is still listening");
+      await request(port, "POST", `/s/${id}/send`, message("hello after the tabs closed"), page(port));
+      assert.deepEqual((await listening).data.items.map((i) => i.text), ["hello after the tabs closed"]);
+    },
+    { AUSTERE_AXI_DISCONNECT_GRACE_MS: "100" },
+  ));
 
 test("a second server on the same state dir refuses to start", () =>
   withServer(async ({ port, state }) => {
@@ -433,11 +471,9 @@ test("session files from before the database are imported once, every state inta
   fs.mkdirSync(sessions);
   fs.writeFileSync(path.join(sessions, `${id}.json`), JSON.stringify(legacy));
   try {
-    const check = (store: SessionStore, status = "ended") => {
+    const check = (store: SessionStore) => {
       const s = store.get(id) as Session;
-      assert.equal(s.status, status);
-      assert.equal(s.endedBy, status === "ended" ? "agent" : null);
-      assert.deepEqual(store.unread(s).map((e) => e.id), ["u-pending"]);
+      assert.equal(s.archivedAt, null);
       assert.deepEqual(store.heldEntries(s).map((e) => e.id), ["u-held"]);
       assert.deepEqual(
         store.feedback(s, { all: true, peek: true }).entries.map((e) => [e.id, e.status]),
@@ -452,15 +488,15 @@ test("session files from before the database are imported once, every state inta
     };
     let store = await SessionStore.open(dir);
     check(store);
-    // The server reopens the review after the import.
-    store.reopen(store.get(id) as Session);
+    // A server's other changes to the row leave the notes alone.
+    store.touch(store.get(id) as Session);
     store.close();
     assert.deepEqual(fs.readdirSync(sessions), [`${id}.json.imported`]);
 
     // A rename that did not happen: importing again changes nothing, not even the status.
     fs.writeFileSync(path.join(sessions, `${id}.json`), JSON.stringify(legacy));
     store = await SessionStore.open(dir);
-    check(store, "open");
+    check(store);
     store.close();
   } finally {
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });

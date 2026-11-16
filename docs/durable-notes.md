@@ -1,6 +1,6 @@
 # Durable notes: SQLite as the source of truth
 
-Status: implemented in 0.5.0 (RLM-272). sid.kasat settled all decisions (Q1–Q21) in a grilling session on 2026-11-09. Where the implementation differs from the first draft, see [As built](#as-built).
+Status: implemented in 0.5.0 (RLM-272). sid.kasat settled all decisions (Q1–Q21) in a grilling session on 2026-11-09. Where the implementation differs from the first draft, see [As built](#as-built). The session verbs this note keeps (`end`, `close`, `reopen`, `--takeover`, the `browser_disconnected` timer, the ended and closed states) went in 0.11: see [Review loop v2](review-loop-v2.md) (RLM-338); the CLI guide has the current rules.
 
 ## Problem
 

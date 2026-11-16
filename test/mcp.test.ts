@@ -104,7 +104,7 @@ test("initializes and lists the review tools", async () => {
   const list = await rpc("tools/list", {});
   assert.deepEqual(
     list.result.tools.map((t) => t.name),
-    ["spec", "check", "open", "poll", "reply", "patch", "end", "components"],
+    ["spec", "check", "open", "poll", "reply", "patch", "components"],
   );
   for (const t of list.result.tools) assert.equal(t.inputSchema.type, "object");
   const components = list.result.tools.find((t) => t.name === "components")!;
@@ -145,7 +145,7 @@ test("check reports errors as a tool error and passes a valid page", async () =>
   assert.match(noFile.content[0].text, /file is required/);
 });
 
-test("open, poll for feedback, reply through the poll, end", async () => {
+test("open, poll for feedback, reply through the poll", async () => {
   const open = await call("open", { file: GOOD, no_open: true });
   assert.equal(open.isError, false, open.content[0].text);
   assert.match(open.content[0].text, /^status: open/m);
@@ -172,9 +172,6 @@ test("open, poll for feedback, reply through the poll, end", async () => {
 
   const replied = await call("poll", { file: GOOD, agent_reply: "Made it louder.", timeout_ms: 200 });
   assert.match(replied.content[0].text, /^status: timeout/m);
-
-  const ended = await call("end", { file: GOOD });
-  assert.match(ended.content[0].text, /^status: ended/m);
 });
 
 test("components searches locally and refuses paths and untrusted packs", async () => {

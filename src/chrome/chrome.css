@@ -585,7 +585,7 @@ textarea.edit {
   align-self: center;
   margin: 0 auto 8px;
 }
-.ended-note {
+.archived-note {
   text-align: center;
   font-size: 12px;
   color: var(--faint);

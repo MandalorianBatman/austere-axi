@@ -54,7 +54,7 @@ In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/pl
 
 ### MCP
 
-`austere-axi mcp` is an MCP server on stdio. Tools: `spec`, `check`, `open`, `poll`, `reply`, `patch`, `end`, `components`. Each one runs the CLI command of the same name, so the loop is the same as on the command line.
+`austere-axi mcp` is an MCP server on stdio. Tools: `spec`, `check`, `open`, `poll`, `reply`, `patch`, `components`. Each one runs the CLI command of the same name, so the loop is the same as on the command line.
 
 - `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer calls. The agent polls again; nothing is lost. `timeout_ms: 0` waits until feedback arrives.
 - `poll` and `reply` take the `cursor` a poll returned, like `--cursor`.

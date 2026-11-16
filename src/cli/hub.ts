@@ -54,8 +54,6 @@ export interface HubCopy extends HubCounts {
   title: string | null;
   updated_at: number;
   reviewed: number;
-  status: string | null;
-  ended_by: string | null;
   archived_at: number | null;
   /** The file is gone; its notes are kept. */
   missing: boolean;
@@ -286,14 +284,12 @@ export class Hub {
     this.db = db;
     this.q = {
       upsertArtifact: db.prepare(`
-        INSERT INTO artifacts (id, file, project, title, created_at, updated_at, reviewed, status, ended_by, project_id, root, page_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO artifacts (id, file, project, title, created_at, updated_at, reviewed, project_id, root, page_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           title = COALESCE(excluded.title, artifacts.title),
           updated_at = MAX(artifacts.updated_at, excluded.updated_at),
           reviewed = MAX(artifacts.reviewed, excluded.reviewed),
-          status = COALESCE(excluded.status, artifacts.status),
-          ended_by = CASE WHEN excluded.status IS NULL THEN artifacts.ended_by ELSE excluded.ended_by END,
           project_id = COALESCE(artifacts.project_id, excluded.project_id),
           root = COALESCE(artifacts.root, excluded.root),
           page_id = COALESCE(artifacts.page_id, excluded.page_id)`),
@@ -310,7 +306,7 @@ export class Hub {
     // One transaction: a merge or forget-root in another process cannot prune the page between the two.
     inTransaction(this.db, () => {
       const loc = resolveProject(this.db, file);
-      this.q.upsertArtifact.run(id, file, loc.root, title || null, at, at, 0, null, null, loc.projectId, loc.root, loc.pageId);
+      this.q.upsertArtifact.run(id, file, loc.root, title || null, at, at, 0, loc.projectId, loc.root, loc.pageId);
     });
   }
 
@@ -363,8 +359,6 @@ export class Hub {
         title: r.title,
         updated_at: r.updated_at,
         reviewed: r.reviewed,
-        status: r.status,
-        ended_by: r.ended_by,
         archived_at: r.archived_at,
         missing: !fs.existsSync(r.file),
         open: r.open || 0,

@@ -205,7 +205,7 @@ interface Api {
   held: number;
   count: number;
   revoked: { name: string }[];
-  sessions: { id: string; status: string; browsers: number }[];
+  sessions: { id: string; archived: boolean; browsers: number }[];
 }
 
 interface Res<T> {
@@ -579,7 +579,7 @@ test("releasing held notes needs explicit ids: a note the owner was never shown 
 
 test("auto mode goes straight to the agent; discard keeps a note from it", async () => {
   const bo = await accept((await share("Bo", true)).data.link);
-  const waiting = request(srv.port, "POST", "/api/poll", { body: { file: FILE, takeover: true } });
+  const waiting = request(srv.port, "POST", "/api/poll", { body: { file: FILE } });
   await new Promise((r) => setTimeout(r, 100));
   const sent = await sendNote(bo, "straight through");
   assert.equal(sent.data.entry.held, undefined);
@@ -602,7 +602,7 @@ test("auto mode goes straight to the agent; discard keeps a note from it", async
 test("reviewers add notes and nothing else", async () => {
   const dee = await accept((await share("Dee")).data.link);
   const h = { cookie: dee.cookie, origin: `http://127.0.0.1:${srv.port}` };
-  assert.equal((await request(srv.port, "POST", `/s/${id}/end`, { body: {}, headers: h })).status, 403, "cannot end the review");
+  assert.equal((await request(srv.port, "POST", `/s/${id}/archive`, { body: {}, headers: h })).status, 403, "cannot archive the page");
   assert.equal((await request(srv.port, "GET", `/s/${id}/export`, { headers: { cookie: dee.cookie } })).status, 403, "cannot export");
   assert.equal((await request(srv.port, "GET", `/s/${id}/agent-prompt`, { headers: { cookie: dee.cookie } })).status, 403, "cannot read the agent prompt");
   assert.equal((await request(srv.port, "POST", `/s/${id}/release`, { body: { all: true }, headers: h })).status, 403, "cannot send held notes on");
@@ -628,7 +628,7 @@ test("reviewers add notes and nothing else", async () => {
   assert.notEqual(r.data.entry.items[0].id, "taken", "the server picks the id");
   assert.equal(r.data.entry.author, "Dee", "the author comes from the invite, not the request");
   const sessions = await request(srv.port, "GET", "/api/sessions");
-  assert.equal(sessions.data.sessions.find((s) => s.id === id)!.status, "open");
+  assert.equal(sessions.data.sessions.find((s) => s.id === id)!.archived, false, "a reviewer's note archives nothing");
 
   // A target, component or path entry the annotator would never produce is dropped, so a long one cannot
   // hide text behind the owner's shortened view; invisible characters are stripped from the note.

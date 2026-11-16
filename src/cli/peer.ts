@@ -549,15 +549,15 @@ export class Peer {
     const key = remoteKey(link.page, row.id);
     const known = store.byRemote(s, key);
     if (known) {
-      // The hold is decided here: only a row that left `held` lets a held note go, and never into a closed review.
+      // The hold is decided here: only a row that left `held` lets a held note go, and never into an archived page.
       if (!known.held || row.state === "held") return [];
-      if (row.state === "released") return s.closedAt ? [] : store.release(s, [known.id]);
+      if (row.state === "released") return s.archivedAt ? [] : store.release(s, [known.id]);
       return store.discard(s, [known.id]);
     }
     // Untrusted: rebuilt like a tailnet reviewer's note, with ids of our own.
     const items: NoteItem[] = row.items.map((it) => ({ ...reviewerItem({ ...it }), id: newId("i") }));
-    // A closed review takes no notes straight to the agent, as /send refuses a tailnet reviewer's: it holds them for the owner.
-    const hold = row.state !== "released" || !!s.closedAt;
+    // An archived page takes no notes straight to the agent, as /send refuses a tailnet reviewer's: it holds them for the owner.
+    const hold = row.state !== "released" || !!s.archivedAt;
     const entry = store.addUserBatch(s, items, { author: row.author || "Reviewer", hold, remote: key, at: Math.min(row.at, Date.now()) });
     if (row.state === "discarded") store.discard(s, [entry.id]);
     return [entry];

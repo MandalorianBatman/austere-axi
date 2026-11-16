@@ -30,10 +30,8 @@ type ToolArgs = {
   fix?: boolean;
   render?: boolean;
   no_open?: boolean;
-  reopen?: boolean;
   agent_reply?: string;
   cursor?: number;
-  takeover?: boolean;
   timeout_ms?: number;
   text: string;
   statements: string;
@@ -103,25 +101,22 @@ const TOOLS: Record<string, Tool> = {
     properties: {
       file,
       no_open: { type: "boolean", description: "Do not launch a browser; give the user the printed url." },
-      reopen: { type: "boolean", description: "Reopen a review the user ended. Only when the user asks." },
     },
     required: ["file"],
-    run: (a) => [{ args: ["open", ...(a.no_open ? ["--no-open"] : []), ...(a.reopen ? ["--reopen"] : []), "--", a.file] }],
+    run: (a) => [{ args: ["open", ...(a.no_open ? ["--no-open"] : []), "--", a.file] }],
   },
   poll: {
     title: "Wait for feedback",
-    description: `Wait for the reviewer's feedback on an open review. Returns status feedback (items addressed by statement name), ended, browser_disconnected, replaced, interrupted, or timeout (call poll again: nothing is lost). Feedback comes back on every poll until acknowledged: after applying it, pass agent_reply, or pass the cursor it returned.`,
+    description: `Wait for the reviewer's feedback on a page. Returns status feedback (items addressed by statement name; final: true means the reviewer pressed Send & End, so stop listening after applying it), replaced (a newer poll took over this page: stop), interrupted, or timeout (call poll again: nothing is lost). Feedback comes back on every poll until acknowledged: after applying it, pass agent_reply, or pass the cursor it returned.`,
     properties: {
       file,
       agent_reply: { type: "string", description: "One line for the reviewer: what you changed." },
       cursor: { type: "integer", minimum: 0, description: "The cursor the last poll returned: acknowledges that feedback, so it is not returned again. A reply acknowledges it too." },
-      takeover: { type: "boolean", description: "Replace a poll that is stuck listening on this session." },
       timeout_ms: { type: "integer", minimum: 0, description: `Return status timeout after this long (default ${POLL_TIMEOUT_MS}). 0 waits until feedback arrives; use it only if your client allows long tool calls.` },
     },
     required: ["file"],
     run: (a) => {
       const args = ["poll", "--timeout-ms", String(a.timeout_ms ?? POLL_TIMEOUT_MS)];
-      if (a.takeover) args.push("--takeover");
       if (Number.isInteger(a.cursor)) args.push("--cursor", String(a.cursor));
       if (typeof a.agent_reply === "string") return [{ args: [...args, "--agent-reply-file", "-", "--", a.file], stdin: a.agent_reply }];
       return [{ args: [...args, "--", a.file] }];
@@ -144,13 +139,6 @@ const TOOLS: Record<string, Tool> = {
     properties: { file, statements: { type: "string", description: "One or more `name = ...` statements." } },
     required: ["file", "statements"],
     run: (a) => [{ args: ["patch", "--", a.file], stdin: a.statements }],
-  },
-  end: {
-    title: "End the review",
-    description: "End the review as the agent.",
-    properties: { file },
-    required: ["file"],
-    run: (a) => [{ args: ["end", "--", a.file] }],
   },
   components: {
     title: "Find and install components",

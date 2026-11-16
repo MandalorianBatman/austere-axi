@@ -41,9 +41,7 @@ function shortPath(p: string, max = 48): string {
 
 function state(c: HubCopy): string {
   const flags = [c.missing ? `<em class="gone">missing</em>` : "", c.archived_at ? `<em>archived</em>` : ""].filter(Boolean);
-  if (!c.reviewed) flags.unshift(`<em>checked</em>`);
-  else if (c.status === "ended") flags.unshift(`<em>ended${c.ended_by ? ` by ${escapeHtml(c.ended_by)}` : ""}</em>`);
-  else flags.unshift(`<em class="live">in review</em>`);
+  flags.unshift(c.reviewed ? `<em class="live">in review</em>` : `<em>checked</em>`);
   return flags.join(" · ");
 }
 
