@@ -219,8 +219,9 @@ function gitPlace(db: sqlite.DatabaseSync, dir: string, git: "dir" | "file", roo
     }
     if (!assigned || known.project_id === assigned.project_id) return placeOf(storeRoot(db, dir, "worktree", known.project_id, known.prefix));
     // An assigned root of another project holding the worktree wins. The repository's worktrees in
-    // that project share the prefix of the first one seen there, so they stay copies of one page.
-    const sibling = roots.find((r) => r.kind === "worktree" && r.project_id === assigned.project_id && pathKey(mainRepoOf(r.root) ?? "") === pathKey(main));
+    // that project (one the owner assigned included) share the prefix of the first one stored there,
+    // so they stay copies of one page.
+    const sibling = roots.find((r) => (r.kind === "worktree" || r.kind === "assigned") && r.project_id === assigned.project_id && pathKey(mainRepoOf(r.root) ?? "") === pathKey(main));
     return placeOf(storeRoot(db, dir, "worktree", assigned.project_id, sibling ? sibling.prefix : prefixUnder(assigned, dir)));
   }
   return placeOf(storeRoot(db, dir, "git", assigned?.project_id, assigned ? prefixUnder(assigned, dir) : ""));
@@ -345,8 +346,13 @@ function settlePrefixes(db: sqlite.DatabaseSync, projectId: string): void {
     if (holder) update(r, prefixUnder(holder, r.root));
     else if (r.kind === "assigned") update(r, "");
   }
-  // Worktrees whose repository is not in the project: one prefix per repository, the first one's.
+  // Worktrees whose repository is not in the project: one prefix per repository, an assigned
+  // worktree's (the owner placed it), else the first one's.
   const byMain = new Map<string, string>();
+  for (const r of roots) {
+    const main = r.kind === "assigned" ? mainRepoOf(r.root) : null;
+    if (main && !byMain.has(pathKey(main))) byMain.set(pathKey(main), r.prefix);
+  }
   for (const r of roots) {
     if (r.kind !== "worktree") continue;
     const main = mainRepoOf(r.root);

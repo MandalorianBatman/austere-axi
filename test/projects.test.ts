@@ -207,6 +207,10 @@ test("two worktrees under an assigned root of another project than their reposit
     assert.deepEqual([a.projectId, b.projectId], [project.id, project.id]);
     assert.equal(a.pageId, b.pageId);
     assert.notEqual(a.pageId, resolveProject(db, write(path.join(work, "docs", "plan.html"))).pageId);
+    // The owner assigns one of the worktrees as a root of the same project: later worktrees still join.
+    addRoot(db, path.join(work, "feat-a"), "work");
+    const c = resolveProject(db, write(path.join(worktree(main, path.join(work, "feat-c"), "ref: refs/heads/c"), "docs", "plan.html")));
+    assert.deepEqual([resolveProject(db, path.join(work, "feat-a", "docs", "plan.html")).pageId, c.pageId], [a.pageId, a.pageId]);
   }));
 
 test("project add absorbs a guessed folder root below it, even of the project it names", async () =>
