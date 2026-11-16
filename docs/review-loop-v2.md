@@ -43,13 +43,13 @@ Each row is: Accepted 2026-11-16 (owner away, proceed-with-assumptions instructi
 | Q2 | P2 | `browser_disconnected` is removed. A poll waits for notes or `--timeout-ms`. `armGrace` goes. | RLM-338 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q3 | P3 | Attach and `publish --auto` are mutually exclusive. An unattended run with full permissions reads only text the owner sent or released. | RLM-345 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q4 | P4 | Only the owner turns attach on: from the review page (owner cookie) or at a terminal. An agent can read the setting, not change it. | RLM-346 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
-| Q5 | P5 | `hub on|off|status` is removed. The hub is always on. | RLM-335 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
+| Q5 | P5 | `hub on\|off\|status` is removed. The hub is always on. | RLM-335 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q6 | P6 | A revision stores the full program, not a diff. Diffs are computed on read with `changedStatementIds` (`src/shared/statements.ts`). | RLM-349 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q7 | P7 | Archive replaces close. `close`/`reopen` become `archive`/`unarchive`. Archived = composer locked. | RLM-335, RLM-338 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
-| Q8 | P8 | The wiki's files folder is a root of the project, so core `find`, `show` and `outline` read the wiki. | RLM-363 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
+| Q8 | P8 | The wiki's files folder is a root of the project, so core `find`, `show` and `outline` read the wiki. `project_roots.root` is unique, so a files folder is a root of one project only: the first project the wiki was set up for. A second project that shares the wiki (`project_wikis`) reads it with `find --project <first project>`, or the owner merges the two projects; `austere-wiki doctor` says so. | RLM-363 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q9 | P9 | Activity triggers are generic and in the core, configured only at a terminal. | RLM-360 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q10 | P10 | A wiki block is "reviewed" only by an explicit action, per block or for all. A block with an open note stays unreviewed until the owner has seen the fix. | RLM-365 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
-| Q11 | P11 | The project default session is "author": the session that wrote each page. No author registered → `new` with the project's default harness. | RLM-346 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
+| Q11 | P11 | The project default session is "author": the session that wrote each page. When the author session has continuations (A14), "author" means the newest session in its `parent_id` chain linked to the page, so the default run resumes where omp actually continued. No author registered → `new` with the project's default harness. | RLM-346 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 
 Sid can reverse any Q row when he is back. A reversal is a change to this note first, then to the issue.
 
@@ -62,9 +62,9 @@ Choices made while writing this note, where the issues are silent or ambiguous.
 | A1 | Before RLM-342, the Copilot CLI adapter flags (RLM-344) came from `copilot --help` and its docs, not from observed runs: `copilot` is not installed on the planning machine. The spike then ran Copilot CLI 1.0.112 through `npx -y @github/copilot@latest`. The flags in [Harness facts](#harness-facts-rlm-342) are observed. |
 | A2 | The wiki package `austere-wiki` lives in its own GitHub repo, `MandalorianBatman/austere-wiki`. Nothing of it is in the austere-axi npm package. |
 | A3 | PRs are per stage: one PR per top-level sub-issue of RLM-329 (RLM-332, RLM-337, RLM-341, RLM-348, RLM-355, RLM-359), bundling its child issues. The PR lists the child issues it closes. This replaces "one PR per sub-issue" in the epic rules. |
-| A4 | `hub status` goes with `hub on|off` (RLM-335 says `on|off|status`; RLM-331 says `on|off`). `hub list|notes|open` stay. |
-| A5 | A removed command or flag (`end`, `close`, `reopen`, `--reopen`, `--takeover`, `hub on|off|status`) exits 2 with one line naming its replacement, for one minor version (0.11.x). In 0.12 it is an unknown command. |
-| A6 | The MCP server has an `end` tool and no `close` or `reopen` tool; `end` goes (`src/cli/mcp.ts`). New MCP tools exist only for commands an agent may run: `poll`, `feedback`, `patch --from`, `history`, `show`, `outline`, `changes`, `decisions`, `find`, `sessions list`, `attach status`, `run list`, `run log`. No MCP tool for `attach on|off`, `adapter set`, `trigger add|remove`, `server install` or `restore` (owner-only or terminal-only). |
+| A4 | `hub status` goes with `hub on\|off` (RLM-335 says `on\|off\|status`; RLM-331 says `on\|off`). `hub list\|notes\|open` stay. |
+| A5 | A removed command or flag (`end`, `close`, `reopen`, `--reopen`, `--takeover`, `hub on\|off\|status`) exits 2 with one line naming its replacement, for one minor version (0.11.x). In 0.12 it is an unknown command. |
+| A6 | The MCP server has an `end` tool and no `close` or `reopen` tool; `end` goes (`src/cli/mcp.ts`). New MCP tools exist only for commands an agent may run: `poll`, `feedback`, `patch --from`, `history`, `show`, `outline`, `changes`, `decisions`, `find`, `sessions list`, `attach status`, `run list`, `run log`. No MCP tool for `attach on\|off`, `adapter set`, `trigger add\|remove`, `server install` or `restore` (owner-only or terminal-only). |
 | A7 | The owner's "last viewed" mark (RLM-352) is a column, `artifacts.last_viewed_rev`, not a table. |
 | A8 | A trigger run has no page. `runs.artifact_id` is NULL for it, and `runs.project_id` names the project. The cursor a trigger last saw is stored in hub.db, `trigger_state`, not in `triggers.json`, so the terminal-only file stays the owner's to edit. |
 | A9 | `artifacts.project` (the old path) stays and is still written, so a 0.10.4 CLI that opens the DB keeps working. New code reads `project_id`. |
@@ -179,7 +179,7 @@ A separate file, `<state>/wiki.db`, mode 0600, owned by the wiki package (A2). T
 
 ```sql
 wikis         (id, name, files_dir, export_dir)
-project_wikis (project_id, wiki_id)                 -- several projects may share one wiki
+project_wikis (project_id, wiki_id)                 -- several projects may share one wiki; its files folder is a root of the first one only (Q8)
 wiki_pages    (id, wiki_id, slug, title, position)
 blocks        (id,                                  -- "b" + base36: a valid statement name
                page_id, position,
@@ -205,29 +205,29 @@ wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
 | Removed | `reopen <file>` → `unarchive` | RLM-338 | `COMMANDS.reopen`, route `reopen`, `SessionStore.reopen` |
 | Removed | `open --reopen` | RLM-338 | `body.reopen` in `server.ts` |
 | Removed | `poll --takeover` | RLM-338 | `body.takeover` in the `poll` route |
-| Removed | `hub on|off|status` | RLM-335 | `cmdHub`, `hubEnabled`, `setHubEnabled`, `homePage` |
+| Removed | `hub on\|off\|status` | RLM-335 | `cmdHub`, `hubEnabled`, `setHubEnabled`, `homePage` |
 | Changed | `poll [<file>]` | RLM-338, RLM-339 | `cmdPoll`: no file → the project of the current directory; `--project`; `replaced` and `final`; no `browser_disconnected` |
 | Changed | `feedback [<file>]` | RLM-339 | `cmdFeedback`: no file → the project |
 | Changed | `patch --from <src>#<a>[,<b>] [--rev n]` | RLM-354 | `cmdPatch` |
-| Changed | `hub list --project <name|id|dir> [--archived] [--all]` | RLM-333, RLM-335 | `cmdHub`, `Hub.list` |
+| Changed | `hub list --project <name\|id\|dir> [--archived] [--all]` | RLM-333, RLM-335 | `cmdHub`, `Hub.list` |
 | Changed | `open`, `patch`, `poll`, `reply`, `feedback` print `session:` and accept `--session <harness>:<id>` | RLM-343 | `cmdOpen`, `cmdPatch`, `cmdPoll`, `cmdFeedback` |
 | Changed | first `open` prints `similar:` | RLM-353 | `cmdOpen` |
-| New | `project list|add|merge|rename|forget-root` | RLM-333 | new `src/cli/projects.ts` |
+| New | `project list\|add\|merge\|rename\|forget-root` | RLM-333 | new `src/cli/projects.ts` |
 | New | `archive <file>`, `unarchive <file>` | RLM-335 | `main.ts`, `Hub` |
-| New | `sessions list [<file>|--project]` | RLM-343 | `main.ts` |
-| New | `attach status` (anywhere; warns when the adapter has no write grant, A13), `attach on|off` (TTY only) | RLM-346 | `main.ts` |
+| New | `sessions list [<file>\|--project]` | RLM-343 | `main.ts` |
+| New | `attach status` (anywhere; warns when the adapter has no write grant, A13), `attach on\|off` (TTY only) | RLM-346 | `main.ts` |
 | New | `run list`, `run log <id>`, `run stop <file>` | RLM-345 | new `src/cli/dispatch.ts` |
 | New | `adapter set <harness> --extra-args "…"` (TTY only; the owner's permission grant, A13) | RLM-344 | new `src/cli/adapters/` |
 | New | `history <file> [--statement n] [--since rev]` | RLM-349 | `recordRevision` in `hub.ts` |
-| New | `show <file> [statement…] [--rev n] [--text|--source] [--deps]` | RLM-349, RLM-351 | `main.ts` |
+| New | `show <file> [statement…] [--rev n] [--text\|--source] [--deps]` | RLM-349, RLM-351 | `main.ts` |
 | New | `restore <file> --rev n [statement…]` | RLM-349 | through the `cmdPatch` path |
 | New | `outline <file>` | RLM-351 | `main.ts` |
-| New | `changes [<file>|--project] --since <cursor>` | RLM-351 | `main.ts` |
-| New | `decisions [<file>|--project] [--since cursor]` | RLM-351 | `main.ts` |
+| New | `changes [<file>\|--project] --since <cursor>` | RLM-351 | `main.ts` |
+| New | `decisions [<file>\|--project] [--since cursor]` | RLM-351 | `main.ts` |
 | New | `find <words> [--project] [--component] [--limit]` | RLM-351 | `main.ts`, `statements_fts` |
 | New | `hub reindex` | RLM-350 | `cmdHub` |
-| New | `trigger add|list|remove` (`add` TTY only) | RLM-360 | `main.ts`, `server.ts` |
-| New | `server install|uninstall|status` | RLM-340 | `main.ts` |
+| New | `trigger add\|list\|remove` (`add` TTY only) | RLM-360 | `main.ts`, `server.ts` |
+| New | `server install\|uninstall\|status` | RLM-340 | `main.ts` |
 
 The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, else `fail` with the command for the user to run).
 
@@ -284,12 +284,14 @@ The invariants in `AGENTS.md` stay unchanged:
 
 New rules in this design:
 
-- **Configuration that runs a command is set at a terminal only.** `attach on|off`, `adapter set`, `trigger add|remove` and `server install` refuse without a TTY, as `trust add` does. `adapters.json`, `attach.json` and `triggers.json` are read only from the state dir, never from a project or a page. Attach can also be turned on from the owner's review page (Q4); never by an agent, a reviewer or a hosted page.
+- **Configuration that runs a command is set at a terminal only.** `attach on|off`, `adapter set`, `trigger add|remove` and `server install` refuse without a TTY, as `trust add` does. `adapters.json`, `attach.json` and `triggers.json` are read only from the state dir, never from a project or a page. Attach can also be turned on from the owner's review page (Q4); never by a reviewer or a hosted page.
+- **Threat model of the TTY rule.** It stops configuration that arrives as data (a page, a project file, a note, a hosted page) and an agent's ordinary non-interactive tool call. It does not stop a process that runs as the owner and allocates a pseudo-terminal, or that writes the state dir directly. Such a process already has the owner's full permissions (L7), so no rule inside austere-axi can hold it. The design does not claim to; the TTY rule keeps a prompt-injected or careless agent from turning attach on in passing. The control an agent cannot satisfy is the owner cookie on the review page; it is the only route a remote or hosted party can reach.
 - **No permission bypass by default** (A13). An adapter adds no `--approval-mode yolo`, `--allow-all` or similar flag on its own. The owner grants it at a terminal with `adapter set`, and `attach status` warns while a harness that denies writes has no grant.
 - **Session ids never leave the machine.** They are absent from `publish`, `export`, hosted sync and printed links.
 - **A reviewer's note never starts a run until the owner releases it.** A run starts only from a note that has a `seq` because the owner sent it or released it (RLM-345).
 - **Attach and `publish --auto` are mutually exclusive** (Q3). Each refuses while the other is on.
 - A run gets `AUSTERE_AXI_RUN_ID`, never the owner key: not in its argv, environment, prompt file or log. Logs and prompt files are mode 0600.
+- **Prompt text never goes in argv.** Every adapter pipes the 0600 prompt file on stdin, so page and note text is not readable through `ps` or `/proc/<pid>/cmdline`.
 - Page and note text is data in every prompt (dispatcher and wiki ingest), never instructions.
 - Product code never runs `git` (L10). Roots and branch labels come from reading `.git` and `HEAD` as files.
 
@@ -338,23 +340,22 @@ Observed on Sid's machine on 2026-11-16, in scratch folders under `/dev/shm/spik
 | `--no-ask-user` | `$C --help` | 1.0.112 | `Disable the ask_user tool (the agent can still ask in its replies, but not through the question form)` | No effect on permissions. Pass it so `-p` never blocks. |
 | Limits | `$C --help` | 1.0.112 | `--max-ai-credits <credits>`, `--max-autopilot-continues <count>`; no time or cost flag | Pass `--max-ai-credits` when set; time is the dispatcher's timeout (A15). |
 | Prompt on stdin | `echo "reply exactly: stdin-ok" \| $C -s --model auto --no-ask-user` | 1.0.112 | `stdin-ok`; exit 0 | Piped stdin works as the prompt, without `-p`. |
+| Prompt on stdin, new and resume | `printf 'say ok' \| $C --session-id <uuid> --model auto --no-ask-user --output-format json`, then `printf 'say ok2' \| $C --resume=<uuid> --model auto --no-ask-user --output-format json` | 1.0.112 | both exit 0; the transcript grew from 1 to 2 user messages; `sessionId` is on the last line (`{"type":"result",…}`) in both runs, on line 1 only for the new one | The adapter uses stdin, not `-p`, and reads the id from the last line. |
 | Background job wakes the session | `$C -p "Start this shell command in the background…: sleep 10; echo BGDONE > bg.txt. … reply 'started'…" --model auto --allow-all --output-format json` | 1.0.112 | `started`; exit 0 after 12 s; `bg.txt` appeared later; no second assistant message | No wake in `-p` mode, and no `--wait-async` equivalent (A16). |
 | Delete saved sessions | `$C sessions --help` | 1.0.112 | only `import` | No delete command. |
 
 ### Adapter argv (RLM-344)
 
-`<extra>` is the owner's `--extra-args` from `adapters.json` (A13), for example `--approval-mode yolo` or `--allow-all`. Nothing grants permissions by default. `[--max-cost c]` and `[--max-ai-credits n]` come from `attach.json` (A15). omp reads the 0600 prompt file on stdin.
+`<extra>` is the owner's `--extra-args` from `adapters.json` (A13), for example `--approval-mode yolo` or `--allow-all`. Nothing grants permissions by default. `[--max-cost c]` and `[--max-ai-credits n]` come from `attach.json` (A15). Every adapter reads the 0600 prompt file on stdin; no prompt text is in argv.
 
 | Harness | Mode | argv | Session id of the run |
 |---|---|---|---|
 | omp | same | `omp -p --mode json --wait-async --resume <id> --model <m> [--max-cost c] <extra>` | line 1 `id`. If it differs from `<id>`, a new session with `continuationOf` (A14). |
 | omp | fork | `omp -p --mode json --wait-async --fork <id> --model <m> [--max-cost c] <extra>` | line 1 `id`; `parentSession` = `<id>` |
 | omp | new | `omp -p --mode json --wait-async --model <m> [--max-cost c] <extra>` | line 1 `id` |
-| Copilot CLI | same | `copilot -p <prompt> --resume=<id> --model <m or auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>` | `<id>`. `SessionInUseError`, exit 1 → `session_in_use` (A14). |
+| Copilot CLI | same | `copilot --resume=<id> --model <m or auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>` | last line `sessionId`. `SessionInUseError`, exit 1 → `session_in_use` (A14). |
 | Copilot CLI | fork | unavailable: no flag, and `-p "/fork"` does nothing. The popover disables it and says why. | |
-| Copilot CLI | new | `copilot -p <prompt> --session-id <uuid we mint> --model <m or auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>` | the minted UUID; line 1 `data.sessionId` confirms it |
-
-Copilot takes the prompt as the `-p` argument, so a Copilot run reads the prompt file into argv. Piped stdin also works, but only without `-p`.
+| Copilot CLI | new | `copilot --session-id <uuid we mint> --model <m or auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>` | the minted UUID; the last line's `sessionId` confirms it |
 
 Caller detection (RLM-343): omp `PI_SESSION_ID` and `PI_SESSION_FILE`; Copilot CLI `COPILOT_AGENT_SESSION_ID` (no session file).
 
