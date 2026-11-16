@@ -254,6 +254,20 @@ test("archive hides a page until unarchive; a deleted file is listed as missing"
     r = await cliWith(env, "archive", path.join(work, "never.html"));
     assert.equal(r.code, 1);
     assert.match(r.out, /not in the hub/);
+
+    // A closed review is archived, and unarchive reopens it: never listed while locked.
+    r = await cliWith(env, "close", keep);
+    assert.match(r.out, /status: closed/);
+    r = await cliWith(env, "hub", "list");
+    assert.doesNotMatch(r.out, /keep\.html/, "close archives");
+    r = await cliWith(env, "unarchive", keep);
+    assert.match(r.out, /status: unarchived/);
+    assert.match(r.out, /reopened/);
+    r = await cliWith(env, "hub", "list");
+    assert.match(r.out, /keep\.html/);
+    r = await cliWith(env, keep);
+    assert.doesNotMatch(r.out, /refused/, r.out);
+    assert.match(r.out, /status: open/, "unlocked: it opens without --reopen");
   } finally {
     await cliWith(env, "stop");
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -428,6 +442,32 @@ test("two worktrees holding docs/plan.html: one row, two chips, notes per copy, 
   }
 });
 
+test("a page's title opens a copy that is still there, the newest one when every copy is gone", async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-gone-copy-")));
+  const { main, wt } = shopWithWorktree(dir);
+  const a = path.join(main, "docs", "plan.html");
+  const b = path.join(wt, "docs", "plan.html");
+  for (const f of [a, b]) fs.copyFileSync(FILE, f);
+  const store = await SessionStore.open(fs.mkdtempSync(path.join(dir, "state-")));
+  try {
+    const sa = store.ensure(a);
+    const sb = store.ensure(b);
+    // The worktree's copy is the newest, then its file is deleted.
+    store.addUserBatch(sb, [{ kind: "message", text: "on feat" }]);
+    store.db.prepare("UPDATE artifacts SET updated_at = ? WHERE id = ?").run(Date.now() + 60_000, sb.id);
+    fs.rmSync(b);
+    const hub = new Hub(store.db);
+    const titleLink = (): string | undefined => hubPage(hub.list(), { version: "1", q: "", project: "", projects: hub.projects(), stats: hub.stats() }).match(/<li><a href="\/hub\/open\/(\w+)"/)?.[1];
+    assert.equal(hub.list()[0].copies[0].id, sb.id, "the gone copy is the newest");
+    assert.equal(titleLink(), sa.id);
+    fs.rmSync(a);
+    assert.equal(titleLink(), sb.id);
+  } finally {
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
 test("hubPage escapes project names, labels and paths", () => {
   const copy = (id: string, label: string) => ({ id, file: `/w/${label}/a.html`, root: `/w/${label}`, label, title: null, updated_at: 1, reviewed: 1, status: "open", ended_by: null, archived_at: null, missing: false, open: 0, received: 0, addressed: 0, held: 0 });
   const html = hubPage(
@@ -469,7 +509,17 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
     } finally {
       hub.close();
     }
-    (await Hub.open(file)).close(); // opening again does not fail
+    // A 0.10.4 CLI sharing the migrated hub.db closes the main copy: it writes closed_at only.
+    const shared = new DatabaseSync(file);
+    assert.equal(Number(shared.prepare("UPDATE artifacts SET closed_at = 1 WHERE file = ? AND archived_at IS NULL").run(path.join(main, "docs", "plan.html")).changes), 1);
+    shared.close();
+    const again = await Hub.open(file);
+    try {
+      assert.deepEqual(again.list(), [], "closed under 0.10.4 after the migration: archived on the next open");
+      assert.deepEqual(again.list({ archived: true }).map((p) => p.copies.map((c) => c.label).sort()), [["feat", "main"]]);
+    } finally {
+      again.close();
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }

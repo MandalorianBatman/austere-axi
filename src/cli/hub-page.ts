@@ -57,9 +57,11 @@ function chip(c: HubCopy): string {
 function row(p: HubPage): string {
   const only = p.copies.length === 1 ? p.copies[0] : null;
   const gone = p.copies.every((c) => c.missing);
+  // The title opens a copy that is still there (the newest such); the newest copy when all are gone.
+  const main = p.copies.find((c) => !c.missing) ?? p.copies[0];
   const meta = [escapeHtml(p.rel_path), escapeHtml(`${day(p.updated_at)} ${time(p.updated_at)}`), only ? state(only) : gone ? `<em class="gone">missing</em>` : "", counts(p)].filter(Boolean).join(" · ");
   const chips = only ? "" : `<div class="chips">${p.copies.map(chip).join("")}</div>`;
-  return `<li><a href="/hub/open/${escapeHtml(p.copies[0].id)}" title="${escapeHtml(p.copies[0].file)}">
+  return `<li><a href="/hub/open/${escapeHtml(main.id)}" title="${escapeHtml(main.file)}">
   <strong>${escapeHtml(p.title || path.posix.basename(p.rel_path))}</strong>
   <span class="meta">${meta}</span>
 </a>${chips}</li>`;

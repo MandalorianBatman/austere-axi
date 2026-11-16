@@ -26,8 +26,8 @@ What it finds is stored, so it does not look again. Change it with `project`:
 austere-axi project list                     # projects, their roots and page counts
 austere-axi project add ~/work/plans --name plans   # assign a root (a folder with no .git, holding pages in subfolders)
 austere-axi project merge shop shop-clone    # the second project's roots move to the first
-austere-axi project rename shop storefront
-austere-axi project forget-root ~/old/clone  # its pages are filed again
+austere-axi project rename shop storefront     # refused if another project is named storefront
+austere-axi project forget-root ~/old/clone  # its pages, and the project's other roots, are filed again
 ```
 
 `project add` takes in the folders it guessed below the new root, and refuses a folder inside another project's root, or around one, naming that project; `project merge` is the way to join them. `--project` (on `hub list` and `hub notes`) and the home page's project link take a name, an id, or any folder inside a root.
@@ -35,8 +35,8 @@ austere-axi project forget-root ~/old/clone  # its pages are filed again
 ## What the lists leave out
 
 - Pages only `check`ed or `patch`ed, never opened for review. `hub list --all` (or **All, with checked-only** on the home page) shows them.
-- Archived pages: `austere-axi archive <file>` puts a page away, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. A review closed in an older version is archived when its `hub.db` is first opened.
-- Nothing else: a page whose file is gone stays listed, marked `missing`, with its notes.
+- Archived pages: `austere-axi archive <file>` puts a page away, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. A closed review is archived: `close` archives it, and a review closed in an older version (0.10.4 can still share this `hub.db`) is archived the next time `hub.db` is opened. `unarchive` on a closed review also reopens it, so a listed page is never locked.
+- Nothing else: a page whose file is gone stays listed, marked `missing`, with its notes. A page's title opens a copy that is still there; the chips open each copy.
 
 ## Notes
 
