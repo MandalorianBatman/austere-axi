@@ -44,7 +44,7 @@ function context(over: Partial<ServiceContext> = {}): { ctx: ServiceContext; cal
       calls.push([cmd, ...args].join(" "));
       if (cmd === "loginctl") return { code: 0, stdout: "no\n", stderr: "" };
       if (args.includes("is-enabled")) return { code: 0, stdout: "enabled\n", stderr: "" };
-      if (args.includes("is-active")) return { code: 0, stdout: "active\n", stderr: "" };
+      if (args.includes("is-active")) return { code: 0, stdout: "inactive\n", stderr: "" };
       return { code: 0, stdout: "", stderr: "" };
     },
     isTTY: true,
@@ -125,10 +125,23 @@ test("install writes the unit under HOME, reloads systemd and enables it now", a
   assert.equal(r.status, "installed");
   assert.equal(r.unit, unitPath(ctx.home));
   assert.equal(fs.readFileSync(unitPath(ctx.home), "utf8"), systemdUnit({ ...SPEC, linkUrl: "https://austere.example.com" }));
-  assert.deepEqual(calls, ["systemctl --user daemon-reload", "systemctl --user enable --now austere-axi.service", "loginctl show-user ana --property=Linger --value"]);
+  assert.deepEqual(calls, ["systemctl --user daemon-reload", "systemctl --user is-active austere-axi.service", "systemctl --user enable --now austere-axi.service", "loginctl show-user ana --property=Linger --value"]);
   assert.deepEqual(r.ran, ["systemctl --user daemon-reload", "systemctl --user enable --now austere-axi.service"]);
   assert.match(String(r.notes), /loginctl enable-linger/);
   assert.equal(r.warning, undefined);
+});
+
+test("installing over a running unit restarts it, so it picks up the settings just written", async () => {
+  const { ctx, calls } = context({
+    run: (cmd, args): RunResult => {
+      calls.push([cmd, ...args].join(" "));
+      if (args.includes("is-active")) return { code: 0, stdout: "active\n", stderr: "" };
+      if (args.includes("is-enabled")) return { code: 0, stdout: "enabled\n", stderr: "" };
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
+  const r = await installService({}, ctx);
+  assert.ok(String(r.ran).includes("systemctl --user restart austere-axi.service"), String(r.ran));
 });
 
 test("install on macOS writes the plist and bootstraps it", async () => {
@@ -207,7 +220,13 @@ test("uninstall disables the unit and removes it", async () => {
 });
 
 test("status says a supervised server on an older version needs a restart", async () => {
-  const { ctx } = context();
+  const { ctx } = context({
+    run: (cmd, args): RunResult => {
+      if (args.includes("is-enabled")) return { code: 0, stdout: "enabled\n", stderr: "" };
+      if (args.includes("is-active")) return { code: 0, stdout: "active\n", stderr: "" };
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
   await installService({}, ctx);
   const s = serviceStatus(ctx, { version: "0.0.1", pid: 42, port: 4388, supervised: "systemd" }, "0.0.2");
   assert.equal(s.installed, true);
@@ -243,6 +262,7 @@ async function startServer(env: Record<string, string> = {}): Promise<{ child: C
 }
 
 async function stop(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise((r) => child.once("exit", r));
   child.kill();
   await exited;
@@ -284,24 +304,33 @@ test("a supervised server says so in server.lock and /api/health, never idles ou
 test("an unsupervised server waits out the idle exit while a run is active or an agent is attached", async () => {
   // The tables come with the dispatcher and the attach settings (RLM-345, RLM-346); the
   // idle exit waits for them when they are there (RLM-340).
-  const { child, port } = await startServer({ AUSTERE_AXI_IDLE_TIMEOUT_MS: "100" });
+  const { child, port } = await startServer({ AUSTERE_AXI_IDLE_TIMEOUT_MS: "200" });
+  const db = await openDatabase(path.join(STATE, "hub.db"));
   try {
-    const db = await openDatabase(path.join(STATE, "hub.db"));
     db.exec("CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, status TEXT NOT NULL)");
     db.exec("CREATE TABLE IF NOT EXISTS attach_settings (scope TEXT NOT NULL, scope_id TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY (scope, scope_id))");
     assert.equal(hasActiveWork(db), false);
+    // A run is active: the server stays up over several idle intervals, without a request
+    // to keep it awake (a health check would reset the idle timer on its own).
     db.exec("INSERT INTO runs (id, status) VALUES ('r1', 'running')");
     assert.equal(hasActiveWork(db), true);
+    await new Promise((r) => setTimeout(r, 1200));
+    assert.equal(child.exitCode, null, "the server idle-exited while a run was active");
+    assert.ok(await health(port));
+    // The run is done and an agent is attached instead: still no idle exit.
     db.exec("UPDATE runs SET status = 'done'");
-    assert.equal(hasActiveWork(db), false);
     db.exec("INSERT INTO attach_settings (scope, scope_id, state) VALUES ('page', 'p1', 'on')");
     assert.equal(hasActiveWork(db), true);
+    await new Promise((r) => setTimeout(r, 1200));
+    assert.equal(child.exitCode, null, "the server idle-exited while an agent was attached");
+    // Nothing is going on: now the idle exit may do its work.
     db.exec("UPDATE attach_settings SET state = 'off'");
     assert.equal(hasActiveWork(db), false);
-    db.close();
-    // The server is still up: the idle exit waited.
-    assert.ok(await health(port));
+    const exited = new Promise((r) => child.once("exit", r));
+    await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
+    assert.notEqual(child.exitCode, null, "the server did not idle-exit when the work was done");
   } finally {
+    db.close();
     await stop(child);
   }
 });

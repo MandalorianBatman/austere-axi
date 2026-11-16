@@ -22,7 +22,7 @@ import { lockStateDir } from "./lock.ts";
 import { supervisor } from "./service.ts";
 import type { Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
-import { Hub, hasActiveWork } from "./hub.ts";
+import { Hub, activeWorkNow } from "./hub.ts";
 import { findProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
@@ -1497,10 +1497,21 @@ export async function runServer({
   }
 
   if (idleMs > 0) {
+    let checking = false;
     setInterval(() => {
-      const busy = polls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || hasActiveWork(store.db);
-      if (busy) activity();
-      else if (Date.now() - lastActivity > idleMs) shutdown("idle");
+      // A run or an attach is written by another process, so the check reads the database with
+      // a connection of its own; the server's own connection may hold an older snapshot.
+      if (checking) return;
+      checking = true;
+      void activeWorkNow()
+        .then((working) => {
+          const busy = polls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || working;
+          if (busy) activity();
+          else if (Date.now() - lastActivity > idleMs) shutdown("idle");
+        })
+        .finally(() => {
+          checking = false;
+        });
     }, Math.min(60_000, idleMs)).unref();
   }
   process.on("SIGINT", () => shutdown("SIGINT"));

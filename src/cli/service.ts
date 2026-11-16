@@ -192,7 +192,10 @@ function runChecked(ctx: ServiceContext, ran: string[], cmd: string, args: strin
 export async function installService(o: InstallOptions, ctx: ServiceContext): Promise<Record<string, unknown>> {
   const port = o.port ?? defaultPort(ctx.env);
   const linkUrl = o.linkUrl ? parseLinkUrl(o.linkUrl)?.base : undefined;
-  const spec: ServiceSpec = { node: ctx.node, cli: ctx.cli, port, linkUrl, stateDir: ctx.env.AUSTERE_AXI_STATE_DIR ? ctx.stateDir : undefined };
+  // The service runs from its own working folder (the user's home), so a relative state dir
+  // would point it at a different database than the CLI that installed it. Absolute, or nothing.
+  const stateDir = path.resolve(ctx.stateDir);
+  const spec: ServiceSpec = { node: ctx.node, cli: ctx.cli, port, linkUrl, stateDir: ctx.env.AUSTERE_AXI_STATE_DIR ? stateDir : undefined };
   const warning = npxWarning(ctx.cli) ?? undefined;
   const target = unitFile(ctx);
   // The terminal rule comes first on every platform: `server install` configures what runs on
@@ -202,11 +205,11 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
     throw new Error(`server install needs the user at a terminal and changes nothing here. Ask the user to run \`${installCommand(o)}\` themselves.`);
   }
   if (!target) return manualSteps(spec, ctx, warning);
-  const holder = await ctx.holder(ctx.stateDir);
+  const holder = await ctx.holder(stateDir);
   if (holder && !holder.supervised) {
     const where = holder.port ? `, port ${holder.port}` : "";
     const stop = holder.port && holder.port !== defaultPort(ctx.env) ? `AUSTERE_AXI_PORT=${holder.port} ${BIN} stop` : `${BIN} stop`;
-    throw new Error(`a server not started by ${target.supervisor} (pid ${holder.pid}${where}) holds ${path.join(ctx.stateDir, "server.lock")}; run \`${stop}\` first, then \`${installCommand(o)}\` again`);
+    throw new Error(`a server not started by ${target.supervisor} (pid ${holder.pid}${where}) holds ${path.join(stateDir, "server.lock")}; run \`${stop}\` first, then \`${installCommand(o)}\` again`);
   }
   const ran: string[] = [];
   const notes: string[] = [];
@@ -214,9 +217,11 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
   if (target.supervisor === "systemd") {
     fs.writeFileSync(target.file, systemdUnit(spec), { mode: 0o644 });
     runChecked(ctx, ran, "systemctl", ["--user", "daemon-reload"]);
+    // A unit that is already running keeps the settings it was started with, so it has to
+    // restart to pick up what was just written (a new port, a new state dir).
+    const active = ctx.run("systemctl", ["--user", "is-active", SYSTEMD_UNIT]).stdout.trim() === "active";
     runChecked(ctx, ran, "systemctl", ["--user", "enable", "--now", SYSTEMD_UNIT]);
-    // enable --now leaves a running unit as it is; restart it so it runs what was just written.
-    if (holder?.supervised === "systemd") runChecked(ctx, ran, "systemctl", ["--user", "restart", SYSTEMD_UNIT]);
+    if (active || holder?.supervised === "systemd") runChecked(ctx, ran, "systemctl", ["--user", "restart", SYSTEMD_UNIT]);
     const user = ctx.env.USER || os.userInfo().username;
     const linger = ctx.run("loginctl", ["show-user", user, "--property=Linger", "--value"]);
     if (linger.code === 0 && linger.stdout.trim() === "no") {
@@ -224,7 +229,7 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
     }
   } else {
     if (ctx.uid == null) throw new Error("no user id to install the launchd agent for");
-    fs.writeFileSync(target.file, launchdPlist(spec, path.join(ctx.stateDir, "server.log")), { mode: 0o644 });
+    fs.writeFileSync(target.file, launchdPlist(spec, path.join(stateDir, "server.log")), { mode: 0o644 });
     // Unload an earlier copy (it may not be loaded: ignore the answer), then load this one; RunAtLoad starts it.
     const domain = `gui/${ctx.uid}`;
     ctx.run("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
@@ -267,6 +272,21 @@ function manualSteps(spec: ServiceSpec, ctx: ServiceContext, warning: string | u
   };
 }
 
+/**
+ * Unload the launchd agent. An agent that is not loaded is fine; any other failure is not:
+ * the file must not go while the agent is still loaded, or the server keeps running with no
+ * unit behind it.
+ */
+function bootoutAgent(ctx: ServiceContext, ran: string[]): void {
+  const domain = `gui/${ctx.uid ?? 0}`;
+  const line = `launchctl bootout ${domain}/${LAUNCHD_LABEL}`;
+  const r = ctx.run("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
+  ran.push(line);
+  if (r.code !== 0 && !/Could not find service|No such process|not loaded/i.test(r.stderr || "")) {
+    throw new Error(`\`${line}\` failed (exit ${r.code}): ${(r.stderr || r.stdout).trim() || "no output"}`);
+  }
+}
+
 /** Stop the service and remove its unit. */
 export function uninstallService(ctx: ServiceContext): Record<string, unknown> {
   const target = unitFile(ctx);
@@ -280,9 +300,8 @@ export function uninstallService(ctx: ServiceContext): Record<string, unknown> {
     fs.rmSync(target.file, { force: true });
     runChecked(ctx, ran, "systemctl", ["--user", "daemon-reload"]);
   } else {
-    // Not loaded is fine: the file goes either way.
-    ctx.run("launchctl", ["bootout", `gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`]);
-    ran.push(`launchctl bootout gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`);
+    // The agent has to be gone before the file goes, or the server keeps running with no unit.
+    bootoutAgent(ctx, ran);
     fs.rmSync(target.file, { force: true });
   }
   return { status: "uninstalled", supervisor: target.supervisor, unit: target.file, ran };

@@ -475,6 +475,28 @@ export function hasActiveWork(db: sqlite.DatabaseSync): boolean {
   return false;
 }
 
+/**
+ * Whether work is going on, read with a connection of its own. The server's own connection can
+ * hold a read snapshot that predates a row another process wrote, so a fresh one is what sees
+ * the truth. False when the database is not there yet.
+ */
+export async function activeWorkNow(file = hubDbFile()): Promise<boolean> {
+  const Database = await loadSqlite();
+  let db: sqlite.DatabaseSync | null = null;
+  try {
+    db = new Database(file, { readOnly: true });
+    return hasActiveWork(db);
+  } catch {
+    return false;
+  } finally {
+    try {
+      db?.close();
+    } catch {
+      // already closed
+    }
+  }
+}
+
 /** Register an artifact with the hub from a CLI command. Never fails the command. */
 export async function registerWithHub(file: string, title: string | null | undefined, id: string): Promise<void> {
   try {
