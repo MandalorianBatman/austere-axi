@@ -17,7 +17,7 @@ A project is a name and a list of root folders. A page is a path inside a root, 
 The hub finds a page's project without git; it never runs it. Walking up from the page's folder it takes the first of:
 
 1. a root it already knows (a folder it guessed from a page, rule 3, counts only for pages directly in it);
-2. a folder with a `.git` entry: a `.git` directory is a repository; a `.git` file of a worktree joins the project of its main repository; a submodule is its own project. Inside a root you assigned (`project add`), the repository or worktree joins that root's project, and page paths stay relative to the repository, so its worktrees elsewhere share its pages;
+2. a folder with a `.git` entry: a `.git` directory is a repository; a `.git` file of a worktree joins the project of its main repository; a submodule is its own project. Inside a root you assigned (`project add`), the repository or worktree joins that root's project, and its page paths start with the repository's folder inside that root (`shop/docs/plan.html`), so two repositories there stay apart and the repository's worktrees, wherever they are, share its pages;
 3. the page's own folder.
 
 What it finds is stored, so it does not look again. Change it with `project`:

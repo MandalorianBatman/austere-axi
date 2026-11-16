@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS cloud_queue (
 // sha1(absolute path) (URLs, notes and cloud.json key on it); page_id groups the copies.
 const PROJECTS = `
 CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS project_roots (root TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS project_roots (root TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, prefix TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS project_roots_project ON project_roots(project_id);
 CREATE TABLE IF NOT EXISTS pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, rel_path TEXT NOT NULL, UNIQUE (project_id, rel_path));
 `;
@@ -246,6 +246,7 @@ function migrate(db: sqlite.DatabaseSync): void {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS notes_remote ON notes(remote_id)");
   db.exec(CLOUD);
   db.exec(PROJECTS);
+  if (!has("project_roots", "prefix")) db.exec("ALTER TABLE project_roots ADD COLUMN prefix TEXT NOT NULL DEFAULT ''");
   if (!has("artifacts", "project_id")) db.exec("ALTER TABLE artifacts ADD COLUMN project_id TEXT");
   if (!has("artifacts", "page_id")) db.exec("ALTER TABLE artifacts ADD COLUMN page_id TEXT");
   if (!has("artifacts", "root")) db.exec("ALTER TABLE artifacts ADD COLUMN root TEXT");

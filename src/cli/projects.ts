@@ -21,17 +21,20 @@ export interface RootRow {
   root: string;
   project_id: string;
   kind: RootKind;
+  /** What page paths under this root start with (`/`-separated, no trailing `/`): a repository nested in an assigned root keeps its folder in its pages' paths, and its worktrees share them. Empty for most roots. */
+  prefix: string;
   created_at: number;
 }
 
-/** Where a folder belongs: its project and the root it is under. */
+/** Where a folder belongs: its project, the root it is under and that root's page-path prefix. */
 export interface Place {
   projectId: string;
   root: string;
   kind: RootKind;
+  prefix: string;
 }
 
-/** Where a file belongs: its place, its path inside the root (`/`-separated) and its page. */
+/** Where a file belongs: its place, its page path (the root's prefix, then the path inside the root, `/`-separated) and its page. */
 export interface Located extends Place {
   file: string;
   relPath: string;
@@ -55,6 +58,11 @@ export function within(root: string, p: string, platform: string = process.platf
 /** A file's path inside its root, with `/` separators. */
 export function relPathOf(root: string, file: string): string {
   return path.relative(root, file).split(path.sep).join("/");
+}
+
+/** A page path: `prefix`, then `rel`. */
+function joinPrefix(prefix: string, rel: string): string {
+  return prefix && rel ? `${prefix}/${rel}` : prefix || rel;
 }
 
 /** A page's id: 12 hex of sha1(project id, NUL, path inside the root). */
@@ -93,7 +101,6 @@ function dotGit(dir: string): "dir" | "file" | null {
     return null;
   }
 }
-
 /** The git dir a `.git` file points at (`gitdir: <path>`, relative to the folder holding it). */
 function gitdirOf(dir: string): string | null {
   const m = /^gitdir:\s*(.+?)\s*$/m.exec(readText(path.join(dir, ".git")) || "");
@@ -106,6 +113,16 @@ function gitDirFor(root: string): string | null {
   if (kind === "dir") return path.join(root, ".git");
   if (kind === "file") return gitdirOf(root);
   return null;
+}
+
+/** The main repository of a linked worktree (a `.git` file whose git dir holds `commondir`); null for anything else, a submodule included. */
+function mainRepoOf(dir: string): string | null {
+  const gitDir = gitdirOf(dir);
+  const common = gitDir ? readText(path.join(gitDir, "commondir")) : null;
+  if (!gitDir || common == null || !common.trim()) return null;
+  const commonDir = canonicalFile(path.resolve(gitDir, common.trim()));
+  const main = path.basename(commonDir) === ".git" ? path.dirname(commonDir) : commonDir;
+  return pathKey(main) === pathKey(dir) ? null : main;
 }
 
 /**
@@ -133,15 +150,17 @@ function createProject(db: sqlite.DatabaseSync, name: string): string {
 
 /**
  * Store `root` as a root of `projectId` (or of a new project named after the folder), unless it is
- * stored already; re-read so a root another process stored first wins. The root's project id.
+ * stored already; re-read so a root another process stored first wins. The stored row.
  */
-function storeRoot(db: sqlite.DatabaseSync, root: string, kind: RootKind, projectId?: string): string {
+function storeRoot(db: sqlite.DatabaseSync, root: string, kind: RootKind, projectId?: string, prefix = ""): RootRow {
   const id = projectId ?? createProject(db, path.basename(root) || root);
-  db.prepare("INSERT INTO project_roots (root, project_id, kind, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(root) DO NOTHING").run(root, id, kind, Date.now());
-  const stored = (db.prepare("SELECT project_id FROM project_roots WHERE root = ?").get(root) as { project_id: string } | undefined)?.project_id ?? id;
-  if (projectId === undefined && stored !== id) db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+  db.prepare("INSERT INTO project_roots (root, project_id, kind, prefix, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(root) DO NOTHING").run(root, id, kind, prefix, Date.now());
+  const stored = db.prepare("SELECT * FROM project_roots WHERE root = ?").get(root) as unknown as RootRow;
+  if (projectId === undefined && stored.project_id !== id) db.prepare("DELETE FROM projects WHERE id = ?").run(id);
   return stored;
 }
+
+const placeOf = (r: RootRow): Place => ({ projectId: r.project_id, root: r.root, kind: r.kind, prefix: r.prefix });
 
 /**
  * The project and root of a folder (canonical), storing a root found by `.git` or by the folder
@@ -151,8 +170,9 @@ function storeRoot(db: sqlite.DatabaseSync, root: string, kind: RootKind, projec
  *  2. a `.git` entry: a directory makes a `git` root; a file points at a git dir, and a `commondir`
  *     there leads to the main repository, whose project this `worktree` root joins (no
  *     `commondir`: a submodule, its own project). Inside an assigned root, the folder holding
- *     `.git` is a root of the assigned root's project: the project comes from the assigned root,
- *     page paths from the repository, so a repository and its worktrees elsewhere share pages;
+ *     `.git` is a root of the assigned root's project, and its pages' paths start with its folder
+ *     inside the assigned root, so two repositories there keep apart; a repository's worktrees,
+ *     wherever they are, share its prefix and so its pages;
  *  3. `dir` itself, a `folder` root.
  */
 export function resolveDir(db: sqlite.DatabaseSync, dir: string): Place {
@@ -160,46 +180,48 @@ export function resolveDir(db: sqlite.DatabaseSync, dir: string): Place {
   const byKey = new Map(roots.map((r) => [pathKey(r.root), r]));
   for (let d = dir; ; ) {
     const row = byKey.get(pathKey(d));
-    if (row && (row.kind !== "folder" || d === dir)) return { projectId: row.project_id, root: row.root, kind: row.kind };
+    if (row && (row.kind !== "folder" || d === dir)) return placeOf(row);
     const git = dotGit(d);
     if (git) return gitPlace(db, d, git, roots);
     const up = path.dirname(d);
     if (up === d) break;
     d = up;
   }
-  return { projectId: storeRoot(db, dir, "folder"), root: dir, kind: "folder" };
+  return placeOf(storeRoot(db, dir, "folder"));
 }
 
-/** The nearest assigned root holding `dir`: the owner said everything under it is one project. */
-function assignedHolder(roots: RootRow[], dir: string): RootRow | null {
+/** The nearest assigned root holding `dir` (or only those of `projectId`): the owner said everything under it is one project. */
+function assignedHolder(roots: RootRow[], dir: string, projectId?: string): RootRow | null {
   let best: RootRow | null = null;
-  for (const r of roots) if (r.kind === "assigned" && within(r.root, dir) && (!best || r.root.length > best.root.length)) best = r;
+  for (const r of roots) {
+    if (r.kind === "assigned" && (projectId === undefined || r.project_id === projectId) && within(r.root, dir) && (!best || r.root.length > best.root.length)) best = r;
+  }
   return best;
 }
+
+/** The prefix of `dir` under the assigned root `holder`. */
+const prefixUnder = (holder: RootRow, dir: string): string => joinPrefix(holder.prefix, relPathOf(holder.root, dir));
 
 function gitPlace(db: sqlite.DatabaseSync, dir: string, git: "dir" | "file", roots: RootRow[]): Place {
   // Inside an assigned root: that root's project, whatever the repository.
   const assigned = assignedHolder(roots, dir);
-  if (git === "file") {
-    const gitDir = gitdirOf(dir);
-    const common = gitDir ? readText(path.join(gitDir, "commondir")) : null;
-    if (gitDir && common != null && common.trim()) {
-      const commonDir = canonicalFile(path.resolve(gitDir, common.trim()));
-      const main = path.basename(commonDir) === ".git" ? path.dirname(commonDir) : commonDir;
-      if (pathKey(main) !== pathKey(dir)) {
-        // The main repository's project: its own stored root, else the root holding it (an
-        // assigned parent, which the repository then joins as a root), else a new one.
-        let projectId = assigned?.project_id;
-        if (!projectId) {
-          const known = roots.find((r) => pathKey(r.root) === pathKey(main));
-          const holder = known ? null : assignedHolder(roots, main);
-          projectId = known ? known.project_id : storeRoot(db, main, "git", holder?.project_id);
-        }
-        return { projectId: storeRoot(db, dir, "worktree", projectId), root: dir, kind: "worktree" };
-      }
+  const main = git === "file" ? mainRepoOf(dir) : null;
+  if (main) {
+    // The main repository's root: stored, else stored now, under the assigned root holding it, else
+    // in the project of the assigned root holding this worktree (with this worktree's prefix, so
+    // the repository's other worktrees join the same pages), else in a new project.
+    let known = roots.find((r) => pathKey(r.root) === pathKey(main));
+    if (!known) {
+      const holder = assignedHolder(roots, main);
+      known = holder
+        ? storeRoot(db, main, "git", holder.project_id, prefixUnder(holder, main))
+        : storeRoot(db, main, "git", assigned?.project_id, assigned ? prefixUnder(assigned, dir) : "");
     }
+    // An assigned root of another project holding the worktree wins; the worktree then has its own paths.
+    const own = assigned && known.project_id !== assigned.project_id;
+    return placeOf(storeRoot(db, dir, "worktree", own ? assigned.project_id : known.project_id, own ? prefixUnder(assigned, dir) : known.prefix));
   }
-  return { projectId: storeRoot(db, dir, "git", assigned?.project_id), root: dir, kind: "git" };
+  return placeOf(storeRoot(db, dir, "git", assigned?.project_id, assigned ? prefixUnder(assigned, dir) : ""));
 }
 
 /** Insert the page row for a path in a project; its id. */
@@ -217,7 +239,7 @@ export function resolveProject(db: sqlite.DatabaseSync, file: string): Located {
 }
 
 function locatedIn(db: sqlite.DatabaseSync, place: Place, file: string): Located {
-  const relPath = relPathOf(place.root, file);
+  const relPath = joinPrefix(place.prefix, relPathOf(place.root, file));
   return { ...place, file, relPath, pageId: ensurePage(db, place.projectId, relPath) };
 }
 
@@ -294,10 +316,40 @@ export function listProjects(db: sqlite.DatabaseSync): ProjectListing[] {
   }));
 }
 
-/** Re-resolve every artifact whose file is inside `root`. */
-function rekeyUnder(db: sqlite.DatabaseSync, root: string): void {
-  for (const a of db.prepare("SELECT id, file FROM artifacts").all() as unknown as { id: string; file: string }[]) {
-    if (within(root, a.file)) placeArtifact(db, a.id, a.file);
+/** Re-resolve every artifact whose file is inside `root` or that belongs to `projectId`. */
+function rekey(db: sqlite.DatabaseSync, root: string | null, projectId: string): void {
+  for (const a of db.prepare("SELECT id, file, project_id FROM artifacts").all() as unknown as { id: string; file: string; project_id: string | null }[]) {
+    if (a.project_id === projectId || (root && within(root, a.file))) placeArtifact(db, a.id, a.file);
+  }
+}
+
+/**
+ * Recompute the page-path prefixes of a project's roots after its roots changed, so a root nested
+ * in an assigned root keeps its folder in its pages' paths: assigned and git roots take their path
+ * under the nearest assigned root of the project holding them (a git root held by none keeps its
+ * prefix); a worktree takes its main repository's prefix when that repository is in the project.
+ */
+function settlePrefixes(db: sqlite.DatabaseSync, projectId: string): void {
+  const roots = allRoots(db).filter((r) => r.project_id === projectId).sort((a, b) => a.root.length - b.root.length);
+  const set = db.prepare("UPDATE project_roots SET prefix = ? WHERE root = ?");
+  const update = (r: RootRow, prefix: string): void => {
+    r.prefix = prefix;
+    set.run(prefix, r.root);
+  };
+  // Shortest first: a holder's prefix is settled before the roots inside it.
+  for (const r of roots) {
+    if (r.kind !== "assigned" && r.kind !== "git") continue;
+    const holder = assignedHolder(roots.filter((h) => h !== r), r.root);
+    if (holder) update(r, prefixUnder(holder, r.root));
+    else if (r.kind === "assigned") update(r, "");
+  }
+  for (const r of roots) {
+    if (r.kind !== "worktree") continue;
+    const main = mainRepoOf(r.root);
+    const mainRow = main ? roots.find((m) => pathKey(m.root) === pathKey(main)) : undefined;
+    const holder = assignedHolder(roots, r.root);
+    if (mainRow) update(r, mainRow.prefix);
+    else if (holder) update(r, prefixUnder(holder, r.root));
   }
 }
 
@@ -335,7 +387,8 @@ export function addRoot(db: sqlite.DatabaseSync, dir: string, name?: string): { 
     db.prepare(
       "INSERT INTO project_roots (root, project_id, kind, created_at) VALUES (?, ?, 'assigned', ?) ON CONFLICT(root) DO UPDATE SET project_id = excluded.project_id, kind = 'assigned'",
     ).run(existing ? existing.root : root, projectId, Date.now());
-    rekeyUnder(db, root);
+    settlePrefixes(db, projectId);
+    rekey(db, root, projectId);
     prune(db);
     return { project: db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as unknown as ProjectRow, root: existing ? existing.root : root };
   });
@@ -348,6 +401,8 @@ export function mergeProjects(db: sqlite.DatabaseSync, a: string, b: string): Pr
     const from = needProject(db, b);
     if (into.id === from.id) throw new Error(`${a} and ${b} are the same project`);
     db.prepare("UPDATE project_roots SET project_id = ? WHERE project_id = ?").run(into.id, from.id);
+    settlePrefixes(db, into.id);
+    rekey(db, null, into.id);
     for (const r of db.prepare("SELECT id, file FROM artifacts WHERE project_id = ?").all(from.id) as unknown as { id: string; file: string }[]) placeArtifact(db, r.id, r.file);
     db.prepare("DELETE FROM projects WHERE id = ?").run(from.id);
     prune(db);

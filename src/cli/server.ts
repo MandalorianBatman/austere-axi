@@ -1155,6 +1155,8 @@ export async function runServer({
     if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
     // The hub only shows pages and opens reviews by link: nothing to post to it.
     if (ownerOnly && req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
+    // Owner browsing the hub keeps the server up.
+    if (ownerOnly) activity();
     if (url.pathname === "/") return send(res, 200, hubHome(url), { "content-type": "text/html; charset=utf-8" });
     if (url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
     if (url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
