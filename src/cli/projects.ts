@@ -329,8 +329,10 @@ function rekey(db: sqlite.DatabaseSync, root: string | null, projectId: string):
 /**
  * Recompute the page-path prefixes of a project's roots after its roots changed, so a root nested
  * in an assigned root keeps its folder in its pages' paths: assigned and git roots take their path
- * under the nearest assigned root of the project holding them (a git root held by none keeps its
- * prefix); a worktree takes its main repository's prefix when that repository is in the project.
+ * under the nearest assigned root of the project holding them; a git root held by none keeps its
+ * prefix only while a worktree of it sits under an assigned root of the project (that worktree gave
+ * it the prefix), else has none; a worktree takes its main repository's prefix when that repository
+ * is in the project.
  */
 function settlePrefixes(db: sqlite.DatabaseSync, projectId: string): void {
   const roots = allRoots(db).filter((r) => r.project_id === projectId).sort((a, b) => a.root.length - b.root.length);
@@ -344,7 +346,8 @@ function settlePrefixes(db: sqlite.DatabaseSync, projectId: string): void {
     if (r.kind !== "assigned" && r.kind !== "git") continue;
     const holder = assignedHolder(roots.filter((h) => h !== r), r.root);
     if (holder) update(r, prefixUnder(holder, r.root));
-    else if (r.kind === "assigned") update(r, "");
+    // A git root held by none: its prefix came from a worktree of it under an assigned root, or it has none.
+    else if (r.kind === "assigned" || !roots.some((w) => w !== r && pathKey(mainRepoOf(w.root) ?? "") === pathKey(r.root) && (w.kind === "assigned" || assignedHolder(roots, w.root)))) update(r, "");
   }
   // Worktrees whose repository is not in the project: one prefix per repository, an assigned
   // worktree's (the owner placed it), else the first one's.
@@ -423,16 +426,18 @@ export function mergeProjects(db: sqlite.DatabaseSync, a: string, b: string): Pr
   });
 }
 
-/** `project rename <p> <name>`. */
+/** `project rename <p> <name>`: refused when another project has that name, as names must stay unambiguous to find a project by. */
 export function renameProject(db: sqlite.DatabaseSync, ref: string, name: string): ProjectRow {
   return inTransaction(db, () => {
     const p = needProject(db, ref);
+    const taken = db.prepare("SELECT id FROM projects WHERE name = ? AND id != ?").get(name, p.id) as { id: string } | undefined;
+    if (taken) throw new Error(`a project is already named ${name} (${taken.id}); \`project merge\` joins two projects`);
     db.prepare("UPDATE projects SET name = ? WHERE id = ?").run(name, p.id);
     return { ...p, name };
   });
 }
 
-/** `project forget-root <dir>`: drop a root; its pages are resolved again (a `.git` or their folder). */
+/** `project forget-root <dir>`: drop a root; the project's other roots get their prefixes again, and its pages, and those under the root, are resolved again (a `.git` or their folder). */
 export function forgetRoot(db: sqlite.DatabaseSync, dir: string): { root: string; project: string } {
   const want = canonicalFile(dir);
   return inTransaction(db, () => {
@@ -440,7 +445,8 @@ export function forgetRoot(db: sqlite.DatabaseSync, dir: string): { root: string
     if (!row) throw new Error(`not a project root: ${want} (\`project list\` shows them)`);
     const name = (db.prepare("SELECT name FROM projects WHERE id = ?").get(row.project_id) as { name: string } | undefined)?.name || row.project_id;
     db.prepare("DELETE FROM project_roots WHERE root = ?").run(row.root);
-    for (const a of db.prepare("SELECT id, file FROM artifacts WHERE root = ?").all(row.root) as unknown as { id: string; file: string }[]) placeArtifact(db, a.id, a.file);
+    settlePrefixes(db, row.project_id);
+    rekey(db, row.root, row.project_id);
     prune(db);
     return { root: row.root, project: name };
   });

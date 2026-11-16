@@ -474,12 +474,13 @@ export class SessionStore {
     this.touch(s);
   }
 
-  /** The owner locks the review: no more notes until it is reopened. */
+  /** The owner locks the review: no more notes until it is reopened. Archive replaces close, so it is archived too. */
   closeReview(s: Session): void {
     const now = Date.now();
     if (s.status !== "ended") Object.assign(s, { status: "ended", endedBy: "user", endedAt: now });
     s.closedAt = now;
     this.touch(s);
+    this.db.prepare("UPDATE artifacts SET archived_at = COALESCE(archived_at, ?) WHERE id = ?").run(now, s.id);
   }
 
   reopen(s: Session): void {

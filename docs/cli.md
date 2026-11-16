@@ -8,7 +8,7 @@ austere-axi <file>               validate + open a review   [--no-open] [--reope
 austere-axi poll <file>          long-poll for feedback      [--cursor n] [--agent-reply "..."] [--after n] [--takeover]
 austere-axi reply <file>         post a reply without polling   [--cursor n]
 austere-axi end <file>           stop as the agent; the reviewer can still add notes
-austere-axi close <file>         close the review: no more notes until reopen
+austere-axi close <file>         close the review: no more notes until reopen; the page is archived
 austere-axi reopen <file>        reopen an ended or closed review
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback <file>      feedback no agent has answered yet   [--all] [--peek]
@@ -21,7 +21,7 @@ austere-axi registry list|add|remove   private npm registries for scopes (see Pr
 austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
 austere-axi hub [list|notes|open]   home page with every page by project and every note   [--project p] [--archived] [--all] [--unanswered]
 austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)
-austere-axi archive <file>       put a page away from the hub's lists; unarchive <file> brings it back
+austere-axi archive <file>       put a page away from the hub's lists; unarchive <file> brings it back (and reopens a closed review)
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
 austere-axi publish <file>       hosted copy of the page on austere.kasat.xyz   [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new]

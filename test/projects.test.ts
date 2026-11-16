@@ -280,6 +280,49 @@ test("project merge moves roots and re-keys pages; rename; forget-root", async (
     assert.throws(() => forgetRoot(db, path.join(dir, "elsewhere")), /not a project root/);
   }));
 
+test("project rename refuses a name another project has", () =>
+  withDb((db, dir) => {
+    const shop = resolveProject(db, write(path.join(repo(path.join(dir, "shop")), "a.html")));
+    const b = resolveProject(db, write(path.join(repo(path.join(dir, "b")), "a.html")));
+    assert.throws(() => renameProject(db, b.projectId, "shop"), /already named shop/);
+    assert.equal(findProject(db, "shop")?.id, shop.projectId, "the name still finds one project");
+    assert.equal(renameProject(db, "shop", "shop").name, "shop", "a project may keep its own name");
+  }));
+
+test("forget-root settles the other roots' prefixes and re-keys their pages", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const work = path.join(dir, "work");
+    const docs = path.join(work, "docs");
+    const nested = repo(path.join(work, "nested"));
+    fs.mkdirSync(docs, { recursive: true });
+    const other = path.join(dir, "other");
+    fs.mkdirSync(other, { recursive: true });
+    addRoot(db, work, "W");
+    addRoot(db, docs, "W");
+    addRoot(db, other, "W");
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(docs, "plan.html")) });
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(nested, "docs", "plan.html")) });
+    hub.register({ id: "cccccccccccc", file: write(path.join(other, "docs", "plan.html")) });
+    hub.register({ id: "dddddddddddd", file: write(path.join(other, "plan.html")) });
+    const paths = (): string[][] => hub.list({ all: true }).map((p) => [p.rel_path, p.copies.map((c) => c.id).sort().join(" ")]).sort();
+    assert.deepEqual(paths(), [
+      ["docs/plan.html", "aaaaaaaaaaaa cccccccccccc"],
+      ["nested/docs/plan.html", "bbbbbbbbbbbb"],
+      ["plan.html", "dddddddddddd"],
+    ]);
+    forgetRoot(db, work);
+    // Without /work, /work/docs and the repository have no prefix: their pages' paths are inside them.
+    assert.deepEqual(paths(), [
+      ["docs/plan.html", "bbbbbbbbbbbb cccccccccccc"],
+      ["plan.html", "aaaaaaaaaaaa dddddddddddd"],
+    ]);
+    assert.deepEqual((db.prepare("SELECT prefix FROM project_roots WHERE root IN (?, ?)").all(docs, nested) as { prefix: string }[]).map((r) => r.prefix), ["", ""]);
+    const before = paths();
+    addRoot(db, other, "W");
+    assert.deepEqual(paths(), before, "nothing left for the next project add to re-key");
+  }));
+
 test("a path through a symlink resolves to the same project and page", () =>
   withDb((db, dir) => {
     const r = repo(path.join(dir, "real"));

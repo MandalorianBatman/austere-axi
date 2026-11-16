@@ -182,7 +182,7 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: 'reply plan.html --cursor 3 --agent-reply "Done."',
   },
   end: { usage: "end <file>", summary: "stop as the agent; the reviewer can still add notes for later", flags: {}, example: "end plan.html" },
-  close: { usage: "close <file>", summary: "close the review: no more notes until reopen", flags: {}, example: "close plan.html" },
+  close: { usage: "close <file>", summary: "close the review: no more notes until reopen; the page is archived", flags: {}, example: "close plan.html" },
   reopen: { usage: "reopen <file>", summary: "reopen an ended or closed review", flags: {}, example: "reopen plan.html" },
   login: {
     usage: "login [file]",
@@ -266,7 +266,7 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "project add ~/work/site --name site",
   },
   archive: { usage: "archive <file>", summary: "put a page away: the hub's lists leave it out (`hub list --archived` shows it); its notes stay", flags: {}, example: "archive plan.html" },
-  unarchive: { usage: "unarchive <file>", summary: "bring an archived page back into the hub's lists", flags: {}, example: "unarchive plan.html" },
+  unarchive: { usage: "unarchive <file>", summary: "bring an archived page back into the hub's lists (a closed review is reopened)", flags: {}, example: "unarchive plan.html" },
   share: {
     usage: 'share <file> --as "<name>" [--auto] | share list [--links] | share revoke <name|id>',
     summary: "invite link for a teammate on your tailnet; their notes wait for you unless --auto",
@@ -1177,15 +1177,27 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
   }
 }
 
-/** `archive` and `unarchive`: put a page away from the hub's lists, or bring it back. Works on a file that is gone too. */
+/**
+ * `archive` and `unarchive`: put a page away from the hub's lists, or bring it back. Works on a file
+ * that is gone too. A review closed before archive replaced close is reopened when brought back, so
+ * it is not listed while still locked (the server reopens it: it holds the session).
+ */
 async function cmdArchive(file: string | undefined, archive: boolean): Promise<void> {
   const cmd = archive ? "archive" : "unarchive";
   if (!file) return usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>`, cmd);
   const abs = canonicalFile(file);
-  return withHub((hub) => {
-    if (!hub.setArchived(sessionId(abs), archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
-    print({ status: archive ? "archived" : "unarchived", file: abs });
+  let closed = false;
+  await withHub((hub) => {
+    const id = sessionId(abs);
+    if (!hub.setArchived(id, archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
+    closed = !archive && Boolean(hub.artifact(id)?.closed_at);
+    if (!closed) print({ status: archive ? "archived" : "unarchived", file: abs });
   });
+  if (!closed) return;
+  await ensureServer();
+  const r = await request("POST", "/api/reopen", { file: abs }, { timeoutMs: 10_000 });
+  if (r.status !== 200) return fail(r.data?.error || `unarchived, but reopening the closed review failed (${r.status}); run \`${BIN} reopen ${quote(file)}\``);
+  print({ status: "unarchived", file: abs, note: "it was closed: reopened" });
 }
 
 // ── share (team review) ──
