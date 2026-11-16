@@ -61,7 +61,7 @@ austere-axi server uninstall    # stop it and remove the unit
 - **macOS:** a launchd agent, `~/Library/LaunchAgents/xyz.kasat.austere-axi.plist`, loaded with `launchctl bootstrap gui/<uid>`.
 - **Windows:** it prints the Task Scheduler commands (`schtasks`) to do it by hand and changes nothing.
 
-It refuses without a terminal, so an agent or a page cannot set it up, and while a server it did not start holds the state dir (`server.lock`): run `austere-axi stop` first. Run from npx, it warns: npm may clear npx's cache, and the service would stop starting.
+It refuses without a terminal, so an agent or a page cannot set it up, and while a server it did not start holds the state dir (`server.lock`): run `austere-axi stop` first. On Windows it refuses the same way, and prints the steps to a terminal that runs it. Run from npx, it warns: npm may clear npx's cache, and the service would stop starting.
 
 `--port n` sets the port the service listens on; CLI commands then find it with `AUSTERE_AXI_PORT=n`. `--link-url` sets `AUSTERE_AXI_LINK_URL` in the unit (see below). Run `server install` again to change either; it restarts the service.
 
