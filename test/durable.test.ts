@@ -533,6 +533,24 @@ test("notes of another project never reach a project poll", () =>
     assert.match(theirs.out, /message: belongs to elsewhere/);
   }));
 
+test("a page merged into the project while its poll waits is handed over with the notes it already holds", () =>
+  withServer(
+    async ({ port, state }) => {
+      const otherId = await open(port, OTHER);
+      await send(port, otherId, "waiting in elsewhere");
+      const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "5000");
+      await settle(500);
+      // Another process moves the page into this project: no note is sent, so only the poll's own look again finds it.
+      const merged = await cliIn(WORK, port, state, "project", "merge", WORK, OTHER_DIR);
+      assert.equal(merged.code, 0, merged.out);
+      const got = await projectPoll;
+      assert.match(got.out, /^status: feedback$/m, got.out);
+      assert.ok(got.out.includes(format({ file: OTHER })), got.out);
+      assert.match(got.out, /message: waiting in elsewhere/);
+    },
+    { AUSTERE_AXI_PROJECT_REFRESH_MS: "200" },
+  ));
+
 test("an agent reply on a project poll is a usage error that names reply; feedback with no file reads the project", () =>
   withServer(async ({ port, state, id }) => {
     const bad = await cliIn(WORK, port, state, "poll", "--agent-reply", "done");

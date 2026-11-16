@@ -65,6 +65,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 | `AUSTERE_AXI_ALLOWED_HOSTS` | | extra `Host` headers to accept (reverse proxy) |
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
+| `AUSTERE_AXI_PROJECT_REFRESH_MS` | `30000` | how often a waiting project `poll` looks again for pages that joined the project from another process (`project merge`) |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them, except scopes mapped with `registry add` |
 | `AUSTERE_AXI_CLOUD_URL` | `https://austere.kasat.xyz` | the service `publish` talks to (self-hosting, tests) |
 | `AUSTERE_AXI_SYNC_RETRY_MS` | `1000` | first wait before the local server reconnects to a hosted page; it doubles up to 60 s |

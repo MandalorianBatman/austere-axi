@@ -750,10 +750,22 @@ export async function runServer({
     return clients.get(id)?.size || 0;
   }
 
+  /**
+   * Coverage of a waiting project poll may have changed (a page registered, or `project merge` in another process):
+   * fix the hosted connections, then hand over notes a newly covered page already holds, as no insert will wake for them.
+   */
+  function rescanProjectPoll(projectId: string): void {
+    const poll = projectPolls.get(projectId);
+    if (!poll || poll.done) return;
+    refreshWatch(projectId);
+    const batches = projectBatches(poll);
+    if (batches.length) deliverProject(poll, batches);
+  }
+
   /** A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll. */
   function joinProjectPoll(s: Session): void {
     const pid = store.projectIdOf(s);
-    if (pid && projectPolls.has(pid)) refreshWatch(pid);
+    if (pid) rescanProjectPoll(pid);
   }
 
   /**
@@ -805,7 +817,7 @@ export async function runServer({
     projectPolls.set(projectId, poll);
     refreshWatch(projectId);
     // Pages can join the project without this server hearing of it (`project merge` in another process): look again now and then.
-    poll.refresh = setInterval(() => refreshWatch(projectId), PROJECT_REFRESH_MS);
+    poll.refresh = setInterval(() => rescanProjectPoll(projectId), msEnv("AUSTERE_AXI_PROJECT_REFRESH_MS", PROJECT_REFRESH_MS) || PROJECT_REFRESH_MS);
     res.on("close", () => {
       if (poll.done) return;
       retireProjectPoll(poll);
