@@ -20,7 +20,7 @@ const CHILDREN: ChildProcess[] = [];
 
 after(async () => {
   for (const child of CHILDREN) {
-    if (child.exitCode !== null) continue;
+    if (child.exitCode !== null || child.signalCode !== null) continue;
     const exited = new Promise((r) => child.once("exit", r));
     child.kill();
     await exited;
@@ -279,6 +279,38 @@ test("install refuses while a server it did not start holds server.lock, and say
     });
     assert.equal(fs.existsSync(unitPath(ctx.home)), false);
     assert.deepEqual(calls, []);
+  } finally {
+    await stop(child);
+  }
+});
+
+test("a relative state dir is resolved, so the lock still names the running server", async () => {
+  // The server, the CLI and the service may run from different folders; they have to mean
+  // the same state dir, or the lock of a running server looks stale and install goes ahead.
+  const relative = path.relative(process.cwd(), STATE);
+  const port = await freePort();
+  const child = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(port)], {
+    env: { ...process.env, AUSTERE_AXI_STATE_DIR: relative, AUSTERE_AXI_NO_TAILSCALE: "1" },
+    stdio: "ignore",
+  });
+  CHILDREN.push(child);
+  try {
+    let up = false;
+    for (let i = 0; i < 200 && !up; i++) {
+      up = Boolean(await health(port));
+      if (!up) await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.ok(up, "the server did not start");
+    // A lock older than a minute is only stale when the server does not answer for it; age
+    // it, so the check has to prove the running server holds this state dir.
+    const lockFile = path.join(STATE, "server.lock");
+    const lock = JSON.parse(fs.readFileSync(lockFile, "utf8")) as { at: number };
+    fs.writeFileSync(lockFile, JSON.stringify({ ...lock, at: Date.now() - 10 * 60_000 }));
+    const holder = await stateDirHolder(STATE);
+    assert.ok(holder, "the running server's lock was not found");
+    assert.equal(holder.pid, child.pid);
+    const { ctx } = context({ holder: stateDirHolder });
+    await assert.rejects(installService({}, ctx), /without a supervisor|not started by systemd/);
   } finally {
     await stop(child);
   }

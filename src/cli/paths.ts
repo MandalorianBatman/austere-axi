@@ -35,7 +35,9 @@ export function assetPath(name: string): string {
 let securedDir: string | null = null;
 
 export function stateDir(): string {
-  const dir = process.env.AUSTERE_AXI_STATE_DIR || path.join(os.homedir(), ".austere-axi");
+  // An absolute path, always: the state dir is named by a server, a CLI command and a
+  // service that may run from different folders, and they have to mean the same one.
+  const dir = process.env.AUSTERE_AXI_STATE_DIR ? path.resolve(process.env.AUSTERE_AXI_STATE_DIR) : path.join(os.homedir(), ".austere-axi");
   // Sessions, invites, the owner key and logs live here: the owner's only. mkdir's mode only applies to
   // a new dir, so tighten one made by an older version too (POSIX; Windows ignores modes).
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
