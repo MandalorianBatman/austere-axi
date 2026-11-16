@@ -15,6 +15,7 @@ import type { AddressInfo } from "node:net";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { freePort } from "./port.ts";
+import { format } from "../src/cli/output.ts";
 import { quote } from "../src/cli/paths.ts";
 import { ownerHeaders } from "./owner.ts";
 import { SUBPROTOCOL, SYNC_VERSION, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
@@ -604,7 +605,7 @@ test("a project poll keeps the hosted socket of every published page in the proj
     // A hosted note on either page reaches the one project poll.
     addNote(idB, "Ana", [{ kind: "message", text: "hosted note on b" }], "released");
     const r = await polling;
-    assert.ok(r.out.includes(`file: ${b}`) && /message: hosted note on b/.test(r.out), r.out);
+    assert.ok(r.out.includes(format({ file: b })) && /message: hosted note on b/.test(r.out), r.out);
     await until("sockets released once the project poll is over", () => pa.live.size === 0 && pb.live.size === 0);
     assert.ok(sidA && sidB);
   } finally {
