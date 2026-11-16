@@ -763,7 +763,7 @@ export async function runServer({
     const mine = covered(projectId);
     if (cursor != null) {
       for (const s of mine) {
-        const acked = store.ack(s, cursor);
+        const acked = store.ackDelivered(s, cursor);
         if (acked.length) broadcastTranscript(s, acked);
       }
     }

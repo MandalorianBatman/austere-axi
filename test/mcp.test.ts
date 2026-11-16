@@ -8,6 +8,7 @@ import path from "node:path";
 import readline from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { after, before, test } from "node:test";
+import { format } from "../src/cli/output.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
@@ -188,7 +189,7 @@ test("poll without a file waits on a project: batches name their file, and bad c
   await api("POST", `/s/${id}/send`, { items: [{ kind: "message", text: "for the whole project" }] }, { host: `127.0.0.1:${PORT}` });
   const got = (await pollP).content[0].text;
   assert.match(got, /^status: feedback/m);
-  assert.ok(got.includes(`file: ${GOOD}`), got);
+  assert.ok(got.includes(format({ file: GOOD })), got);
   assert.match(got, /message: for the whole project/);
   const cursor = Number((/^cursor: (\d+)$/m.exec(got) as RegExpExecArray)[1]);
   assert.match((await call("poll", { project: WORK, cursor, timeout_ms: 200 })).content[0].text, /^status: timeout/m);

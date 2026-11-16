@@ -450,6 +450,19 @@ export class SessionStore {
   }
 
   /**
+   * A project poll's cursor: acknowledge up to `cursor`, but only the run of notes a poll already handed over (`seenAt`).
+   * A page registered, merged or written to after the batch was made keeps its unseen notes unread.
+   */
+  ackDelivered(s: Session, cursor: number): QueuedEntry[] {
+    let target = 0;
+    for (const e of this.after(s, s.ackedSeq)) {
+      if (e.seq > cursor || !e.seenAt) break;
+      target = e.seq;
+    }
+    return target ? this.ack(s, target) : [];
+  }
+
+  /**
    * Feedback no agent has acted on (`feedback <file>`): notes not yet acknowledged,
    * plus acknowledged ones with no agent reply since; `all` adds the addressed ones.
    * Unless `peek`, reading acknowledges them, so a later poll does not deliver them again.
