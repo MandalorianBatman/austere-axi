@@ -26,6 +26,7 @@ interface ArgSchema {
 /** Tool arguments once `validate` has passed: every key is one the tool lists, with its type. */
 type ToolArgs = {
   file: string;
+  project?: string;
   groups?: string[];
   fix?: boolean;
   render?: boolean;
@@ -107,17 +108,24 @@ const TOOLS: Record<string, Tool> = {
   },
   poll: {
     title: "Wait for feedback",
-    description: `Wait for the reviewer's feedback on a page. Returns status feedback (items addressed by statement name; final: true means the reviewer pressed Send & End, so stop listening after applying it), replaced (a newer poll took over this page: stop), interrupted, or timeout (call poll again: nothing is lost). Feedback comes back on every poll until acknowledged: after applying it, pass agent_reply, or pass the cursor it returned.`,
+    description: `Wait for the reviewer's feedback. The default loop is one poll for a whole project: pass project (a name, an id or a folder) and no file, and each batch in the answer names its file. With a file it waits on that page only, and a poll on a page wins for that page. Returns status feedback (items addressed by statement name; final: true means the reviewer pressed Send & End, so stop listening after applying it), replaced (a newer poll took over: stop), interrupted, or timeout (call poll again: nothing is lost). Feedback comes back on every poll until acknowledged: after applying it, reply for each page (project polls) or pass agent_reply (file polls), and pass the cursor it returned.`,
     properties: {
-      file,
-      agent_reply: { type: "string", description: "One line for the reviewer: what you changed." },
-      cursor: { type: "integer", minimum: 0, description: "The cursor the last poll returned: acknowledges that feedback, so it is not returned again. A reply acknowledges it too." },
+      file: { type: "string", description: "Path of the .html page to wait on. Leave out to wait on every page of a project. Use an absolute path." },
+      project: { type: "string", description: "The project to wait on when no file is given: a name, an id, or a folder inside one of its roots." },
+      agent_reply: { type: "string", description: "File polls only. One line for the reviewer: what you changed. For a project poll use the reply tool on each page." },
+      cursor: { type: "integer", minimum: 0, description: "The cursor the last poll returned: acknowledges that feedback, so it is not returned again. A reply acknowledges it too. On a project poll it acknowledges every page in the answer." },
       timeout_ms: { type: "integer", minimum: 0, description: `Return status timeout after this long (default ${POLL_TIMEOUT_MS}). 0 waits until feedback arrives; use it only if your client allows long tool calls.` },
     },
-    required: ["file"],
+    reject: (a) => {
+      if (typeof a.file === "string" && typeof a.project === "string") return "pass a file or a project, not both";
+      if (typeof a.file !== "string" && typeof a.project !== "string") return "pass a file, or a project to wait on all of its pages";
+      if (typeof a.project === "string" && typeof a.agent_reply === "string") return "a reply belongs to one page: use the reply tool for each page, then poll with the cursor";
+      return null;
+    },
     run: (a) => {
       const args = ["poll", "--timeout-ms", String(a.timeout_ms ?? POLL_TIMEOUT_MS)];
       if (Number.isInteger(a.cursor)) args.push("--cursor", String(a.cursor));
+      if (typeof a.project === "string") return [{ args: [...args, "--project", a.project] }];
       if (typeof a.agent_reply === "string") return [{ args: [...args, "--agent-reply-file", "-", "--", a.file], stdin: a.agent_reply }];
       return [{ args: [...args, "--", a.file] }];
     },

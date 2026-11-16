@@ -17,6 +17,7 @@ import { Hub } from "../src/cli/hub.ts";
 import { freePort } from "./port.ts";
 import { ownerKey } from "../src/cli/invites.ts";
 import { ownerHeaders } from "./owner.ts";
+import { format } from "../src/cli/output.ts";
 
 interface Note {
   id: string;
@@ -29,6 +30,7 @@ interface SessionRow {
   id: string;
   archived: boolean;
   pending: number;
+  presence: string;
 }
 
 /** Every response body field these tests read; each route fills in its own. */
@@ -69,6 +71,9 @@ interface Ctx {
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const WORK = tmp("austere-durable-work-");
 const FILE = path.join(WORK, "plan.html");
+const FILE2 = path.join(WORK, "second.html");
+const OTHER_DIR = tmp("austere-durable-other-");
+const OTHER = path.join(OTHER_DIR, "elsewhere.html");
 const BASE_ENV = { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" };
 
 // The state dir of the server on each port: requests go as its owner, unless they bring a reviewer's cookie.
@@ -162,17 +167,21 @@ async function invite(port: number, id: string, name: string): Promise<string> {
 }
 
 before(() => {
-  fs.writeFileSync(
-    FILE,
-    `<!doctype html><html><head><title>Plan</title><script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
+  for (const f of [FILE, FILE2, OTHER]) {
+    fs.writeFileSync(
+      f,
+      `<!doctype html><html><head><title>Plan</title><script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>
 <body><script type="text/openui">
 root = Stack([intro])
 intro = TextContent("hello")
 </script></body></html>`,
-  );
+    );
+  }
 });
 
-after(() => fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
+after(() => {
+  for (const d of [WORK, OTHER_DIR]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+});
 
 /** A server of its own for one test, with the plan open. */
 async function withServer(fn: (ctx: Ctx) => Promise<void>, extraEnv?: Record<string, string>) {
@@ -416,6 +425,192 @@ test("closing every tab does not end a poll: it waits for a note", () =>
     { AUSTERE_AXI_DISCONNECT_GRACE_MS: "100" },
   ));
 
+// ── the project inbox: one poll for every page of a project ──
+
+const open = async (port: number, file: string) => (await request(port, "POST", "/api/open", { file })).data.session.id;
+const send = (port: number, id: string, text: string) => request(port, "POST", `/s/${id}/send`, message(text), page(port));
+
+/** The CLI with a working directory: a bare `poll` means the project of that folder. */
+function cliIn(cwd: string, port: number, state: string, ...args: string[]): Promise<{ code: number | null; out: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [path.resolve("src/cli/main.ts"), ...args], {
+      cwd,
+      env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) },
+    });
+    let out = "";
+    child.stdout.on("data", (c) => (out += c));
+    child.stderr.on("data", (c) => (out += c));
+    child.on("close", (code) => resolve({ code, out }));
+  });
+}
+
+test("one project poll receives notes from two pages, each batch naming its file; unacknowledged notes come back; the project cursor acknowledges both", () =>
+  withServer(async ({ port, state, id }) => {
+    const id2 = await open(port, FILE2);
+    await send(port, id, "on the plan");
+    await send(port, id2, "on the second");
+
+    const first = await cliIn(WORK, port, state, "poll"); // no file: the project of the working directory
+    assert.match(first.out, /^status: feedback$/m, first.out);
+    assert.ok(first.out.includes(format({ file: FILE })) && first.out.includes(format({ file: FILE2 })), "each batch names its file");
+    assert.match(first.out, /message: on the plan/);
+    assert.match(first.out, /message: on the second/);
+    const cursor = Number((/^cursor: (\d+)$/m.exec(first.out) as RegExpExecArray)[1]);
+
+    // Not acknowledged: both come back.
+    const again = await cliIn(WORK, port, state, "poll", "--project", WORK);
+    assert.match(again.out, /message: on the plan/);
+    assert.match(again.out, /message: on the second/);
+
+    // The project cursor acknowledges the notes of both pages.
+    const ack = await cliIn(WORK, port, state, "poll", "--project", WORK, "--cursor", String(cursor), "--timeout-ms", "300");
+    assert.match(ack.out, /^status: timeout$/m, ack.out);
+    const pending = (await request(port, "GET", "/api/sessions")).data.sessions.map((s) => s.pending);
+    assert.deepEqual(pending, [0, 0]);
+  }));
+
+const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test("a page poll takes its page; the project poll takes the pages without a listener of their own", () =>
+  withServer(async ({ port, state, id }) => {
+    const id2 = await open(port, FILE2);
+    const pagePoll = request(port, "POST", "/api/poll", { file: FILE });
+    await settle(100);
+    const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK);
+    await settle(500);
+
+    await send(port, id, "for the page listener");
+    const first = await pagePoll;
+    assert.deepEqual(first.data.items.map((i) => i.text), ["for the page listener"]);
+    // The page agent acknowledges and listens again, so the plan stays its own.
+    const pageAgain = request(port, "POST", "/api/poll", { file: FILE, cursor: first.data.cursor, timeoutMs: 1500 });
+    await settle(100);
+
+    await send(port, id2, "for the project listener");
+    const got = await projectPoll;
+    assert.ok(got.out.includes(format({ file: FILE2 })), got.out);
+    assert.ok(!got.out.includes(format({ file: FILE })), "the plan is the page listener's");
+    assert.match(got.out, /message: for the project listener/);
+    assert.doesNotMatch(got.out, /for the page listener/);
+    assert.equal((await pageAgain).data.status, "timeout");
+  }));
+
+test("a page registered after the project poll started is included", () =>
+  withServer(async ({ port, state }) => {
+    const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK);
+    await settle(500);
+    const id2 = await open(port, FILE2); // not in the hub when the poll started
+    await send(port, id2, "from the new page");
+    const got = await projectPoll;
+    assert.ok(got.out.includes(format({ file: FILE2 })), got.out);
+    assert.match(got.out, /message: from the new page/);
+  }));
+
+test("a project cursor never acknowledges a note no poll delivered, so a --after replay loses nothing", () =>
+  withServer(async ({ port, state, id }) => {
+    // Fresh database: the notes are seq 1 and 2.
+    await send(port, id, "first, skipped by --after");
+    await send(port, id, "second");
+    const replay = await cliIn(WORK, port, state, "poll", "--project", WORK, "--after", "1", "--timeout-ms", "2000");
+    assert.match(replay.out, /message: second/);
+    assert.doesNotMatch(replay.out, /first, skipped/);
+    assert.match(replay.out, /^cursor: 2$/m);
+
+    // The cursor of that answer must not consume the note nobody was handed.
+    await cliIn(WORK, port, state, "poll", "--project", WORK, "--cursor", "2", "--timeout-ms", "300");
+    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 2, "nothing acknowledged past the skipped note");
+    const again = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "2000");
+    assert.match(again.out, /message: first, skipped by --after/, "the skipped note comes back");
+  }));
+
+test("notes of another project never reach a project poll", () =>
+  withServer(async ({ port, state }) => {
+    const otherId = await open(port, OTHER);
+    await send(port, otherId, "belongs to elsewhere");
+    const r = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "300");
+    assert.match(r.out, /^status: timeout$/m, r.out);
+    assert.doesNotMatch(r.out, /elsewhere/);
+    const theirs = await cliIn(OTHER_DIR, port, state, "poll", "--timeout-ms", "5000"); // its own project still gets it
+    assert.match(theirs.out, /message: belongs to elsewhere/);
+  }));
+
+test("a page merged into the project while its poll waits is handed over with the notes it already holds", () =>
+  withServer(
+    async ({ port, state, id }) => {
+      const otherId = await open(port, OTHER);
+      await send(port, otherId, "waiting in elsewhere");
+      const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "5000");
+      // The plan is covered once the project poll is registered: only then can a merge test the look again, not the poll's first read.
+      const listening = async () => (await request(port, "GET", "/api/sessions")).data.sessions.some((s) => s.id === id && s.presence === "listening");
+      for (let i = 0; i < 50 && !(await listening()); i++) await settle(100);
+      assert.ok(await listening(), "the project poll is registered");
+      // Another process moves the page into this project: no note is sent, so only the poll's own look again finds it.
+      const merged = await cliIn(WORK, port, state, "project", "merge", WORK, OTHER_DIR);
+      assert.equal(merged.code, 0, merged.out);
+      const got = await projectPoll;
+      assert.match(got.out, /^status: feedback$/m, got.out);
+      assert.ok(got.out.includes(format({ file: OTHER })), got.out);
+      assert.match(got.out, /message: waiting in elsewhere/);
+    },
+    { AUSTERE_AXI_PROJECT_REFRESH_MS: "200" },
+  ));
+
+test("a reply without a cursor after an --after replay leaves the skipped note unread", () =>
+  withServer(async ({ port, state, id }) => {
+    // Fresh database: the notes are seq 1 and 2.
+    await send(port, id, "first, skipped by --after");
+    await send(port, id, "second");
+    const replay = await cliIn(WORK, port, state, "poll", "--project", WORK, "--after", "1", "--timeout-ms", "2000");
+    assert.match(replay.out, /message: second/);
+    // The project loop: reply per page, no cursor. It answers what was handed over, not the note it skipped.
+    assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status, 200);
+    const again = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "2000");
+    assert.match(again.out, /message: first, skipped by --after/, again.out);
+  }));
+
+test("an agent reply on a project poll is a usage error that names reply; feedback with no file reads the project", () =>
+  withServer(async ({ port, state, id }) => {
+    const bad = await cliIn(WORK, port, state, "poll", "--agent-reply", "done");
+    assert.equal(bad.code, 2);
+    assert.match(bad.out, /reply <file>/);
+
+    const id2 = await open(port, FILE2);
+    await send(port, id, "feedback one");
+    await send(port, id2, "feedback two");
+    const r = await cliIn(WORK, port, state, "feedback", "--peek");
+    assert.ok(r.out.includes(format({ file: FILE })) && r.out.includes(format({ file: FILE2 })), r.out);
+    assert.match(r.out, /message: feedback one/);
+    assert.match(r.out, /message: feedback two/);
+    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 2, "--peek acknowledges nothing");
+    await cliIn(WORK, port, state, "feedback");
+    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 0, "reading acknowledges");
+  }));
+
+test("project feedback with no server reads hub.db and labels each copy as the server does", () =>
+  withServer(async ({ port, state, proc }) => {
+    // A repository checked out on a branch: the copy's label is the branch, not the folder.
+    const repo = tmp("austere-durable-repo-");
+    fs.mkdirSync(path.join(repo, ".git"));
+    fs.writeFileSync(path.join(repo, ".git", "HEAD"), "ref: refs/heads/feat/inbox\n");
+    try {
+      const [a, b] = ["a.html", "b.html"].map((n) => path.join(repo, n));
+      for (const f of [a, b]) fs.copyFileSync(FILE, f);
+      await send(port, await open(port, a), "waiting one");
+      await send(port, await open(port, b), "waiting two");
+      const label = /^ {4}copy: feat\/inbox$/gm;
+      const live = await cliIn(repo, port, state, "feedback", "--peek");
+      assert.equal(live.out.match(label)?.length, 2, live.out);
+
+      await kill(proc); // nothing is serving: the CLI reads hub.db itself
+      const offline = await cliIn(repo, port, state, "feedback", "--peek");
+      assert.ok(offline.out.includes(format({ file: a })) && offline.out.includes(format({ file: b })), offline.out);
+      assert.match(offline.out, /message: waiting one/);
+      assert.equal(offline.out.match(label)?.length, 2, "the same label as with a server");
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    }
+  }));
+
 test("a second server on the same state dir refuses to start", () =>
   withServer(async ({ port, state }) => {
     const other = startServer(await freePort(), state);
@@ -531,6 +726,31 @@ test("session files from before the database are imported once, every state inta
     check(store);
     store.close();
   } finally {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("a project cursor acknowledges only notes a poll handed over: a page with an unseen note below the cursor keeps it unread", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-ackdelivered-"));
+  const store = await SessionStore.open(dir);
+  try {
+    const [a, b] = ["a.html", "b.html"].map((n) => store.ensure(path.join(dir, n)));
+    const note = (text: string) => [{ kind: "message", text }];
+    const unseen = store.addUserBatch(b, note("written before the page joined"));
+    const first = store.addUserBatch(a, note("delivered"));
+    const second = store.addUserBatch(a, note("also delivered"));
+    store.markDelivered(a, [first, second]);
+    const cursor = Number(second.seq);
+
+    assert.deepEqual(store.ackDelivered(b, cursor), [], "nothing on b was handed over");
+    assert.equal(b.ackedSeq, 0);
+    assert.deepEqual(store.unread(b).map((e) => e.id), [unseen.id]);
+
+    assert.deepEqual(store.ackDelivered(a, cursor).map((e) => e.id), [first.id, second.id]);
+    assert.equal(a.ackedSeq, cursor);
+    assert.deepEqual(store.ackDelivered(a, cursor), [], "acknowledging again changes nothing");
+  } finally {
+    store.close();
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });

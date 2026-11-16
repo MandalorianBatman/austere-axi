@@ -56,7 +56,7 @@ In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/pl
 
 `austere-axi mcp` is an MCP server on stdio. Tools: `spec`, `check`, `open`, `poll`, `reply`, `patch`, `components`. Each one runs the CLI command of the same name, so the loop is the same as on the command line.
 
-- `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer calls. The agent polls again; nothing is lost. `timeout_ms: 0` waits until feedback arrives.
+- `poll` takes a `file`, or a `project` (a name, an id or a folder) with no file: one poll for every page of the project, each batch naming its file. `agent_reply` belongs to file polls; reply to each page of a project poll with `reply`. `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer calls. The agent polls again; nothing is lost. `timeout_ms: 0` waits until feedback arrives.
 - `poll` and `reply` take the `cursor` a poll returned, like `--cursor`.
 - `components` takes `command` (`search`, `show`, `list` or `add`) and `args`; `show` also takes `pack`, like `--pack`. `add` takes only an npm package name, never a folder or `.tgz`, and has no `trust`: a third-party pack the user has not trusted is refused, and the agent asks the user to install it.
 - Pass absolute file paths. The server resolves relative paths against its own working directory, which depends on the client.

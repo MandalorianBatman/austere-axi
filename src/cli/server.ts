@@ -17,13 +17,13 @@ import { allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./
 import type { Tailnet } from "./net.ts";
 import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
 import { SessionStore, newId, sessionId } from "./sessions.ts";
-import type { FeedbackEntry, NoteItem, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
+import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
 import { detectSupervisor } from "./service.ts";
 import type { Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub, activeWorkNow } from "./hub.ts";
-import { findProject } from "./projects.ts";
+import { copyLabel, findProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
 import type { Invite } from "./invites.ts";
@@ -103,18 +103,36 @@ export interface PollResponse {
   status: "feedback" | "timeout" | "replaced" | "interrupted";
   /** feedback: the notes' items, and the cursor that acknowledges them */
   items?: NoteItem[];
+  /** feedback: the highest seq in the answer (a project poll's cursor covers every page). */
   cursor?: number;
-  /** feedback: the reviewer pressed Send & End on one of these notes; the agent stops listening after applying them */
+  /** feedback: the reviewer pressed Send & End on the newest batch; the agent stops listening after applying it */
   final?: true;
+  /** A project poll's answer: the project, and one batch per page with notes. `items` and `final` are then per batch. */
+  project?: string;
+  batches?: PollBatch[];
   /** interrupted: why the server stopped */
   reason?: string;
   error?: string;
+}
+
+/** The notes of one page in a project poll's answer. `copy` is the label of the page's root (its branch, else its folder). */
+export interface PollBatch {
+  file: string;
+  copy: string;
+  items: NoteItem[];
+  final?: true;
 }
 
 /** /api/feedback. */
 export interface FeedbackResponse {
   session: PublicSession;
   entries: FeedbackEntry[];
+}
+
+/** /api/feedback for a project: the pages that have notes. */
+export interface ProjectFeedbackResponse {
+  project: string;
+  batches: { file: string; copy: string; archived: boolean; entries: FeedbackEntry[] }[];
 }
 
 /** /api/share. */
@@ -169,7 +187,13 @@ interface Poll {
   res: http.ServerResponse;
   startedAt: number;
   done: boolean;
+  /** A page poll's read point. */
   from: number;
+  /** A project poll: the project it listens for, the pages it watches, and `--after` (null: each page's own cursor). */
+  project?: string;
+  after?: number | null;
+  /** A project poll's refresh of its pages' hosted connections (membership can change under it: `project merge`). */
+  refresh?: ReturnType<typeof setInterval>;
 }
 
 /** A watched artifact file and what it held last. */
@@ -235,6 +259,8 @@ const SSE_HARD_MAX = 32 << 20;
 const SSE_MAX_PER_REVIEWER = 4;
 const MAX_HELD_PER_REVIEWER = 200;
 const SSE_MAX_PER_SESSION = 16;
+// How often a waiting project poll re-reads which pages it covers, to keep their hosted connections right.
+const PROJECT_REFRESH_MS = 30_000;
 
 export async function runServer({
   port,
@@ -282,17 +308,15 @@ export async function runServer({
   const ownerCookieValue = ownerCookie(ownerToken);
   const logins = new LoginCodes(LOGIN_TTL_MS);
   const clients = new Map<string, Set<SseClient>>(); // id -> Set<{res, viewer}>
-  const polls = new Map<string, Poll>(); // id -> poll
+  const polls = new Map<string, Poll>(); // page id -> its poll
+  const projectPolls = new Map<string, Poll>(); // project id -> its poll
   const watchers = new Map<string, Watcher>(); // id -> { html, program, shell }
   const listeners = new Map<string, http.Server>(); // host -> http.Server
   // Hosted pages in cloud.json: their notes come in, the owner's Send/Discard and the agent's replies go out.
   const peer = new Peer({
     store,
     log,
-    listening: (s) => {
-      const poll = polls.get(s.id);
-      return !!poll && !poll.done;
-    },
+    listening: (s) => Boolean(listener(s)),
     changed: (s, entries) => {
       broadcastTranscript(s, entries);
       wake(s);
@@ -442,8 +466,17 @@ export async function runServer({
     }
   }
 
+  /** The poll that gets this page's notes: its own, else its project's. */
+  function listener(s: Session): Poll | undefined {
+    const own = polls.get(s.id);
+    if (own && !own.done) return own;
+    const pid = store.projectIdOf(s);
+    const shared = pid ? projectPolls.get(pid) : undefined;
+    return shared && !shared.done ? shared : undefined;
+  }
+
   function presence(s: Session): Presence {
-    if (polls.has(s.id)) return "listening";
+    if (listener(s)) return "listening";
     if (s.workingSince) return "working";
     return "idle";
   }
@@ -572,13 +605,9 @@ export async function runServer({
   /** Answer `poll` with every note after its read point. The notes stay unread until the agent acknowledges them. */
   function deliver(s: Session, poll: Poll): void {
     const entries = store.after(s, poll.from);
-    const items: NoteItem[] = [];
-    for (const e of entries) {
-      for (const it of e.items || []) items.push(e.author ? { ...it, author: e.author, ...(e.remote ? { remote: true } : {}) } : it);
-    }
     // A page always takes notes: final only tells the agent the newest batch was sent with Send & End, so it stops listening after applying it. A later plain note in the same answer means the reviewer carries on.
     const final = Boolean(entries[entries.length - 1].end);
-    const body: PollResponse = { status: "feedback", items, cursor: entries[entries.length - 1].seq, final: final || undefined };
+    const body: PollResponse = { status: "feedback", items: itemsOf(entries), cursor: entries[entries.length - 1].seq, final: final || undefined };
     finishPoll(s, poll, body, () => {
       store.markDelivered(s, entries);
       s.workingSince = Date.now();
@@ -587,10 +616,65 @@ export async function runServer({
     });
   }
 
-  /** A listening poll gets new notes at once. */
+  /** The items of these notes as a poll hands them over: a teammate's carry `author`, a hosted page's `remote`. */
+  function itemsOf(entries: UserEntry[]): NoteItem[] {
+    const items: NoteItem[] = [];
+    for (const e of entries) {
+      for (const it of e.items || []) items.push(e.author ? { ...it, author: e.author, ...(e.remote ? { remote: true } : {}) } : it);
+    }
+    return items;
+  }
+
+  /** The label of a page's copy: its root's branch, else its folder's name. */
+  function copyOf(s: Session): string {
+    const root = hub.artifact(s.id)?.root;
+    return root ? copyLabel(root) : path.basename(path.dirname(s.file));
+  }
+
+  /** The pages a project poll listens for: every review of the project without a poll of its own. Read each time, so a page registered later counts. */
+  function covered(projectId: string): Session[] {
+    return store.inProject(projectId).filter((s) => {
+      const own = polls.get(s.id);
+      return !(own && !own.done);
+    });
+  }
+
+  /** What a project poll would hand over now: each covered page's notes after its own cursor (or after `--after`). */
+  function projectBatches(poll: Poll): { s: Session; entries: QueuedEntry[] }[] {
+    return covered(poll.project as string)
+      .map((s) => ({ s, entries: store.after(s, poll.after ?? s.ackedSeq) }))
+      .filter((b) => b.entries.length);
+  }
+
+  function deliverProject(poll: Poll, batches: { s: Session; entries: QueuedEntry[] }[]): void {
+    const body: PollResponse = {
+      status: "feedback",
+      project: poll.project,
+      cursor: Math.max(...batches.flatMap((b) => b.entries.map((e) => e.seq))),
+      batches: batches.map(({ s, entries }) => ({ file: s.file, copy: copyOf(s), items: itemsOf(entries), final: entries[entries.length - 1].end ? (true as const) : undefined })),
+    };
+    finishProjectPoll(poll, body, () => {
+      for (const { s, entries } of batches) {
+        store.markDelivered(s, entries);
+        s.workingSince = Date.now();
+        broadcastTranscript(s, entries);
+        broadcastPresence(s);
+      }
+    });
+  }
+
+  /** A listening poll gets new notes at once: the page's own, else its project's. */
   function wake(s: Session): void {
-    const poll = polls.get(s.id);
-    if (poll && !poll.done && store.after(s, poll.from).length) deliver(s, poll);
+    const own = polls.get(s.id);
+    if (own && !own.done) {
+      if (store.after(s, own.from).length) deliver(s, own);
+      return;
+    }
+    const pid = store.projectIdOf(s);
+    const shared = pid ? projectPolls.get(pid) : undefined;
+    if (!shared || shared.done) return;
+    const batches = projectBatches(shared);
+    if (batches.length) deliverProject(shared, batches);
   }
 
   /** The `cursor` or `after` of a poll or reply: a whole number, or null when absent. */
@@ -603,13 +687,13 @@ export async function runServer({
 
   /**
    * The agent acknowledges what it got: up to `cursor`, or, when it replies without one,
-   * up to what the last poll handed it. A bare poll acknowledges nothing, so an agent
-   * that lost an answer gets it again.
+   * the notes the last poll handed it, stopping at one it was never handed (an `--after` replay skips some).
+   * A bare poll acknowledges nothing, so an agent that lost an answer gets it again.
    */
   function acknowledge(s: Session, body: RequestBody, replying: boolean): UserEntry[] {
     const cursor = seqParam(body.cursor);
     if (cursor != null) return store.ack(s, cursor);
-    return replying ? store.ack(s, s.deliveredSeq) : [];
+    return replying ? store.ackDelivered(s, s.deliveredSeq) : [];
   }
 
   /** The owner puts a page away, or brings it back: the composer locks or opens, nothing else changes. False when the hub does not know the page. */
@@ -634,8 +718,118 @@ export async function runServer({
     broadcastPresence(s);
   }
 
+  /** A project poll has ended (answered, replaced, timed out or its client left): its pages stop being covered. */
+  function retireProjectPoll(poll: Poll): void {
+    poll.done = true;
+    clearInterval(poll.refresh);
+    const project = poll.project as string;
+    if (projectPolls.get(project) === poll) projectPolls.delete(project);
+    refreshWatch(project);
+  }
+
+  function finishProjectPoll(poll: Poll, body: PollResponse, onDelivered?: () => void): void {
+    if (poll.done) return;
+    retireProjectPoll(poll);
+    poll.res.on("finish", () => onDelivered?.());
+    send(poll.res, 200, body);
+    for (const s of store.inProject(poll.project as string)) broadcastPresence(s);
+  }
+
+  /**
+   * Keep each page's hosted connection as the listeners say: open while a poll (its own or its project's) covers the page,
+   * closed once none does. Peer derives "wanted" from the same registry, so this only has to run when coverage may have changed.
+   */
+  function refreshWatch(projectId: string): void {
+    for (const s of store.inProject(projectId)) {
+      if (listener(s)) peer.watch(s);
+      else peer.unwatch(s);
+    }
+  }
+
   function clientCount(id: string): number {
     return clients.get(id)?.size || 0;
+  }
+
+  /**
+   * Coverage of a waiting project poll may have changed (a page registered, or `project merge` in another process):
+   * fix the hosted connections, then hand over notes a newly covered page already holds, as no insert will wake for them.
+   */
+  function rescanProjectPoll(projectId: string): void {
+    const poll = projectPolls.get(projectId);
+    if (!poll || poll.done) return;
+    refreshWatch(projectId);
+    const batches = projectBatches(poll);
+    if (batches.length) deliverProject(poll, batches);
+  }
+
+  /** A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll. */
+  function joinProjectPoll(s: Session): void {
+    const pid = store.projectIdOf(s);
+    if (pid) rescanProjectPoll(pid);
+  }
+
+  /**
+   * `poll` and `feedback` for a whole project (`project`: an id or a name; the CLI resolves a folder to one).
+   * A project poll gets every page of the project without a poll of its own, including pages registered after
+   * it started. `cursor` acknowledges the notes up to that seq on those pages. The newest project poll wins.
+   */
+  async function projectRoute(route: "poll" | "feedback", body: RequestBody, res: http.ServerResponse): Promise<void> {
+    let project: ProjectRow | null;
+    try {
+      project = findProject(hub.db, String(body.project), { folders: false });
+    } catch (err) {
+      return send(res, 400, { error: String((err as Error).message) });
+    }
+    if (!project) return send(res, 404, { error: `no project ${String(body.project)}` });
+
+    if (route === "feedback") {
+      const batches: ProjectFeedbackResponse["batches"] = [];
+      const pages = store.inProject(project.id);
+      await Promise.all(pages.map((s) => peer.pull(s.file))); // together, so slow hosted pages wait once, not each
+      for (const s of pages) {
+        const { entries, fresh } = store.feedback(s, { all: !!body.all, peek: !!body.peek });
+        if (fresh.length) {
+          broadcastTranscript(s, fresh);
+          broadcastPresence(s);
+        }
+        if (entries.length) batches.push({ file: s.file, copy: copyOf(s), archived: Boolean(s.archivedAt), entries });
+      }
+      return send(res, 200, { project: project.name, batches } satisfies ProjectFeedbackResponse);
+    }
+
+    if (body.agentReply) return send(res, 400, { error: "a reply belongs to one page: use `reply <file> --agent-reply ...`" });
+    const projectId = project.id;
+    const after = seqParam(body.after);
+    const cursor = seqParam(body.cursor);
+    const mine = covered(projectId);
+    if (cursor != null) {
+      for (const s of mine) {
+        const acked = store.ackDelivered(s, cursor);
+        if (acked.length) broadcastTranscript(s, acked);
+      }
+    }
+    for (const s of mine) s.workingSince = null;
+    const existing = projectPolls.get(projectId);
+    if (existing && !existing.done) finishProjectPoll(existing, { status: "replaced" });
+    const poll: Poll = { res, startedAt: Date.now(), done: false, from: 0, project: projectId, after };
+    const batches = projectBatches(poll);
+    if (batches.length) return deliverProject(poll, batches);
+    projectPolls.set(projectId, poll);
+    refreshWatch(projectId);
+    // Pages can join the project without this server hearing of it (`project merge` in another process): look again now and then.
+    poll.refresh = setInterval(() => rescanProjectPoll(projectId), msEnv("AUSTERE_AXI_PROJECT_REFRESH_MS", PROJECT_REFRESH_MS) || PROJECT_REFRESH_MS);
+    res.on("close", () => {
+      if (poll.done) return;
+      retireProjectPoll(poll);
+      for (const s of store.inProject(projectId)) broadcastPresence(s);
+    });
+    const timeoutMs = Number(body.timeoutMs);
+    if (timeoutMs > 0) {
+      setTimeout(() => {
+        if (!poll.done) finishProjectPoll(poll, { status: "timeout" });
+      }, timeoutMs);
+    }
+    for (const s of mine) broadcastPresence(s);
   }
 
 
@@ -712,6 +906,8 @@ export async function runServer({
       log("share-revoke", gone.map((i) => `${i.name}(${inviteId(i)})`).join(","));
       return send(res, 200, { revoked: gone.map((i) => ({ id: inviteId(i), name: i.name, file: i.file })) } satisfies RevokeResponse);
     }
+    // A whole project: `poll` and `feedback` with no file.
+    if ((route === "poll" || route === "feedback") && typeof body.project === "string" && body.project && !body.file) return projectRoute(route, body, res);
     // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
     const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
     if (!file) return send(res, 400, { error: "file is required" });
@@ -729,6 +925,7 @@ export async function runServer({
         const s = store.ensure(file);
         inv = invites.add({ name: body.name, sessionId: s.id, file: s.file, auto: !!body.auto });
         watch(s);
+        joinProjectPoll(s);
         store.touch(s);
       } catch (err) {
         return send(res, 400, { error: String((err as Error).message || err) });
@@ -742,6 +939,7 @@ export async function runServer({
       await ensureTailnetListener();
       const s = store.ensure(file);
       watch(s);
+      joinProjectPoll(s);
       store.touch(s);
       return send(res, 200, {
         session: publicSession(s),
@@ -1377,6 +1575,7 @@ export async function runServer({
       const s = store.get(id);
       if (s && !poll.done) finishPoll(s, poll, { status: "interrupted", reason });
     }
+    for (const poll of projectPolls.values()) finishProjectPoll(poll, { status: "interrupted", reason });
     for (const id of watchers.keys()) unwatch(id);
     peer.close();
     for (const server of listeners.values()) server.close();
@@ -1397,7 +1596,7 @@ export async function runServer({
       checking = true;
       void activeWorkNow()
         .then((working) => {
-          const busy = polls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || working;
+          const busy = polls.size > 0 || projectPolls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || working;
           if (busy) activity();
           else if (Date.now() - lastActivity > idleMs) shutdown("idle");
         })

@@ -8,6 +8,7 @@ import path from "node:path";
 import readline from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { after, before, test } from "node:test";
+import { format } from "../src/cli/output.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
@@ -172,6 +173,36 @@ test("open, poll for feedback, reply through the poll", async () => {
 
   const replied = await call("poll", { file: GOOD, agent_reply: "Made it louder.", timeout_ms: 200 });
   assert.match(replied.content[0].text, /^status: timeout/m);
+});
+
+test("poll without a file waits on a project: batches name their file, and bad combinations are refused", async () => {
+  const open = await call("open", { file: GOOD, no_open: true });
+  const id = /\/s\/(\w+)/.exec(open.content[0].text)?.[1];
+  assert.ok(id, open.content[0].text);
+
+  const idle = await call("poll", { project: WORK, timeout_ms: 200 });
+  assert.equal(idle.isError, false, idle.content[0].text);
+  assert.match(idle.content[0].text, /^status: timeout/m);
+
+  const pollP = call("poll", { project: WORK });
+  await new Promise((r) => setTimeout(r, 500));
+  await api("POST", `/s/${id}/send`, { items: [{ kind: "message", text: "for the whole project" }] }, { host: `127.0.0.1:${PORT}` });
+  const got = (await pollP).content[0].text;
+  assert.match(got, /^status: feedback/m);
+  assert.ok(got.includes(format({ file: GOOD })), got);
+  assert.match(got, /message: for the whole project/);
+  const cursor = Number((/^cursor: (\d+)$/m.exec(got) as RegExpExecArray)[1]);
+  assert.match((await call("poll", { project: WORK, cursor, timeout_ms: 200 })).content[0].text, /^status: timeout/m);
+
+  for (const [args, message] of [
+    [{ file: GOOD, project: WORK }, /not both/],
+    [{}, /pass a file, or a project/],
+    [{ project: WORK, agent_reply: "done" }, /use the reply tool/],
+  ] as const) {
+    const r = await call("poll", args);
+    assert.equal(r.isError, true);
+    assert.match(r.content[0].text, message);
+  }
 });
 
 test("components searches locally and refuses paths and untrusted packs", async () => {
