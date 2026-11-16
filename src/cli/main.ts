@@ -1167,10 +1167,16 @@ async function cmdArchive(file: string | undefined, archive: boolean): Promise<v
     if (r.status !== 200) return fail(r.data?.error || `${cmd} failed (${r.status})`);
     return done();
   }
-  return withHub((hub) => {
-    if (!hub.setArchived(sessionId(abs), archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
-    done();
-  });
+  // No server: hold the state dir's lock so hub.db is not written while a server runs or starts on it.
+  const release = await lockStateDir(stateDir(), { wait: 5000 });
+  try {
+    await withHub((hub) => {
+      if (!hub.setArchived(sessionId(abs), archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
+      done();
+    });
+  } finally {
+    release();
+  }
 }
 
 // ── share (team review) ──

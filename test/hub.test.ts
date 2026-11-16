@@ -474,3 +474,30 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
+
+test("a 0.11.0 hub.db opens: a review closed under 0.11.0 is archived once", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-migrate-closed-"));
+  const file = path.join(dir, "hub.db");
+  try {
+    // 0.11.0 already has archived_at, so the column check no longer copies closed_at.
+    const db = await openDatabase(file);
+    const insert = db.prepare("INSERT INTO artifacts (id, file, project, created_at, updated_at, reviewed, closed_at, archived_at) VALUES (?, ?, '', 1, 1, 1, ?, ?)");
+    insert.run("closed", "/x/closed.html", 5, null);
+    insert.run("both", "/x/both.html", 6, 7);
+    insert.run("open", "/x/open.html", null, null);
+    db.close();
+
+    const hub = await Hub.open(file);
+    try {
+      const rows = hub.db.prepare("SELECT id, closed_at, archived_at FROM artifacts ORDER BY id").all();
+      assert.deepEqual(
+        rows.map((r) => [r.id, r.closed_at, r.archived_at]),
+        [["both", null, 7], ["closed", null, 5], ["open", null, null]],
+      );
+    } finally {
+      hub.close();
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});

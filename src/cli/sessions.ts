@@ -443,7 +443,10 @@ export class SessionStore {
    * Unless `peek`, reading acknowledges them, so a later poll does not deliver them again.
    */
   feedback(s: Session, { all = false, peek = false }: { all?: boolean; peek?: boolean } = {}): { entries: FeedbackEntry[]; fresh: QueuedEntry[] } {
-    const picked = s.transcript.filter((e): e is QueuedEntry => deliverable(e) && (e.items || []).length > 0 && (all || e.seq > s.ackedSeq || !e.doneAt));
+    const picked = s.transcript
+      .filter((e): e is QueuedEntry => deliverable(e) && (e.items || []).length > 0 && (all || e.seq > s.ackedSeq || !e.doneAt))
+      // Delivery order, not transcript order: a held note released later has a newer seq but sits earlier in the transcript.
+      .sort((a, b) => a.seq - b.seq);
     const entries = picked.map((e): FeedbackEntry => ({
       id: e.id,
       at: e.at,

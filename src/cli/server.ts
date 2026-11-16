@@ -15,7 +15,7 @@ import { cloudUrl, readCloud } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
 import type { Tailnet } from "./net.ts";
-import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.ts";
+import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
 import { SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
@@ -699,7 +699,8 @@ export async function runServer({
       log("share-revoke", gone.map((i) => `${i.name}(${inviteId(i)})`).join(","));
       return send(res, 200, { revoked: gone.map((i) => ({ id: inviteId(i), name: i.name, file: i.file })) } satisfies RevokeResponse);
     }
-    const file = typeof body.file === "string" ? body.file : "";
+    // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
+    const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
     if (!file) return send(res, 400, { error: "file is required" });
 
     if (route === "share") {

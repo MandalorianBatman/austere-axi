@@ -37,6 +37,7 @@ interface Body {
   final: boolean;
   cursor: number;
   items: Note[];
+  entries: { items: Note[]; end?: boolean }[];
   entry: Note;
   session: { id: string; archived: boolean };
   sessions: SessionRow[];
@@ -305,6 +306,33 @@ test("a held note released after a final batch reaches the next poll", () =>
     assert.deepEqual(poll.data.items.map((i) => i.text), ["held before the end"]);
     assert.equal(poll.data.final, undefined);
   }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
+
+test("feedback lists notes in delivery order, so a note released after Send & End is last and not final", () =>
+  withServer(async ({ port, id }) => {
+    const invited = await invite(port, id, "Ana");
+    const held = await request(port, "POST", `/s/${id}/send`, message("held before the end"), { ...page(port), cookie: invited });
+    await request(port, "POST", `/s/${id}/send`, { ...message("final words"), end: true }, page(port));
+    await request(port, "POST", `/s/${id}/release`, { ids: [held.data.entry.id] }, page(port));
+
+    const r = await request(port, "POST", "/api/feedback", { file: FILE, all: true, peek: true });
+    assert.deepEqual(r.data.entries.map((e) => e.items[0].text), ["final words", "held before the end"]);
+    assert.equal(r.data.entries[1].end, undefined, "the newest note was not sent with Send & End");
+  }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
+
+test("open and archive meet on one page however the path is spelled", () =>
+  withServer(async ({ port, id }) => {
+    const link = path.join(tmp("austere-durable-link-"), "work");
+    fs.symlinkSync(WORK, link, "junction");
+    try {
+      const viaLink = path.join(link, "plan.html");
+      assert.equal((await request(port, "POST", "/api/open", { file: viaLink })).data.session.id, id, "open through a symlinked folder keys on the real path");
+      assert.equal((await request(port, "POST", "/api/archive", { file: viaLink })).status, 200);
+      const listed = (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id);
+      assert.equal(listed?.archived, true);
+    } finally {
+      fs.rmSync(path.dirname(link), { recursive: true, force: true });
+    }
+  }));
 
 test("archiving locks the composer for everyone and unarchive restores it; no other state refuses notes", () =>
   withServer(async ({ port, state, id }) => {
