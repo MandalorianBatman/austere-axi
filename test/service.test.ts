@@ -4,6 +4,7 @@ import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { after, test } from "node:test";
 import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
@@ -321,7 +322,9 @@ test("a supervised server says so in server.lock and /api/health, never idles ou
   // shuts down exits, and that would end the test run.
   const port = await freePort();
   const script = path.join(STATE, "supervised-server.ts");
-  fs.writeFileSync(script, `import { runServer } from ${JSON.stringify(path.resolve("src/cli/server.ts"))};\nawait runServer({ port: Number(process.env.TEST_PORT), supervised: "systemd" });\n`);
+  // A file URL: a Windows path is not a valid module specifier.
+  const serverModule = pathToFileURL(path.resolve("src/cli/server.ts")).href;
+  fs.writeFileSync(script, `import { runServer } from ${JSON.stringify(serverModule)};\nawait runServer({ port: Number(process.env.TEST_PORT), supervised: "systemd" });\n`);
   const child = spawn(process.execPath, [script], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", TEST_PORT: String(port) },
     stdio: "ignore",
