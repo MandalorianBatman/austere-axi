@@ -179,8 +179,14 @@ test("the CLI refuses server install without a terminal", () => {
   assert.equal(bad.status, 2);
 });
 
-test("Windows gets the steps, and nothing is written", async () => {
+test("Windows refuses without a terminal too: the rule is the owner's, on every platform", async () => {
   const { ctx, calls } = context({ platform: "win32", isTTY: false });
+  await assert.rejects(installService({}, ctx), /needs the user at a terminal/);
+  assert.deepEqual(calls, []);
+});
+
+test("Windows gets the steps, and nothing is written", async () => {
+  const { ctx, calls } = context({ platform: "win32" });
   const r = await installService({ linkUrl: "https://austere.example.com" }, ctx);
   assert.equal(r.status, "manual");
   assert.match(String(r.steps), /schtasks \/Create \/SC ONLOGON/);

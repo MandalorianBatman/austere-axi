@@ -195,10 +195,13 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
   const spec: ServiceSpec = { node: ctx.node, cli: ctx.cli, port, linkUrl, stateDir: ctx.env.AUSTERE_AXI_STATE_DIR ? ctx.stateDir : undefined };
   const warning = npxWarning(ctx.cli) ?? undefined;
   const target = unitFile(ctx);
-  if (!target) return manualSteps(spec, ctx, warning);
+  // The terminal rule comes first on every platform: `server install` configures what runs on
+  // this machine, so it is the owner's decision everywhere, Windows included (design note,
+  // Security). On Windows it changes nothing anyway, but the refusal is the same.
   if (!ctx.isTTY) {
     throw new Error(`server install needs the user at a terminal and changes nothing here. Ask the user to run \`${installCommand(o)}\` themselves.`);
   }
+  if (!target) return manualSteps(spec, ctx, warning);
   const holder = await ctx.holder(ctx.stateDir);
   if (holder && !holder.supervised) {
     const where = holder.port ? `, port ${holder.port}` : "";
