@@ -7,7 +7,8 @@ import path from "node:path";
 import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.ts";
 import { ownerKey } from "./invites.ts";
 import type { HealthInfo, LoginResponse } from "./server.ts";
-import { restartCommand } from "./service.ts";
+import { restartCommand, serviceContext, startInstalledService } from "./service.ts";
+import type { PortProbe } from "./service.ts";
 
 /** The `error` a control route answers with when it refuses. */
 export interface ApiError {
@@ -150,7 +151,11 @@ export async function ensureServer(): Promise<ServerHealth> {
     h = null;
     exited = spawnServer(port, { alsoListen: keep, persist });
   } else if (!h) {
-    exited = spawnServer(port);
+    // No server answers. If a service is installed for this state dir, start it: a CLI that
+    // starts its own server instead takes the port and the state dir away from the unit,
+    // and the unit could never come back (RLM-311).
+    const started = startInstalledService(serviceContext(probePort), stateDir(), port);
+    if (!started) exited = spawnServer(port);
   }
   if (!h) {
     const deadline = Date.now() + START_TIMEOUT_MS;
@@ -177,6 +182,14 @@ export async function ensureServer(): Promise<ServerHealth> {
 export function serverAction(h: ServerHealth, version: string): "use" | "replace" | "restart-unit" {
   if (!h.legacy && !versionGt(version, h.version)) return "use";
   return !h.legacy && h.supervised ? "restart-unit" : "replace";
+}
+
+/** What answers on a port, for the service commands: a server, a foreign listener, or nothing. */
+export async function probePort(port: number): Promise<PortProbe | null> {
+  const h = await health(port);
+  if (!h) return null;
+  if (h.foreign) return { foreign: true };
+  return { stateDir: h.stateDir, supervised: h.supervised };
 }
 
 /**

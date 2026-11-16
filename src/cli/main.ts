@@ -9,7 +9,7 @@ import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
-import { ensureServer, health, loginUrl, openBrowser, request, serverIfRunning, shutdownServer } from "./client.ts";
+import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer } from "./client.ts";
 import { Hub, hubDbFile, registerWithHub, unanswered } from "./hub.ts";
 import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
@@ -1429,6 +1429,7 @@ async function cmdServer(sub: string | undefined, flags: Flags): Promise<void> {
     stateDir: stateDir(),
     uid: process.getuid?.() ?? null,
     holder: stateDirHolder,
+    probe: probePort,
   };
   try {
     if (sub === "install") {

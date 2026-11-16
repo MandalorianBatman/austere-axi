@@ -8,7 +8,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseLinkUrl } from "./net.ts";
+import { stateDirHolder } from "./lock.ts";
 import type { LockHolder } from "./lock.ts";
+import { CLI_ENTRY, stateDir } from "./paths.ts";
 
 /** The service manager that runs a server. */
 export type Supervisor = "systemd" | "launchd";
@@ -16,6 +18,8 @@ export type Supervisor = "systemd" | "launchd";
 /** Set by the unit `server install` writes, to the supervisor's name. */
 export const SUPERVISED_ENV = "AUSTERE_AXI_SUPERVISED";
 export const SYSTEMD_UNIT = "austere-axi.service";
+/** The line both units carry, so the command knows a unit is its own. */
+export const UNIT_MARKER = "Written by `austere-axi server install`";
 export const LAUNCHD_LABEL = "xyz.kasat.austere-axi";
 const BIN = "austere-axi";
 const DEFAULT_PORT = 4388;
@@ -135,6 +139,16 @@ export const runCommand: Runner = (cmd, args) => {
   return { code: r.error ? null : r.status, stdout: r.stdout ?? "", stderr: r.stderr || (r.error ? r.error.message : "") };
 };
 
+/** What a probe says about a port: is a server there, and whose. */
+export interface PortProbe {
+  /** A listener that is not an austere-axi server. */
+  foreign?: boolean;
+  /** The state dir the server on that port uses. */
+  stateDir?: string;
+  /** The supervisor that runs it, when one does. */
+  supervised?: Supervisor;
+}
+
 /** Everything install, uninstall and status read from the machine, so tests can supply their own. */
 export interface ServiceContext {
   platform: NodeJS.Platform;
@@ -148,6 +162,8 @@ export interface ServiceContext {
   uid: number | null;
   /** Who holds the state dir's server.lock (stateDirHolder in lock.ts). */
   holder: (dir: string) => Promise<LockHolder | null>;
+  /** What answers on a port, if anything. */
+  probe: (port: number) => Promise<PortProbe | null>;
 }
 
 export interface InstallOptions {
@@ -191,7 +207,14 @@ function runChecked(ctx: ServiceContext, ran: string[], cmd: string, args: strin
  */
 export async function installService(o: InstallOptions, ctx: ServiceContext): Promise<Record<string, unknown>> {
   const port = o.port ?? defaultPort(ctx.env);
-  const linkUrl = o.linkUrl ? parseLinkUrl(o.linkUrl)?.base : undefined;
+  let linkUrl: string | undefined;
+  if (o.linkUrl) {
+    try {
+      linkUrl = parseLinkUrl(o.linkUrl)?.base;
+    } catch (err) {
+      throw new Error(`--link-url is not a url: ${o.linkUrl} (${(err as Error).message})`);
+    }
+  }
   // The service runs from its own working folder (the user's home), so a relative state dir
   // would point it at a different database than the CLI that installed it. Absolute, or nothing.
   const stateDir = path.resolve(ctx.stateDir);
@@ -205,11 +228,22 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
     throw new Error(`server install needs the user at a terminal and changes nothing here. Ask the user to run \`${installCommand(o)}\` themselves.`);
   }
   if (!target) return manualSteps(spec, ctx, warning);
+  // A unit that this command did not write belongs to the owner: it may carry settings (a
+  // proxy url) that only they know about. Overwriting it silently would lose them.
+  if (fs.existsSync(target.file) && !isOurUnit(target.file)) {
+    throw new Error(`there is already a unit at ${target.file} that \`${BIN} server install\` did not write; move it aside or remove it, then run \`${installCommand(o)}\` again`);
+  }
   const holder = await ctx.holder(stateDir);
   if (holder && !holder.supervised) {
     const where = holder.port ? `, port ${holder.port}` : "";
     const stop = holder.port && holder.port !== defaultPort(ctx.env) ? `AUSTERE_AXI_PORT=${holder.port} ${BIN} stop` : `${BIN} stop`;
     throw new Error(`a server not started by ${target.supervisor} (pid ${holder.pid}${where}) holds ${path.join(stateDir, "server.lock")}; run \`${stop}\` first, then \`${installCommand(o)}\` again`);
+  }
+  // The service has to be able to take the port: something else on it would leave the unit
+  // restarting in a loop, and install would say "installed".
+  const onPort = await ctx.probe(port);
+  if (onPort && !onPort.supervised) {
+    throw new Error(`something already listens on port ${port}${onPort.foreign ? " that is not an austere-axi server" : ""}; the service could not take it. Stop it, or install on another port: \`${installCommand({ ...o, port: port + 1 })}\``);
   }
   const ran: string[] = [];
   const notes: string[] = [];
@@ -237,6 +271,17 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
     runChecked(ctx, ran, "launchctl", ["bootstrap", domain, target.file]);
   }
   if (port !== defaultPort(ctx.env)) notes.push(`It listens on port ${port}: CLI commands find it with AUSTERE_AXI_PORT=${port}.`);
+  // The service has to answer: a unit that dies at once (a port taken, a bad path) would
+  // restart in a loop while install said "installed".
+  let up = false;
+  for (let i = 0; i < 150 && !up; i++) {
+    const answer = await ctx.probe(port);
+    up = Boolean(answer && answer.supervised);
+    if (!up) await new Promise((r) => setTimeout(r, 100));
+  }
+  if (!up) {
+    throw new Error(`the service was written to ${target.file} but does not answer on port ${port}; look at it: ${target.supervisor === "systemd" ? `systemctl --user status ${SYSTEMD_UNIT}` : `launchctl print gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`}`);
+  }
   return {
     status: "installed",
     supervisor: target.supervisor,
@@ -294,6 +339,10 @@ export function uninstallService(ctx: ServiceContext): Record<string, unknown> {
     return { status: "manual", platform: ctx.platform, steps: ctx.platform === "win32" ? ["schtasks /End /TN austere-axi", "schtasks /Delete /TN austere-axi /F"] : ["Remove the entry you added to your service manager."] };
   }
   if (!fs.existsSync(target.file)) return { status: "not installed", unit: target.file };
+  if (!isOurUnit(target.file)) {
+    // A unit the owner wrote is theirs: it may carry settings only they know about.
+    return { status: "not installed", unit: target.file, note: `that unit was not written by \`${BIN} server install\`; it was left alone` };
+  }
   const ran: string[] = [];
   if (target.supervisor === "systemd") {
     runChecked(ctx, ran, "systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]);
@@ -315,6 +364,65 @@ export interface RunningServer {
   supervised?: Supervisor;
 }
 
+/** This machine, as the service commands see it. */
+export function serviceContext(probe: (port: number) => Promise<PortProbe | null>): ServiceContext {
+  return {
+    platform: process.platform,
+    home: os.homedir(),
+    env: process.env,
+    run: runCommand,
+    isTTY: !!process.stdin.isTTY,
+    node: process.execPath,
+    cli: CLI_ENTRY,
+    stateDir: stateDir(),
+    uid: process.getuid?.() ?? null,
+    holder: stateDirHolder,
+    probe,
+  };
+}
+
+/** Whether a unit file is the one this command wrote. */
+export function isOurUnit(file: string): boolean {
+  try {
+    return fs.readFileSync(file, "utf8").includes(UNIT_MARKER);
+  } catch {
+    return false;
+  }
+}
+
+/** The state dir an installed unit runs with: its own setting, or the default. */
+export function unitStateDir(file: string): string {
+  const m = /^Environment=AUSTERE_AXI_STATE_DIR="?(.*?)"?$/m.exec(fs.readFileSync(file, "utf8"));
+  return m ? path.resolve(m[1]) : path.join(os.homedir(), ".austere-axi");
+}
+
+/** The port an installed unit listens on, or null when its command does not name one. */
+export function unitPort(file: string): number | null {
+  const m = /--port\s+(\d+)/.exec(fs.readFileSync(file, "utf8"));
+  const port = m ? Number(m[1]) : NaN;
+  return Number.isInteger(port) && port > 0 ? port : null;
+}
+
+/**
+ * Start the installed service, when it is the one for this state dir and this port. A CLI
+ * that starts its own server instead would take the port and the state dir away from the
+ * unit, and the unit could never come back (RLM-311). Returns whether a service was started.
+ */
+export function startInstalledService(ctx: ServiceContext, dir: string, port: number): boolean {
+  const target = unitFile(ctx);
+  if (!target || !fs.existsSync(target.file)) return false;
+  if (path.resolve(unitStateDir(target.file)) !== path.resolve(dir)) return false; // it is another state dir's service
+  const unitPortNumber = unitPort(target.file);
+  if (unitPortNumber != null && unitPortNumber !== port) return false; // it serves another port
+  if (target.supervisor === "systemd") {
+    const r = ctx.run("systemctl", ["--user", "start", SYSTEMD_UNIT]);
+    if (r.code !== 0) throw new Error(`the installed service did not start: ${(r.stderr || r.stdout).trim() || "no output"} (${restartCommand("systemd", ctx.uid)})`);
+  } else {
+    const r = ctx.run("launchctl", ["kickstart", "-k", `gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`]);
+    if (r.code !== 0) throw new Error(`the installed service did not start: ${(r.stderr || r.stdout).trim() || "no output"} (${restartCommand("launchd", ctx.uid)})`);
+  }
+  return true;
+}
 /** Whether the unit is installed and running, and which server answers on `port`. */
 export function serviceStatus(ctx: ServiceContext, server: RunningServer | null, version: string): Record<string, unknown> {
   const target = unitFile(ctx);

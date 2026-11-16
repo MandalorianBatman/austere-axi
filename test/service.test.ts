@@ -9,7 +9,7 @@ import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
 import { stateDirHolder } from "../src/cli/lock.ts";
 import { hasActiveWork, openDatabase } from "../src/cli/hub.ts";
-import { installService, launchdPlist, npxWarning, restartCommand, serviceStatus, systemdUnit, uninstallService } from "../src/cli/service.ts";
+import { installService, launchdPlist, npxWarning, restartCommand, serviceStatus, startInstalledService, systemdUnit, uninstallService } from "../src/cli/service.ts";
 import type { RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
 import { freePort } from "./port.ts";
 
@@ -53,6 +53,7 @@ function context(over: Partial<ServiceContext> = {}): { ctx: ServiceContext; cal
     stateDir: STATE,
     uid: 501,
     holder: async () => null,
+    probe: async () => ({ stateDir: STATE, supervised: "systemd" }),
     ...over,
   };
   return { ctx, calls };
@@ -365,4 +366,42 @@ test("an unsupervised server waits out the idle exit while a run is active or an
     db.close();
     await stop(child);
   }
+});
+
+test("install refuses to overwrite a unit it did not write, and uninstall leaves it alone", async () => {
+  const { ctx } = context();
+  const file = unitPath(ctx.home);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "[Unit]\nDescription=my own server\nEnvironment=AUSTERE_AXI_LINK_URL=https://mine.example\n");
+  await assert.rejects(installService({}, ctx), /did not write/);
+  assert.match(fs.readFileSync(file, "utf8"), /my own server/);
+  const r = uninstallService(ctx);
+  assert.equal(r.status, "not installed");
+  assert.match(String(r.note), /left alone/);
+  assert.equal(fs.existsSync(file), true);
+});
+
+test("install refuses when something else already listens on the port", async () => {
+  const { ctx } = context({ probe: async () => ({ foreign: true }) });
+  await assert.rejects(installService({}, ctx), /already listens on port 4388/);
+  assert.equal(fs.existsSync(unitPath(ctx.home)), false);
+});
+
+test("install fails when the service does not answer on its port", async () => {
+  const { ctx } = context({ probe: async () => null });
+  await assert.rejects(installService({}, ctx), /does not answer on port 4388/);
+});
+
+test("a CLI starts the installed service instead of one of its own", () => {
+  const { ctx, calls } = context();
+  fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
+  fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, stateDir: STATE }));
+  assert.equal(startInstalledService(ctx, STATE, 4388), true);
+  assert.ok(calls.includes("systemctl --user start austere-axi.service"), calls.join("; "));
+  // A unit for another state dir is another machine's business: leave it alone.
+  const { ctx: other, calls: otherCalls } = context();
+  fs.mkdirSync(path.dirname(unitPath(other.home)), { recursive: true });
+  fs.writeFileSync(unitPath(other.home), systemdUnit({ ...SPEC, stateDir: "/home/ana/other-state" }));
+  assert.equal(startInstalledService(other, STATE, 4388), false);
+  assert.deepEqual(otherCalls, []);
 });

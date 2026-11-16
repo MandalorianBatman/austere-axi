@@ -10,6 +10,9 @@ import type { Supervisor } from "./service.ts";
 // that does not answer on its port yet) or finishing (a command). Older and silent: it died.
 const STARTING_MS = 60_000;
 
+// How often the holder writes its lock again, so a live holder never ages out.
+const REFRESH_MS = 15_000;
+
 /** What server.lock holds: `{ pid, port?, at, supervised? }`, or a bare pid (the old format); anything else when corrupt. */
 type LockFile = { pid?: unknown; port?: unknown; at?: unknown; supervised?: unknown } | number | null;
 
@@ -36,15 +39,30 @@ export async function lockStateDir(
   const file = path.join(dir, "server.lock");
   const deadline = Date.now() + wait;
   for (let stale = 0; stale < 3; ) {
-    const mine = JSON.stringify(port ? { pid: process.pid, port, at: Date.now(), ...(supervised ? { supervised } : {}) } : { pid: process.pid, at: Date.now() });
+    const lock = port ? { pid: process.pid, port, at: Date.now(), ...(supervised ? { supervised } : {}) } : { pid: process.pid, at: Date.now() };
     try {
-      fs.writeFileSync(file, mine, { flag: "wx" });
+      fs.writeFileSync(file, JSON.stringify(lock), { flag: "wx" });
       let held = true;
+      // The holder keeps the lock fresh: a live server's lock must not look stale to the
+      // next process, whatever the owner key does.
+      const refresh = setInterval(() => {
+        if (!held) return;
+        try {
+          const current = JSON.parse(fs.readFileSync(file, "utf8")) as { pid?: unknown };
+          if (Number(current.pid) !== process.pid) return; // another process took it
+          fs.writeFileSync(file, JSON.stringify({ ...lock, at: Date.now() }));
+        } catch {
+          // the file is gone or unreadable: the release will sort it out
+        }
+      }, REFRESH_MS);
+      refresh.unref();
       return () => {
         if (!held) return;
         held = false;
+        clearInterval(refresh);
         try {
-          if (fs.readFileSync(file, "utf8") === mine) fs.unlinkSync(file);
+          const current = JSON.parse(fs.readFileSync(file, "utf8")) as { pid?: unknown };
+          if (Number(current.pid) === process.pid) fs.unlinkSync(file);
         } catch {
           // already gone
         }
