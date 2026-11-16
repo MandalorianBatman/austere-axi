@@ -1,6 +1,7 @@
 process.env.OPENUI_TELEMETRY_DISABLED = process.env.OPENUI_TELEMETRY_DISABLED || "1";
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { mergeStatements } from "@openuidev/lang-core";
@@ -8,22 +9,24 @@ import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
-import { ensureServer, loginUrl, openBrowser, request, serverIfRunning, shutdownServer } from "./client.ts";
+import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
 import { Hub, hubDbFile, registerWithHub, unanswered } from "./hub.ts";
 import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
-import { lockStateDir } from "./lock.ts";
+import { lockStateDir, stateDirHolder } from "./lock.ts";
+import { installService, installedServiceFor, runCommand, serviceStatus, uninstallService } from "./service.ts";
+import type { ServiceContext } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
 import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, RevokeResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
-import { format, print } from "./output.ts";
+import { format, print as printOutput } from "./output.ts";
 import { describeItem, locator } from "../shared/feedback.ts";
 import type { FeedbackItem } from "../shared/feedback.ts";
-import { VERSION, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
+import { CLI_ENTRY, VERSION, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
 import { listComponents, searchComponents, showComponents } from "./components.ts";
 import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
@@ -118,6 +121,7 @@ COMMANDS
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} trust list              packs and scopes the user lets you add without --trust
   ${BIN} registry list           private registries the user mapped npm scopes to
+  ${BIN} server install          the server as a service of your user account: always on (owner only)
   ${BIN} publish <file>          hosted share link (austere.kasat.xyz), only when the user asks
   ${BIN} <command> --help        one command's flags and an example
   ${BIN} help all                every command, notes and environment
@@ -290,17 +294,24 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
   server: {
-    usage: "server [--persist] [--port n] [--verbose]",
-    summary: "run the server in the foreground (under systemd, behind a reverse proxy)",
-    flags: { persist: "never idle out", port: "listen port (default: AUSTERE_AXI_PORT or 4388)", verbose: "log requests", "also-listen": "extra address to listen on (repeatable)" },
-    example: "server --persist",
+    usage: "server [install|uninstall|status] [--persist] [--port n] [--verbose] [--link-url u]",
+    summary:
+      "run the server in the foreground (behind a reverse proxy); `server install` (at a terminal only) makes it always on as a per-user systemd or launchd service that starts at login and restarts on failure, `server uninstall` removes it, `server status` shows it",
+    flags: {
+      persist: "never idle out",
+      port: "listen port (default: AUSTERE_AXI_PORT or 4388); with install, the port the service listens on",
+      verbose: "log requests",
+      "also-listen": "extra address to listen on (repeatable)",
+      "link-url": "install: the address reviewers reach the server at, e.g. https://austere.example.com (AUSTERE_AXI_LINK_URL in the unit)",
+    },
+    example: "server install --link-url https://austere.example.com",
   },
   mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch end components as tools", flags: {}, example: "mcp" },
   help: { usage: "help [command]", summary: "the full workflow, or one command's help", flags: {}, example: "help poll" },
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -327,6 +338,16 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
     else pos.push(a);
   }
   return { flags, pos };
+}
+
+/**
+ * The command's own output. A note the server left (a supervised server that needs a restart)
+ * goes with it, so a harness that reads stdout sees it.
+ */
+function print(obj: Printed): void {
+  // The server's note goes with the command's own note, not instead of it.
+  const note = takeServerNote();
+  printOutput(note ? { ...obj, server_note: note } : obj);
 }
 
 /** A failure while running: exit 1. */
@@ -736,7 +757,7 @@ function cmdExport(file: string | undefined, flags: Flags): void {
 }
 
 function printResult(out: object): void {
-  print(out);
+  print(out as Printed);
   if (out && "status" in out && out.status === "error") process.exitCode = 1;
 }
 
@@ -822,7 +843,7 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
     default: {
       // `components charts` reads as `components list charts`.
       const listed = listComponents(sub);
-      if (listed.status !== "error") return print(listed);
+      if (listed.status !== "error") return print(listed as Printed);
       return usage(`unknown components command: ${sub}. One of: list search show add remove new build`, "components");
     }
   }
@@ -1361,7 +1382,11 @@ async function cmdStop(): Promise<void> {
   const h = await serverIfRunning({ legacy: true });
   if (!h) return print({ status: "not running" });
   await shutdownServer(h);
-  print({ status: "stopped", port: port() });
+  print({
+    status: "stopped",
+    port: port(),
+    note: h.supervised ? `It runs under ${h.supervised}; the next command that needs a server starts the service again. \`${BIN} server uninstall\` takes the service away for good.` : undefined,
+  });
 }
 
 /** The hint for a browser the CLI did not open: the plain url answers 403 until that browser signs in. */
@@ -1392,10 +1417,48 @@ async function cmdLogin(file: string | undefined): Promise<void> {
   });
 }
 
-async function cmdServer(flags: Flags): Promise<void> {
-  const { runServer } = await import("./server.ts");
-  const p = flags.port ? Number(flags.port) : port();
-  await runServer({ port: p, verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist });
+async function cmdServer(sub: string | undefined, rest: string[], flags: Flags): Promise<void> {
+  const p = flags.port ? Number(flags.port) : undefined;
+  if (p !== undefined && !(Number.isInteger(p) && p > 0 && p < 65536)) return usage(`--port must be a port number: ${flags.port}`, "server");
+  if (sub === undefined) {
+    if (flags["link-url"] !== undefined) return usage("--link-url is for `server install`; a foreground server reads AUSTERE_AXI_LINK_URL", "server");
+    // A foreground server and an installed service want the same port and the same state
+    // dir: the service would restart in a loop while this one holds them.
+    const installed = installedServiceFor(stateDir(), p ?? port());
+    if (installed) {
+      process.stderr.write(`a service for this state dir is installed (${installed.file}); it will keep restarting while this server holds the port. Stop it with \`${BIN} server uninstall\`, or run this server on another port.\n`);
+    }
+    const { runServer } = await import("./server.ts");
+    return void (await runServer({ port: p ?? port(), verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist }));
+  }
+  if (!["install", "uninstall", "status"].includes(sub)) return usage(`unknown server subcommand: ${sub}. One of: install uninstall status`, "server");
+  if (rest.length > 1) return usage(`server ${sub} takes no arguments; it got ${rest.slice(1).map((a) => `"${a}"`).join(" ")}`, "server");
+  const extra = Object.keys(flags).filter((k) => !(sub === "install" ? ["port", "link-url"] : sub === "status" ? ["port"] : []).includes(k));
+  if (extra.length) return usage(`server ${sub} does not take ${extra.map((k) => `--${k}`).join(" ")}`, "server");
+  const ctx: ServiceContext = {
+    platform: process.platform,
+    home: os.homedir(),
+    env: process.env,
+    run: runCommand,
+    isTTY: !!process.stdin.isTTY,
+    node: process.execPath,
+    cli: CLI_ENTRY,
+    stateDir: stateDir(),
+    uid: process.getuid?.() ?? null,
+    holder: stateDirHolder,
+    probe: probePort,
+  };
+  try {
+    if (sub === "install") {
+      const linkUrl = typeof flags["link-url"] === "string" ? flags["link-url"] : undefined;
+      return print(await installService({ port: p, linkUrl }, ctx));
+    }
+    if (sub === "uninstall") return print(uninstallService(ctx));
+    const h = await health(p ?? port());
+    return print(serviceStatus(ctx, h && !h.foreign && !h.legacy ? h : null, VERSION));
+  } catch (err) {
+    return fail(messageOf(err));
+  }
 }
 
 /** The oldest Node this CLI supports: node:sqlite, and type stripping for development. Keep in step with `engines`. */
@@ -1472,7 +1535,7 @@ async function main(): Promise<unknown> {
     case "stop":
       return cmdStop();
     case "server":
-      return cmdServer(flags);
+      return cmdServer(rest[0], rest, flags);
     case "mcp": {
       const { runMcp } = await import("./mcp.ts");
       return runMcp();

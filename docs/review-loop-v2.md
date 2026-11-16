@@ -228,7 +228,7 @@ wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
 | New | `find <words> [--project] [--component] [--limit]` | RLM-351 | `main.ts`, `statements_fts` |
 | New | `hub reindex` | RLM-350 | `cmdHub` |
 | New | `trigger add\|list\|remove` (`add` TTY only) | RLM-360 | `main.ts`, `server.ts` |
-| New | `server install\|uninstall\|status` | RLM-340 | `main.ts` |
+| New | `server install\|uninstall\|status` | RLM-340 | `service.ts`, `main.ts` |
 
 The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, else `fail` with the command for the user to run).
 
@@ -242,7 +242,7 @@ The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, 
 | RLM-336 | `hubPage`, `notesPage` in `src/cli/hub-page.ts` |
 | RLM-338 | `Session.status`, `endedBy`, `endedAt`, `closedAt`, `SessionStore.end`, `closeReview`, `reopen` in `sessions.ts`; routes `end`, `close`, `reopen`, the takeover branch of `poll`, `armGrace`, `closeReview` in `server.ts`; the owner menu in `src/chrome/chrome.ts` (End/Close/Reopen review → Archive/Unarchive); `src/cli/agent-prompt.ts`; `docs/cli.md` "Session rules" |
 | RLM-339 | the `poll` route in `server.ts` (listener registry keyed by page, project fallback); `SessionStore.nextSeq` as the project cursor; `cmdPoll`, `cmdFeedback`; MCP `poll` |
-| RLM-340 | `main.ts` (`server install`); the idle exit (`idleMs`) in `server.ts`; `docs/hub.md` "Always on" |
+| RLM-340 | new `src/cli/service.ts` (the unit, the plist, install/uninstall/status); `main.ts` (`server` subcommands, `HELP`/`COMMANDS`); `client.ts` (a CLI never replaces a supervised server; it starts the installed one); `lock.ts` (the lock names the supervisor and is refreshed while held); `server.ts` (the idle exit waits for a run or an attach); `hub.ts` (`hasActiveWork`); `net.ts` (`parseLinkUrl`); `paths.ts` (the state dir is an absolute path); `docs/hub.md` "Always on", `docs/cli.md` |
 | RLM-343 | `cmdOpen`, `cmdPatch`, `cmdPoll`, `cmdFeedback`, `reply`; new caller detection module; `export.ts` and the `publish` payload must not carry session ids |
 | RLM-344 | new `src/cli/adapters/types.ts`, `omp.ts`, `copilot.ts`, `command.ts`; argv as in [Harness facts](#harness-facts-rlm-342) |
 | RLM-345 | new `src/cli/dispatch.ts`; the `send` and `release` paths of `server.ts`; route `POST /s/:id/run/stop` |
@@ -285,7 +285,8 @@ The invariants in `AGENTS.md` stay unchanged:
 
 New rules in this design:
 
-- **Configuration that runs a command is set at a terminal only.** `attach on|off`, `adapter set`, `trigger add|remove` and `server install` refuse without a TTY, as `trust add` does. `adapters.json`, `attach.json` and `triggers.json` are read only from the state dir, never from a project or a page. Attach can also be turned on from the owner's review page (Q4); never by a reviewer or a hosted page.
+- **Configuration that runs a command is set at a terminal only.** `attach on|off`, `adapter set`, `trigger add|remove`, `server install` and `server uninstall` refuse without a TTY, as `trust add` does. `adapters.json`, `attach.json` and `triggers.json` are read only from the state dir, never from a project or a page. Attach can also be turned on from the owner's review page (Q4); never by a reviewer or a hosted page.
+- **A supervisor is what the system says, not what a process claims.** A server is supervised when the unit that owns its cgroup runs the austere server and runs that process (directly, or below its main process, as `npx` does): it asks systemd (or launchd) for the unit's command and its main pid and compares. No environment variable can say so, and a CLI strips the supervisor's markers from the server it starts, so a command cannot hand its child a supervisor that does not exist.
 - **Threat model of the TTY rule.** It stops configuration that arrives as data (a page, a project file, a note, a hosted page) and an agent's ordinary non-interactive tool call. It does not stop a process that runs as the owner and allocates a pseudo-terminal, or that writes the state dir directly. Such a process already has the owner's full permissions (L7), so no rule inside austere-axi can hold it. The design does not claim to; the TTY rule keeps a prompt-injected or careless agent from turning attach on in passing. The control an agent cannot satisfy is the owner cookie on the review page; it is the only route a remote or hosted party can reach.
 - **No permission bypass by default** (A13). An adapter adds no `--approval-mode yolo`, `--allow-all` or similar flag on its own. The owner grants it at a terminal with `adapter set`, and `attach status` warns while a harness that denies writes has no grant.
 - **Session ids never leave the machine.** They are absent from `publish`, `export`, hosted sync and printed links.
