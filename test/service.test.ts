@@ -423,6 +423,19 @@ test("a CLI starts the installed service instead of one of its own", () => {
   assert.deepEqual(otherCalls, []);
 });
 
+test("when the installed service does not start, the error says how to see why and how to remove it", () => {
+  const { ctx } = context({ run: (cmd, args) => (args.includes("start") ? { code: 1, stdout: "", stderr: "Job failed" } : { code: 0, stdout: "", stderr: "" }) });
+  fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
+  fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, stateDir: STATE }));
+  assert.throws(() => startInstalledService(ctx, STATE, 4388), (e: Error) => {
+    assert.match(e.message, /Job failed/);
+    assert.match(e.message, /systemctl --user status austere-axi\.service/);
+    assert.match(e.message, /austere-axi server uninstall/);
+    assert.doesNotMatch(e.message, /restart/);
+    return true;
+  });
+});
+
 test("the state dir and port are read out of a systemd unit and a launchd agent alike", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-unit-"));
   HOMES.push(dir);
@@ -482,9 +495,15 @@ test("a server below the unit's main process is supervised too, as npx runs it",
 });
 
 test("only a unit that runs the austere server counts as the server's unit", () => {
-  const unit = "austere-axi.service";
-  assert.equal(runsTheServer("/usr/bin/node /home/ana/.npm-global/lib/node_modules/austere-axi/dist/cli.mjs server --persist --port 4388"), true);
-  assert.equal(runsTheServer("/usr/bin/env npx -y austere-axi server --persist"), true);
-  assert.equal(runsTheServer("/usr/bin/node /home/ana/multica/daemon/index.js"), false);
-  assert.equal(runsTheServer("/usr/bin/node /home/ana/other/cli.mjs serve"), false);
+  const cli = "/home/ana/.npm-global/lib/node_modules/austere-axi/dist/cli.mjs";
+  assert.equal(runsTheServer(`/usr/bin/node ${cli} server --persist --port 4388`, cli), true);
+  assert.equal(runsTheServer("/usr/bin/env npx -y austere-axi server --persist", "/home/ana/.npm/_npx/1a/node_modules/austere-axi/dist/cli.mjs"), true);
+  assert.equal(runsTheServer("/usr/bin/node /home/ana/multica/daemon/index.js", cli), false);
+  assert.equal(runsTheServer("/usr/bin/node /home/ana/other/cli.mjs serve", cli), false);
+  // Another project's cli.mjs runs `server`: not ours, even when an austere server sits in its unit.
+  assert.equal(runsTheServer("/usr/bin/node /home/ana/other/dist/cli.mjs server", cli), false);
+  // A dev checkout in a folder with any name: the unit runs this very script, so it is ours.
+  const dev = "/home/ana/src/axi-fork/dist/cli.mjs";
+  assert.equal(runsTheServer(`/usr/bin/node ${dev} server --persist --port 4388`, dev), true);
+  assert.equal(runsTheServer("/usr/bin/node /home/ana/other/dist/cli.mjs server", dev), false);
 });
