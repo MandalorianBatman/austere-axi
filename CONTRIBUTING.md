@@ -22,7 +22,7 @@ npm run build
 npm test
 ```
 
-`npm run test:browser`, `npm run gallery` and `npm run shot` need Chrome, or `CHROME_PATH` pointing at a Chrome or Chromium binary. `npm run test:browser` also needs Firefox for one engine-specific check: `npx playwright-core install firefox`, or `FIREFOX_PATH`. Run the CLI you just built with `node dist/cli.mjs <command>`.
+`npm run test:browser`, `npm run gallery` and `npm run shot` need Chrome, or `CHROME_PATH` pointing at a Chrome or Chromium binary. `npm run test:browser` also needs Firefox for one engine-specific check: `npx playwright-core install firefox`, or `FIREFOX_PATH`. Run the CLI you just built with `node dist/cli.mjs <command>`, for example `node dist/cli.mjs examples/session-migration.html`.
 
 ## Making a change
 
@@ -30,7 +30,7 @@ npm test
 
 - **A new component** in core: follow `.agents/skills/add-component/SKILL.md`. Released props are positional and append-only, and the component reference has a token budget, so most new components belong in a pack instead.
 - **A new pack:** you do not need a PR here. Build it in your own repo against `austere-axi/pack` (see [`docs/writing-a-pack.md`](docs/writing-a-pack.md), and [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as a worked example), publish it to npm, then open an issue so we can link it.
-- **User-facing behaviour** (CLI output, flags, the review page): update `README.md` in the same PR. Agents read `--help` and `spec`, so change those in `src/cli/main.ts` and `src/runtime/prompt.ts` when the workflow changes.
+- **User-facing behaviour** (CLI output, flags, the review page): update the matching guide in [`docs/`](docs/README.md) in the same PR, and `README.md` when the change alters what a reviewer sees or how they start. Agents read `--help` and `spec`, so change those in `src/cli/main.ts` and `src/runtime/prompt.ts` when the workflow changes.
 
 Before you open the PR:
 
@@ -48,14 +48,14 @@ If you use a coding agent, `.agents/skills/review-change/SKILL.md` runs these ch
 |---|---|
 | `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `FileTree`), one file each |
 | `src/runtime/stock.ts` | Which stock components ship, which stay out of `spec`, their groups |
-| `docs/` | [Writing a pack](docs/writing-a-pack.md) |
+| `docs/` | User guides ([index](docs/README.md)), [Writing a pack](docs/writing-a-pack.md), the benchmark and design notes |
 | `packs/` | Packs bundled with austere-axi (`shadcn`) |
 | `src/runtime/pack-api.ts`, `src/pack-kit/` | `austere-axi/pack` and the `components build` pipeline |
 | `src/shared/catalog.ts` | Component catalog and prompt tiers |
 | `src/runtime/` | Library, annotation layer, review bridge, styles |
 | `src/chrome/` | Review UI around the page iframe |
 | `src/cli/` | CLI, server, sessions, `check`, `export`, packs, hub |
-| `action/` | The [GitHub Action](README.md#github-action) (not published to npm) |
+| `action/` | The [GitHub Action](docs/github-action.md) (not published to npm) |
 | `skills/` | Published skills: `austere`, `austere-setup` |
 | `.claude-plugin/` | Claude Code marketplace and plugin manifest (in git, not in the npm package) |
 

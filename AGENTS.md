@@ -4,7 +4,7 @@ austere-axi is a CLI, a local review server, and a browser runtime for agent rev
 
 ## Where things are owned
 
-- **User-facing contract:** `README.md`.
+- **User-facing contract:** the guides in `docs/` (`docs/README.md` lists them). `README.md` is the product page for people who do not read flags: what it is, how to use it, how to start. Keep it plain and put reference detail in `docs/`.
 - **What agents are told while using the tool:** CLI output: `--help` (`src/cli/main.ts`), and `spec` (generated from `src/runtime/prompt.ts`, the component files and `src/runtime/stock.ts`).
 - **Shipped skills:** `skills/austere/SKILL.md` stays a stub that points at the CLI, so don't copy CLI guidance into it. The one exception is its line that the agent must not open, screenshot or inspect the page unless asked: it has to override a harness's "verify UI visually" rule before the agent reads the CLI. `skills/austere-setup/SKILL.md` walks an agent through setup; keep its commands in step with the CLI.
 - **MCP server and Claude Code plugin:** `austere-axi mcp` (`src/cli/mcp.ts`) runs the CLI as a child process for each tool call and returns its output; keep logic in the CLI commands, not there. A new tool argument maps to an existing CLI flag. `.claude-plugin/` holds the marketplace and plugin manifests; it lives in git, not in the npm package.
@@ -42,7 +42,7 @@ npm run social       # re-render docs/social-preview.png, 1200x630 (after build;
   - The frame's subresources send no cookie (opaque origin), so the frame's URL carries a per-viewer token, `/s/:id/a/<token>/<file>` (`assetToken` in `src/cli/server.ts`). It opens only what that route already serves; keep `allow-same-origin` out of the sandbox. `export` reads sibling images through the same `resolveSibling` rules (`src/cli/assets.ts`).
 - Tests that start the server, or read packs or the hub, set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.
 - Nothing an installed pack ships runs in the CLI or the server; its code runs only in the sandboxed artifact frame. (`components build` does load the pack being built, in Node, to read its components.)
-- Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `bench/`, `docs/`, `scripts/` and `test/` are maintainer-only.
+- Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `bench/`, `scripts/` and `test/` are maintainer-only. `docs/` holds the user guides, read on GitHub and not shipped in the npm package.
 - The website lives in `site/` (hand-written) and `examples/` (gallery source), built to `_site/` by `scripts/site.ts` and deployed by `.github/workflows/pages.yml`. Keep links relative (the site is served under `/austere-axi/`) and keep `site/` out of `package.json` `files`.
 - The playground (`site/play/`) runs `src/shared/check-program.ts`, `src/shared/feedback.ts` and `src/shared/statements.ts` in the browser, and the artifact frame over the review bridge in `src/runtime/index.tsx`. Keep those shared modules free of Node APIs; if a bridge message changes, change `site/play/play.ts` with it.
 - Sources are strict TypeScript (`tsconfig.json`; `npm run typecheck`): no `any`; only erasable syntax (Node runs `.ts` directly), so no `enum`, `namespace` or parameter properties; relative imports name the `.ts`/`.tsx` file; type-only imports use `import type`.
