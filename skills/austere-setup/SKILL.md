@@ -1,6 +1,6 @@
 ---
 name: austere-setup
-description: Set up austere-axi on this machine for the user. Checks Node, installs the `austere` skill, optionally installs the CLI globally and turns on the hub, then proves the review loop works with a test page. Use when the user asks to install, set up or configure austere-axi.
+description: Set up austere-axi on this machine for the user. Checks Node, installs the `austere` skill, optionally installs the CLI globally, then proves the review loop works with a test page. Use when the user asks to install, set up or configure austere-axi.
 license: MIT
 ---
 

@@ -127,6 +127,21 @@ test("an assigned parent root wins over a nested .git", () =>
     assert.equal(loc.relPath, "inner/docs/x.html");
   }));
 
+test("a worktree outside an assigned root joins the project of its main repository inside it", () =>
+  withDb((db, dir) => {
+    const work = path.join(dir, "work");
+    const main = repo(path.join(work, "shop"));
+    const wt = worktree(main, path.join(dir, "elsewhere", "shop-feat"), "ref: refs/heads/feat");
+    const { project } = addRoot(db, work, "work");
+    const b = resolveProject(db, write(path.join(wt, "docs", "plan.html")));
+    const a = resolveProject(db, write(path.join(main, "docs", "plan.html")));
+    assert.equal(b.projectId, project.id);
+    assert.equal(b.kind, "worktree");
+    assert.equal(a.projectId, project.id);
+    assert.equal(a.root, work, "the repository stays under its assigned root");
+    assert.deepEqual(listProjects(db).map((p) => [p.name, p.roots.map((r) => r.kind).sort()]), [["work", ["assigned", "worktree"]]]);
+  }));
+
 test("project add <folder>: pages in two subfolders become one project", async () =>
   withDb(async (db, dir) => {
     const hub = new Hub(db);

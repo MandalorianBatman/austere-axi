@@ -131,8 +131,16 @@ function createProject(db: sqlite.DatabaseSync, name: string): string {
   return id;
 }
 
-function storeRoot(db: sqlite.DatabaseSync, root: string, projectId: string, kind: RootKind): void {
-  db.prepare("INSERT INTO project_roots (root, project_id, kind, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(root) DO NOTHING").run(root, projectId, kind, Date.now());
+/**
+ * Store `root` as a root of `projectId` (or of a new project named after the folder), unless it is
+ * stored already; re-read so a root another process stored first wins. The root's project id.
+ */
+function storeRoot(db: sqlite.DatabaseSync, root: string, kind: RootKind, projectId?: string): string {
+  const id = projectId ?? createProject(db, path.basename(root) || root);
+  db.prepare("INSERT INTO project_roots (root, project_id, kind, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(root) DO NOTHING").run(root, id, kind, Date.now());
+  const stored = (db.prepare("SELECT project_id FROM project_roots WHERE root = ?").get(root) as { project_id: string } | undefined)?.project_id ?? id;
+  if (projectId === undefined && stored !== id) db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+  return stored;
 }
 
 /**
@@ -160,9 +168,7 @@ export function resolveDir(db: sqlite.DatabaseSync, dir: string): Place {
     if (up === d) break;
     d = up;
   }
-  const projectId = createProject(db, path.basename(dir) || dir);
-  storeRoot(db, dir, projectId, "folder");
-  return { projectId, root: dir, kind: "folder" };
+  return { projectId: storeRoot(db, dir, "folder"), root: dir, kind: "folder" };
 }
 
 function gitPlace(db: sqlite.DatabaseSync, dir: string, git: "dir" | "file", byKey: Map<string, RootRow>): Place {
@@ -173,17 +179,16 @@ function gitPlace(db: sqlite.DatabaseSync, dir: string, git: "dir" | "file", byK
       const commonDir = canonicalFile(path.resolve(gitDir, common.trim()));
       const main = path.basename(commonDir) === ".git" ? path.dirname(commonDir) : commonDir;
       if (pathKey(main) !== pathKey(dir)) {
-        const known = byKey.get(pathKey(main));
-        const projectId = known ? known.project_id : createProject(db, path.basename(main) || main);
-        if (!known) storeRoot(db, main, projectId, "git");
-        storeRoot(db, dir, projectId, "worktree");
-        return { projectId, root: dir, kind: "worktree" };
+        // The main repository's project: its own stored root, else the nearest stored root holding
+        // it (an assigned parent, say; a `folder` guess holds only its own pages), else a new one.
+        let holder = byKey.get(pathKey(main));
+        if (!holder) for (const r of byKey.values()) if (r.kind !== "folder" && within(r.root, main) && (!holder || r.root.length > holder.root.length)) holder = r;
+        const projectId = holder ? holder.project_id : storeRoot(db, main, "git");
+        return { projectId: storeRoot(db, dir, "worktree", projectId), root: dir, kind: "worktree" };
       }
     }
   }
-  const projectId = createProject(db, path.basename(dir) || dir);
-  storeRoot(db, dir, projectId, "git");
-  return { projectId, root: dir, kind: "git" };
+  return { projectId: storeRoot(db, dir, "git"), root: dir, kind: "git" };
 }
 
 /** Insert the page row for a path in a project; its id. */
@@ -196,8 +201,8 @@ function ensurePage(db: sqlite.DatabaseSync, projectId: string, relPath: string)
 /** The project, root and page of a file (resolved through canonicalFile), storing what it finds. */
 export function resolveProject(db: sqlite.DatabaseSync, file: string): Located {
   const abs = canonicalFile(file);
-  const place = resolveDir(db, path.dirname(abs));
-  return locatedIn(db, place, abs);
+  // One write transaction: two processes seeing a folder for the first time store one root.
+  return inTransaction(db, () => locatedIn(db, resolveDir(db, path.dirname(abs)), abs));
 }
 
 function locatedIn(db: sqlite.DatabaseSync, place: Place, file: string): Located {
@@ -237,13 +242,17 @@ export function backfillProjects(db: sqlite.DatabaseSync): void {
   });
 }
 
-/** A project by id, name, or any folder inside one of its roots. Throws when a name is ambiguous. */
-export function findProject(db: sqlite.DatabaseSync, ref: string): ProjectRow | null {
+/**
+ * A project by id, name, or any folder inside one of its roots. Throws when a name is ambiguous.
+ * `folders: false` matches an id or name only (the server, which has no working directory to resolve against).
+ */
+export function findProject(db: sqlite.DatabaseSync, ref: string, { folders = true }: { folders?: boolean } = {}): ProjectRow | null {
   const byId = db.prepare("SELECT * FROM projects WHERE id = ?").get(ref) as unknown as ProjectRow | undefined;
   if (byId) return byId;
   const named = db.prepare("SELECT * FROM projects WHERE name = ? ORDER BY created_at").all(ref) as unknown as ProjectRow[];
   if (named.length > 1) throw new Error(`several projects are named ${ref}: ${named.map((p) => p.id).join(", ")}; use an id`);
   if (named.length) return named[0];
+  if (!folders) return null;
   const dir = canonicalFile(path.resolve(ref));
   let best: RootRow | null = null;
   for (const r of allRoots(db)) if (within(r.root, dir) && (!best || r.root.length > best.root.length)) best = r;

@@ -1091,7 +1091,7 @@ export async function runServer({
     if (!ref) return { ref, id: "", name: "" };
     let p: ProjectRow | null = null;
     try {
-      p = findProject(store.db, ref);
+      p = findProject(store.db, ref, { folders: path.isAbsolute(ref) });
     } catch {
       // an ambiguous name: no match
     }
