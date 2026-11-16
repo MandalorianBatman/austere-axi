@@ -7,7 +7,7 @@ import path from "node:path";
 import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.ts";
 import { ownerKey } from "./invites.ts";
 import type { HealthInfo, LoginResponse } from "./server.ts";
-import { restartCommand, serviceContext, startInstalledService } from "./service.ts";
+import { childEnv, restartCommand, serviceContext, startInstalledService } from "./service.ts";
 import type { PortProbe } from "./service.ts";
 
 /** The `error` a control route answers with when it refuses. */
@@ -114,7 +114,8 @@ function spawnServer(port: number, { alsoListen = [], persist = false }: { alsoL
   const child = spawn(process.execPath, args, {
     detached: true,
     stdio: ["ignore", log, log],
-    env: { ...process.env, OPENUI_TELEMETRY_DISABLED: "1" },
+    // The child may not claim a supervisor it does not have: a CLI hands over its environment.
+    env: { ...childEnv(), OPENUI_TELEMETRY_DISABLED: "1" },
     windowsHide: true,
   });
   let exited: number | "signal" | null = null;
@@ -125,6 +126,16 @@ function spawnServer(port: number, { alsoListen = [], persist = false }: { alsoL
 
 // A cold start can take many seconds on a busy Windows machine (antivirus scans every file Node loads).
 const START_TIMEOUT_MS = 30_000;
+
+/** A note the server left for the user, waiting to be printed with the command's own output. */
+let pendingNote: string | undefined;
+
+/** The note `ensureServer` left, and forgets it. */
+export function takeServerNote(): string | undefined {
+  const note = pendingNote;
+  pendingNote = undefined;
+  return note;
+}
 
 /** Make sure a compatible server is running; returns its health info. */
 export async function ensureServer(): Promise<ServerHealth> {
@@ -140,7 +151,9 @@ export async function ensureServer(): Promise<ServerHealth> {
   const action = h ? serverAction(h, VERSION) : null;
   if (h?.supervised && action === "restart-unit") {
     // A supervised server is never replaced: two would fight over the port and the state dir. It still serves.
-    process.stderr.write(`[austere-axi] the server runs v${h.version} under ${h.supervised} and this CLI is v${VERSION}; restart it to update: ${restartCommand(h.supervised)}\n`);
+    const note = `The server runs v${h.version} under ${h.supervised} and this CLI is v${VERSION}; it keeps serving. Restart it to update: ${restartCommand(h.supervised)}`;
+    pendingNote = note;
+    process.stderr.write(`[austere-axi] ${note}\n`);
   } else if (h && action === "replace") {
     // A newer CLI replaces an older server; sessions are on disk. The new one listens where the old one did and keeps --persist.
     const { tailnet } = h;

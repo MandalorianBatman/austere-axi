@@ -66,7 +66,6 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 | `AUSTERE_AXI_DISCONNECT_GRACE_MS` | `300000` | how long a dropped connection can stay away before `poll` returns; `0` disables |
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |
-| `AUSTERE_AXI_SUPERVISED` | | set by the unit `server install` writes (`systemd` or `launchd`): the server never idles out and a newer CLI does not replace it |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them, except scopes mapped with `registry add` |
 | `AUSTERE_AXI_CLOUD_URL` | `https://austere.kasat.xyz` | the service `publish` talks to (self-hosting, tests) |
 | `AUSTERE_AXI_SYNC_RETRY_MS` | `1000` | first wait before the local server reconnects to a hosted page; it doubles up to 60 s |

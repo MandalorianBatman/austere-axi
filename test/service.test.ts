@@ -9,7 +9,7 @@ import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
 import { stateDirHolder } from "../src/cli/lock.ts";
 import { hasActiveWork, openDatabase } from "../src/cli/hub.ts";
-import { installService, launchdPlist, npxWarning, restartCommand, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitPort, unitStateDir } from "../src/cli/service.ts";
+import { childEnv, detectSupervisor, installService, launchdPlist, npxWarning, restartCommand, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitPort, unitStateDir } from "../src/cli/service.ts";
 import type { RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
 import { freePort } from "./port.ts";
 
@@ -70,7 +70,6 @@ Description=austere-axi review server
 
 [Service]
 ExecStart=/usr/bin/node /usr/lib/node_modules/austere-axi/dist/cli.mjs server --persist --port 4388
-Environment=AUSTERE_AXI_SUPERVISED=systemd
 Environment=AUSTERE_AXI_LINK_URL=https://austere.example.com
 Restart=on-failure
 RestartSec=5
@@ -107,7 +106,6 @@ test("the launchd plist runs the same command, supervised, kept alive after a fa
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>AUSTERE_AXI_SUPERVISED</key><string>launchd</string>
     <key>AUSTERE_AXI_LINK_URL</key><string>https://austere.example.com</string>
   </dict>
   <key>RunAtLoad</key><true/>
@@ -318,8 +316,24 @@ test("a relative state dir is resolved, so the lock still names the running serv
 });
 
 test("a supervised server says so in server.lock and /api/health, never idles out, and install restarts it", async () => {
-  const { child, port } = await startServer({ AUSTERE_AXI_SUPERVISED: "systemd", AUSTERE_AXI_IDLE_TIMEOUT_MS: "50" });
+  // The supervisor is what the system says; the test asks for it directly, because a test
+  // machine has no unit that runs this server. It runs in its own process: a server that
+  // shuts down exits, and that would end the test run.
+  const port = await freePort();
+  const script = path.join(STATE, "supervised-server.ts");
+  fs.writeFileSync(script, `import { runServer } from ${JSON.stringify(path.resolve("src/cli/server.ts"))};\nawait runServer({ port: Number(process.env.TEST_PORT), supervised: "systemd" });\n`);
+  const child = spawn(process.execPath, [script], {
+    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", TEST_PORT: String(port) },
+    stdio: "ignore",
+  });
+  CHILDREN.push(child);
   try {
+    let up = false;
+    for (let i = 0; i < 200 && !up; i++) {
+      up = Boolean(await health(port));
+      if (!up) await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.ok(up, "the server did not start");
     const h = await health(port);
     assert.ok(h && !h.foreign);
     assert.equal(h.supervised, "systemd");
@@ -328,7 +342,7 @@ test("a supervised server says so in server.lock and /api/health, never idles ou
     const { ctx, calls } = context({ holder: stateDirHolder });
     const r = await installService({}, ctx);
     assert.equal(r.status, "installed");
-    assert.ok(calls.includes("systemctl --user restart austere-axi.service"));
+    assert.ok(calls.includes("systemctl --user restart austere-axi.service"), calls.join("; "));
   } finally {
     await stop(child);
   }
@@ -421,4 +435,36 @@ test("the state dir and port are read out of a systemd unit and a launchd agent 
   fs.writeFileSync(plist, launchdPlist({ ...SPEC, port: 5000, stateDir: "/home/ana/other" }, "/tmp/server.log"));
   assert.equal(unitStateDir(plist), path.resolve("/home/ana/other"));
   assert.equal(unitPort(plist), 5000);
+});
+
+test("supervision is what the system says, not what a process claims", () => {
+  // A variable cannot claim a supervisor: a CLI hands its environment to the server it
+  // starts, and so does every shell.
+  assert.equal(detectSupervisor({ AUSTERE_AXI_SUPERVISED: "systemd" }, "linux"), null);
+  assert.equal(detectSupervisor({ INVOCATION_ID: "abc" }, "darwin"), null);
+  assert.equal(childEnv({ INVOCATION_ID: "abc", XPC_SERVICE_NAME: "x", AUSTERE_AXI_SUPERVISED: "systemd", PATH: "/bin" }).INVOCATION_ID, undefined);
+  assert.equal(childEnv({ INVOCATION_ID: "abc", XPC_SERVICE_NAME: "x", AUSTERE_AXI_SUPERVISED: "systemd", PATH: "/bin" }).PATH, "/bin");
+});
+
+test("server uninstall refuses without a terminal, like install does", () => {
+  const { ctx: noTty, calls } = context({ isTTY: false });
+  fs.mkdirSync(path.dirname(unitPath(noTty.home)), { recursive: true });
+  fs.writeFileSync(unitPath(noTty.home), systemdUnit(SPEC));
+  assert.throws(() => uninstallService(noTty), /needs the user at a terminal/);
+  assert.deepEqual(calls, []);
+  assert.equal(fs.existsSync(unitPath(noTty.home)), true);
+});
+
+test("uninstall removes the unit even when the service manager fails, and says so", () => {
+  const { ctx } = context({
+    run: (cmd, args): RunResult => {
+      if (args.includes("disable")) return { code: 1, stdout: "", stderr: "Failed to connect to bus" };
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
+  fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
+  fs.writeFileSync(unitPath(ctx.home), systemdUnit(SPEC));
+  const r = uninstallService(ctx);
+  assert.equal(fs.existsSync(unitPath(ctx.home)), false);
+  assert.match(String(r.problems), /disable --now/);
 });

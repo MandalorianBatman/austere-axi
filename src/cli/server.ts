@@ -19,7 +19,7 @@ import { ASSET_DIR, VERSION, msEnv, stateDir } from "./paths.ts";
 import { SessionStore, newId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
-import { supervisor } from "./service.ts";
+import { detectSupervisor } from "./service.ts";
 import type { Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub, activeWorkNow } from "./hub.ts";
@@ -241,11 +241,14 @@ export async function runServer({
   verbose = false,
   alsoListen = [],
   persist = false,
+  supervised,
 }: {
   port: number;
   verbose?: boolean;
   alsoListen?: string[];
   persist?: boolean;
+  /** The supervisor that runs this server; read from the system when it is not given. */
+  supervised?: Supervisor | null;
 }): Promise<{ port: number; shutdown: (reason: string) => void }> {
   const log = (...a: unknown[]): void => {
     const line = `${new Date().toISOString()} ${a.join(" ")}`;
@@ -260,8 +263,10 @@ export async function runServer({
   // Notes commit to hub.db before any request that adds them is answered. The lock names
   // the port, so a later process can tell this server from an unrelated one with its pid,
   // and the supervisor, so `server install` can tell a server it started from one it did not.
-  const supervised = supervisor();
-  const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000, supervised });
+  // Who runs this server: systemd or launchd, when one does. A supervised server is the
+  // unit's, so a CLI never replaces it (RLM-311).
+  const supervisorName: Supervisor | null = supervised ?? detectSupervisor();
+  const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000, supervised: supervisorName });
   process.on("exit", releaseLock);
   let store: SessionStore;
   try {
@@ -308,7 +313,7 @@ export async function runServer({
   let lastActivity = Date.now();
   const longGraceMs = msEnv("AUSTERE_AXI_DISCONNECT_GRACE_MS", 5 * 60_000);
   // A supervised server is always on: its supervisor decides when it stops.
-  const idleMs = persist || persistEnv() || supervised ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
+  const idleMs = persist || persistEnv() || supervisorName ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
 
   const activity = () => {
     lastActivity = Date.now();
@@ -694,7 +699,7 @@ export async function runServer({
         tailnet: tailnet || undefined,
         remote: remoteBase() || undefined,
         persist: idleMs === 0,
-        supervised: supervised ?? undefined,
+        supervised: supervisorName ?? undefined,
       } satisfies HealthInfo);
     }
     if (route === "sessions") {

@@ -1,8 +1,8 @@
 // `server install|uninstall|status`: the server as a per-user service, so pages always have one.
 // systemd on Linux, launchd on macOS; on Windows the owner gets the steps to do it by hand.
-// The unit sets AUSTERE_AXI_SUPERVISED, and a server started with it never idles out, records its
-// supervisor in server.lock and /api/health, and is never replaced by a newer CLI (that CLI prints
-// how to restart the unit instead).
+// A server a supervisor runs never idles out, records its supervisor in server.lock and
+// /api/health, and is never replaced by a newer CLI (that CLI prints how to restart the unit
+// instead).
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -24,10 +24,59 @@ export const LAUNCHD_LABEL = "xyz.kasat.austere-axi";
 const BIN = "austere-axi";
 const DEFAULT_PORT = 4388;
 
-/** The supervisor this process runs under, from AUSTERE_AXI_SUPERVISED; null when started by hand or by a CLI. */
-export function supervisor(env: NodeJS.ProcessEnv = process.env): Supervisor | null {
-  const v = env[SUPERVISED_ENV];
-  return v === "systemd" || v === "launchd" ? v : null;
+/**
+ * The supervisor this process runs under, or null when nobody runs it.
+ *
+ * The evidence is the system's own, and it is checked: a systemd service runs one process,
+ * the unit's main one, and the process's cgroup names the unit. A variable a process sets for
+ * itself proves nothing (a CLI hands its environment to the server it starts, and so does
+ * every shell), so the answer is: is this process the one the unit runs?
+ */
+export function detectSupervisor(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): Supervisor | null {
+  if (platform === "linux") {
+    const unit = systemdUnitName();
+    if (!unit) return null;
+    return systemdMainPid(unit) === process.pid ? "systemd" : null;
+  }
+  if (platform === "darwin") {
+    const label = env.XPC_SERVICE_NAME;
+    if (!label) return null;
+    return launchdPid(label) === process.pid ? "launchd" : null;
+  }
+  return null;
+}
+
+/** The systemd unit that owns this process, from its cgroup. */
+export function systemdUnitName(): string | null {
+  let cgroup: string;
+  try {
+    cgroup = fs.readFileSync("/proc/self/cgroup", "utf8");
+  } catch {
+    return null;
+  }
+  const units = [...cgroup.matchAll(/\/([^/\s]+\.service)(?=\/|\s|$)/g)].map((m) => m[1]);
+  // The session's own unit (user@1000.service) is not a service that runs a server.
+  return units.filter((u) => !/^user@/.test(u)).pop() ?? null;
+}
+
+/** The pid a systemd unit runs, or null when it runs none. */
+export function systemdMainPid(unit: string): number | null {
+  const r = spawnSync("systemctl", ["--user", "show", unit, "--property=MainPID", "--value"], { encoding: "utf8", timeout: 5000 });
+  const pid = Number((r.stdout || "").trim());
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+/** The pid a launchd job runs, or null. */
+export function launchdPid(label: string): number | null {
+  const r = spawnSync("launchctl", ["print", `gui/${os.userInfo().uid}/${label}`], { encoding: "utf8", timeout: 5000 });
+  const pid = Number(/\bpid = (\d+)/.exec(r.stdout || "")?.[1] ?? NaN);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+/** The environment a CLI hands to the server it starts: it may not claim a supervisor. */
+export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const { INVOCATION_ID, XPC_SERVICE_NAME, [SUPERVISED_ENV]: _claimed, ...rest } = env;
+  return rest;
 }
 
 /** The command that restarts the server under `s`. */
@@ -51,8 +100,10 @@ function serverArgs(spec: ServiceSpec): string[] {
   return [spec.node, spec.cli, "server", "--persist", "--port", String(spec.port)];
 }
 
-function serverEnv(spec: ServiceSpec, s: Supervisor): [string, string][] {
-  const env: [string, string][] = [[SUPERVISED_ENV, s]];
+function serverEnv(spec: ServiceSpec): [string, string][] {
+  // The supervisor does not need to be told: systemd sets INVOCATION_ID for a service and
+  // launchd sets XPC_SERVICE_NAME for a job, and that is the evidence the server reads.
+  const env: [string, string][] = [];
   if (spec.linkUrl) env.push(["AUSTERE_AXI_LINK_URL", spec.linkUrl]);
   if (spec.stateDir) env.push(["AUSTERE_AXI_STATE_DIR", spec.stateDir]);
   return env;
@@ -78,7 +129,7 @@ export function systemdUnit(spec: ServiceSpec): string {
     "",
     "[Service]",
     `ExecStart=${serverArgs(spec).map(systemdWord).join(" ")}`,
-    ...serverEnv(spec, "systemd").map(([k, v]) => `Environment=${systemdEnv(k, v)}`),
+    ...serverEnv(spec).map(([k, v]) => `Environment=${systemdEnv(k, v)}`),
     "Restart=on-failure",
     "RestartSec=5",
     "",
@@ -106,7 +157,7 @@ export function launchdPlist(spec: ServiceSpec, log: string): string {
     "  </array>",
     "  <key>EnvironmentVariables</key>",
     "  <dict>",
-    ...serverEnv(spec, "launchd").map(([k, v]) => `    <key>${xml(k)}</key>${str(v)}`),
+    ...serverEnv(spec).map(([k, v]) => `    <key>${xml(k)}</key>${str(v)}`),
     "  </dict>",
     "  <key>RunAtLoad</key><true/>",
     "  <key>KeepAlive</key>",
@@ -237,7 +288,11 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
   if (holder && !holder.supervised) {
     const where = holder.port ? `, port ${holder.port}` : "";
     const stop = holder.port && holder.port !== defaultPort(ctx.env) ? `AUSTERE_AXI_PORT=${holder.port} ${BIN} stop` : `${BIN} stop`;
-    throw new Error(`a server not started by ${target.supervisor} (pid ${holder.pid}${where}) holds ${path.join(stateDir, "server.lock")}; run \`${stop}\` first, then \`${installCommand(o)}\` again`);
+    // A server that is still starting does not answer `stop` yet: say to wait for it.
+    const advice = holder.serving
+      ? `run \`${stop}\` first, then \`${installCommand(o)}\` again`
+      : `it is still starting; wait a moment, then run \`${installCommand(o)}\` again (a server that keeps the lock for good is stopped with \`${stop}\`)`;
+    throw new Error(`a server not started by ${target.supervisor} (pid ${holder.pid}${where}) holds ${path.join(stateDir, "server.lock")}; ${advice}`);
   }
   // The service has to be able to take the port: something else on it would leave the unit
   // restarting in a loop, and install would say "installed".
@@ -343,17 +398,28 @@ export function uninstallService(ctx: ServiceContext): Record<string, unknown> {
     // A unit the owner wrote is theirs: it may carry settings only they know about.
     return { status: "not installed", unit: target.file, note: `that unit was not written by \`${BIN} server install\`; it was left alone` };
   }
+  // Taking a service away is the owner's decision, like setting one up (design note, Security).
+  if (!ctx.isTTY) {
+    throw new Error(`server uninstall needs the user at a terminal: it stops a service and removes its unit. Ask the user to run \`${BIN} server uninstall\` themselves.`);
+  }
   const ran: string[] = [];
+  const problems: string[] = [];
   if (target.supervisor === "systemd") {
-    runChecked(ctx, ran, "systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]);
+    // The unit goes either way: a service manager that fails must not leave a file that
+    // starts the server again at the next login.
+    const disable = ctx.run("systemctl", ["--user", "disable", "--now", SYSTEMD_UNIT]);
+    ran.push(`systemctl --user disable --now ${SYSTEMD_UNIT}`);
+    if (disable.code !== 0) problems.push(`systemctl --user disable --now ${SYSTEMD_UNIT} failed (exit ${disable.code}): ${(disable.stderr || disable.stdout).trim() || "no output"}`);
     fs.rmSync(target.file, { force: true });
-    runChecked(ctx, ran, "systemctl", ["--user", "daemon-reload"]);
+    const reload = ctx.run("systemctl", ["--user", "daemon-reload"]);
+    ran.push(`systemctl --user daemon-reload`);
+    if (reload.code !== 0) problems.push(`systemctl --user daemon-reload failed (exit ${reload.code}): ${(reload.stderr || reload.stdout).trim() || "no output"}`);
   } else {
     // The agent has to be gone before the file goes, or the server keeps running with no unit.
     bootoutAgent(ctx, ran);
     fs.rmSync(target.file, { force: true });
   }
-  return { status: "uninstalled", supervisor: target.supervisor, unit: target.file, ran };
+  return { status: problems.length ? "removed with errors" : "uninstalled", supervisor: target.supervisor, unit: target.file, ran, problems: problems.length ? problems : undefined };
 }
 
 /** The running server, as status reports it (client.ts ServerHealth, narrowed). */
@@ -451,18 +517,30 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
   if (target) {
     const installed = fs.existsSync(target.file);
     Object.assign(out, { supervisor: target.supervisor, unit: target.file, installed });
-    if (installed && target.supervisor === "systemd") {
-      const word = (args: string[]): string => ctx.run("systemctl", ["--user", ...args, SYSTEMD_UNIT]).stdout.trim() || "unknown";
-      Object.assign(out, { enabled: word(["is-enabled"]), active: word(["is-active"]) });
-    } else if (installed) {
-      const r = ctx.run("launchctl", ["print", `gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`]);
-      Object.assign(out, { loaded: r.code === 0, state: r.code === 0 ? /^\s*state = (.+)$/m.exec(r.stdout)?.[1]?.trim() : undefined });
+    if (installed) {
+      // The port the unit runs on, not the one this command was given: they can differ.
+      const unitPortNumber = unitPort(target.file);
+      if (unitPortNumber != null) out.port = unitPortNumber;
+      if (target.supervisor === "systemd") {
+        const word = (args: string[]): string => ctx.run("systemctl", ["--user", ...args, SYSTEMD_UNIT]).stdout.trim() || "unknown";
+        Object.assign(out, { enabled: word(["is-enabled"]), active: word(["is-active"]) });
+      } else {
+        const r = ctx.run("launchctl", ["print", `gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`]);
+        Object.assign(out, { loaded: r.code === 0, state: r.code === 0 ? /^\s*state = (.+)$/m.exec(r.stdout)?.[1]?.trim() : undefined });
+      }
     }
   } else {
     Object.assign(out, { platform: ctx.platform, installed: "unknown: no supported service manager here" });
   }
   out.server = server ? { version: server.version, pid: server.pid, port: server.port, supervised: server.supervised ?? "no" } : "not running";
-  if (server?.supervised && server.version !== version) out.next = `The server runs v${server.version} and this CLI is v${version}. Restart it: ${restartCommand(server.supervised, ctx.uid)}`;
-  else if (target && !out.installed) out.next = `${BIN} server install sets it up (at a terminal).`;
+  if (server?.supervised && server.version !== version) {
+    out.next = `The server runs v${server.version} and this CLI is v${version}. Restart it: ${restartCommand(server.supervised, ctx.uid)}`;
+  } else if (target && !out.installed) {
+    out.next = `${BIN} server install sets it up (at a terminal).`;
+  } else if (target && out.installed && !server) {
+    // Installed but not answering: say how to start it, and on which port.
+    const start = target.supervisor === "systemd" ? `systemctl --user start ${SYSTEMD_UNIT}` : `launchctl kickstart -k gui/${ctx.uid ?? 0}/${LAUNCHD_LABEL}`;
+    out.next = `The service is installed but no server answers. Start it: ${start}${out.port ? ` (it listens on port ${out.port}; CLI commands find it with AUSTERE_AXI_PORT=${out.port})` : ""}`;
+  }
   return out;
 }

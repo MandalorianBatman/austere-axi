@@ -9,7 +9,7 @@ import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
-import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer } from "./client.ts";
+import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
 import { Hub, hubDbFile, registerWithHub, unanswered } from "./hub.ts";
 import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
@@ -23,7 +23,7 @@ import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, Revok
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
-import { format, print } from "./output.ts";
+import { format, print as printOutput } from "./output.ts";
 import { describeItem, locator } from "../shared/feedback.ts";
 import type { FeedbackItem } from "../shared/feedback.ts";
 import { CLI_ENTRY, VERSION, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
@@ -338,6 +338,15 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
     else pos.push(a);
   }
   return { flags, pos };
+}
+
+/**
+ * The command's own output. A note the server left (a supervised server that needs a restart)
+ * goes with it, so a harness that reads stdout sees it.
+ */
+function print(obj: Printed): void {
+  const note = takeServerNote();
+  printOutput(note && !obj.note ? { ...obj, note } : obj);
 }
 
 /** A failure while running: exit 1. */
@@ -747,7 +756,7 @@ function cmdExport(file: string | undefined, flags: Flags): void {
 }
 
 function printResult(out: object): void {
-  print(out);
+  print(out as Printed);
   if (out && "status" in out && out.status === "error") process.exitCode = 1;
 }
 
@@ -833,7 +842,7 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
     default: {
       // `components charts` reads as `components list charts`.
       const listed = listComponents(sub);
-      if (listed.status !== "error") return print(listed);
+      if (listed.status !== "error") return print(listed as Printed);
       return usage(`unknown components command: ${sub}. One of: list search show add remove new build`, "components");
     }
   }
@@ -1407,7 +1416,7 @@ async function cmdLogin(file: string | undefined): Promise<void> {
   });
 }
 
-async function cmdServer(sub: string | undefined, flags: Flags): Promise<void> {
+async function cmdServer(sub: string | undefined, rest: string[], flags: Flags): Promise<void> {
   const p = flags.port ? Number(flags.port) : undefined;
   if (p !== undefined && !(Number.isInteger(p) && p > 0 && p < 65536)) return usage(`--port must be a port number: ${flags.port}`, "server");
   if (sub === undefined) {
@@ -1422,6 +1431,7 @@ async function cmdServer(sub: string | undefined, flags: Flags): Promise<void> {
     return void (await runServer({ port: p ?? port(), verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist }));
   }
   if (!["install", "uninstall", "status"].includes(sub)) return usage(`unknown server subcommand: ${sub}. One of: install uninstall status`, "server");
+  if (rest.length > 1) return usage(`server ${sub} takes no arguments; it got ${rest.slice(1).map((a) => `"${a}"`).join(" ")}`, "server");
   const extra = Object.keys(flags).filter((k) => !(sub === "install" ? ["port", "link-url"] : sub === "status" ? ["port"] : []).includes(k));
   if (extra.length) return usage(`server ${sub} does not take ${extra.map((k) => `--${k}`).join(" ")}`, "server");
   const ctx: ServiceContext = {
@@ -1524,7 +1534,7 @@ async function main(): Promise<unknown> {
     case "stop":
       return cmdStop();
     case "server":
-      return cmdServer(rest[0], flags);
+      return cmdServer(rest[0], rest, flags);
     case "mcp": {
       const { runMcp } = await import("./mcp.ts");
       return runMcp();
