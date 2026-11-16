@@ -323,21 +323,21 @@ test("forget-root settles the other roots' prefixes and re-keys their pages", as
     assert.deepEqual(paths(), before, "nothing left for the next project add to re-key");
   }));
 
-test("forget-root: a worktree whose repository is in another project loses the prefix its assigned root gave it", async () =>
+test("forget-root: worktrees of two repositories in one project stay two pages", async () =>
   withDb(async (db, dir) => {
     const hub = new Hub(db);
-    const main = repo(path.join(dir, "repos", "shop"));
-    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(main, "docs", "plan.html")) });
+    const ra = repo(path.join(dir, "repos", "a"));
+    const rb = repo(path.join(dir, "repos", "b"));
+    hub.register({ id: "111111111111", file: write(path.join(ra, "docs", "plan.html")) });
+    hub.register({ id: "222222222222", file: write(path.join(rb, "docs", "plan.html")) });
     const work = path.join(dir, "work");
     fs.mkdirSync(work, { recursive: true });
     addRoot(db, work, "W");
-    const wt = worktree(main, path.join(work, "wt"), "ref: refs/heads/feat");
-    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(wt, "docs", "plan.html")) });
-    const prefix = (): string => (db.prepare("SELECT prefix FROM project_roots WHERE root = ?").get(wt) as { prefix: string }).prefix;
-    assert.equal(prefix(), "wt");
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(worktree(ra, path.join(work, "wa"), "ref: refs/heads/a"), "docs", "plan.html")) });
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(worktree(rb, path.join(work, "wb"), "ref: refs/heads/b"), "docs", "plan.html")) });
     forgetRoot(db, work);
-    assert.equal(prefix(), "", "no assigned root holds it any more");
-    assert.equal(hub.list({ all: true }).find((p) => p.copies.some((c) => c.id === "bbbbbbbbbbbb"))?.rel_path, "docs/plan.html");
+    const rows = hub.list({ all: true }).filter((p) => p.copies.some((c) => c.id === "aaaaaaaaaaaa" || c.id === "bbbbbbbbbbbb"));
+    assert.deepEqual(rows.map((p) => [p.rel_path, p.copies.map((c) => c.id)]).sort(), [["wa/docs/plan.html", ["aaaaaaaaaaaa"]], ["wb/docs/plan.html", ["bbbbbbbbbbbb"]]]);
   }));
 
 test("a path through a symlink resolves to the same project and page", () =>

@@ -549,10 +549,14 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
     } finally {
       hub.close();
     }
-    // A 0.10.4 CLI sharing the migrated hub.db closes the main copy: it writes closed_at only.
+    // A 0.10.4 CLI sharing the migrated hub.db closes the main copy: it writes closed_at only. By id:
+    // the fixture's paths keep their `/` separators after the rewrite, so a joined path misses on Windows.
     const shared = new DatabaseSync(file);
-    assert.equal(Number(shared.prepare("UPDATE artifacts SET closed_at = 1 WHERE file = ? AND archived_at IS NULL").run(path.join(main, "docs", "plan.html")).changes), 1);
-    shared.close();
+    try {
+      assert.equal(Number(shared.prepare("UPDATE artifacts SET closed_at = 1 WHERE id = ? AND archived_at IS NULL").run("e050da28afb0").changes), 1);
+    } finally {
+      shared.close();
+    }
     const again = await Hub.open(file);
     try {
       assert.deepEqual(again.list(), [], "closed under 0.10.4 after the migration: archived on the next open");
@@ -561,6 +565,11 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
       again.close();
     }
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    // Windows may still hold hub.db's WAL files for a moment: a failed cleanup must not hide the test's own error.
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    } catch (err) {
+      if (process.platform !== "win32") throw err;
+    }
   }
 });

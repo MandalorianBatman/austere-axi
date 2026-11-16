@@ -1179,8 +1179,8 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
 
 /**
  * `archive` and `unarchive`: put a page away from the hub's lists, or bring it back. Works on a file
- * that is gone too. A review closed before archive replaced close is reopened when brought back, so
- * it is not listed while still locked (the server reopens it: it holds the session).
+ * that is gone too. A closed review is brought back by reopening it on the server (it holds the
+ * session; its reopen clears the archive), so it stays archived until it is no longer locked.
  */
 async function cmdArchive(file: string | undefined, archive: boolean): Promise<void> {
   const cmd = archive ? "archive" : "unarchive";
@@ -1189,15 +1189,24 @@ async function cmdArchive(file: string | undefined, archive: boolean): Promise<v
   let closed = false;
   await withHub((hub) => {
     const id = sessionId(abs);
-    if (!hub.setArchived(id, archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
-    closed = !archive && Boolean(hub.artifact(id)?.closed_at);
-    if (!closed) print({ status: archive ? "archived" : "unarchived", file: abs });
+    const row = hub.artifact(id);
+    if (!row) return fail(`not in the hub: ${abs}`);
+    closed = !archive && Boolean(row.closed_at);
+    if (closed) return;
+    hub.setArchived(id, archive ? Date.now() : null);
+    print({ status: archive ? "archived" : "unarchived", file: abs });
   });
   if (!closed) return;
-  await ensureServer();
-  const r = await request("POST", "/api/reopen", { file: abs }, { timeoutMs: 10_000 });
-  if (r.status !== 200) return fail(r.data?.error || `unarchived, but reopening the closed review failed (${r.status}); run \`${BIN} reopen ${quote(file)}\``);
-  print({ status: "unarchived", file: abs, note: "it was closed: reopened" });
+  let why: string;
+  try {
+    await ensureServer();
+    const r = await request("POST", "/api/reopen", { file: abs }, { timeoutMs: 10_000 });
+    if (r.status === 200) return print({ status: "unarchived", file: abs, note: "it was closed: reopened" });
+    why = r.data?.error || `reopen failed (${r.status})`;
+  } catch (err) {
+    why = messageOf(err);
+  }
+  fail(`the review is closed and could not be reopened, so it stays archived: ${why}; run \`${BIN} reopen ${quote(file)}\``);
 }
 
 // ── share (team review) ──
