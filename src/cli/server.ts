@@ -20,7 +20,9 @@ import { SessionStore, newId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
-import { Hub, hubEnabled } from "./hub.ts";
+import { Hub } from "./hub.ts";
+import { findProject } from "./projects.ts";
+import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
 import type { Invite } from "./invites.ts";
 import { reviewerItem } from "./items.ts";
@@ -45,7 +47,6 @@ export interface HealthInfo {
   listen: string[];
   tailnet?: Tailnet;
   remote?: string;
-  hub: boolean;
   persist: boolean;
 }
 
@@ -263,7 +264,7 @@ export async function runServer({
     releaseLock();
     throw err;
   }
-  // The owner's pages over the same database, shown while `hub on`.
+  // The owner's pages over the same database: the hub, at `/`.
   const hub = new Hub(store.db);
   const invites = new InviteStore(stateDir());
   const ownerToken = ownerKey(stateDir());
@@ -685,7 +686,6 @@ export async function runServer({
         listen: Array.from(listeners.keys()),
         tailnet: tailnet || undefined,
         remote: remoteBase() || undefined,
-        hub: hubEnabled(),
         persist: idleMs === 0,
       } satisfies HealthInfo);
     }
@@ -1085,20 +1085,35 @@ export async function runServer({
 </html>`;
   }
 
+  /** A `?project=` value (a project name, id, or folder inside a root) as a project id; one that matches nothing filters to nothing. */
+  function projectParam(url: URL): { ref: string; id: string; name: string } {
+    const ref = (url.searchParams.get("project") || "").slice(0, 1000);
+    if (!ref) return { ref, id: "", name: "" };
+    let p: ProjectRow | null = null;
+    try {
+      p = findProject(store.db, ref);
+    } catch {
+      // an ambiguous name: no match
+    }
+    return p ? { ref, id: p.id, name: p.name } : { ref, id: "\0none", name: ref };
+  }
+
   function hubHome(url: URL): string {
     const q = (url.searchParams.get("q") || "").slice(0, 200);
-    const project = (url.searchParams.get("project") || "").slice(0, 1000);
-    return hubPage(hub.list({ q, project }), { version: VERSION, q, project, stats: hub.stats() });
+    const project = projectParam(url);
+    const view = url.searchParams.has("all") ? "all" : url.searchParams.has("archived") ? "archived" : "default";
+    const pages = hub.list({ q, project: project.id, archived: view === "archived", all: view === "all" });
+    return hubPage(pages, { version: VERSION, q, project: project.ref, projectName: project.name, view, projects: hub.projects(), stats: hub.stats() });
   }
 
   function hubNotes(url: URL): string {
     const q = (url.searchParams.get("q") || "").slice(0, 200);
-    const project = (url.searchParams.get("project") || "").slice(0, 1000);
+    const project = projectParam(url);
     const st = url.searchParams.get("status");
     const status = st === "unanswered" || st === "answered" ? st : "all";
     const author = (url.searchParams.get("author") || "").slice(0, 80);
-    const rows = hub.notes({ q, project, author, status: status === "all" ? "" : status });
-    return notesPage(rows, { version: VERSION, q, project, status, author, authors: hub.authors(), stats: hub.stats() });
+    const rows = hub.notes({ q, project: project.id, author, status: status === "all" ? "" : status });
+    return notesPage(rows, { version: VERSION, q, project: project.ref, projectName: project.name, status, author, authors: hub.authors(), stats: hub.stats() });
   }
 
   /** Open an indexed artifact for review (it may never have had a session) and go to it. */
@@ -1111,19 +1126,6 @@ export async function runServer({
     if (!existed) store.touch(s);
     res.writeHead(302, { location: `/s/${s.id}` });
     res.end();
-  }
-
-  function homePage(): string {
-    const rows = store
-      .list()
-      .map(
-        (s) =>
-          `<li><a href="/s/${s.id}">${escapeHtml(s.title)}</a><span>${escapeHtml(s.file)}</span><em>${s.status === "ended" ? "ended" : presence(s)}</em></li>`,
-      )
-      .join("");
-    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>austere-axi</title>
-<style>body{margin:0;background:#0b0b0d;color:#e8e8ec;font:14px/1.5 ui-sans-serif,system-ui,sans-serif}main{max-width:760px;margin:0 auto;padding:40px 20px}h1{font-size:18px;font-weight:600}ul{list-style:none;padding:0}li{display:grid;gap:2px;padding:12px 0;border-bottom:1px solid #222}a{color:#a9c1ff;text-decoration:none;font-weight:600}span{color:#8a8a94;font-size:12px;overflow-wrap:anywhere}em{color:#8a8a94;font-style:normal;font-size:12px}</style></head>
-<body><main><h1>austere-axi <small style="color:#777;font-weight:400">${VERSION}</small></h1><ul>${rows || "<li>No sessions yet.</li>"}</ul></main></body></html>`;
   }
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<http.ServerResponse | void> {
@@ -1149,11 +1151,9 @@ export async function runServer({
     // The hub lists every page and every note: the owner's only.
     const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
     if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
-    if (url.pathname === "/") {
-      return send(res, 200, hubEnabled() ? hubHome(url) : homePage(), { "content-type": "text/html; charset=utf-8" });
-    }
-    if (hubEnabled() && url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
-    if (hubEnabled() && url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
+    if (url.pathname === "/") return send(res, 200, hubHome(url), { "content-type": "text/html; charset=utf-8" });
+    if (url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
+    if (url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
     if (url.pathname === "/favicon.ico") return send(res, 204, "");
 
     const m = /^\/s\/([a-f0-9]{12})(\/.*)?$/.exec(url.pathname);

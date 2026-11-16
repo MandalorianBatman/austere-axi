@@ -19,7 +19,9 @@ austere-axi components ...       list | search | show | add | remove | new | bui
 austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
 austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
 austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
-austere-axi hub on|off|status|list|notes|open   home page with every page and note
+austere-axi hub [list|notes|open]   home page with every page by project and every note   [--project p] [--archived] [--all] [--unanswered]
+austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)
+austere-axi archive <file>       put a page away from the hub's lists; unarchive <file> brings it back
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
 austere-axi publish <file>       hosted copy of the page on austere.kasat.xyz   [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new]

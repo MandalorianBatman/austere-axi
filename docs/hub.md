@@ -1,18 +1,48 @@
 # Hub
 
-The server starts when needed and stops after 30 idle minutes. Every review is kept in `~/.austere-axi/hub.db` (SQLite) either way. `hub on` adds a home page over it and indexes every page you `check` or `patch`:
+The server starts when needed and stops after 30 idle minutes. Every review is kept in `~/.austere-axi/hub.db` (SQLite), with every page you open for review, `check` or `patch`. The hub is the home page over it, always on:
 
 ```sh
-austere-axi hub on      # http://127.0.0.1:4388/: pages by project and day, with search
-austere-axi hub list    # the same, for an agent: [words] [--project dir]
-austere-axi hub notes   # every note, same for an agent: [words] [--project dir] [--unanswered]
-austere-axi hub off     # back to the plain session list; the database stays
+austere-axi hub open    # http://127.0.0.1:4388/, signed in: pages by project, with search
+austere-axi hub list    # the same, for an agent: [words] [--project p] [--archived] [--all]
+austere-axi hub notes   # every note, same for an agent: [words] [--project p] [--unanswered]
 ```
 
-The home page shows which reviews are live and how much feedback the agent answered. `/notes` lists every note, newest first, with search, status and project filters.
+The home page has one section per project and one row per page. A row shows the page's path in the project, its last activity, and its unanswered and answered notes across copies; pages with unanswered notes come first, then by last activity. `/notes` lists every note, newest first, with its project and copy, and search, status and project filters.
 
-- Session files from before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`.
+## Projects and copies
+
+A project is a name and a list of root folders. A page is a path inside a root, so the same file in two worktrees of one repository is one page with two copies. The row shows a chip per copy, labelled with the branch that worktree has checked out (or the folder's name), marked when it has unanswered notes; a chip opens that copy. Notes stay with their copy: each branch's file can differ.
+
+The hub finds a page's project without git; it never runs it. Walking up from the page's folder it takes the first of:
+
+1. a root it already knows (a folder it guessed from a page, rule 3, counts only for pages directly in it);
+2. a folder with a `.git` entry: a `.git` directory is a repository; a `.git` file of a worktree joins the project of its main repository; a submodule is its own project. An assigned root above it wins;
+3. the page's own folder.
+
+What it finds is stored, so it does not look again. Change it with `project`:
+
+```sh
+austere-axi project list                     # projects, their roots and page counts
+austere-axi project add ~/work/plans --name plans   # assign a root (a folder with no .git, holding pages in subfolders)
+austere-axi project merge shop shop-clone    # the second project's roots move to the first
+austere-axi project rename shop storefront
+austere-axi project forget-root ~/old/clone  # its pages are filed again
+```
+
+`project add` refuses a folder inside another project's root, or around one, and names that project; `project merge` is the way to join them. `--project` (on `hub list` and `hub notes`) and the home page's project link take a name, an id, or any folder inside a root.
+
+## What the lists leave out
+
+- Pages only `check`ed or `patch`ed, never opened for review. `hub list --all` (or **All, with checked-only** on the home page) shows them.
+- Archived pages: `austere-axi archive <file>` puts a page away, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. A review closed in an older version is archived when its `hub.db` is first opened.
+- Nothing else: a page whose file is gone stays listed, marked `missing`, with its notes.
+
+## Notes
+
+- Session files from before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`. A `hub.db` from an older version gets its projects on first open.
 - One server runs per state dir; a second one refuses to start. `server.lock` holds the running server's pid and port. If that server no longer answers on the port, the lock is stale and is taken over.
+- `hub on`, `hub off` and `hub status` are gone: they exit 2 and point at `hub open`.
 
 ## Always on, behind a reverse proxy
 
