@@ -274,7 +274,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   project: {
     usage: "project [list | add <dir> [--name n] | merge <a> <b> | rename <p> <name> | forget-root <dir>]",
     summary:
-      "projects in the hub: a name and its root folders, found without git (a .git folder or a worktree's .git file, else the page's folder); add assigns a root, merge moves b's roots into a, forget-root drops one",
+      "projects in the hub: a name and its root folders, found without git (a .git folder or a worktree's .git file, else the folder you ran in when the page is inside it, else the page's folder); add assigns a root, merge moves b's roots into a, forget-root drops one",
     flags: { name: "the project to add the root to, made if there is none (add)" },
     example: "project add ~/work/site --name site",
   },
@@ -486,7 +486,7 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   const html = fs.readFileSync(abs, "utf8");
   const check = checkHtml(html, { file: quote(file) });
   await ensureServer();
-  const r = await request<OpenResponse>("POST", "/api/open", { file: abs });
+  const r = await request<OpenResponse>("POST", "/api/open", { file: abs, cwd: process.cwd() });
   if (r.status !== 200) return fail(r.data?.error || `open failed (${r.status})`);
   const d = r.data;
   const noOpen = flags["no-open"] || browserDisabled();
@@ -502,6 +502,7 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
     browser,
     sign_in: browser === "opened" || d.browsers > 0 ? undefined : signInHint(file),
     check: compactCheck(check),
+    project: d.project?.name,
   };
   if (d.pending) out.queued_feedback = d.pending;
   if (d.held) out.held_notes = `${d.held} from teammates, waiting for the owner to send them`;
@@ -509,9 +510,12 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   if (d.session.archived) {
     out.next = `The page is archived, so it takes no notes. Only if the user asks, run \`${BIN} unarchive ${quote(file)}\`, then \`${BIN} poll ${quote(file)}\`.`;
   } else {
+    // From this folder a bare poll means this folder's project: name the page's when it is another.
+    const poll = !d.project ? `${BIN} poll ${quote(file)}` : d.project.here ? `${BIN} poll` : `${BIN} poll --project ${quote(d.project.ref)}`;
+    const scope = d.project ? ` One poll covers every page of ${d.project.name} you open, this one included (\`${BIN} poll ${quote(file)}\` for this page only).` : "";
     out.next = check.ok
-      ? `Run \`${BIN} poll ${quote(file)}\` and leave it running until it returns.`
-      : `Fix the errors above (the page renders what it can), then run \`${BIN} poll ${quote(file)}\`.`;
+      ? `Run \`${poll}\` and leave it running until it returns.${scope}`
+      : `Fix the errors above (the page renders what it can), then run \`${poll}\`.${scope}`;
   }
   print(out);
 }
@@ -563,8 +567,11 @@ function seqFlag(flags: Flags, name: string): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-/** The project a poll or feedback with no file means: `--project` (a name, an id or a folder), else the folder the command runs in. */
-async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string; scope: string; files: string[] } | null> {
+/**
+ * The project a poll or feedback with no file means: `--project` (a name, an id or a folder), else the folder the command runs in.
+ * `pages`: how many of its pages are open for review (not archived; copies count once); `reviewed`: any page was ever opened, archived ones included.
+ */
+async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string; scope: string; files: string[]; pages: number; reviewed: boolean } | null> {
   const ref = typeof flags.project === "string" ? flags.project : process.cwd();
   let hub: Hub;
   try {
@@ -583,8 +590,10 @@ async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string;
       );
       return null;
     }
-    const files = (hub.db.prepare("SELECT file FROM artifacts WHERE project_id = ?").all(project.id) as { file: string }[]).map((r) => r.file);
-    return { id: project.id, name: project.name, scope: typeof flags.project === "string" ? ` --project ${quote(flags.project)}` : "", files };
+    const rows = hub.db.prepare("SELECT file, reviewed, archived_at, page_id FROM artifacts WHERE project_id = ?").all(project.id) as { file: string; reviewed: number; archived_at: number | null; page_id: string | null }[];
+    const scope = typeof flags.project === "string" ? ` --project ${quote(flags.project)}` : "";
+    const pages = new Set(rows.filter((r) => r.reviewed && !r.archived_at).map((r) => r.page_id)).size;
+    return { id: project.id, name: project.name, scope, files: rows.map((r) => r.file), pages, reviewed: rows.some((r) => r.reviewed) };
   } catch (err) {
     fail(messageOf(err));
     return null;
@@ -593,6 +602,9 @@ async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string;
   }
 }
 
+/** What `poll` and `feedback` print for a project with no page open, instead of waiting on nothing. */
+const noOpenPage = (project: { name: string }): Printed => ({ status: "none", project: project.name, pages: 0, next: `no page of this project is open: \`${BIN} <file>\`` });
+
 /** `poll` with no file: one poll for every page of the project. Each batch names its file and copy; `--cursor` acknowledges all of them. */
 async function cmdProjectPoll(flags: Flags): Promise<void> {
   if (flags["agent-reply"] !== undefined || flags["agent-reply-file"] !== undefined) {
@@ -600,8 +612,9 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
   }
   const project = await projectOfFlags(flags);
   if (!project) return;
+  if (!project.pages) return print(noOpenPage(project));
   await ensureServer();
-  process.stderr.write(`[${BIN}] waiting for feedback on every page of ${project.name} (interrupting is safe: feedback stays queued)\n`);
+  process.stderr.write(`[${BIN}] waiting for feedback on every page of ${project.name} (${project.pages} open; interrupting is safe: feedback stays queued)\n`);
   const ticker = process.stderr.isTTY ? setInterval(() => process.stderr.write(`[${BIN}] still waiting…\n`), 60_000) : undefined;
   const again = `${BIN} poll${project.scope}`;
   let r;
@@ -614,7 +627,7 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
     });
   } catch {
     clearInterval(ticker);
-    return print({ status: "interrupted", project: project.name, next: `The server restarted; the feedback is safe and still unread. Run the same poll again: \`${again}\`.` });
+    return print({ status: "interrupted", project: project.name, pages: project.pages, next: `The server restarted; the feedback is safe and still unread. Run the same poll again: \`${again}\`.` });
   }
   clearInterval(ticker);
   if (r.status !== 200) return fail(r.data?.error || `poll failed (${r.status})`);
@@ -625,6 +638,7 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
     const out: Printed = {
       status: "feedback",
       project: project.name,
+      pages: project.pages,
       cursor: d.cursor,
       batches: batches.map((b) => ({ file: b.file, copy: b.copy, final: b.final, items: describeItems(b.file, b.items) })),
     };
@@ -637,10 +651,11 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
         : `Then \`${again} --cursor ${d.cursor}\`, which acknowledges every page above and listens again. A batch marked final: true was sent with Send & End: apply it, then stop listening for that page.`);
     return print(out);
   }
-  const out: Printed = { status: d.status || "unknown", project: project.name };
+  const out: Printed = { status: d.status || "unknown", project: project.name, pages: project.pages };
   if (d.status === "timeout") out.next = `No feedback yet. Run \`${again}\` again.`;
   if (d.status === "replaced") out.next = "A newer poll took over this project. Stop polling here.";
   if (d.status === "interrupted") out.next = `The server restarted; the feedback is safe and still unread. Run the same poll again: \`${again}\`.`;
+  if (d.status === "moved") out.next = `The pages of ${project.name} joined another project (a page in a folder above them was opened). Poll that one: \`${BIN} poll\` from that folder, or \`${BIN} poll --project <folder>\`; unread notes stay queued.`;
   print(out);
 }
 
@@ -1161,6 +1176,8 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
 async function cmdProjectFeedback(flags: Flags): Promise<void> {
   const project = await projectOfFlags(flags);
   if (!project) return;
+  // Archived pages still list their notes: only a project with no page ever opened has nothing to read.
+  if (!project.reviewed) return print(noOpenPage(project));
   const opts = { all: !!flags.all, peek: !!flags.peek };
   let batches: ProjectFeedbackResponse["batches"] = [];
   // Hosted notes come in through the server: start it when a page of the project is published.
@@ -1188,12 +1205,13 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
       release();
     }
   }
-  if (!batches.length) return print({ status: "none", project: project.name, note: "Every piece of feedback in this project has been answered." });
+  if (!batches.length) return print({ status: "none", project: project.name, pages: project.pages, note: "Every piece of feedback in this project has been answered." });
   const final = batches.every((b) => endsWithFinal(b.entries));
   const gone = batches.some((b) => b.missing);
   print({
     status: "feedback",
     project: project.name,
+    pages: project.pages,
     batches: batches.map((b) => ({ file: b.file, copy: b.copy, archived: b.archived || undefined, missing: b.missing || undefined, final: endsWithFinal(b.entries) || undefined, items: feedbackItems(b.file, b.entries, opts.all) })),
     next:
       `For each page above: apply what still applies with \`${BIN} patch <file>\` (changed statements only), then \`${BIN} reply <file> --agent-reply "<what changed>"\`, which marks it addressed. ` +
@@ -1517,7 +1535,7 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
   if (!abs) return;
   if (typeof flags.as !== "string" || !flags.as.trim()) return usage(`share needs a reviewer name: ${BIN} share ${quote(sub)} --as "<name>"`, "share");
   await ensureServer();
-  const r = await request<ShareResponse>("POST", "/api/share", { file: abs, name: flags.as, auto: !!flags.auto });
+  const r = await request<ShareResponse>("POST", "/api/share", { file: abs, name: flags.as, auto: !!flags.auto, cwd: process.cwd() });
   if (r.status !== 200) return fail(r.data?.error || `share failed (${r.status})`);
   const d = r.data;
   print({

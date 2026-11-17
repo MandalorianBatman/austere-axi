@@ -62,10 +62,71 @@ test("a plain folder is its own project, stored on first sight", () =>
     assert.equal(rootCount(db), 1);
     assert.deepEqual(resolveProject(db, file), loc, "the second lookup finds the stored root");
     assert.equal(rootCount(db), 1);
-    // A page in a subfolder of a guessed folder root is not pulled into it.
+    // A page in a subfolder of a guessed folder root is in its project: the same rule as a lookup by folder.
     const deeper = resolveProject(db, write(path.join(dir, "notes", "sub", "b.html")));
-    assert.notEqual(deeper.projectId, loc.projectId);
-    assert.equal(deeper.root, path.join(dir, "notes", "sub"));
+    assert.equal(deeper.projectId, loc.projectId);
+    assert.equal(deeper.relPath, "sub/b.html");
+    assert.equal(findProject(db, path.join(dir, "notes", "sub"))?.id, loc.projectId);
+  }));
+
+test("no .git: pages in two subfolders, opened from the parent, are one project the parent finds", () =>
+  withDb((db, dir) => {
+    const notes = path.join(dir, "notes");
+    const a = resolveProject(db, write(path.join(notes, "a", "sprint.html")), notes);
+    const b = resolveProject(db, write(path.join(notes, "b", "plan.html")), notes);
+    assert.equal(a.root, notes);
+    assert.equal(b.projectId, a.projectId);
+    assert.deepEqual([a.relPath, b.relPath], ["a/sprint.html", "b/plan.html"]);
+    assert.deepEqual(listProjects(db).map((p) => p.name), ["notes"], "no projects named a and b");
+    assert.equal(findProject(db, notes)?.id, a.projectId, "the folder the pages were opened from finds them");
+    // The working folder counts only when the file is inside it.
+    const away = resolveProject(db, write(path.join(dir, "elsewhere", "x.html")), notes);
+    assert.equal(away.root, path.join(dir, "elsewhere"));
+  }));
+
+test("nested guessed roots: the parent's root takes in the child's, so the parent finds the child's pages", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const work = path.join(dir, "work");
+    const reviews = path.join(work, "reviews");
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(reviews, "plan.html")), cwd: reviews });
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(work, "notes.html")), cwd: work });
+    const parent = findProject(db, work);
+    assert.equal(parent?.name, "work");
+    assert.equal(findProject(db, reviews)?.id, parent?.id, "the child folder resolves to the same project");
+    assert.deepEqual(hub.list({ all: true }).map((p) => [p.project, p.rel_path]).sort(), [["work", "notes.html"], ["work", "reviews/plan.html"]]);
+    assert.deepEqual(listProjects(db).map((p) => [p.name, p.roots.map((r) => r.root)]), [["work", [work]]], "the child's guessed project is gone");
+  }));
+
+test("a guessed root is never / or the home folder for anything below it", () =>
+  withDb((db, dir) => {
+    const home = path.join(dir, "home");
+    const was = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const top = resolveProject(db, write(path.join(home, "todo.html")));
+      assert.equal(top.root, home, "a page directly in the home folder has it as its root");
+      const below = resolveProject(db, write(path.join(home, "proj", "x.html")), home);
+      assert.equal(below.root, path.join(home, "proj"), "working in the home folder does not make it the root");
+      assert.notEqual(below.projectId, top.projectId, "and the home folder's root holds only its own folder");
+      assert.equal(findProject(db, path.join(home, "proj"))?.id, below.projectId);
+      assert.equal(findProject(db, path.join(home, "other")), null, "a lookup applies the same rule");
+      assert.equal(findProject(db, home)?.id, top.projectId);
+    } finally {
+      if (was === undefined) delete process.env.HOME;
+      else process.env.HOME = was;
+    }
+  }));
+
+test("a lookup by folder follows a .git the way opening a page would", () =>
+  withDb((db, dir) => {
+    const work = path.join(dir, "work");
+    resolveProject(db, write(path.join(work, "a.html")), work);
+    const inner = repo(path.join(work, "inner"));
+    assert.equal(findProject(db, path.join(inner, "docs")), null, "a repository not seen yet is no project, not the folder around it");
+    const loc = resolveProject(db, write(path.join(inner, "docs", "x.html")), work);
+    assert.equal(loc.kind, "git");
+    assert.equal(findProject(db, path.join(inner, "docs"))?.id, loc.projectId);
   }));
 
 test("a repository with a .git directory is a git root; its branch labels the copy", () =>
