@@ -155,8 +155,15 @@ function originIn(file: string): string | null {
     const section = /^\s*\[\s*([^\]]*?)\s*\]/.exec(line);
     if (section) inOrigin = /^remote\s+"origin"$/i.test(section[1]);
     else if (inOrigin) {
-      const url = /^\s*url\s*=\s*"?(.*?)"?\s*$/i.exec(line)?.[1];
-      if (url) return url;
+      const match = /^\s*url\s*=\s*(.*?)\s*$/i.exec(line);
+      if (!match) continue;
+      let val = match[1].trim();
+      if (val.startsWith('"')) {
+        const end = val.indexOf('"', 1);
+        if (end !== -1) return val.slice(1, end);
+      }
+      val = val.replace(/\s*[#;].*$/, "").trim();
+      if (val) return val;
     }
   }
   return null;
@@ -472,7 +479,8 @@ export function listProjects(db: sqlite.DatabaseSync): ProjectListing[] {
   }
   const nameCount = new Map<string, number>();
   for (const p of projects) nameCount.set(p.name, (nameCount.get(p.name) || 0) + 1);
-  const ref = (p: ProjectRow): string => (/^[\w.@+-]+$/.test(p.name) && nameCount.get(p.name) === 1 && !projects.some((o) => o.id === p.name) ? p.name : p.id);
+  const ref = (p: ProjectRow): string =>
+    (/^[\w.@+-]+$/.test(p.name) && !p.name.startsWith("-") && nameCount.get(p.name) === 1 && !projects.some((o) => o.id === p.name) ? p.name : p.id);
   const oldestFirst = db.prepare("SELECT * FROM projects ORDER BY created_at, rowid").all() as unknown as ProjectRow[];
   const sameAs = (p: ProjectRow): SameRepository | undefined => {
     const mine = reposOf.get(p.id);

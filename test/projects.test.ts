@@ -538,3 +538,21 @@ test("two clones of one repository: the newer project gets a merge hint, nothing
     );
     assert.equal(hub.list({ all: true }).filter((p) => p.rel_path === "plan.html" && p.project === "austere-axi")[0].copies.length, 2, "one page, two copies");
   }));
+
+test("origin url with quotes or trailing comments is parsed cleanly, and option-like names use id in merge hint", () =>
+  withDb((db, dir) => {
+    const r1 = repo(path.join(dir, "repo1"));
+    fs.writeFileSync(path.join(r1, ".git", "config"), '[remote "origin"]\n\turl = "https://github.com/org/test-repo.git" # primary\n');
+    const r2 = repo(path.join(dir, "repo2"));
+    fs.writeFileSync(path.join(r2, ".git", "config"), '[remote "origin"]\n\turl = https://github.com/org/test-repo.git ; secondary\n');
+    const p1 = resolveProject(db, write(path.join(r1, "a.html")));
+    const p2 = resolveProject(db, write(path.join(r2, "b.html")));
+    assert.equal(findProject(db, p1.projectId)?.name, "test-repo");
+
+    // Rename p1 to option-like name "-h": merge command in p2 should use p1 ID instead of "-h"
+    db.prepare("UPDATE projects SET name = ? WHERE id = ?").run("-h", p1.projectId);
+    const projects = listProjects(db);
+    const newer = projects.find((p) => p.id === p2.projectId);
+    assert.ok(newer?.sameAs);
+    assert.equal(newer?.sameAs?.merge, `project merge ${p1.projectId} ${p2.projectId}`);
+  }));
