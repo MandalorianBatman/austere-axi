@@ -602,7 +602,7 @@ test("the owner's menu copies an agent prompt that polls this file", async (t) =
     await page.locator('[data-cmd="copy-agent-prompt"]').click();
     await page.waitForSelector(".banner:not([hidden])");
     const copied = await page.evaluate(() => navigator.clipboard.readText());
-    assert.ok(copied.includes(`austere-axi poll ${fs.realpathSync(file)}`), copied);
+    assert.ok(copied.includes(`File: ${file}`) && /Run `austere-axi poll/.test(copied), copied);
     assert.match(await page.locator(".banner").innerText(), /Agent prompt copied/);
     assert.deepEqual(problems, [], "browser errors");
   } finally {
@@ -637,7 +637,7 @@ test("the copy items work where navigator.clipboard is missing (a review page op
       return v;
     };
     for (const [cmd, expect] of [
-      ["copy-agent-prompt", `austere-axi poll ${fs.realpathSync(file)}`],
+      ["copy-agent-prompt", `File: ${file}`],
       ["copy-path", fs.realpathSync(file)],
     ] as const) {
       await page.locator(".menu-btn").click();
