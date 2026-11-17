@@ -10,7 +10,7 @@ import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
 import { stateDirHolder } from "../src/cli/lock.ts";
 import { hasActiveWork, openDatabase } from "../src/cli/hub.ts";
-import { childEnv, detectUnit, installService, isAncestor, launchdPlist, npxWarning, parseSystemdShow, restartCommand, runsTheServer, serverUnit, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitInCgroup, unitPort, unitStateDir } from "../src/cli/service.ts";
+import { childEnv, detectUnit, installService, isAncestor, launchdPlist, npxWarning, parseLaunchctlList, parsePsScript, parseSystemdShow, restartCommand, runsTheServer, serverUnit, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitInCgroup, unitPort, unitStateDir } from "../src/cli/service.ts";
 import type { ProcessView, RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
 import { launchdSettings, systemdSettings } from "../src/cli/unit-file.ts";
 import { freePort } from "./port.ts";
@@ -309,6 +309,8 @@ test("a CLI never replaces a supervised server; it says how to restart the unit"
   // The unit's name comes from the server, so the hint restarts the unit that runs it.
   assert.deepEqual(serverAction(h({ supervised: "systemd", unit: "austere.service" }), "0.11.0", noUnit), { action: "restart-unit", unit: { supervisor: "systemd", unit: "austere.service" } });
   assert.deepEqual(serverAction(h({ supervised: "launchd" }), "0.10.0", noUnit), { action: "use" });
+  // A launchd server whose label the system would not name: never replaced, and no label is guessed.
+  assert.deepEqual(serverAction(h({ supervised: "launchd" }), "0.11.0", noUnit), { action: "restart-unit", unit: { supervisor: "launchd", unit: "<launchd-label>" } });
   assert.equal(restartCommand("systemd"), "systemctl --user restart austere-axi.service");
   assert.equal(restartCommand("launchd", 501), "launchctl kickstart -k gui/501/xyz.kasat.austere-axi");
   assert.equal(restartCommand("systemd", 501, "austere.service"), "systemctl --user restart austere.service");
@@ -330,7 +332,7 @@ function processView(over: Partial<ProcessView> = {}): ProcessView {
     run: (cmd, args) => (cmd === "systemctl" && args[1] === "show" ? { code: 0, stdout: HAND_WRITTEN_SHOW, stderr: "" } : { code: 1, stdout: "", stderr: "" }),
     cgroup: () => UNIT_CGROUP,
     script: () => HAND_WRITTEN_CLI,
-    isAncestor: (ancestor, pid) => ancestor === pid || (ancestor === 4242 && pid === 4243),
+    ancestors: (pid) => (pid === 4243 ? [4243, 4242, 1] : [pid, 1]),
     ...over,
   };
 }
@@ -350,12 +352,96 @@ test("a server from before 0.12 that sits in a unit's cgroup is the unit's: rest
   assert.deepEqual(serverAction({ ...old, pid: 4243, legacy: true }, "0.12.0", () => serverUnit(4243, processView())), { action: "restart-unit", unit: { supervisor: "systemd", unit: "austere-axi.service" } });
 });
 
+// `launchctl list` and `launchctl print gui/501/<label>` on macOS: the user's agents and what runs under them.
+const LAUNCHCTL_LIST = `PID\tStatus\tLabel
+-\t0\tcom.apple.Spotlight
+812\t0\tapplication.com.apple.Terminal.1234.5678
+901\t0\tcom.ana.review-server
+-\t78\tcom.example.other
+`;
+const MAC_CLI = "/usr/local/lib/node_modules/austere-axi/dist/cli.mjs";
+const printOf = (label: string, pid: number, program: string): string => `gui/501/${label} = {
+\tactive count = 1
+\tpath = /Users/ana/Library/LaunchAgents/${label}.plist
+\tstate = running
+\tprogram = ${program}
+\targuments = {
+\t\t${program}
+\t\t${MAC_CLI}
+\t\tserver
+\t\t--persist
+\t}
+\tpid = ${pid}
+}
+`;
+
+/** A Mac where agent com.ana.review-server (pid 901) runs the server; 902 is the server when node runs below it, 903 one started from Terminal (pid 812). */
+function macView(over: Partial<ProcessView> = {}): ProcessView {
+  return {
+    platform: "darwin",
+    uid: 501,
+    run: (cmd, args) => {
+      if (cmd !== "launchctl") return { code: 1, stdout: "", stderr: "" };
+      if (args[0] === "list") return { code: 0, stdout: LAUNCHCTL_LIST, stderr: "" };
+      if (args[1] === "gui/501/com.ana.review-server") return { code: 0, stdout: printOf("com.ana.review-server", 901, "/usr/local/bin/node"), stderr: "" };
+      if (args[1] === "gui/501/application.com.apple.Terminal.1234.5678") return { code: 0, stdout: "gui/501/application.com.apple.Terminal = {\n\tprogram = /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal\n\tpid = 812\n}\n", stderr: "" };
+      return { code: 113, stdout: "", stderr: "Could not find service" };
+    },
+    cgroup: () => null,
+    script: () => MAC_CLI,
+    ancestors: (pid) => (pid === 902 ? [902, 901, 1] : pid === 903 ? [903, 850, 812, 1] : [pid, 1]),
+    ...over,
+  };
+}
+
+test("launchctl list rows with a running pid name their label", () => {
+  assert.deepEqual(parseLaunchctlList(LAUNCHCTL_LIST), [
+    { pid: 812, label: "application.com.apple.Terminal.1234.5678" },
+    { pid: 901, label: "com.ana.review-server" },
+  ]);
+});
+
+test("parsePsScript extracts the script path and avoids space-split prefixes", () => {
+  // Standard command line with node and script path.
+  assert.equal(parsePsScript("/usr/local/bin/node /opt/austere-axi/dist/cli.mjs server --persist"), "/opt/austere-axi/dist/cli.mjs");
+  assert.equal(parsePsScript("node src/cli/main.ts server"), "src/cli/main.ts");
+  // Quoted paths with spaces.
+  assert.equal(parsePsScript('node "/Users/ana/My Apps/cli.mjs" server --persist'), "/Users/ana/My Apps/cli.mjs");
+  assert.equal(parsePsScript("node '/Users/ana/My Apps/cli.mjs' server"), "/Users/ana/My Apps/cli.mjs");
+  // Unquoted path with spaces cannot be safely separated from arguments; returns null to fall back to CLI_ENTRY.
+  assert.equal(parsePsScript("node /Users/ana/My Apps/cli.mjs server"), null);
+  // Non-script command or unrelated binary.
+  assert.equal(parsePsScript("/usr/bin/tmux new -s session"), null);
+});
+
+test("a server under a launchd agent with its own label is the agent's: left alone, and the hint names that label", () => {
+  // RLM-400: a 0.11 server (no `supervised` in its health) under a hand-written agent, as the first 0.12 CLI sees it.
+  const old: ServerHealth = { name: "austere-axi", version: "0.11.0", pid: 902, port: 4388, stateDir: STATE, listen: ["127.0.0.1"], persist: true };
+  const plan = serverAction(old, "0.12.0", () => serverUnit(old.pid, macView()));
+  assert.deepEqual(plan, { action: "restart-unit", unit: { supervisor: "launchd", unit: "com.ana.review-server" } });
+  assert.equal(restartCommand("launchd", 501, "com.ana.review-server"), "launchctl kickstart -k gui/501/com.ana.review-server");
+  // The server is the agent's own main process (it execs, no wrapper): no `print` is needed.
+  const exec = macView({ ancestors: (pid) => [pid, 1], run: (cmd, args) => (args[0] === "list" ? { code: 0, stdout: "901\t0\tcom.ana.review-server\n", stderr: "" } : { code: 1, stdout: "", stderr: "" }) });
+  assert.deepEqual(serverUnit(901, exec), { supervisor: "launchd", unit: "com.ana.review-server" });
+});
+
+test("a server started by hand on a Mac is not an agent's, even below an app that launchd runs", () => {
+  const stray: ServerHealth = { name: "austere-axi", version: "0.11.0", pid: 903, port: 4388, stateDir: STATE, listen: [], persist: false };
+  assert.equal(serverUnit(903, macView()), null);
+  assert.deepEqual(serverAction(stray, "0.12.0", () => serverUnit(stray.pid, macView())), { action: "replace" });
+  // An agent that runs something else (a tmux) does not own the server below it.
+  const tmux = macView({ run: (cmd, args) => (args[0] === "list" ? { code: 0, stdout: "901\t0\tcom.ana.tmux\n", stderr: "" } : { code: 0, stdout: "gui/501/com.ana.tmux = {\n\tprogram = /opt/homebrew/bin/tmux\n\tpid = 901\n}\n", stderr: "" }) });
+  assert.equal(serverUnit(902, tmux), null);
+  // launchctl cannot be asked: no answer, so the old rules apply.
+  assert.equal(serverUnit(902, macView({ run: () => ({ code: null, stdout: "", stderr: "spawn launchctl ENOENT" }) })), null);
+});
+
 test("a stray server in another service's cgroup is not that service's, and is replaced", () => {
   // RLM-374: an agent's CLI started the server, so it sits in the agent daemon's unit.
   const daemon = processView({
     cgroup: () => "0::/user.slice/user-1000.slice/user@1000.service/app.slice/multica-host.service\n",
     run: () => ({ code: 0, stdout: "ExecStart={ path=/usr/bin/node ; argv[]=/usr/bin/node /home/ana/multica/daemon/index.js ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=4000 ; code=(null) ; status=0/0 }\nMainPID=4000\n", stderr: "" }),
-    isAncestor: () => true,
+    ancestors: (pid) => [pid, 4000, 1],
   });
   assert.equal(serverUnit(4243, daemon), null);
   // The unit runs the server, but some other process: not this one.

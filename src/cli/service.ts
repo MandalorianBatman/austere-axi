@@ -21,6 +21,8 @@ export const SYSTEMD_UNIT = "austere-axi.service";
 /** The line both units carry, so the command knows a unit is its own. */
 export const UNIT_MARKER = "Written by `austere-axi server install`";
 export const LAUNCHD_LABEL = "xyz.kasat.austere-axi";
+/** Stands in a restart hint for the label of a launchd agent that runs the server but could not be found (`launchctl list` shows it). */
+export const UNKNOWN_LAUNCHD_LABEL = "<launchd-label>";
 const BIN = "austere-axi";
 const DEFAULT_PORT = 4388;
 
@@ -89,17 +91,23 @@ export function runsTheServer(command: string, cli: string = CLI_ENTRY): boolean
   return (BIN_COMMAND.test(command) || command.includes(cli)) && /(^|[\s"'])server([\s"']|$)/.test(command);
 }
 
-/** Whether `ancestor` is `pid` itself or one of its parents. */
-export function isAncestor(ancestor: number, pid: number): boolean {
+/** `pid` and its parents, nearest first (up to 20 generations; the chain ends at pid 1 or the last parent we can see). */
+export function ancestors(pid: number): number[] {
+  const chain: number[] = [];
   let current = pid;
   for (let i = 0; i < 20; i++) {
-    if (current === ancestor) return true;
-    if (current <= 1) return false;
+    chain.push(current);
+    if (current <= 1) break;
     const parent = parentPid(current);
-    if (parent == null || parent === current) return false;
+    if (parent == null || parent === current) break;
     current = parent;
   }
-  return false;
+  return chain;
+}
+
+/** Whether `ancestor` is `pid` itself or one of its parents. */
+export function isAncestor(ancestor: number, pid: number): boolean {
+  return ancestors(pid).includes(ancestor);
 }
 
 /** The parent of a process, or null when it has none we can see. */
@@ -146,7 +154,8 @@ export interface ProcessView {
   cgroup: (pid: number) => string | null;
   /** The script a process runs (its argv[1]), or null when it cannot be read. */
   script: (pid: number) => string | null;
-  isAncestor: (ancestor: number, pid: number) => boolean;
+  /** `pid` and its parents, nearest first (`ancestors`). */
+  ancestors: (pid: number) => number[];
 }
 
 const readProc = (pid: number, file: string): string | null => {
@@ -157,6 +166,28 @@ const readProc = (pid: number, file: string): string | null => {
   }
 };
 
+/**
+ * Where there is no /proc (macOS): parse the script path from a `ps -o args=` line, or null when the full path
+ * cannot be established reliably (for example paths containing spaces without quotes). Servers with space-containing
+ * paths that differ from CLI_ENTRY may not be detected.
+ */
+export function parsePsScript(line: string): string | null {
+  const trimmed = line.trim();
+  const quoted = /^\S+\s+"([^"]+)"\s+server\b/.exec(trimmed) ?? /^\S+\s+'([^']+)'\s+server\b/.exec(trimmed);
+  if (quoted) return quoted[1];
+  const simple = /^\S+\s+(\S+)\s+server\b/.exec(trimmed);
+  if (simple && (/\.[mc]?[jt]s$/.test(simple[1]) || simple[1].includes("austere-axi"))) {
+    return simple[1];
+  }
+  return null;
+}
+
+function psScript(pid: number): string | null {
+  const r = spawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8", timeout: 5000 });
+  if (r.status !== 0 || !r.stdout) return null;
+  return parsePsScript(r.stdout);
+}
+
 /** This machine, as serverUnit sees it. */
 export function thisMachine(): ProcessView {
   return {
@@ -164,8 +195,8 @@ export function thisMachine(): ProcessView {
     uid: process.getuid?.() ?? null,
     run: runCommand,
     cgroup: (pid) => readProc(pid, "cgroup"),
-    script: (pid) => readProc(pid, "cmdline")?.split("\0")[1] || null,
-    isAncestor,
+    script: (pid) => readProc(pid, "cmdline")?.split("\0")[1] || psScript(pid),
+    ancestors,
   };
 }
 
@@ -175,7 +206,9 @@ export function thisMachine(): ProcessView {
  * that replaced it would lock its unit out (RLM-311, RLM-375). On Linux the pid's cgroup names
  * the unit; the unit counts when it runs the austere server (runsTheServer, with the script
  * that pid runs) and its main process is that pid or an ancestor of it. On macOS it is the
- * agent `server install` writes, when its pid is that pid or an ancestor.
+ * launchd agent whose main process is that pid or an ancestor of it, whatever its label (a
+ * hand-written agent has its own): `launchctl list` names the agents with a running pid, and
+ * the one found has to run the austere server (launchdUnit).
  */
 export function serverUnit(pid: number, view: ProcessView = thisMachine()): ServerUnit | null {
   if (!Number.isInteger(pid) || pid <= 0) return null;
@@ -186,13 +219,45 @@ export function serverUnit(pid: number, view: ProcessView = thisMachine()): Serv
     const r = view.run("systemctl", ["--user", "show", unit, "--property=ExecStart", "--property=MainPID"]);
     if (r.code !== 0) return null;
     const job = parseSystemdShow(r.stdout);
-    if (job.pid == null || !runsTheServer(job.command, view.script(pid) ?? CLI_ENTRY) || !view.isAncestor(job.pid, pid)) return null;
+    if (job.pid == null || !runsTheServer(job.command, view.script(pid) ?? CLI_ENTRY) || !view.ancestors(pid).includes(job.pid)) return null;
     return { supervisor: "systemd", unit };
   }
   if (view.platform === "darwin") {
-    const r = view.run("launchctl", ["print", launchdTarget(view.uid)]);
-    const main = r.code === 0 ? positivePid(/\bpid = (\d+)/.exec(r.stdout)?.[1]) : null;
-    return main != null && view.isAncestor(main, pid) ? { supervisor: "launchd", unit: LAUNCHD_LABEL } : null;
+    return launchdUnit(pid, view);
+  }
+  return null;
+}
+
+/** The `[pid, label]` rows of `launchctl list` that have a running pid (its columns: PID, last exit status, label). */
+export function parseLaunchctlList(text: string): { pid: number; label: string }[] {
+  const rows: { pid: number; label: string }[] = [];
+  for (const line of text.split("\n")) {
+    const m = /^(\d+)\s+\S+\s+(\S+)\s*$/.exec(line);
+    if (m) rows.push({ pid: Number(m[1]), label: m[2] });
+  }
+  return rows;
+}
+
+/**
+ * The launchd agent that runs the process `pid`, whatever its label. Nearest first, a job
+ * whose main process is `pid` itself is the agent's; one whose main process is an ancestor
+ * counts when its command runs the austere server (`npx -y austere-axi server` runs it below
+ * its main process). An app (Terminal) or an agent that runs something else, a tmux say, is
+ * not the server's even when the server sits below it.
+ */
+function launchdUnit(pid: number, view: ProcessView): ServerUnit | null {
+  if (view.uid == null) return null;
+  const list = view.run("launchctl", ["list"]);
+  if (list.code !== 0) return null;
+  const jobs = parseLaunchctlList(list.stdout);
+  for (const p of view.ancestors(pid)) {
+    if (p <= 1) break;
+    for (const { label } of jobs.filter((j) => j.pid === p)) {
+      if (p === pid) return { supervisor: "launchd", unit: label };
+      const r = view.run("launchctl", ["print", `gui/${view.uid}/${label}`]);
+      if (r.code !== 0 || positivePid(/\bpid = (\d+)/.exec(r.stdout)?.[1]) !== p) continue;
+      if (runsTheServer(r.stdout, view.script(pid) ?? CLI_ENTRY)) return { supervisor: "launchd", unit: label };
+    }
   }
   return null;
 }
@@ -965,7 +1030,7 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
     // The installed service's port is taken by a server it did not start: it fails until that one stops.
     out.next = lockedOutNote(server.pid, server.port);
   } else if (server?.supervised && server.version !== version) {
-    out.next = `The server runs v${server.version} and this CLI is v${version}. Restart it: ${restartCommand(server.supervised, ctx.uid, server.unit)}`;
+    out.next = `The server runs v${server.version} and this CLI is v${version}. Restart it: ${restartCommand(server.supervised, ctx.uid, server.unit ?? (server.supervised === "launchd" ? UNKNOWN_LAUNCHD_LABEL : undefined))}`;
   } else if (target && !out.installed) {
     out.next = `${BIN} server install sets it up (at a terminal).`;
   } else if (target && out.installed && !server) {
