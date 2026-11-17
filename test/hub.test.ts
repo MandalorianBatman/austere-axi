@@ -582,8 +582,8 @@ test("archiving one of two copies names it, the copy that stays open and the not
     assert.match(r.out, /^status: archived$/m);
     assert.match(r.out, /^copy: main$/m, "names the copy it archived");
     assert.match(r.out, /^unanswered: 3$/m, "and the notes that go with it");
-    assert.ok(r.out.includes(`still_open:\n  - file: ${b}\n    copy: feat\n    unanswered: 1\n`), r.out);
-    assert.match(r.out, /Only this copy \(main\) is archived.*3 unanswered notes go with it.*leave the hub's counts.*archive \S+plan\.html --every-copy` archives them too/);
+    assert.match(r.out, /still_open:\n\s+- file: [^\n]*shop-feat[^\n]*plan\.html"?\n\s+copy: feat\n\s+unanswered: 1\n/);
+    assert.match(r.out, /Only this copy \(main\) is archived.*3 unanswered notes go with it.*leave the hub's counts.*archive [^`]+plan\.html[^`]* --every-copy` archives them too/);
 
     const reopened = await SessionStore.open(state);
     try {

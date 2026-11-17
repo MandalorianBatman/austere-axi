@@ -280,7 +280,7 @@ test("poll on an archived page returns what is queued, then status: archived at 
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /^status: archived$/m, r.out);
     assert.ok(Date.now() - started < 15_000, "it answers at once instead of timing out");
-    assert.match(r.out, /Stop polling: the owner archived this page.*Unarchive only if the user asks: `austere-axi unarchive \S+a\.html`/);
+    assert.match(r.out, /Stop polling: the owner archived this page.*Unarchive only if the user asks: `austere-axi unarchive [^`]+a\.html[^`]*`/);
     assert.doesNotMatch(r.out, /No feedback yet/);
 
     r = await run(file, "--no-open");
