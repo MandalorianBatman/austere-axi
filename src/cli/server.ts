@@ -362,6 +362,8 @@ const PAGE_HOLD_MS = 10 * 60_000;
  * stale page is also one the project poll may take back. AUSTERE_AXI_STALE_WORKING_MS overrides it (tests).
  */
 export const STALE_WORKING_MS = 10 * 60_000;
+// The longest delay setTimeout takes: a larger one fires after 1 ms and warns. A longer wait is armed in several steps.
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 export async function runServer({
   port,
@@ -633,7 +635,7 @@ export async function runServer({
     const schedule = () => {
       const remaining = staleWorkingMs - (Date.now() - (s.agentAt ?? s.workingSince ?? 0));
       if (remaining > 10) {
-        const timer = setTimeout(schedule, remaining);
+        const timer = setTimeout(schedule, Math.min(remaining, MAX_TIMER_MS));
         timer.unref();
         staleTimers.set(s.id, timer);
         return;
@@ -641,7 +643,7 @@ export async function runServer({
       staleTimers.delete(s.id);
       broadcastPresence(s);
     };
-    const timer = setTimeout(schedule, staleWorkingMs);
+    const timer = setTimeout(schedule, Math.min(staleWorkingMs, MAX_TIMER_MS));
     timer.unref();
     staleTimers.set(s.id, timer);
   }

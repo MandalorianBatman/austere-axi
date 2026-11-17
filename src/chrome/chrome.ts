@@ -1312,7 +1312,7 @@ function renderPresence() {
       : cls === "working"
         ? "The agent has your last batch."
         : cls === "stale"
-          ? "The agent took your last batch and has not replied or changed the page since."
+          ? "The agent took your last notes. It has not replied or changed the page for a while."
           : cls === "hosted"
             ? "Notes go to the page owner. Replies show up here as they are posted."
             : "";
@@ -1379,7 +1379,10 @@ function loadAgentPrompt(): Promise<string> {
     (t) => {
       if (agentPrompt === p) agentPromptText = t;
     },
-    () => {},
+    () => {
+      // A failed fetch must not stay cached: the next click asks again.
+      if (agentPrompt === p) agentPrompt = null;
+    },
   );
   return p;
 }

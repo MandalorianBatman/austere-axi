@@ -519,6 +519,28 @@ test("on a phone the dock says what the agent does; with nobody listening the co
   }
 });
 
+test("Copy agent prompt under the composer asks again after the prompt could not be fetched", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "prompt-retry.html");
+  fs.writeFileSync(file, htmlPage("Prompt retry", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  const { context, page } = await openReview(file, VIEWPORTS[0]);
+  try {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${port}` });
+    // Opening the menu fetches the prompt again; here the service does not answer.
+    await page.route("**/agent-prompt", (route) => route.abort());
+    await page.click(".menu-btn");
+    await page.locator(".composer-presence .copy-prompt").click();
+    await page.waitForSelector(".banner:has-text('Could not get the agent prompt')");
+    // The service is back: the same button must fetch again, not replay the failed answer.
+    await page.unroute("**/agent-prompt");
+    await page.locator(".composer-presence .copy-prompt").click();
+    await page.waitForSelector(".banner:has-text('Agent prompt copied.')");
+    assert.ok((await page.evaluate(() => navigator.clipboard.readText())).includes(`File: ${file}`));
+  } finally {
+    await context.close();
+  }
+});
+
 test("Explore hides the conversation and gives the page the full width; Annotate brings it back", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "explore-panel.html");

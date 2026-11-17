@@ -35,13 +35,18 @@ interface Body {
   sessions: { id: string; presence: string }[];
 }
 
-function request(method: string, route: string, body?: unknown): Promise<Body> {
+interface Target {
+  port: number;
+  owner: Record<string, string>;
+}
+
+function request(method: string, route: string, body?: unknown, at: Target = { port, owner: OWNER }): Promise<Body> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     // /api/* is the CLI's (no Origin); a page route takes the browser's own Origin.
-    const origin: Record<string, string> = route.startsWith("/s/") ? { origin: `http://127.0.0.1:${port}` } : {};
+    const origin: Record<string, string> = route.startsWith("/s/") ? { origin: `http://127.0.0.1:${at.port}` } : {};
     const r = http.request(
-      { host: "127.0.0.1", port, method, path: route, headers: { "content-type": "application/json", ...origin, ...OWNER } },
+      { host: "127.0.0.1", port: at.port, method, path: route, headers: { "content-type": "application/json", ...origin, ...at.owner } },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -91,7 +96,7 @@ async function until(what: string, ok: () => boolean | Promise<boolean>) {
   assert.fail(`timed out waiting for ${what}`);
 }
 
-const presence = async (id: string) => (await request("GET", "/api/sessions")).sessions.find((s) => s.id === id)?.presence;
+const presence = async (id: string, at?: Target) => (await request("GET", "/api/sessions", undefined, at)).sessions.find((s) => s.id === id)?.presence;
 
 before(async () => {
   fs.writeFileSync(FILE, page("hello"));
@@ -122,7 +127,7 @@ await runServer({ port: Number(process.env.TEST_PORT), unit: null });
 });
 
 after(async () => {
-  if (child && child.exitCode === null) {
+  if (child && child.exitCode === null && child.signalCode === null) {
     const exited = new Promise((r) => child.once("exit", r));
     child.kill("SIGKILL");
     await exited;
@@ -169,5 +174,38 @@ test("a poll that took the notes and went quiet reads stale after STALE_WORKING_
     await until("the page told", () => tab.last() === "idle");
   } finally {
     tab.close();
+  }
+});
+
+test("a threshold past setTimeout's 32-bit limit is armed in steps: no overflow warning, no spinning timer", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-presence-long-"));
+  const at: Target = { port: await freePort(), owner: ownerHeaders(state) };
+  let stderr = "";
+  const server = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", path.resolve("src/cli/main.ts"), "server", "--port", String(at.port)], {
+    env: { ...process.env, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1", AUSTERE_AXI_STALE_WORKING_MS: String(30 * 24 * 60 * 60_000) },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  server.stderr.setEncoding("utf8");
+  server.stderr.on("data", (c: string) => (stderr += c));
+  try {
+    await until("the server", async () => {
+      try {
+        return Boolean(await request("GET", "/api/health", undefined, at));
+      } catch {
+        return false;
+      }
+    });
+    const { id } = (await request("POST", "/api/open", { file: FILE }, at)).session;
+    await request("POST", `/s/${id}/send`, { items: [{ kind: "message", text: "tighten the intro" }] }, at);
+    assert.equal((await request("POST", "/api/poll", { file: FILE }, at)).status, "feedback");
+    // A real clock on purpose: the fake one never overflows. Node turns a longer delay into 1 ms and warns; a callback that re-arms the same delay would do so in a loop.
+    await new Promise((r) => setTimeout(r, 500));
+    assert.doesNotMatch(stderr, /TimeoutOverflowWarning/);
+    assert.equal(await presence(id, at), "working");
+  } finally {
+    const exited = new Promise((r) => server.once("exit", r));
+    server.kill("SIGKILL");
+    await exited;
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
