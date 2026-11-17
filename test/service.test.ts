@@ -78,6 +78,7 @@ function context(over: Partial<ServiceContext> = {}): { ctx: ServiceContext; cal
 const changes = (calls: string[]): string[] => calls.filter((c) => !/ show-environment$| show | is-active | is-enabled |^launchctl print |^loginctl /.test(c));
 
 const unitPath = (home: string): string => path.join(home, ".config", "systemd", "user", "austere-axi.service");
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 test("the systemd unit runs the installed CLI with --persist, supervised, restarting on failure", () => {
   assert.equal(
@@ -846,7 +847,7 @@ test("install asks first, with what it will run; no changes nothing", async () =
   ctx.confirm = async (q) => (asked.push(q), false);
   const r = await installService({ port: 5000, linkUrl: "https://austere.example.com" }, ctx);
   assert.deepEqual(r, { status: "cancelled", unit: unitPath(ctx.home), note: "nothing was changed" });
-  assert.match(asked[0], new RegExp(`will write ${unitPath(ctx.home)}:\\n  ExecStart: /usr/bin/node ${CLI} server --persist --port 5000\\n  port: 5000\\n  state dir: ${STATE}\\n  link url: https://austere.example.com\\nGo ahead\\?$`));
+  assert.match(asked[0], new RegExp(`will write ${escapeRegExp(unitPath(ctx.home))}:\\n  ExecStart: /usr/bin/node ${escapeRegExp(CLI)} server --persist --port 5000\\n  port: 5000\\n  state dir: ${escapeRegExp(STATE)}\\n  link url: https://austere.example.com\\nGo ahead\\?$`));
   assert.deepEqual(changes(calls), []);
   assert.equal(fs.existsSync(unitPath(ctx.home)), false);
 });
@@ -879,22 +880,23 @@ test("install and uninstall refuse a unit of another state dir or another CLI un
   const { ctx, calls } = context();
   const file = unitPath(ctx.home);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const owners = systemdUnit({ ...SPEC, stateDir: "/home/ana/.austere-axi" });
+  const ownersState = path.resolve("/home/ana/.austere-axi");
+  const owners = systemdUnit({ ...SPEC, stateDir: ownersState });
   fs.writeFileSync(file, owners);
   const checkout = "/home/ana/src/austere-axi/src/cli/main.ts";
   ctx.cli = checkout;
-  await assert.rejects(installService({ port: 5000 }, ctx), new RegExp(`${file} serves the state dir /home/ana/\\.austere-axi, and this CLI uses ${STATE}\\. .*add --force`));
-  assert.throws(() => uninstallService(ctx), /serves the state dir \/home\/ana\/\.austere-axi.*add --force to remove it anyway/);
+  await assert.rejects(installService({ port: 5000 }, ctx), new RegExp(`${escapeRegExp(file)} serves the state dir ${escapeRegExp(ownersState)}, and this CLI uses ${escapeRegExp(STATE)}\\. .*add --force`));
+  assert.throws(() => uninstallService(ctx), new RegExp(`serves the state dir ${escapeRegExp(ownersState)}.*add --force to remove it anyway`));
   assert.equal(fs.readFileSync(file, "utf8"), owners);
   // Same state dir, another CLI: refused too.
   fs.writeFileSync(file, systemdUnit({ ...SPEC, stateDir: STATE }));
-  await assert.rejects(installService({}, ctx), new RegExp(`runs ${CLI}, and this CLI is ${checkout}`));
-  assert.throws(() => uninstallService(ctx), new RegExp(`runs ${CLI}, and this CLI is ${checkout}`));
+  await assert.rejects(installService({}, ctx), new RegExp(`runs ${escapeRegExp(CLI)}, and this CLI is ${escapeRegExp(checkout)}`));
+  assert.throws(() => uninstallService(ctx), new RegExp(`runs ${escapeRegExp(CLI)}, and this CLI is ${escapeRegExp(checkout)}`));
   assert.deepEqual(changes(calls), []);
   // --force: the owner meant it.
   const r = await installService({ force: true }, ctx);
   assert.equal(r.status, "installed");
-  assert.match(fs.readFileSync(file, "utf8"), new RegExp(`ExecStart=/usr/bin/node ${checkout} server`));
+  assert.match(fs.readFileSync(file, "utf8"), new RegExp(`ExecStart=/usr/bin/node ${escapeRegExp(checkout)} server`));
   fs.writeFileSync(file, owners);
   assert.equal(uninstallService(ctx, { force: true }).status, "uninstalled");
   // A unit npx's cache runs is not another CLI's: the npx warning says to install for good and run install again.
@@ -903,7 +905,7 @@ test("install and uninstall refuse a unit of another state dir or another CLI un
   const npx = "/home/ana/.npm/_npx/1a2b3c/node_modules/austere-axi/dist/cli.mjs";
   fs.writeFileSync(unitPath(moved.home), systemdUnit({ ...SPEC, cli: npx, stateDir: STATE }));
   assert.equal((await installService({}, moved)).status, "installed");
-  assert.match(asked[0], new RegExp(`ExecStart: /usr/bin/node ${CLI} server --persist --port 4388 \\(was ${npx}\\)`));
+  assert.match(asked[0], new RegExp(`ExecStart: /usr/bin/node ${escapeRegExp(CLI)} server --persist --port 4388 \\(was ${escapeRegExp(npx)}\\)`));
 });
 
 test("installed means the unit's own process answers, not a server another unit runs", async () => {
