@@ -124,7 +124,8 @@ export type PsRunner = (args: string[]) => string | null;
 
 function runPs(args: string[]): string | null {
   try {
-    return execFileSync("ps", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000, windowsHide: true });
+    // lstart is printed in the locale and time zone of the environment: one fixed form, so every caller's string compares equal.
+    return execFileSync("ps", args, { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, stdio: ["ignore", "pipe", "ignore"], timeout: 2000, windowsHide: true });
   } catch {
     return null;
   }

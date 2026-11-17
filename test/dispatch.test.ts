@@ -4,6 +4,7 @@
 // CLI (feedback, patch, reply), or fail as a marker file tells them to.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -13,8 +14,9 @@ import { after, before, test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { autoConflict } from "../src/cli/attach.ts";
 import { systemProcessTable } from "../src/cli/caller.ts";
-import { Dispatcher } from "../src/cli/dispatch.ts";
-import { SessionStore } from "../src/cli/sessions.ts";
+import { Dispatcher, readAttachLimits, unreleasedNotes } from "../src/cli/dispatch.ts";
+import { RENDER_CHECK_AUTHOR, SessionStore } from "../src/cli/sessions.ts";
+import type { QueuedEntry } from "../src/cli/sessions.ts";
 import { ownerKey } from "../src/cli/invites.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
@@ -36,6 +38,8 @@ interface RunRow {
   seq_from: number | null;
   seq_to: number | null;
   log_file: string | null;
+  started_at: number | null;
+  ended_at: number | null;
 }
 
 /** What a fake harness recorded about its run. */
@@ -246,18 +250,7 @@ function runEvents(id: string): { events: { run: RunRow; tail?: string[]; messag
   return { events, close: () => req.destroy() };
 }
 
-before(async () => {
-  if (skip) return;
-  fs.mkdirSync(path.join(PROJECT, ".git"), { recursive: true });
-  fs.mkdirSync(CTL);
-  for (const harness of ["omp", "copilot"]) {
-    const script = path.join(WORK, "fakes", harness, "fake.mjs");
-    fs.mkdirSync(path.dirname(script), { recursive: true });
-    fs.writeFileSync(script, FAKE);
-    fs.mkdirSync(BIN, { recursive: true });
-    fs.writeFileSync(path.join(BIN, harness), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, { mode: 0o755 });
-  }
-  attachLimits();
+async function startServer(): Promise<void> {
   server = spawn(process.execPath, [CLI, "server", "--port", String(PORT)], {
     env: { ...ENV, PATH: `${BIN}${path.delimiter}${process.env.PATH}`, FAKE_CTL: CTL, FAKE_CLI: CLI, AUSTERE_AXI_HOST: "127.0.0.1" },
     stdio: "ignore",
@@ -270,6 +263,21 @@ before(async () => {
     await sleep(50);
   }
   throw new Error("server did not start");
+}
+
+before(async () => {
+  if (skip) return;
+  fs.mkdirSync(path.join(PROJECT, ".git"), { recursive: true });
+  fs.mkdirSync(CTL);
+  for (const harness of ["omp", "copilot"]) {
+    const script = path.join(WORK, "fakes", harness, "fake.mjs");
+    fs.mkdirSync(path.dirname(script), { recursive: true });
+    fs.writeFileSync(script, FAKE);
+    fs.mkdirSync(BIN, { recursive: true });
+    fs.writeFileSync(path.join(BIN, harness), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, { mode: 0o755 });
+  }
+  attachLimits();
+  await startServer();
 });
 
 after(async () => {
@@ -373,11 +381,69 @@ test("attach and unattended input exclude each other: publish --auto and share -
   await owner("/api/share/revoke", { key: "Cy" });
 });
 
+test("the server reads the hosted page's live auto flag: --auto turned on elsewhere refuses a run cloud.json would allow", { skip }, async () => {
+  const { file, id } = await page("quebec");
+  // This machine published without --auto; the page row the last pull cached says auto.
+  fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t", pages: { [file]: { id: "pq", auto: false, unlisted: false, presence: true, invites: {} } } }));
+  exec("INSERT INTO cloud_rows (page_id, type, id, seq, body) VALUES ('pq', 'page', 'pq', 1, ?)", JSON.stringify({ type: "page", id: "pq", auto: true }));
+  try {
+    assert.equal(autoConflict(file, id, []), null, "cloud.json alone says not auto");
+    assert.match(String(autoConflict(file, id, [], () => true)), /published with --auto/);
+    attach(id);
+    await say(id, "go");
+    const refused = await runIn(id, "failed", "done");
+    assert.equal(refused.reason, "auto_conflict");
+  } finally {
+    fs.rmSync(path.join(STATE, "cloud.json"));
+    exec("DELETE FROM cloud_rows WHERE page_id = 'pq'");
+  }
+});
+
+test("a note an --auto invite delivered keeps runs off after the invite is revoked, until the owner answers or discards it (A17)", { skip }, async () => {
+  const { file, id } = await page("romeo");
+  const shared = await owner("/api/share", { file, name: "Dee", auto: true });
+  assert.equal(shared.status, 200, shared.data);
+  const token = new URL((JSON.parse(shared.data) as { link: string }).link).searchParams.get("invite") as string;
+  const sent = await post(`/s/${id}/send`, { items: [{ kind: "message", text: "rewrite everything" }] }, { cookie: `austere_rv=${token}` });
+  assert.equal(sent.status, 200, sent.data);
+  assert.equal((await owner("/api/share/revoke", { key: "Dee" })).status, 200);
+  attach(id);
+  await say(id, "fix the title");
+  const refused = await runIn(id, "failed", "done");
+  assert.equal(refused.reason, "auto_conflict");
+  assert.match(fs.readFileSync(refused.log_file as string, "utf8"), /A note from Dee reached the inbox without the owner releasing it/);
+});
+
+test("unreleasedNotes names reviewers' notes with a seq the owner never gave; not the owner's, released, hosted or render-check notes", () => {
+  const note = (extra: Partial<QueuedEntry>): QueuedEntry => ({ id: "u", role: "user", at: 0, items: [], seenAt: null, doneAt: null, seq: 1, ...extra });
+  assert.equal(unreleasedNotes([note({}), note({ author: "Ana", releasedAt: 5 }), note({ author: "Bo", remote: true }), note({ author: RENDER_CHECK_AUTHOR })]), null);
+  assert.match(String(unreleasedNotes([note({}), note({ author: "Ana" }), note({ author: "Ana" }), note({ author: "Bo" })])), /^3 notes from Ana, Bo reached the inbox/);
+});
+
+test("attach.json limits are capped: a timer past setTimeout's range, or an absurd count, is refused", { skip }, () => {
+  try {
+    for (const [key, value] of [["maxMinutes", 24 * 60 + 1], ["debounceMs", 3_600_001], ["recheckMs", 2 ** 31], ["runsPerHour", 1001], ["maxConcurrent", 17]] as const) {
+      fs.writeFileSync(path.join(STATE, "attach.json"), JSON.stringify({ [key]: value }));
+      assert.throws(() => readAttachLimits(), new RegExp(`${key} must be at most`));
+    }
+    fs.writeFileSync(path.join(STATE, "attach.json"), JSON.stringify({ maxMinutes: 24 * 60, maxConcurrent: 16, recheckMs: 3_600_000 }));
+    assert.equal(readAttachLimits().maxConcurrent, 16);
+  } finally {
+    attachLimits();
+  }
+});
+
 test("notes within the debounce make one run; a note during a run makes a second run after it", { skip }, async () => {
   const { id } = await page("delta");
   fs.writeFileSync(path.join(CTL, "delta.hold"), "");
   attach(id);
-  for (const t of ["one", "two", "three"]) await say(id, t);
+  // A debounce the three sends always fit in, however slow the machine.
+  attachLimits({ debounceMs: 1500 });
+  try {
+    for (const t of ["one", "two", "three"]) await say(id, t);
+  } finally {
+    attachLimits();
+  }
   const first = await runIn(id, "running");
   await until("the first run read its feedback", () => fs.existsSync(path.join(CTL, `${first.id}.fed`)));
   await say(id, "four");
@@ -474,6 +540,49 @@ test("mode same waits while the session's process runs, then runs when it exits"
   assert.equal(args[args.indexOf("--resume") + 1], "sess-live");
 });
 
+test("two pages on one author session in mode same: the second waits for the first page's run, announced once, then runs", { skip }, async () => {
+  const a = await page("oscar");
+  const b = await page("papa");
+  const table = systemProcessTable();
+  assert.ok(table);
+  // The author's own process has exited: only the dispatcher's runs can hold the session.
+  const dead = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+  const start = await until("the process's start time", () => table.info(dead.pid as number)?.start);
+  const exited = once(dead, "exit");
+  dead.kill();
+  await exited;
+  const now = Date.now();
+  exec("INSERT INTO agent_sessions (id, harness, session_id, pid, pid_start, first_seen, last_seen) VALUES ('as-shared', 'omp', 'sess-shared', ?, ?, ?, ?)", dead.pid as number, start, now, now);
+  for (const p of [a, b]) {
+    exec("INSERT INTO page_sessions (artifact_id, agent_session_id, role, at) VALUES (?, 'as-shared', 'author', ?)", p.id, now);
+    attach(p.id, { mode: "same", session: "author" });
+  }
+  fs.writeFileSync(path.join(CTL, "oscar.hold"), "");
+  const sse = runEvents(b.id);
+  await sleep(200);
+  await say(a.id, "fix");
+  const first = await runIn(a.id, "running");
+  await until("the first run read its feedback", () => fs.existsSync(path.join(CTL, `${first.id}.fed`)));
+  await say(b.id, "fix");
+  const waiting = await runIn(b.id, "waiting_for_session");
+  assert.equal(waiting.agent_session_id, "as-shared");
+  // Several rechecks (recheckMs 200) pass; the run neither starts nor is announced again.
+  await sleep(1500);
+  assert.equal(runsOf(b.id)[0].started_at, null, "the second run started on a session in use");
+  fs.writeFileSync(path.join(CTL, "oscar.go"), "");
+  const second = await runIn(b.id, "done", "failed");
+  assert.equal(second.status, "done", `reason ${second.reason}`);
+  const firstDone = runsOf(a.id)[0];
+  assert.equal(firstDone.status, "done", `reason ${firstDone.reason}`);
+  assert.ok((second.started_at as number) >= (firstDone.ended_at as number), "the runs overlapped");
+  const args = recorded(second.id).args;
+  assert.equal(args[args.indexOf("--resume") + 1], "sess-shared");
+  const waits = sse.events.filter((e) => /^Waiting for/.test(e.message ?? ""));
+  assert.equal(waits.length, 1, JSON.stringify(waits));
+  assert.match(String(waits[0].message), new RegExp(`run ${first.id} is using it`));
+  sse.close();
+});
+
 test("mode same with a session of unknown liveness, and Copilot fork, are refused with the reason", { skip }, async () => {
   const { id } = await page("juliet");
   const now = Date.now();
@@ -543,4 +652,48 @@ test("after a restart a running or waiting run is interrupted and queued once mo
     store.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a run whose files cannot be written fails with unavailable; the server stays up", { skip: skip || (process.getuid?.() === 0 && "root writes anywhere") }, async () => {
+  const { id } = await page("sierra");
+  attach(id);
+  const runs = path.join(STATE, "runs");
+  fs.mkdirSync(runs, { recursive: true });
+  fs.chmodSync(runs, 0o500);
+  try {
+    await say(id, "fix");
+    const run = await runIn(id, "failed", "done", "running");
+    assert.equal(run.status, "failed");
+    assert.equal(run.reason, "unavailable");
+  } finally {
+    fs.chmodSync(runs, 0o700);
+  }
+  // The server answers: the failed write did not take it down.
+  assert.ok((await owner("/api/health")).status);
+  await say(id, "again");
+  const next = await until("a second run", () => runsOf(id).find((r) => r.status === "done"));
+  assert.equal(next.reason, null);
+});
+
+test("a server that stops leaves its running run's row running; the next server interrupts and requeues it", { skip }, async () => {
+  const { id } = await page("tango");
+  fakeMode("tango", "sleep");
+  attach(id);
+  await say(id, "fix");
+  const running = await runIn(id, "running");
+  await until("the harness started", () => fs.existsSync(path.join(CTL, `${running.id}.grandchild`)));
+  const child = server as ChildProcess;
+  const exited = once(child, "exit");
+  child.kill("SIGTERM");
+  await exited;
+  await sleep(300);
+  assert.equal(runsOf(id)[0].status, "running", "the stopping server judged the run it killed");
+  fakeMode("tango", "ok");
+  await startServer();
+  const rows = await until("the requeued run done", () => {
+    const rs = runsOf(id);
+    return rs.length === 2 && rs[1].status === "done" && rs;
+  });
+  assert.equal(rows[0].status, "interrupted");
+  assert.equal(query<{ requeued_from: string }>("SELECT requeued_from FROM runs WHERE id = ?", rows[1].id)[0].requeued_from, running.id);
 });

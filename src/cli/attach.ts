@@ -123,13 +123,19 @@ export function resolveTarget(db: sqlite.DatabaseSync, artifactId: string, setti
   return { mode: setting.mode, harness: session.harness, session };
 }
 
+/** Whether a hosted page releases notes at once, given its id and cloud.json's copy of the flag. */
+export type LiveAuto = (pageId: string, fallback: boolean) => boolean;
+
 /**
  * Why this copy takes notes no owner sent or released (Q3, A17), or null: it is published with
- * `--auto` (cloud.json), or shared with an `--auto` invite. Attach refuses to run on such a page,
- * and `attach on` refuses while this says something.
+ * `--auto`, or shared with an `--auto` invite. Attach refuses to run on such a page, and
+ * `attach on` refuses while this says something. The server passes `liveAuto` (the page row its
+ * last pull cached: the flag may have changed on another machine since this one published);
+ * without it, cloud.json's copy decides.
  */
-export function autoConflict(file: string, artifactId: string, invites: readonly Invite[]): string | null {
-  if (readCloud().pages[file]?.auto) return `${file} is published with --auto: reviewers' notes reach the agent without the owner`;
+export function autoConflict(file: string, artifactId: string, invites: readonly Invite[], liveAuto: LiveAuto = (_, fallback) => fallback): string | null {
+  const entry = readCloud().pages[file];
+  if (entry && liveAuto(entry.id, entry.auto)) return `${file} is published with --auto: reviewers' notes reach the agent without the owner`;
   const auto = invites.filter((i) => i.sessionId === artifactId && i.auto).map((i) => i.name);
   if (auto.length) return `${file} is shared with --auto (${auto.join(", ")}): those reviewers' notes reach the agent without the owner`;
   return null;
@@ -250,13 +256,21 @@ export interface AttachReport {
   auto: string | null;
 }
 
-/** The report for one copy. `file` and `invites` feed the auto check; `cfg` and `env` the adapter checks. */
-export function attachReport(db: sqlite.DatabaseSync, artifactId: string, file: string, invites: readonly Invite[], cfg: AdaptersConfig, env: NodeJS.ProcessEnv = process.env): AttachReport {
+/** The report for one copy. `file`, `invites` and `liveAuto` feed the auto check; `cfg` and `env` the adapter checks. */
+export function attachReport(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  file: string,
+  invites: readonly Invite[],
+  cfg: AdaptersConfig,
+  env: NodeJS.ProcessEnv = process.env,
+  liveAuto?: LiveAuto,
+): AttachReport {
   const ids = scopeIds(db, artifactId);
   const effective = effectiveAttach(db, artifactId);
   const projectRow = ids.project ? (db.prepare("SELECT id, name FROM projects WHERE id = ?").get(ids.project) as { id: string; name: string } | undefined) : undefined;
   const target = resolveTarget(db, artifactId, effective);
-  const auto = autoConflict(file, artifactId, invites);
+  const auto = autoConflict(file, artifactId, invites, liveAuto);
   const warnings = adapterWarnings(target, cfg, env);
   if (target.mode === "same" && target.session && liveness(target.session) === "unknown") {
     warnings.push(`cannot tell whether ${target.session.harness} session ${shortId(target.session.session_id)} is still open (no harness process was recorded for it), so a same run fails with session_unknown: choose fork or new`);
@@ -306,12 +320,12 @@ export type AttachWhere = { page: { artifactId: string; file: string } } | { pro
  * Turning a page on refuses while the page is auto (Q3, A17) and when its harness, or the session
  * it resumes, cannot run the mode; nothing is written then. Returns the row as stored.
  */
-export function changeSetting(db: sqlite.DatabaseSync, where: AttachWhere, state: AttachState, fields: AttachFields, cfg: AdaptersConfig, invites: readonly Invite[]): AttachSettingRow {
+export function changeSetting(db: sqlite.DatabaseSync, where: AttachWhere, state: AttachState, fields: AttachFields, cfg: AdaptersConfig, invites: readonly Invite[], liveAuto?: LiveAuto): AttachSettingRow {
   return inTransaction(db, () => {
     const page = "page" in where ? where.page : null;
     const ids = page ? scopeIds(db, page.artifactId) : { page: null, project: (where as { projectId: string }).projectId };
     if (state === "on" && page) {
-      const conflict = autoConflict(page.file, page.artifactId, invites);
+      const conflict = autoConflict(page.file, page.artifactId, invites, liveAuto);
       if (conflict) throw new AttachRefused("auto_conflict", `${conflict}. Attach and --auto exclude each other (Q3), so attach stays off: publish or share the page without --auto first.`);
     }
     const row = ids.page !== null ? writeSetting(db, "page", ids.page, state, fields) : writeSetting(db, "project", ids.project as string, state, fields);

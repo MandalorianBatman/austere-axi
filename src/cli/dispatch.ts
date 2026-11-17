@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type * as sqlite from "node:sqlite";
-import { adapterFor, capabilitiesOf, findOnPath } from "./adapters/index.ts";
+import { adapterFor, capabilitiesOf, findOnPath, spawnSpec } from "./adapters/index.ts";
 import { extraArgsFor, isHarness, readAdapters } from "./adapters/config.ts";
 import { AdapterError } from "./adapters/types.ts";
 import type { Adapter, AttachMode, BuiltCommand, Limits } from "./adapters/types.ts";
@@ -22,6 +22,7 @@ import type { RunTarget } from "./attach.ts";
 import { systemProcessTable } from "./caller.ts";
 import { stateDir } from "./paths.ts";
 import { childEnv } from "./service.ts";
+import { RENDER_CHECK_AUTHOR } from "./sessions.ts";
 import type { QueuedEntry, Session, SessionStore, TranscriptEntry } from "./sessions.ts";
 
 export type RunStatus = "queued" | "waiting_for_session" | "running" | "done" | "failed" | "stopped" | "interrupted";
@@ -112,6 +113,17 @@ export interface AttachLimits {
 
 export const DEFAULT_ATTACH_LIMITS: Readonly<AttachLimits> = Object.freeze({ maxMinutes: 15, runsPerHour: 12, maxConcurrent: 2, debounceMs: 5000, recheckMs: 30_000 });
 
+/** The largest value each limit takes: the timers stay within setTimeout's 2^31-1 ms. */
+const MAX_ATTACH_LIMITS: Readonly<Record<keyof AttachLimits, number>> = Object.freeze({
+  maxMinutes: 24 * 60,
+  runsPerHour: 1000,
+  maxConcurrent: 16,
+  debounceMs: 3_600_000,
+  recheckMs: 3_600_000,
+  maxCost: Number.MAX_VALUE,
+  maxAiCredits: Number.MAX_VALUE,
+});
+
 export function attachFile(): string {
   return path.join(stateDir(), "attach.json");
 }
@@ -136,9 +148,11 @@ export function readAttachLimits(): AttachLimits {
   if (!data || typeof data !== "object" || Array.isArray(data)) throw bad("not an object");
   const out: AttachLimits = { ...DEFAULT_ATTACH_LIMITS };
   for (const [key, value] of Object.entries(data)) {
-    if (!["maxMinutes", "runsPerHour", "maxConcurrent", "debounceMs", "recheckMs", "maxCost", "maxAiCredits"].includes(key)) throw bad(`unknown key ${JSON.stringify(key)}`);
+    if (!Object.hasOwn(MAX_ATTACH_LIMITS, key)) throw bad(`unknown key ${JSON.stringify(key)}`);
     if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) throw bad(`${key} must be a number above 0`);
     if ((key === "runsPerHour" || key === "maxConcurrent") && !Number.isInteger(value)) throw bad(`${key} must be a whole number`);
+    const max = MAX_ATTACH_LIMITS[key as keyof AttachLimits];
+    if (value > max) throw bad(`${key} must be at most ${max}`);
     out[key as keyof AttachLimits] = value;
   }
   return out;
@@ -273,6 +287,20 @@ interface Running {
 
 const deliverable = (e: TranscriptEntry): e is QueuedEntry => e.role === "user" && e.seq != null && !e.held && !e.discarded;
 
+/**
+ * Why the open notes keep a run from starting (A17), or null: a reviewer's note that has a seq
+ * the owner never gave it (no `releasedAt`), as an `--auto` invite, since revoked, gave it. Notes
+ * from a hosted page are the hosted page's to release (a hosted `--auto` page is refused as a
+ * whole), and the page's own render check is not a reviewer.
+ */
+export function unreleasedNotes(open: readonly QueuedEntry[]): string | null {
+  const notes = open.filter((e) => e.author && e.author !== RENDER_CHECK_AUTHOR && !e.releasedAt && !e.remote);
+  if (!notes.length) return null;
+  const names = [...new Set(notes.map((e) => e.author))].join(", ");
+  const [these, them] = notes.length === 1 ? ["A note", "it"] : [`${notes.length} notes`, "them"];
+  return `${these} from ${names} reached the inbox without the owner releasing ${them} (an --auto invite, since revoked), and a run reads only notes the owner sent or released, so it does not start (Q3). Answer or discard ${them} on the review page; to have the agent act on one, send it yourself.`;
+}
+
 export interface DispatcherOptions {
   db: sqlite.DatabaseSync;
   store: SessionStore;
@@ -297,6 +325,8 @@ export class Dispatcher {
   private timers = new Map<string, NodeJS.Timeout>();
   private intervals: NodeJS.Timeout[] = [];
   private closed = false;
+  /** Waiting runs whose wait the owner has heard of: one "Waiting for…" each, not one per recheck. */
+  private announced = new Set<string>();
 
   constructor(o: DispatcherOptions) {
     this.o = o;
@@ -341,7 +371,10 @@ export class Dispatcher {
     setImmediate(() => this.pump());
   }
 
-  /** Stop the timers and kill every run's process tree. Their rows stay `running`: the next start marks them interrupted. */
+  /**
+   * Stop the timers and kill every run's process tree. Their rows stay `running`: the next start
+   * marks them interrupted and queues them again (finish leaves a closed dispatcher's rows alone).
+   */
   close(): void {
     this.closed = true;
     for (const t of this.intervals) clearInterval(t);
@@ -448,6 +481,7 @@ export class Dispatcher {
     } catch {
       logFile = row.log_file;
     }
+    this.announced.delete(row.id);
     this.db.prepare("UPDATE runs SET status = ?, reason = ?, ended_at = ?, log_file = ? WHERE id = ?").run(status, reason, Date.now(), logFile, row.id);
     this.emit(row.id, { message });
     this.o.log("run", row.id, status, reason);
@@ -458,7 +492,15 @@ export class Dispatcher {
     if (row?.artifact_id) this.o.emit(row.artifact_id, { run: summary(row), ...extra });
   }
 
-  /** Waiting runs look again: now and then their session's process (exited → run), and every `recheckMs` everything. */
+  /** This dispatcher's run that is using `session` now: one started on it, or one resuming its harness session id. */
+  private holderOf(session: AgentSessionRow): Running | null {
+    for (const r of this.running.values()) {
+      if (r.row.agent_session_id === session.id || (r.adapter.id === session.harness && r.built.sessionId === session.session_id)) return r;
+    }
+    return null;
+  }
+
+  /** Waiting runs look again: now and then their session (exited, or this dispatcher's run on it ended → run), and every `recheckMs` everything. */
   private recheck(full: boolean): void {
     if (this.closed) return;
     const rows = this.db.prepare("SELECT * FROM runs WHERE status = 'waiting_for_session'").all() as unknown as RunRow[];
@@ -466,7 +508,7 @@ export class Dispatcher {
     for (const row of rows) {
       const s = row.artifact_id ? this.o.store.get(row.artifact_id) : null;
       const session = row.agent_session_id ? sessionRow(this.db, row.agent_session_id) : null;
-      if (!full && s && session && liveness(session) === "alive" && !this.o.listening(s)) continue;
+      if (!full && s && session && (this.holderOf(session) || liveness(session) === "alive") && !this.o.listening(s)) continue;
       // Back to the queue; pump decides again (and waits again if the session still runs).
       this.db.prepare("UPDATE runs SET status = 'queued' WHERE id = ?").run(row.id);
       changed = true;
@@ -498,8 +540,8 @@ export class Dispatcher {
         this.end(row, "stopped", "listener", "An agent is polling the page: the notes go to it.");
         continue;
       }
-      const open = s.transcript.filter((e): e is QueuedEntry => deliverable(e) && !e.doneAt).map((e) => e.seq);
-      if (!open.length) {
+      const openNotes = s.transcript.filter((e): e is QueuedEntry => deliverable(e) && !e.doneAt);
+      if (!openNotes.length) {
         this.end(row, "stopped", "answered", "Every note on the page is answered already.");
         continue;
       }
@@ -508,6 +550,12 @@ export class Dispatcher {
         this.end(row, "failed", "auto_conflict", `${conflict}; a run reads only notes the owner sent or released, so it does not start (Q3). Run \`austere-axi attach off\` for the page, or publish or share it without --auto.`);
         continue;
       }
+      const unreleased = unreleasedNotes(openNotes);
+      if (unreleased) {
+        this.end(row, "failed", "auto_conflict", unreleased);
+        continue;
+      }
+      const open = openNotes.map((e) => e.seq);
       const started = Number((this.db.prepare("SELECT COUNT(*) AS n FROM runs WHERE artifact_id = ? AND started_at >= ?").get(artifactId, now - HOUR_MS) as { n: number }).n);
       if (started >= limits.runsPerHour) {
         this.end(row, "failed", "rate_limit", `${started} runs started on this page in the last hour; the limit is ${limits.runsPerHour} (runsPerHour in ${attachFile()}). The notes wait in the inbox.`);
@@ -515,20 +563,32 @@ export class Dispatcher {
       }
       const target = resolveTarget(this.db, s.id, setting);
       if (target.mode === "same" && target.session) {
-        const live = liveness(target.session);
+        // Busy when this dispatcher runs on it (another page, the same author session), else when its own process still runs.
+        const holder = this.holderOf(target.session);
+        const live = holder ? "alive" : liveness(target.session);
         if (live === "unknown") {
           this.end(row, "failed", "session_unknown", `Cannot tell whether ${target.session.harness} session ${target.session.session_id} is still open (no harness process was recorded for it), and resuming an open session is unsafe. Choose fork, or new, for this page.`);
           continue;
         }
         if (live === "alive") {
-          const was = row.status;
           this.db.prepare("UPDATE runs SET status = 'waiting_for_session', agent_session_id = ?, harness = ?, mode = ?, model = ? WHERE id = ?").run(target.session.id, target.harness, target.mode, setting.model, row.id);
-          if (was !== "waiting_for_session") this.emit(row.id, { message: `Waiting for ${target.harness} session ${target.session.session_id} to exit: it is still running.` });
+          if (!this.announced.has(row.id)) {
+            this.announced.add(row.id);
+            const why = holder ? `run ${holder.row.id} is using it` : "it is still running";
+            this.emit(row.id, { message: `Waiting for ${target.harness} session ${target.session.session_id} to be free: ${why}.` });
+          }
           continue;
         }
       }
       if (this.running.size >= limits.maxConcurrent) continue;
-      this.launch(row, s, target, setting.model, Math.min(...open), Math.max(...open));
+      try {
+        this.launch(row, s, target, setting.model, Math.min(...open), Math.max(...open));
+      } catch (err) {
+        // launch ends its run itself on every failure it knows; this keeps the server up, and no row stuck, on one it does not.
+        this.o.log("run-launch", row.id, (err as Error).message);
+        const current = getRun(this.db, row.id);
+        if (current && !this.running.has(row.id) && (current.status === "queued" || current.status === "running")) this.end(current, "failed", "unavailable", `Could not start the run: ${(err as Error).message}`);
+      }
     }
   }
 
@@ -572,10 +632,24 @@ export class Dispatcher {
       from = this.dispatcherSession(s.id, target.harness);
       if (from) buildMode = "same";
     }
-    const dir = runsDir();
-    const promptFile = path.join(dir, `${row.id}.prompt`);
-    const logFile = path.join(dir, `${row.id}.log`);
-    fs.writeFileSync(promptFile, runPrompt({ file: s.file, cursor: seqTo }), { mode: 0o600 });
+    // The run's files: a failure here (a full disk, a runs dir it cannot write) fails the run, not the server.
+    let promptFile: string;
+    let logFile: string;
+    const discardPrompt = () => {
+      try {
+        fs.rmSync(promptFile, { force: true });
+      } catch {
+        // the next start sweeps it
+      }
+    };
+    try {
+      const dir = runsDir();
+      promptFile = path.join(dir, `${row.id}.prompt`);
+      logFile = path.join(dir, `${row.id}.log`);
+      fs.writeFileSync(promptFile, runPrompt({ file: s.file, cursor: seqTo }), { mode: 0o600 });
+    } catch (err) {
+      return fail("unavailable", `Could not write the run's prompt file: ${(err as Error).message}`);
+    }
     const art = this.db.prepare("SELECT root FROM artifacts WHERE id = ?").get(s.id) as { root: string | null } | undefined;
     const cwd = art?.root && fs.existsSync(art.root) ? art.root : path.dirname(s.file);
     const runLimits: Limits = {};
@@ -593,28 +667,39 @@ export class Dispatcher {
         extraArgs: isHarness(adapter.id) ? extraArgsFor(adapter.id, readAdapters()) : [],
       });
     } catch (err) {
-      fs.rmSync(promptFile, { force: true });
+      discardPrompt();
       return fail(err instanceof AdapterError && err.code === "missing_session" ? "unavailable" : "unsupported", (err as Error).message);
     }
 
-    const now = Date.now();
+    let logFd: number | undefined;
+    let promptFd: number;
+    try {
+      logFd = fs.openSync(logFile, "a", 0o600);
+      promptFd = fs.openSync(promptFile, "r");
+    } catch (err) {
+      if (logFd !== undefined) fs.closeSync(logFd);
+      discardPrompt();
+      return fail("unavailable", `Could not open the run's files: ${(err as Error).message}`);
+    }
+    this.announced.delete(row.id);
     this.db
       .prepare("UPDATE runs SET status = 'running', started_at = ?, harness = ?, mode = ?, model = ?, agent_session_id = ?, seq_from = ?, seq_to = ?, log_file = ?, reason = NULL WHERE id = ?")
-      .run(now, target.harness, target.mode, model, from?.id ?? null, seqFrom, seqTo, logFile, row.id);
-    const logFd = fs.openSync(logFile, "a", 0o600);
-    const promptFd = fs.openSync(promptFile, "r");
+      .run(Date.now(), target.harness, target.mode, model, from?.id ?? null, seqFrom, seqTo, logFile, row.id);
+    // A .cmd shim on Windows runs through cmd.exe (spawnSpec); the prompt stays on stdin either way.
+    const spec = spawnSpec(bin, built.args, process.platform, env);
     let child: ChildProcess;
     try {
-      child = spawn(bin, built.args, {
+      child = spawn(spec.file, spec.args, {
         cwd: built.cwd,
         env: { ...env, ...built.env },
         stdio: [promptFd, "pipe", "pipe"],
         detached: process.platform !== "win32",
         windowsHide: true,
+        windowsVerbatimArguments: spec.windowsVerbatimArguments,
       });
     } catch (err) {
       fs.closeSync(logFd);
-      fs.rmSync(promptFile, { force: true });
+      discardPrompt();
       return this.end({ ...row, log_file: logFile }, "failed", "unavailable", `Could not start ${bin}: ${(err as Error).message}`);
     } finally {
       fs.closeSync(promptFd);
@@ -705,7 +790,22 @@ export class Dispatcher {
   private finish(r: Running, code: number | null, forced: RunReasonCode | null): void {
     clearTimeout(r.timer);
     this.running.delete(r.row.id);
-    fs.rmSync(r.promptFile, { force: true });
+    try {
+      fs.rmSync(r.promptFile, { force: true });
+    } catch {
+      // the next start sweeps it
+    }
+    if (this.closed) {
+      // close() killed it: the row stays `running`, so the next start marks it interrupted and
+      // queues it again; a server that is stopping does not judge it (nor overwrite a newer server's row).
+      try {
+        fs.closeSync(r.logFd);
+      } catch {
+        // closed already
+      }
+      r.resolve();
+      return;
+    }
     const stdout = r.head.length + r.tail.length <= OUTPUT_KEEP || r.tail.startsWith(r.head) ? r.tail : `${r.head}\n${r.tail}`;
     const result = r.adapter.readResult({ stdout, stderr: r.stderr, exitCode: code, command: r.built });
     const agentSessionId = this.recordSession(r, result.sessionId ?? r.built.sessionId);

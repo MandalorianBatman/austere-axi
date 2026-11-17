@@ -17,7 +17,7 @@ import { exportHtml } from "./export.ts";
 import { allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
 import type { Tailnet } from "./net.ts";
 import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
-import { SessionStore, newId, sessionId } from "./sessions.ts";
+import { RENDER_CHECK_AUTHOR, SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
 import { listSessions, liveness, parseCallerReport, registerSession, shortId } from "./agent-sessions.ts";
@@ -30,8 +30,8 @@ import { Hub, activeWorkNow } from "./hub.ts";
 import { Dispatcher, getRun, listRuns, logTail, summary } from "./dispatch.ts";
 import type { RunEvent, RunSummary } from "./dispatch.ts";
 import { AttachRefused, attachReport, authorOf, autoConflict, changeSetting, effectiveAttach, harnessInfos, isAttachMode, resolveSessionValue, scopeIds } from "./attach.ts";
-import type { AttachFields, AttachSettingRow, AttachState, EffectiveAttach, HarnessInfo } from "./attach.ts";
-import { adapterFor, findOnPath } from "./adapters/index.ts";
+import type { AttachFields, AttachSettingRow, AttachState, EffectiveAttach, HarnessInfo, LiveAuto } from "./attach.ts";
+import { adapterFor, findOnPath, spawnSpec } from "./adapters/index.ts";
 import { readAdapters } from "./adapters/config.ts";
 import type { AdaptersConfig } from "./adapters/config.ts";
 import type { AttachMode } from "./adapters/types.ts";
@@ -318,8 +318,7 @@ export function persistEnv() {
 const LOGIN_TTL_MS = 60_000;
 const OWNER: OwnerViewer = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set<unknown>(["annotation", "message"]);
-// Render failures the owner's page reports on its own; they reach the agent as notes from this author.
-const RENDER_CHECK_AUTHOR = "Render check";
+// Render failures the owner's page reports on its own reach the agent as notes from RENDER_CHECK_AUTHOR.
 const MAX_RENDER_ERRORS = 20;
 // Transcript entries a page gets at once; it asks for older ones as the reader scrolls back.
 const PAGE = 200;
@@ -400,6 +399,7 @@ export async function runServer({
       for (const c of Array.from(clients.get(s.id) || [])) if (c.viewer.role === "owner") sseWrite(clients.get(s.id) as Set<SseClient>, c, viewerEvent(frame));
     },
   });
+  const liveAuto: LiveAuto = (pageId, fallback) => peer.liveAuto(pageId, fallback);
   // Attached agents (RLM-345): a note the owner sent or released starts a run when no poll holds the page.
   const dispatcher = new Dispatcher({
     db: store.db,
@@ -407,7 +407,8 @@ export async function runServer({
     port,
     log,
     listening: (s) => Boolean(listener(s)),
-    autoConflict: (s) => autoConflict(s.file, s.id, invites.list()),
+    // The page row the last pull cached decides, not cloud.json: --auto may have been turned on elsewhere since.
+    autoConflict: (s) => autoConflict(s.file, s.id, invites.list(), liveAuto),
     emit: (id, event) => broadcastOwners(id, "run", event),
   });
   // Render errors already sent per session, for one revision; a repeat or a second tab adds nothing.
@@ -613,7 +614,7 @@ export async function runServer({
     } catch (err) {
       configError = (err as Error).message;
     }
-    const report = attachReport(store.db, s.id, s.file, invites.list(), cfg);
+    const report = attachReport(store.db, s.id, s.file, invites.list(), cfg, process.env, liveAuto);
     const harnesses: AttachInfo["harnesses"] = harnessInfos(cfg);
     if (harnesses.omp?.found) {
       const models = await ompModels();
@@ -667,7 +668,8 @@ export async function runServer({
     const bin = findOnPath("omp");
     if (!bin) return Promise.resolve(null);
     const listed = Promise.withResolvers<string[] | null>();
-    const child = spawn(bin, ["models", "--json"], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, timeout: 15_000 });
+    const spec = spawnSpec(bin, ["models", "--json"]);
+    const child = spawn(spec.file, spec.args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, windowsVerbatimArguments: spec.windowsVerbatimArguments, timeout: 15_000 });
     let out = "";
     child.stdout.on("data", (c: Buffer) => {
       if (out.length < 4 * 1024 * 1024) out += c.toString("utf8");
@@ -1758,7 +1760,7 @@ export async function runServer({
         return send(res, 400, { error: (err as Error).message });
       }
       try {
-        changeSetting(store.db, { page: { artifactId: s.id, file: s.file } }, change.state, change.fields, cfg, invites.list());
+        changeSetting(store.db, { page: { artifactId: s.id, file: s.file } }, change.state, change.fields, cfg, invites.list(), liveAuto);
       } catch (err) {
         if (err instanceof AttachRefused) return send(res, 409, { error: err.message, code: err.code });
         throw err;

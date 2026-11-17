@@ -22,6 +22,9 @@ export type NoteItem = Record<string, unknown>;
 /** Where a note stands; see noteStatus. */
 export type NoteStatus = "discarded" | "held" | "open" | "received" | "addressed";
 
+/** The `author` of the notes the owner's page writes on its own when the page fails to render. */
+export const RENDER_CHECK_AUTHOR = "Render check";
+
 /** A batch of items the reviewer (or a team reviewer, `author`) sent. `seq` is null while it is held, and after it is discarded. */
 export interface UserEntry {
   id: string;

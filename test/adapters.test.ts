@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { ADAPTERS, adapterFor, capabilitiesOf, findOnPath } from "../src/cli/adapters/index.ts";
+import { ADAPTERS, adapterFor, capabilitiesOf, cmdQuoteArg, findOnPath, spawnSpec } from "../src/cli/adapters/index.ts";
 import { DEFAULT_EXTRA_ARGS, extraArgsFor, hasWriteGrant, readAdapters, shellJoin, shellWords } from "../src/cli/adapters/config.ts";
 import type { AdaptersConfig } from "../src/cli/adapters/config.ts";
 import { AdapterError } from "../src/cli/adapters/types.ts";
@@ -192,19 +192,41 @@ test("a missing binary makes every capability unavailable with the reason; findO
       for (const c of Object.values(caps)) assert.deepEqual(c, { ok: false, reason: `${a.bin} not found on PATH` });
     }
     assert.equal(findOnPath("omp", { PATH: "" }), null);
-    // A file that is not executable does not count; an executable one does.
-    const file = path.join(empty, "omp");
-    fs.writeFileSync(file, "#!/bin/sh\n");
-    if (process.platform !== "win32") {
-      assert.equal(findOnPath("omp", { PATH: empty }), null);
-      fs.chmodSync(file, 0o755);
-    }
+    // A file that is not executable does not count; an executable one does. On Windows only a
+    // PATHEXT name counts: npm's extensionless sh script beside the .cmd shim is no hit.
+    const windows = process.platform === "win32";
+    const file = path.join(empty, windows ? "omp.cmd" : "omp");
+    fs.writeFileSync(path.join(empty, "omp"), "#!/bin/sh\n");
+    assert.equal(findOnPath("omp", { PATH: empty }), null);
+    if (windows) fs.writeFileSync(file, "@echo off\r\n");
+    else fs.chmodSync(file, 0o755);
     assert.equal(findOnPath("omp", { PATH: `/nonexistent${path.delimiter}${empty}` }), file);
     assert.deepEqual(capabilitiesOf(ADAPTERS.omp, { PATH: empty }), ADAPTERS.omp.capabilities);
     assert.equal(findOnPath(file, { PATH: "" }), file, "a path is checked as is");
   } finally {
     fs.rmSync(empty, { recursive: true, force: true });
   }
+});
+
+test("cmd.exe quoting: every argument quoted for argv and caret-escaped for cmd, only .cmd/.bat on Windows go through it", () => {
+  assert.equal(cmdQuoteArg("plain"), '^"plain^"');
+  assert.equal(cmdQuoteArg(""), '^"^"');
+  assert.equal(cmdQuoteArg("a b"), '^"a^ b^"');
+  assert.equal(cmdQuoteArg('say "hi" & exit'), '^"say^ \\^"hi\\^"^ ^&^ exit^"');
+  assert.equal(cmdQuoteArg("C:\\dir\\"), '^"C:\\dir\\\\^"', "trailing backslashes doubled before the closing quote");
+  assert.equal(cmdQuoteArg('a\\"b'), '^"a\\\\\\^"b^"', "backslashes before a quote doubled, the quote escaped");
+  assert.equal(cmdQuoteArg("50%!^|<>()"), '^"50^%^!^^^|^<^>^(^)^"');
+  assert.equal(cmdQuoteArg("%PATH%"), '^"^%PATH^%^"', "no variable expands");
+
+  const env = { ComSpec: "C:\\Windows\\system32\\cmd.exe" };
+  assert.deepEqual(spawnSpec("C:\\Program Files\\npm\\omp.cmd", ["--model", "a&b"], "win32", env), {
+    file: "C:\\Windows\\system32\\cmd.exe",
+    args: ["/d", "/s", "/c", '"C:\\Program^ Files\\npm\\omp.cmd ^"--model^" ^"a^&b^""'],
+    windowsVerbatimArguments: true,
+  });
+  assert.equal(spawnSpec("C:\\x\\run.BAT", [], "win32", {}).file, "cmd.exe");
+  assert.deepEqual(spawnSpec("C:\\x\\omp.exe", ["-p"], "win32", env), { file: "C:\\x\\omp.exe", args: ["-p"], windowsVerbatimArguments: false });
+  assert.deepEqual(spawnSpec("/usr/bin/omp.cmd", ["-p"], "linux", env), { file: "/usr/bin/omp.cmd", args: ["-p"], windowsVerbatimArguments: false });
 });
 
 test("adapters.json is read from the state dir only, and a malformed one names the file", () => {

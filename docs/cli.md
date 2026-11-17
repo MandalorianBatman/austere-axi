@@ -93,25 +93,26 @@ austere-axi run stop <file>                 end the page's runs: the running one
 ```
 
 - **When a run starts:** 5 s after the owner's last note on the page (`debounceMs`). One run per page at a time; notes that arrive while one runs make the next run, after it. At most 2 runs at once on the machine (`maxConcurrent`); the rest stay `queued`.
-- **Which session:** the page's setting names a mode (`same`, `fork`, `new`) and a session (`author`: the session that wrote the page, followed to its newest continuation). With no session registered for the page, the run is `new`; the first `new` run's session is kept, and later `new` runs on the page resume it. A `same` run waits (`waiting_for_session`) while that session's harness process still runs, and starts when it exits (checked every second, and again every `recheckMs`, and when a poll arrives). A session whose process is unknown (`sessions list` shows `unknown`) is not resumed: the run fails with `session_unknown`; choose fork or new.
+- **Which session:** the page's setting names a mode (`same`, `fork`, `new`) and a session (`author`: the session that wrote the page, followed to its newest continuation). With no session registered for the page, the run is `new`; the first `new` run's session is kept, and later `new` runs on the page resume it. A `same` run waits (`waiting_for_session`, announced once) while that session's harness process still runs, or while another page's run uses the same session, and starts when it is free (checked every second, and again every `recheckMs`, and when a poll arrives). A session whose process is unknown (`sessions list` shows `unknown`) is not resumed: the run fails with `session_unknown`; choose fork or new.
 - **Statuses:** `queued`, `waiting_for_session`, `running`, `done`, `failed`, `stopped`, `interrupted`. A run is `done` only when it replied to every note it was started for; exit 0 without a reply is `failed` with `no_reply` (a harness without a write grant exits 0, see Adapters). Other reasons: `exit` (non-zero exit), `timeout`, `cost_cap` (omp exit 3), `session_in_use` (Copilot), `stopped`, `session_unknown`, `unsupported` (Copilot fork), `unavailable` (no such adapter, or its binary is not on `PATH`), `rate_limit`, `auto_conflict` (the page is published or shared with `--auto`), `config` (a malformed `attach.json` or `adapters.json`), and for a run that ended before it started: `listener`, `answered`, `attach_off`. A failed run leaves its notes unanswered, and is not retried; the owner's review page hears each change of a run, with the last 20 log lines when it failed.
 - **What a run gets:** a 0600 prompt file on stdin (the page's path, the three commands and the seq its reply acknowledges; no note text), deleted when the run ends; the working directory of the page's root (else its folder); the server's environment with `AUSTERE_AXI_RUN_ID`, `AUSTERE_AXI_STATE_DIR` and `AUSTERE_AXI_PORT` of this server. Never the owner key, in argv, environment, prompt or log.
 - **Logs:** `<state>/runs/<id>.log`, mode 0600, stdout and stderr, cut at 1 MB, removed after 30 days.
 - **Time limit:** after `maxMinutes` the run's whole process tree is killed (SIGTERM, then SIGKILL 5 s later; `taskkill /T /F` on Windows). `run stop` and the review page's stop do the same at once.
-- **Restart:** a server that stops kills its runs; the next one marks them `interrupted` and queues each once more.
-- **Attach and `--auto` exclude each other:** an unattended run reads only notes the owner sent or released. `publish --auto` and `share --auto` refuse while attach is on for the page, and a run refuses (`auto_conflict`) on a page published or shared with `--auto`.
+- **Restart:** a server that stops kills its runs and leaves their rows `running`; the next one marks them `interrupted` and queues each once more.
+- **Attach and `--auto` exclude each other:** an unattended run reads only notes the owner sent or released. `publish --auto` and `share --auto` refuse while attach is on for the page, and a run refuses (`auto_conflict`) on a page published (as the hosted page now has it) or shared with `--auto`, and while a note an `--auto` invite let through, before it was revoked, is still unanswered: answer or discard it.
+- **Windows:** a harness installed by npm is found as its `.cmd` shim (only `PATHEXT` names count) and run through `cmd.exe /d /s /c`, every argument quoted for it; the prompt still goes on stdin.
 
-`<state>/attach.json` (written by the owner, read only from the state dir; every key optional):
+`<state>/attach.json` (written by the owner, read only from the state dir; every key optional; a value above its maximum makes the file malformed):
 
-| Key | Default | |
-|---|---|---|
-| `maxMinutes` | `15` | wall clock per run |
-| `runsPerHour` | `12` | runs started per page in any hour; the next one fails with `rate_limit` |
-| `maxConcurrent` | `2` | runs at once on the machine |
-| `debounceMs` | `5000` | wait after the owner's last note |
-| `recheckMs` | `30000` | how often a waiting run looks again |
-| `maxCost` | | omp `--max-cost` (dollars) |
-| `maxAiCredits` | | Copilot `--max-ai-credits` |
+| Key | Default | Max | |
+|---|---|---|---|
+| `maxMinutes` | `15` | `1440` | wall clock per run |
+| `runsPerHour` | `12` | `1000` | runs started per page in any hour; the next one fails with `rate_limit` |
+| `maxConcurrent` | `2` | `16` | runs at once on the machine |
+| `debounceMs` | `5000` | `3600000` | wait after the owner's last note |
+| `recheckMs` | `30000` | `3600000` | how often a waiting run looks again |
+| `maxCost` | | | omp `--max-cost` (dollars) |
+| `maxAiCredits` | | | Copilot `--max-ai-credits` |
 
 ## Attach
 
