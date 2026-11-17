@@ -1268,6 +1268,7 @@ test("server restart replaces a server no unit runs; the CLI then finds it by se
   // A runner's own AUSTERE_AXI_PORT would hide the lookup through server.lock.
   const { AUSTERE_AXI_PORT: _runnerPort, ...base } = process.env;
   const env = { ...base, HOME: home, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" };
+  let replacement: number | null = null;
   try {
     const before = await health(port);
     assert.ok(before && !before.foreign);
@@ -1279,6 +1280,7 @@ test("server restart replaces a server no unit runs; the CLI then finds it by se
     let after = await health(port);
     for (let i = 0; i < 20 && !after; i++) after = await health(port);
     assert.ok(after && !after.foreign);
+    replacement = after.pid;
     assert.notEqual(after.pid, before.pid);
     assert.match(r.stdout, new RegExp(`^server: v\\S+, pid ${after.pid}, port ${port}, not run by a service$`, "m"));
     // Without AUSTERE_AXI_PORT the CLI reads the port from server.lock, and stops the server there.
@@ -1289,15 +1291,42 @@ test("server restart replaces a server no unit runs; the CLI then finds it by se
     assert.equal(await health(port), null);
   } finally {
     await stop(child);
-    // The detached replacement, when an assertion failed before it was stopped.
-    try {
-      const { pid } = JSON.parse(fs.readFileSync(path.join(STATE, "server.lock"), "utf8")) as { pid: number };
-      if (pid !== child.pid) process.kill(pid);
-    } catch {
-      // no lock, or that process is gone
-    }
+    // The detached replacement: stopped above, or still up when an assertion failed first.
+    await retire(replacement ?? lockPid(), child.pid);
   }
 });
+
+/** The pid in STATE's server.lock, or null. */
+function lockPid(): number | null {
+  let lock: unknown;
+  try {
+    lock = JSON.parse(fs.readFileSync(path.join(STATE, "server.lock"), "utf8"));
+  } catch {
+    return null;
+  }
+  return lock && typeof lock === "object" && "pid" in lock && typeof lock.pid === "number" ? lock.pid : null;
+}
+
+/**
+ * Wait for a detached server to exit, and kill it when it has not within 5 s. Until it exits it
+ * holds files in STATE (hub.db, server.log), and Windows then refuses to remove the folder.
+ */
+async function retire(pid: number | null, keep?: number): Promise<void> {
+  if (pid == null || pid === keep) return;
+  const alive = (): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // A real process exits on its own schedule: poll until it has.
+  for (let i = 0; i < 50 && alive(); i++) await new Promise((res) => setTimeout(res, 100));
+  if (!alive()) return;
+  process.kill(pid);
+  for (let i = 0; i < 50 && alive(); i++) await new Promise((res) => setTimeout(res, 100));
+}
 
 /** Run the CLI without blocking this process (a fake server here has to answer it). */
 function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number | null; stdout: string; stderr: string }> {
@@ -1343,7 +1372,11 @@ test("server restart replaces a server from before the health proof, and says wh
     assert.match(r.stdout, new RegExp(`^server: v\\S+, pid \\d+, port ${port}, not run by a service$`, "m"));
   } finally {
     legacy.close();
+    // The replacement is detached: stop it and wait until it has exited and let go of STATE.
+    const pid = lockPid();
     await runCli(["stop"], env);
+    for (let i = 0; i < 50 && (await health(port)); i++) await new Promise((res) => setTimeout(res, 100));
+    await retire(pid, process.pid);
   }
 });
 
