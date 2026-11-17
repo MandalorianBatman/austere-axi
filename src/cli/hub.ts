@@ -9,6 +9,7 @@ import type * as sqlite from "node:sqlite";
 import { stateDirHolder } from "./lock.ts";
 import { VERSION, stateDir } from "./paths.ts";
 import { DEVICES_SCHEMA, importInvites } from "./devices.ts";
+import { REQUESTS_SCHEMA } from "./requests.ts";
 import { backfillProjects, copyLabel, inTransaction, listProjects, resolveProject } from "./projects.ts";
 import type { SameRepository } from "./projects.ts";
 import type { NoteItem } from "./sessions.ts";
@@ -161,9 +162,10 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
  * a build whose schema is newer than a database's must not read it without migrating it.
  * 1 is the schema of 0.12.0, the first build that records it. 2 adds attach (RLM-343–346):
  * `agent_sessions`, `page_sessions`, `attach_settings`, `runs`. 3 adds team-review devices
- * (RLM-397): `devices`, and `device_id` on `notes` and `items`.
+ * (RLM-397): `devices`, and `device_id` on `notes` and `items`. 4 adds access requests
+ * (RLM-398): `access_requests` and `access_settings`.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** The schema version `db` is at. Before builds recorded it (0), a database 0.12.0 migrated already has version 1's last columns. */
 function schemaVersion(db: sqlite.DatabaseSync): number {
@@ -172,7 +174,8 @@ function schemaVersion(db: sqlite.DatabaseSync): number {
   const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   if (!has("artifacts", "archived_at") || !has("project_roots", "prefix")) return 0;
   if (!has("runs", "requeued_from") || !has("page_sessions", "role")) return 1;
-  return has("notes", "device_id") && has("items", "device_id") ? 3 : 2;
+  if (!has("notes", "device_id") || !has("items", "device_id")) return 2;
+  return has("access_requests", "secret_hash") ? 4 : 3;
 }
 
 /** Open hub.db with the schema in place; `readOnly`: as it is, refused when it is older than this build's schema. */
@@ -420,6 +423,8 @@ function migrate(db: sqlite.DatabaseSync): void {
     db.exec(DEVICES_SCHEMA);
     if (!has("notes", "device_id")) db.exec("ALTER TABLE notes ADD COLUMN device_id TEXT");
     if (!has("items", "device_id")) db.exec("ALTER TABLE items ADD COLUMN device_id TEXT");
+    // Access requests (RLM-398): browsers that asked to review, and where the owner lets them ask.
+    db.exec(REQUESTS_SCHEMA);
     backfillProjects(db);
     // Recorded from now on; a newer build's database keeps its number: the steps above are all this build adds.
     if (Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);

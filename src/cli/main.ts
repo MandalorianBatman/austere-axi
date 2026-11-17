@@ -17,7 +17,7 @@ import { lockStateDir } from "./lock.ts";
 import { installService, installedServiceFor, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
-import type { AccessSummary, ArchiveMissingResponse, ArchiveResponse, FeedbackResponse, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import type { AccessRequestSummary, AccessRequestsResponse, AccessSummary, ArchiveMissingResponse, ArchiveResponse, FeedbackResponse, OpenResponse, PollResponse, ProjectFeedbackResponse, RequestDecisionResponse, RequestSwitchResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
@@ -338,18 +338,19 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
   share: {
-    usage: 'share <file> --as "<name>" [--project <p> | --all] [--auto] [--expires <dur>] | share list [--links] | share revoke <name|id>',
+    usage:
+      'share <file> --as "<name>" [--project <p> | --all] [--auto] [--expires <dur>] | share list [--links] | share revoke <name|id> | share requests [on|off] [--project <p>] | share approve <id> [--project <p> | --all] [--auto] [--as "<name>"] | share deny <id> | share block <id>',
     summary:
-      "named link for a teammate on your tailnet. The first browser that opens it becomes that person's device and the link stops working; a link nobody opens expires (default 7d). It reaches the page, or with --project the page's project, or with --all every page. Their notes wait for you unless --auto. list shows the links nobody has opened yet and the devices; revoke cuts one off at once",
+      "named link for a teammate on your tailnet. The first browser that opens it becomes that person's device and the link stops working; a link nobody opens expires (default 7d). It reaches the page, or with --project the page's project, or with --all every page. Their notes wait for you unless --auto. list shows the links nobody has opened yet and the devices; revoke cuts one off at once. Requests (off by default): with `requests on` (every page) or `requests on --project <p>`, a browser without a link that opens a page's address can type a name and ask; `requests` lists who waits, approve lets that browser in (the page, or --project / --all), deny refuses it (it may ask again), block stops that browser asking",
     flags: {
-      as: "the reviewer's name",
-      project: "reach every page of this project (the page's own: a name, an id, or a folder inside one of its roots)",
+      as: "the reviewer's name; with approve: let them in under this name instead of the one they typed",
+      project: "reach every page of this project (the page's own: a name, an id, or a folder inside one of its roots); with requests on|off: that project only",
       all: "reach every page on this machine",
       auto: "send this reviewer's notes straight to the agent",
       expires: "an unopened link stops working after this long: 30m, 12h, 7d, 2w (default 7d)",
       links: "show the links (list)",
     },
-    example: 'share plan.html --as "Ana"   |   share plan.html --as "Bo" --project shop --expires 2d',
+    example: 'share plan.html --as "Ana"   |   share plan.html --as "Bo" --project shop --expires 2d   |   share requests on --project shop   |   share approve r0123456789',
   },
   publish: {
     usage:
@@ -2138,6 +2139,32 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
       next: `${withLinks ? "" : "--links shows the links. "}${BIN} share revoke <name|id> cuts one off.`,
     });
   }
+  if (sub === "requests") return shareRequests(more, flags);
+  if (sub === "approve" || sub === "deny" || sub === "block") {
+    const [rid] = more;
+    if (!rid) return usage(`${sub} needs a request id: ${BIN} share ${sub} <id> (see ${BIN} share requests)`, "share");
+    if (sub === "approve" && flags.project !== undefined && flags.all) return usage("--project and --all exclude each other: pick one scope", "share");
+    if (sub === "approve" && flags.as !== undefined && (typeof flags.as !== "string" || !flags.as.trim())) return usage(`--as needs a name: ${BIN} share approve ${rid} --as "<name>"`, "share");
+    await ensureServer();
+    // A folder names the project whose root holds it; the server has no working directory to resolve it against.
+    const project = typeof flags.project === "string" ? (fs.existsSync(flags.project) ? path.resolve(flags.project) : flags.project) : undefined;
+    const body = sub === "approve" ? { id: rid, scope: flags.all ? "all" : flags.project !== undefined ? "project" : "page", project, auto: !!flags.auto, name: flags.as } : { id: rid };
+    const r = await request<RequestDecisionResponse>("POST", `/api/share/${sub}`, body);
+    if (r.status !== 200) return fail(r.data?.error || `${sub} failed (${r.status})`);
+    const { request: q, device } = r.data;
+    if (device) {
+      return print({
+        status: "approved",
+        reviewer: device.name,
+        id: device.id,
+        reaches: device.reaches,
+        mode: device.auto ? "auto: their notes go straight to the agent" : "hold: their notes wait until the owner sends them on",
+        note: "The browser that asked opens the page by itself; no other browser can use this approval.",
+        next: `${BIN} share revoke ${device.id} cuts it off.`,
+      });
+    }
+    return print({ status: q.status, request: `${q.name} (${q.id})`, note: q.status === "blocked" ? "That browser can no longer ask." : "That browser may ask again.", next: `${BIN} share requests lists who else waits.` });
+  }
   if (sub === "revoke") {
     const key = more.join(" ");
     if (!key) return usage(`revoke needs a name or id: ${BIN} share revoke <name|id> (see ${BIN} share list)`, "share");
@@ -2174,6 +2201,51 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
     expires: `${shortDate(d.expiresAt)} if nobody opens it`,
     note: `The first browser that opens this link becomes ${d.name}'s device, and the link stops working. Send it only to ${d.name}.`,
     next: `${BIN} share revoke ${JSON.stringify(d.name)} cuts it off.`,
+  });
+}
+
+/** One row of `share requests`. */
+function requestRow(q: AccessRequestSummary): Printed {
+  return { name: q.name, id: q.id, asked: shortDate(q.createdAt), page: q.file ?? q.page, from: [q.addr, q.host && `(${q.host})`].filter(Boolean).join(" ") || undefined, browser: q.browser, tailscale: q.verifiedLogin ?? undefined };
+}
+
+/** `share requests` lists who waits; `share requests on|off [--project <p>]` turns requests on or off. */
+async function shareRequests(args: string[], flags: Flags): Promise<void> {
+  const [mode] = args;
+  if (mode !== undefined && mode !== "on" && mode !== "off") return usage(`share requests takes on or off: ${BIN} share requests [on|off] [--project <p>]`, "share");
+  if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project)) return usage(`--project needs a project: ${BIN} share requests ${mode ?? "on"} --project <name>`, "share");
+  await ensureServer();
+  // A project's own setting wins over the one for every page.
+  const where = (s: RequestSwitchResponse): string => {
+    const differ = s.projects.filter((p) => p.on !== s.all).map((p) => `project ${p.name}`);
+    if (s.all) return differ.length ? `on for every page except ${differ.join(", ")}` : "on for every page";
+    return differ.length ? `on for ${differ.join(", ")} only` : "off";
+  };
+  if (mode) {
+    // A folder names the project whose root holds it; the server has no working directory to resolve it against.
+    const project = typeof flags.project === "string" ? (fs.existsSync(flags.project) ? path.resolve(flags.project) : flags.project) : undefined;
+    const r = await request<RequestSwitchResponse>("POST", "/api/share/requests", { on: mode === "on", project });
+    if (r.status !== 200) return fail(r.data?.error || `share requests failed (${r.status})`);
+    return print({
+      status: "saved",
+      requests: where(r.data),
+      note: mode === "on" ? "A browser without a link that opens a page's address can now type a name and ask; it gets in only once you approve it." : undefined,
+      next: `${BIN} share requests lists who waits.`,
+    });
+  }
+  const r = await request<AccessRequestsResponse>("GET", "/api/share/requests");
+  if (r.status !== 200) return fail(r.data?.error || `share requests failed (${r.status})`);
+  if (!Array.isArray(r.data.waiting)) return fail(`the running server is older than this CLI and has no requests: run \`${BIN} stop\` (or restart its service), then try again`);
+  const { waiting, blocked } = r.data;
+  return print({
+    requests: where(r.data.switch),
+    waiting: waiting.length ? waiting.map(requestRow) : "none",
+    blocked: blocked.length ? blocked.length : undefined,
+    next: waiting.length
+      ? `${BIN} share approve <id> [--project <p> | --all] [--auto] [--as "<name>"], or deny / block <id>.`
+      : r.data.switch.all || r.data.switch.projects.length
+        ? `nobody is waiting; run ${BIN} share requests again later.`
+        : `${BIN} share requests on [--project <p>] lets teammates ask.`,
   });
 }
 

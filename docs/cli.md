@@ -28,6 +28,8 @@ austere-axi archive <file>       put a page away from the hub's lists and lock i
 austere-axi archive --missing    the same for every copy whose file is gone   [--project p]
 austere-axi share <file> --as "<name>"   a link for one teammate's device on your tailnet, claimed once   [--project <p> | --all] [--auto] [--expires <dur>]
 austere-axi share list|revoke           links nobody has opened yet and devices; cut one off
+austere-axi share requests [on|off]    who asks for access from a page's address (off by default); turn it on or off   [--project <p>]
+austere-axi share approve|deny|block <id>   let that browser in, refuse it, or stop it asking   approve: [--project <p> | --all] [--auto]
 austere-axi publish <file>       hosted copy of the page on austere.blundertech.com   [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new]
 austere-axi publish invites|revoke <file> [name]   see a page's invites, cut one off
 austere-axi publish login <file>   single-use link that signs your browser in to your hosted page

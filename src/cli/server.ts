@@ -41,7 +41,10 @@ import { copyLabel, findProject, findRoot } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, LoginCodes, OWNER_COOKIE, ownerCookie, ownerKey, reviewerCookies, safeEqual, tokenFromCookie } from "./invites.ts";
 import { DeviceStore, covers, isLive } from "./devices.ts";
-import type { DeviceRow, Scope, ScopeKind, SeenMeta } from "./devices.ts";
+import type { DeviceOrigin, DeviceRow, Scope, ScopeKind, SeenMeta } from "./devices.ts";
+import { RequestRefused, RequestStore, describeAgent } from "./requests.ts";
+import type { AccessRequestRow, RequestStatus } from "./requests.ts";
+import dns from "node:dns";
 import { reviewerItem } from "./items.ts";
 import { hubPage, missingPage, notesPage } from "./hub-page.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
@@ -187,6 +190,8 @@ export interface ShareResponse {
 export interface AccessSummary {
   id: string;
   name: string;
+  /** How it came in: a link, an approved request, or Tailscale. */
+  origin: DeviceOrigin;
   scope: ScopeKind;
   /** The page's artifact id, or the project's id; null for every page. */
   scopeId: string | null;
@@ -216,6 +221,47 @@ export interface ShareListResponse {
 /** /api/share/revoke and POST /hub/api/people/<id>/revoke. */
 export interface RevokeResponse {
   revoked: { id: string; name: string; kind: "link" | "device" }[];
+}
+
+/** One access request in /api/share/requests and GET /hub/api/people/requests (RLM-398). */
+export interface AccessRequestSummary {
+  id: string;
+  /** The name the browser typed. */
+  name: string;
+  status: RequestStatus;
+  /** The page it asked from (artifact id), its file, and its project; null when the page is gone from the hub. */
+  page: string;
+  file: string | null;
+  project: { id: string; name: string } | null;
+  /** What the server saw: the address, its hostname (reverse lookup, best effort), the User-Agent and, in words, its browser and system. */
+  addr: string | null;
+  host: string | null;
+  userAgent: string | null;
+  browser: string;
+  /** The Tailscale login and device when it came over Tailscale (RLM-399); null until then. */
+  verifiedLogin: string | null;
+  tailscaleDevice: string | null;
+  createdAt: number;
+  decidedAt: number | null;
+}
+
+/** Where browsers may ask for access: every page or not, and the projects whose own setting differs (it wins). Off everywhere by default. */
+export interface RequestSwitchResponse {
+  all: boolean;
+  projects: { id: string; name: string; on: boolean }[];
+}
+
+/** /api/share/requests and GET /hub/api/people/requests: requests waiting for the owner (the oldest first), blocked ones, and the switch. */
+export interface AccessRequestsResponse {
+  waiting: AccessRequestSummary[];
+  blocked: AccessRequestSummary[];
+  switch: RequestSwitchResponse;
+}
+
+/** Approve, deny or block: the request as it is now and, for an approval, the device it made. */
+export interface RequestDecisionResponse {
+  request: AccessRequestSummary;
+  device?: AccessSummary;
 }
 
 /** /api/login. */
@@ -365,6 +411,11 @@ const DEVICE_COOKIE_MAX_AGE = 400 * 86_400;
 const LINK_INVALID = "This link is not valid. It may have been revoked; ask for a new one.";
 const LINK_USED = "This link was already used on another device. Each link opens on one device only; ask the owner for a new one.";
 const LINK_EXPIRED = "This link expired before anyone opened it. Ask the owner for a new one.";
+// A browser that asked for access (RLM-398) holds its request's pending secret here until the owner decides.
+const REQUEST_COOKIE = "austere_rq";
+const REQUEST_COOKIE_MAX_AGE = 30 * 86_400;
+// How often the waiting page asks whether the owner has decided.
+const REQUEST_POLL_MS = 2000;
 const OWNER: OwnerViewer = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set<unknown>(["annotation", "message"]);
 // Render failures the owner's page reports on its own reach the agent as notes from RENDER_CHECK_AUTHOR.
@@ -435,6 +486,7 @@ export async function runServer({
   // The owner's pages over the same database: the hub, at `/`.
   const hub = new Hub(store.db);
   const devices = new DeviceStore(store.db);
+  const requests = new RequestStore(store.db);
   const ownerToken = ownerKey(stateDir());
   const ownerCookieValue = ownerCookie(ownerToken);
   const logins = new LoginCodes(LOGIN_TTL_MS);
@@ -550,6 +602,7 @@ export async function runServer({
     return {
       id: row.id,
       name: row.name,
+      origin: row.origin,
       scope: row.scope_kind,
       scopeId: row.scope_id,
       reaches: reachesText(row),
@@ -639,10 +692,236 @@ export async function runServer({
     return { revoked: gone.map((r) => ({ id: r.id, name: r.name, kind: r.claimed_at == null ? "link" : "device" })) };
   }
 
-  /** Where a request came from, for a device's last-seen fields. */
+  // ── access requests (RLM-398) ──
+
+  function requestSummary(r: AccessRequestRow): AccessRequestSummary {
+    const art = hub.artifact(r.page);
+    const project = art?.project_id ? findProject(hub.db, art.project_id, { folders: false }) : null;
+    return {
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      page: r.page,
+      file: art?.file ?? null,
+      project: project ? { id: project.id, name: project.name } : null,
+      addr: r.addr,
+      host: r.host,
+      userAgent: r.user_agent,
+      browser: describeAgent(r.user_agent),
+      verifiedLogin: r.verified_login,
+      tailscaleDevice: r.ts_device,
+      createdAt: r.created_at,
+      decidedAt: r.decided_at,
+    };
+  }
+
+  function requestSwitch(): RequestSwitchResponse {
+    const on = requests.switches();
+    return { all: on.all, projects: on.projects.map((p) => ({ ...p, name: findProject(hub.db, p.id, { folders: false })?.name ?? p.id })) };
+  }
+
+  function requestsList(): AccessRequestsResponse {
+    return { waiting: requests.list("waiting").map(requestSummary), blocked: requests.list("blocked").map(requestSummary), switch: requestSwitch() };
+  }
+
+  /** Turn requests on or off: `{ on, project? }`, a project by id or name (or, from the CLI, a folder inside one of its roots); none: every page. */
+  function changeRequestSwitch(body: RequestBody): { status: number; error: string } | RequestSwitchResponse {
+    if (typeof body.on !== "boolean") return { status: 400, error: "on must be true or false" };
+    let projectId: string | null = null;
+    if (body.project !== undefined && body.project !== null) {
+      if (typeof body.project !== "string" || !body.project) return { status: 400, error: "project must be a project's id or name" };
+      let found: ProjectRow | null;
+      try {
+        found = findProject(hub.db, body.project, { folders: path.isAbsolute(body.project) });
+      } catch (err) {
+        return { status: 400, error: (err as Error).message };
+      }
+      if (!found) return { status: 404, error: `no project ${body.project}` };
+      projectId = found.id;
+    }
+    requests.setEnabled(projectId, body.on);
+    log("share-requests", projectId ?? "all", body.on ? "on" : "off");
+    return requestSwitch();
+  }
+
+  /**
+   * Approve (`{ scope?, project?, auto?, name? }`, scope relative to the page the request came from, as
+   * for a share), deny, or block a waiting request.
+   */
+  function decideRequest(id: unknown, action: string, body: RequestBody): { status: number; error: string } | RequestDecisionResponse {
+    const row = typeof id === "string" ? requests.get(id) : null;
+    if (!row) return { status: 404, error: "no request with that id" };
+    try {
+      if (action === "approve") {
+        const s = store.get(row.page);
+        let scope: Scope | string;
+        if (body.scope === "all") scope = { kind: "all", id: null };
+        else if (!s) return { status: 409, error: "the page this request came from is gone; approve it for every page (scope all), or deny it" };
+        else scope = scopeFor(s, body);
+        if (typeof scope === "string") return { status: 400, error: scope };
+        const auto = Boolean(body.auto);
+        const refused = auto ? autoAttachConflict(scope) : "";
+        if (refused) return { status: 409, error: refused };
+        const device = requests.approve(row.id, scope, auto, body.name);
+        if (s) {
+          watch(s);
+          rescanSharedPolls();
+        }
+        log("share-approve", row.id, device.name, device.id, device.scope_kind, device.auto ? "auto" : "hold");
+        return { request: requestSummary(requests.get(row.id) as AccessRequestRow), device: accessSummary(device, false) };
+      }
+      const decided = requests.decide(row.id, action === "block" ? "blocked" : "denied");
+      log(`share-${action}`, row.id, row.name);
+      return { request: requestSummary(decided) };
+    } catch (err) {
+      if (err instanceof RequestRefused) return { status: err.status, error: err.message };
+      throw err;
+    }
+  }
+
+  /** The pending request cookie, and the one that clears it. */
+  function requestCookie(req: http.IncomingMessage, secret: string | null): string {
+    return secret == null
+      ? `${REQUEST_COOKIE}=; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=0`
+      : `${REQUEST_COOKIE}=${secret}; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=${REQUEST_COOKIE_MAX_AGE}${overHttps(req) ? "; Secure" : ""}`;
+  }
+
+  /** The device cookie for an approved request, when this browser is the one that asked; clears the pending cookie. Null: nothing to collect. */
+  function collectApproval(req: http.IncomingMessage): string[] | null {
+    const pending = tokenFromCookie(req.headers.cookie, REQUEST_COOKIE);
+    if (!pending) return null;
+    const got = requests.collect(pending);
+    if (!got) return null;
+    log("share-request-joined", got.device.name, got.device.id);
+    return [`${COOKIE}_${got.device.id}=${got.secret}; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_COOKIE_MAX_AGE}${overHttps(req) ? "; Secure" : ""}`, requestCookie(req, null)];
+  }
+
+  /** This browser's request, as the browser may know it: waiting, denied, blocked, or none (no request, or one it cannot use: collected, lapsed). */
+  function requestStateOf(req: http.IncomingMessage): "none" | "waiting" | "denied" | "blocked" {
+    const mine = requests.bySecret(tokenFromCookie(req.headers.cookie, REQUEST_COOKIE));
+    return mine?.status === "waiting" || mine?.status === "denied" || mine?.status === "blocked" ? mine.status : "none";
+  }
+
+  /**
+   * The page an unknown browser sees where requests are on. It names neither the page's title nor
+   * its file, and holds nothing of its content: only the form, or where the browser's request stands.
+   */
+  function requestPage(req: http.IncomingMessage, s: Session, error = ""): string {
+    const state = requestStateOf(req);
+    const head = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Ask for access</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:28rem;margin:12vh auto;padding:0 1rem;color:#222}input{font:inherit;padding:.4rem .5rem;width:100%;box-sizing:border-box;margin:.25rem 0 .75rem}button{font:inherit;padding:.4rem 1rem}.err{color:#b00020}.muted{color:#666}</style>`;
+    if (state === "blocked") return `${head}<h1>No access</h1><p>The owner has blocked this browser from asking for access.</p>`;
+    if (state === "waiting") {
+      return `${head}<h1>Waiting for the owner</h1><p>Your request was sent. This page opens by itself once the owner lets you in.</p><p class="muted">Keep this tab open, or come back to this address later.</p><script>setInterval(function(){fetch(${JSON.stringify(`/s/${s.id}/request`)},{cache:"no-store",credentials:"same-origin"}).then(function(r){return r.ok?r.json():null}).then(function(j){if(!j||j.state!=="waiting")location.reload()},function(){})},${REQUEST_POLL_MS})</script>`;
+    }
+    const denied = state === "denied" ? `<p class="err">The owner declined your last request. You can ask again.</p>` : "";
+    const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
+    const local = isLoopback(clientAddr(req)) ? `<p class="muted">If this is your page, sign this browser in instead: run <code>austere-axi login</code> and open the link it prints.</p>` : "";
+    return `${head}<h1>Ask the owner for access</h1>${denied}${err}<form method="post" action="/s/${s.id}/request"><label>Your name<input name="name" maxlength="40" autocomplete="name" required autofocus></label><button>Send</button></form><p class="muted">The owner sees your name, your address and your browser, and lets this browser in.</p>${local}`;
+  }
+
+  /** Headers for a page of the request flow: not framed, and a form POST keeps its Origin (see the join page). */
+  const REQUEST_PAGE_HEADERS = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "same-origin", "x-frame-options": "DENY" };
+
+  /**
+   * The hostname of a request's address, stored once it resolves both ways: a reverse lookup alone
+   * is whatever the address's owner put in its PTR record. Best effort, never waited for.
+   */
+  function lookUpHost(id: string, addr: string | null): void {
+    if (!addr) return;
+    const ip = addr.replace(/^::ffff:/, "");
+    dns.promises
+      .reverse(ip)
+      .then(async (names) => {
+        for (const name of names.slice(0, 3)) {
+          const back = await dns.promises.lookup(name, { all: true }).catch(() => []);
+          if (back.some((a) => a.address.replace(/^::ffff:/, "") === ip)) return requests.setHost(id, name);
+        }
+      })
+      // No name, a slow resolver, or a database closed by shutdown in the meantime: the request keeps no hostname.
+      .catch(() => {});
+  }
+
+  /**
+   * The request flow for a browser with no reviewer cookie, where requests are on for the page:
+   * GET the page (the form, or where its request stands), GET /request (the waiting page's poll),
+   * POST /request (send). False: requests are off here, so the caller answers as without them.
+   */
+  async function requestRoute(req: http.IncomingMessage, res: http.ServerResponse, s: Session, sub: string): Promise<boolean> {
+    if (!requests.enabled(store.projectIdOf(s))) return false;
+    if (sub === "/request" && req.method === "GET") {
+      send(res, 200, { state: requestStateOf(req) });
+      return true;
+    }
+    if (sub !== "/request") {
+      send(res, 403, requestPage(req, s), REQUEST_PAGE_HEADERS);
+      return true;
+    }
+    // A same-origin browser POST: Origin present and equal to Host, as for /join.
+    if (!req.headers.origin || !checkOrigin(req)) {
+      send(res, 403, { error: "cross-origin request refused" });
+      return true;
+    }
+    const pre = requests.bySecret(tokenFromCookie(req.headers.cookie, REQUEST_COOKIE));
+    if (pre?.status === "blocked") {
+      send(res, 403, requestPage(req, s), REQUEST_PAGE_HEADERS);
+      return true;
+    }
+    if (pre?.status === "approved" || pre?.status === "waiting") {
+      res.writeHead(303, { location: `/s/${s.id}`, "cache-control": "no-store" });
+      res.end();
+      return true;
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const c of req as AsyncIterable<Buffer>) {
+      size += c.length;
+      if (size > 4096) {
+        send(res, 413, "payload too large");
+        return true;
+      }
+      chunks.push(c);
+    }
+    // The body can take its time: check the page, the switch and this browser's standing again now.
+    if (!store.get(s.id) || !requests.enabled(store.projectIdOf(s))) return false;
+    const mine = requests.bySecret(tokenFromCookie(req.headers.cookie, REQUEST_COOKIE));
+    if (mine?.status === "blocked" || mine?.status === "waiting" || mine?.status === "approved") {
+      // Blocked: the page says so. Waiting: one request per browser. Approved: collect it on the GET.
+      res.writeHead(303, { location: `/s/${s.id}`, "cache-control": "no-store" });
+      res.end();
+      return true;
+    }
+    const name = new URLSearchParams(Buffer.concat(chunks).toString("utf8")).get("name");
+    let made: { row: AccessRequestRow; secret: string };
+    try {
+      made = requests.ask({ name, page: s.id, meta: seenMeta(req) });
+    } catch (err) {
+      if (!(err instanceof RequestRefused)) throw err;
+      send(res, err.status, requestPage(req, s, err.message), REQUEST_PAGE_HEADERS);
+      return true;
+    }
+    lookUpHost(made.row.id, made.row.addr);
+    log("share-request", made.row.id, made.row.name, made.row.addr ?? "");
+    res.writeHead(303, { location: `/s/${s.id}`, "set-cookie": requestCookie(req, made.secret), "cache-control": "no-store" });
+    res.end();
+    return true;
+  }
+
+  /**
+   * The address a request came from: the socket's, or, when a reverse proxy on this machine
+   * forwarded it, the address that proxy saw (the last `X-Forwarded-For` entry). A remote peer's
+   * own header is never trusted.
+   */
+  function clientAddr(req: http.IncomingMessage): string | undefined {
+    const socket = req.socket.remoteAddress;
+    if (!isLoopback(socket)) return socket;
+    const forwarded = String(req.headers["x-forwarded-for"] || "").split(",").pop()?.trim() ?? "";
+    return net.isIP(forwarded) ? forwarded : socket;
+  }
+
+  /** Where a request came from, for a device's last-seen fields and an access request. */
   function seenMeta(req: http.IncomingMessage): SeenMeta {
     const ua = req.headers["user-agent"];
-    return { addr: req.socket.remoteAddress ?? null, host: hostOnly(req.headers.host) || null, userAgent: typeof ua === "string" ? ua : null };
+    return { addr: clientAddr(req) ?? null, host: hostOnly(req.headers.host) || null, userAgent: typeof ua === "string" ? ua : null };
   }
 
   /** Whether the browser reached this server over HTTPS: a proxy says so, or the link URL is https and this is its host. */
@@ -1464,6 +1743,7 @@ export async function runServer({
     }
     if (route === "login" && req.method === "POST") return send(res, 200, { code: logins.issue(), ttlMs: LOGIN_TTL_MS } satisfies LoginResponse);
     if (route === "share/list") return send(res, 200, accessList(url.searchParams.get("links") === "1") satisfies ShareListResponse);
+    if (route === "share/requests" && req.method === "GET") return send(res, 200, requestsList() satisfies AccessRequestsResponse);
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req);
     // The agent session the command runs in (RLM-343); recorded once the route knows its pages.
@@ -1477,6 +1757,11 @@ export async function runServer({
       const done = revokeAccess(body.key);
       if (!done.revoked.length) return send(res, 404, { error: "no link or device matches that name or id" });
       return send(res, 200, done satisfies RevokeResponse);
+    }
+    // Access requests (RLM-398): `share requests on|off [--project]`, `share approve|deny|block <id>`.
+    if (route === "share/requests" || route === "share/approve" || route === "share/deny" || route === "share/block") {
+      const done = route === "share/requests" ? changeRequestSwitch(body) : decideRequest(body.id, route.slice("share/".length), body);
+      return "error" in done ? send(res, done.status, { error: done.error }) : send(res, 200, done);
     }
     // `attach on|off|inherit` at a terminal while this server runs: written here, so open owner tabs hear it.
     if (route === "attach") {
@@ -1907,11 +2192,25 @@ export async function runServer({
   /**
    * People (RLM-397), for the hub's Settings → People (RLM-396): GET /hub/api/people lists the links
    * nobody has claimed and the devices; POST /hub/api/people/<id>/rename {name}, /scope {scope, page
-   * or project}, /revoke, and /single-use (an old-style link gets a fresh single-use token). The owner's only.
+   * or project}, /revoke, and /single-use (an old-style link gets a fresh single-use token).
+   * Requests (RLM-398), for People → Waiting and the hub header's count: GET /hub/api/people/requests;
+   * POST /hub/api/people/requests/switch {on, project?}; POST /hub/api/people/requests/<id>/approve
+   * {scope?, project?, auto?, name?}, /deny, /block. The owner's only.
    */
   async function hubPeople(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     // It holds the links: never for another site, GET included.
     if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+    if (url.pathname === "/hub/api/people/requests") {
+      if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
+      return send(res, 200, requestsList() satisfies AccessRequestsResponse);
+    }
+    const asked = /^\/hub\/api\/people\/requests\/(?:switch|(r[0-9a-f]{10})\/(approve|deny|block))$/.exec(url.pathname);
+    if (asked) {
+      if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
+      const body = await readBody(req, 16 * 1024);
+      const done = asked[1] ? decideRequest(asked[1], asked[2], body) : changeRequestSwitch(body);
+      return "error" in done ? send(res, done.status, { error: done.error }) : send(res, 200, done);
+    }
     if (url.pathname === "/hub/api/people") {
       if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
       return send(res, 200, accessList(true) satisfies ShareListResponse);
@@ -2054,9 +2353,22 @@ export async function runServer({
       return serveArtifact(req, res, s, tokened[2]);
     }
 
+    const asking = ((sub === "" || sub === "/") && req.method === "GET") || (sub === "/request" && (req.method === "GET" || req.method === "POST"));
+    // A browser whose request the owner approved: its pending secret is traded for the device's cookie, once.
+    if (asking && req.method === "GET") {
+      const joined = collectApproval(req);
+      if (joined) {
+        if (sub === "/request") return send(res, 200, { state: "approved" }, { "set-cookie": joined });
+        res.writeHead(303, { location: `/s/${s.id}`, "set-cookie": joined, "cache-control": "no-store" });
+        return res.end();
+      }
+    }
+
     const who = identify(req, s);
     if (!who) {
       const presented = reviewerCookies(req.headers.cookie);
+      // An unknown browser may ask for access where the owner turned requests on (RLM-398).
+      if (!presented.length && asking && (await requestRoute(req, res, s, sub))) return;
       if (!presented.length) return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
       // A live device whose scope does not reach this page keeps its cookie: it still opens the pages it does reach.
       if (cookieDevices(req).length) return send(res, 403, "This page is not shared with you. Ask the owner for access to it.");

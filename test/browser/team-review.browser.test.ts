@@ -29,6 +29,8 @@ interface ApiReply {
   status: string;
   code: string;
   items: { text: string; author?: string }[];
+  /** /api/share/approve: the device the approval made. */
+  device?: { name: string };
 }
 
 function freePort(): Promise<number> {
@@ -154,6 +156,57 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
   } finally {
     await ownerCtx.close();
     await guestCtx.close();
+  }
+});
+
+test("a teammate without a link asks from the page's address; the waiting page opens by itself once the owner approves; a second browser with the same name stays out", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { session } = await api("/api/open", { file: FILE });
+  await api("/api/share/requests", { on: true });
+  const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const otherCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const waiting = async () => {
+    const r = await fetch(`http://127.0.0.1:${port}/api/share/requests`, { headers: { "x-austere-key": KEY } });
+    return ((await r.json()) as { waiting: { id: string; name: string }[] }).waiting;
+  };
+  try {
+    const guest = await guestCtx.newPage();
+    await guest.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+    assert.equal(await guest.title(), "Ask for access", "the page's title stays hidden");
+    assert.doesNotMatch(await guest.content(), /hello|plan\.html/, "nothing of the page");
+    await guest.fill("input[name=name]", "Fay");
+    await guest.click("form[action$='/request'] button");
+    await guest.waitForSelector("text=Waiting for the owner");
+
+    const other = await otherCtx.newPage();
+    await other.goto(`http://127.0.0.1:${port}/s/${session.id}`);
+    await other.fill("input[name=name]", "Fay");
+    await other.click("form[action$='/request'] button");
+    await other.waitForSelector("text=Waiting for the owner");
+
+    const asked = await waiting();
+    assert.deepEqual(asked.map((r) => r.name), ["Fay", "Fay"]);
+    const approved = await api("/api/share/approve", { id: asked[0].id });
+    assert.equal(approved.device?.name, "Fay", JSON.stringify(approved));
+
+    // The first browser's waiting page lets it in by itself.
+    await guest.waitForSelector(".composer textarea", { timeout: 10_000 });
+    assert.match(await guest.title(), /^Plan/);
+    await guest.fill(".composer textarea", "asked, then let in");
+    await guest.click(".composer .send");
+    await guest.waitForSelector(".msg.user.held");
+
+    // The second browser with the same name still waits; denied, its page says so by itself.
+    await other.reload();
+    await other.waitForSelector("text=Waiting for the owner");
+    assert.equal(await other.locator(".composer textarea").count(), 0);
+    await api("/api/share/deny", { id: asked[1].id });
+    await other.waitForSelector("text=declined your last request");
+  } finally {
+    await guestCtx.close();
+    await otherCtx.close();
+    await api("/api/share/revoke", { key: "Fay" });
+    await api("/api/share/requests", { on: false });
   }
 });
 
