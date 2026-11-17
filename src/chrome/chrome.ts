@@ -1453,15 +1453,23 @@ const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" 
 const noteLine = (n: { author: string; target: string | null; text: string }): string => `${n.author}${n.target ? ` on ${n.target}` : ""}: ${n.text}`;
 const SOURCES: Record<string, string> = { patch: "patched", file: "edited", open: "found on open", restore: "restored" };
 
+/** The newest `/history` request: an answer to an earlier one may arrive after it and must not replace what it brought. */
+let histLoad = 0;
+
 async function loadHistory(): Promise<HistoryData | null> {
   if (!OWNER || HOSTED) return null;
+  const mine = ++histLoad;
+  let data: HistoryData;
   try {
     const r = await fetch(`${BASE}/history`);
     if (!r.ok) return null;
-    hist = (await r.json()) as HistoryData;
+    data = (await r.json()) as HistoryData;
   } catch {
     return null;
   }
+  // A newer request is on its way (or done): its answer is the one to keep.
+  if (mine !== histLoad) return hist;
+  hist = data;
   sendHistoryCounts();
   return hist;
 }

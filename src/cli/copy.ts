@@ -6,7 +6,7 @@ import fs from "node:fs";
 import type * as sqlite from "node:sqlite";
 import { canonicalFile } from "./paths.ts";
 import { readArtifact } from "./artifact.ts";
-import { headRevision, revisionAt } from "./history.ts";
+import { headRevision, programSha, revisionAt } from "./history.ts";
 import { sessionId } from "./sessions.ts";
 import { closureOf, renameStatements, statementMap } from "../shared/statements.ts";
 
@@ -59,8 +59,8 @@ function sourceProgram(db: sqlite.DatabaseSync | null, file: string, rev: number
   if (fs.existsSync(abs)) {
     const program = readArtifact(fs.readFileSync(abs, "utf8")).program;
     if (program == null) throw new Error(`${file} has no <script type="text/openui"> block to copy from`);
-    // The file may be ahead of the hub (an edit nobody recorded yet): the copy is the file's, the origin names the newest recorded revision.
-    return { program, rev: head?.rev ?? 0, artifact, abs };
+    // The copy is the file's. The origin names the newest revision only when that is what was read (an edit made since is revision 0: not recorded).
+    return { program, rev: head && head.program_sha === programSha(program) ? head.rev : 0, artifact, abs };
   }
   if (head) return { program: head.program, rev: head.rev, artifact, abs };
   throw new Error(`no such file: ${abs}`);

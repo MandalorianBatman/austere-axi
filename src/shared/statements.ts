@@ -138,7 +138,18 @@ function escapeRe(s: string): string {
 function mentionedIds(text: string, known: ReadonlyMap<string, unknown>, self: string): string[] {
   const body = text.slice(text.indexOf("=") + 1);
   const out = new Set<string>();
+  const open: string[] = []; // the brackets around the word
   let last = ""; // the last significant character before the word
+  /** The first character after `from` that is not space or a comment. */
+  const next = (from: number): string => {
+    let k = from;
+    while (k < body.length) {
+      if (/\s/.test(body[k])) k++;
+      else if (body[k] === "#" || (body[k] === "/" && body[k + 1] === "/")) while (k < body.length && body[k] !== "\n") k++;
+      else return body[k];
+    }
+    return "";
+  };
   for (let i = 0; i < body.length; ) {
     const c = body[i];
     if (c === '"' || c === "'") {
@@ -152,12 +163,14 @@ function mentionedIds(text: string, known: ReadonlyMap<string, unknown>, self: s
       let j = i + 1;
       while (j < body.length && /[\w$]/.test(body[j])) j++;
       const word = body.slice(i, j);
-      const after = /^\s*(.)/.exec(body.slice(j))?.[1];
-      const key = after === ":" && (last === "{" || last === ",");
+      // An object key is a word before `:` directly inside braces (a ternary's `?` before it makes it a value).
+      const key = open[open.length - 1] === "{" && last !== "?" && next(j) === ":";
       if (last !== "." && !key && word !== self && known.has(word)) out.add(word);
       i = j;
       last = "a";
     } else {
+      if (c === "(" || c === "[" || c === "{") open.push(c);
+      else if (c === ")" || c === "]" || c === "}") open.pop();
       if (!/\s/.test(c)) last = c;
       i++;
     }

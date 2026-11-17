@@ -63,3 +63,17 @@ real = Card([other])`);
   assert.deepEqual(closureOf(map, ["keyed"]), ["keyed"]);
   assert.deepEqual(closureOf(map, ["real"]), ["other", "real"]);
 });
+
+test("closureOf: object keys with a comment before the colon, or no comma between entries, are not references", () => {
+  const map = statementMap(`keyed = Chart({other // why
+: 1})
+second = Chart({first: 1 other: 2})
+third = Chart({first: 1, other: 2})
+ternary = Chart({x: flag ? other : 1})
+other = TextContent("o")
+flag = TextContent("f")`);
+  assert.deepEqual(closureOf(map, ["keyed"]), ["keyed"]);
+  assert.deepEqual(closureOf(map, ["second"]), ["second"]);
+  assert.deepEqual(closureOf(map, ["third"]), ["third"]);
+  assert.deepEqual(closureOf(map, ["ternary"]), ["ternary", "other", "flag"], "a ternary's branches are values");
+});

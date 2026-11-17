@@ -181,8 +181,12 @@ test("a value's own spaces are part of the statement: a change inside a string i
     recordRevision(db, "eeeeeeeeeeee", html('root = Stack([a])\na = TextContent("a  b")'), { source: "patch" });
     recordRevision(db, "eeeeeeeeeeee", html('root = Stack([a])\na = TextContent("a b")'), { source: "patch" });
     recordRevision(db, "eeeeeeeeeeee", html('root = Stack([a])\na   =   TextContent("a b")'), { source: "patch" });
+    // A quote in a comment opens no string.
+    recordRevision(db, "eeeeeeeeeeee", html('root = Stack([c])\nc = TextContent(\n// "\n"a  b"\n)'), { source: "patch" });
+    recordRevision(db, "eeeeeeeeeeee", html('root = Stack([c])\nc = TextContent(\n// "\n"a b"\n)'), { source: "patch" });
+    assert.deepEqual(revisionLog(db, "eeeeeeeeeeee", { statement: "c" }).map((r) => r.rev), [5, 4]);
     const log = revisionLog(db, "eeeeeeeeeeee", { statement: "a" });
-    assert.deepEqual(log.map((r) => r.rev), [2, 1], "spacing inside the string is a change; spacing around it is not");
+    assert.deepEqual(log.map((r) => r.rev), [4, 2, 1], "spacing inside the string is a change, spacing around it is not (4: the statement is deleted)");
   } finally {
     db.close();
   }

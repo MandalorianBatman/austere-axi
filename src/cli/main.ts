@@ -14,7 +14,7 @@ import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from ".
 import { planCopy, parseSource, recordOrigins, originsOf } from "./copy.ts";
 import type { CopyPlan } from "./copy.ts";
 import { changesOutput, decisionsOutput, findOutput, historyOutput, outlineOutput, programAt, showOutput } from "./history-cmds.ts";
-import { ageOf, recordWithHub, reindex, restoredProgram } from "./history.ts";
+import { ageOf, keepPage, recordWithHub, reindex, restoredProgram } from "./history.ts";
 import { addRoot, copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { lockStateDir } from "./lock.ts";
@@ -1000,16 +1000,6 @@ async function recordBaseline(abs: string, html: string): Promise<void> {
   await recordWithHub(id, html, "open", null);
 }
 
-/** Whether hub.db can be written from here (another version may hold the state dir). */
-async function hubWritable(): Promise<boolean> {
-  try {
-    (await openHubDirect({ write: true })).close();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function cmdPatch(file: string | undefined, flags: Flags): Promise<void> {
   const abs = needFile(file, "patch");
   if (!abs || file === undefined) return; // needFile reported a missing file
@@ -1152,8 +1142,7 @@ async function cmdRestore(file: string | undefined, names: string[], flags: Flag
     const next = replaceProgram(html, merged);
     const id = page.id;
     // "Nothing is lost" needs the page as it is kept first: with no way to write hub.db, the file is left as it is.
-    if (!(await hubWritable())) return fail(`${hubDbFile()} cannot be written (another austere-axi version may hold the state dir), so the current page cannot be kept first; ${page.abs} is unchanged`);
-    await recordBaseline(page.abs, html);
+    if (!(await keepPage(page.abs, id, html))) return fail(`${hubDbFile()} cannot be written (another austere-axi version may hold the state dir), so the current page cannot be kept first; ${page.abs} is unchanged`);
     const caller = callerOf(flags);
     const registered = caller ? await registerWithHubDb(caller, [id], "patch") : false;
     // Recorded before the write, as `patch` does, so a watching server keeps the source.

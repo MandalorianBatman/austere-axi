@@ -164,6 +164,25 @@ export async function recordWithHub(artifactId: string, html: string, source: Re
 }
 
 /**
+ * The page as it is, kept as a revision before something replaces it, and told whether that worked. Null only when the hub
+ * could not be written, which is when the caller must not go on; a program the hub already holds is a success.
+ */
+export async function keepPage(file: string, id: string, html: string): Promise<boolean> {
+  try {
+    const hub = await openHubDirect({ write: true });
+    try {
+      hub.register({ id, file, title: readArtifact(html).title, cwd: process.cwd() });
+      recordRevision(hub.db, id, html, { source: "open" });
+      return true;
+    } finally {
+      hub.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Rebuild the index (`hub reindex`): every copy whose file is still there is read again, its
  * program becomes a revision when it differs from the head, and its statements are indexed again.
  * Copies whose file is gone lose their index rows (their revisions stay).
@@ -237,6 +256,12 @@ function squash(text: string): string {
   let space = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
+    // A comment (outside a string) is not part of the statement, and a quote in it opens nothing.
+    if (!quote && (c === "#" || (c === "/" && text[i + 1] === "/"))) {
+      while (i + 1 < text.length && text[i + 1] !== "\n") i++;
+      space = true;
+      continue;
+    }
     if (quote) {
       out += c;
       if (c === "\\") out += text[++i] ?? "";
