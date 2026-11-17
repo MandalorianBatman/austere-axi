@@ -546,3 +546,44 @@ test("a 0.11.0 hub.db opens: a review closed under 0.11.0 is archived once", asy
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
+
+test("hub list on a state dir a server of another version holds: hub.db is left as it is, and the output says why", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-otherversion-"));
+  const file = path.join(state, "hub.db");
+  const port = await freePort();
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
+  // This test process stands in for the holder: a live pid, a fresh lock, another version.
+  const holdAs = (version: string) => fs.writeFileSync(path.join(state, "server.lock"), JSON.stringify({ pid: process.pid, port, at: Date.now(), version }));
+  // A read-only reader of a WAL database may leave empty -wal/-shm files beside it, as the holder does; hub.db is what must not change.
+  const snapshot = () => fs.readFileSync(file).toString("base64");
+  try {
+    // A 0.10.4 database: this build could only read it after migrating it.
+    fs.copyFileSync(path.join(import.meta.dirname, "fixtures", "hub-0.10.4.db"), file);
+    holdAs("0.0.1");
+    const before = snapshot();
+    const list = await cliWith(env, "hub", "list");
+    assert.equal(list.code, 1, list.out);
+    assert.match(list.out, new RegExp(`in use by austere-axi v0\\.0\\.1 \\(pid ${process.pid}, port ${port}\\)`));
+    assert.match(list.out, /older than this build's .* after a migration/);
+    const add = await cliWith(env, "project", "add", WORK);
+    assert.equal(add.code, 1, add.out);
+    assert.match(add.out, /in use by austere-axi v0\.0\.1/);
+    assert.deepEqual(snapshot(), before, "neither command touched hub.db");
+
+    // At this build's schema it is read as it is.
+    fs.rmSync(path.join(state, "server.lock"));
+    (await Hub.open(file)).close();
+    holdAs("0.0.1");
+    const current = snapshot();
+    const readable = await cliWith(env, "hub", "list", "--all");
+    assert.equal(readable.code, 0, readable.out);
+    assert.match(readable.out, /plan\.html/);
+    assert.deepEqual(snapshot(), current, "read-only");
+  } finally {
+    try {
+      fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    } catch (err) {
+      if (process.platform !== "win32") throw err;
+    }
+  }
+});

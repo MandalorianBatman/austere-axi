@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +33,38 @@ export function assetPath(name: string): string {
   return path.join(ASSET_DIR, name);
 }
 
+/** The port an installed build's server listens on unless AUSTERE_AXI_PORT says otherwise. */
+export const REAL_PORT = 4388;
+
+/**
+ * The checkout this CLI runs from: the sources (`src/cli/main.ts`), or `dist/` whose parent is a
+ * git checkout. Null for an installed build. Only `dist/`'s own parent counts: a package installed
+ * under `node_modules/` inside someone's repository is not a checkout of austere-axi.
+ */
+export function devCheckout(bundled = BUNDLED, here = HERE): string | null {
+  const root = path.resolve(here, bundled ? ".." : "../..");
+  if (!bundled) return root;
+  return fs.existsSync(path.join(root, ".git")) ? root : null;
+}
+
+/** A checkout's own port, 4400-4899 by its path: two checkouts rarely share one, and none is the real 4388. */
+export function devPort(root: string): number {
+  return 4400 + (crypto.createHash("sha1").update(root).digest().readUInt32BE(0) % 500);
+}
+
+/**
+ * A build run from a checkout keeps off the owner's state dir and port: with AUSTERE_AXI_STATE_DIR
+ * unset it sets it to `<checkout>/.dev/state`, and AUSTERE_AXI_PORT, when unset too, to the
+ * checkout's own port. Written into `env`, so a server, service or child CLI this process starts
+ * means the same ones. Returns the line that says so, or null when nothing changed.
+ */
+export function applyDevDefaults(env: NodeJS.ProcessEnv = process.env, root = devCheckout()): string | null {
+  if (!root || env.AUSTERE_AXI_STATE_DIR) return null;
+  env.AUSTERE_AXI_STATE_DIR = path.join(root, ".dev", "state");
+  env.AUSTERE_AXI_PORT ||= String(devPort(root));
+  return `a build from a checkout: state dir ${env.AUSTERE_AXI_STATE_DIR}, port ${env.AUSTERE_AXI_PORT}, not ~/.austere-axi and ${REAL_PORT}. Set AUSTERE_AXI_STATE_DIR to choose.`;
+}
+
 let securedDir: string | null = null;
 
 export function stateDir(): string {
@@ -54,7 +87,7 @@ export function stateDir(): string {
 
 export function port(): number {
   const p = Number(process.env.AUSTERE_AXI_PORT);
-  return Number.isInteger(p) && p > 0 && p < 65536 ? p : 4388;
+  return Number.isInteger(p) && p > 0 && p < 65536 ? p : REAL_PORT;
 }
 
 export function msEnv(name: string, fallback: number): number {

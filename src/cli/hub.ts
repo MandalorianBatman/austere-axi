@@ -6,7 +6,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type * as sqlite from "node:sqlite";
-import { stateDir } from "./paths.ts";
+import { stateDirHolder } from "./lock.ts";
+import { VERSION, stateDir } from "./paths.ts";
 import { backfillProjects, copyLabel, inTransaction, resolveProject } from "./projects.ts";
 import type { NoteItem } from "./sessions.ts";
 
@@ -127,14 +128,53 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
   return DatabaseSync;
 }
 
-/** Open hub.db with the schema in place. */
-export async function openDatabase(file = hubDbFile()): Promise<sqlite.DatabaseSync> {
+/**
+ * hub.db's schema version, kept in `PRAGMA user_version`. Raise it with every change to migrate():
+ * a build whose schema is newer than a database's must not read it without migrating it.
+ */
+export const SCHEMA_VERSION = 1;
+
+function userVersion(db: sqlite.DatabaseSync): number {
+  return Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
+}
+
+/** Open hub.db with the schema in place; `readOnly`: as it is, refused when it is older than this build's schema. */
+export async function openDatabase(file = hubDbFile(), { readOnly = false }: { readOnly?: boolean } = {}): Promise<sqlite.DatabaseSync> {
   const Database = await loadSqlite();
+  if (readOnly) {
+    const db = new Database(file, { readOnly: true });
+    const version = userVersion(db);
+    if (version < SCHEMA_VERSION) {
+      db.close();
+      throw new Error(`its schema (version ${version}) is older than this build's (${SCHEMA_VERSION}) and can only be read after a migration`);
+    }
+    return db;
+  }
   // Every note is in here: create it as the owner's only (SQLite gives its WAL the same mode).
   if (file !== ":memory:") fs.closeSync(fs.openSync(file, "a", 0o600));
   const db = new Database(file);
   migrate(db);
   return db;
+}
+
+/**
+ * Open hub.db for a command that reads or writes it without the server. A server or command of
+ * another version that holds the state dir owns its schema: this build neither migrates nor writes
+ * it then. A reader opens it read-only (refused when its schema is older); a writer is refused.
+ * The error says why (callers name the file).
+ */
+export async function openHubDirect({ write }: { write: boolean }): Promise<Hub> {
+  const holder = await stateDirHolder(stateDir());
+  if (!holder || holder.version === VERSION) return Hub.open();
+  const who = `austere-axi ${holder.version ? `v${holder.version}` : "of an older version"} (pid ${holder.pid}${holder.port ? `, port ${holder.port}` : ""})`;
+  const leave = `this is v${VERSION}, so it leaves the file as it is`;
+  const fix = "Stop that one first, or run this command with that version";
+  if (write) throw new Error(`it is in use by ${who}; ${leave}. ${fix}`);
+  try {
+    return new Hub(await openDatabase(hubDbFile(), { readOnly: true }));
+  } catch (err) {
+    throw new Error(`it is in use by ${who}; ${leave}, and ${err instanceof Error ? err.message : String(err)}. ${fix}`);
+  }
 }
 
 // journal_mode cannot change inside a transaction: set before migrate() opens one.
@@ -263,6 +303,8 @@ function migrate(db: sqlite.DatabaseSync): void {
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
     backfillProjects(db);
+    // A newer build's database keeps its number: the steps above are all this build adds.
+    if (userVersion(db) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   });
 }
 
@@ -492,10 +534,10 @@ export async function activeWorkNow(file = hubDbFile()): Promise<boolean> {
   }
 }
 
-/** Register an artifact with the hub from a CLI command. Never fails the command. */
+/** Register an artifact with the hub from a CLI command. Never fails the command; skipped while another version holds the state dir. */
 export async function registerWithHub(file: string, title: string | null | undefined, id: string): Promise<void> {
   try {
-    const hub = await Hub.open();
+    const hub = await openHubDirect({ write: true });
     try {
       hub.register({ id, file, title });
     } finally {

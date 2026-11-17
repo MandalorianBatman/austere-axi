@@ -39,6 +39,8 @@ npm run test:browser      # when components, look or runtime changed
 
 `test:browser` needs Chrome, or `CHROME_PATH` pointing at a browser, and Firefox (`npx playwright-core install firefox`, or `FIREFOX_PATH`). If either is missing, say so in the report; do not silently skip it.
 
+Every CLI run from this checkout sets `AUSTERE_AXI_STATE_DIR` to a scratch dir (`AGENTS.md`): the commands run while making the change, and any test or script it adds. `npm test` fails on a test or script that runs the CLI without it (`test/dev-state.test.ts`). A run that printed `a build from a checkout: ...` on stderr had no variable set and fell back to `.dev/state`; say so in the report.
+
 Fix every failure before launching any agent. Agents are slow and cost tokens, so don't spend them on a red build.
 
 ## 3. Launch the agents

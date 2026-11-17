@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { escapeMd, expandPages, marker, parseCheck, renderComment, resolveCli, upsertComment } from "../action/lib.ts";
 
-const cli = (...args: string[]) => spawnSync(process.execPath, ["src/cli/main.ts", ...args], { encoding: "utf8" }).stdout;
+const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-action-"));
+const env = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, OPENUI_TELEMETRY_DISABLED: "1" };
+const cli = (...args: string[]) => spawnSync(process.execPath, ["src/cli/main.ts", ...args], { encoding: "utf8", env }).stdout;
+
+test.after(() => fs.rmSync(STATE, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
 
 test("parseCheck reads real `check` output: errors with statement, line and message", () => {
   const r = parseCheck(cli("check", "test/fixtures/action/bad.html"));
