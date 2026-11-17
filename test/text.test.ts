@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { readArtifact } from "../src/cli/artifact.ts";
 import { parseArtifact } from "../src/cli/check.ts";
 import { Hub, openDatabase } from "../src/cli/hub.ts";
-import { findStatements, recordRevision, reindex } from "../src/cli/history.ts";
+import { findStatements, recordRevision, reindex, revisionLog } from "../src/cli/history.ts";
 import { programText, statementText } from "../src/shared/text.ts";
 import type { TextSpec } from "../src/shared/text.ts";
 
@@ -169,6 +169,72 @@ test("find: a copy whose file is gone does not hide the same statement in a copy
     assert.deepEqual(findStatements(db, "rollout", { all: true }).hits.map((h) => h.missing), [true], "with --all the page is one hit, the newest copy");
   } finally {
     db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a value's own spaces are part of the statement: a change inside a string is a change", async () => {
+  const db = await openDatabase(":memory:");
+  try {
+    const hub = new Hub(db);
+    hub.register({ id: "eeeeeeeeeeee", file: "/work/plan.html", title: "Plan" });
+    recordRevision(db, "eeeeeeeeeeee", html('root = Stack([a])\na = TextContent("a  b")'), { source: "patch" });
+    recordRevision(db, "eeeeeeeeeeee", html('root = Stack([a])\na = TextContent("a b")'), { source: "patch" });
+    recordRevision(db, "eeeeeeeeeeee", html('root = Stack([a])\na   =   TextContent("a b")'), { source: "patch" });
+    // A quote in a comment opens no string.
+    recordRevision(db, "eeeeeeeeeeee", html('root = Stack([c])\nc = TextContent(\n// "\n"a  b"\n)'), { source: "patch" });
+    recordRevision(db, "eeeeeeeeeeee", html('root = Stack([c])\nc = TextContent(\n// "\n"a b"\n)'), { source: "patch" });
+    assert.deepEqual(revisionLog(db, "eeeeeeeeeeee", { statement: "c" }).map((r) => r.rev), [5, 4]);
+    const log = revisionLog(db, "eeeeeeeeeeee", { statement: "a" });
+    assert.deepEqual(log.map((r) => r.rev), [4, 2, 1], "spacing inside the string is a change, spacing around it is not (4: the statement is deleted)");
+  } finally {
+    db.close();
+  }
+});
+
+test("find keeps looking past a page that fills the first candidates", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-find-many-"));
+  const db = await openDatabase(":memory:");
+  try {
+    const hub = new Hub(db);
+    // One page with 80 matching statements, newer than 3 other pages that match once each.
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => `s${i} = TextContent("rollout ${i}")`).join("\n");
+    const make = (id: string, name: string, program: string, at: number) => {
+      const file = path.join(dir, `${name}.html`);
+      fs.writeFileSync(file, html(program));
+      hub.register({ id, file, title: name, at });
+      recordRevision(db, id, html(program), { source: "patch" });
+    };
+    make("111111111111", "old-a", 'root = Stack([a])\na = TextContent("rollout plan")', 1);
+    make("222222222222", "old-b", 'root = Stack([a])\na = TextContent("rollout plan")', 2);
+    make("333333333333", "old-c", 'root = Stack([a])\na = TextContent("rollout plan")', 3);
+    make("444444444444", "big", `root = Stack([${Array.from({ length: 80 }, (_, i) => `s${i}`).join(", ")}])\n${rows(80)}`, 4);
+    const hits = findStatements(db, "rollout", { limit: 8 }).hits;
+    assert.deepEqual([...new Set(hits.map((h) => path.basename(h.file)))].sort(), ["big.html", "old-a.html", "old-b.html", "old-c.html"], "every page is found, the big one at most 3 times");
+    assert.equal(hits.filter((h) => h.file.endsWith("big.html")).length, 3);
+  } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a database that ran without FTS5 gets its existing statements indexed when FTS is first available", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-fts-late-"));
+  const file = path.join(dir, "hub.db");
+  try {
+    const db = await openDatabase(file, { fts: false });
+    new Hub(db).register({ id: "555555555555", file: "/work/plan.html", title: "Plan" });
+    recordRevision(db, "555555555555", html('root = Stack([a])\na = TextContent("session migration")'), { source: "patch" });
+    db.close();
+    const later = await openDatabase(file);
+    try {
+      const found = findStatements(later, "migration", { all: true });
+      assert.equal(found.fts, true);
+      assert.deepEqual(found.hits.map((h) => h.statement), ["a"], "found without a reindex");
+    } finally {
+      later.close();
+    }
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

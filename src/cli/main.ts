@@ -14,7 +14,7 @@ import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from ".
 import { planCopy, parseSource, recordOrigins, originsOf } from "./copy.ts";
 import type { CopyPlan } from "./copy.ts";
 import { changesOutput, decisionsOutput, findOutput, historyOutput, outlineOutput, programAt, showOutput } from "./history-cmds.ts";
-import { ageOf, recordWithHub, reindex, restoredProgram } from "./history.ts";
+import { ageOf, keepPage, recordWithHub, reindex, restoredProgram } from "./history.ts";
 import { addRoot, copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { lockStateDir } from "./lock.ts";
@@ -1017,9 +1017,17 @@ async function cmdPatch(file: string | undefined, flags: Flags): Promise<void> {
   if (art.program == null) return fail('no <script type="text/openui"> block to patch');
   let copy: CopyPlan | null = null;
   if (from.length) {
+    const sources = from.map(parseSource);
+    // A source page as it is now becomes a revision first, so the revision the copy names holds what was copied.
+    if (rev === undefined) {
+      for (const src of sources) {
+        const srcAbs = canonicalFile(src.file);
+        if (fs.existsSync(srcAbs)) await recordBaseline(srcAbs, fs.readFileSync(srcAbs, "utf8"));
+      }
+    }
     const hub = await readHub();
     try {
-      copy = planCopy(hub?.db ?? null, art.program, from.map(parseSource), rev);
+      copy = planCopy(hub?.db ?? null, art.program, sources, rev);
     } catch (err) {
       return fail(messageOf(err));
     } finally {
@@ -1135,7 +1143,8 @@ async function cmdRestore(file: string | undefined, names: string[], flags: Flag
     if (merged === null) return print({ status: "unchanged", file: page.abs, note: `The page already reads as revision ${rev}${names.length ? ` in ${names.join(", ")}` : ""}.` });
     const next = replaceProgram(html, merged);
     const id = page.id;
-    await recordBaseline(page.abs, html);
+    // "Nothing is lost" needs the page as it is kept first: with no way to write hub.db, the file is left as it is.
+    if (!(await keepPage(page.abs, id, html))) return fail(`${hubDbFile()} cannot be written (another austere-axi version may hold the state dir), so the current page cannot be kept first; ${page.abs} is unchanged`);
     const caller = callerOf(flags);
     const registered = caller ? await registerWithHubDb(caller, [id], "patch") : false;
     // Recorded before the write, as `patch` does, so a watching server keeps the source.
@@ -1164,7 +1173,9 @@ async function cmdChanges(kind: "changes" | "decisions", file: string | undefine
   if (since === null || limit === null) return;
   return withHub(false, (hub) => {
     const scope = historyScope(hub, file, flags);
-    if (kind === "changes") print(changesOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 20, ...scope }));
+    // The continuation names the same scope: the file, or the project that was asked for.
+    const named = file ? ` ${quote(file)}` : typeof flags.project === "string" ? ` --project ${quote(flags.project)}` : "";
+    if (kind === "changes") print(changesOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 20, ...scope }, named));
     else print(decisionsOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 50, ...scope }));
   });
 }

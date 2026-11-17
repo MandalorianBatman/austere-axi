@@ -115,7 +115,7 @@ export function outlineOutput(program: string, html: string | null, file: string
 }
 
 /** `changes`: revisions after a cursor. */
-export function changesOutput(db: sqlite.DatabaseSync, { cursor, artifactId, projectId, limit }: { cursor: number; artifactId?: string; projectId?: string; limit: number }): Printed {
+export function changesOutput(db: sqlite.DatabaseSync, { cursor, artifactId, projectId, limit }: { cursor: number; artifactId?: string; projectId?: string; limit: number }, scope = ""): Printed {
   const { changes, next } = changesSince(db, { cursor, artifactId, projectId, limit });
   if (!changes.length) return { changes: "none", cursor: next };
   return {
@@ -132,7 +132,7 @@ export function changesOutput(db: sqlite.DatabaseSync, { cursor, artifactId, pro
       reply: c.reply ?? undefined,
     })),
     cursor: next,
-    next: changes.length >= limit ? `More: \`${BIN} changes --since ${next}\`` : undefined,
+    next: changes.length >= limit ? `More: \`${BIN} changes${scope} --since ${next}${limit === 20 ? "" : ` --limit ${limit}`}\`` : undefined,
   };
 }
 

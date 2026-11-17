@@ -52,3 +52,32 @@ client2 = Node("client", client2.name)`,
   );
   assert.equal(renameStatements("x = y", new Map()), "x = y");
 });
+
+test("closureOf: a name in a comment, an object key or a member is not a reference", () => {
+  const map = statementMap(`root = Stack([note])
+note = TextContent("visible") // other
+other = TextContent("not a dependency")
+keyed = Chart({other: 1}, thing.other)
+real = Card([other])`);
+  assert.deepEqual(closureOf(map, ["note"]), ["note"]);
+  assert.deepEqual(closureOf(map, ["keyed"]), ["keyed"]);
+  assert.deepEqual(closureOf(map, ["real"]), ["other", "real"]);
+});
+
+test("closureOf: object keys with a comment before the colon, or no comma between entries, are not references", () => {
+  const map = statementMap(`keyed = Chart({other // why
+: 1})
+second = Chart({first: 1 other: 2})
+third = Chart({first: 1, other: 2})
+ternary = Chart({x: flag ? other : 1})
+other = TextContent("o")
+flag = TextContent("f")`);
+  assert.deepEqual(closureOf(map, ["keyed"]), ["keyed"]);
+  assert.deepEqual(closureOf(map, ["second"]), ["second"]);
+  assert.deepEqual(closureOf(map, ["third"]), ["third"]);
+  assert.deepEqual(closureOf(map, ["ternary"]), ["ternary", "other", "flag"], "a ternary's branches are values");
+  const sum = statementMap(`root = Chart({x: flag ? 1 + amount : 0})
+flag = TextContent("f")
+amount = TextContent("a")`);
+  assert.deepEqual(closureOf(sum, ["root"]), ["root", "flag", "amount"], "arithmetic in a branch");
+});

@@ -161,6 +161,7 @@ test("changes: both patches come back, each with the note that caused it; the cu
   const limited = await cli(["changes", file, "--since", String(cursor0), "--limit", "1"]);
   assert.match(limited.out, /rev: 2/);
   assert.doesNotMatch(limited.out, /rev: 3/);
+  assert.match(limited.out, /More: `austere-axi changes [^`]*changes\.html[^`]* --since \d+ --limit 1`/, "the continuation names the page and the limit");
 });
 
 test("decisions: a submitted form with its values, and a batch sent with Send & finish", async () => {

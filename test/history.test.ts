@@ -74,6 +74,8 @@ interface Rev {
 /** The revisions of a page as hub.db has them, read with a connection of its own. */
 function revisions(file: string): Rev[] {
   const db = new DatabaseSync(path.join(STATE, "hub.db"), { readOnly: true });
+  // A server that is going down may still hold the file for a moment (Windows locks it hard).
+  db.exec("PRAGMA busy_timeout = 5000");
   try {
     return db.prepare("SELECT rev, source, program, run_id, seq_from, seq_to FROM revisions WHERE artifact_id = ? ORDER BY rev").all(sessionId(file)) as unknown as Rev[];
   } finally {
@@ -82,10 +84,10 @@ function revisions(file: string): Rev[] {
 }
 
 /** Waits for a condition the server will make true (a watched file is read within about half a second). */
-async function until<T>(read: () => T | undefined | false, what: string): Promise<T> {
+async function until<T>(read: () => T | undefined | false | Promise<T | undefined | false>, what: string): Promise<T> {
   const deadline = Date.now() + 10_000;
   for (;;) {
-    const v = read();
+    const v = await read();
     if (v) return v;
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, 50));
@@ -155,6 +157,8 @@ test("an edit made while no server ran becomes a revision on the next open", asy
   const file = page("offline", PROGRAM);
   assert.equal((await cli(file)).code, 0);
   assert.equal((await cli("stop")).code, 0);
+  // `stop` answers before the server has quite gone; its watcher would still record an edit made now as its own.
+  await until(async () => (await fetch(`http://127.0.0.1:${PORT}/api/health`).then(() => false, () => true)) || undefined, "the server to be gone");
   fs.writeFileSync(file, html(PROGRAM.replace('"hello"', '"edited while stopped"')));
   assert.equal(revisions(file).length, 1);
   assert.equal((await cli(file)).code, 0);

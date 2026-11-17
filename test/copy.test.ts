@@ -113,6 +113,20 @@ test("patch --from copies a statement with what it references; a name that clash
   assert.equal(origins(dest).some((o) => o.name === "unrelated"), false);
 });
 
+test("a source edited by hand and never recorded is recorded before it is copied: the origin names a revision that holds what was copied", async () => {
+  const src = write("hand-src", SOURCE);
+  const dest = write("hand-dest", `root = Stack([intro])\nintro = TextContent("intro")`);
+  assert.equal((await cli([src])).code, 0);
+  assert.equal((await cli(["stop"])).code, 0);
+  fs.writeFileSync(src, html(SOURCE.replace('"API"', '"API by hand"').replace('"backend", "Node"', '"backend", "Node 99"'), "hand-src"));
+  const r = await cli(["patch", dest, "--from", `${src}#api`], "root = Stack([intro, api])");
+  assert.equal(r.code, 0, r.out);
+  const o = origins(dest).find((x) => x.name === "api");
+  assert.equal(o?.src_rev, 2, "a revision of its own, not revision 1");
+  const shown = await cli(["show", src, "api", "--rev", String(o?.src_rev)]);
+  assert.match(shown.out, /API by hand/);
+});
+
 test("--rev copies an older version; an unknown statement lists the names the source has", async () => {
   const src = write("rev-src", SOURCE);
   const dest = write("rev-dest", `root = Stack([intro])\nintro = TextContent("intro")`);
