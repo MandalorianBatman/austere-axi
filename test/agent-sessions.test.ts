@@ -309,7 +309,7 @@ test("open, patch, poll, reply and feedback print the session line and register 
   r = await cli({}, ["sessions", "list", "--project", PROJECT]);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /project: shop/);
-  assert.match(r.out, /file: .*other\.html\n\s+harness: dsh\n\s+id: stener\n\s+role: listener/);
+  assert.match(r.out, /file: "?.*other\.html"?\n\s+harness: dsh\n\s+id: stener\n\s+role: listener/);
   r = await cli({}, ["sessions", "list", path.join(PROJECT, "never.html")]);
   assert.match(r.out, /sessions: none/);
   r = await cli({}, ["sessions", "frob"]);

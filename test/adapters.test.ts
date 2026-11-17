@@ -200,7 +200,8 @@ test("a missing binary makes every capability unavailable with the reason; findO
     assert.equal(findOnPath("omp", { PATH: empty }), null);
     if (windows) fs.writeFileSync(file, "@echo off\r\n");
     else fs.chmodSync(file, 0o755);
-    assert.equal(findOnPath("omp", { PATH: `/nonexistent${path.delimiter}${empty}` }), file);
+    // Windows names the hit with PATHEXT's own case (`omp.CMD`); its file system ignores case.
+    assert.equal(findOnPath("omp", { PATH: `/nonexistent${path.delimiter}${empty}` })?.toLowerCase(), file.toLowerCase());
     assert.deepEqual(capabilitiesOf(ADAPTERS.omp, { PATH: empty }), ADAPTERS.omp.capabilities);
     assert.equal(findOnPath(file, { PATH: "" }), file, "a path is checked as is");
   } finally {
