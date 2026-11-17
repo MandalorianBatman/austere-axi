@@ -23,8 +23,8 @@ import { lockStateDir } from "./lock.ts";
 import { listSessions, liveness, parseCallerReport, registerSession, shortId } from "./agent-sessions.ts";
 import type { CallerReport, SessionAction } from "./agent-sessions.ts";
 import type { Liveness } from "./caller.ts";
-import { detectSupervisor } from "./service.ts";
-import type { Supervisor } from "./service.ts";
+import { detectUnit } from "./service.ts";
+import type { ServerUnit, Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub, activeWorkNow } from "./hub.ts";
 import { Dispatcher, getRun, listRuns, logTail, summary } from "./dispatch.ts";
@@ -64,6 +64,8 @@ export interface HealthInfo {
   persist: boolean;
   /** The service manager that runs this server (`server install`); a CLI never replaces it. */
   supervised?: Supervisor;
+  /** The unit that runs it (a systemd unit, a launchd label), for the hint that restarts it. Missing before 0.12. */
+  unit?: string;
   /** The address variables it runs with, kept by a CLI that replaces it. Missing before 0.12. */
   addresses?: AddressSettings;
 }
@@ -352,14 +354,14 @@ export async function runServer({
   verbose = false,
   alsoListen = [],
   persist = false,
-  supervised,
+  unit,
 }: {
   port: number;
   verbose?: boolean;
   alsoListen?: string[];
   persist?: boolean;
-  /** The supervisor that runs this server; read from the system when it is not given. */
-  supervised?: Supervisor | null;
+  /** The unit that runs this server; null: none does. Read from the system when it is not given. */
+  unit?: ServerUnit | null;
 }): Promise<{ port: number; shutdown: (reason: string) => void }> {
   const log = (...a: unknown[]): void => {
     const line = `${new Date().toISOString()} ${a.join(" ")}`;
@@ -373,11 +375,12 @@ export async function runServer({
 
   // Notes commit to hub.db before any request that adds them is answered. The lock names
   // the port, so a later process can tell this server from an unrelated one with its pid,
-  // and the supervisor, so `server install` can tell a server it started from one it did not.
-  // Who runs this server: systemd or launchd, when one does. A supervised server is the
+  // and the unit, so `server install` can tell a server it started from one it did not.
+  // Who runs this server: a systemd or launchd unit, when one does. A supervised server is the
   // unit's, so a CLI never replaces it (RLM-311).
-  const supervisorName: Supervisor | null = supervised ?? detectSupervisor();
-  const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000, supervised: supervisorName });
+  const runBy: ServerUnit | null = unit === undefined ? detectUnit() : unit;
+  const supervisorName: Supervisor | null = runBy?.supervisor ?? null;
+  const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000, unit: runBy });
   process.on("exit", releaseLock);
   let store: SessionStore;
   try {
@@ -1168,6 +1171,7 @@ export async function runServer({
         remote: remoteBase() || undefined,
         persist: idleMs === 0,
         supervised: supervisorName ?? undefined,
+        unit: runBy?.unit,
         addresses: addressSettings(),
       } satisfies HealthInfo);
     }

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { health } from "./client.ts";
 import { VERSION } from "./paths.ts";
-import type { Supervisor } from "./service.ts";
+import type { ServerUnit, Supervisor } from "./service.ts";
 
 // A process that has held the lock for less than this may still be starting (a server
 // that does not answer on its port yet) or finishing (a command). Older and silent: it died.
@@ -14,11 +14,12 @@ const STARTING_MS = 60_000;
 // How often the holder writes its lock again, so a live holder never ages out.
 const REFRESH_MS = 15_000;
 
-/** What server.lock holds: `{ pid, port?, at, supervised?, version? }`, or a bare pid (the old format); anything else when corrupt. */
-type LockFile = { pid?: unknown; port?: unknown; at?: unknown; supervised?: unknown; version?: unknown } | number | null;
+/** What server.lock holds: `{ pid, port?, at, supervised?, unit?, version? }`, or a bare pid (the old format); anything else when corrupt. */
+type LockFile = { pid?: unknown; port?: unknown; at?: unknown; supervised?: unknown; unit?: unknown; version?: unknown } | number | null;
 
 /**
- * A live holder of the lock. `serving`: a server that answered on its port. `supervised`: the service manager that runs it (`server install`).
+ * A live holder of the lock. `serving`: a server that answered on its port. `supervised`: the service manager that runs it, and `unit`
+ * the unit's name (a systemd unit, a launchd label; unknown for a lock written before locks named it).
  * `version`: the austere-axi version that holds it, unknown for a lock written before locks named one.
  */
 export interface LockHolder {
@@ -26,6 +27,7 @@ export interface LockHolder {
   port?: number;
   serving: boolean;
   supervised?: Supervisor;
+  unit?: string;
   version?: string;
 }
 
@@ -34,17 +36,17 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 /**
  * Take the state dir's lock. A server passes its `port`; another process then asks that
  * port whether the server still runs, which a reused pid cannot fake. A server a service
- * manager runs passes `supervised`. `wait` is how long to wait for a holder that is
+ * manager runs passes its `unit`. `wait` is how long to wait for a holder that is
  * starting or finishing. Returns the function that lets go.
  */
 export async function lockStateDir(
   dir: string,
-  { port = null, wait = 0, supervised = null }: { port?: number | null; wait?: number; supervised?: Supervisor | null } = {},
+  { port = null, wait = 0, unit = null }: { port?: number | null; wait?: number; unit?: ServerUnit | null } = {},
 ): Promise<() => void> {
   const file = path.join(dir, "server.lock");
   const deadline = Date.now() + wait;
   for (let stale = 0; stale < 3; ) {
-    const lock = port ? { pid: process.pid, port, at: Date.now(), version: VERSION, ...(supervised ? { supervised } : {}) } : { pid: process.pid, at: Date.now(), version: VERSION };
+    const lock = port ? { pid: process.pid, port, at: Date.now(), version: VERSION, ...(unit ? { supervised: unit.supervisor, unit: unit.unit } : {}) } : { pid: process.pid, at: Date.now(), version: VERSION };
     try {
       fs.writeFileSync(file, JSON.stringify(lock), { flag: "wx" });
       let held = true;
@@ -132,10 +134,11 @@ async function lockHolder(text: string, dir: string): Promise<LockHolder | null>
   if (!lock || !Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null;
   const port = typeof lock.port === "number" && Number.isInteger(lock.port) && lock.port > 0 ? lock.port : undefined;
   const supervised = lock.supervised === "systemd" || lock.supervised === "launchd" ? lock.supervised : undefined;
+  const unit = supervised && typeof lock.unit === "string" && lock.unit ? lock.unit : undefined;
   if (port) {
     // A server proves it holds this state dir's owner key (no key is sent) and is that pid on that dir.
     const h = await health(port);
-    if (h && !h.foreign && h.pid === pid && h.stateDir === dir) return { pid, port, serving: true, supervised, version: h.version };
+    if (h && !h.foreign && h.pid === pid && h.stateDir === dir) return { pid, port, serving: true, supervised, unit, version: h.version };
   }
   if (!processAlive(pid)) return null;
   const version = typeof lock.version === "string" ? lock.version : undefined;
@@ -143,7 +146,7 @@ async function lockHolder(text: string, dir: string): Promise<LockHolder | null>
   // taking a lock a server still holds would put two writers on hub.db, while wrongly
   // keeping one only blocks with a message that says to delete the file.
   if (lock.at == null) return { pid, port, serving: false };
-  return Date.now() - Number(lock.at) < STARTING_MS ? { pid, port, serving: false, supervised, version } : null;
+  return Date.now() - Number(lock.at) < STARTING_MS ? { pid, port, serving: false, supervised, unit, version } : null;
 }
 
 function processAlive(pid: number): boolean {
