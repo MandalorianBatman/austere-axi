@@ -2,6 +2,16 @@
 
 Versions before 0.11.0 are listed only in the [GitHub releases](https://github.com/MandalorianBatman/austere-axi/releases).
 
+## Unreleased
+
+### Added
+
+- Activity triggers: `trigger add|list|remove` runs a command once a project has been quiet (`quiet:2h`), once per burst of activity, as a run (`run list --project p`, `run log`, `run stop --project p`). `add` and `remove` work only at a terminal; `triggers.json` is read only from the state dir. See [Triggers](docs/cli.md#triggers). (RLM-360)
+
+### Changed
+
+- hub.db schema version 6 (additive; migrated on open): `trigger_state` and `runs.trigger_id`. (RLM-360)
+
 ## 0.13.0 (2026-11-17)
 
 ### Added

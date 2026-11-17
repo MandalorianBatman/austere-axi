@@ -146,7 +146,8 @@ runs            (id TEXT PRIMARY KEY,
                  log_file TEXT,                     -- <state>/runs/<id>.log, 0600, ≤ 1 MB, 30 days
                  requeued_from TEXT,                -- A20: the interrupted run this one requeues
                  pid INTEGER, pid_start TEXT,       -- A20: the run's process group, for restart recovery
-                 bin TEXT)                          -- A20: the file it spawned (Windows pid-reuse check)
+                 bin TEXT,                          -- A20: the file it spawned (Windows pid-reuse check)
+                 trigger_id TEXT)                   -- RLM-360: the trigger (triggers.json) that started a trigger run; its seq_from and seq_to are the trigger's cursor before and after
 trigger_state   (trigger_id TEXT PRIMARY KEY,       -- A8; RLM-360
                  last_cursor INTEGER NOT NULL DEFAULT 0,
                  last_run_at INTEGER)
@@ -236,7 +237,7 @@ wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
 | New | `decisions [<file>\|--project] [--since cursor]` | RLM-351 | `main.ts` |
 | New | `find <words> [--project] [--component] [--limit]` | RLM-351 | `main.ts`, `statements_fts` |
 | New | `hub reindex` | RLM-350 | `cmdHub` |
-| New | `trigger add\|list\|remove` (`add` TTY only) | RLM-360 | `main.ts`, `server.ts` |
+| New | `trigger add\|list\|remove` (`add` and `remove` TTY only) | RLM-360 | `main.ts`, `triggers.ts`, `server.ts` |
 | New | `server install\|uninstall\|status\|restart` | RLM-340, RLM-391 | `service.ts`, `main.ts` |
 
 The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, else an error with the command for the user to run). `adapter set` refuses as a usage error, exit 2 (the call cannot work from where it was made), not exit 1.
@@ -265,7 +266,7 @@ The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, 
 | RLM-356 | `/hub/api/*` in `server.ts` |
 | RLM-357 | new shell in `src/chrome/`; `hub-page.ts` lists replaced |
 | RLM-358 | review header in `chrome.ts` |
-| RLM-360 | new trigger scheduler in `server.ts`; `runs` kind `trigger` |
+| RLM-360 | new `triggers.ts` (scheduler, `triggers.json`), started by `server.ts`; `runs` kind `trigger` |
 | RLM-361–366 | `austere-wiki` repo only (A2); RLM-366 adds one paragraph to austere-axi `docs/` |
 
 ## Migration from 0.10.4

@@ -11,7 +11,8 @@ austere-axi reply <file>         post a reply without polling   [--cursor n]
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback [file]      feedback no agent has answered yet; no file: every page of this checkout   [--project p: every checkout] [--all] [--peek]
 austere-axi sessions list [file]   agent sessions that opened, patched or listened to a page; no file: the project   [--project p]
-austere-axi run list [file]      runs of the attached agent; no file: the project   [--project p]; run log <id>; run stop <file>
+austere-axi run list [file]      runs of the attached agent; no file: the project   [--project p]; run log <id>; run stop <file> | --project p
+austere-axi trigger list|add|remove   run a command once a project has been quiet (the user, at a terminal; see Triggers)   add --project p --on quiet:2h [--max-time 30m] -- <bin> [args…]
 austere-axi attach status [file] whether an agent is attached to a page and what would stop it; no file: the project   [--project p]
 austere-axi attach on|off [file] attach an agent to a page or a project (the user, at a terminal)   [--mode m] [--session s] [--harness h] [--model x]; attach inherit <file>
 austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]
@@ -27,7 +28,7 @@ austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narro
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
 austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
-austere-axi adapter list|set     how a run starts an agent: harness binaries, capabilities, the owner's extra arguments (see Adapters)
+austere-axi adapter list|command|set     how a run starts an agent: harness binaries, capabilities, the owner's extra arguments (see Adapters)
 austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
 austere-axi hub [list|notes|open|reindex]   home page with every page by project and every note; reindex rebuilds the text index   [--project p] [--archived] [--all] [--unanswered]
 austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)
@@ -101,6 +102,7 @@ An adapter turns a run (a note the owner sent to an attached page) into one comm
 
 ```
 austere-axi adapter list                                   each harness: bin, found (its path on PATH, or false), same/fork/new, model, max_cost, extra_args, write_grant
+austere-axi adapter command <name> [--model m]             the command a new run of that adapter would run (bin, args with the owner's extra arguments and limits, env; the prompt goes on stdin): for a program that starts the harness itself, such as an add-on
 austere-axi adapter set omp --extra-args "--approval-mode yolo"   arguments added last to every omp run ("" clears them)
 austere-axi adapter set copilot --extra-args "--allow-all"        the same for Copilot CLI
 austere-axi adapter set <name> --command "<bin> <args…>"          a command adapter: a fixed binary and arguments, new session only ("" removes it)
@@ -120,6 +122,7 @@ With attach on for a page (see [Attach](#attach)), a note the owner sends from t
 austere-axi run list [file] [--project p]   status, reason, harness and mode, the notes (seq) and how long it took; no file: the project
 austere-axi run log <id>                    what the run printed (stdout and stderr), and why it ended
 austere-axi run stop <file>                 end the page's runs: the running one and everything it started is killed (without a server, also a crashed server's leftover run)
+austere-axi run stop --project p            end the project's trigger runs (see Triggers)
 ```
 
 - **When a run starts:** 5 s after the owner's last note on the page (`debounceMs`). One run per page at a time; notes that arrive while one runs make the next run, after it. At most 2 runs at once on the machine (`maxConcurrent`); the rest stay `queued`.
@@ -143,6 +146,22 @@ austere-axi run stop <file>                 end the page's runs: the running one
 | `recheckMs` | `30000` | `3600000` | how often a waiting run looks again |
 | `maxCost` | | | omp `--max-cost` (dollars) |
 | `maxAiCredits` | | | Copilot `--max-ai-credits` |
+
+## Triggers
+
+A trigger runs a command once a project has been quiet: the first "on event" facility of the core, and generic (the optional wiki add-on uses it to start its ingest; nothing here knows it).
+
+```
+austere-axi trigger add --project shop --on quiet:2h [--max-time 30m] -- austere-wiki ingest --project shop
+austere-axi trigger list
+austere-axi trigger remove <id>
+```
+
+- **Terminal only:** a trigger names a command that runs on this machine, so `trigger add` and `trigger remove` work only at a terminal, as `trust add` does: without one they exit 2, change nothing and print the command for the user to run. `<state>/triggers.json` (mode 0600) is read only from the state dir: a file of that name in a project or a page's folder is never read, and neither is anything a page or a note says. An agent can `trigger list` and read the runs.
+- **When it runs:** after the last revision or note in the project, once `<duration>` (`quiet:90s`, `quiet:30m`, `quiet:2h`, `quiet:1d`) passes with none, the command runs once. It runs with no shell, in the project's first folder, with the server's environment plus `AUSTERE_AXI_RUN_ID`, `AUSTERE_AXI_PROJECT` (the project's name) and `AUSTERE_AXI_CHANGES_CURSOR` (the cursor the trigger had before this run, the one `changes --since` takes), and `austere-axi` on `PATH` is this server's CLI. Never the owner key.
+- **Not again without new activity:** a trigger starts from the moment it was added; what happened before is not its activity. Activity while a run goes on (a revision after the run's cursor, a note after it started) makes exactly one more run, once the project is quiet again. A run a restart interrupted gives its cursor back, so the activity it was for runs again.
+- **A run like any other:** a row in `run list --project p` (`trigger: <id>`, the cursor range), `run log <id>`, `run stop --project p`. Same log (1 MB, 0600, 30 days), `maxTime` (else `maxMinutes` in `attach.json`) and `runsPerHour` (per trigger) and `maxConcurrent` limits as a note's run. Statuses: `done`, `failed` (`exit`, `timeout`, `rate_limit`, `unavailable`), `stopped`, `interrupted`.
+- **It needs a server:** a server with a trigger configured does not idle out. Without a running server nothing runs; `server install` keeps one.
 
 ## Attach
 
@@ -169,6 +188,7 @@ austere-axi attach inherit <file>                        the page goes back to i
 | `AUSTERE_AXI_NO_OPEN` | | `1` = never open a browser |
 | `AUSTERE_AXI_HOST` | | extra bind address (never `0.0.0.0`) |
 | `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |
+| `AUSTERE_AXI_FORMAT` | | `json` = every command prints one JSON line instead of the compact YAML, for a program that reads the output (the same fields) |
 | `AUSTERE_AXI_TAILNET_CHECK_MS` | `60000` | how often the server asks Tailscale for its address again (it came up later, restarted, or changed); `0` disables |
 | `AUSTERE_AXI_LINK_HOST` | | host in the printed remote link (`http://<host>:<port>`) |
 | `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS`. The host may hold only letters, digits, dots, hyphens and underscores (or be a bracketed IPv6 address) |

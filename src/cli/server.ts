@@ -33,6 +33,7 @@ import type { ArchivePlan } from "./hub.ts";
 import { agentLabel, headRev, recordRevision, restoredProgram, revisionAt, revisionLog, setViewedRev, similarPages, statementVersions, viewedRev } from "./history.ts";
 import type { RevisionRow } from "./history.ts";
 import { Dispatcher, getRun, listRuns, logTail, summary } from "./dispatch.ts";
+import { TriggerScheduler, readTriggers } from "./triggers.ts";
 import type { RunEvent, RunSummary } from "./dispatch.ts";
 import { AttachRefused, attachReport, authorOf, autoConflict, changeSetting, effectiveAttach, harnessInfos, isAttachMode, resolveSessionValue, scopeIds } from "./attach.ts";
 import type { AttachFields, AttachSettingRow, AttachState, AttachWhere, EffectiveAttach, HarnessInfo, LiveAuto } from "./attach.ts";
@@ -448,6 +449,15 @@ export const STALE_WORKING_MS = 10 * 60_000;
 // The longest delay setTimeout takes: a larger one fires after 1 ms and warns. A longer wait is armed in several steps.
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
+/** Whether triggers.json names a trigger: the server stays up to run it. A file that cannot be read counts as none. */
+function triggersConfigured(): boolean {
+  try {
+    return readTriggers().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function runServer({
   port,
   verbose = false,
@@ -529,6 +539,8 @@ export async function runServer({
     autoConflict: (s) => autoConflict(store.db, s.file, s.id, liveAuto),
     emit: (id, event) => broadcastOwners(id, "run", event),
   });
+  // Activity triggers (RLM-360): a command the owner named at a terminal runs once a project has gone quiet.
+  const triggers = new TriggerScheduler({ db: store.db, port, log, pollMs: msEnv("AUSTERE_AXI_TRIGGER_POLL_MS", 15_000) });
   // Render errors already sent per session, for one revision; a repeat or a second tab adds nothing.
   const renderReported = new Map<string, { revision: number; keys: Set<string> }>();
   let tailnet: Tailnet | null = null;
@@ -1824,6 +1836,17 @@ export async function runServer({
       for (const c of copies) setArchived(c.id, at);
       return send(res, 200, { ok: true, copies } satisfies ArchiveMissingResponse);
     }
+    // A project's trigger runs (RLM-360): no page.
+    if (route === "run/stop" && typeof body.project === "string") {
+      let projectId: string | undefined;
+      try {
+        projectId = findProject(store.db, body.project)?.id;
+      } catch (err) {
+        return send(res, 400, { error: String((err as Error).message || err) });
+      }
+      if (!projectId) return send(res, 404, { error: `no project ${body.project}` });
+      return send(res, 200, { ok: true, stopped: await triggers.stop(projectId) } satisfies RunStopResponse);
+    }
     // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
     const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
     if (!file) return send(res, 400, { error: "file is required" });
@@ -2810,7 +2833,7 @@ export async function runServer({
     for (const server of listeners.values()) server.close();
     // The runs' process trees go first (dispatcher.close waits for them): until then a harness could
     // still write the page, so the lock stays. Everything else is on disk; then a replacement server can take the state dir.
-    void dispatcher.close().finally(() => {
+    void Promise.all([dispatcher.close(), triggers.close()]).finally(() => {
       releaseLock();
       setTimeout(() => {
         store.close();
@@ -2828,7 +2851,8 @@ export async function runServer({
       checking = true;
       void activeWorkNow()
         .then((working) => {
-          const busy = polls.size > 0 || rootPolls.size > 0 || projectPolls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || working;
+          // A trigger is waiting for its project to go quiet: the server stays to run it.
+          const busy = polls.size > 0 || rootPolls.size > 0 || projectPolls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || working || triggersConfigured();
           if (busy) activity();
           else if (Date.now() - lastActivity > idleMs) shutdown("idle");
         })
@@ -2841,6 +2865,8 @@ export async function runServer({
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   log("started", `v${VERSION}`, `pid=${process.pid}`);
   dispatcher.start();
+  // After the dispatcher, which marks the runs a restart interrupted: the scheduler gives back what they consumed.
+  triggers.start();
   peer.start();
   return { port, shutdown };
 }
