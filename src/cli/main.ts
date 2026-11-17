@@ -632,13 +632,15 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
   clearInterval(ticker);
   if (r.status !== 200) return fail(r.data?.error || `poll failed (${r.status})`);
   const d: Partial<PollResponse> = r.data || {};
+  const refreshed = await projectOfFlags(flags);
+  const pages = refreshed?.id === project.id ? refreshed.pages : project.pages;
   if (d.status === "feedback") {
     const batches = d.batches || [];
     const third = new Set(batches.flatMap((b) => thirdPartyOf(b.file)));
     const out: Printed = {
       status: "feedback",
       project: project.name,
-      pages: project.pages,
+      pages,
       cursor: d.cursor,
       batches: batches.map((b) => ({ file: b.file, copy: b.copy, final: b.final, items: describeItems(b.file, b.items) })),
     };
@@ -651,7 +653,7 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
         : `Then \`${again} --cursor ${d.cursor}\`, which acknowledges every page above and listens again. A batch marked final: true was sent with Send & End: apply it, then stop listening for that page.`);
     return print(out);
   }
-  const out: Printed = { status: d.status || "unknown", project: project.name, pages: project.pages };
+  const out: Printed = { status: d.status || "unknown", project: project.name, pages };
   if (d.status === "timeout") out.next = `No feedback yet. Run \`${again}\` again.`;
   if (d.status === "replaced") out.next = "A newer poll took over this project. Stop polling here.";
   if (d.status === "interrupted") out.next = `The server restarted; the feedback is safe and still unread. Run the same poll again: \`${again}\`.`;

@@ -101,8 +101,10 @@ test("nested guessed roots: the parent's root takes in the child's, so the paren
 test("a guessed root is never / or the home folder for anything below it", () =>
   withDb((db, dir) => {
     const home = path.join(dir, "home");
-    const was = process.env.HOME;
+    const wasHome = process.env.HOME;
+    const wasProfile = process.env.USERPROFILE;
     process.env.HOME = home;
+    process.env.USERPROFILE = home;
     try {
       const top = resolveProject(db, write(path.join(home, "todo.html")));
       assert.equal(top.root, home, "a page directly in the home folder has it as its root");
@@ -113,8 +115,10 @@ test("a guessed root is never / or the home folder for anything below it", () =>
       assert.equal(findProject(db, path.join(home, "other")), null, "a lookup applies the same rule");
       assert.equal(findProject(db, home)?.id, top.projectId);
     } finally {
-      if (was === undefined) delete process.env.HOME;
-      else process.env.HOME = was;
+      if (wasHome === undefined) delete process.env.HOME;
+      else process.env.HOME = wasHome;
+      if (wasProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = wasProfile;
     }
   }));
 
