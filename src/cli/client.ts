@@ -9,7 +9,7 @@ import { ownerKey } from "./invites.ts";
 import { withAddressSettings } from "./net.ts";
 import type { AddressSettings } from "./net.ts";
 import type { HealthInfo, LoginResponse } from "./server.ts";
-import { childEnv, installedServiceFor, lockedOutNote, restartCommand, serverUnit, serviceContext, startInstalledService, SYSTEMD_UNIT, LAUNCHD_LABEL } from "./service.ts";
+import { childEnv, installedServiceFor, lockedOutNote, restartCommand, serverUnit, serviceContext, startInstalledService, SYSTEMD_UNIT, UNKNOWN_LAUNCHD_LABEL } from "./service.ts";
 import type { PortProbe, ServerUnit } from "./service.ts";
 
 /** The `error` a control route answers with when it refuses. */
@@ -221,7 +221,9 @@ export async function ensureServer(): Promise<ServerHealth> {
  */
 export function serverAction(h: ServerHealth, version: string, unitOf: () => ServerUnit | null): { action: "use" } | { action: "replace" } | { action: "restart-unit"; unit: ServerUnit } {
   if (!h.legacy && !versionGt(version, h.version)) return { action: "use" };
-  const unit = unitOf() ?? (!h.legacy && h.supervised ? { supervisor: h.supervised, unit: h.supervised === "systemd" ? SYSTEMD_UNIT : LAUNCHD_LABEL } : null);
+  // The server says a supervisor runs it but the system would not say which unit: systemd's is the one
+  // `server install` writes; a launchd agent may carry any label, so the hint does not guess one.
+  const unit = unitOf() ?? (!h.legacy && h.supervised ? { supervisor: h.supervised, unit: h.supervised === "systemd" ? SYSTEMD_UNIT : UNKNOWN_LAUNCHD_LABEL } : null);
   return unit ? { action: "restart-unit", unit } : { action: "replace" };
 }
 
