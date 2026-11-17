@@ -215,6 +215,12 @@ before(async () => {
           .map(([id, p]) => ({ id, title: p.row?.title, url: `${CLOUD}/p/${id}`, expiresAt: p.row?.expiresAt, notes: p.notes }));
         return json(res, 200, { pages });
       }
+      const login = /^\/api\/pages\/([^/]+)\/login$/.exec(url);
+      if (req.method === "POST" && login) {
+        const p = stub.pages.get(login[1]);
+        if (!p || p.owner !== auth || !p.row) return json(res, 404, { error: "page not found" });
+        return json(res, 200, { code: "c0de_".padEnd(43, "x"), ttlMs: 60_000 });
+      }
       json(res, 404, { error: "not found" });
     });
   });
@@ -513,6 +519,27 @@ test("--unlisted publishes the open link and prints the page URL", async () => {
   assert.equal(field(r.out, "url"), `${CLOUD}/p/${id}`);
   assert.match(field(r.out, "access") ?? "", /^"?unlisted/);
   assert.match(field(r.out, "next") ?? "", /--unlisted again/);
+});
+
+test("publish login prints the page's single-use owner sign-in link; an unpublished file or extra argument is an error", async () => {
+  const file = path.join(WORK, "mine.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  let r = await cli(["publish", "login", file]);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /has not been published from this machine/);
+  assert.ok(!stub.requests.some((x) => x.includes("/login")), "nothing is asked before the page is published");
+
+  assert.equal((await cli(["publish", file])).code, 0);
+  const id = cloudState().pages[fs.realpathSync(file)].id;
+  r = await cli(["publish", "login", file]);
+  assert.equal(r.code, 0, r.out);
+  assert.ok(stub.requests.includes(`POST /api/pages/${id}/login`), stub.requests.join("\n"));
+  assert.equal(field(r.out, "url"), `${CLOUD}/p/${id}?login=${"c0de_".padEnd(43, "x")}`);
+  assert.match(field(r.out, "expires") ?? "", /after one use, or in 60s/);
+
+  r = await cli(["publish", "login", file, "extra"]);
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /login takes one file/);
 });
 
 test("invite flags are checked before any request; a failed grant still records the published page", async () => {
