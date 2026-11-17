@@ -39,7 +39,7 @@ In 0.12 each removed command or flag exits 2 with `code: REMOVED` and one line t
 - The `end` tool is gone.
 - `open`: the `reopen` argument is gone.
 - `poll`: the `takeover` argument is gone. `file` is optional: without it, `poll` covers every page of the checkout of the MCP server's working folder. `project` widens it to every checkout of a project.
-- New tools: `sessions_list`, `run_list`, `run_log` and `attach_status` (see [Attach](attach.md)).
+- New tools, all read-only: `sessions_list`, `run_list`, `run_log` and `attach_status` (see [Attach](attach.md)). Turning attach on or off and granting permissions stay at a terminal.
 
 ## Your agent's instructions
 
@@ -61,7 +61,7 @@ The default service is now `https://austere.blundertech.com`. The host 0.11 defa
 
 ### No service runs it
 
-Upgrade the install (`npm install -g austere-axi@0.12`, or `npx austere-axi@0.12 …`). The next command that needs the server replaces the old one and says so on stderr: `replaced server 0.11.0 (pid N) with 0.12.0 from <path>`. The new server listens where the old one did, with `--persist` if the old one had it.
+Upgrade the install (`npm install -g austere-axi@0.12`, or `npx austere-axi@0.12 …`). The next command that needs the server (`open`, `poll`, `reply`, `feedback`) replaces the old one and says so on stderr: `replaced server 0.11.0 (pid N) with 0.12.0 from <path>`. The new server listens where the old one did, with `--persist` if the old one had it. A command that only reads `hub.db` (`hub list`, `project list`) refuses while the old server holds the state dir, and says so: run `austere-axi stop` first, or any command above.
 
 An old server does not report the variables it was started with. If it ran behind a reverse proxy with `AUSTERE_AXI_LINK_URL`, `AUSTERE_AXI_LINK_HOST` or `AUSTERE_AXI_ALLOWED_HOSTS`, set them in the shell of that first command, or run `austere-axi stop` and start the server again yourself.
 
@@ -70,7 +70,7 @@ An old server does not report the variables it was started with. If it ran behin
 0.11 had no `server install`, so a server that runs all the time runs under a unit you wrote. Do this:
 
 1. Upgrade the install.
-2. Restart the unit before any other command: `systemctl --user restart <your unit>`, or `launchctl kickstart -k gui/$(id -u)/<your label>`.
+2. Restart the unit before any other command: `austere-axi server restart` finds the unit that runs the server, whatever its name, and restarts it. By hand: `systemctl --user restart <your unit>`, or `launchctl kickstart -k gui/$(id -u)/<your label>`.
 3. Check: `austere-axi server status` prints `server: v0.12.0, pid N, port P, run by <your unit>`.
 
 **If a command already ran before the restart:**
