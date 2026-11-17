@@ -2313,14 +2313,16 @@ export async function runServer({
 
   /** AUSTERE_AXI_HOST, when it names one address: the server listens there instead of on the tailnet. */
   const fixedHost = process.env.AUSTERE_AXI_HOST && !/^(0\.0\.0\.0|::|\*)$/.test(process.env.AUSTERE_AXI_HOST) ? process.env.AUSTERE_AXI_HOST : null;
+  /** The tailnet address the server listens on, kept apart from `tailnet` (what Tailscale said last), so a move always lets go of it. */
+  let tailnetBound: string | null = null;
+  let stopping = false;
 
   async function ensureTailnetListener(): Promise<void> {
     if (fixedHost) {
       await listen(fixedHost);
       return;
     }
-    tailnet = await detectTailscale();
-    if (tailnet && !listeners.has(tailnet.ip)) await listen(tailnet.ip);
+    await followTailnet(await detectTailscale(), false);
   }
 
   /** Whether a connection to `host` on this port is accepted, within 2 s. */
@@ -2334,28 +2336,34 @@ export async function runServer({
   }
 
   /**
-   * Ask Tailscale again: it may have come up after the server (a service started at boot) or
-   * restarted under it. Listen on the address it has now, again when the listener there no longer
-   * accepts, and let go of an address it no longer has. While Tailscale does not answer, the
-   * listeners stay: its address comes back with it.
+   * Listen on the address Tailscale has now (`now`), and let go of one it no longer has. `probe`
+   * also listens again when the listener there no longer accepts (Tailscale restarted under it).
+   * While Tailscale does not answer, the listeners stay: its address comes back with it.
    */
-  async function recheckTailnet(): Promise<void> {
-    const now = await detectTailscale({ fresh: true });
+  async function followTailnet(now: Tailnet | null, probe: boolean): Promise<void> {
     if (!now || stopping) return;
-    const before = tailnet;
     tailnet = now;
-    if (before && before.ip !== now.ip && !alsoListen.includes(before.ip)) {
-      listeners.get(before.ip)?.close();
-      listeners.delete(before.ip);
-      log("tailnet", `left ${before.ip}`);
+    if (tailnetBound && tailnetBound !== now.ip) {
+      if (!alsoListen.includes(tailnetBound)) {
+        listeners.get(tailnetBound)?.close();
+        listeners.delete(tailnetBound);
+        log("tailnet", `left ${tailnetBound}`);
+      }
+      tailnetBound = null;
     }
     const current = listeners.get(now.ip);
-    if (current && !(await accepts(now.ip))) {
+    if (probe && current && !(await accepts(now.ip))) {
       current.close();
       listeners.delete(now.ip);
       log("tailnet", `${now.ip} stopped accepting; listening again`);
     }
     if (!listeners.has(now.ip) && !stopping) await listen(now.ip);
+    if (listeners.has(now.ip)) tailnetBound = now.ip;
+  }
+
+  /** Ask Tailscale again: it may have come up after the server (a service started at boot), restarted under it, or moved. */
+  async function recheckTailnet(): Promise<void> {
+    await followTailnet(await detectTailscale({ fresh: true }), true);
   }
 
   const ok = await listen("127.0.0.1");
@@ -2378,7 +2386,6 @@ export async function runServer({
     }, tailnetCheckMs).unref();
   }
 
-  let stopping = false;
   function shutdown(reason: string): void {
     if (stopping) return;
     stopping = true;

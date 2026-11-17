@@ -32,15 +32,27 @@ export type ServerHealth = HealthInfo & { foreign?: undefined; legacy?: true };
 /** health(): our server, or a listener that is not (`foreign`). */
 export type Health = ServerHealth | { foreign: true; legacy?: undefined };
 
+/** The port this command talks to: resolved once (serverPort reads server.lock, which may change under it). */
+let pinnedPort: number | undefined;
+
+/**
+ * The server port for this command, resolved on first use and kept. A later read of server.lock
+ * could name another port (the checked server exited), and the key must not follow it there.
+ */
+export function commandPort(): number {
+  return (pinnedPort ??= serverPort());
+}
+
 /**
  * Call a control route. `auth` sends the owner key, which the server requires on every route but
- * health; only send it to a server health() has checked.
+ * health; only send it to a server health() has checked. The default port is commandPort(), the
+ * one ensureServer and serverIfRunning checked.
  */
 export function request<T extends object = ApiError>(
   method: string,
   route: string,
   body?: unknown,
-  { timeoutMs = 0, port = serverPort(), auth = true }: { timeoutMs?: number; port?: number; auth?: boolean } = {},
+  { timeoutMs = 0, port = commandPort(), auth = true }: { timeoutMs?: number; port?: number; auth?: boolean } = {},
 ): Promise<ApiResult<T>> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -159,7 +171,7 @@ function leaveNote(note: string): void {
  * unit runs is replaced, as an older one is.
  */
 export async function ensureServer({ restart = false }: { restart?: boolean } = {}): Promise<ServerHealth> {
-  const port = serverPort();
+  const port = commandPort();
   let h = await health(port);
   let exited: () => number | "signal" | null = () => null;
   if (h?.foreign) {
@@ -197,8 +209,9 @@ export async function ensureServer({ restart = false }: { restart?: boolean } = 
   } else if (!h) {
     // No server answers. If a service is installed for this state dir, start it: a CLI that
     // starts its own server instead takes the port and the state dir away from the unit,
-    // and the unit could never come back (RLM-311).
-    const started = startInstalledService(serviceContext(probePort), stateDir(), port);
+    // and the unit could never come back (RLM-311). A restart restarts it: a unit that is
+    // active while its server does not answer would ignore a start.
+    const started = startInstalledService(serviceContext(probePort), stateDir(), port, { restart });
     if (!started) exited = spawnServer(port);
   }
   if (!h) {
@@ -230,6 +243,7 @@ export async function ensureServer({ restart = false }: { restart?: boolean } = 
 /**
  * What a CLI of `version` does about the running server `h`: use it, replace it (it is older), or,
  * when a unit runs that older server, leave it running and tell the owner to restart the unit.
+ * `restart` (`server restart`) restarts it whatever its version: through its unit, or by replacing it.
  * `unitOf` asks the system which unit runs it: a server from before 0.12 does not say it is
  * supervised, and is the unit's all the same.
  */
@@ -259,12 +273,12 @@ export async function probePort(port: number): Promise<PortProbe | null> {
  * which is good for nothing but shutdownServer.
  */
 export async function serverIfRunning({ legacy = false }: { legacy?: boolean } = {}): Promise<ServerHealth | null> {
-  const h = await health(serverPort());
+  const h = await health(commandPort());
   return h && !h.foreign && (legacy || !h.legacy) ? h : null;
 }
 
 /** Ask the server `h` to stop. A legacy server asks for no key; do not hand one to a listener that has not proven itself. */
-export function shutdownServer(h: ServerHealth, port = serverPort()): Promise<ApiResult<ApiError> | void> {
+export function shutdownServer(h: ServerHealth, port = commandPort()): Promise<ApiResult<ApiError> | void> {
   return request("POST", "/api/shutdown", {}, { timeoutMs: 2000, port, auth: !h.legacy }).catch(() => {});
 }
 

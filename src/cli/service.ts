@@ -11,7 +11,7 @@ import { commandLine } from "./adapters/config.ts";
 import { parseLinkUrl } from "./net.ts";
 import { lockedPort, stateDirHolder } from "./lock.ts";
 import type { LockHolder } from "./lock.ts";
-import { CLI_ENTRY, stateDir } from "./paths.ts";
+import { CLI_ENTRY, REAL_PORT, stateDir } from "./paths.ts";
 import { launchdSettings, systemdSettings } from "./unit-file.ts";
 import type { KeptLine, UnitSettings } from "./unit-file.ts";
 
@@ -25,7 +25,6 @@ export const LAUNCHD_LABEL = "xyz.kasat.austere-axi";
 /** Stands in a restart hint for the label of a launchd agent that runs the server but could not be found (`launchctl list` shows it). */
 export const UNKNOWN_LAUNCHD_LABEL = "<launchd-label>";
 const BIN = "austere-axi";
-const DEFAULT_PORT = 4388;
 
 /**
  * The unit this process runs under, or null when nobody runs it.
@@ -440,10 +439,18 @@ export function stableNode(node: string, env: NodeJS.ProcessEnv = process.env): 
   return node;
 }
 
-/** The warning for a unit that runs node from a folder of one release: the next Node update removes it, and the service stops starting. */
-export function nodeWarning(node: string): string | null {
-  if (!NODE_RELEASE.test(node)) return null;
-  return `the service runs node from ${node}, a folder of one Node release; a Node update or \`nvm uninstall\` removes it, and the service then stops starting. Make node reachable at a path without a version (a system package, Homebrew's /opt/homebrew/bin/node, or a link on PATH that you move with each update), then run \`${BIN} server install\` again: it runs such a link when it leads to the node it runs on.`;
+/**
+ * The warning for a unit that runs node, or the CLI, from a folder of one Node release (nvm keeps
+ * global packages there too): the next Node update removes it, and the service stops starting.
+ */
+export function nodeWarning(node: string, cli = ""): string | null {
+  if (NODE_RELEASE.test(node)) {
+    return `the service runs node from ${node}, a folder of one Node release; a Node update or \`nvm uninstall\` removes it, and the service then stops starting. Make node reachable at a path without a version (a system package, Homebrew's /opt/homebrew/bin/node, or a link on PATH that you move with each update), then run \`${BIN} server install\` again: it runs such a link when it leads to the node it runs on.`;
+  }
+  if (NODE_RELEASE.test(cli)) {
+    return `the service runs ${cli}, installed in a folder of one Node release (nvm keeps global packages per release); a Node update or \`nvm uninstall\` removes it, and the service then stops starting. Install ${BIN} with a node outside such a folder, then run \`${BIN} server install\` again.`;
+  }
+  return null;
 }
 
 /** What a service is doing, in the words `server status` prints. */
@@ -547,10 +554,10 @@ export function unitFile(ctx: Pick<ServiceContext, "platform" | "home" | "env">)
   return null;
 }
 
-/** The port CLI commands look for the server on (paths.ts port(), over ctx.env). */
+/** The port CLI commands look for the server on when AUSTERE_AXI_PORT is all there is (serverPort, over ctx.env). */
 function defaultPort(env: NodeJS.ProcessEnv): number {
   const p = Number(env.AUSTERE_AXI_PORT);
-  return Number.isInteger(p) && p > 0 && p < 65536 ? p : DEFAULT_PORT;
+  return Number.isInteger(p) && p > 0 && p < 65536 ? p : REAL_PORT;
 }
 
 /** The install command to run again, quoted for this platform's shell: a link url can hold `&` or `;`. */
@@ -606,11 +613,12 @@ function backupName(file: string): string {
   }
 }
 
-/** A systemd user unit's file, state and main pid, out of one `systemctl --user show`. */
-function systemdUnitInfo(ctx: ServiceContext, unit: string): { file: string | null; enabled: boolean; active: boolean; state: string; sub: string; pid: number | null } {
+/** A systemd user unit's file, state and main pid, out of one `systemctl --user show`; `answered` is false when systemd said nothing. */
+function systemdUnitInfo(ctx: ServiceContext, unit: string): { answered: boolean; file: string | null; enabled: boolean; active: boolean; state: string; sub: string; pid: number | null } {
   const r = ctx.run("systemctl", ["--user", "show", unit, "--property=FragmentPath", "--property=UnitFileState", "--property=ActiveState", "--property=SubState", "--property=MainPID"]);
   const prop = (key: string): string => new RegExp(`^${key}=(.*)$`, "m").exec(r.stdout)?.[1]?.trim() ?? "";
   return {
+    answered: r.code === 0 && prop("ActiveState") !== "",
     file: prop("FragmentPath") || null,
     enabled: prop("UnitFileState").startsWith("enabled"),
     active: ["active", "activating", "reloading"].includes(prop("ActiveState")),
@@ -708,8 +716,10 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
   // the unit names the state dir whenever it is not the default, so the two always mean the same.
   const stateDir = path.resolve(ctx.stateDir);
   const unitStateDirSetting = ctx.env.AUSTERE_AXI_STATE_DIR || stateDir !== path.join(ctx.home, ".austere-axi") ? stateDir : undefined;
-  const specFor = (port: number, linkUrl: string | undefined, env?: [string, string][]): ServiceSpec => ({ node: ctx.node, cli: ctx.cli, port, linkUrl, stateDir: unitStateDirSetting, env });
-  const warnings = [npxWarning(ctx.cli), nodeWarning(ctx.node)].filter((w): w is string => w != null);
+  // The node the unit runs: a link without a version when one leads to this node (stableNode).
+  const node = stableNode(ctx.node, ctx.env);
+  const specFor = (port: number, linkUrl: string | undefined, env?: [string, string][]): ServiceSpec => ({ node, cli: ctx.cli, port, linkUrl, stateDir: unitStateDirSetting, env });
+  const warnings = [npxWarning(ctx.cli), nodeWarning(node, ctx.cli)].filter((w): w is string => w != null);
   const target = unitFile(ctx);
   // The terminal rule comes first on every platform: `server install` configures what runs on
   // this machine, so it is the owner's decision everywhere, Windows included (design note,
@@ -1038,7 +1048,7 @@ export function serviceContext(probe: (port: number) => Promise<PortProbe | null
     env: process.env,
     run: runCommand,
     isTTY: !!process.stdin.isTTY,
-    node: stableNode(process.execPath),
+    node: process.execPath,
     cli: CLI_ENTRY,
     stateDir: stateDir(),
     uid: process.getuid?.() ?? null,
@@ -1059,37 +1069,23 @@ export function isOurUnit(file: string): boolean {
   }
 }
 
-/** The installed service, when it is the one for this state dir and port. */
+/**
+ * What the installed unit runs with, read by the same parsers install uses (systemd's quoting and
+ * `%h`, launchd's XML escapes; the port from `--port` or `AUSTERE_AXI_PORT`), and its state dir.
+ */
+function installedSettings(target: { supervisor: Supervisor; file: string }, home: string): UnitSettings & { dir: string } {
+  const settings = (target.supervisor === "systemd" ? systemdSettings : launchdSettings)(fs.readFileSync(target.file, "utf8"));
+  return { ...settings, dir: unitSettingsStateDir(settings, home) };
+}
+
+/** The installed service, when it is the one for this state dir and port (a unit that names no port is taken for any). */
 export function installedServiceFor(ctx: Pick<ServiceContext, "platform" | "home" | "env">, dir: string, port: number): { supervisor: Supervisor; file: string } | null {
   const target = unitFile(ctx);
   if (!target || !fs.existsSync(target.file)) return null;
-  if (path.resolve(unitStateDir(target.file)) !== path.resolve(dir)) return null; // another state dir's service
-  const unitPortNumber = unitPort(target.file);
-  if (unitPortNumber != null && unitPortNumber !== port) return null; // it serves another port
+  const s = installedSettings(target, ctx.home);
+  if (s.dir !== path.resolve(dir)) return null; // another state dir's service
+  if (s.port != null && s.port !== port) return null; // it serves another port
   return target;
-}
-
-/** The state dir an installed unit runs with: its own setting, or the default. */
-export function unitStateDir(file: string): string {
-  const text = fs.readFileSync(file, "utf8");
-  // systemd: Environment=AUSTERE_AXI_STATE_DIR=/path, or the whole assignment quoted.
-  const systemd = /^Environment="?AUSTERE_AXI_STATE_DIR=(.*?)"?$/m.exec(text);
-  if (systemd) return path.resolve(systemd[1]);
-  // launchd: <key>AUSTERE_AXI_STATE_DIR</key><string>/path</string>
-  const plist = /<key>AUSTERE_AXI_STATE_DIR<\/key>\s*<string>(.*?)<\/string>/.exec(text);
-  if (plist) return path.resolve(plist[1]);
-  return path.join(os.homedir(), ".austere-axi");
-}
-
-/** The port an installed unit listens on, or null when its command does not name one. */
-export function unitPort(file: string): number | null {
-  const text = fs.readFileSync(file, "utf8");
-  // systemd: ExecStart=... --port 5000
-  const systemd = /--port[=\s]+(\d+)/.exec(text);
-  // launchd: <string>--port</string><string>5000</string>
-  const plist = /<string>--port<\/string>\s*<string>(\d+)<\/string>/.exec(text);
-  const port = Number(systemd?.[1] ?? plist?.[1] ?? NaN);
-  return Number.isInteger(port) && port > 0 ? port : null;
 }
 
 /**
@@ -1103,21 +1099,24 @@ export function serverPort(ctx: Pick<ServiceContext, "platform" | "home" | "env"
   const locked = lockedPort(dir);
   if (locked != null) return locked;
   const target = unitFile(ctx);
-  if (target && fs.existsSync(target.file) && unitStateDir(target.file) === path.resolve(dir)) return unitPort(target.file) ?? DEFAULT_PORT;
-  return DEFAULT_PORT;
+  if (!target || !fs.existsSync(target.file)) return REAL_PORT;
+  const s = installedSettings(target, ctx.home);
+  return s.dir === path.resolve(dir) ? (s.port ?? REAL_PORT) : REAL_PORT;
 }
 
 /**
  * Start the installed service, when it is the one for this state dir and this port. A CLI
  * that starts its own server instead would take the port and the state dir away from the
- * unit, and the unit could never come back (RLM-311). Returns whether a service was started.
+ * unit, and the unit could never come back (RLM-311). `restart` restarts a unit that is already
+ * active (its server does not answer), which a start would leave as it is. Returns whether a
+ * service was started.
  */
-export function startInstalledService(ctx: ServiceContext, dir: string, port: number): boolean {
+export function startInstalledService(ctx: ServiceContext, dir: string, port: number, { restart = false }: { restart?: boolean } = {}): boolean {
   const target = installedServiceFor(ctx, dir, port);
   if (!target) return false;
   // A unit that hit its start limit (it was locked out) refuses to start until it is reset.
   if (target.supervisor === "systemd") ctx.run("systemctl", ["--user", "reset-failed", SYSTEMD_UNIT]);
-  const r = target.supervisor === "systemd" ? ctx.run("systemctl", ["--user", "start", SYSTEMD_UNIT]) : ctx.run("launchctl", ["kickstart", "-k", launchdTarget(ctx.uid)]);
+  const r = target.supervisor === "systemd" ? ctx.run("systemctl", ["--user", restart ? "restart" : "start", SYSTEMD_UNIT]) : ctx.run("launchctl", ["kickstart", "-k", launchdTarget(ctx.uid)]);
   if (r.code !== 0) throw new Error(`the installed service did not start: ${commandOutput(r)} (see why: ${statusCommand(target.supervisor, ctx.uid)}; remove it: ${BIN} server uninstall)`);
   return true;
 }
@@ -1133,22 +1132,28 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
   const answering = server ? `v${server.version}, pid ${server.pid}, port ${server.port}, ${server.supervised ? `run by ${server.unit ?? server.supervised}` : "not run by a service"}` : "not running";
   if (!target) return { service: "unknown: no supported service manager here", platform: ctx.platform, server: answering };
   const unit = { supervisor: target.supervisor, unit: target.file };
-  if (!fs.existsSync(target.file)) return { service: "not installed", ...unit, server: answering, next: `${BIN} server install sets it up (at a terminal).` };
+  if (!fs.existsSync(target.file)) {
+    // A unit the owner wrote may run it under another name: say so, not "install one".
+    const next = server?.supervised
+      ? `It runs under ${server.unit ?? server.supervised}, a unit \`${BIN} server install\` did not write; \`${BIN} server restart\` restarts it, \`${BIN} server install --adopt\` takes its place.`
+      : `${BIN} server install sets it up (at a terminal).`;
+    return { service: "not installed", ...unit, server: answering, next };
+  }
   const dir = path.resolve(ctx.stateDir);
-  const serves = unitStateDir(target.file);
-  if (serves !== dir) {
-    return { service: "not installed for this state dir", ...unit, server: answering, note: `that unit serves ${serves}, and this CLI uses ${dir}; its state is not this state dir's.` };
+  const settings = installedSettings(target, ctx.home);
+  if (settings.dir !== dir) {
+    return { service: "not installed for this state dir", ...unit, server: answering, note: `that unit serves ${settings.dir}, and this CLI uses ${dir}; its state is not this state dir's.` };
   }
   const systemd = target.supervisor === "systemd";
-  const settings = (systemd ? systemdSettings : launchdSettings)(fs.readFileSync(target.file, "utf8"));
-  const port = settings.port ?? DEFAULT_PORT;
+  const port = settings.port ?? REAL_PORT;
   let state: string;
-  let enabled = true; // a launchd agent in LaunchAgents loads at login
+  let enabled: boolean | null = true; // a launchd agent in LaunchAgents loads at login
   let lingers: boolean | null | undefined;
   if (systemd) {
     const info = systemdUnitInfo(ctx, SYSTEMD_UNIT);
-    state = systemdState(info.state, info.sub) ?? `unknown (systemd says ${info.state || "nothing"})`;
-    enabled = info.enabled;
+    // No answer (a `su` shell, a container): nothing is known, not "stopped" or "disabled".
+    state = info.answered ? (systemdState(info.state, info.sub) ?? `unknown (systemd says ${info.state})`) : "unknown: systemd's user manager does not answer here";
+    enabled = info.answered ? info.enabled : null;
     lingers = linger(ctx);
   } else {
     const r = ctx.run("launchctl", ["print", launchdTarget(ctx.uid)]);
@@ -1156,7 +1161,7 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
   }
   const node = settings.node;
   const warnings = [
-    node && path.isAbsolute(node) && !fs.existsSync(node) ? `the unit runs node from ${node}, which is not there any more: the service cannot start. Run \`${BIN} server install\` again.` : nodeWarning(node ?? ""),
+    node && path.isAbsolute(node) && !fs.existsSync(node) ? `the unit runs node from ${node}, which is not there any more: the service cannot start. Run \`${BIN} server install\` again.` : nodeWarning(node ?? "", settings.cli ?? ""),
     settings.cli ? npxWarning(settings.cli) : null,
   ].filter((w): w is string => w != null);
   const why = systemd ? `journalctl --user -u ${SYSTEMD_UNIT} -n 50` : path.join(dir, "server.log");
@@ -1177,7 +1182,7 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
     service: state,
     ...unit,
     port,
-    starts: !enabled ? "not on its own (disabled)" : lingers ? "at boot" : "at login",
+    starts: enabled === null ? "unknown" : !enabled ? "not on its own (disabled)" : lingers ? "at boot" : "at login",
     linger: lingers === undefined ? undefined : lingers === null ? "unknown" : lingers ? "on" : "off",
     server: answering,
     warnings: warnings.length ? warnings : undefined,

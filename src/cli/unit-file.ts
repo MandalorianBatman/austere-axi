@@ -92,7 +92,7 @@ function words(value: string): { raw: string; text: string }[] {
 }
 
 /** Where node is in a command: the word that is `node` (or `nodejs`), or -1. */
-const nodeIndex = (argv: string[]): number => argv.findIndex((a) => /(^|\/)(node|nodejs)$/.test(a));
+const nodeIndex = (argv: string[]): number => argv.findIndex((a) => /(^|[\\/])(node|nodejs)(\.exe)?$/i.test(a));
 
 /** The script a command runs with node: the word after `node` (or `nodejs`), or null. */
 function scriptOf(argv: string[]): string | null {

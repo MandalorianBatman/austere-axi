@@ -117,8 +117,9 @@ function readFile(file: string): string | null {
 
 /**
  * The port the server named in `dir`'s server.lock listens on, while the process that wrote it
- * lives; null for no lock, a lock without a port (a command holds it) or a dead holder. Read
- * without asking the port, so a CLI can find a server another port than the default runs on.
+ * lives and keeps the lock fresh (a server rewrites it every REFRESH_MS); null for no lock, a lock
+ * without a port (a command holds it), a dead holder or a stale lock (a reused pid). Read without
+ * asking the port, so a CLI can find a server another port than the default runs on.
  */
 export function lockedPort(dir: string): number | null {
   let lock: LockFile;
@@ -131,6 +132,7 @@ export function lockedPort(dir: string): number | null {
   const pid = Number(lock.pid);
   const port = lock.port;
   if (typeof port !== "number" || !Number.isInteger(port) || port <= 0 || port >= 65536) return null;
+  if (!(Date.now() - Number(lock.at) < STARTING_MS)) return null;
   return Number.isInteger(pid) && pid > 0 && processAlive(pid) ? port : null;
 }
 

@@ -147,7 +147,7 @@ austere-axi attach inherit <file>                        the page goes back to i
 | `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |
 | `AUSTERE_AXI_TAILNET_CHECK_MS` | `60000` | how often the server asks Tailscale for its address again (it came up later, restarted, or changed); `0` disables |
 | `AUSTERE_AXI_LINK_HOST` | | host in the printed remote link (`http://<host>:<port>`) |
-| `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS` |
+| `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS`. The host may hold only letters, digits, dots, hyphens and underscores (or be a bracketed IPv6 address) |
 | `AUSTERE_AXI_ALLOWED_HOSTS` | | extra `Host` headers to accept (reverse proxy) |
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |

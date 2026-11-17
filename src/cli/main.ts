@@ -8,13 +8,13 @@ import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
-import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
+import { commandPort, ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
 import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
 import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { lockStateDir } from "./lock.ts";
-import { installService, installedServiceFor, serverPort, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
+import { installService, installedServiceFor, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
 import type { AccessSummary, ArchiveMissingResponse, ArchiveResponse, FeedbackResponse, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
@@ -531,7 +531,7 @@ async function cmdHome() {
   print({
     bin: `${BIN} ${VERSION}`,
     description: "review pages written in OpenUI Lang; the reviewer annotates them in the browser and notes come back by statement name",
-    server: h ? `running on ${serverPort()} (v${h.version})` : "not running",
+    server: h ? `running on ${commandPort()} (v${h.version})` : "not running",
     open_sessions: sessions.length > shown.length ? `${shown.length} of ${sessions.length} shown` : sessions.length,
     sessions: shown.length ? shown : undefined,
     commands: Object.fromEntries(Object.entries(COMMANDS).map(([name, c]) => [name === "open" ? "<file>" : name, c.summary])),
@@ -1528,7 +1528,7 @@ function browserDisabled(): boolean {
 }
 
 async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
-  const url = `http://127.0.0.1:${serverPort()}/`;
+  const url = `http://127.0.0.1:${commandPort()}/`;
   switch (sub) {
     case "on":
     case "off":
@@ -2309,10 +2309,12 @@ async function cmdStop(): Promise<void> {
   // A server from before the health proof is stopped too (without the key).
   const h = await serverIfRunning({ legacy: true });
   if (!h) return print({ status: "not running" });
-  await shutdownServer(h);
+  // The port that server answered on, read before it stops and lets go of server.lock.
+  const port = commandPort();
+  await shutdownServer(h, port);
   print({
     status: "stopped",
-    port: serverPort(),
+    port,
     note: h.supervised ? `It runs under ${h.supervised}; the next command that needs a server starts the service again. \`${BIN} server uninstall\` takes the service away for good.` : undefined,
   });
 }
@@ -2323,7 +2325,7 @@ function signInHint(file?: string): string {
 }
 
 async function cmdLogin(file: string | undefined): Promise<void> {
-  let url = `http://127.0.0.1:${serverPort()}/`;
+  let url = `http://127.0.0.1:${commandPort()}/`;
   let abs: string | null = null;
   if (file) {
     abs = needFile(file, "login");
@@ -2352,12 +2354,12 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
     if (flags["link-url"] !== undefined) return usage("--link-url is for `server install`; a foreground server reads AUSTERE_AXI_LINK_URL", "server");
     // A foreground server and an installed service want the same port and the same state
     // dir: the service would restart in a loop while this one holds them.
-    const installed = installedServiceFor(serviceContext(probePort), stateDir(), p ?? serverPort());
+    const installed = installedServiceFor(serviceContext(probePort), stateDir(), p ?? commandPort());
     if (installed) {
       process.stderr.write(`a service for this state dir is installed (${installed.file}); it will keep restarting while this server holds the port. Stop it with \`${BIN} server uninstall\`, or run this server on another port.\n`);
     }
     const { runServer } = await import("./server.ts");
-    return void (await runServer({ port: p ?? serverPort(), verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist }));
+    return void (await runServer({ port: p ?? commandPort(), verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist }));
   }
   if (!["install", "uninstall", "status", "restart"].includes(sub)) return usage(`unknown server subcommand: ${sub}. One of: install uninstall status restart`, "server");
   if (rest.length > 1) return usage(`server ${sub} takes no arguments; it got ${rest.slice(1).map((a) => `"${a}"`).join(" ")}`, "server");
@@ -2372,7 +2374,8 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
     }
     if (sub === "uninstall") return print(uninstallService(ctx, { force: !!flags.force }));
     if (sub === "restart") {
-      const before = await serverIfRunning();
+      // A server from before the health proof counts: restarting replaces it, as an upgrade does.
+      const before = await serverIfRunning({ legacy: true });
       const h = await ensureServer({ restart: true });
       return print({
         status: before ? "restarted" : "started",
@@ -2381,7 +2384,7 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
         note: h.supervised ? undefined : `No service runs it: it stops after 30 idle minutes unless it was started with --persist, and the next command that needs a server starts one. \`${BIN} server install\` keeps one running.`,
       });
     }
-    const h = await health(p ?? serverPort());
+    const h = await health(p ?? commandPort());
     const running = h && !h.foreign && !h.legacy ? h : null;
     // A server from before 0.12 does not say a unit runs it; the system does.
     const unit = running ? serverUnit(running.pid) : null;
