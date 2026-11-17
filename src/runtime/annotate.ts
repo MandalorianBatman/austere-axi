@@ -668,14 +668,17 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     return { left, top, right, bottom };
   }
 
-  /**
-   * el's box cut to the ancestors that clip it (scrollers, overflow: hidden); null when nothing shows.
-   * A statement in a folded card (hidden="until-found") shows as the card that holds it.
-   */
-  function visibleBox(el: Element): Box | null {
+  /** el, or the card that holds it when it sits in a folded card (hidden="until-found"). */
+  function shown(el: Element): Element {
     for (let fold = el.closest("[hidden='until-found']"); fold?.parentElement; fold = el.closest("[hidden='until-found']")) {
       el = fold.parentElement;
     }
+    return el;
+  }
+
+  /** el's box cut to the ancestors that clip it (scrollers, overflow: hidden); null when nothing shows. */
+  function visibleBox(target: Element): Box | null {
+    const el = shown(target);
     let { left, top, right, bottom } = renderedBox(el);
     // A straight diagram edge is a line, flat on one side; a side clipping took to zero shows nothing.
     const flatX = right === left;
@@ -809,7 +812,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     marked = ids.length ? ids : null;
     const list = drawMarks();
     if (scroll && list.length) {
-      const boxes = list.map(boxOf);
+      const boxes = list.map((el) => boxOf(shown(el)));
       if (!boxes.some((r) => r.bottom > 0 && r.top < window.innerHeight)) {
         const r = boxes[0];
         const y = r.top + window.scrollY - Math.max(24, (window.innerHeight - r.height) / 3);

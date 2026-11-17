@@ -147,9 +147,11 @@ test("a Card folds to its header, and a folded card is still annotated by its st
     await frame.locator(".austere-pop textarea").fill("split the ramp");
     await frame.locator(".austere-pop textarea").press("Enter");
     await page.waitForFunction(() => (window as unknown as { annotations: unknown[] }).annotations.length > 0);
-    const [item] = await page.evaluate(() => (window as unknown as { annotations: { target: string; quote?: string }[] }).annotations);
+    const [item] = await page.evaluate(() => (window as unknown as { annotations: { target: string; excerpt?: string }[] }).annotations);
     assert.equal(item.target, "plan");
-    assert.ok(!item.quote || item.quote.includes("Rollout plan"), `the quote ${JSON.stringify(item.quote)} is not the title`);
+    const excerpt = item.excerpt ?? "";
+    assert.ok(excerpt.includes("Rollout plan"), `the excerpt ${JSON.stringify(item.excerpt)} does not quote the title`);
+    assert.ok(!excerpt.includes("Ship behind a flag"), `the excerpt ${JSON.stringify(item.excerpt)} quotes the folded body`);
 
     // A changed statement inside a folded card is outlined on the card.
     const post = (msg: object) =>
