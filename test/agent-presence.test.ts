@@ -121,9 +121,13 @@ await runServer({ port: Number(process.env.TEST_PORT), unit: null });
   });
 });
 
-after(() => {
-  child?.kill("SIGKILL");
-  for (const d of [STATE, WORK]) fs.rmSync(d, { recursive: true, force: true });
+after(async () => {
+  if (child && child.exitCode === null) {
+    const exited = new Promise((r) => child.once("exit", r));
+    child.kill("SIGKILL");
+    await exited;
+  }
+  for (const d of [STATE, WORK]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 test("a poll that took the notes and went quiet reads stale after STALE_WORKING_MS; page changes and replies count as activity", async () => {
