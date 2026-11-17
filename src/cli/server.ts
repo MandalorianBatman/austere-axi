@@ -27,6 +27,7 @@ import { detectUnit } from "./service.ts";
 import type { ServerUnit, Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub, activeWorkNow } from "./hub.ts";
+import type { ArchivePlan } from "./hub.ts";
 import { Dispatcher, getRun, listRuns, logTail, summary } from "./dispatch.ts";
 import type { RunEvent, RunSummary } from "./dispatch.ts";
 import { AttachRefused, attachReport, authorOf, autoConflict, changeSetting, effectiveAttach, harnessInfos, isAttachMode, resolveSessionValue, scopeIds } from "./attach.ts";
@@ -117,9 +118,10 @@ export interface OpenResponse {
 /**
  * /api/poll, and how a listening poll ends. `replaced`: a newer poll took over this page. `interrupted`: the server stopped.
  * `moved`: a project poll's project is gone, its pages taken into another one (a guessed folder above them, `project merge`).
+ * `archived`: the page is archived and nothing is left to deliver, so a poll on it would wait for nothing.
  */
 export interface PollResponse {
-  status: "feedback" | "timeout" | "replaced" | "interrupted" | "moved";
+  status: "feedback" | "timeout" | "replaced" | "interrupted" | "moved" | "archived";
   /** feedback: the notes' items, and the cursor that acknowledges them */
   items?: NoteItem[];
   /** feedback: the highest seq in the answer (a project poll's cursor covers every page). */
@@ -159,6 +161,11 @@ export interface ProjectFeedbackResponse {
 export interface ArchiveMissingResponse {
   ok: boolean;
   copies: { id: string; file: string; unanswered: number }[];
+}
+
+/** /api/archive with a file, and `/s/:id/archive`: the copies archived and the copies of the page that stay open. */
+export interface ArchiveResponse extends ArchivePlan {
+  ok: true;
 }
 
 /** /api/share. */
@@ -984,16 +991,29 @@ export async function runServer({
     return replying ? store.ackDelivered(s, s.deliveredSeq) : [];
   }
 
-  /** The owner puts a page away, or brings it back: the composer locks or opens, nothing else changes. False when the hub does not know the page. */
-  function setArchived(file: string, at: number | null): boolean {
-    const id = sessionId(file);
+  /**
+   * The owner puts a copy away, or brings it back: the composer locks or opens. A poll waiting on the copy is told
+   * `archived` at once, as a poll started on it later is: no note can reach it. False when the hub does not know the copy.
+   */
+  function setArchived(id: string, at: number | null): boolean {
     if (!hub.setArchived(id, at)) return false;
     const s = store.get(id);
     if (s) {
       s.archivedAt = at;
+      const waiting = polls.get(id);
+      if (at && waiting && !waiting.done) finishPoll(s, waiting, { status: "archived" });
       broadcastPresence(s);
     }
     return true;
+  }
+
+  /** Archive the copy `id`, or with `every` each copy of its page: see Hub.archivePlan. Null when the hub does not know it. */
+  function archiveCopies(id: string, every: boolean): ArchiveResponse | null {
+    const plan = hub.archivePlan(id, every);
+    if (!plan) return null;
+    const at = Date.now();
+    for (const c of plan.archived) setArchived(c.id, at);
+    return { ok: true, ...plan };
   }
 
   function finishPoll(s: Session, poll: Poll, body: PollResponse, onDelivered?: () => void): void {
@@ -1249,7 +1269,7 @@ export async function runServer({
     if (route === "archive" && body.missing) {
       const copies = hub.missingCopies(typeof body.project === "string" ? body.project : "");
       const at = Date.now();
-      for (const c of copies) setArchived(c.file, at);
+      for (const c of copies) setArchived(c.id, at);
       return send(res, 200, { ok: true, copies } satisfies ArchiveMissingResponse);
     }
     // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
@@ -1304,8 +1324,12 @@ export async function runServer({
       } satisfies OpenResponse);
     }
 
-    if (route === "archive" || route === "unarchive") {
-      if (!setArchived(file, route === "archive" ? Date.now() : null)) return send(res, 404, { error: "not in the hub" });
+    if (route === "archive") {
+      const done = archiveCopies(sessionId(file), !!body.every);
+      return done ? send(res, 200, done) : send(res, 404, { error: "not in the hub" });
+    }
+    if (route === "unarchive") {
+      if (!setArchived(sessionId(file), null)) return send(res, 404, { error: "not in the hub" });
       return send(res, 200, { ok: true });
     }
 
@@ -1369,6 +1393,8 @@ export async function runServer({
       if (existing && !existing.done) finishPoll(s, existing, { status: "replaced" });
       const poll: Poll = { res, startedAt: Date.now(), done: false, from: after ?? s.ackedSeq };
       if (store.after(s, poll.from).length) return deliver(s, poll);
+      // Nothing waits and the page takes no notes: say so now rather than wait for nothing.
+      if (s.archivedAt) return send(res, 200, { status: "archived" } satisfies PollResponse);
       polls.set(s.id, poll);
       peer.watch(s);
       res.on("close", () => {
@@ -1639,7 +1665,7 @@ export async function runServer({
   function hubArchive(res: http.ServerResponse, id: string): void {
     const a = /^[a-f0-9]{12}$/.test(id) ? hub.artifact(id) : null;
     if (!a) return send(res, 404, "not in the hub");
-    setArchived(a.file, Date.now());
+    setArchived(a.id, Date.now());
     res.writeHead(303, { location: "/" });
     res.end();
   }
@@ -1862,8 +1888,19 @@ export async function runServer({
       broadcastPresence(s);
       return send(res, 200, { ok: true, count: done.length });
     }
-    if ((sub === "/archive" || sub === "/unarchive") && req.method === "POST") {
-      setArchived(s.file, sub === "/archive" ? Date.now() : null);
+    // The menu's Archive asks first what it would do (GET: it names other copies, so not for another site), then archives
+    // this copy or, with `every`, each copy of the page.
+    if (sub === "/archive" && (req.method === "GET" || req.method === "POST")) {
+      if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+      let done: ArchiveResponse | null;
+      if (req.method === "GET") {
+        const plan = hub.archivePlan(s.id);
+        done = plan && { ok: true, ...plan };
+      } else done = archiveCopies(s.id, !!(await readBody(req)).every);
+      return done ? send(res, 200, done) : send(res, 404, { error: "not in the hub" });
+    }
+    if (sub === "/unarchive" && req.method === "POST") {
+      if (!setArchived(s.id, null)) return send(res, 404, { error: "not in the hub" });
       return send(res, 200, { ok: true });
     }
     // The attach popover and the run panel (RLM-346): the owner's only, as reviewers are refused above.

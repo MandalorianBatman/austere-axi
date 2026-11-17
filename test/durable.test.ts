@@ -348,19 +348,19 @@ test("archiving locks the composer for everyone and unarchive restores it; no ot
     const listed = async () => (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id);
     assert.equal((await listed())?.archived, false);
 
-    // Archiving leaves a listening poll alone: it still waits for the next note.
-    const listening = request(port, "POST", "/api/poll", { file: FILE, timeoutMs: 600 });
+    // Archiving ends a listening poll at once: no note can reach the page, so it would wait for nothing.
+    const listening = request(port, "POST", "/api/poll", { file: FILE, timeoutMs: 0 });
     await new Promise((r) => setTimeout(r, 100));
     const archived = await request(port, "POST", "/api/archive", { file: FILE });
     assert.equal(archived.status, 200);
     assert.equal((await listed())?.archived, true);
     assert.equal((await request(port, "POST", `/s/${id}/send`, message("while archived"), page(port))).status, 409);
-    assert.equal((await listening).data.status, "timeout");
+    assert.equal((await listening).data.status, "archived");
 
     // open leaves an archived page archived.
     assert.equal((await request(port, "POST", "/api/open", { file: FILE })).data.session.archived, true, "open does not unarchive");
     const opened = await cli(port, state, FILE, "--no-open");
-    assert.match(opened.out, /^archived: /m, opened.out);
+    assert.match(opened.out, /^status: archived$/m, opened.out);
     assert.match(opened.out, /austere-axi unarchive \S+plan\.html/, "the hint asks to unarchive before polling");
     assert.doesNotMatch(opened.out, /leave it running/);
     assert.equal((await request(port, "POST", `/s/${id}/unarchive`, {}, page(port))).status, 200);

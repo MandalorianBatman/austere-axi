@@ -16,6 +16,7 @@ import type { Browser, Frame } from "playwright-core";
 import { launchBrowser } from "../../scripts/lib/browser.ts";
 import { CDN_RUNTIME_URL } from "../../src/cli/artifact.ts";
 import { ownerKey } from "../../src/cli/invites.ts";
+import { ownerHeaders } from "../owner.ts";
 import { ROOT, examplePage, htmlPage, loadLibrary, type LoadedLibrary } from "../../scripts/lib/plugins.ts";
 
 const VIEWPORTS = [
@@ -346,11 +347,18 @@ test("with no agent listening the reviewer can still send; Send & End marks the 
     await page.waitForSelector(".composer textarea:not([disabled])"); // the send finished; Send & End locks nothing
 
     await page.click(".menu-btn");
-    page.once("dialog", (d) => d.accept());
     await page.click('[data-cmd="archive"]');
+    // One copy: the dialog offers no "every copy".
+    await page.waitForSelector("dialog.confirm[open]");
+    assert.equal(await page.locator("dialog.confirm h2").textContent(), "Archive this page?");
+    assert.equal(await page.locator('dialog.confirm [data-archive="every"]').count(), 0);
+    await page.click('dialog.confirm [data-archive="this"]');
     await page.waitForSelector(".presence:has-text('Page archived')");
     assert.equal(await page.locator(".composer textarea").isDisabled(), true);
     assert.equal(await page.locator(".archived-note").count(), 1);
+    // The frame is in Explore, and the switch shows it: Annotate is off and cannot be picked.
+    assert.equal(await page.locator('.seg [data-mode="annotate"]').isDisabled(), true);
+    assert.match(String(await page.locator('.seg [data-mode="explore"]').getAttribute("class")), /\bon\b/);
 
     await page.click(".menu-btn");
     await page.click('[data-cmd="unarchive"]');
@@ -359,6 +367,118 @@ test("with no agent listening the reviewer can still send; Send & End marks the 
     assert.deepEqual(problems, [], "browser errors");
   } finally {
     await context.close();
+  }
+});
+
+/** A repository at `<dir>/shop` on main and its worktree `<dir>/shop-feat` on feat, as git lays them out, each with `name`. */
+function twoCopies(dir: string, name: string, program: string): { main: string; feat: string } {
+  const main = path.join(dir, "shop");
+  const wt = path.join(dir, "shop-feat");
+  const gitdir = path.join(main, ".git", "worktrees", "shop-feat");
+  fs.mkdirSync(gitdir, { recursive: true });
+  fs.mkdirSync(wt, { recursive: true });
+  fs.writeFileSync(path.join(main, ".git", "HEAD"), "ref: refs/heads/main\n");
+  fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
+  fs.writeFileSync(path.join(gitdir, "HEAD"), "ref: refs/heads/feat\n");
+  fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${gitdir}\n`);
+  const html = htmlPage("Two copies", program, CDN_RUNTIME_URL);
+  for (const root of [main, wt]) fs.writeFileSync(path.join(root, name), html);
+  return { main: path.join(main, name), feat: path.join(wt, name) };
+}
+
+/** Sends a message on a page as its owner, as the composer does. */
+function sendNote(id: string, text: string): Promise<number | undefined> {
+  return new Promise((resolve, reject) => {
+    const r = http.request(
+      { host: "127.0.0.1", port, method: "POST", path: `/s/${id}/send`, headers: { "content-type": "application/json", ...ownerHeaders(STATE) } },
+      (res) => {
+        res.resume();
+        res.on("end", () => resolve(res.statusCode));
+      },
+    );
+    r.on("error", reject);
+    r.end(JSON.stringify({ items: [{ kind: "message", text }] }));
+  });
+}
+
+test("a page with two copies: the dialog names this copy, its unanswered notes and the copy that stays; every copy archives both; errors show", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(WORK, "copies-")));
+  const { main, feat } = twoCopies(dir, "plan.html", 'root = Stack([intro])\nintro = TextContent("hello")');
+  const a = (await api("/api/open", { file: main })).session.id;
+  const b = (await api("/api/open", { file: feat })).session.id;
+  for (const text of ["one", "two", "three"]) assert.equal(await sendNote(a, text), 200);
+  assert.equal(await sendNote(b, "on feat"), 200);
+  const archived = async (file: string) => ((await api("/api/open", { file })) as ApiReply & { session: { archived: boolean } }).session.archived;
+
+  for (const viewport of VIEWPORTS) {
+    const { context, page, problems } = await openReview(main, viewport);
+    try {
+      const ask = async () => {
+        await page.click(".menu-btn");
+        await page.click('[data-cmd="archive"]');
+        await page.waitForSelector("dialog.confirm[open]");
+      };
+      // The composer locks when the page is archived (at 390 px the presence label is not shown).
+      const locked = (on: boolean) => page.waitForFunction((on) => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.disabled === on, on);
+      await ask();
+      const dialog = page.locator("dialog.confirm");
+      assert.equal(await dialog.locator("h2").textContent(), "Archive this copy (main)?");
+      const text = String(await dialog.textContent());
+      assert.match(text, /3 unanswered notes go with it: they are kept, but leave the hub's counts\./);
+      assert.match(text, /This copy stays open:/);
+      assert.equal(await dialog.locator("li").textContent(), "feat · 1 unanswered note");
+      assert.equal(await dialog.locator("li").getAttribute("title"), feat, "the full path is a hover away");
+      const box = await dialog.boundingBox();
+      assert.ok(box && box.x >= 0 && box.x + box.width <= viewport.width, `the dialog fits at ${viewport.width} px`);
+
+      // Cancel archives nothing; Escape neither.
+      await dialog.locator("button", { hasText: "Cancel" }).click();
+      assert.equal(await page.locator("dialog.confirm").count(), 0);
+      await ask();
+      await page.keyboard.press("Escape");
+      assert.equal(await page.locator("dialog.confirm").count(), 0);
+      assert.equal(await archived(main), false);
+
+      // This copy only: the other one stays open.
+      await ask();
+      await page.click('dialog.confirm [data-archive="this"]');
+      await locked(true);
+      assert.equal(await archived(main), true);
+      assert.equal(await archived(feat), false, "the copy in the other worktree stays open");
+
+      // A failed unarchive says why instead of doing nothing.
+      await page.route("**/unarchive", (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "disk full" }) }));
+      await page.click(".menu-btn");
+      await page.click('[data-cmd="unarchive"]');
+      await page.waitForSelector(".banner:has-text('Could not unarchive this page: disk full')");
+      await page.unroute("**/unarchive");
+      await page.click(".menu-btn");
+      await page.click('[data-cmd="unarchive"]');
+      await locked(false);
+      assert.equal(await page.locator(".banner:has-text('Could not unarchive')").count(), 0, "a later success clears the error");
+
+      // Every copy.
+      await ask();
+      await page.click('dialog.confirm [data-archive="every"]');
+      await locked(true);
+      assert.equal(await archived(feat), true, "every copy is archived");
+
+      // A failed archive says why too.
+      await page.click(".menu-btn");
+      await page.click('[data-cmd="unarchive"]');
+      await locked(false);
+      await page.route("**/archive", (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not in the hub" }) }));
+      await page.click(".menu-btn");
+      await page.click('[data-cmd="archive"]');
+      await page.waitForSelector(".banner:has-text('Could not archive this page: not in the hub')");
+      await page.unroute("**/archive");
+      assert.deepEqual(problems.filter((p) => !/status of 40[04]|status of 500/.test(p)), [], "browser errors");
+    } finally {
+      await context.close();
+    }
+    // Back to one open copy each time round.
+    for (const file of [main, feat]) await api("/api/unarchive", { file });
   }
 });
 

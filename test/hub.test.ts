@@ -537,6 +537,82 @@ test("a page's title opens a copy that is still there, the newest one when every
   }
 });
 
+test("archiving one of two copies names it, the copy that stays open and the notes that go with it; --every-copy takes both", async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-archive-copies-")));
+  const { main, wt } = shopWithWorktree(dir);
+  const a = path.join(main, "docs", "plan.html");
+  const b = path.join(wt, "docs", "plan.html");
+  for (const f of [a, b]) fs.copyFileSync(FILE, f);
+  const state = fs.mkdtempSync(path.join(dir, "state-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(await freePort()) };
+  const store = await SessionStore.open(state);
+  try {
+    const sa = store.ensure(a);
+    const sb = store.ensure(b);
+    for (const text of ["one", "two", "three"]) store.addUserBatch(sa, [{ kind: "message", text }]);
+    store.addUserBatch(sb, [{ kind: "message", text: "on feat" }]);
+    const hub = new Hub(store.db);
+    // A third worktree where the page was only checked, never opened for review: no list shows it.
+    const fix = path.join(dir, "shop-fix");
+    const fixGit = path.join(main, ".git", "worktrees", "shop-fix");
+    fs.mkdirSync(fixGit, { recursive: true });
+    fs.writeFileSync(path.join(fixGit, "commondir"), "../..\n");
+    fs.writeFileSync(path.join(fixGit, "HEAD"), "ref: refs/heads/fix\n");
+    fs.mkdirSync(path.join(fix, "docs"), { recursive: true });
+    fs.writeFileSync(path.join(fix, ".git"), `gitdir: ${fixGit}\n`);
+    const c = path.join(fix, "docs", "plan.html");
+    fs.copyFileSync(FILE, c);
+    hub.register({ id: sessionId(c), file: c });
+    assert.equal(hub.list({ all: true })[0].copies.length, 3, "the checked copy is a copy of the same page");
+    assert.equal(hub.archivePlan("000000000000"), null, "a copy the hub does not know");
+    assert.deepEqual(hub.archivePlan(sa.id), {
+      copy: "main",
+      archived: [{ id: sa.id, file: a, copy: "main", unanswered: 3 }],
+      others: [{ id: sb.id, file: b, copy: "feat", unanswered: 1 }],
+    }, "the checked copy neither goes nor is said to stay open");
+    assert.deepEqual(hub.archivePlan(sa.id, true)?.archived.map((c) => c.copy), ["main", "feat"]);
+    assert.deepEqual(hub.archivePlan(sa.id, true)?.others, []);
+  } finally {
+    store.close();
+  }
+  try {
+    // No server runs: the CLI writes hub.db itself, with the same plan.
+    let r = await cliWith(env, "archive", a);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /^status: archived$/m);
+    assert.match(r.out, /^copy: main$/m, "names the copy it archived");
+    assert.match(r.out, /^unanswered: 3$/m, "and the notes that go with it");
+    assert.ok(r.out.includes(`still_open:\n  - file: ${b}\n    copy: feat\n    unanswered: 1\n`), r.out);
+    assert.match(r.out, /Only this copy \(main\) is archived.*3 unanswered notes go with it.*leave the hub's counts.*archive \S+plan\.html --every-copy` archives them too/);
+
+    const reopened = await SessionStore.open(state);
+    try {
+      const hub = new Hub(reopened.db);
+      const pages = hub.list();
+      assert.deepEqual(pages.map((p) => p.copies.map((c) => c.label)), [["feat"]], "the row stays, with the copy that is still open");
+      assert.equal(unanswered(pages[0]), 1, "the archived copy's notes leave the counts");
+      const html = hubPage(pages, { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() });
+      assert.ok(html.includes(`<li><a href="/hub/open/${sessionId(b)}"`), "the row opens the copy that stays");
+      assert.doesNotMatch(html, /in review/);
+      const all = hubPage(hub.list({ all: true }), { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() });
+      assert.match(all, />main <span>3 unanswered · archived<\/span>/, "the archived copy's chip says so");
+      assert.doesNotMatch(all, /in review/);
+    } finally {
+      reopened.close();
+    }
+
+    assert.match((await cliWith(env, "unarchive", a)).out, /status: unarchived/);
+    r = await cliWith(env, "archive", b, "--every-copy");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Every copy of this page is archived/);
+    assert.doesNotMatch(r.out, /still_open/);
+    r = await cliWith(env, "hub", "list");
+    assert.doesNotMatch(r.out, /plan\.html/, "no copy is left open");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
 test("hubPage escapes project names, labels and paths", () => {
   const copy = (id: string, label: string) => ({ id, file: `/w/${label}/a.html`, root: `/w/${label}`, label, title: null, updated_at: 1, reviewed: 1, archived_at: null, missing: false, open: 0, received: 0, addressed: 0, held: 0 });
   const html = hubPage(

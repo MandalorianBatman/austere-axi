@@ -10,7 +10,7 @@ import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
 import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
 import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
-import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
+import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, copyLabel, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
@@ -18,7 +18,7 @@ import { lockStateDir } from "./lock.ts";
 import { installService, installedServiceFor, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
-import type { ArchiveMissingResponse, FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import type { ArchiveMissingResponse, ArchiveResponse, FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
@@ -111,7 +111,7 @@ WORKFLOW
 
 POLL OUTPUT
   status: feedback | timeout (poll again) | interrupted (poll again) | replaced (a newer poll,
-          maybe your own, took over: stop this one), plus next:
+          maybe your own, took over: stop this one) | archived (stop), plus next:
   batches: file, copy (the branch or folder that page lives in), final, items
   items: annotation: <statement> (<Component>) with line, source, note
          action: <@ToAssistant message> with form values | message: <free text>
@@ -327,11 +327,11 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "project add ~/work/site --name site",
   },
   archive: {
-    usage: "archive <file> | archive --missing [--project p]",
+    usage: "archive <file> [--every-copy] | archive --missing [--project p]",
     summary:
-      "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and its composer is locked; its notes stay. Works on a file that is gone. --missing does it for every copy opened for review whose file is gone (a deleted worktree), and says how many notes were still unanswered",
-    flags: { missing: "every copy whose file is gone, instead of one file", project: "with --missing: only this project: a name, an id, or a folder inside one of its roots" },
-    example: "archive plan.html   |   archive --missing --project shop",
+      "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and its composer is locked; its notes stay. Works on a file that is gone. A page in several worktrees has a copy in each: archive puts away this copy and names the copies that stay open (--every-copy: all of them), with the unanswered notes on each. --missing does it for every copy opened for review whose file is gone (a deleted worktree), and says how many notes were still unanswered",
+    flags: { "every-copy": "every copy of the page, not only this one", missing: "every copy whose file is gone, instead of one file", project: "with --missing: only this project: a name, an id, or a folder inside one of its roots" },
+    example: "archive plan.html   |   archive plan.html --every-copy   |   archive --missing --project shop",
   },
   unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
   share: {
@@ -560,7 +560,7 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   else if (noOpen) browser = "not opened (--no-open)";
   else browser = (await openBrowser(d.links.local)) ? "opened" : "could not launch";
   const out: Printed = {
-    status: "open",
+    status: d.session.archived ? "archived" : "open",
     file: abs,
     url: d.links.local,
     phone: d.links.remote,
@@ -572,7 +572,6 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   };
   if (d.pending) out.queued_feedback = d.pending;
   if (d.held) out.held_notes = `${d.held} from teammates, waiting for the owner to send them`;
-  if (d.session.archived) out.archived = "notes are locked until the owner unarchives this page";
   // From this folder a bare poll means this folder's project: name the page's when it is another.
   const poll = !d.project ? `${BIN} poll ${quote(file)}` : d.project.here ? `${BIN} poll` : `${BIN} poll --project ${quote(d.project.ref)}`;
   if (d.session.archived) {
@@ -625,6 +624,7 @@ const NEXT: Record<string, (f: string, cursor?: number) => string> = {
   replaced: () => "A newer poll on this page took over (another one, or your own newer one); notes go to it. Stop this one.",
   interrupted: (again) => `The server stopped or restarted; the feedback is safe and still unread. Run the same poll again: \`${again}\`.`,
   timeout: (f) => `No feedback yet. Run \`${BIN} poll ${f}\` again.`,
+  archived: (f) => `Stop polling: the owner archived this page, so it takes no notes and this poll could never return any. Unarchive only if the user asks: \`${BIN} unarchive ${f}\`, then poll.`,
 };
 
 /** `--timeout-ms` as a number: undefined when absent, null (after a usage error) when it is not a whole number. */
@@ -1665,35 +1665,75 @@ async function archiveMissing(flags: Flags): Promise<void> {
   });
 }
 
+/** What `archive <file>` prints: the copy it put away, the copies of the page that stay open, and the unanswered notes that go with it. */
+function archivedOut(file: string, abs: string, plan: ArchivePlan): Printed {
+  const f = quote(file);
+  const waiting = plan.archived.reduce((n, c) => n + c.unanswered, 0);
+  const several = plan.archived.length + plan.others.length > 1;
+  const them = plan.archived.length > 1;
+  const one = waiting === 1;
+  const kept = waiting
+    ? ` ${them ? "Their" : "Its"} ${waiting} unanswered note${one ? " goes" : "s go"} with ${them ? "them" : "it"}: kept, and \`${BIN} feedback${them ? "" : ` ${f}`}\` still lists ${one ? "it" : "them"}, but ${one ? "it leaves" : "they leave"} the hub's counts.`
+    : "";
+  const row = (c: ArchiveCopy) => ({ file: c.file, copy: c.copy, unanswered: c.unanswered });
+  let note: string;
+  if (plan.archived.length > 1) note = `Every copy of this page is archived: each refuses notes until \`${BIN} unarchive <its file>\`.${kept}`;
+  else if (plan.others.length) note = `Only this copy (${plan.copy}) is archived: it refuses notes until \`${BIN} unarchive ${f}\`.${kept} The copies in still_open stay open and listed; \`${BIN} archive ${f} --every-copy\` archives them too.`;
+  else note = `Notes are refused until \`${BIN} unarchive ${f}\`.${kept}`;
+  return {
+    status: "archived",
+    file: abs,
+    copy: several ? plan.copy : undefined,
+    copies: plan.archived.length > 1 ? plan.archived.map(row) : undefined,
+    unanswered: waiting || undefined,
+    still_open: plan.others.length ? plan.others.map(row) : undefined,
+    note,
+  };
+}
+
 /**
  * `archive` and `unarchive`: put a page away from the hub's lists and lock its composer, or bring it back.
  * Works on a file that is gone too. A running server holds the page in memory, so it makes the change.
+ * `archive` takes one copy of the page (`--every-copy`: each one) and names the copies that stay open.
  * `archive --missing` does it for every copy whose file is gone.
  */
 async function cmdArchive(file: string | undefined, archive: boolean, flags: Flags = {}): Promise<void> {
   const cmd = archive ? "archive" : "unarchive";
   if (flags.missing && file) return usage("archive takes a file or --missing, not both", "archive");
+  if (flags.missing && flags["every-copy"]) return usage("archive takes --every-copy only with a file", "archive");
   if (flags.missing) return archiveMissing(flags);
   if (typeof flags.project === "string") return usage("archive takes --project only with --missing", "archive");
   if (!file) return usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>${archive ? ` or ${BIN} archive --missing` : ""}`, cmd);
   const abs = canonicalFile(file);
-  const done = () => print({ status: archive ? "archived" : "unarchived", file: abs, note: archive ? `Notes are refused until \`${BIN} unarchive ${quote(file)}\`.` : undefined });
+  const every = !!flags["every-copy"];
+  const done = (plan?: ArchivePlan) => print(plan ? archivedOut(file, abs, plan) : { status: "unarchived", file: abs });
   if (await serverIfRunning()) {
-    const r = await request("POST", `/api/${cmd}`, { file: abs }, { timeoutMs: 10_000 });
+    const r = await request<Partial<ArchiveResponse> & { error?: string }>("POST", `/api/${cmd}`, { file: abs, every: every || undefined }, { timeoutMs: 10_000 });
+    // An older server answers "unknown route" (no archive at all), or archives this copy without naming the copies (no --every-copy).
     if (r.status === 404) {
-      // An older server answers "unknown route": it predates this CLI and must be restarted to know archive.
       if (/unknown route/.test(String(r.data?.error))) return fail(`the running server is older than this CLI and does not know ${cmd}: run \`${BIN} stop\`, then ${cmd} again`);
       return fail(`not in the hub: ${abs}`);
     }
     if (r.status !== 200) return fail(r.data?.error || `${cmd} failed (${r.status})`);
-    return done();
+    if (!archive) return done();
+    const { copy, archived, others } = r.data;
+    if (copy === undefined || !archived || !others) {
+      if (every) return fail(`the running server is older than this CLI: it archived this copy only, as it does not know --every-copy. Run \`${BIN} stop\`, then \`${BIN} archive ${quote(file)} --every-copy\` again`);
+      return print({ status: "archived", file: abs, note: `Notes are refused until \`${BIN} unarchive ${quote(file)}\`.` });
+    }
+    return done({ copy, archived, others });
   }
   // No server: hold the state dir's lock so hub.db is not written while a server runs or starts on it.
   const release = await lockStateDir(stateDir(), { wait: 5000 });
   try {
     await withHub(true, (hub) => {
-      if (!hub.setArchived(sessionId(abs), archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
-      done();
+      const id = sessionId(abs);
+      if (!archive) return hub.setArchived(id, null) ? done() : fail(`not in the hub: ${abs}`);
+      const plan = hub.archivePlan(id, every);
+      if (!plan) return fail(`not in the hub: ${abs}`);
+      const at = Date.now();
+      for (const c of plan.archived) hub.setArchived(c.id, at);
+      done(plan);
     });
   } finally {
     release();
