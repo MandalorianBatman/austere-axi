@@ -12,7 +12,7 @@ import type { AdaptersConfig } from "./adapters/config.ts";
 import { ATTACH_MODES } from "./adapters/types.ts";
 import type { Adapter, AdapterKind, AttachMode, Capabilities } from "./adapters/types.ts";
 import { readCloud } from "./cloud.ts";
-import type { Invite } from "./invites.ts";
+import { DeviceStore } from "./devices.ts";
 import { inTransaction } from "./projects.ts";
 
 export type AttachState = "inherit" | "off" | "on";
@@ -134,10 +134,11 @@ export type LiveAuto = (pageId: string, fallback: boolean) => boolean;
  * Either source saying auto is enough: a cached row that says not auto never overrides
  * cloud.json's auto, since it may predate this machine's own `publish --auto`.
  */
-export function autoConflict(file: string, artifactId: string, invites: readonly Invite[], liveAuto: LiveAuto = (_, fallback) => fallback): string | null {
+export function autoConflict(db: sqlite.DatabaseSync, file: string, artifactId: string, liveAuto: LiveAuto = (_, fallback) => fallback): string | null {
   const entry = readCloud().pages[file];
   if (entry && (entry.auto || liveAuto(entry.id, entry.auto))) return `${file} is published with --auto: reviewers' notes reach the agent without the owner`;
-  const auto = invites.filter((i) => i.sessionId === artifactId && i.auto).map((i) => i.name);
+  const projectId = (db.prepare("SELECT project_id FROM artifacts WHERE id = ?").get(artifactId)?.project_id as string | null | undefined) ?? null;
+  const auto = new DeviceStore(db).autoNames(artifactId, projectId);
   if (auto.length) return `${file} is shared with --auto (${auto.join(", ")}): those reviewers' notes reach the agent without the owner`;
   return null;
 }
@@ -257,12 +258,11 @@ export interface AttachReport {
   auto: string | null;
 }
 
-/** The report for one copy. `file`, `invites` and `liveAuto` feed the auto check; `cfg` and `env` the adapter checks. */
+/** The report for one copy. `file` and `liveAuto` feed the auto check (with the devices in `db`); `cfg` and `env` the adapter checks. */
 export function attachReport(
   db: sqlite.DatabaseSync,
   artifactId: string,
   file: string,
-  invites: readonly Invite[],
   cfg: AdaptersConfig,
   env: NodeJS.ProcessEnv = process.env,
   liveAuto?: LiveAuto,
@@ -271,7 +271,7 @@ export function attachReport(
   const effective = effectiveAttach(db, artifactId);
   const projectRow = ids.project ? (db.prepare("SELECT id, name FROM projects WHERE id = ?").get(ids.project) as { id: string; name: string } | undefined) : undefined;
   const target = resolveTarget(db, artifactId, effective);
-  const auto = autoConflict(file, artifactId, invites, liveAuto);
+  const auto = autoConflict(db, file, artifactId, liveAuto);
   const warnings = adapterWarnings(target, cfg, env);
   if (target.mode === "same" && target.session && liveness(target.session) === "unknown") {
     warnings.push(`cannot tell whether ${target.session.harness} session ${shortId(target.session.session_id)} is still open (no harness process was recorded for it), so a same run fails with session_unknown: choose fork or new`);
@@ -323,7 +323,7 @@ export type AttachWhere = { page: { artifactId: string; file: string } } | { pro
  * Also when the harness, or the session it resumes, cannot run the mode: for the setting itself,
  * and for each copy it leaves on (each resolves its own author, A19). Returns the row as stored.
  */
-export function changeSetting(db: sqlite.DatabaseSync, where: AttachWhere, state: AttachState, fields: AttachFields, cfg: AdaptersConfig, invites: readonly Invite[], liveAuto?: LiveAuto): AttachSettingRow {
+export function changeSetting(db: sqlite.DatabaseSync, where: AttachWhere, state: AttachState, fields: AttachFields, cfg: AdaptersConfig, liveAuto?: LiveAuto): AttachSettingRow {
   return inTransaction(db, () => {
     const page = "page" in where ? where.page : null;
     const ids = page ? scopeIds(db, page.artifactId) : { page: null, project: (where as { projectId: string }).projectId };
@@ -337,7 +337,7 @@ export function changeSetting(db: sqlite.DatabaseSync, where: AttachWhere, state
       if (page && !copies.some((c) => c.id === page.artifactId)) copies.push({ id: page.artifactId, file: page.file });
       on.push(...copies.filter((c) => effectiveAttach(db, c.id).state === "on"));
       for (const c of on) {
-        const conflict = autoConflict(c.file, c.id, invites, liveAuto);
+        const conflict = autoConflict(db, c.file, c.id, liveAuto);
         if (!conflict) continue;
         // Throwing rolls the row back.
         const kept = page && state === "on" ? "attach stays off" : "the setting stays as it was";

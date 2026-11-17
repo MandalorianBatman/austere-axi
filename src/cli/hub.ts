@@ -8,6 +8,7 @@ import path from "node:path";
 import type * as sqlite from "node:sqlite";
 import { stateDirHolder } from "./lock.ts";
 import { VERSION, stateDir } from "./paths.ts";
+import { DEVICES_SCHEMA, importInvites } from "./devices.ts";
 import { backfillProjects, copyLabel, inTransaction, listProjects, resolveProject } from "./projects.ts";
 import type { SameRepository } from "./projects.ts";
 import type { NoteItem } from "./sessions.ts";
@@ -90,6 +91,8 @@ export interface HubNoteRow {
   text: string | null;
   status: string;
   author: string;
+  /** The team-review device that wrote it (RLM-397); null for the owner's notes and notes from before devices. */
+  device_id: string | null;
   /** 1 when the note came from a hosted page. */
   remote: number;
   title: string | null;
@@ -157,9 +160,10 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
  * hub.db's schema version, kept in `PRAGMA user_version`. Raise it with every change to migrate():
  * a build whose schema is newer than a database's must not read it without migrating it.
  * 1 is the schema of 0.12.0, the first build that records it. 2 adds attach (RLM-343–346):
- * `agent_sessions`, `page_sessions`, `attach_settings`, `runs`.
+ * `agent_sessions`, `page_sessions`, `attach_settings`, `runs`. 3 adds team-review devices
+ * (RLM-397): `devices`, and `device_id` on `notes` and `items`.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** The schema version `db` is at. Before builds recorded it (0), a database 0.12.0 migrated already has version 1's last columns. */
 function schemaVersion(db: sqlite.DatabaseSync): number {
@@ -167,7 +171,8 @@ function schemaVersion(db: sqlite.DatabaseSync): number {
   if (recorded) return recorded;
   const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   if (!has("artifacts", "archived_at") || !has("project_roots", "prefix")) return 0;
-  return has("runs", "requeued_from") && has("page_sessions", "role") ? 2 : 1;
+  if (!has("runs", "requeued_from") || !has("page_sessions", "role")) return 1;
+  return has("notes", "device_id") && has("items", "device_id") ? 3 : 2;
 }
 
 /** Open hub.db with the schema in place; `readOnly`: as it is, refused when it is older than this build's schema. */
@@ -186,6 +191,8 @@ export async function openDatabase(file = hubDbFile(), { readOnly = false }: { r
   if (file !== ":memory:") fs.closeSync(fs.openSync(file, "a", 0o600));
   const db = new Database(file);
   migrate(db);
+  // Invites from before devices (invites.json beside hub.db) become old-style links, once.
+  if (file !== ":memory:") importInvites(db, path.dirname(file));
   return db;
 }
 
@@ -409,6 +416,10 @@ function migrate(db: sqlite.DatabaseSync): void {
     if (!has("runs", "pid")) db.exec("ALTER TABLE runs ADD COLUMN pid INTEGER");
     if (!has("runs", "pid_start")) db.exec("ALTER TABLE runs ADD COLUMN pid_start TEXT");
     if (!has("runs", "bin")) db.exec("ALTER TABLE runs ADD COLUMN bin TEXT");
+    // Team review devices (RLM-397): who may review, and which device wrote each note.
+    db.exec(DEVICES_SCHEMA);
+    if (!has("notes", "device_id")) db.exec("ALTER TABLE notes ADD COLUMN device_id TEXT");
+    if (!has("items", "device_id")) db.exec("ALTER TABLE items ADD COLUMN device_id TEXT");
     backfillProjects(db);
     // Recorded from now on; a newer build's database keeps its number: the steps above are all this build adds.
     if (Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -593,27 +604,29 @@ export class Hub {
   /**
    * Notes (annotations and messages) across all pages, newest first.
    * `q` matches note text, target and page title. `status`: "unanswered" (held, open and received), "answered", or "" for all.
-   * `project`: a project id. `artifact`: one copy's id. `author`: a reviewer's name, "owner" for the owner's own notes, or "" for everyone. Discarded notes are left out.
+   * `project`: a project id. `artifact`: one copy's id. `author`: a reviewer's name, "owner" for the owner's own notes, or "" for everyone.
+   * `device`: one team-review device's id (one person, where two share a name), or "" for any. Discarded notes are left out.
    * `limit` is the most rows returned; -1 returns all.
    */
-  notes({ q = "", status = "", project = "", artifact = "", author = "", limit = 200 }: { q?: string; status?: string; project?: string; artifact?: string; author?: string; limit?: number } = {}): HubNoteRow[] {
+  notes({ q = "", status = "", project = "", artifact = "", author = "", device = "", limit = 200 }: { q?: string; status?: string; project?: string; artifact?: string; author?: string; device?: string; limit?: number } = {}): HubNoteRow[] {
     const anyAuthor = author === "" ? "all" : "one";
     const who = author === "owner" ? "" : author;
     const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     const rows = this.db
       .prepare(
-        `SELECT i.id, i.artifact_id, i.at, i.kind, i.target, i.text, i.status, i.author,
+        `SELECT i.id, i.artifact_id, i.at, i.kind, i.target, i.text, i.status, i.author, i.device_id,
                 n.remote_id IS NOT NULL AS remote, a.title, a.file, COALESCE(p.name, a.project) AS project, a.project_id, COALESCE(a.root, a.project) AS root
          FROM items i JOIN artifacts a ON a.id = i.artifact_id LEFT JOIN notes n ON n.id = i.entry_id LEFT JOIN projects p ON p.id = a.project_id
          WHERE i.kind IN ('annotation', 'message') AND i.status != 'discarded'
            AND (? = 'all' OR i.author = ?)
+           AND (? = '' OR i.device_id = ?)
            AND (? = '' OR i.text LIKE ? ESCAPE '\\' OR i.target LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')
            AND (? = '' OR a.project_id = ?)
            AND (? = '' OR a.id = ?)
            AND (? = '' OR (? = 'unanswered' AND i.status != 'addressed') OR (? = 'answered' AND i.status = 'addressed'))
          ORDER BY i.at DESC, i.id LIMIT ?`,
       )
-      .all(anyAuthor, who, q, like, like, like, project, project, artifact, artifact, status, status, status, limit) as unknown as Omit<HubNoteRow, "label">[];
+      .all(anyAuthor, who, device, device, q, like, like, like, project, project, artifact, artifact, status, status, status, limit) as unknown as Omit<HubNoteRow, "label">[];
     const labels = new Map<string, string>();
     return rows.map((r) => {
       const root = r.root || "";

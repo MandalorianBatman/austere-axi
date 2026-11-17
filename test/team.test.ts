@@ -1,6 +1,8 @@
-// Team review: invite links, reviewer identity, the hold queue, auto mode, revoke.
+// Team review: share links claimed by one device, reviewer identity, scope, the hold queue, auto mode, revoke.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -8,53 +10,30 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { InviteStore, cleanName, inviteId, tokenFromCookie } from "../src/cli/invites.ts";
+import { cleanName, reviewerCookies, tokenFromCookie } from "../src/cli/invites.ts";
 import { SessionStore } from "../src/cli/sessions.ts";
 import type { AgentEntry, Session, UserEntry } from "../src/cli/sessions.ts";
 import { Hub } from "../src/cli/hub.ts";
-import { ownerHeaders } from "./owner.ts";
+import type { RevokeResponse, ShareListResponse, ShareResponse } from "../src/cli/server.ts";
+import { claimLink, ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 
-// ── invites ──
-
-test("an invite token maps to its reviewer, and revoking removes it", () => {
-  const dir = tmp("austere-inv-");
-  try {
-    const store = new InviteStore(dir);
-    const ana = store.add({ name: "  Ana ", sessionId: "aaaaaaaaaaaa", file: "/p/plan.html" });
-    const bo = store.add({ name: "Bo", sessionId: "aaaaaaaaaaaa", file: "/p/plan.html", auto: true });
-    assert.ok(Buffer.from(ana.token, "base64url").length >= 16, "at least 128 bits");
-    assert.notEqual(ana.token, bo.token);
-    assert.equal(store.find(ana.token)?.name, "Ana");
-    assert.equal(store.find(bo.token)?.auto, true);
-    assert.equal(store.find(ana.token + "x"), null);
-    assert.equal(store.find(""), null);
-    assert.equal(store.find(undefined), null);
-
-    // Invites survive a restart.
-    assert.equal(new InviteStore(dir).find(ana.token)?.name, "Ana");
-
-    assert.throws(() => store.add({ name: "ana", sessionId: "aaaaaaaaaaaa", file: "/p/plan.html" }), /already shared/);
-    assert.throws(() => store.add({ name: "Owner", sessionId: "bbbbbbbbbbbb", file: "/p/x.html" }), /reserved/);
-    assert.throws(() => cleanName(" render  Check "), /reserved/, "the render check's author is no reviewer's name");
-    assert.throws(() => cleanName(""), /name is required/);
-    assert.equal(cleanName("A\u0000\nB"), "A B");
-
-    assert.deepEqual(store.revoke("nobody"), []);
-    assert.equal(store.revoke(inviteId(ana)).length, 1, "by short id");
-    assert.equal(store.find(ana.token), null, "revoked token no longer matches");
-    assert.equal(new InviteStore(dir).find(ana.token), null, "and stays revoked after a restart");
-    assert.equal(store.revoke("BO")[0].name, "Bo", "by name, any case");
-    assert.equal(store.list().length, 0);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-  }
-});
-
-test("the cookie header yields the token", () => {
+test("names are cleaned, and the cookie header yields every value of the reviewer cookie", () => {
+  assert.throws(() => cleanName("Owner"), /reserved/);
+  assert.throws(() => cleanName(" render  Check "), /reserved/, "the render check's author is no reviewer's name");
+  assert.throws(() => cleanName(""), /name is required/);
+  assert.equal(cleanName("A\u0000\nB"), "A B");
   assert.equal(tokenFromCookie("a=1; austere_rv=abc_-9; b=2"), "abc_-9");
+  assert.deepEqual(
+    reviewerCookies("austere_rv_d0123456789=new; a=1; austere_rv=old; austere_rv_x=no; austere_owner=o"),
+    [
+      { name: "austere_rv_d0123456789", value: "new" },
+      { name: "austere_rv", value: "old" },
+    ],
+    "one cookie per device, and an old-style invite's",
+  );
   assert.equal(tokenFromCookie("other=1"), null);
   assert.equal(tokenFromCookie(undefined), null);
 });
@@ -194,7 +173,6 @@ interface Entry {
 interface Api {
   error: string;
   link: string;
-  invites: { link?: string }[];
   links: { remote: string };
   remote: string;
   session: { id: string };
@@ -367,14 +345,18 @@ async function accept(link: string) {
   const u = new URL(link);
   const page = await request<string>(srv.port, "GET", u.pathname + u.search);
   assert.equal(page.status, 200);
-  const r = await join(new URLSearchParams({ invite: u.searchParams.get("invite") ?? "" }).toString(), { origin: `http://127.0.0.1:${srv.port}` });
+  const token = u.searchParams.get("invite") ?? "";
+  const r = await join(new URLSearchParams({ invite: token }).toString(), { origin: `http://127.0.0.1:${srv.port}` });
   assert.equal(r.status, 303);
   assert.equal(r.headers.location, `/s/${id}`, "the token is gone from the URL");
   const set = ([] as (string | undefined)[]).concat(r.headers["set-cookie"])[0] ?? "";
   assert.match(set, /HttpOnly/);
   assert.match(set, /SameSite=Lax/, "Lax, so the cookie comes back after a click in chat or email");
-  assert.match(set, new RegExp(`Path=/s/${id}`));
-  return { cookie: set.split(";")[0] };
+  assert.match(set, /^austere_rv_d[0-9a-f]{10}=[^;]+; Path=\/s\/;/, "a cookie per device, for every page its scope reaches");
+  assert.doesNotMatch(set, /Secure/, "plain http: a Secure cookie would never come back");
+  const cookie = set.split(";")[0];
+  assert.notEqual(cookie.slice(cookie.indexOf("=") + 1), token, "the cookie is a fresh secret, never the link token");
+  return { cookie };
 }
 
 /** The confirmation form's POST: urlencoded, not JSON. */
@@ -405,12 +387,13 @@ test("sharing prints a tailnet link with a long random token", async () => {
   assert.match(r.data.link, new RegExp(`^http://127\\.0\\.0\\.1:${srv.port}/s/${id}\\?invite=[A-Za-z0-9_-]{32,}$`));
   const dup = await share("ana");
   assert.equal(dup.status, 400);
-  assert.match(dup.data.error, /already shared/);
+  assert.match(dup.data.error, /already has access/);
   assert.equal((await request(srv.port, "POST", "/api/share", { body: { file: FILE, name: "" } })).status, 400);
-  const listed = await request(srv.port, "GET", "/api/share/list");
-  assert.equal(listed.data.invites[0].link, undefined, "list hides links unless asked");
-  const withLinks = await request(srv.port, "GET", "/api/share/list?links=1");
-  assert.equal(withLinks.data.invites[0].link, r.data.link);
+  const listed = await request<ShareListResponse>(srv.port, "GET", "/api/share/list");
+  assert.equal(listed.data.links[0].link, undefined, "list hides links unless asked");
+  assert.equal(listed.data.links[0].expiresAt! - Date.now() > 6.9 * 86_400_000, true, "an unclaimed link lasts 7 days by default");
+  const withLinks = await request<ShareListResponse>(srv.port, "GET", "/api/share/list?links=1");
+  assert.equal(withLinks.data.links[0].link, r.data.link);
   assert.equal((await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ana" } })).status, 200);
 });
 
@@ -477,6 +460,9 @@ test("an invite link only asks for confirmation; a cross-site GET plants no cook
   assert.equal(page.status, 200);
   assert.equal(page.headers["set-cookie"], undefined, "the GET sets no cookie");
   assert.match(page.data, /Continue as Dee/);
+  assert.match(page.data, /signed in as the page&#39;s owner|signed in as the page's owner/, "the owner's own browser is warned before it becomes Dee's device");
+  const stranger = await request<string>(srv.port, "GET", u.pathname + u.search, { headers: { cookie: "x=1" } });
+  assert.doesNotMatch(stranger.data, /owner/, "a teammate's browser is not");
   assert.match(page.data, new RegExp(`action="/s/${id}/join"`));
   assert.equal(page.headers["cache-control"], "no-store");
   assert.equal(page.headers["x-frame-options"], "DENY", "the confirmation cannot be framed");
@@ -1045,4 +1031,191 @@ test("a long transcript loses nothing: every entry, held and waiting notes too, 
   } finally {
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
+});
+
+// ── devices (RLM-397): claimed once, expiry, scope, People ──
+
+/** A page in a folder of its own with a `.git` entry, so it lands in that folder's project. */
+function projectPage(project: string, name: string): string {
+  const dir = path.join(WORK, project);
+  fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
+  const file = path.join(dir, `${name}.html`);
+  fs.writeFileSync(file, fs.readFileSync(FILE, "utf8").replace("<title>Plan</title>", `<title>${name}</title>`));
+  return file;
+}
+
+const openPage = async (file: string): Promise<string> => (await request(srv.port, "POST", "/api/open", { body: { file } })).data.session.id;
+const shareAs = (file: string, name: string, extra: Record<string, unknown> = {}) => request<ShareResponse>(srv.port, "POST", "/api/share", { body: { file, name, ...extra } });
+
+/** Every route a reviewer may use on page `pid`, with its status for this cookie. */
+async function reviewerRoutes(pid: string, cookie: string): Promise<Record<string, number>> {
+  const headers = { cookie, origin: `http://127.0.0.1:${srv.port}` };
+  const out: Record<string, number> = {};
+  out.page = (await request(srv.port, "GET", `/s/${pid}`, { headers })).status ?? 0;
+  out.transcript = (await request(srv.port, "GET", `/s/${pid}/transcript`, { headers })).status ?? 0;
+  out.file = (await request(srv.port, "GET", `/s/${pid}/a/`, { headers })).status ?? 0;
+  out.send = (await request(srv.port, "POST", `/s/${pid}/send`, { body: { items: [{ kind: "message", text: "scope check" }] }, headers })).status ?? 0;
+  const live = stream(srv.port, `/s/${pid}/events`, { cookie });
+  await until(() => live.events.length > 0 || live.isEnded(), 1500);
+  out.events = live.events.some((e) => e.name === "snapshot") ? 200 : 403;
+  live.close();
+  return out;
+}
+
+test("a link is claimed by the first browser only: a second is refused, and the stored secret is a hash", async () => {
+  const r = await shareAs(FILE, "Ivy");
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const token = new URL(r.data.link).searchParams.get("invite") as string;
+  const ivy = await accept(r.data.link);
+  const secret = ivy.cookie.slice(ivy.cookie.indexOf("=") + 1);
+  try {
+    // The second browser: the link page and the join both refuse, and say why.
+    const u = new URL(r.data.link);
+    const again = await request<string>(srv.port, "GET", u.pathname + u.search);
+    assert.equal(again.status, 403);
+    assert.match(again.data, /already used on another device/);
+    const second = await join(new URLSearchParams({ invite: token }).toString(), { origin: `http://127.0.0.1:${srv.port}` });
+    assert.equal(second.status, 403);
+    assert.equal(second.headers["set-cookie"], undefined, "no cookie for the second browser");
+    // The link token is no cookie: only the device secret gets in.
+    assert.equal((await request(srv.port, "GET", `/s/${id}`, { headers: { cookie: `austere_rv=${token}` } })).status, 403);
+    assert.equal((await request(srv.port, "GET", `/s/${id}`, { headers: ivy })).status, 200);
+    // hub.db keeps sha256 of the secret, never the secret or the used link token.
+    const db = new DatabaseSync(path.join(srv.state, "hub.db"), { readOnly: true });
+    try {
+      const row = db.prepare("SELECT * FROM devices WHERE name = 'Ivy' AND revoked_at IS NULL").get() as Record<string, unknown>;
+      assert.equal(row.secret_hash, crypto.createHash("sha256").update(secret).digest("base64url"));
+      assert.equal(row.link_token, null, "the link token is forgotten once claimed");
+      assert.ok(!JSON.stringify(row).includes(secret), "the secret itself is nowhere in the row");
+      assert.equal(row.user_agent === null || typeof row.user_agent === "string", true);
+      assert.equal(typeof row.claimed_at, "number");
+    } finally {
+      db.close();
+    }
+    // The device's notes carry its id.
+    const sent = await sendNote(ivy, "from Ivy's laptop");
+    assert.equal(sent.status, 200);
+    const listed = await request<ShareListResponse>(srv.port, "GET", "/api/share/list");
+    const device = listed.data.devices.find((d) => d.name === "Ivy");
+    assert.ok(device && device.claimedAt && device.lastSeenAt, JSON.stringify(listed.data));
+    assert.equal(listed.data.links.some((l) => l.name === "Ivy"), false, "a claimed link leaves the links");
+    const mine = await request<string>(srv.port, "GET", `/notes?device=${device.id}`);
+    assert.match(mine.data, /from Ivy&#39;s laptop|from Ivy's laptop/);
+    const others = await request<string>(srv.port, "GET", "/notes?device=d0000000000");
+    assert.doesNotMatch(others.data, /from Ivy/);
+  } finally {
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ivy" } });
+    await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+  }
+});
+
+test("a link nobody opened in time is refused; --expires sets how long", async () => {
+  const r = await shareAs(FILE, "Jon", { expiresAt: Date.now() + 400 });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  // The server runs in its own process with its own clock: only real time can expire the link there.
+  await new Promise((done) => setTimeout(done, 600));
+  const u = new URL(r.data.link);
+  const page = await request<string>(srv.port, "GET", u.pathname + u.search);
+  assert.equal(page.status, 403);
+  assert.match(page.data, /expired/);
+  const token = u.searchParams.get("invite") as string;
+  assert.equal((await join(new URLSearchParams({ invite: token }).toString(), { origin: `http://127.0.0.1:${srv.port}` })).status, 403);
+  // An expired link is not listed, and its name is free again.
+  assert.equal((await request<ShareListResponse>(srv.port, "GET", "/api/share/list")).data.links.some((l) => l.name === "Jon"), false);
+  assert.equal((await shareAs(FILE, "Jon", { expiresAt: Date.now() - 1 })).status, 400, "a link that is born expired is refused");
+  const cli1 = await cli("share", FILE, "--as", "Jon", "--expires", "2d");
+  assert.equal(cli1.code, 0, cli1.out);
+  assert.match(cli1.out, /if nobody opens it/);
+  assert.equal((await cli("share", FILE, "--as", "Kim", "--expires", "soon")).code, 2);
+  await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Jon" } });
+});
+
+test("scope page, project or all is enforced on every reviewer route", async () => {
+  const a = projectPage("alpha", "a");
+  const b = projectPage("alpha", "b");
+  const c = projectPage("beta", "c");
+  const [ida, idb, idc] = [await openPage(a), await openPage(b), await openPage(c)];
+  const allowed = { page: 200, transcript: 200, file: 200, send: 200, events: 200 };
+  const refused = { page: 403, transcript: 403, file: 403, send: 403, events: 403 };
+  const devices: string[] = [];
+  try {
+    const page = await shareAs(a, "Lea");
+    assert.equal(page.data.scope, "page");
+    const lea = await claimLink(srv.port, page.data.link);
+    devices.push("Lea");
+    assert.deepEqual(await reviewerRoutes(ida, lea), allowed);
+    assert.deepEqual(await reviewerRoutes(idb, lea), refused, "another page of the same project");
+    const out = await request<string>(srv.port, "GET", `/s/${idb}`, { headers: { cookie: lea } });
+    assert.match(out.data, /not shared with you/);
+    assert.equal(out.headers["set-cookie"], undefined, "a live device keeps its cookie on a page it does not reach");
+
+    const proj = await shareAs(a, "Max", { scope: "project" });
+    assert.equal(proj.status, 200, JSON.stringify(proj.data));
+    assert.match(proj.data.reaches, /^project alpha/);
+    const max = await claimLink(srv.port, proj.data.link);
+    devices.push("Max");
+    assert.deepEqual(await reviewerRoutes(ida, max), allowed);
+    assert.deepEqual(await reviewerRoutes(idb, max), allowed);
+    assert.deepEqual(await reviewerRoutes(idc, max), refused, "a page of another project");
+    assert.equal((await shareAs(a, "Max2", { scope: "project", project: "beta" })).status, 400, "--project must be the page's own");
+
+    const all = await shareAs(c, "Ned", { scope: "all" });
+    assert.equal(all.data.reaches, "every page");
+    const ned = await claimLink(srv.port, all.data.link);
+    devices.push("Ned");
+    for (const pid of [ida, idb, idc, id]) assert.deepEqual(await reviewerRoutes(pid, ned), allowed, pid);
+    // Whatever the scope, a device is a reviewer: the hub and the owner's routes stay closed.
+    for (const route of ["/", "/notes", "/hub/api/people"]) assert.equal((await request(srv.port, "GET", route, { headers: { cookie: ned } })).status, 403, route);
+    assert.equal((await request(srv.port, "POST", `/s/${idc}/share`, { body: { name: "Eve" }, headers: { cookie: ned, origin: `http://127.0.0.1:${srv.port}` } })).status, 403, "a reviewer cannot share");
+  } finally {
+    for (const n of devices) await request(srv.port, "POST", "/api/share/revoke", { body: { key: n } });
+    for (const pid of [ida, idb, idc, id]) await request(srv.port, "POST", `/s/${pid}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });
+  }
+});
+
+test("the page menu's Share and People: owner-only, and narrowing a device's scope cuts its stream on pages it leaves", async () => {
+  const origin = `http://127.0.0.1:${srv.port}`;
+  const offer = await request<{ project: { name: string } | null; remote: boolean }>(srv.port, "GET", `/s/${id}/share`);
+  assert.equal(offer.status, 200);
+  assert.equal(offer.data.remote, true);
+  const made = await request<ShareResponse>(srv.port, "POST", `/s/${id}/share`, { body: { name: "Oli", scope: "all", auto: false }, headers: { origin } });
+  assert.equal(made.status, 200, JSON.stringify(made.data));
+  assert.equal((await request(srv.port, "POST", `/s/${id}/share`, { body: { name: "Oli2" }, headers: { origin: "http://evil.example.test" } })).status, 403, "not from another site");
+  const people = await request<ShareListResponse>(srv.port, "GET", "/hub/api/people");
+  const link = people.data.links.find((l) => l.name === "Oli");
+  assert.equal(link?.link, made.data.link, "the owner can copy an unclaimed link again");
+  assert.equal((await request(srv.port, "GET", "/hub/api/people", { headers: { origin: "http://evil.example.test" } })).status, 403);
+
+  const oli = await claimLink(srv.port, made.data.link);
+  const devId = (await request<ShareListResponse>(srv.port, "GET", "/hub/api/people")).data.devices.find((d) => d.name === "Oli")!.id;
+  const other = projectPage("gamma", "g");
+  const idg = await openPage(other);
+  const onOther = stream(srv.port, `/s/${idg}/events`, { cookie: oli });
+  const onHome = stream(srv.port, `/s/${id}/events`, { cookie: oli });
+  try {
+    assert.ok(await until(() => onOther.events.some((e) => e.name === "snapshot") && onHome.events.some((e) => e.name === "snapshot")));
+    const renamed = await request<{ name: string }>(srv.port, "POST", `/hub/api/people/${devId}/rename`, { body: { name: "Oli (laptop)" }, headers: { origin } });
+    assert.equal(renamed.data.name, "Oli (laptop)");
+    const narrowed = await request<{ scope: string }>(srv.port, "POST", `/hub/api/people/${devId}/scope`, { body: { scope: "page", page: id }, headers: { origin } });
+    assert.equal(narrowed.status, 200, JSON.stringify(narrowed.data));
+    assert.ok(await until(() => onOther.isEnded()), "the stream on the page it left is closed");
+    assert.ok(onOther.events.some((e) => e.name === "server" && e.data.state === "revoked"));
+    assert.equal(onHome.isEnded(), false, "the page it still reaches stays open");
+    assert.equal((await request(srv.port, "GET", `/s/${idg}`, { headers: { cookie: oli } })).status, 403);
+    const gone = await request<RevokeResponse>(srv.port, "POST", `/hub/api/people/${devId}/revoke`, { headers: { origin } });
+    assert.equal(gone.data.revoked[0].kind, "device");
+    assert.ok(await until(() => onHome.isEnded()), "revoke closes the rest");
+  } finally {
+    onOther.close();
+    onHome.close();
+  }
+});
+
+test("over HTTPS (a proxy says so) the device cookie is Secure", async () => {
+  const r = await shareAs(FILE, "Pia");
+  const token = new URL(r.data.link).searchParams.get("invite") as string;
+  const done = await join(new URLSearchParams({ invite: token }).toString(), { origin: `http://127.0.0.1:${srv.port}`, "x-forwarded-proto": "https" });
+  assert.equal(done.status, 303);
+  assert.match(String(done.headers["set-cookie"]), /; Secure/);
+  await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Pia" } });
 });

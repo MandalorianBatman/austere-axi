@@ -916,6 +916,45 @@ textarea.edit {
   gap: 8px;
   margin-top: 14px;
 }
+.share fieldset {
+  margin: 10px 0 0;
+  padding: 0;
+  border: 0;
+}
+.share legend {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.share-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.share input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: #0f0f12;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.share input[type="text"]:focus {
+  outline: none;
+  border-color: rgba(143, 176, 255, 0.55);
+}
+.share-link {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.share .share-error {
+  margin-top: 8px;
+  color: #ff9b9b;
+}
 
 .btn {
   border: 1px solid var(--line-2);

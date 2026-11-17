@@ -10,7 +10,7 @@ import { after, before, test } from "node:test";
 import type { IncomingHttpHeaders } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { SessionStore, sessionId } from "../src/cli/sessions.ts";
-import { Hub, openDatabase, unanswered } from "../src/cli/hub.ts";
+import { Hub, SCHEMA_VERSION, openDatabase, unanswered } from "../src/cli/hub.ts";
 import { hubPage, notesPage } from "../src/cli/hub-page.ts";
 import { findProject } from "../src/cli/projects.ts";
 import { ownerHeaders } from "./owner.ts";
@@ -700,7 +700,7 @@ test("hub home: plural and singular labels; an empty hub; the notes header", () 
 
   assert.match(hubPage([], { version: "1", q: "", project: "", counts: { open: 0, everything: 0, archived: 0, checked: 0 } }), /No pages yet\. Open one for review/);
 
-  const note = (status: string) => ({ id: status, artifact_id: "aaaaaaaaaaaa", at: 1, target: null, text: "t", status, author: "", remote: 0, title: "A", file: "/w/a.html", project: "shop", project_id: "x", root: "/w", label: "main" });
+  const note = (status: string) => ({ id: status, artifact_id: "aaaaaaaaaaaa", at: 1, target: null, text: "t", status, author: "", device_id: null, remote: 0, title: "A", file: "/w/a.html", project: "shop", project_id: "x", root: "/w", label: "main" });
   assert.match(notesPage([note("open")], { version: "1", q: "", project: "", status: "all" }), /1 note · 1 unanswered</);
   assert.match(notesPage([note("addressed"), note("held")], { version: "1", q: "", project: "", status: "all" }), /2 notes · 1 unanswered</);
   assert.match(notesPage([note("addressed")], { version: "1", q: "", project: "", status: "answered" }), /1 note</);
@@ -829,7 +829,7 @@ test("hub list on a state dir a server of another version holds: hub.db is left 
     for (const recorded of [true, false]) {
       if (!recorded) {
         const db = new DatabaseSync(file);
-        assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, 2, "migrate() records the schema version");
+        assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, SCHEMA_VERSION, "migrate() records the schema version");
         db.exec("PRAGMA user_version = 0");
         db.close();
       }

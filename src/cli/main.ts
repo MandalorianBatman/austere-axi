@@ -13,12 +13,11 @@ import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hu
 import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
-import { InviteStore, inviteId } from "./invites.ts";
 import { lockStateDir } from "./lock.ts";
 import { installService, installedServiceFor, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
-import type { ArchiveMissingResponse, ArchiveResponse, FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import type { AccessSummary, ArchiveMissingResponse, ArchiveResponse, FeedbackResponse, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
@@ -335,10 +334,18 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
   share: {
-    usage: 'share <file> --as "<name>" [--auto] | share list [--links] | share revoke <name|id>',
-    summary: "invite link for a teammate on your tailnet; their notes wait for you unless --auto",
-    flags: { as: "the reviewer's name", auto: "send this reviewer's notes straight to the agent", links: "show the links (list)" },
-    example: 'share plan.html --as "Ana"',
+    usage: 'share <file> --as "<name>" [--project <p> | --all] [--auto] [--expires <dur>] | share list [--links] | share revoke <name|id>',
+    summary:
+      "named link for a teammate on your tailnet. The first browser that opens it becomes that person's device and the link stops working; a link nobody opens expires (default 7d). It reaches the page, or with --project the page's project, or with --all every page. Their notes wait for you unless --auto. list shows the links nobody has opened yet and the devices; revoke cuts one off at once",
+    flags: {
+      as: "the reviewer's name",
+      project: "reach every page of this project (the page's own: a name, an id, or a folder inside one of its roots)",
+      all: "reach every page on this machine",
+      auto: "send this reviewer's notes straight to the agent",
+      expires: "an unopened link stops working after this long: 30m, 12h, 7d, 2w (default 7d)",
+      links: "show the links (list)",
+    },
+    example: 'share plan.html --as "Ana"   |   share plan.html --as "Bo" --project shop --expires 2d',
   },
   publish: {
     usage:
@@ -1917,7 +1924,7 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
 /** What `attach status` prints for one copy: the setting that applies, where it comes from, where a run would go, and what would stop it. */
 function attachStatusOf(hub: Hub, abs: string, cfg: AdaptersConfig): Printed {
   const id = sessionId(abs);
-  const r = attachReport(hub.db, id, abs, new InviteStore(stateDir()).list(), cfg);
+  const r = attachReport(hub.db, id, abs, cfg);
   const e = r.effective;
   const t = r.target;
   const named = t.session ? `${t.session.harness} ${shortId(t.session.session_id)}` : null;
@@ -2040,16 +2047,15 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
   try {
     await withHub(true, (hub) => {
       if (fields.session !== undefined) fields.session = resolveSessionValue(hub.db, fields.session);
-      const invites = new InviteStore(stateDir()).list();
       if (abs === null) {
         const p = projectScope(hub, flags);
-        const row = changeSetting(hub.db, { projectId: p.id }, verb as AttachState, fields, cfg, invites);
+        const row = changeSetting(hub.db, { projectId: p.id }, verb as AttachState, fields, cfg);
         return print({ status: `project ${verb}`, ...attachProjectStatus(p, row, cfg) });
       }
       const id = sessionId(abs);
       // The page row is keyed by the page (A19): a file the hub never saw gets its row first.
       if (!hub.artifact(id)) hub.register({ id, file: abs, title: null });
-      changeSetting(hub.db, { page: { artifactId: id, file: abs } }, verb as AttachState, fields, cfg, invites);
+      changeSetting(hub.db, { page: { artifactId: id, file: abs } }, verb as AttachState, fields, cfg);
       print({ status, ...attachStatusOf(hub, abs, cfg) });
     });
   } finally {
@@ -2063,60 +2069,69 @@ function ago(ms: number): string {
   return shortDate(ms);
 }
 
+/** One row of `share list`. */
+function accessRow(a: AccessSummary): Printed {
+  return {
+    name: a.name,
+    id: a.id,
+    reaches: a.reaches,
+    mode: a.auto ? "auto" : "hold",
+    ...(a.claimedAt == null
+      ? { kind: a.reusable ? "old-style link: reusable, no expiry; revoke it and share again for a single-use one" : "link", created: ago(a.createdAt), expires: a.expiresAt == null ? undefined : shortDate(a.expiresAt), link: a.link }
+      : { joined: ago(a.claimedAt), seen: a.lastSeenAt == null ? undefined : ago(a.lastSeenAt), from: a.lastAddr ?? undefined }),
+  };
+}
+
 async function cmdShare(args: string[], flags: Flags): Promise<void> {
   const [sub, ...more] = args;
   if (sub === "list") {
-    let invites: InviteSummary[];
     const withLinks = Boolean(flags.links);
-    if (await serverIfRunning()) {
-      const r = await request<ShareListResponse>("GET", `/api/share/list${withLinks ? "?links=1" : ""}`);
-      if (r.status !== 200) return fail(r.data?.error || `share list failed (${r.status})`);
-      invites = r.data.invites;
-    } else {
-      invites = new InviteStore(stateDir()).list().map((i) => ({ id: inviteId(i), name: i.name, file: i.file, auto: i.auto, createdAt: i.createdAt }));
-    }
-    if (!invites.length) return print({ invites: "none", next: `${BIN} share <file> --as "<name>"` });
+    await ensureServer();
+    const r = await request<ShareListResponse>("GET", `/api/share/list${withLinks ? "?links=1" : ""}`);
+    if (r.status !== 200) return fail(r.data?.error || `share list failed (${r.status})`);
+    const { links, devices } = r.data;
+    if (!links.length && !devices.length) return print({ links: "none", devices: "none", next: `${BIN} share <file> --as "<name>"` });
     return print({
-      invites: invites.map((i) => ({
-        name: i.name,
-        id: i.id,
-        file: i.file,
-        mode: i.auto ? "auto" : "hold",
-        created: ago(i.createdAt),
-        link: i.link,
-      })),
-      next: withLinks ? undefined : `--links shows the links. ${BIN} share revoke <name|id> cuts one off.`,
+      links: links.length ? links.map(accessRow) : "none waiting",
+      devices: devices.length ? devices.map(accessRow) : "none",
+      next: `${withLinks ? "" : "--links shows the links. "}${BIN} share revoke <name|id> cuts one off.`,
     });
   }
   if (sub === "revoke") {
     const key = more.join(" ");
     if (!key) return usage(`revoke needs a name or id: ${BIN} share revoke <name|id> (see ${BIN} share list)`, "share");
-    let revoked: RevokeResponse["revoked"];
-    if (await serverIfRunning()) {
-      const r = await request<RevokeResponse>("POST", "/api/share/revoke", { key });
-      if (r.status !== 200) return fail(r.data?.error || `revoke failed (${r.status})`);
-      revoked = r.data.revoked;
-    } else {
-      revoked = new InviteStore(stateDir()).revoke(key).map((i) => ({ id: inviteId(i), name: i.name, file: i.file }));
-      if (!revoked.length) return fail("no invite matches that name or id");
-    }
-    return print({ status: "revoked", invites: revoked.map((i) => `${i.name} (${i.id})`), note: "Their link and open pages stop working at once." });
+    await ensureServer();
+    const r = await request<RevokeResponse>("POST", "/api/share/revoke", { key });
+    if (r.status !== 200) return fail(r.data?.error || `revoke failed (${r.status})`);
+    return print({ status: "revoked", revoked: r.data.revoked.map((i) => `${i.name} (${i.kind} ${i.id})`), note: "Their link and open pages stop working at once." });
   }
-  // share <file> --as "<name>"
+  // share <file> --as "<name>" [--project <p> | --all] [--auto] [--expires <dur>]
   const abs = needFile(sub, "share");
   if (!abs) return;
   if (typeof flags.as !== "string" || !flags.as.trim()) return usage(`share needs a reviewer name: ${BIN} share ${quote(sub)} --as "<name>"`, "share");
+  if (flags.project !== undefined && flags.all) return usage("--project and --all exclude each other: pick one scope", "share");
+  if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project)) return usage(`--project needs the page's project: ${BIN} share ${quote(sub)} --as "<name>" --project <name>`, "share");
+  let expiresAt: number | undefined;
+  if (flags.expires !== undefined) {
+    try {
+      expiresAt = cloud.expiryOf(String(flags.expires));
+    } catch (err) {
+      return usage(messageOf(err), "share");
+    }
+  }
+  const scope = flags.all ? "all" : flags.project !== undefined ? "project" : "page";
   await ensureServer();
-  const r = await request<ShareResponse>("POST", "/api/share", { file: abs, name: flags.as, auto: !!flags.auto, cwd: process.cwd() });
+  const r = await request<ShareResponse>("POST", "/api/share", { file: abs, name: flags.as, auto: !!flags.auto, scope, project: flags.project, expiresAt, cwd: process.cwd() });
   if (r.status !== 200) return fail(r.data?.error || `share failed (${r.status})`);
   const d = r.data;
   print({
     status: "shared",
     reviewer: d.name,
-    file: abs,
+    reaches: d.reaches,
     mode: d.auto ? "auto: their notes go straight to the agent" : "hold: their notes wait until the owner sends them on",
     link: d.link,
-    note: "Anyone with this link on your tailnet can post notes under this name until you revoke it.",
+    expires: `${shortDate(d.expiresAt)} if nobody opens it`,
+    note: `The first browser that opens this link becomes ${d.name}'s device, and the link stops working. Send it only to ${d.name}.`,
     next: `${BIN} share revoke ${JSON.stringify(d.name)} cuts it off.`,
   });
 }

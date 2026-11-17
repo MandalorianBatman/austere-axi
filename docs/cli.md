@@ -26,8 +26,8 @@ austere-axi hub [list|notes|open]   home page with every page by project and eve
 austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)
 austere-axi archive <file>       put a page away from the hub's lists and lock its composer; unarchive <file> brings it back
 austere-axi archive --missing    the same for every copy whose file is gone   [--project p]
-austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
-austere-axi share list|revoke           see invites, cut one off
+austere-axi share <file> --as "<name>"   a link for one teammate's device on your tailnet, claimed once   [--project <p> | --all] [--auto] [--expires <dur>]
+austere-axi share list|revoke           links nobody has opened yet and devices; cut one off
 austere-axi publish <file>       hosted copy of the page on austere.blundertech.com   [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new]
 austere-axi publish invites|revoke <file> [name]   see a page's invites, cut one off
 austere-axi publish login <file>   single-use link that signs your browser in to your hosted page

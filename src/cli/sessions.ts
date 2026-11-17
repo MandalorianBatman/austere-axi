@@ -36,6 +36,8 @@ export interface UserEntry {
   doneAt: number | null;
   seq: number | null;
   author?: string;
+  /** The team-review device that sent it (devices.ts); none for the owner's own notes. */
+  deviceId?: string;
   held?: boolean;
   discarded?: boolean;
   workAt?: number;
@@ -111,6 +113,7 @@ interface NoteRow {
   work_at: number | null;
   done_at: number | null;
   remote_id: string | null;
+  device_id: string | null;
 }
 
 /** A row of `replies`. */
@@ -192,16 +195,16 @@ export class SessionStore {
       note: db.prepare(`SELECT 1 FROM notes WHERE id = ?`),
       hasNotes: db.prepare(`SELECT 1 FROM notes WHERE artifact_id = ? LIMIT 1`),
       saveNote: db.prepare(`
-        INSERT INTO notes (id, artifact_id, seq, state, author, items, ends, at, released_at, seen_at, work_at, done_at, remote_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO notes (id, artifact_id, seq, state, author, items, ends, at, released_at, seen_at, work_at, done_at, remote_id, device_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET seq = excluded.seq, state = excluded.state, released_at = excluded.released_at,
           seen_at = excluded.seen_at, work_at = excluded.work_at, done_at = excluded.done_at`),
       maxSeq: db.prepare(`SELECT COALESCE(MAX(seq), 0) AS n FROM notes`),
       replies: db.prepare(`SELECT * FROM replies ORDER BY at, rowid`),
       saveReply: db.prepare(`INSERT INTO replies (id, artifact_id, at, text) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`),
       indexItem: db.prepare(`
-        INSERT INTO items (id, artifact_id, entry_id, at, kind, target, text, status, data, author)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO items (id, artifact_id, entry_id, at, kind, target, text, status, data, author, device_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET status = excluded.status, text = excluded.text, data = excluded.data, author = excluded.author`),
       itemStatus: db.prepare(`UPDATE items SET status = ? WHERE entry_id = ?`),
       projectOf: db.prepare(`SELECT project_id FROM artifacts WHERE id = ?`),
@@ -293,14 +296,14 @@ export class SessionStore {
 
   saveNote(s: Session, e: UserEntry): void {
     const state = e.discarded ? "discarded" : e.held ? "held" : "queued";
-    this.q.saveNote.run(e.id, s.id, e.seq ?? null, state, e.author || "", JSON.stringify(e.items || []), e.end ? 1 : 0, e.at, e.releasedAt ?? null, e.seenAt ?? null, e.workAt ?? null, e.doneAt ?? null, e.remoteId ?? null);
+    this.q.saveNote.run(e.id, s.id, e.seq ?? null, state, e.author || "", JSON.stringify(e.items || []), e.end ? 1 : 0, e.at, e.releasedAt ?? null, e.seenAt ?? null, e.workAt ?? null, e.doneAt ?? null, e.remoteId ?? null, e.deviceId ?? null);
   }
 
   /** Index each item of a note for the hub, with where the note stands. */
   indexNote(s: Session, e: UserEntry): void {
     const status = noteStatus(e, s.ackedSeq);
     (e.items || []).forEach((it, i) => {
-      this.q.indexItem.run(String(it.id || `${e.id}.${i}`), s.id, e.id, e.at, String(it.kind || "message"), bindText(it.target || it.statement), bindText(itemText(it)) ?? "", status, JSON.stringify(it), String(e.author || ""));
+      this.q.indexItem.run(String(it.id || `${e.id}.${i}`), s.id, e.id, e.at, String(it.kind || "message"), bindText(it.target || it.statement), bindText(itemText(it)) ?? "", status, JSON.stringify(it), String(e.author || ""), e.deviceId ?? null);
     });
   }
 
@@ -346,17 +349,18 @@ export class SessionStore {
 
   /**
    * Reviewer sent a batch of items. Returns the transcript entry, already on disk.
-   * `author` is a team reviewer's name (empty: the owner). `hold` keeps it from the
+   * `author` is a team reviewer's name (empty: the owner), `deviceId` their device. `hold` keeps it from the
    * agent until the owner releases it. `remote` is the note's row on a hosted page
    * (`<pageId>/<noteId>`), and `at` when it was written there.
    */
   addUserBatch(
     s: Session,
     items: NoteItem[],
-    { end = false, author = "", hold = false, remote = "", at = Date.now() }: { end?: boolean; author?: string; hold?: boolean; remote?: string; at?: number } = {},
+    { end = false, author = "", deviceId = "", hold = false, remote = "", at = Date.now() }: { end?: boolean; author?: string; deviceId?: string; hold?: boolean; remote?: string; at?: number } = {},
   ): UserEntry {
     const entry: UserEntry = { id: newId("u"), role: "user", at, items, end: end || undefined, seenAt: null, doneAt: null, seq: null };
     if (author) entry.author = author;
+    if (deviceId) entry.deviceId = deviceId;
     if (hold) entry.held = true;
     if (remote) Object.assign(entry, { remote: true, remoteId: remote });
     this.tx(() => {
@@ -601,6 +605,7 @@ function noteEntry(row: NoteRow): UserEntry {
   };
   if (row.ends) e.end = true;
   if (row.author) e.author = row.author;
+  if (row.device_id) e.deviceId = row.device_id;
   if (row.work_at != null) e.workAt = row.work_at;
   if (row.released_at != null) e.releasedAt = row.released_at;
   if (row.remote_id) Object.assign(e, { remote: true, remoteId: row.remote_id });

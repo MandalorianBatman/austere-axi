@@ -38,8 +38,9 @@ import type { AdaptersConfig } from "./adapters/config.ts";
 import type { AttachMode } from "./adapters/types.ts";
 import { copyLabel, findProject, findRoot } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
-import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
-import type { Invite } from "./invites.ts";
+import { COOKIE, LoginCodes, OWNER_COOKIE, ownerCookie, ownerKey, reviewerCookies, safeEqual, tokenFromCookie } from "./invites.ts";
+import { DeviceStore, covers, isLive } from "./devices.ts";
+import type { DeviceRow, Scope, ScopeKind, SeenMeta } from "./devices.ts";
 import { reviewerItem } from "./items.ts";
 import { hubPage, missingPage, notesPage } from "./hub-page.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
@@ -168,33 +169,52 @@ export interface ArchiveResponse extends ArchivePlan {
   ok: true;
 }
 
-/** /api/share. */
+/** /api/share and the review page's Share: the new link. */
 export interface ShareResponse {
   id: string;
   name: string;
   auto: boolean;
+  scope: ScopeKind;
+  /** What the scope reaches, in words: the page's file, the project's name, or "every page". */
+  reaches: string;
   link: string;
   file: string;
+  expiresAt: number;
 }
 
-/** One invite in /api/share/list; `link` only when asked for. */
-export interface InviteSummary {
+/** One link (nobody has claimed it yet) or device in /api/share/list and /hub/api/people. */
+export interface AccessSummary {
   id: string;
   name: string;
-  file: string;
+  scope: ScopeKind;
+  /** The page's artifact id, or the project's id; null for every page. */
+  scopeId: string | null;
+  reaches: string;
   auto: boolean;
   createdAt: number;
+  /** An old-style link from invites.json: any number of browsers can open it, and it does not expire. */
+  reusable: boolean;
+  /** Links only: when the link stops working if nobody claims it (null: an old-style link). */
+  expiresAt: number | null;
+  /** Devices only. */
+  claimedAt: number | null;
+  lastSeenAt: number | null;
+  lastAddr: string | null;
+  lastHost: string | null;
+  userAgent: string | null;
+  /** Links only, when asked for (`?links=1`, and always in /hub/api/people). */
   link?: string;
 }
 
-/** /api/share/list. */
+/** /api/share/list and GET /hub/api/people: links nobody has claimed yet, and devices. Revoked and expired ones are left out. */
 export interface ShareListResponse {
-  invites: InviteSummary[];
+  links: AccessSummary[];
+  devices: AccessSummary[];
 }
 
-/** /api/share/revoke. */
+/** /api/share/revoke and POST /hub/api/people/<id>/revoke. */
 export interface RevokeResponse {
-  revoked: { id: string; name: string; file: string }[];
+  revoked: { id: string; name: string; kind: "link" | "device" }[];
 }
 
 /** /api/login. */
@@ -263,9 +283,9 @@ function modelSelectors(json: string): string[] | null {
   return names.length ? names : null;
 }
 
-/** Who is asking for a page: the owner, or a team reviewer with a valid invite. */
+/** Who is asking for a page: the owner, or a team reviewer on a live device whose scope reaches the page. */
 type OwnerViewer = { role: "owner"; name: string };
-type ReviewerViewer = { role: "reviewer"; name: string; auto: boolean; token: string };
+type ReviewerViewer = { role: "reviewer"; name: string; auto: boolean; deviceId: string };
 type Viewer = OwnerViewer | ReviewerViewer;
 
 /** A browser's event stream. `stalledSince`: when its socket backed up. */
@@ -338,6 +358,11 @@ export function persistEnv() {
 
 /** How long a login code from `austere-axi login` (or the CLI opening a browser) works. */
 const LOGIN_TTL_MS = 60_000;
+// A device's cookie lasts as long as browsers allow (400 days); the owner ends it by revoking the device.
+const DEVICE_COOKIE_MAX_AGE = 400 * 86_400;
+const LINK_INVALID = "This link is not valid. It may have been revoked; ask for a new one.";
+const LINK_USED = "This link was already used on another device. Each link opens on one device only; ask the owner for a new one.";
+const LINK_EXPIRED = "This link expired before anyone opened it. Ask the owner for a new one.";
 const OWNER: OwnerViewer = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set<unknown>(["annotation", "message"]);
 // Render failures the owner's page reports on its own reach the agent as notes from RENDER_CHECK_AUTHOR.
@@ -399,7 +424,7 @@ export async function runServer({
   }
   // The owner's pages over the same database: the hub, at `/`.
   const hub = new Hub(store.db);
-  const invites = new InviteStore(stateDir());
+  const devices = new DeviceStore(store.db);
   const ownerToken = ownerKey(stateDir());
   const ownerCookieValue = ownerCookie(ownerToken);
   const logins = new LoginCodes(LOGIN_TTL_MS);
@@ -434,7 +459,7 @@ export async function runServer({
     log,
     listening: (s) => Boolean(listener(s)),
     // The page row the last pull cached counts too: --auto may have been turned on elsewhere since; either saying auto refuses.
-    autoConflict: (s) => autoConflict(s.file, s.id, invites.list(), liveAuto),
+    autoConflict: (s) => autoConflict(store.db, s.file, s.id, liveAuto),
     emit: (id, event) => broadcastOwners(id, "run", event),
   });
   // Render errors already sent per session, for one revision; a repeat or a second tab adds nothing.
@@ -494,9 +519,123 @@ export async function runServer({
     return out;
   }
 
-  /** The link a teammate opens: the page plus the token, which the server swaps for a cookie. */
-  function inviteLink(inv: Invite): string {
-    return `${remoteUrl(inv.sessionId)}?invite=${inv.token}`;
+  /** The link a teammate opens: the page plus the link token, which the server swaps for a device secret. Null when only loopback listens. */
+  function shareLink(sessionId: string, token: string): string | null {
+    const page = remoteUrl(sessionId);
+    return page ? `${page}?invite=${token}` : null;
+  }
+
+  /** What a row's scope reaches, in words. */
+  function reachesText(row: Pick<DeviceRow, "scope_kind" | "scope_id">): string {
+    if (row.scope_kind === "all") return "every page";
+    if (row.scope_kind === "project") return `project ${(row.scope_id && findProject(hub.db, row.scope_id, { folders: false })?.name) || row.scope_id}`;
+    return (row.scope_id && hub.artifact(row.scope_id)?.file) || String(row.scope_id);
+  }
+
+  function accessSummary(row: DeviceRow, withLink: boolean): AccessSummary {
+    const landing = withLink && row.claimed_at == null ? row.link_page : null;
+    return {
+      id: row.id,
+      name: row.name,
+      scope: row.scope_kind,
+      scopeId: row.scope_id,
+      reaches: reachesText(row),
+      auto: Boolean(row.auto),
+      createdAt: row.created_at,
+      reusable: Boolean(row.reusable),
+      expiresAt: row.claimed_at == null ? row.link_expires_at : null,
+      claimedAt: row.claimed_at,
+      lastSeenAt: row.last_seen_at,
+      lastAddr: row.last_addr,
+      lastHost: row.last_host,
+      userAgent: row.user_agent,
+      link: landing && row.link_token ? (shareLink(landing, row.link_token) ?? undefined) : undefined,
+    };
+  }
+
+  /** Live links nobody has claimed (old-style links among them), and live devices. */
+  function accessList(withLinks: boolean): ShareListResponse {
+    const live = devices.list().filter((r) => isLive(r));
+    return {
+      links: live.filter((r) => r.claimed_at == null).map((r) => accessSummary(r, withLinks)),
+      devices: live.filter((r) => r.claimed_at != null).map((r) => accessSummary(r, false)),
+    };
+  }
+
+  /**
+   * The scope a share or a scope change asks for, from `scope` ("page", "project" or "all") and, for
+   * a project, the project the page `s` is in (`project`, when given, must name that one). A string is the error.
+   */
+  function scopeFor(s: Session, body: RequestBody): Scope | string {
+    const kind = body.scope ?? "page";
+    if (kind === "page") return { kind, id: s.id };
+    if (kind === "all") return { kind, id: null };
+    if (kind !== "project") return "scope must be page, project or all";
+    const pid = store.projectIdOf(s);
+    if (!pid) return `${s.file} is in no project, so it cannot be shared by project`;
+    if (typeof body.project === "string" && body.project) {
+      let named: ProjectRow | null = null;
+      try {
+        named = findProject(hub.db, body.project, { folders: path.isAbsolute(body.project) });
+      } catch (err) {
+        return (err as Error).message;
+      }
+      if (!named) return `no project ${body.project}`;
+      if (named.id !== pid) return `${s.file} is not in project ${named.name}`;
+    }
+    return { kind, id: pid };
+  }
+
+  /** A new link for the page `s`, from the CLI or the review page's Share. An HTTP error, or the link. */
+  async function createShare(s: Session, body: RequestBody): Promise<{ status: number; error: string } | ShareResponse> {
+    await ensureTailnetListener();
+    if (!remoteBase()) {
+      return { status: 409, error: "no tailnet address: Tailscale is not running here and neither AUSTERE_AXI_HOST nor AUSTERE_AXI_LINK_URL is set, so a teammate could not open the link" };
+    }
+    const scope = scopeFor(s, body);
+    if (typeof scope === "string") return { status: 400, error: scope };
+    const auto = Boolean(body.auto);
+    if (auto) {
+      const refused = autoAttachConflict(scope);
+      if (refused) return { status: 409, error: refused };
+    }
+    let expiresAt: number | undefined;
+    if (body.expiresAt !== undefined && body.expiresAt !== null) {
+      if (typeof body.expiresAt !== "number" || !Number.isFinite(body.expiresAt) || body.expiresAt <= Date.now()) return { status: 400, error: "expiresAt must be a time in the future (epoch ms)" };
+      expiresAt = body.expiresAt;
+    }
+    let made: { row: DeviceRow; token: string };
+    try {
+      made = devices.createLink({ name: body.name, scope, page: s.id, auto, expiresAt });
+    } catch (err) {
+      return { status: 400, error: String((err as Error).message || err) };
+    }
+    watch(s);
+    rescanSharedPolls();
+    store.touch(s);
+    log("share", made.row.name, made.row.id, made.row.scope_kind, made.row.auto ? "auto" : "hold");
+    const { row } = made;
+    return { id: row.id, name: row.name, auto: Boolean(row.auto), scope: row.scope_kind, reaches: reachesText(row), link: shareLink(s.id, made.token) as string, file: s.file, expiresAt: row.link_expires_at as number };
+  }
+
+  /** Revoke what `key` names (an id, or a name) and cut its open pages off. */
+  function revokeAccess(key: unknown): RevokeResponse {
+    const gone = devices.revoke(key);
+    for (const r of gone) cutOff(r.id, null);
+    if (gone.length) log("share-revoke", gone.map((r) => `${r.name}(${r.id})`).join(","));
+    return { revoked: gone.map((r) => ({ id: r.id, name: r.name, kind: r.claimed_at == null ? "link" : "device" })) };
+  }
+
+  /** Where a request came from, for a device's last-seen fields. */
+  function seenMeta(req: http.IncomingMessage): SeenMeta {
+    const ua = req.headers["user-agent"];
+    return { addr: req.socket.remoteAddress ?? null, host: hostOnly(req.headers.host) || null, userAgent: typeof ua === "string" ? ua : null };
+  }
+
+  /** Whether the browser reached this server over HTTPS: a proxy says so, or the link URL is https and this is its host. */
+  function overHttps(req: http.IncomingMessage): boolean {
+    if (String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https") return true;
+    return Boolean(linkBase && linkBase.base.startsWith("https:") && hostOnly(req.headers.host) === hostOnly(linkBase.host));
   }
 
   /**
@@ -526,33 +665,60 @@ export async function runServer({
     res.end();
   }
 
+  /**
+   * An --auto link or device gives a reviewer's notes a seq without the owner: never while an agent
+   * is attached to a page it reaches (Q3, A17). Why `scope` cannot be auto now, or "".
+   */
+  function autoAttachConflict(scope: Scope): string {
+    const attached = (store.db.prepare("SELECT id, file, project_id FROM artifacts").all() as { id: string; file: string; project_id: string | null }[]).find(
+      (a) => covers({ scope_kind: scope.kind, scope_id: scope.id }, a.id, a.project_id) && effectiveAttach(store.db, a.id).state === "on",
+    );
+    return attached ? `attach is on for ${attached.file}: an --auto link would let a reviewer's notes start the attached agent without you. Run \`austere-axi attach off ${attached.file}\` first, or share without --auto.` : "";
+  }
+
   // ── who is asking ──
 
+  /** The live devices behind the reviewer cookies a request carries (an old-style link's token counts as its cookie). */
+  function cookieDevices(req: http.IncomingMessage): DeviceRow[] {
+    const out: DeviceRow[] = [];
+    for (const { value: v } of reviewerCookies(req.headers.cookie)) {
+      const row = devices.bySecret(v);
+      if (row && !out.some((r) => r.id === row.id)) out.push(row);
+    }
+    return out;
+  }
+
   /**
-   * A team reviewer (a valid invite cookie for this session), else the owner (the owner key cookie, set
-   * from a link the CLI opened or the owner's own remote link), else nobody. A cookie that matches no
-   * invite is refused, never treated as the owner, so revoking cuts access.
+   * A team reviewer (a reviewer cookie of a live device whose scope reaches this page), else the
+   * owner (the owner key cookie, set from a link the CLI opened or the owner's own remote link), else
+   * nobody. A request with a reviewer cookie is never the owner, so revoking cuts access.
    */
   function identify(req: http.IncomingMessage, s: Session): Viewer | null {
-    const token = tokenFromCookie(req.headers.cookie);
-    if (token == null) return isOwner(req) ? OWNER : null;
-    const inv = invites.find(token);
-    if (!inv || inv.sessionId !== s.id) return null;
-    return { role: "reviewer", name: inv.name, auto: inv.auto, token: inv.token };
+    if (!reviewerCookies(req.headers.cookie).length) return isOwner(req) ? OWNER : null;
+    const pid = store.projectIdOf(s);
+    const row = cookieDevices(req).find((r) => covers(r, s.id, pid));
+    if (!row) return null;
+    devices.seen(row, seenMeta(req));
+    return { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id };
+  }
+
+  /** A note this reviewer wrote: by device, or by name for a note from before devices. */
+  function wroteIt(e: UserEntry, viewer: ReviewerViewer): boolean {
+    return e.deviceId ? e.deviceId === viewer.deviceId : e.author === viewer.name;
   }
 
   /** Held and discarded notes belong to the owner and to the author. */
   function canSee(e: TranscriptEntry, viewer: Viewer): boolean {
     if (viewer.role === "owner") return true;
-    if (e.role === "user" && (e.held || e.discarded)) return e.author === viewer.name;
+    if (e.role === "user" && (e.held || e.discarded)) return wroteIt(e, viewer);
     return true;
   }
 
-  function send(res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
+  function send(res: http.ServerResponse, status: number, body: unknown, headers: http.OutgoingHttpHeaders = {}): void {
     const isText = typeof body === "string" || Buffer.isBuffer(body);
     const payload = isText ? body : JSON.stringify(body);
     res.writeHead(status, {
-      "content-type": isText ? headers["content-type"] || "text/plain; charset=utf-8" : "application/json; charset=utf-8",
+      "content-type": isText ? String(headers["content-type"] || "text/plain; charset=utf-8") : "application/json; charset=utf-8",
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
       ...headers,
@@ -673,7 +839,7 @@ export async function runServer({
     } catch (err) {
       configError = (err as Error).message;
     }
-    const report = attachReport(store.db, s.id, s.file, invites.list(), cfg, process.env, liveAuto);
+    const report = attachReport(store.db, s.id, s.file, cfg, process.env, liveAuto);
     const harnesses: AttachInfo["harnesses"] = harnessInfos(cfg);
     if (harnesses.omp?.found) {
       const models = await ompModels();
@@ -787,7 +953,7 @@ export async function runServer({
       return { status: 400, error: (err as Error).message };
     }
     try {
-      changeSetting(store.db, where, change.state, change.fields, cfg, invites.list(), liveAuto);
+      changeSetting(store.db, where, change.state, change.fields, cfg, liveAuto);
     } catch (err) {
       if (err instanceof AttachRefused) return { status: 409, error: err.message, code: err.code };
       throw err;
@@ -821,11 +987,16 @@ export async function runServer({
     }
   }
 
-  /** Close the event streams of revoked invites. */
-  function dropReviewers(tokens: Set<string>): void {
-    for (const set of clients.values()) {
+  /**
+   * Close the event streams of a device: every one when it is revoked (`row` null), else the ones on
+   * pages its scope no longer reaches. Its open pages show why.
+   */
+  function cutOff(deviceId: string, row: DeviceRow | null): void {
+    for (const [id, set] of clients) {
+      const s = store.get(id);
       for (const c of Array.from(set)) {
-        if (c.viewer.role !== "reviewer" || !tokens.has(c.viewer.token)) continue;
+        if (c.viewer.role !== "reviewer" || c.viewer.deviceId !== deviceId) continue;
+        if (row && s && covers(row, s.id, store.projectIdOf(s))) continue;
         c.res.write(`event: server\ndata: ${JSON.stringify({ state: "revoked" })}\n\n`);
         c.res.end();
         set.delete(c);
@@ -1245,19 +1416,7 @@ export async function runServer({
       return;
     }
     if (route === "login" && req.method === "POST") return send(res, 200, { code: logins.issue(), ttlMs: LOGIN_TTL_MS } satisfies LoginResponse);
-    if (route === "share/list") {
-      const withLinks = url.searchParams.get("links") === "1";
-      return send(res, 200, {
-        invites: invites.list().map((i) => ({
-          id: inviteId(i),
-          name: i.name,
-          file: i.file,
-          auto: i.auto,
-          createdAt: i.createdAt,
-          link: withLinks ? inviteLink(i) : undefined,
-        })),
-      } satisfies ShareListResponse);
-    }
+    if (route === "share/list") return send(res, 200, accessList(url.searchParams.get("links") === "1") satisfies ShareListResponse);
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req);
     // The agent session the command runs in (RLM-343); recorded once the route knows its pages.
@@ -1268,11 +1427,9 @@ export async function runServer({
       return send(res, 400, { error: String((err as Error).message) });
     }
     if (route === "share/revoke") {
-      const gone = invites.revoke(String(body.key || ""));
-      if (!gone.length) return send(res, 404, { error: "no invite matches that name or id" });
-      dropReviewers(new Set(gone.map((i) => i.token)));
-      log("share-revoke", gone.map((i) => `${i.name}(${inviteId(i)})`).join(","));
-      return send(res, 200, { revoked: gone.map((i) => ({ id: inviteId(i), name: i.name, file: i.file })) } satisfies RevokeResponse);
+      const done = revokeAccess(body.key);
+      if (!done.revoked.length) return send(res, 404, { error: "no link or device matches that name or id" });
+      return send(res, 200, done satisfies RevokeResponse);
     }
     // `attach on|off|inherit` at a terminal while this server runs: written here, so open owner tabs hear it.
     if (route === "attach") {
@@ -1309,28 +1466,15 @@ export async function runServer({
 
     if (route === "share") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
-      await ensureTailnetListener();
-      if (!remoteBase()) {
-        return send(res, 409, {
-          error: "no tailnet address: Tailscale is not running here and neither AUSTERE_AXI_HOST nor AUSTERE_AXI_LINK_URL is set, so a teammate could not open the link",
-        });
-      }
-      let inv: Invite;
+      let s: Session;
       try {
-        const s = store.ensure(file, cwd);
-        // An --auto invite gives a reviewer's notes a seq without the owner: never while an agent is attached (Q3, A17).
-        if (body.auto && effectiveAttach(store.db, s.id).state === "on") {
-          return send(res, 409, { error: `attach is on for ${file}: an --auto invite would let a reviewer's notes start the attached agent without you. Run \`austere-axi attach off ${file}\` first, or share without --auto.` });
-        }
-        inv = invites.add({ name: body.name, sessionId: s.id, file: s.file, auto: !!body.auto });
-        watch(s);
-        rescanSharedPolls();
-        store.touch(s);
+        s = store.ensure(file, cwd);
       } catch (err) {
         return send(res, 400, { error: String((err as Error).message || err) });
       }
-      log("share", inv.name, inviteId(inv), inv.auto ? "auto" : "hold");
-      return send(res, 200, { id: inviteId(inv), name: inv.name, auto: inv.auto, link: inviteLink(inv), file: inv.file } satisfies ShareResponse);
+      const made = await createShare(s, body);
+      if ("error" in made) return send(res, made.status, { error: made.error });
+      return send(res, 200, made satisfies ShareResponse);
     }
 
     if (route === "open") {
@@ -1569,19 +1713,21 @@ export async function runServer({
    * The artifact frame is sandboxed without `allow-same-origin`, so its opaque origin sends no
    * cookie on subresource requests: a relative `Image` src never reaches the cookie check. Instead
    * the frame's own URL carries a token, `/s/:id/a/<token>/<file>`, and relative URLs inherit it.
-   * One token per viewer, derived from the owner key: a revoked invite stops working, and the token
+   * One token per viewer, derived from the owner key: a revoked device stops working, and the token
    * opens only what `serveArtifact` serves anyway.
    */
   function assetToken(s: Session, viewer: Viewer): string {
-    const who = viewer.role === "owner" ? "owner" : `invite:${viewer.token}`;
+    const who = viewer.role === "owner" ? "owner" : `device:${viewer.deviceId}`;
     return crypto.createHmac("sha256", ownerToken).update(`austere-axi asset\0${s.id}\0${who}`).digest("base64url");
   }
 
-  /** Does `token` belong to the owner or to a live invite for this page? */
+  /** Does `token` belong to the owner or to a live device whose scope reaches this page? */
   function assetTokenValid(s: Session, token: string): boolean {
     let ok = safeEqual(token, assetToken(s, OWNER));
-    for (const inv of invites.list()) {
-      if (inv.sessionId === s.id && safeEqual(token, assetToken(s, { role: "reviewer", name: inv.name, auto: inv.auto, token: inv.token }))) ok = true;
+    const pid = store.projectIdOf(s);
+    for (const row of devices.list()) {
+      if (row.secret_hash == null || !isLive(row) || !covers(row, s.id, pid)) continue;
+      if (safeEqual(token, assetToken(s, { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id }))) ok = true;
     }
     return ok;
   }
@@ -1671,8 +1817,11 @@ export async function runServer({
     const st = url.searchParams.get("status");
     const status = st === "unanswered" || st === "answered" ? st : "all";
     const author = (url.searchParams.get("author") || "").slice(0, 80);
-    const rows = hub.notes({ q, project: project.id, author, status: status === "all" ? "" : status });
-    return notesPage(rows, { version: VERSION, q, project: project.ref, projectName: project.name, status, author, authors: hub.authors() });
+    // One person's notes by device (People links here), where two reviewers may share a name.
+    const deviceId = (url.searchParams.get("device") || "").slice(0, 40);
+    const row = deviceId ? devices.get(deviceId) : null;
+    const rows = hub.notes({ q, project: project.id, author, device: deviceId, status: status === "all" ? "" : status });
+    return notesPage(rows, { version: VERSION, q, project: project.ref, projectName: project.name, status, author, authors: hub.authors(), device: deviceId ? { id: deviceId, name: row?.name ?? deviceId } : null });
   }
 
   /** Open an indexed artifact for review (it may never have had a session) and go to it. A copy whose file is gone gets its notes and an Archive button. */
@@ -1700,6 +1849,66 @@ export async function runServer({
     res.end();
   }
 
+  /** Why a share link does not open page `s`, or "" when it does. */
+  function linkRefusal(link: DeviceRow | null, s: Session): string {
+    if (!link || !covers(link, s.id, store.projectIdOf(s))) return LINK_INVALID;
+    const state = devices.linkState(link);
+    return state === "claimed" ? LINK_USED : state === "expired" ? LINK_EXPIRED : state === "revoked" ? LINK_INVALID : "";
+  }
+
+  /**
+   * People (RLM-397), for the hub's Settings → People (RLM-396): GET /hub/api/people lists the links
+   * nobody has claimed and the devices; POST /hub/api/people/<id>/rename {name}, /scope {scope, page
+   * or project}, /revoke, and /single-use (an old-style link gets a fresh single-use token). The owner's only.
+   */
+  async function hubPeople(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
+    // It holds the links: never for another site, GET included.
+    if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+    if (url.pathname === "/hub/api/people") {
+      if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
+      return send(res, 200, accessList(true) satisfies ShareListResponse);
+    }
+    const m = /^\/hub\/api\/people\/(d[0-9a-f]{10})\/(rename|scope|revoke|single-use)$/.exec(url.pathname);
+    if (!m) return send(res, 404, { error: "not found" });
+    if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
+    const [, id, action] = m;
+    const body = await readBody(req, 16 * 1024);
+    const row = devices.get(id);
+    if (!row || !isLive(row)) return send(res, 404, { error: "no live link or device with that id" });
+    if (action === "revoke") return send(res, 200, revokeAccess(id) satisfies RevokeResponse);
+    try {
+      if (action === "rename") {
+        const renamed = devices.rename(id, body.name);
+        log("share-rename", id);
+        return send(res, 200, accessSummary(renamed, true));
+      }
+      if (action === "scope") {
+        let scope: Scope;
+        if (body.scope === "all") scope = { kind: "all", id: null };
+        else if (body.scope === "page" && typeof body.page === "string" && hub.artifact(body.page)) scope = { kind: "page", id: body.page };
+        else if (body.scope === "project" && typeof body.project === "string" && findProject(hub.db, body.project, { folders: false })?.id === body.project) scope = { kind: "project", id: body.project };
+        else return send(res, 400, { error: "scope is all, page with `page` (a page's id), or project with `project` (a project's id)" });
+        // An unclaimed link opens on its page: a project that does not hold that page would leave a link that opens nowhere.
+        if (row.claimed_at == null && scope.kind === "project" && row.link_page && hub.artifact(row.link_page)?.project_id !== scope.id) {
+          return send(res, 400, { error: "this link opens on a page outside that project; revoke it and share a page of that project" });
+        }
+        const refused = row.auto ? autoAttachConflict(scope) : "";
+        if (refused) return send(res, 409, { error: refused });
+        const changed = devices.setScope(id, scope);
+        if (changed.claimed_at != null) cutOff(id, changed);
+        log("share-scope", id, scope.kind);
+        return send(res, 200, accessSummary(changed, true));
+      }
+      const fresh = devices.makeSingleUse(id, typeof body.expiresAt === "number" && body.expiresAt > Date.now() ? body.expiresAt : undefined);
+      // The old token was a cookie too: its open pages stop now, as on revoke.
+      cutOff(id, null);
+      log("share-single-use", id);
+      return send(res, 200, accessSummary(fresh.row, true));
+    } catch (err) {
+      return send(res, 400, { error: String((err as Error).message || err) });
+    }
+  }
+
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<http.ServerResponse | void> {
     const url = new URL(String(req.url), "http://x");
     const host = hostOnly(req.headers.host);
@@ -1725,15 +1934,17 @@ export async function runServer({
     // The hub lists every page and every note: the owner's only.
     const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
     if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
-    // The hub shows pages and opens reviews by link; the one thing it takes a POST for is the Archive button of a missing copy.
+    // The hub shows pages and opens reviews by link. It takes a POST for the Archive button of a missing copy, and for People (/hub/api/people).
     const archiveId = req.method === "POST" && ownerOnly && url.pathname.startsWith("/hub/archive/") ? url.pathname.slice("/hub/archive/".length) : null;
-    if (ownerOnly && archiveId === null && req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
+    const people = ownerOnly && (url.pathname === "/hub/api/people" || url.pathname.startsWith("/hub/api/people/"));
+    if (ownerOnly && archiveId === null && !people && req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
     // Owner browsing the hub keeps the server up.
     if (ownerOnly) activity();
     if (url.pathname === "/") return send(res, 200, hubHome(url), { "content-type": "text/html; charset=utf-8" });
     if (url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
     if (archiveId !== null) return hubArchive(res, archiveId);
     if (url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
+    if (people) return hubPeople(req, res, url);
     if (url.pathname === "/favicon.ico") return send(res, 204, "");
 
     const m = /^\/s\/([a-f0-9]{12})(\/.*)?$/.exec(url.pathname);
@@ -1743,16 +1954,20 @@ export async function runServer({
     const sub = m[2] || "";
     activity();
 
-    // An invite link: ask before trading the token for a cookie, so a cross-site navigation cannot
-    // switch a browser (e.g. the owner's) into a reviewer identity.
+    // A share link: ask before trading the link for a device, so a cross-site navigation cannot
+    // switch a browser (e.g. the owner's) into a reviewer identity, or use up the link.
     const invite = url.searchParams.get("invite");
     if (invite != null && (sub === "" || sub === "/") && req.method === "GET") {
-      const inv = invites.find(invite);
-      if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
+      const link = devices.findLink(invite);
+      const refused = linkRefusal(link, s);
+      if (refused || !link) return send(res, 403, refused);
+      const once = link.reusable ? "" : "<p>This link works on one device only: the browser that continues becomes yours, and the link stops working.</p>";
+      // The owner testing their own link would turn this browser into the reviewer on every page the link reaches.
+      const owner = isOwner(req) ? `<p><strong>This browser is signed in as the page's owner.</strong> Continuing makes it ${escapeHtml(link.name)}'s device: the pages this link reaches then open as ${escapeHtml(link.name)} here. Send the link to ${escapeHtml(link.name)} instead.</p>` : "";
       return send(
         res,
         200,
-        `<!doctype html><meta charset="utf-8"><title>Join review</title><form method="post" action="/s/${s.id}/join"><input type="hidden" name="invite" value="${escapeHtml(inv.token)}"><button>Continue as ${escapeHtml(inv.name)}</button></form>`,
+        `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Join review</title><form method="post" action="/s/${s.id}/join"><input type="hidden" name="invite" value="${escapeHtml(invite)}">${owner}${once}<button>Continue as ${escapeHtml(link.name)}</button></form>`,
         // "same-origin", not "no-referrer": Chrome and Firefox send `Origin: null` on a form POST under no-referrer, which the join check would refuse.
         { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "same-origin", "x-frame-options": "DENY" },
       );
@@ -1768,12 +1983,17 @@ export async function runServer({
         if (size > 4096) return send(res, 413, "payload too large");
         chunks.push(c);
       }
-      const raw = Buffer.concat(chunks).toString("utf8");
-      const inv = invites.find(new URLSearchParams(raw).get("invite") || "");
-      if (!inv || inv.sessionId !== s.id) return send(res, 403, "This invite link is not valid. It may have been revoked; ask for a new one.");
+      const link = devices.findLink(new URLSearchParams(Buffer.concat(chunks).toString("utf8")).get("invite") || "");
+      const refused = linkRefusal(link, s);
+      if (refused || !link) return send(res, 403, refused);
+      // Claimed once: a second browser racing the first gets null here. The cookie is a fresh secret, never the link token.
+      const claimed = devices.claim(link, seenMeta(req));
+      if (!claimed) return send(res, 403, LINK_USED);
+      log("share-claim", claimed.device.name, claimed.device.id);
       res.writeHead(303, {
         location: `/s/${s.id}`,
-        "set-cookie": `${COOKIE}=${inv.token}; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+        // One cookie per device, so a second link claimed in this browser adds a device instead of replacing the first.
+        "set-cookie": `${COOKIE}_${claimed.device.id}=${claimed.secret}; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_COOKIE_MAX_AGE}${overHttps(req) ? "; Secure" : ""}`,
         "cache-control": "no-store",
       });
       return res.end();
@@ -1787,9 +2007,13 @@ export async function runServer({
 
     const who = identify(req, s);
     if (!who) {
-      if (tokenFromCookie(req.headers.cookie) == null) return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
-      return send(res, 403, "This invite is no longer valid. Ask for a new link.", {
-        "set-cookie": `${COOKIE}=; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=0`,
+      const presented = reviewerCookies(req.headers.cookie);
+      if (!presented.length) return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
+      // A live device whose scope does not reach this page keeps its cookie: it still opens the pages it does reach.
+      if (cookieDevices(req).length) return send(res, 403, "This page is not shared with you. Ask the owner for access to it.");
+      return send(res, 403, "This device no longer has access. Ask the owner for a new link.", {
+        // A device's cookie lives on /s/; an old-style invite's on its page.
+        "set-cookie": presented.flatMap(({ name }) => [`${name}=; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=0`, ...(name === COOKIE ? [`${name}=; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=0`] : [])]),
       });
     }
     // Reviewers read the page and the conversation and add notes. Everything else is the owner's.
@@ -1815,7 +2039,7 @@ export async function runServer({
     if (sub === "/events") {
       if (reviewer) {
         const open = Array.from(clients.get(s.id) || []).filter((c): c is SseClient & { viewer: ReviewerViewer } => c.viewer.role === "reviewer");
-        if (open.length >= SSE_MAX_PER_SESSION || open.filter((c) => c.viewer.token === who.token).length >= SSE_MAX_PER_REVIEWER) {
+        if (open.length >= SSE_MAX_PER_SESSION || open.filter((c) => c.viewer.deviceId === who.deviceId).length >= SSE_MAX_PER_REVIEWER) {
           return send(res, 429, { error: "too many event streams" });
         }
       }
@@ -1872,8 +2096,8 @@ export async function runServer({
         it.id = reviewer || !it.id ? newId("i") : it.id;
       }
       const hold = reviewer && !who.auto;
-      if (hold && store.heldEntries(s).filter((e) => e.author === who.name).length >= MAX_HELD_PER_REVIEWER) return send(res, 429, { error: "too many notes awaiting the owner; wait for them to be released" });
-      const entry = store.addUserBatch(s, items, { end, author: who.name, hold });
+      if (hold && store.heldEntries(s).filter((e) => wroteIt(e, who)).length >= MAX_HELD_PER_REVIEWER) return send(res, 429, { error: "too many notes awaiting the owner; wait for them to be released" });
+      const entry = store.addUserBatch(s, items, { end, author: who.name, deviceId: reviewer ? who.deviceId : "", hold });
       broadcastTranscript(s, [entry]);
       wakeOrRun(s, !reviewer);
       broadcastPresence(s);
@@ -1932,6 +2156,18 @@ export async function runServer({
     if (sub === "/unarchive" && req.method === "POST") {
       if (!setArchived(s.id, null)) return send(res, 404, { error: "not in the hub" });
       return send(res, 200, { ok: true });
+    }
+    // The menu's Share (RLM-397): a named link for this page, its project, or every page. The owner's only, as reviewers are refused above.
+    if (sub === "/share" && req.method === "POST") {
+      const made = await createShare(s, await readBody(req, 16 * 1024));
+      if ("error" in made) return send(res, made.status, { error: made.error });
+      return send(res, 200, made satisfies ShareResponse);
+    }
+    // What the Share dialog offers: the page's project, when it has one.
+    if (sub === "/share" && req.method === "GET") {
+      if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+      const p = projectOfPage(s);
+      return send(res, 200, { project: p ? { id: p.id, name: p.name } : null, remote: Boolean(remoteBase()) });
     }
     // The attach popover and the run panel (RLM-346): the owner's only, as reviewers are refused above.
     // A GET from a foreign Origin is refused too: it lists the page's agent sessions.
