@@ -1,6 +1,6 @@
 // npm run site — builds the public website into _site/ (deployed by .github/workflows/pages.yml).
 //
-//   site/**             copied as is; every .html goes through render() for {{root}}, {{nav}}, {{hero}}, {{version}}
+//   site/**             copied as is; every .html goes through render() for {{root}}, {{nav}}, {{hero}}, {{version}} (npm's latest)
 //   dist/austere.js ... the runtime and the bundled packs, so live pages load them from the site itself
 //   gallery/<id>.html   each file in examples/, with its runtime tag pointed at ../austere.js
 //   gallery/thumbs/     screenshots of those pages, taken by scripts/shot.ts (which also fails on render errors)
@@ -43,7 +43,10 @@ const EXAMPLES = path.join(ROOT, "examples");
 const OUT = path.join(ROOT, "_site");
 const DEMO_GIF = path.join(ROOT, "docs", "demo.gif");
 const SOCIAL = path.join(ROOT, "docs", "social-preview.png");
-const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { version: string };
+// The footer and the npm card name the version npm installs. main runs ahead of the release and
+// pages.yml deploys every push to main, so package.json's version would announce one that is not out.
+const NPM_LATEST = "https://registry.npmjs.org/austere-axi/latest";
+const published = await publishedVersion();
 
 const REPO = "https://github.com/MandalorianBatman/austere-axi";
 const THUMB = { width: 1280, height: 800 };
@@ -77,10 +80,19 @@ function render(html: string, rel: string, vars: Record<string, string> = {}): s
     const href = /^https?:/.test(n.href) ? n.href : `{{root}}${n.href}`;
     return `<a href="${href}"${n.href === current ? ' aria-current="page"' : ""}>${escapeHtml(n.label)}</a>`;
   }).join("")}</nav>`;
-  const all = { nav, version: pkg.version, ...vars };
+  const all = { nav, version: published, ...vars };
   let out = html;
   for (const [key, value] of Object.entries(all)) out = out.replaceAll(`{{${key}}}`, () => value);
   return out.replaceAll("{{root}}", root);
+}
+
+/** The `latest` dist-tag on npm. The build fails rather than print a version nobody can install. */
+async function publishedVersion(): Promise<string> {
+  const res = await fetch(NPM_LATEST, { signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`${NPM_LATEST}: HTTP ${res.status}`);
+  const { version } = (await res.json()) as { version?: unknown };
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+/.test(version)) throw new Error(`${NPM_LATEST}: no version in the answer`);
+  return version;
 }
 
 function* htmlFiles(dir: string): Generator<string> {
@@ -267,7 +279,6 @@ const readJson = (name: string): unknown => JSON.parse(fs.readFileSync(path.join
 fs.writeFileSync(
   path.join(OUT, "play", "data.json"),
   JSON.stringify({
-    version: pkg.version,
     spec: readJson("spec.json"),
     catalog: readJson("catalog.json"),
     templates: examples.map(({ id, title, description, program }) => ({ id, title, description, program })),
