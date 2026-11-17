@@ -39,7 +39,7 @@ export function agentPrompt({ file, hosted, project }: AgentPromptInput): string
     ``,
     `1. Run \`${poll}\`. It returns when I send notes${project ? `, one batch per page of ${project.name} (this one included), each naming its file` : ""}. If it returns status: timeout, run it again. If your harness wakes you when a background job ends, run it as one.`,
     `2. For each batch: change that page with \`${BIN} patch <file>\` (send only the changed statements on stdin), then \`${BIN} reply <file> --cursor <n> --agent-reply "<one line: what changed>"\` with the cursor the poll printed. Then \`${poll} --cursor <n>\` to listen again.`,
-    `3. A batch with \`final: true\` means I pressed Send & End: that page is done. Apply it and reply; keep polling while another page you opened is still in review, else stop and continue in chat. A note I send later waits for your next poll. On status: replaced, a newer poll took over (maybe your own): stop that one.`,
+    `3. A batch with \`final: true\` means I pressed Done or Send & finish: that page is done. Apply it and reply; keep polling while another page you opened is still in review, else stop and continue in chat. A note I send later waits for your next poll. On status: replaced, a newer poll took over (maybe your own): stop that one.`,
   );
   if (hosted) {
     lines.push(

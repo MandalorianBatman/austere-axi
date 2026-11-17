@@ -93,7 +93,7 @@ export interface FeedbackEntry {
   items: NoteItem[];
   status: NoteStatus;
   remote?: true;
-  /** Sent with Send & End. */
+  /** Sent with Done or Send & finish. */
   end?: true;
 }
 

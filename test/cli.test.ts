@@ -166,7 +166,7 @@ async function scratch(fn: (s: Scratch) => Promise<void>): Promise<void> {
       child.on("close", (code) => resolve({ code, out }));
     });
   const run = (...args: string[]) => runIn(process.cwd(), ...args);
-  /** The owner sends a note on page `f` (`end`: with Send & End). */
+  /** The owner sends a note on page `f` (`end`: with Send & finish). */
   const send = (f: string, text: string, end = false): Promise<number | undefined> =>
     new Promise((resolve, reject) => {
       const r = http.request(

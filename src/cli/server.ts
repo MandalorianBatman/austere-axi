@@ -131,7 +131,7 @@ export interface PollResponse {
   items?: NoteItem[];
   /** feedback: the highest seq in the answer (a project poll's cursor covers every page). */
   cursor?: number;
-  /** feedback: the reviewer pressed Send & End on the newest batch; the agent stops listening after applying it */
+  /** feedback: the reviewer pressed Done or Send & finish on the newest batch; the agent stops listening after applying it */
   final?: true;
   /** A project poll's answer: the project, and one batch per page with notes. `items` and `final` are then per batch. */
   project?: string;
@@ -1393,7 +1393,7 @@ export async function runServer({
   /** Answer `poll` with every note after its read point. The notes stay unread until the agent acknowledges them. */
   function deliver(s: Session, poll: Poll): void {
     const entries = store.after(s, poll.from);
-    // A page always takes notes: final only tells the agent the newest batch was sent with Send & End, so it stops listening after applying it. A later plain note in the same answer means the reviewer carries on.
+    // A page always takes notes: final only tells the agent the newest batch was sent with Done or Send & finish, so it stops listening after applying it. A later plain note in the same answer means the reviewer carries on.
     const final = Boolean(entries[entries.length - 1].end);
     const body: PollResponse = { status: "feedback", items: itemsOf(entries), cursor: entries[entries.length - 1].seq, final: final || undefined };
     finishPoll(s, poll, body, () => {

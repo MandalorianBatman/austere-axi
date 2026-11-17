@@ -103,9 +103,9 @@ WORKFLOW
                                    repeated in several statements: patch each of them.
        ${BIN} reply <file.html> --agent-reply "one line: what changed"     (for each page)
        ${BIN} poll --cursor <n>  acknowledge every batch and listen again
-  5. final: true on a batch: the reviewer pressed Send & End, so that page is done. Apply it
-     and reply. Keep polling while another page you opened is still in review; else stop and
-     continue in chat. A later note waits for the next poll.
+  5. final: true on a batch: the reviewer pressed Done or Send & finish: that page is done.
+     Apply it and reply. Keep polling while another page you opened is in review; else stop
+     and continue in chat. A later note waits for the next poll.
      One page only: ${BIN} poll <file.html> [--cursor n --agent-reply "..."]
 
 POLL OUTPUT
@@ -632,7 +632,7 @@ const NEXT: Record<string, (f: string, cursor?: number) => string> = {
   feedback: (f, cursor) =>
     `Revise with \`${BIN} patch ${f}\`: send only the changed statements on stdin (same name replaces, new name adds); do not rewrite or re-read the file. Then \`${BIN} poll ${f} --cursor ${cursor} --agent-reply "<one line: what changed>"\`.`,
   feedbackFinal: (f, cursor) =>
-    `The reviewer sent this with Send & End: this page is done. Apply it with \`${BIN} patch ${f}\` (changed statements only), then \`${BIN} reply ${f} --cursor ${cursor} --agent-reply "<what changed>"\` and summarize in chat. Stop polling this page; a note sent later waits for the next poll.`,
+    `The reviewer sent this with Done or Send & finish: this page is done. Apply it with \`${BIN} patch ${f}\` (changed statements only), then \`${BIN} reply ${f} --cursor ${cursor} --agent-reply "<what changed>"\` and summarize in chat. Stop polling this page; a note sent later waits for the next poll.`,
   replaced: () => "A newer poll on this page took over (another one, or your own newer one); notes go to it. Stop this one.",
   interrupted: (again) => `The server stopped or restarted; the feedback is safe and still unread. Run the same poll again: \`${again}\`.`,
   timeout: (f) => `No feedback yet. Run \`${BIN} poll ${f}\` again.`,
@@ -765,7 +765,7 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
     out.next =
       `For each page above: revise with \`${BIN} patch <file>\` (changed statements only), then \`${BIN} reply <file> --cursor ${d.cursor} --agent-reply "<one line: what changed>"\` (the reply acknowledges it). ` +
       (batches.some((b) => b.final)
-        ? `final: true means that page is done (Send & End). Keep polling with ${listen} while another page you opened is still in review; else stop and continue in chat. A later note waits for the next poll.`
+        ? `final: true means that page is done (the reviewer pressed Done or Send & finish). Keep polling with ${listen} while another page you opened is still in review; else stop and continue in chat. A later note waits for the next poll.`
         : `Then ${listen}, which acknowledges every page above and listens again.`);
     return print(out);
   }
@@ -1336,7 +1336,7 @@ function feedbackItems(abs: string, entries: FeedbackEntry[], all: boolean): Pri
   return items;
 }
 
-/** The newest batch was sent with Send & End and nothing has answered it yet. */
+/** The newest batch was sent with Done or Send & finish and nothing has answered it yet. */
 function endsWithFinal(entries: FeedbackEntry[]): boolean {
   const last = entries[entries.length - 1];
   return Boolean(last?.end) && last.status !== "addressed";
@@ -1409,7 +1409,7 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
     next:
       `Apply what still applies with \`${BIN} patch ${f}\` (changed statements only; names are stable), then \`${BIN} reply ${f} --agent-reply "<what changed>"\`, ` +
       `which marks it addressed. ` +
-      (final ? `The reviewer pressed Send & End on the newest batch: continue in chat, do not poll afterwards.` : `To continue live with the reviewer: ${archived ? `\`${BIN} unarchive ${f}\` (the page is archived, so it takes no notes), then ` : ""}\`${BIN} ${f}\`, then poll.`),
+      (final ? `The reviewer pressed Done or Send & finish on the newest batch: continue in chat, do not poll afterwards.` : `To continue live with the reviewer: ${archived ? `\`${BIN} unarchive ${f}\` (the page is archived, so it takes no notes), then ` : ""}\`${BIN} ${f}\`, then poll.`),
   });
 }
 
@@ -1466,7 +1466,7 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
       (gone
         ? `A batch with missing: true is a file that is gone: do not patch it; \`${BIN} reply <file> --agent-reply "<file is gone>"\` still answers its notes, and \`${BIN} archive --missing\` puts every gone copy away. `
         : "") +
-      (final ? `The reviewer pressed Send & End on every newest batch: continue in chat, do not poll afterwards.` : `To continue live with the reviewer: \`${BIN} poll${project.scope}\`.`),
+      (final ? `The reviewer pressed Done or Send & finish on every newest batch: continue in chat, do not poll afterwards.` : `To continue live with the reviewer: \`${BIN} poll${project.scope}\`.`),
   });
 }
 

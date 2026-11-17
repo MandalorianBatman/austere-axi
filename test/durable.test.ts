@@ -200,7 +200,7 @@ async function withServer(fn: (ctx: Ctx) => Promise<void>, extraEnv?: Record<str
 
 test("a note sent after a final batch is kept, and the next poll returns it", () =>
   withServer(async ({ port, state, id }) => {
-    // The reviewer's Send & End: the batch is final, the agent stops listening after it.
+    // The reviewer's Send & finish: the batch is final, the agent stops listening after it.
     await request(port, "POST", `/s/${id}/send`, { ...message("last words"), end: true }, page(port));
     const last = await request(port, "POST", "/api/poll", { file: FILE });
     assert.equal(last.data.status, "feedback");
@@ -338,7 +338,7 @@ test("a held note released after a final batch reaches the next poll", () =>
     assert.equal(poll.data.final, undefined);
   }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
 
-test("feedback lists notes in delivery order, so a note released after Send & End is last and not final", () =>
+test("feedback lists notes in delivery order, so a note released after Send & finish is last and not final", () =>
   withServer(async ({ port, id }) => {
     const invited = await invite(port, id, "Ana");
     const held = await request(port, "POST", `/s/${id}/send`, message("held before the end"), { ...page(port), cookie: invited });
@@ -347,7 +347,7 @@ test("feedback lists notes in delivery order, so a note released after Send & En
 
     const r = await request(port, "POST", "/api/feedback", { file: FILE, all: true, peek: true });
     assert.deepEqual(r.data.entries.map((e) => e.items[0].text), ["final words", "held before the end"]);
-    assert.equal(r.data.entries[1].end, undefined, "the newest note was not sent with Send & End");
+    assert.equal(r.data.entries[1].end, undefined, "the newest note was not sent with Send & finish");
   }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
 
 test("open and archive meet on one page however the path is spelled", () =>
