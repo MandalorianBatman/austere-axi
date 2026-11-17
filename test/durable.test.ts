@@ -931,7 +931,7 @@ test("a newer CLI that replaces an older server keeps --persist", async () => {
   stateOf.set(port, state);
   try {
     const r = await cli(port, state, FILE, "--no-open");
-    assert.match(r.out, /status: open/);
+    assert.match(r.out, /status: registered/);
     const h = (await request(port, "GET", "/api/health")).data;
     assert.notEqual(h.version, "0.0.1", "replaced");
     assert.equal(h.persist, true);

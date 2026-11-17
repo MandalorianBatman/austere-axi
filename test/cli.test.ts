@@ -76,7 +76,7 @@ test("with no arguments, live state comes first and the full help is not printed
   const r = cli();
   assert.equal(r.code, 0);
   assert.match(r.out, /^bin: austere-axi \S+\n/);
-  assert.match(r.out, /\nserver: not running\nopen_sessions: 0\n/);
+  assert.match(r.out, /\nserver: not running\npages: 0\n/);
   assert.doesNotMatch(r.out, /WORKFLOW/);
 });
 
@@ -285,7 +285,7 @@ test("poll on an archived page returns what is queued, then status: archived at 
 
     r = await run(file, "--no-open");
     assert.match(r.out, /^status: archived$/m, r.out);
-    assert.doesNotMatch(r.out, /^status: open$/m, "not open and archived at once");
+    assert.doesNotMatch(r.out, /^status: open$/m, "not registered and archived at once");
 
     // Unarchived, the page listens again.
     assert.match((await run("unarchive", file)).out, /status: unarchived/);

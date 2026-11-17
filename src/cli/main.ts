@@ -308,7 +308,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   hub: {
     usage: "hub [list|notes|open] [words] [--project p] [--archived] [--all] [--unanswered] [--limit n]",
-    summary: "the owner's home page, always on: every page by project (one entry per page, a copy per worktree), every note",
+    summary: "the owner's home page: every page by project (one entry per page, a copy per worktree), every note",
     flags: {
       project: "only pages or notes from this project: a name, an id, or a folder inside one of its roots (list, notes)",
       archived: "list archived pages instead (list)",
@@ -333,7 +333,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   archive: {
     usage: "archive <file> [--every-copy] | archive --missing [--project p]",
     summary:
-      "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and its composer is locked; its notes stay. Works on a file that is gone. A page in several worktrees has a copy in each: archive puts away this copy and names the copies that stay open (--every-copy: all of them), with the unanswered notes on each. --missing does it for every copy opened for review whose file is gone (a deleted worktree), and says how many notes were still unanswered",
+      "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and it stops taking notes; its notes stay. Works on a file that is gone. A page in several worktrees has a copy in each: archive puts away this copy and names the copies that stay open (--every-copy: all of them), with the unanswered notes on each. --missing does it for every copy opened for review whose file is gone (a deleted worktree), and says how many notes were still unanswered",
     flags: { "every-copy": "every copy of the page, not only this one", missing: "every copy whose file is gone, instead of one file", project: "with --missing: only this project: a name, an id, or a folder inside one of its roots" },
     example: "archive plan.html   |   archive plan.html --every-copy   |   archive --missing --project shop",
   },
@@ -447,7 +447,7 @@ function usage(message: string, cmd?: string | null): void {
  */
 const REMOVED_COMMANDS: Record<string, string> = {
   end: "a page always takes notes, so there is nothing to end; stop polling and continue in chat",
-  close: `use \`${BIN} archive <file>\`: it locks the composer`,
+  close: `use \`${BIN} archive <file>\`: it stops the page taking notes`,
   reopen: `use \`${BIN} unarchive <file>\`; a page that is not archived needs nothing`,
 };
 const REMOVED_FLAGS: Record<string, string> = {
@@ -516,6 +516,11 @@ function compactCheck(result: CheckResult): string | Printed {
 
 // ── commands ──
 
+/** The one message for a page the hub does not know yet (`poll`, `reply`, `feedback`, `login`). */
+function notRegistered(file: string, flags = ""): string {
+  return `this page is not registered yet: run \`${BIN} ${quote(file)}${flags}\` first`;
+}
+
 async function cmdHome() {
   const h = await serverIfRunning();
   let sessions: SessionListing[] = [];
@@ -534,8 +539,8 @@ async function cmdHome() {
     bin: `${BIN} ${VERSION}`,
     description: "review pages written in OpenUI Lang; the reviewer annotates them in the browser and notes come back by statement name",
     server: h ? `running on ${commandPort()} (v${h.version})` : "not running",
-    open_sessions: sessions.length > shown.length ? `${shown.length} of ${sessions.length} shown` : sessions.length,
-    sessions: shown.length ? shown : undefined,
+    pages: shown.length ? shown : 0,
+    more: sessions.length > shown.length ? `${shown.length} of ${sessions.length} pages shown` : undefined,
     commands: Object.fromEntries(Object.entries(COMMANDS).map(([name, c]) => [name === "open" ? "<file>" : name, c.summary])),
     next: shown.length
       ? `${BIN} poll waits for feedback on every page of this checkout (${BIN} poll <file> for one page). ${BIN} --help: workflow and file skeleton.`
@@ -573,7 +578,7 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   else if (noOpen) browser = "not opened (--no-open)";
   else browser = (await openBrowser(d.links.local)) ? "opened" : "could not launch";
   const out: Printed = {
-    status: d.session.archived ? "archived" : "open",
+    status: d.session.archived ? "archived" : "registered",
     file: abs,
     url: d.links.local,
     phone: d.links.remote,
@@ -812,7 +817,7 @@ async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
   }
   if (ticker) clearInterval(ticker);
   if (r.status === 404) {
-    return fail(`no review session for this file; open it first: ${BIN} ${quote(file)}`);
+    return fail(notRegistered(file));
   }
   if (r.status === 400) return fail(r.data?.error || "bad request");
   const d: Partial<PollResponse> = r.data || {};
@@ -843,6 +848,7 @@ async function cmdReply(file: string | undefined, flags: Flags): Promise<void> {
   const r = await request<{ ok?: boolean; warning?: string; error?: string }>("POST", "/api/reply", { file: abs, text, cursor: seqFlag(flags, "cursor"), session: caller ?? undefined }, { timeoutMs: 15_000 });
   // The hub keeps a page whose file was deleted, so its notes can still be answered; a path it never saw is just a wrong path.
   if (r.status === 404 && !fs.existsSync(abs)) return fail(`no such file: ${abs}`);
+  if (r.status === 404) return fail(notRegistered(file ?? abs));
   if (r.status !== 200) return fail(r.data?.error || `reply failed (${r.status})`);
   print({ status: "replied", file: abs, warning: r.data?.warning, session: sessionLine(caller) });
 }
@@ -1393,7 +1399,7 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
   }
   const session = sessionLine(caller, registered);
   if (!entries) {
-    return print({ status: "none", file: abs, note: "This file has never been reviewed.", session });
+    return print({ status: "none", file: abs, note: notRegistered(file), session });
   }
   if (!entries.length) {
     return print({ status: "none", file: abs, archived: archived || undefined, note: "Every piece of feedback on it has been answered.", session });
@@ -1535,7 +1541,7 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
     case "on":
     case "off":
     case "status":
-      print({ error: `the hub is always on; open it with \`${BIN} hub open\`` });
+      print({ error: `the hub has no on/off switch; open it with \`${BIN} hub open\`` });
       process.exitCode = 2;
       return;
     case undefined:
@@ -1776,7 +1782,7 @@ function archivedOut(file: string, abs: string, plan: ArchivePlan): Printed {
 }
 
 /**
- * `archive` and `unarchive`: put a page away from the hub's lists and lock its composer, or bring it back.
+ * `archive` and `unarchive`: put a page away from the hub's lists and stop it taking notes, or bring it back.
  * Works on a file that is gone too. A running server holds the page in memory, so it makes the change.
  * `archive` takes one copy of the page (`--every-copy`: each one) and names the copies that stay open.
  * `archive --missing` does it for every copy whose file is gone.
@@ -2416,7 +2422,7 @@ async function cmdLogin(file: string | undefined): Promise<void> {
     const r = await request<SessionsResponse>("GET", "/api/sessions");
     if (r.status !== 200) return fail(r.data?.error || `login failed (${r.status})`);
     const s = (r.data.sessions || []).find((x) => x.file === abs);
-    if (!s) return fail(`no review for ${abs} yet: \`${BIN} ${quote(file)} --no-open\` starts one`);
+    if (!s) return fail(notRegistered(file, " --no-open"));
     url = s.links.local;
   }
   const link = await loginUrl(url);

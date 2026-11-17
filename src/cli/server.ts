@@ -1850,7 +1850,7 @@ export async function runServer({
     const s = store.byFile(file);
     const pageRoute = route === "reply" || route === "feedback" || route === "poll" ? route : null;
     if (pageRoute) noteCaller(caller, s ? [s.id] : [], pageRoute);
-    if (!s) return send(res, 404, { error: "no session for this file; open it first" });
+    if (!s) return send(res, 404, { error: "this page is not registered yet: run `austere-axi <file>` first" });
 
     if (route === "reply") {
       const text = String(body.text || "").trim();
@@ -2298,7 +2298,7 @@ export async function runServer({
     const m = /^\/s\/([a-f0-9]{12})(\/.*)?$/.exec(url.pathname);
     if (!m) return send(res, 404, "not found");
     const s = store.get(m[1]);
-    if (!s) return send(res, 404, "no such session");
+    if (!s) return send(res, 404, "no such page");
     const sub = m[2] || "";
     activity();
 

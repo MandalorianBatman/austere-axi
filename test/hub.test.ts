@@ -140,7 +140,7 @@ test("hub: always on; check-only pages hidden until --all; hands feedback to a l
 
   // A fresh state dir, no `hub on`: / is the hub.
   r = await cli(FILE);
-  assert.match(r.out, /status: open/);
+  assert.match(r.out, /status: registered/);
   let home = (await req("GET", "/")).data;
   assert.match(home, /austere-axi hub/);
   assert.match(home, />shop</);
@@ -213,11 +213,46 @@ test("hub: always on; check-only pages hidden until --all; hands feedback to a l
   assert.match(r.out, /Checkout plan/);
 });
 
+test("CLI output has no `session` key, and a page that is not registered gets one message", async () => {
+  const unregistered = path.join(WORK, "never-opened.html");
+  fs.copyFileSync(FILE, unregistered);
+  const runs: CliResult[] = [];
+  for (const args of [
+    [],
+    [FILE],
+    ["poll", FILE, "--timeout-ms", "200"],
+    ["feedback", FILE, "--all"],
+    ["reply", FILE, "--agent-reply", "ok"],
+    ["hub", "list"],
+    ["hub", "list", "--all"],
+    ["hub", "notes"],
+    ["project", "list"],
+    ["archive", FILE],
+    ["unarchive", FILE],
+  ]) {
+    const r = await cli(...args);
+    assert.equal(r.code, 0, `${args.join(" ")}: ${r.out}`);
+    runs.push(r);
+  }
+  const keys = runs.flatMap((r) => Array.from(r.out.matchAll(/^[ \t-]*([A-Za-z_][\w-]*):/gm), (m) => m[1]));
+  assert.ok(keys.includes("pages") && keys.includes("status"), `output keys were read: ${keys.join(" ")}`);
+  // `session:` is the agent's own session line and `sessions` a command name (RLM-343); the review-session key `open_sessions` is gone.
+  assert.deepEqual(keys.filter((k) => /session/i.test(k) && k !== "session" && k !== "sessions"), [], "no output key says session");
+
+  // The path is quoted (and escaped again in YAML) when it has a backslash, as on Windows: match around it.
+  const message = /this page is not registered yet: run `austere-axi [^\n]*never-opened\.html[^\n]*` first/;
+  for (const args of [["poll", unregistered], ["reply", unregistered, "--agent-reply", "x"], ["login", unregistered], ["feedback", unregistered]]) {
+    const r = await cli(...args);
+    assert.match(r.out, message, args.join(" "));
+    assert.doesNotMatch(r.out, /never been reviewed|no review|no session/i, args.join(" "));
+  }
+});
+
 test("hub on|off|status exit 2 with a one-line hint", async () => {
   for (const sub of ["on", "off", "status"]) {
     const r = await cli("hub", sub);
     assert.equal(r.code, 2, r.out);
-    assert.match(r.out, /^error: "?the hub is always on; open it with `austere-axi hub open`"?\n$/);
+    assert.match(r.out, /^error: "?the hub has no on\/off switch; open it with `austere-axi hub open`"?\n$/);
   }
 });
 

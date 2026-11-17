@@ -3,7 +3,7 @@
 Usage errors (unknown command or flag, missing argument) exit 2 before anything runs; failures exit 1. `<command> --help` prints that command's flags and an example.
 
 ```
-austere-axi                      sessions + command list
+austere-axi                      pages + command list
 austere-axi <file>               validate + register + open a review   [--no-open]
 austere-axi poll [file]          long-poll for feedback; no file: every page of this checkout   [--project p: every checkout] [--cursor n] [--agent-reply "..."] [--after n]
 austere-axi reply <file>         post a reply without polling   [--cursor n]
@@ -24,7 +24,7 @@ austere-axi adapter list|set     how a run starts an agent: harness binaries, ca
 austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
 austere-axi hub [list|notes|open]   home page with every page by project and every note   [--project p] [--archived] [--all] [--unanswered]
 austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)
-austere-axi archive <file>       put a page away from the hub's lists and lock its composer; unarchive <file> brings it back
+austere-axi archive <file>       put a page away from the hub's lists; it stops taking notes; unarchive <file> brings it back
 austere-axi archive --missing    the same for every copy whose file is gone   [--project p]
 austere-axi share <file> --as "<name>"   a link for one teammate's device on your tailnet, claimed once   [--project <p> | --all] [--auto] [--expires <dur>]
 austere-axi share list|revoke           links nobody has opened yet and devices; cut one off
@@ -44,7 +44,7 @@ Trust and private registries are in [Components and packs](components-and-packs.
 
 Output is compact YAML for agents. Each `poll` item has its statement and that statement's line and source, so the agent does not read the file again. Agents revise with `patch` only: they send the changed statements, never the whole file.
 
-## Session rules
+## Review rules
 
 - **Pages are permanent:** a registered page always takes notes. Nothing starts, ends, closes or reopens a review. `poll`, `reply` and `feedback` need only the page; the page's state is derived: `listening` (a poll waits), `working` (an agent has a batch), `stale` (an agent took a batch and for 10 minutes has neither replied, polled nor changed the file: its poll may have died), `idle`, or `archived`. The review page says "Agent working (2 min)", "Took your notes 14 min ago, no reply yet" and "Agent not listening"; on a phone the dock under the page carries the same label.
 - **Newest listener wins:** a new `poll` on a page answers the older one with `status: replaced`, and its `next:` says to stop. There is no `--takeover`; a poll waits for notes or for `--timeout-ms`, however many tabs are open.
@@ -55,7 +55,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 - **No lost notes:** every note is written to `~/.austere-axi/hub.db` before the page is told it was sent, so it survives a server crash or restart. Feedback sent while no agent listens waits for the next poll.
 - **Acknowledge with the cursor:** `poll` prints a `cursor`. Passing it back (`--cursor n` on the next `poll` or `reply`), or replying at all, acknowledges everything up to it that a poll handed over; a note no poll delivered (skipped by `--after`) stays unread. A reply without a cursor acknowledges what the last poll handed over, after a server restart too. Without either, `poll` returns the same feedback again, so a crash or timed-out tool call loses nothing. `--after n` replays from any point.
 - **Done is a hint, not a state:** the reviewer's **Done** (nothing typed or queued: a batch with no items) or **Send & finish** (the notes in the composer) marks that batch. `poll` returns `final: true` on it (`feedback` lists notes only, so it shows `final: true` on a Send & finish): that page is done. The agent applies it and replies; on a project poll it keeps polling while another page it opened is still in review, else it stops and continues in chat. The page still takes notes: a later one waits in the inbox for the next `poll`, days later and after a server restart too. A Done is not counted as a note waiting for an answer.
-- **Archive is the only lock:** `archive <file>` (or **Archive page** in the page's `⋯` menu) leaves the hub's lists and locks the composer: `/send` answers 409. `unarchive <file>` or **Unarchive page** restores both. A running server makes the change, so an open page updates at once; `open` leaves an archived page archived and prints `status: archived`. The page's frame stays in Explore and Annotate is off while it is archived.
+- **Archive is the only lock:** `archive <file>` (or **Archive page** in the page's `⋯` menu) leaves the hub's lists and the page stops taking notes: `/send` answers 409. `unarchive <file>` or **Unarchive page** restores both. A running server makes the change, so an open page updates at once; `open` leaves an archived page archived and prints `status: archived`. The page's frame stays in Explore and Annotate is off while it is archived.
 - **Archive takes one copy:** a page in several worktrees has a copy in each, and `archive <file>` puts away that copy only. It prints the copy's label (`copy:`), its unanswered notes (`unanswered:`, kept, but out of the hub's counts) and the copies that stay open (`still_open:`, each with its unanswered notes); the hub row stays and opens a copy that is still open. `archive <file> --every-copy` puts away every copy of the page. The `⋯` menu asks the same: **Archive this copy** or **Archive every copy**, with the copies that stay open listed. When archive or unarchive fails, the page shows why.
 - **Poll on an archived page:** `poll <file>` still returns notes queued before the page was archived; with none left it answers at once with `status: archived` and a `next:` that says to stop, and to unarchive only if the user asks, instead of waiting for a note the page cannot take. A `poll <file>` already waiting when the page is archived gets the same answer.
 - **Missing files:** a copy whose file is gone keeps its notes. `feedback` with no file marks its batch `missing: true`; `reply <file>` and `archive <file>` work on it without the file (a path the hub never saw still says `no such file`). `archive --missing [--project p]` puts away every copy opened for review whose file is gone, in one command, and prints how many it archived and how many notes on them were still unanswered; those notes stay (`feedback` lists them with `archived: true`).
@@ -143,7 +143,7 @@ austere-axi attach inherit <file>                        the page goes back to i
 | Variable | Default | |
 |---|---|---|
 | `AUSTERE_AXI_PORT` | the port in the state dir's `server.lock` while its server runs, else the installed service's, else `4388` | server port |
-| `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | sessions, owner key, server log (mode 0700 on macOS and Linux) |
+| `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | pages and notes (`hub.db`), owner key, server log (mode 0700 on macOS and Linux) |
 | `AUSTERE_AXI_NO_OPEN` | | `1` = never open a browser |
 | `AUSTERE_AXI_HOST` | | extra bind address (never `0.0.0.0`) |
 | `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |

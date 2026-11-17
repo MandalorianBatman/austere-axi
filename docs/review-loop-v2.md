@@ -1,6 +1,6 @@
 # Review loop v2: design
 
-Status: Approved 2026-11-16. Epic RLM-329, design issue RLM-331. L1–L15 were settled with sid.kasat on 2026-11-16. Q1–Q11 (P1–P11 in the epic) were accepted on the same day on the owner's instruction to proceed with assumptions while away. Line numbers and names below are from 0.10.4 (`e2749d6`). The build issues RLM-332 to RLM-367 follow this note; where an issue and this note differ, this note wins.
+Status: Approved 2026-11-16. Built: stage 1 (shipped in 0.11.0) and stage 2 (in 0.12.0, which ships with RLM-383). Stages 3–6 are not built. A Status column marks each change below. Epic RLM-329, design issue RLM-331. L1–L15 were settled with sid.kasat on 2026-11-16. Q1–Q11 (P1–P11 in the epic) were accepted on the same day on the owner's instruction to proceed with assumptions while away. Line numbers and names below are from 0.10.4 (`e2749d6`). The build issues RLM-332 to RLM-367 follow this note; where an issue and this note differ, this note wins.
 
 ## Problem
 
@@ -63,7 +63,7 @@ Choices made while writing this note, where the issues are silent or ambiguous.
 | A2 | The wiki package `austere-wiki` lives in its own GitHub repo, `MandalorianBatman/austere-wiki`. Nothing of it is in the austere-axi npm package. |
 | A3 | PRs are per stage: one PR per top-level sub-issue of RLM-329 (RLM-332, RLM-337, RLM-341, RLM-348, RLM-355, RLM-359), bundling its child issues. The PR lists the child issues it closes. This replaces "one PR per sub-issue" in the epic rules. Exception: stage 2 (RLM-337) uses one PR per leaf issue (RLM-338, RLM-339, RLM-340), stacked when a leaf depends on another (#69 on #67). The other stages stay one PR per stage. |
 | A4 | `hub status` goes with `hub on\|off` (RLM-335 says `on\|off\|status`; RLM-331 says `on\|off`). `hub list\|notes\|open` stay. |
-| A5 | A removed command or flag exits 2 with one line, for one minor version: the line names the replacement, or says the flag is gone when there is none (`--owner`). After that minor it is an unknown command. `hub on\|off\|status` went in 0.11.0 (unknown in 0.12). `end`, `close`, `reopen`, `--reopen`, `--takeover` and `--owner` go in 0.12, because 0.11.0 shipped before RLM-338 merged (unknown in 0.13). |
+| A5 | A removed command or flag exits 2 with one line, for one minor version: the line names the replacement, or says the flag is gone when there is none (`--owner`). After that minor it is an unknown command. `hub on\|off\|status` went in 0.11.0 and still exit 2 with a pointer to `hub open` in 0.12 (unknown in 0.13). `end`, `close`, `reopen`, `--reopen`, `--takeover` and `--owner` go in 0.12, because 0.11.0 shipped before RLM-338 merged (unknown in 0.13). |
 | A6 | The MCP server has an `end` tool and no `close` or `reopen` tool; `end` goes (`src/cli/mcp.ts`). New MCP tools exist only for commands an agent may run: `poll`, `feedback`, `patch --from`, `history`, `show`, `outline`, `changes`, `decisions`, `find`, `sessions list`, `attach status`, `run list`, `run log`. No MCP tool for `attach on\|off`, `adapter set`, `trigger add\|remove`, `server install` or `restore` (owner-only or terminal-only). |
 | A7 | The owner's "last viewed" mark (RLM-352) is a column, `artifacts.last_viewed_rev`, not a table. |
 | A8 | A trigger run has no page. `runs.artifact_id` is NULL for it, and `runs.project_id` names the project. The cursor a trigger last saw is stored in hub.db, `trigger_state`, not in `triggers.json`, so the terminal-only file stays the owner's to edit. |
@@ -380,16 +380,16 @@ The wiki (RLM-359) is a separate package and stays free and local: one machine, 
 
 One PR per stage (A3). A stage starts when the stages it depends on have merged. Child issues inside a PR follow their `stage` order.
 
-| Stage | PR | Child issues, in order | Depends on |
-|---|---|---|---|
-| 1 | RLM-330 docs split (PR #64) | none | none |
-| 1 | RLM-331 this note | none | RLM-330 |
-| 1 | RLM-332 projects and page identity | RLM-333 → RLM-334, RLM-335 → RLM-336 | RLM-331 |
-| 2 | RLM-337 pages without sessions | RLM-338 → RLM-339, RLM-340 | RLM-332 |
-| 3 | RLM-341 attach | RLM-342 (spike, may run from stage 1) → RLM-343, RLM-344 → RLM-345 → RLM-346. RLM-347 stays parked. | RLM-337 |
-| 4 | RLM-348 history and reuse | RLM-349 → RLM-350 → RLM-351, RLM-352 → RLM-353, RLM-354 | RLM-332 (RLM-334); may run beside stage 3 |
-| 5 | RLM-355 dashboard shell | RLM-356 → RLM-357 → RLM-358 | RLM-336, RLM-346, RLM-349, RLM-350 |
-| 6 | RLM-359 wiki | core PR: RLM-360. `austere-wiki` repo: RLM-361 → RLM-362 → RLM-363 → RLM-364 → RLM-365 → RLM-366. RLM-367 stays parked. | RLM-345, RLM-351, RLM-352 |
+| Stage | PR | Child issues, in order | Depends on | Status |
+|---|---|---|---|---|
+| 1 | RLM-330 docs split (PR #64) | none | none | Built, in 0.11.0 |
+| 1 | RLM-331 this note | none | RLM-330 | Built, in 0.11.0 |
+| 1 | RLM-332 projects and page identity | RLM-333 → RLM-334, RLM-335 → RLM-336 | RLM-331 | Built, in 0.11.0 |
+| 2 | RLM-337 pages without sessions | RLM-338 → RLM-339, RLM-340 | RLM-332 | Built, in 0.12.0 |
+| 3 | RLM-341 attach | RLM-342 (spike, may run from stage 1) → RLM-343, RLM-344 → RLM-345 → RLM-346. RLM-347 stays parked. | RLM-337 | Not built |
+| 4 | RLM-348 history and reuse | RLM-349 → RLM-350 → RLM-351, RLM-352 → RLM-353, RLM-354 | RLM-332 (RLM-334); may run beside stage 3 | Not built |
+| 5 | RLM-355 dashboard shell | RLM-356 → RLM-357 → RLM-358 | RLM-336, RLM-346, RLM-349, RLM-350 | Not built |
+| 6 | RLM-359 wiki | core PR: RLM-360. `austere-wiki` repo: RLM-361 → RLM-362 → RLM-363 → RLM-364 → RLM-365 → RLM-366. RLM-367 stays parked. | RLM-345, RLM-351, RLM-352 | Not built |
 
 Every PR runs `npm run build && npm test && npm run typecheck`; a chrome or hub UI change also runs `npm run test:browser` and screenshots at 1280 and 390 px. Each PR updates the guide in `docs/` and `HELP`/`COMMANDS` for every user-facing change it makes.
 

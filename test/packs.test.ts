@@ -1180,7 +1180,7 @@ test("the server serves an installed pack only at its locked version and hash", 
       page('root = Stack([t])\nt = Milestones(["Mon | Freeze"])', `<meta name="austere-packs" content="austere-pack-steps@1.1.0 ${lock.integrity}">\n`),
     );
     const opened = await cli(page3p, "--no-open");
-    assert.match(opened.out, /status: open/);
+    assert.match(opened.out, /status: registered/);
     const sid = /\/s\/([a-f0-9]{12})/.exec(opened.out)?.[1];
     await new Promise((resolve, reject) => {
       const body = JSON.stringify({ items: [{ kind: "message", text: "ship it" }] });

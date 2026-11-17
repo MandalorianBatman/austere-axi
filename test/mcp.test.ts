@@ -150,7 +150,7 @@ test("check reports errors as a tool error and passes a valid page", async () =>
 test("open, poll for feedback, reply through the poll", async () => {
   const open = await call("open", { file: GOOD, no_open: true });
   assert.equal(open.isError, false, open.content[0].text);
-  assert.match(open.content[0].text, /^status: open/m);
+  assert.match(open.content[0].text, /^status: registered/m);
   const id = /\/s\/(\w+)/.exec(open.content[0].text)?.[1];
   assert.ok(id, open.content[0].text);
 

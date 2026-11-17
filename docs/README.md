@@ -8,7 +8,7 @@ The [project README](../README.md) says what austere-axi is and how to start. Th
 |---|---|
 | [Install and quick start](install.md) | The commands your agent runs, the setup skill, the Claude Code plugin, and the MCP server for Claude Desktop, Cursor and Codex |
 | [How it works](how-it-works.md) | What the agent writes (OpenUI Lang), the review loop, the comparison with lavish-axi, and what is not in v1 |
-| [CLI reference](cli.md) | Every command, the session rules, and the environment variables |
+| [CLI reference](cli.md) | Every command, the review rules, and the environment variables |
 | [Components and packs](components-and-packs.md) | Finding components, installing packs, the trust list, private registries |
 | [Writing a pack](writing-a-pack.md) | From scaffold to `npm publish` |
 | [Team review](team-review.md) | `share`: teammates on your tailnet review a page under their own name |

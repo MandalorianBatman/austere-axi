@@ -1,6 +1,6 @@
 # Hub
 
-The server starts when needed and stops after 30 idle minutes. Every review is kept in `~/.austere-axi/hub.db` (SQLite), with every page you open for review, `check` or `patch`. The hub is the home page over it, always on:
+The server starts when needed and stops after 30 idle minutes; to keep it running for good, see [Always on](#always-on). The hub has no on/off switch: it is the home page over `~/.austere-axi/hub.db` (SQLite), which keeps every page you open for review, `check` or `patch`, and its notes. It is there whenever the server runs:
 
 ```sh
 austere-axi hub open    # http://127.0.0.1:4388/, signed in: pages by project, with search
@@ -49,7 +49,7 @@ austere-axi project forget-root ~/gone/repo --drop  # a root whose folder is gon
 ## What the lists leave out
 
 - Pages only `check`ed or `patch`ed, never opened for review. `hub list --all` (or **Everything** on the home page) shows them.
-- Archived pages: `austere-axi archive <file>` puts a page away and locks its composer, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. Archive works per copy: with a copy in another worktree, the row stays, without the archived copy's notes in its counts, and opens the copy that is still open (`--every-copy` takes them all). A review closed in an older version (0.10.4 can still share this `hub.db`) is archived the next time `hub.db` is opened by this version, however late it was closed.
+- Archived pages: `austere-axi archive <file>` puts a page away and it stops taking notes, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. Archive works per copy: with a copy in another worktree, the row stays, without the archived copy's notes in its counts, and opens the copy that is still open (`--every-copy` takes them all). A review closed in an older version (0.10.4 can still share this `hub.db`) is archived the next time `hub.db` is opened by this version, however late it was closed.
 - Nothing else: a page whose file is gone stays listed, marked `missing`, with its notes. A page's title opens a copy that is still there; the chips open each copy.
 
 ## A copy whose file is gone
@@ -60,7 +60,7 @@ A row or chip marked `missing` opens a page of its own (status 410) with the fil
 
 - Session files from before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`. A `hub.db` from an older version gets its projects on first open.
 - One server runs per state dir; a second one refuses to start. `server.lock` holds the running server's pid and port. If that server no longer answers on the port, the lock is stale and is taken over.
-- `hub on`, `hub off` and `hub status` are gone: they exit 2 and point at `hub open`.
+- `hub on`, `hub off` and `hub status` are gone, because the hub has no on/off switch: they exit 2 and point at `hub open`.
 
 ## Always on
 
