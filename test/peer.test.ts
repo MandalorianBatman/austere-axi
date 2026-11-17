@@ -246,7 +246,12 @@ async function machine(pages: Record<string, { id: string; auto: boolean }>): Pr
 async function cleanup(...ms: Machine[]) {
   for (const m of ms) {
     await m.run("stop");
-    fs.rmSync(m.state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    // Windows may still hold hub.db's WAL files for a moment after stop: a failed cleanup there must not fail the test.
+    try {
+      fs.rmSync(m.state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    } catch (err) {
+      if (process.platform !== "win32") throw err;
+    }
   }
 }
 
