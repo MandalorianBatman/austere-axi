@@ -64,7 +64,8 @@ export function request<T extends object = ApiError>(
         path: route,
         headers: {
           host: `127.0.0.1:${port}`,
-          ...(auth ? { "x-austere-key": ownerKey(stateDir()) } : {}),
+          // The CLI's version: the server's Settings → About says when the CLI is newer than the server.
+          ...(auth ? { "x-austere-key": ownerKey(stateDir()), "x-austere-cli": VERSION } : {}),
           ...(payload ? { "content-type": "application/json", "content-length": Buffer.byteLength(payload) } : {}),
         },
       },

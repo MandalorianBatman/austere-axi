@@ -1842,7 +1842,7 @@ async function sharePage() {
   const r = await fetch(`${BASE}/share`).catch(() => null);
   if (!r) return showBanner(UNREACHABLE);
   if (!r.ok) return showBanner(`Could not share this page: ${await failure(r)}`);
-  const offer = (await r.json()) as { project: { id: string; name: string } | null; remote: boolean };
+  const offer = (await r.json()) as { project: { id: string; name: string } | null; remote: boolean; auto?: boolean };
   const dialog = h("dialog", { class: "confirm share", "aria-labelledby": "share-title" });
   const close = () => {
     dialog.close();
@@ -1863,7 +1863,7 @@ async function sharePage() {
     h("p", { text: "The first browser that opens the link becomes their device, and the link stops working. An unopened link expires in 7 days." }),
     name,
     h("fieldset", {}, h("legend", { text: "They can review" }), option("scope", "page", "This page", true), offer.project ? option("scope", "project", `Every page in ${offer.project.name}`, false) : null, option("scope", "all", "Every page", false)),
-    h("fieldset", {}, h("legend", { text: "Their notes" }), option("mode", "hold", "Wait for me to send them on", true), option("mode", "auto", "Go straight to the agent", false)),
+    h("fieldset", {}, h("legend", { text: "Their notes" }), option("mode", "hold", "Wait for me to send them on", !offer.auto), option("mode", "auto", "Go straight to the agent", Boolean(offer.auto))),
     offer.remote ? null : h("p", { class: "share-error", text: "No tailnet address is up here, so a teammate could not open a link. Start Tailscale, or set AUSTERE_AXI_HOST." }),
     error,
     h("div", { class: "confirm-actions" }, h("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: close }), create),

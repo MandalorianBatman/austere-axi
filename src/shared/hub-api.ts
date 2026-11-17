@@ -240,3 +240,67 @@ export interface ArchiveResult {
   /** The copies it changed. */
   ids: string[];
 }
+
+// ── Settings (RLM-396): the owner's page for the local server. People uses /hub/api/people (src/cli/server.ts). ──
+
+/** An address the server answers on: this computer (loopback), Tailscale, or one added at a terminal (`AUSTERE_AXI_HOST`, `--also-listen`). */
+export interface ListenAddress {
+  kind: "this_computer" | "tailscale" | "added";
+  host: string;
+  url: string;
+}
+
+/** How the server stays up: a service runs it (`server install`), it was started to stay on, or it stops after `idle_minutes` without use. */
+export interface AlwaysOn {
+  mode: "service" | "kept_on" | "idles";
+  supervisor: "systemd" | "launchd" | null;
+  /** The systemd unit or launchd label that runs it. */
+  unit: string | null;
+  idle_minutes: number | null;
+}
+
+/** A page someone has open now, and who: the owner's tabs and reviewers' devices, by name. */
+export interface PageViewers {
+  id: string;
+  title: string;
+  file: string;
+  viewers: { name: string; role: "owner" | "reviewer" }[];
+}
+
+/** GET /hub/api/settings */
+export interface SettingsResponse {
+  network: {
+    port: number;
+    addresses: ListenAddress[];
+    /** The address links for teammates and phones use, and what set it; null: only this computer listens, so no link can be shared. */
+    share: { url: string; from: "link_url" | "link_host" | "tailscale" | "host" } | null;
+    /** This machine on Tailscale, as Tailscale said last; null: Tailscale is not running here (or is turned off for this server). */
+    tailscale: { ip: string; dns_name: string | null } | null;
+    always_on: AlwaysOn;
+  };
+  review: {
+    /** A new reviewer's notes go straight to the agent (true) or wait for the owner (false, the default). */
+    auto: boolean;
+    viewing: PageViewers[];
+  };
+  /** Copies opened for review whose file is gone: what "Archive missing pages" puts away. */
+  missing: number;
+  /** Project folders (roots) that are gone from disk: forgetting one archives its pages (`project forget-root --drop`). */
+  gone_folders: string[];
+  about: {
+    version: string;
+    state_dir: string;
+    /** The newest CLI that called this server, when it is newer than the server; null otherwise. */
+    newer_cli: string | null;
+  };
+}
+
+/**
+ * POST /hub/api/settings/review {auto}; POST /hub/api/projects/<id>/rename {name}, /merge {from} (`from`'s roots and
+ * pages move into <id>), /forget-root {root, drop?}; POST /hub/api/projects/archive-missing {project?}.
+ * `message`: what changed, in words, for the page's status line.
+ */
+export interface ProjectActionResult {
+  ok: true;
+  message: string;
+}

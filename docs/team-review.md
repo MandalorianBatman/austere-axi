@@ -54,7 +54,7 @@ austere-axi share block r0123456789             # refused; that browser cannot a
 
 ## Links from before (0.12 and older)
 
-Invites in `invites.json` move into `hub.db` the first time this version opens it (the file is renamed `invites.json.imported`). Each becomes an **old-style link**: reusable, no expiry, the same URL as before, and the cookie it gave reviewers keeps working. Each new browser that opens an old-style link becomes a device of its own. `share list` marks these links; revoke one and share again to get a single-use link. (The hub's People view, RLM-396, will offer this in one click; the server already has it: `POST /hub/api/people/<id>/single-use`.)
+Invites in `invites.json` move into `hub.db` the first time this version opens it (the file is renamed `invites.json.imported`). Each becomes an **old-style link**: reusable, no expiry, the same URL as before, and the cookie it gave reviewers keeps working. Each new browser that opens an old-style link becomes a device of its own. `share list` marks these links; revoke one and share again to get a single-use link, or use **Make single-use** in the hub's Settings → People.
 
 ## Trust model
 
@@ -67,9 +67,9 @@ Anyone who opens a link before the person you sent it to becomes that device. Se
 - Tokens and secrets are kept out of `server.log`; it names devices by name and id.
 - Your own phone link carries the owner key (`~/.austere-axi/owner.key`); do not forward it. To revoke all old phone links and owner cookies, delete that file and restart the server.
 
-## For the hub's People view (owner only)
+## For the hub's Settings → People (owner only)
 
-The owner's browser (owner cookie, same-origin) can use these; a device never can.
+[Settings](hub.md#settings) in the hub shows all of this: who waits, the links nobody has opened, the devices, and where new reviewers' notes go. The owner's browser (owner cookie, same-origin) can use these routes; a device never can. A share or an approval that leaves `auto` out takes the owner's default (`share default hold|auto`, Settings → Review defaults; hold unless changed).
 
 | Route | Does |
 |---|---|
@@ -77,8 +77,9 @@ The owner's browser (owner cookie, same-origin) can use these; a device never ca
 | `POST /hub/api/people/<id>/rename` `{ name }` | rename a link or device |
 | `POST /hub/api/people/<id>/scope` `{ scope: "page", page }` \| `{ scope: "project", project }` \| `{ scope: "all" }` | change what it reaches; its open pages outside the new scope are cut off |
 | `POST /hub/api/people/<id>/revoke` | revoke it |
+| `POST /hub/api/people/share` `{ page, name, scope?, project?, auto? }` | Settings → People → New link: a named link for the page whose copy id is `page`, as `share` makes it. Returns the link as `share` does |
 | `POST /hub/api/people/<id>/single-use` `[{ expiresAt }]` | an old-style link gets a fresh single-use link; the old URL and cookie stop working |
-| `GET /hub/api/people/requests` | `{ waiting, blocked, switch }`: requests waiting (the oldest first; the hub header's count is `waiting.length`) and blocked ones, each with `id`, `name`, `status`, `page`, `file`, `project`, `addr`, `host`, `userAgent`, `browser`, `verifiedLogin`, `tailscaleDevice`, `createdAt`, `decidedAt`; and `switch: { all, projects: [{ id, name, on }] }`, where `projects` lists only the projects whose own setting differs from `all` (it wins for their pages) |
+| `GET /hub/api/people/requests` | `{ waiting, blocked, switch }`: requests waiting (the oldest first; Settings' count in the hub's sidebar is `waiting.length`) and blocked ones, each with `id`, `name`, `status`, `page`, `file`, `project`, `addr`, `host`, `userAgent`, `browser`, `verifiedLogin`, `tailscaleDevice`, `createdAt`, `decidedAt`; and `switch: { all, projects: [{ id, name, on }] }`, where `projects` lists only the projects whose own setting differs from `all` (it wins for their pages) |
 | `POST /hub/api/people/requests/switch` `{ on, project? }` | without `project`: on or off for every page, clearing each project's own setting; with `project` (id or name): that project's own setting. Returns the `switch` |
 | `POST /hub/api/people/requests/<id>/approve` `[{ scope: "page" \| "project" \| "all", auto, name }]` | let that browser in; scope as for a share, relative to the page it asked from (default the page); `name` replaces the one it typed. 409 when that name already has that scope. Returns `{ request, device }` |
 | `POST /hub/api/people/requests/<id>/deny`, `/block` | refuse it; a blocked browser cannot ask again |

@@ -35,7 +35,7 @@ Status: Approved 2026-11-16. Built: stage 1 (shipped in 0.11.0), stages 2 and 3 
 
 ### Settled from the proposals
 
-Each row is: Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction).
+Q1–Q11: each row is Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction). Q12–Q18 are P1–P7 of the team-access issues RLM-397, RLM-398 and RLM-399, locked by Sid on 2026-11-17 as written; recorded here by RLM-396, the first PR of that group after they were locked.
 
 | # | Was | Decision | Issue | Status |
 |---|---|---|---|---|
@@ -50,8 +50,15 @@ Each row is: Accepted 2026-11-16 (owner away, proceed-with-assumptions instructi
 | Q9 | P9 | Activity triggers are generic and in the core, configured only at a terminal. | RLM-360 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q10 | P10 | A wiki block is "reviewed" only by an explicit action, per block or for all. A block with an open note stays unreviewed until the owner has seen the fix. | RLM-365 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q11 | P11 | The project default session is "author": the session that wrote each page. When the author session has continuations (A14), "author" means the newest session linked to the page through `parent_kind = continuation` edges, never a fork, so the default run resumes where omp actually continued. No author registered → `new` with the project's default harness. | RLM-346 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
+| Q12 | RLM-397 P1 | A named link is claimed once: the first browser that opens it becomes that person's device, and the link stops working. | RLM-397 | Locked (Sid, 2026-11-17). Built in RLM-397 |
+| Q13 | RLM-397 P2 | A link nobody has claimed expires (default 7 days). | RLM-397 | Locked (Sid, 2026-11-17). Built in RLM-397 |
+| Q14 | RLM-397 P3 | A link's scope is chosen when it is made: one page, a project, or every page. | RLM-397 | Locked (Sid, 2026-11-17). Built in RLM-397 |
+| Q15 | RLM-398 P4 | Access requests are off until the owner turns them on in Settings, per project or for every page. | RLM-398 | Locked (Sid, 2026-11-17). Built in RLM-398; the switch is in Settings → People (RLM-396) |
+| Q16 | RLM-399 P5 | On Tailscale, the reviewer's name comes from Tailscale and is shown as verified. Option: let chosen logins in without approval. | RLM-399 | Locked (Sid, 2026-11-17). Not built; Settings → Network keeps its place |
+| Q17 | RLM-399 P6 | Listening on the local network is off by default and is switched on in Settings, with the warning that traffic on it is not encrypted. | RLM-399 | Locked (Sid, 2026-11-17). Not built; Settings → Network keeps the switch's place, off |
+| Q18 | RLM-399 P7 | The owner never signs in over plain HTTP on the local network: that listener serves reviewers only. | RLM-399 | Locked (Sid, 2026-11-17). Not built (no local-network listener yet) |
 
-Sid can reverse any Q row when he is back. A reversal is a change to this note first, then to the issue.
+Sid can reverse any Q row when he is back. A reversal is a change to this note first, then to the issue. (Q12–Q18 were set by Sid himself.)
 
 ### Extra assumptions
 
@@ -301,6 +308,7 @@ The invariants in `AGENTS.md` stay unchanged:
 New rules in this design:
 
 - **Configuration that runs a command is set at a terminal only.** `attach on|off`, `adapter set`, `trigger add|remove`, `server install` and `server uninstall` refuse without a TTY, as `trust add` does. `adapters.json`, `attach.json` and `triggers.json` are read only from the state dir, never from a project or a page. Attach can also be turned on from the owner's review page (Q4); never by a reviewer or a hosted page.
+- **Settings is the owner's page, and sets nothing that runs a command** (RLM-396). `/?view=settings` and its routes (`/hub/api/settings`, `/hub/api/people`, `/hub/api/projects/…`) need the owner cookie, the `Host` allowlist and a same-site `Origin`, as every hub route. It changes who may review, where new reviewers' notes go, and projects; `server install`, `adapter set` and `trigger add` stay at a terminal and the page only names them. A change that widens who can reach the server (the local-network switch, RLM-399) asks for confirmation and says what it exposes.
 - **A supervisor is what the system says, not what a process claims.** A server is supervised when the unit that owns its cgroup runs the austere server and runs that process (directly, or below its main process, as `npx` does): it asks systemd (or launchd) for the unit's command and its main pid and compares. No environment variable can say so, and a CLI strips the supervisor's markers from the server it starts, so a command cannot hand its child a supervisor that does not exist.
 - **Threat model of the TTY rule.** It stops configuration that arrives as data (a page, a project file, a note, a hosted page) and an agent's ordinary non-interactive tool call. It does not stop a process that runs as the owner and allocates a pseudo-terminal, or that writes the state dir directly. Such a process already has the owner's full permissions (L7), so no rule inside austere-axi can hold it. The design does not claim to; the TTY rule keeps a prompt-injected or careless agent from turning attach on in passing. The control an agent cannot satisfy is the owner cookie on the review page; it is the only route a remote or hosted party can reach.
 - **No permission bypass by default** (A13). An adapter adds no `--approval-mode yolo`, `--allow-all` or similar flag on its own. The owner grants it at a terminal with `adapter set`, and `attach status` warns while a harness that denies writes has no grant.
@@ -394,7 +402,7 @@ One PR per stage (A3). A stage starts when the stages it depends on have merged.
 | 2 | RLM-337 pages without sessions | RLM-338 → RLM-339, RLM-340 | RLM-332 | Built, in 0.12.0 |
 | 3 | RLM-341 attach | RLM-342 (spike, may run from stage 1) → RLM-343, RLM-344 → RLM-345 → RLM-346. RLM-347 stays parked. | RLM-337 | Built, in 0.12.0 (RLM-347 parked) |
 | 4 | RLM-348 history and reuse | RLM-349 → RLM-350 → RLM-351, RLM-352 → RLM-353, RLM-354 | RLM-332 (RLM-334); may run beside stage 3 | Built, in 0.13.0 |
-| 5 | RLM-355 dashboard shell | RLM-356 → RLM-357 → RLM-358 | RLM-336, RLM-346, RLM-349, RLM-350 | Built |
+| 5 | RLM-355 dashboard shell | RLM-356 → RLM-357 → RLM-358; RLM-396 Settings (after RLM-397, RLM-398; RLM-399 follows it) | RLM-336, RLM-346, RLM-349, RLM-350 | Built |
 | 6 | RLM-359 wiki | core PR: RLM-360. `austere-wiki` repo: RLM-361 → RLM-362 → RLM-363 → RLM-364 → RLM-365 → RLM-366. RLM-367 stays parked. | RLM-345, RLM-351, RLM-352 | Core: PR #108 merged (RLM-360). `austere-wiki` repo (RLM-361–366): built, in review |
 
 Every PR runs `npm run build && npm test && npm run typecheck`; a chrome or hub UI change also runs `npm run test:browser` and screenshots at 1280 and 390 px. Each PR updates the guide in `docs/` and `HELP`/`COMMANDS` for every user-facing change it makes.

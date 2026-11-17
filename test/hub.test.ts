@@ -12,7 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { SessionStore, sessionId } from "../src/cli/sessions.ts";
 import { Hub, SCHEMA_VERSION, openDatabase, unanswered } from "../src/cli/hub.ts";
 import { shellInbox, shellPages, shellProjects } from "../src/cli/hub-api.ts";
-import type { InboxResponse, PagesResponse, ShellPage } from "../src/shared/hub-api.ts";
+import type { InboxResponse, PagesResponse, ProjectsResponse, SettingsResponse, ShellPage } from "../src/shared/hub-api.ts";
 import { findProject, listProjects, mergeProjects } from "../src/cli/projects.ts";
 import { claimLink, ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
@@ -1202,5 +1202,94 @@ test("hub list on a state dir a server of another version holds: hub.db is left 
     } catch (err) {
       if (process.platform !== "win32") throw err;
     }
+  }
+});
+
+test("/hub/api/settings (RLM-396): the owner's only; network, defaults, about; the default for notes; project commands as the CLI does them", async () => {
+  const port = await freePort();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-settings-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port), AUSTERE_AXI_LINK_HOST: "127.0.0.1" };
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-settings-work-")));
+  const call = (method: string, route: string, extra: Record<string, string> = {}, body: unknown = undefined) => req(method, route, body, port, state, extra);
+  const json = async <T>(method: string, route: string, body: unknown = undefined, extra: Record<string, string> = {}): Promise<T> => {
+    const r = await call(method, route, extra, body);
+    assert.equal(r.status, 200, `${method} ${route}: ${r.data}`);
+    return JSON.parse(r.data) as T;
+  };
+  const same = { origin: `http://127.0.0.1:${port}` };
+  // Two repositories, a page in each.
+  const pageIn = (name: string): string => {
+    fs.mkdirSync(path.join(work, name, ".git"), { recursive: true });
+    const file = path.join(work, name, "plan.html");
+    fs.copyFileSync(FILE, file);
+    return file;
+  };
+  const [shopFile, cartFile] = [pageIn("shop"), pageIn("cart")];
+  try {
+    for (const f of [shopFile, cartFile]) assert.equal((await cliWith(env, f)).code, 0);
+
+    // The owner's only: no cookie, a reviewer, another site.
+    const writes = ["/hub/api/settings/review", "/hub/api/people/share", "/hub/api/projects/archive-missing"];
+    const nobody = { cookie: "", "x-austere-key": "" };
+    assert.equal((await call("GET", "/hub/api/settings", nobody)).status, 403);
+    for (const route of writes) assert.equal((await call("POST", route, { ...nobody, ...same }, { auto: true })).status, 403, route);
+    const shared = JSON.parse((await call("POST", "/api/share", {}, { file: shopFile, name: "Ana" })).data) as { link: string };
+    const ana = { cookie: await claimLink(port, shared.link), "x-austere-key": "" };
+    assert.equal((await call("GET", "/hub/api/settings", ana)).status, 403);
+    for (const route of writes) assert.equal((await call("POST", route, { ...ana, ...same }, { auto: true })).status, 403, route);
+    assert.equal((await call("GET", "/hub/api/settings", { origin: "https://evil.example" })).status, 403);
+    for (const route of writes) assert.equal((await call("POST", route, { origin: "https://evil.example" }, { auto: true })).status, 403, route);
+
+    // A newer CLI than the server says so in About.
+    assert.equal((await call("GET", "/api/sessions", { "x-austere-cli": "99.0.0" })).status, 200);
+    const s = await json<SettingsResponse>("GET", "/hub/api/settings");
+    assert.deepEqual(s.network.addresses.map((a) => [a.kind, a.url]), [["this_computer", `http://127.0.0.1:${port}`]]);
+    assert.deepEqual(s.network.share, { url: `http://127.0.0.1:${port}`, from: "link_host" });
+    assert.equal(s.network.tailscale, null);
+    assert.deepEqual(s.network.always_on, { mode: "kept_on", supervisor: null, unit: null, idle_minutes: null }, "AUSTERE_AXI_PERSIST");
+    assert.deepEqual([s.review.auto, s.missing, s.gone_folders], [false, 0, []]);
+    assert.deepEqual(s.about, { version: JSON.parse(fs.readFileSync("package.json", "utf8")).version, state_dir: state, newer_cli: "99.0.0" });
+
+    // The default for a new reviewer's notes: a share or an approval that does not say takes it; one that does keeps its own.
+    assert.deepEqual(await json("POST", "/hub/api/settings/review", { auto: true }, same), { ok: true, message: "New reviewers' notes go straight to the agent." });
+    assert.equal((await call("POST", "/hub/api/settings/review", same, { auto: "yes" })).status, 400);
+    assert.match((await cliWith(env, "share", "default")).out, /auto: a new reviewer's notes go straight to the agent/);
+    assert.equal(JSON.parse((await call("POST", "/api/share", {}, { file: shopFile, name: "Bo" })).data).auto, true);
+    assert.equal(JSON.parse((await call("POST", "/api/share", {}, { file: shopFile, name: "Cy", auto: false })).data).auto, false);
+    const held = await cliWith(env, "share", shopFile, "--as", "Di", "--hold");
+    assert.match(held.out, /mode: "hold:/, held.out);
+    assert.equal((await cliWith(env, "share", "default", "hold")).code, 0);
+    assert.equal((await json<SettingsResponse>("GET", "/hub/api/settings")).review.auto, false);
+    assert.equal((await cliWith(env, "share", shopFile, "--as", "Ed", "--auto", "--hold")).code, 2, "--auto and --hold exclude each other");
+
+    // New link from Settings: a page by its id.
+    const shopId = sessionId(shopFile);
+    const link = await json<{ name: string; auto: boolean; reaches: string; link: string }>("POST", "/hub/api/people/share", { page: shopId, name: "Fy", scope: "page" }, same);
+    assert.deepEqual([link.name, link.auto, link.reaches], ["Fy", false, shopFile]);
+    assert.match(link.link, new RegExp(`^http://127\\.0\\.0\\.1:${port}/s/${shopId}\\?invite=`));
+    assert.equal((await call("POST", "/hub/api/people/share", same, { page: "000000000000", name: "Gu" })).status, 404);
+
+    // Projects: rename, merge, forget a folder, archive missing pages.
+    const projects = async () => (await json<ProjectsResponse>("GET", "/hub/api/projects")).projects;
+    const byName = new Map((await projects()).map((p) => [p.name, p.id]));
+    const shopPid = byName.get("shop") as string;
+    const cartPid = byName.get("cart") as string;
+    assert.deepEqual(await json("POST", `/hub/api/projects/${shopPid}/rename`, { name: "store" }, same), { ok: true, message: "Renamed shop to store." });
+    assert.equal((await call("POST", `/hub/api/projects/${cartPid}/rename`, same, { name: "store" })).status, 400, "a name another project has");
+    assert.deepEqual(await json("POST", `/hub/api/projects/${shopPid}/merge`, { from: cartPid }, same), { ok: true, message: "Merged cart into store." });
+    assert.deepEqual((await projects()).map((p) => [p.name, p.roots.length]), [["store", 2]]);
+    assert.equal((await call("POST", `/hub/api/projects/${shopPid}/forget-root`, same, { root: "/nowhere" })).status, 400);
+    fs.rmSync(path.join(work, "cart"), { recursive: true });
+    const s2 = await json<SettingsResponse>("GET", "/hub/api/settings");
+    assert.deepEqual([s2.missing, s2.gone_folders], [1, [path.join(work, "cart")]]);
+    assert.deepEqual(await json("POST", "/hub/api/projects/archive-missing", {}, same), { ok: true, message: "Archived 1 missing page." });
+    const forgot = await json<{ message: string }>("POST", `/hub/api/projects/${shopPid}/forget-root`, { root: path.join(work, "cart"), drop: true }, same);
+    assert.match(forgot.message, /^Forgot .*cart\. Its pages stay in store, archived; their notes are kept\.$/);
+    assert.deepEqual((await projects()).map((p) => p.roots), [[path.join(work, "shop")]]);
+    assert.equal((await call("POST", `/hub/api/projects/zzz/rename`, same, { name: "x" })).status, 404);
+  } finally {
+    await cliWith(env, "stop");
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });

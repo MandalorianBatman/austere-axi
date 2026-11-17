@@ -8,7 +8,7 @@ austere-axi hub list    # the same, for an agent: [words] [--project p] [--archi
 austere-axi hub notes   # every note, same for an agent: [words] [--project p] [--unanswered] [--limit n]
 ```
 
-The home page has a sidebar and four views. The sidebar lists the projects, each with its pages open for review and its unanswered notes; a page in several worktrees has a small chip per copy. ▸ folds a project away. The views:
+The home page has a sidebar and five views. The sidebar lists the projects, each with its pages open for review and its unanswered notes; a page in several worktrees has a small chip per copy. ▸ folds a project away. The views:
 
 - **Inbox** (the first time; then the view you used last): the pages open for review, in three groups, newest activity first in each.
   - **Needs you:** the agent changed the page since you last had it open (`Changed since you looked: 2 revisions`), a reviewer's notes wait for you to release them, or the last agent run on it failed. A page you never had open in a browser is not "changed".
@@ -18,6 +18,7 @@ The home page has a sidebar and four views. The sidebar lists the projects, each
 - **Pages:** one section per project and one row per page, pages with unanswered notes first. **Open** (opened for review, not archived), **Everything** and **Archived** each show their page count; when a view is empty it names the others that are not. In **Archived** a row has **Unarchive**.
 - **Notes:** every note, newest first, with its project and copy; search, status and author filters. `/notes` (and its old links, with their filters) opens this view.
 - **Runs:** the newest 100 agent runs, with their state, page, harness and reason.
+- **Settings:** this server, without a terminal. See [Settings](#settings).
 
 The search box at the top looks for pages by title, path or project, and for **parts**: statements whose text matches (the same index as `find`). A part opens its page with that part outlined. Every view and filter is in the address (`/?view=pages&project=shop`), so the back button and bookmarks work.
 
@@ -26,6 +27,18 @@ The search box at the top looks for pages by title, path or project, and for **p
 ### From a review page
 
 The owner's review header has a breadcrumb, **project ›** title, back to the hub (filtered to that project), and, on a page with copies in several worktrees, a list that opens the same page in another copy. On a phone the breadcrumb is a **‹** and the list is left out for room: the hub's chips and the quick switcher open the other copies. **Ctrl+K** (**⌘K** on a Mac; anywhere on the page, the composer and the page itself too), or **Go to page…** in the `⋯` menu, opens a quick switcher: pages you opened lately first, then type to find pages and parts. **Next unanswered page** in the `⋯` menu goes to the next page in the inbox with notes no agent answered, at the copy that has them. A reviewer's page, and a hosted page, has none of this.
+
+### Settings
+
+**Settings** (`/?view=settings`) is the owner's page for this local server: hosted pages keep their own invites (`publish --invite`). Its count in the sidebar is the people waiting for access. Every setting on it has a terminal form, named on the page, so nothing is lost without it; what runs a command (`server install`, `adapter set`, `trigger add`) stays at a terminal.
+
+- **People and access:** who waits for access, with **Approve** (this page, the page's project, or every page; their notes held for you or sent straight to the agent), **Deny** and **Block**; where browsers without a link may ask (every page, or per project; a project's own choice wins); **New link**, a named link for one page, its project or every page, as **Share** in a page's `⋯` menu makes it; the links nobody has opened yet (**Copy link**, **Cancel link**, **Make single-use** for an old-style one); and the devices with access: how they got in, what they reach, where their notes go, when and from which address they were last seen, **Notes by** them, a new reach, **Rename** and **Revoke**. At a terminal: `share`, `share list|revoke`, `share requests`, `share approve|deny|block`. See [Team review](team-review.md).
+- **Network:** the addresses the server answers on (this computer, Tailscale, an address added at a terminal), the address to share and what set it, and whether the server stays on: run by a service (`server install`), started to stay on, or stopping after 30 idle minutes. Two places are kept for what comes next: the reviewer's name from Tailscale, and a switch to listen on the local network (today `AUSTERE_AXI_HOST` or `server --also-listen <address>` at a terminal).
+- **Review defaults:** where a new reviewer's notes go unless a share or an approval says: **Hold them for me** (the default) or **Send them straight to the agent** (`share default hold|auto`; `share --hold` or `--auto` for one). Reviewers you let in already keep their own. **On pages now** lists the pages someone has open and who.
+- **Projects:** each project's folders, **Rename**, **Merge into** an older project of the same repository, **Forget** a folder (a folder that is gone: its pages are archived, notes kept), and **Archive missing pages** for copies whose file is gone. At a terminal: `project rename|merge|forget-root`, `archive --missing`.
+- **About:** the version, the state folder and the port, and a note when the austere-axi you run at the terminal is newer than the server (restart it: `server restart`).
+
+Settings reads `/hub/api/settings` and `/hub/api/people`; its changes are `POST /hub/api/settings/review`, `/hub/api/people/…` and `/hub/api/projects/…`, with the owner's cookie from the same site, as every hub route.
 
 ### What the hub sends
 

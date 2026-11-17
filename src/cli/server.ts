@@ -18,7 +18,7 @@ import { cloudUrl, readCloud } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
 import type { AddressSettings, Tailnet } from "./net.ts";
-import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
+import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir, versionGt } from "./paths.ts";
 import { RENDER_CHECK_AUTHOR, SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
@@ -42,7 +42,7 @@ import { adapterFor, findOnPath, spawnSpec } from "./adapters/index.ts";
 import { readAdapters } from "./adapters/config.ts";
 import type { AdaptersConfig } from "./adapters/config.ts";
 import type { AttachMode } from "./adapters/types.ts";
-import { copyLabel, findProject, findRoot } from "./projects.ts";
+import { copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, LoginCodes, OWNER_COOKIE, ownerCookie, ownerKey, reviewerCookies, safeEqual, tokenFromCookie } from "./invites.ts";
 import { DeviceStore, covers, isLive } from "./devices.ts";
@@ -53,7 +53,7 @@ import dns from "node:dns";
 import { reviewerItem } from "./items.ts";
 import { missingPage } from "./hub-page.ts";
 import { copiesToFlip, copySummary, shellInbox, shellPages, shellProjects, shellRuns, shellSearch } from "./hub-api.ts";
-import type { ArchiveResult, CopySummary, InboxResponse, NotesResponse, PagesResponse, PagesView, ProjectsResponse, HubRunsResponse, SearchResponse } from "../shared/hub-api.ts";
+import type { ArchiveResult, CopySummary, InboxResponse, NotesResponse, PagesResponse, PagesView, ProjectActionResult, ProjectsResponse, HubRunsResponse, SearchResponse, SettingsResponse } from "../shared/hub-api.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
 import { Peer } from "./peer.ts";
 import { parseClientFrame } from "../shared/sync.ts";
@@ -549,6 +549,8 @@ export async function runServer({
   let tailnet: Tailnet | null = null;
   const linkBase = linkUrl(); // throws on a bad AUSTERE_AXI_LINK_URL: better to stop here than print wrong links
   let lastActivity = Date.now();
+  /** The newest CLI version that called this server, when it is newer than the server (Settings → About). */
+  let newestCli: string | null = null;
   // A supervised server is always on: its supervisor decides when it stops.
   const idleMs = persist || persistEnv() || supervisorName ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
   const pageHoldMs = msEnv("AUSTERE_AXI_PAGE_HOLD_MS", PAGE_HOLD_MS);
@@ -672,6 +674,19 @@ export async function runServer({
     return { kind, id: pid };
   }
 
+  /**
+   * Whether a new link or approval sends its notes straight to the agent: `asked` when the owner said
+   * (true or false), else the owner's default (Settings → Review defaults). Auto and attach exclude each
+   * other (Q3): asked for, that is the error; from the default, the notes are held instead.
+   */
+  function shareAuto(asked: unknown, scope: Scope): boolean | string {
+    const explicit = typeof asked === "boolean";
+    const auto = explicit ? asked : requests.defaultAuto();
+    if (!auto) return false;
+    const refused = autoAttachConflict(scope);
+    return !refused ? true : explicit ? refused : false;
+  }
+
   /** A new link for the page `s`, from the CLI or the review page's Share. An HTTP error, or the link. */
   async function createShare(s: Session, body: RequestBody): Promise<{ status: number; error: string } | ShareResponse> {
     await ensureTailnetListener();
@@ -680,11 +695,8 @@ export async function runServer({
     }
     const scope = scopeFor(s, body);
     if (typeof scope === "string") return { status: 400, error: scope };
-    const auto = Boolean(body.auto);
-    if (auto) {
-      const refused = autoAttachConflict(scope);
-      if (refused) return { status: 409, error: refused };
-    }
+    const auto = shareAuto(body.auto, scope);
+    if (typeof auto === "string") return { status: 409, error: auto };
     let expiresAt: number | undefined;
     if (body.expiresAt !== undefined && body.expiresAt !== null) {
       if (typeof body.expiresAt !== "number" || !Number.isFinite(body.expiresAt) || body.expiresAt <= Date.now()) return { status: 400, error: "expiresAt must be a time in the future (epoch ms)" };
@@ -779,9 +791,8 @@ export async function runServer({
         else if (!s) return { status: 409, error: "the page this request came from is gone; approve it for every page (scope all), or deny it" };
         else scope = scopeFor(s, body);
         if (typeof scope === "string") return { status: 400, error: scope };
-        const auto = Boolean(body.auto);
-        const refused = auto ? autoAttachConflict(scope) : "";
-        if (refused) return { status: 409, error: refused };
+        const auto = shareAuto(body.auto, scope);
+        if (typeof auto === "string") return { status: 409, error: auto };
         const device = requests.approve(row.id, scope, auto, body.name);
         if (s) {
           watch(s);
@@ -1566,14 +1577,18 @@ export async function runServer({
    */
   function setArchived(id: string, at: number | null): boolean {
     if (!hub.setArchived(id, at)) return false;
-    const s = store.get(id);
-    if (s) {
-      s.archivedAt = at;
-      const waiting = polls.get(id);
-      if (at && waiting && !waiting.done) finishPoll(s, waiting, { status: "archived" });
-      broadcastPresence(s);
-    }
+    archivedInMemory(id, at);
     return true;
+  }
+
+  /** hub.db has the copy `id` archived at `at` (null: open): its open review pages lock or unlock, and its poll ends. */
+  function archivedInMemory(id: string, at: number | null): void {
+    const s = store.get(id);
+    if (!s) return;
+    s.archivedAt = at;
+    const waiting = polls.get(id);
+    if (at && waiting && !waiting.done) finishPoll(s, waiting, { status: "archived" });
+    broadcastPresence(s);
   }
 
   /** Archive the copy `id`, or with `every` each copy of its page: see Hub.archivePlan. Null when the hub does not know it. */
@@ -1750,6 +1765,9 @@ export async function runServer({
     if (route !== "health") {
       const key = req.headers["x-austere-key"];
       if (typeof key !== "string" || !safeEqual(key, ownerToken)) return send(res, 403, { error: "owner key required" });
+      // Settings → About says when a newer CLI talks to this server (the owner updated austere-axi but not the running server).
+      const cli = req.headers["x-austere-cli"];
+      if (typeof cli === "string" && /^\d+\.\d+\.\d+[\w.+-]{0,40}$/.test(cli) && versionGt(cli, newestCli ?? VERSION)) newestCli = cli;
     }
     if (route === "health") {
       const nonce = url.searchParams.get("nonce");
@@ -1793,6 +1811,8 @@ export async function runServer({
     if (route === "login" && req.method === "POST") return send(res, 200, { code: logins.issue(), ttlMs: LOGIN_TTL_MS } satisfies LoginResponse);
     if (route === "share/list") return send(res, 200, accessList(url.searchParams.get("links") === "1") satisfies ShareListResponse);
     if (route === "share/requests" && req.method === "GET") return send(res, 200, requestsList() satisfies AccessRequestsResponse);
+    // `share default [hold|auto]`: the owner's default for a new reviewer's notes, as Settings → Review defaults sets it.
+    if (route === "share/default" && req.method === "GET") return send(res, 200, { auto: requests.defaultAuto() });
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req);
     // The agent session the command runs in (RLM-343); recorded once the route knows its pages.
@@ -1801,6 +1821,12 @@ export async function runServer({
       caller = parseCallerReport(body.session);
     } catch (err) {
       return send(res, 400, { error: String((err as Error).message) });
+    }
+    if (route === "share/default") {
+      if (typeof body.auto !== "boolean") return send(res, 400, { error: "auto must be true or false" });
+      requests.setDefaultAuto(body.auto);
+      log("settings-review", body.auto ? "auto" : "hold");
+      return send(res, 200, { auto: body.auto });
     }
     if (route === "share/revoke") {
       const done = revokeAccess(body.key);
@@ -2242,6 +2268,7 @@ export async function runServer({
       for (const id of ids) setArchived(id, at);
       return send(res, 200, { ok: true, ids } satisfies ArchiveResult);
     }
+    if (route === "settings" || route.startsWith("settings/") || route.startsWith("projects/")) return hubSettings(req, res, route);
     if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
     const project = projectParam(url);
     if (route === "projects") return send(res, 200, { projects: shellProjects(hub, copyListening) } satisfies ProjectsResponse);
@@ -2275,6 +2302,113 @@ export async function runServer({
     }
     if (route === "runs") return send(res, 200, { runs: shellRuns(hub, { project: project.id }), project: projectField(project) } satisfies HubRunsResponse);
     return send(res, 404, { error: "not found" });
+  }
+
+  /** Where the address teammates get comes from: the same order as remoteBase(). Null: only this computer listens. */
+  function shareAddress(): SettingsResponse["network"]["share"] {
+    if (linkBase) return { url: linkBase.base, from: "link_url" };
+    const host = remoteHost();
+    if (!host) return null;
+    const from = process.env.AUSTERE_AXI_LINK_HOST ? "link_host" : tailnet && listeners.has(tailnet.ip) ? "tailscale" : "host";
+    return { url: `http://${host}:${port}`, from };
+  }
+
+  function settingsView(): SettingsResponse {
+    const addresses = Array.from(listeners.keys()).map((host) => ({
+      kind: host === "127.0.0.1" ? ("this_computer" as const) : host === tailnetBound ? ("tailscale" as const) : ("added" as const),
+      host,
+      url: `http://${host.includes(":") ? `[${host}]` : host}:${port}`,
+    }));
+    // Who has which page open now: one entry per person per page, the owner's tabs as one.
+    const viewing: SettingsResponse["review"]["viewing"] = [];
+    for (const [id, set] of clients) {
+      const seen = new Map<string, { name: string; role: "owner" | "reviewer" }>();
+      for (const c of set) seen.set(c.viewer.role === "owner" ? "owner" : `r:${c.viewer.deviceId}`, { name: c.viewer.name, role: c.viewer.role });
+      const a = seen.size ? hub.artifact(id) : null;
+      if (a) viewing.push({ id, title: a.title || path.basename(a.file), file: a.file, viewers: [...seen.values()] });
+    }
+    return {
+      network: {
+        port,
+        addresses,
+        share: shareAddress(),
+        tailscale: tailnet ? { ip: tailnet.ip, dns_name: tailnet.dnsName } : null,
+        always_on: {
+          mode: runBy ? "service" : idleMs === 0 ? "kept_on" : "idles",
+          supervisor: supervisorName,
+          unit: runBy?.unit ?? null,
+          idle_minutes: idleMs ? Math.max(1, Math.round(idleMs / 60_000)) : null,
+        },
+      },
+      review: { auto: requests.defaultAuto(), viewing },
+      missing: hub.missingCopies().length,
+      gone_folders: listProjects(hub.db).flatMap((p) => p.roots.filter((r) => !fs.existsSync(r.root)).map((r) => r.root)),
+      about: { version: VERSION, state_dir: stateDir(), newer_cli: newestCli },
+    };
+  }
+
+  /**
+   * Settings (RLM-396), the owner's only: GET /hub/api/settings; POST /hub/api/settings/review {auto}; the
+   * project commands of RLM-333 and RLM-389 (`project rename|merge|forget-root`, `archive --missing`), each as
+   * the CLI does it: POST /hub/api/projects/<id>/rename {name}, /merge {from}, /forget-root {root, drop?}, and
+   * POST /hub/api/projects/archive-missing {project?}. People is /hub/api/people (hubPeople).
+   */
+  async function hubSettings(req: http.IncomingMessage, res: http.ServerResponse, route: string): Promise<void> {
+    if (route === "settings") {
+      if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
+      // A Tailscale that came up or moved since the last check shows now, not in a minute.
+      if (!fixedHost) await recheckTailnet();
+      return send(res, 200, settingsView() satisfies SettingsResponse);
+    }
+    if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
+    const body = await readBody(req, 16 * 1024);
+    const done = (message: string) => send(res, 200, { ok: true, message } satisfies ProjectActionResult);
+    if (route === "settings/review") {
+      if (typeof body.auto !== "boolean") return send(res, 400, { error: "auto must be true or false" });
+      requests.setDefaultAuto(body.auto);
+      log("settings-review", body.auto ? "auto" : "hold");
+      return done(body.auto ? "New reviewers' notes go straight to the agent." : "New reviewers' notes wait for you.");
+    }
+    if (route === "projects/archive-missing") {
+      const project = typeof body.project === "string" ? body.project : "";
+      const copies = hub.missingCopies(project);
+      const at = Date.now();
+      for (const c of copies) setArchived(c.id, at);
+      const waiting = copies.reduce((n, c) => n + c.unanswered, 0);
+      return done(copies.length ? `Archived ${copies.length} missing ${copies.length === 1 ? "page" : "pages"}${waiting ? `, with ${waiting} unanswered ${waiting === 1 ? "note" : "notes"} (kept)` : ""}.` : "No page opened for review has a missing file.");
+    }
+    const m = /^projects\/([^/]{1,80})\/(rename|merge|forget-root)$/.exec(route);
+    if (!m) return send(res, 404, { error: "not found" });
+    const [, id, action] = m;
+    const p = hub.db.prepare("SELECT id, name FROM projects WHERE id = ?").get(id) as { id: string; name: string } | undefined;
+    if (!p) return send(res, 404, { error: "no such project" });
+    try {
+      if (action === "rename") {
+        if (typeof body.name !== "string") return send(res, 400, { error: "name is required" });
+        const renamed = renameProject(hub.db, p.id, body.name);
+        log("project-rename", p.id, renamed.name);
+        return done(`Renamed ${p.name} to ${renamed.name}.`);
+      }
+      if (action === "merge") {
+        const from = typeof body.from === "string" ? (hub.db.prepare("SELECT id, name FROM projects WHERE id = ?").get(body.from) as { id: string; name: string } | undefined) : undefined;
+        if (!from) return send(res, 400, { error: "from must be another project's id" });
+        mergeProjects(hub.db, p.id, from.id);
+        log("project-merge", p.id, from.id);
+        return done(`Merged ${from.name} into ${p.name}.`);
+      }
+      // forget-root: only a root of this project, as the page lists them.
+      const root = typeof body.root === "string" ? body.root : "";
+      if (!listProjects(hub.db).find((x) => x.id === p.id)?.roots.some((r) => r.root === root)) return send(res, 400, { error: `not a root of ${p.name}` });
+      const r = forgetRoot(hub.db, root, { drop: body.drop === true });
+      const at = Date.now();
+      for (const file of r.archived) archivedInMemory(sessionId(file), at);
+      log("project-forget-root", p.id, root, r.status);
+      if (r.status === "dropped") return done(`Forgot ${root}. Its pages stay in ${r.project}, archived; their notes are kept.`);
+      if (r.again) return done(`${root} is a folder of ${r.again.project} again at once: it has a .git, or pages right in it and no project folder above.`);
+      return done(`Forgot ${root}.${r.went.length ? ` Its pages moved to the projects their folders belong to.` : ""}`);
+    } catch (err) {
+      return send(res, 400, { error: String((err as Error).message || err) });
+    }
   }
 
   /**
@@ -2322,7 +2456,8 @@ export async function runServer({
    * or project}, /revoke, and /single-use (an old-style link gets a fresh single-use token).
    * Requests (RLM-398), for People → Waiting and the hub header's count: GET /hub/api/people/requests;
    * POST /hub/api/people/requests/switch {on, project?}; POST /hub/api/people/requests/<id>/approve
-   * {scope?, project?, auto?, name?}, /deny, /block. The owner's only.
+   * {scope?, project?, auto?, name?}, /deny, /block. Settings → People → New link: POST /hub/api/people/share
+   * {page (a copy's id), name, scope?, project?, auto?} (auto left out: the owner's default). The owner's only.
    */
   async function hubPeople(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     // It holds the links: never for another site, GET included.
@@ -2337,6 +2472,15 @@ export async function runServer({
       const body = await readBody(req, 16 * 1024);
       const done = asked[1] ? decideRequest(asked[1], asked[2], body) : changeRequestSwitch(body);
       return "error" in done ? send(res, done.status, { error: done.error }) : send(res, 200, done);
+    }
+    if (url.pathname === "/hub/api/people/share") {
+      if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
+      const body = await readBody(req, 16 * 1024);
+      const a = typeof body.page === "string" && /^[a-f0-9]{12}$/.test(body.page) ? hub.artifact(body.page) : null;
+      if (!a) return send(res, 404, { error: "not in the hub" });
+      if (!fs.existsSync(a.file)) return send(res, 409, { error: `the file is gone: ${a.file}` });
+      const made = await createShare(store.ensure(a.file), body);
+      return "error" in made ? send(res, made.status, { error: made.error }) : send(res, 200, made satisfies ShareResponse);
     }
     if (url.pathname === "/hub/api/people") {
       if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
@@ -2712,11 +2856,11 @@ export async function runServer({
       if ("error" in made) return send(res, made.status, { error: made.error });
       return send(res, 200, made satisfies ShareResponse);
     }
-    // What the Share dialog offers: the page's project, when it has one.
+    // What the Share dialog offers: the page's project, when it has one, and the owner's default for notes (Settings).
     if (sub === "/share" && req.method === "GET") {
       if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
       const p = projectOfPage(s);
-      return send(res, 200, { project: p ? { id: p.id, name: p.name } : null, remote: Boolean(remoteBase()) });
+      return send(res, 200, { project: p ? { id: p.id, name: p.name } : null, remote: Boolean(remoteBase()), auto: requests.defaultAuto() });
     }
     // The attach popover and the run panel (RLM-346): the owner's only, as reviewers are refused above.
     // A GET from a foreign Origin is refused too: it lists the page's agent sessions.

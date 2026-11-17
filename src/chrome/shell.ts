@@ -1,8 +1,11 @@
 // The hub shell (RLM-357): the owner's home page, a small client app over /hub/api (src/cli/hub-api.ts).
-// A sidebar of projects and their pages; the views Inbox (default) · Pages · Notes · Runs; search over
+// A sidebar of projects and their pages; the views Inbox (default) · Pages · Notes · Runs · Settings (settings.ts); search over
 // pages and parts. Plain DOM through h(), every text through textContent. The server answers only the
 // owner (the cookie); this page holds no secret of its own.
 import { h } from "./dom.ts";
+import { renderSettings } from "./settings.ts";
+import type { SettingsUi } from "./settings.ts";
+import type { AccessRequestsResponse } from "../cli/server.ts";
 import type { Child } from "./dom.ts";
 import type {
   ArchiveResult,
@@ -30,12 +33,13 @@ interface HubBoot {
 
 const BOOT: HubBoot = (window as Window & { __AUSTERE_HUB__?: HubBoot }).__AUSTERE_HUB__ ?? { version: "", home: "", sep: "/" };
 
-type View = "inbox" | "pages" | "notes" | "runs" | "search";
+type View = "inbox" | "pages" | "notes" | "runs" | "settings" | "search";
 const VIEWS: { id: Exclude<View, "search">; label: string }[] = [
   { id: "inbox", label: "Inbox" },
   { id: "pages", label: "Pages" },
   { id: "notes", label: "Notes" },
   { id: "runs", label: "Runs" },
+  { id: "settings", label: "Settings" },
 ];
 const isView = (v: string | null): v is Exclude<View, "search"> => VIEWS.some((x) => x.id === v);
 
@@ -585,7 +589,23 @@ async function renderSearch(): Promise<Child[]> {
   ];
 }
 
-const RENDER: Record<View, () => Promise<Child[]>> = { inbox: renderInbox, pages: renderPages, notes: renderNotes, runs: renderRuns, search: renderSearch };
+const settingsUi: SettingsUi = {
+  say,
+  // A change can move the sidebar too: a project renamed or merged, a request decided.
+  again: () => {
+    void refresh();
+    void loadSide();
+  },
+  when,
+  tilde,
+  plural,
+  section,
+  empty,
+  notesOf: (d) => viewLink({ view: "notes", device: d.id, project: "", q: "", status: "", author: "" }, `Notes by ${d.name}`),
+  get,
+};
+
+const RENDER: Record<View, () => Promise<Child[]>> = { inbox: renderInbox, pages: renderPages, notes: renderNotes, runs: renderRuns, settings: () => renderSettings(settingsUi), search: renderSearch };
 
 let generation = 0;
 
@@ -647,7 +667,7 @@ $(".search").addEventListener("submit", (e) => {
 
 // ── sidebar ──
 
-function renderViews(needsYou: number): void {
+function renderViews(needsYou: number, waiting: number): void {
   $(".views").replaceChildren(
     ...VIEWS.map((v) =>
       h(
@@ -655,6 +675,7 @@ function renderViews(needsYou: number): void {
         { href: toUrl({ ...state, view: v.id }), "data-view": v.id, "aria-current": state.view === v.id ? "page" : false, onclick: (e: Event) => go(e, { view: v.id }) },
         v.label,
         v.id === "inbox" && needsYou ? h("span", { class: "count need", title: `${plural(needsYou, "page needs", "pages need")} you`, text: String(needsYou) }) : null,
+        v.id === "settings" && waiting ? h("span", { class: "count need", title: `${plural(waiting, "person asks", "people ask")} for access`, text: String(waiting) }) : null,
       ),
     ),
   );
@@ -664,7 +685,10 @@ function renderViews(needsYou: number): void {
 const closedProjects = new Set<string>(stored<string[]>(CLOSED_PROJECTS, []));
 
 function renderSide(): void {
-  renderViews(projects.reduce((n, p) => n + p.needs_you, 0));
+  renderViews(
+    projects.reduce((n, p) => n + p.needs_you, 0),
+    waitingPeople,
+  );
   const all = $<HTMLAnchorElement>(".all-projects");
   all.hidden = !state.project;
   all.href = toUrl({ ...state, project: "" });
@@ -727,11 +751,15 @@ function renderSide(): void {
   $(".projects").replaceChildren(...(list.length ? list : [h("li", { class: "side-empty", text: "No projects yet." })]));
 }
 
+/** Access requests waiting for the owner (RLM-398): a count on Settings. */
+let waitingPeople = 0;
+
 async function loadSide(): Promise<void> {
   try {
-    const [p, pages] = await Promise.all([get<ProjectsResponse>("/hub/api/projects"), get<PagesResponse>("/hub/api/pages")]);
+    const [p, pages, asks] = await Promise.all([get<ProjectsResponse>("/hub/api/projects"), get<PagesResponse>("/hub/api/pages"), get<AccessRequestsResponse>("/hub/api/people/requests")]);
     projects = p.projects;
     sidePages = pages.pages;
+    waitingPeople = asks.waiting.length;
   } catch {
     // the main view says why
   }
