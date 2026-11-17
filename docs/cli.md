@@ -29,7 +29,7 @@ austere-axi publish login <file>   single-use link that signs your browser in to
 austere-axi publish list|rm <file|id>   your hosted pages; delete one now
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out
-austere-axi server install|uninstall|status   always-on server as a per-user systemd or launchd service (see Hub)   [--port n] [--link-url u]
+austere-axi server install|uninstall|status   always-on server as a per-user systemd or launchd service (see Hub)   [--port n] [--link-url u] [--adopt] [--force]
 austere-axi mcp                  MCP server on stdio (see MCP)
 ```
 
