@@ -14,7 +14,7 @@ import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, copyLabel, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
 import { lockStateDir } from "./lock.ts";
-import { installService, installedServiceFor, serviceContext, serviceStatus, uninstallService } from "./service.ts";
+import { installService, installedServiceFor, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
 import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
@@ -1609,7 +1609,10 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
     }
     if (sub === "uninstall") return print(uninstallService(ctx));
     const h = await health(p ?? port());
-    return print(serviceStatus(ctx, h && !h.foreign && !h.legacy ? h : null, VERSION));
+    const running = h && !h.foreign && !h.legacy ? h : null;
+    // A server from before 0.12 does not say a unit runs it; the system does.
+    const unit = running ? serverUnit(running.pid) : null;
+    return print(serviceStatus(ctx, running && { ...running, supervised: running.supervised ?? unit?.supervisor, unit: unit?.unit }, VERSION));
   } catch (err) {
     return fail(messageOf(err));
   }

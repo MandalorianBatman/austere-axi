@@ -6,9 +6,11 @@ import http from "node:http";
 import path from "node:path";
 import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.ts";
 import { ownerKey } from "./invites.ts";
+import { withAddressSettings } from "./net.ts";
+import type { AddressSettings } from "./net.ts";
 import type { HealthInfo, LoginResponse } from "./server.ts";
-import { childEnv, restartCommand, serviceContext, startInstalledService } from "./service.ts";
-import type { PortProbe } from "./service.ts";
+import { childEnv, installedServiceFor, lockedOutNote, restartCommand, serverUnit, serviceContext, startInstalledService, SYSTEMD_UNIT, LAUNCHD_LABEL } from "./service.ts";
+import type { PortProbe, ServerUnit } from "./service.ts";
 
 /** The `error` a control route answers with when it refuses. */
 export interface ApiError {
@@ -105,17 +107,25 @@ export async function health(port: number): Promise<Health | null> {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Start a detached server. Returns a probe that tells whether the process has already exited. */
-function spawnServer(port: number, { alsoListen = [], persist = false }: { alsoListen?: string[]; persist?: boolean } = {}): () => number | "signal" | null {
+/**
+ * Start a detached server. Returns a probe that tells whether the process has already exited.
+ * `addresses` are the address variables of the server it replaces; without them (no server to
+ * replace, or one from before 0.12) it runs with the caller's.
+ */
+function spawnServer(
+  port: number,
+  { alsoListen = [], persist = false, addresses }: { alsoListen?: string[]; persist?: boolean; addresses?: AddressSettings } = {},
+): () => number | "signal" | null {
   const log = fs.openSync(path.join(stateDir(), "server.log"), "a", 0o600);
   const args = [CLI_ENTRY, "server", "--port", String(port)];
   for (const h of alsoListen) args.push("--also-listen", h);
   if (persist) args.push("--persist");
+  // The child may not claim a supervisor it does not have: a CLI hands over its environment.
+  const env = addresses ? withAddressSettings(childEnv(), addresses) : childEnv();
   const child = spawn(process.execPath, args, {
     detached: true,
     stdio: ["ignore", log, log],
-    // The child may not claim a supervisor it does not have: a CLI hands over its environment.
-    env: { ...childEnv(), OPENUI_TELEMETRY_DISABLED: "1" },
+    env: { ...env, OPENUI_TELEMETRY_DISABLED: "1" },
     windowsHide: true,
   });
   let exited: number | "signal" | null = null;
@@ -137,6 +147,12 @@ export function takeServerNote(): string | undefined {
   return note;
 }
 
+/** Leave `note` for the command's output, and say it on stderr now. */
+function leaveNote(note: string): void {
+  pendingNote = note;
+  process.stderr.write(`[austere-axi] ${note}\n`);
+}
+
 /** Make sure a compatible server is running; returns its health info. */
 export async function ensureServer(): Promise<ServerHealth> {
   const port = configuredPort();
@@ -148,21 +164,25 @@ export async function ensureServer(): Promise<ServerHealth> {
   if (h && h.stateDir !== stateDir()) {
     throw new Error(`port ${port} is served by an austere-axi with another state dir (${h.stateDir}); set AUSTERE_AXI_PORT`);
   }
-  const action = h ? serverAction(h, VERSION) : null;
-  if (h?.supervised && action === "restart-unit") {
-    // A supervised server is never replaced: two would fight over the port and the state dir. It still serves.
-    const note = `The server runs v${h.version} under ${h.supervised} and this CLI is v${VERSION}; it keeps serving. Restart it to update: ${restartCommand(h.supervised)}`;
-    pendingNote = note;
-    process.stderr.write(`[austere-axi] ${note}\n`);
-  } else if (h && action === "replace") {
-    // A newer CLI replaces an older server; sessions are on disk. The new one listens where the old one did and keeps --persist.
-    const { tailnet } = h;
-    const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!tailnet || x !== tailnet.ip));
-    const persist = !!h.persist;
-    await shutdownServer(h, port);
+  // Asked of the system at most once, and only when the answer matters.
+  let found: ServerUnit | null | undefined;
+  const unitOf = (s: ServerHealth): ServerUnit | null => (found === undefined ? (found = serverUnit(s.pid)) : found);
+  const plan = h ? serverAction(h, VERSION, () => unitOf(h as ServerHealth)) : null;
+  if (h && plan?.action === "restart-unit") {
+    // A server a unit runs is never replaced: two would fight over the port and the state dir. It still serves.
+    const { supervisor, unit } = plan.unit;
+    leaveNote(`The server runs v${h.version} under ${supervisor} and this CLI is v${VERSION}; it keeps serving. Restart it to update: ${restartCommand(supervisor, undefined, unit)}`);
+  } else if (h && plan?.action === "replace") {
+    // A newer CLI replaces an older server; sessions are on disk. The new one listens where the
+    // old one did, keeps --persist and the old one's address variables (link url, allowed hosts).
+    const old = h;
+    const { tailnet } = old;
+    const keep = (old.listen || []).filter((x) => x !== "127.0.0.1" && (!tailnet || x !== tailnet.ip));
+    await shutdownServer(old, port);
     for (let i = 0; i < 40 && (await health(port)); i++) await sleep(100);
     h = null;
-    exited = spawnServer(port, { alsoListen: keep, persist });
+    exited = spawnServer(port, { alsoListen: keep, persist: !!old.persist, addresses: old.addresses });
+    process.stderr.write(`[austere-axi] replaced server ${old.version} (pid ${old.pid}) with ${VERSION} from ${CLI_ENTRY}\n`);
   } else if (!h) {
     // No server answers. If a service is installed for this state dir, start it: a CLI that
     // starts its own server instead takes the port and the state dir away from the unit,
@@ -175,26 +195,34 @@ export async function ensureServer(): Promise<ServerHealth> {
     while (Date.now() < deadline) {
       await sleep(100);
       h = await health(port);
-      if (h && !h.foreign && !h.legacy) return h;
+      if (h && !h.foreign && !h.legacy) break;
       if (exited() != null) {
         // It may have lost the port to a server another command started at the same time.
         h = await health(port);
-        if (h && !h.foreign && !h.legacy) return h;
         break;
       }
     }
-    throw new Error(`server did not start on port ${port}; see ${path.join(stateDir(), "server.log")}`);
+    if (!h || h.foreign || h.legacy) throw new Error(`server did not start on port ${port}; see ${path.join(stateDir(), "server.log")}`);
+    found = undefined; // another process now
+  }
+  // A server the installed service did not start holds its port: the unit fails (or loops)
+  // until that server stops, and nothing else tells the owner.
+  if (plan?.action !== "restart-unit" && !h.supervised && installedServiceFor(serviceContext(probePort), stateDir(), port) && !unitOf(h)) {
+    leaveNote(lockedOutNote(h.pid, port));
   }
   return h;
 }
 
 /**
  * What a CLI of `version` does about the running server `h`: use it, replace it (it is older), or,
- * when a service manager runs that older server, leave it running and tell the owner to restart the unit.
+ * when a unit runs that older server, leave it running and tell the owner to restart the unit.
+ * `unitOf` asks the system which unit runs it: a server from before 0.12 does not say it is
+ * supervised, and is the unit's all the same.
  */
-export function serverAction(h: ServerHealth, version: string): "use" | "replace" | "restart-unit" {
-  if (!h.legacy && !versionGt(version, h.version)) return "use";
-  return !h.legacy && h.supervised ? "restart-unit" : "replace";
+export function serverAction(h: ServerHealth, version: string, unitOf: () => ServerUnit | null): { action: "use" } | { action: "replace" } | { action: "restart-unit"; unit: ServerUnit } {
+  if (!h.legacy && !versionGt(version, h.version)) return { action: "use" };
+  const unit = unitOf() ?? (!h.legacy && h.supervised ? { supervisor: h.supervised, unit: h.supervised === "systemd" ? SYSTEMD_UNIT : LAUNCHD_LABEL } : null);
+  return unit ? { action: "restart-unit", unit } : { action: "replace" };
 }
 
 /** What answers on a port, for the service commands: a server, a foreign listener, or nothing. */
