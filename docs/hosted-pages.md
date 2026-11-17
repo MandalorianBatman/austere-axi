@@ -29,7 +29,7 @@ austere-axi publish rm plan.html                 # or the page id; every link st
 - **Invite-only by default.** Without a live invite, the service answers 403 to the page's content, its notes and its row feed.
 - **The plain URL shows only an empty shell.** Its tab title reads "Shared page · austere"; the page title, the content and the notes arrive only after the service accepts an invite (or the owner's sign-in, or the open link of an `--unlisted` page).
 - **Links are bearer secrets.** Each `--invite <name>` link carries its own token in the URL fragment (`#i=…`), which browsers never send to the server. Whoever holds a link reads the page and posts notes under that name, so send each person only their own link.
-- **`--expires <dur>`** ends the invites of that publish after `30m`, `12h`, `7d` or `2w`; without it they last as long as the page (30 days after the last publish).
+- **`--expires <dur>`** sets the lifetime of new invites (`30m`, `12h`, `7d`, `2w`); without it they last as long as the page (30 days after the last publish). Re-publishing without `--expires` preserves each existing invite's expiry.
 - **`publish revoke <file> <name>`** stops one link at once and disconnects any page open with it; `publish rm <file>` stops every link.
 - **`--unlisted`** is the one mode where anyone with the plain URL may read and post notes, naming themselves.
 - **You, the owner,** open the page with `publish login <file>`: it prints a single-use link (valid 60 s). Opening it signs that browser in to this page for 30 days, without an invite. Notes you add there carry the name Owner and reach `poll` like a reviewer's. Do not forward the link; an expired or used one answers 403.

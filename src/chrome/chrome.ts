@@ -610,7 +610,7 @@ window.addEventListener("message", (e) => {
       break;
     case "ready":
       state.frameReady = true;
-      if (d.title) showTitle(d.title);
+      if (typeof d.title === "string" && d.title.trim()) showTitle(d.title.trim());
       // A reloaded frame starts unmarked; it handles "highlight" from the start.
       if (state.highlight) postHighlight(false);
       presence.redraw();
@@ -1628,7 +1628,7 @@ async function loadHostedFrame(): Promise<boolean> {
     ]);
     return false;
   }
-  if (answer.title) showTitle(answer.title);
+  if (typeof answer.title === "string" && answer.title.trim()) showTitle(answer.title.trim());
   ownerView = !!answer.owner;
   inviteName = answer.name ?? null;
   if (inviteName) viewerName = inviteName;
