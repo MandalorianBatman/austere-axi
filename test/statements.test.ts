@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { changedStatementIds, referencesTo, splitStatements, statementMap } from "../src/shared/statements.ts";
+import { changedStatementIds, closureOf, referencesTo, renameStatements, splitStatements, statementMap } from "../src/shared/statements.ts";
 
 const program = `root = Stack([intro, flow], "column", "l")
 // a comment
@@ -28,4 +28,27 @@ test("detects changed and added statements", () => {
 test("finds parents that reference a statement, ignoring string contents", () => {
   const map = statementMap(program + 'note = TextContent("text is not a ref")\n');
   assert.deepEqual(referencesTo(map, "text"), ["intro"]);
+});
+
+test("closureOf: the statements and everything they reference, in source order, ignoring names inside strings", () => {
+  const map = statementMap(`root = Stack([a, c])
+a = Card([b, "mentions d in a string"])
+b = TextContent("b")
+c = TextContent("c")
+d = TextContent("d")`);
+  assert.deepEqual(closureOf(map, ["a"]), ["a", "b"]);
+  assert.deepEqual(closureOf(map, ["root"]), ["root", "a", "b", "c"]);
+  assert.deepEqual(closureOf(map, ["nope"]), []);
+});
+
+test("renameStatements: definitions and references follow; strings, comments, members and object keys do not", () => {
+  const text = `flow = Architecture([client, api], {client: 1, label: "client"}) // client
+client = Node("client", client.name)`;
+  const out = renameStatements(text, new Map([["client", "client2"], ["flow", "flow2"]]));
+  assert.equal(
+    out,
+    `flow2 = Architecture([client2, api], {client: 1, label: "client"}) // client
+client2 = Node("client", client2.name)`,
+  );
+  assert.equal(renameStatements("x = y", new Map()), "x = y");
 });

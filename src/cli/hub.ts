@@ -33,6 +33,8 @@ export interface ArtifactRow {
   closed_at: number | null;
   archived_at: number | null;
   acked_seq: number;
+  /** The newest revision the owner had the page open on (history.ts). */
+  last_viewed_rev: number;
 }
 
 /** Notes no agent has answered: open, received, or held for the owner (as Hub.notes "unanswered" and Hub.stats count them). */
@@ -163,9 +165,10 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
  * 1 is the schema of 0.12.0, the first build that records it. 2 adds attach (RLM-343–346):
  * `agent_sessions`, `page_sessions`, `attach_settings`, `runs`. 3 adds team-review devices
  * (RLM-397): `devices`, and `device_id` on `notes` and `items`. 4 adds access requests
- * (RLM-398): `access_requests` and `access_settings`.
+ * (RLM-398): `access_requests` and `access_settings`. 5 adds history (RLM-349–354):
+ * `revisions`, `statements`, `statements_fts` and `statement_origins`.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** The schema version `db` is at. Before builds recorded it (0), a database 0.12.0 migrated already has version 1's last columns. */
 function schemaVersion(db: sqlite.DatabaseSync): number {
@@ -175,11 +178,15 @@ function schemaVersion(db: sqlite.DatabaseSync): number {
   if (!has("artifacts", "archived_at") || !has("project_roots", "prefix")) return 0;
   if (!has("runs", "requeued_from") || !has("page_sessions", "role")) return 1;
   if (!has("notes", "device_id") || !has("items", "device_id")) return 2;
-  return has("access_requests", "secret_hash") ? 4 : 3;
+  if (!has("access_requests", "secret_hash")) return 3;
+  return has("revisions", "program_sha") ? 5 : 4;
 }
 
-/** Open hub.db with the schema in place; `readOnly`: as it is, refused when it is older than this build's schema. */
-export async function openDatabase(file = hubDbFile(), { readOnly = false }: { readOnly?: boolean } = {}): Promise<sqlite.DatabaseSync> {
+/**
+ * Open hub.db with the schema in place; `readOnly`: as it is, refused when it is older than this build's schema.
+ * `fts: false` makes the full-text index unavailable, as it is where SQLite was built without FTS5: `find` then falls back to LIKE.
+ */
+export async function openDatabase(file = hubDbFile(), { readOnly = false, fts = true }: { readOnly?: boolean; fts?: boolean } = {}): Promise<sqlite.DatabaseSync> {
   const Database = await loadSqlite();
   if (readOnly) {
     const db = new Database(file, { readOnly: true });
@@ -193,7 +200,7 @@ export async function openDatabase(file = hubDbFile(), { readOnly = false }: { r
   // Every note is in here: create it as the owner's only (SQLite gives its WAL the same mode).
   if (file !== ":memory:") fs.closeSync(fs.openSync(file, "a", 0o600));
   const db = new Database(file);
-  migrate(db);
+  migrate(db, fts);
   // Invites from before devices (invites.json beside hub.db) become old-style links, once.
   if (file !== ":memory:") importInvites(db, path.dirname(file));
   return db;
@@ -384,8 +391,48 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS runs_artifact ON runs(artifact_id, status);
 `;
 
+// History (history.ts, RLM-349–354). `revisions` keeps every version of a page's program, whole
+// (programs are a few KB; diffs are computed on read): `id` is global and only grows, so a
+// `changes` cursor is one number; `rev` counts per copy from 1. `statements` is the head
+// revision of each copy as plain text, and `statements_fts` its full-text index (its rowid is
+// the statements row's `id`, which a VACUUM keeps). `statement_origins` says where a statement was copied from.
+const HISTORY = `
+CREATE TABLE IF NOT EXISTS revisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artifact_id TEXT NOT NULL,
+  rev INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  program TEXT NOT NULL,
+  program_sha TEXT NOT NULL,
+  run_id TEXT,
+  agent_session_id TEXT,
+  seq_from INTEGER,
+  seq_to INTEGER,
+  UNIQUE (artifact_id, rev)
+);
+CREATE TABLE IF NOT EXISTS statements (
+  id INTEGER PRIMARY KEY,
+  artifact_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  component TEXT NOT NULL,
+  text TEXT NOT NULL,
+  source TEXT NOT NULL,
+  rev INTEGER NOT NULL,
+  UNIQUE (artifact_id, name)
+);
+CREATE TABLE IF NOT EXISTS statement_origins (
+  artifact_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  src_artifact_id TEXT NOT NULL,
+  src_name TEXT NOT NULL,
+  src_rev INTEGER NOT NULL,
+  PRIMARY KEY (artifact_id, name)
+);
+`;
+
 /** Bring hub.db to the current schema in one transaction; a second run changes nothing. */
-function migrate(db: sqlite.DatabaseSync): void {
+function migrate(db: sqlite.DatabaseSync, fts = true): void {
   db.exec(PRAGMAS);
   inTransaction(db, () => {
     db.exec(SCHEMA);
@@ -425,6 +472,18 @@ function migrate(db: sqlite.DatabaseSync): void {
     if (!has("items", "device_id")) db.exec("ALTER TABLE items ADD COLUMN device_id TEXT");
     // Access requests (RLM-398): browsers that asked to review, and where the owner lets them ask.
     db.exec(REQUESTS_SCHEMA);
+    // History (RLM-349–354): a page's versions, its statements as text, and where parts were copied from.
+    db.exec(HISTORY);
+    // The newest revision the owner had the page open on, to say what changed since they last looked.
+    if (!has("artifacts", "last_viewed_rev")) db.exec("ALTER TABLE artifacts ADD COLUMN last_viewed_rev INTEGER NOT NULL DEFAULT 0");
+    // FTS5 may be missing from this SQLite: the index is then left out and `find` searches with LIKE.
+    if (fts) {
+      try {
+        db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS statements_fts USING fts5(title, name, component, text)");
+      } catch {
+        // no FTS5
+      }
+    }
     backfillProjects(db);
     // Recorded from now on; a newer build's database keeps its number: the steps above are all this build adds.
     if (Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);

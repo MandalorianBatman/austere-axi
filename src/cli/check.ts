@@ -25,8 +25,20 @@ export interface CheckOptions {
 }
 
 let coreSpec: SpecSchema | null = null;
-const packParsers = new Map<string, Parser>();
+const packParsers = new Map<string, { parser: Parser; spec: SpecSchema }>();
 const customParsers = new WeakMap<SpecSchema, Parser>();
+
+/** The parser and the library it was made from, for the shipped spec extended with the page's installed packs. */
+function packParser(packs: InstalledPack[]): { parser: Parser; spec: SpecSchema } {
+  const key = packs.map((p) => `${p.name}@${p.version}:${p.integrity || ""}`).join(",");
+  let made = packParsers.get(key);
+  if (!made) {
+    const core: SpecSchema = (coreSpec ||= JSON.parse(fs.readFileSync(assetPath("spec.json"), "utf8")));
+    const spec = mergePackSchemas(core, packs.map((p) => p.catalog));
+    packParsers.set(key, (made = { parser: createParser(spec, spec.root || "Stack"), spec }));
+  }
+  return made;
+}
 
 /**
  * Parser for the shipped spec extended with the page's installed packs, or
@@ -38,14 +50,22 @@ function getParser(schema: SpecSchema | undefined, packs: InstalledPack[] = []):
     if (!custom) customParsers.set(schema, (custom = createParser(schema, schema.root || "Stack")));
     return custom;
   }
-  const key = packs.map((p) => `${p.name}@${p.version}:${p.integrity || ""}`).join(",");
-  let parser = packParsers.get(key);
-  if (!parser) {
-    const core: SpecSchema = (coreSpec ||= JSON.parse(fs.readFileSync(assetPath("spec.json"), "utf8")));
-    const spec = mergePackSchemas(core, packs.map((p) => p.catalog));
-    packParsers.set(key, (parser = createParser(spec, spec.root || "Stack")));
+  return packParser(packs).parser;
+}
+
+/**
+ * The parsed tree of a page's program and the library it was parsed with, for the plain-text
+ * projection (`src/shared/text.ts`); null when the page has no program or it does not parse.
+ */
+export function parseArtifact(html: string): { root: unknown; spec: SpecSchema } | null {
+  const art = readArtifact(html);
+  if (art.program == null) return null;
+  try {
+    const { parser, spec } = packParser(pagePacks(html).installed);
+    return { root: parser.parse(art.program).root, spec };
+  } catch {
+    return null;
   }
-  return parser;
 }
 
 /** Components austere-axi used to have: an old page names them, so say what replaced them. */

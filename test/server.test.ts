@@ -506,8 +506,9 @@ test("render errors from the owner's page reach poll once per revision; stale an
 
   const stale = await report(7);
   assert.equal(stale.data.stale, true, "a report for another revision is dropped");
-  assert.equal((await report(0)).data.count, 1);
-  assert.equal((await report(0)).data.count, 0, "a second tab's identical report adds nothing");
+  // Opening records the page's first revision, and a session's revision counter starts from the stored one.
+  assert.equal((await report(1)).data.count, 1);
+  assert.equal((await report(1)).data.count, 0, "a second tab's identical report adds nothing");
   const poll = await req("POST", "/api/poll", { file, timeoutMs: 1000 });
   assert.equal(poll.data.status, "feedback");
   const items = poll.data.items.filter((i) => i.kind === "render-error");
@@ -519,10 +520,10 @@ test("render errors from the owner's page reach poll once per revision; stale an
   await new Promise((r) => setTimeout(r, 300));
   const sessions = await req<{ sessions: { id: string }[] }>("GET", "/api/sessions");
   assert.ok(sessions.data.sessions.some((s) => s.id === id));
-  let refused = await report(1);
+  let refused = await report(2);
   for (let i = 0; i < 20 && refused.status !== 409; i++) {
     await new Promise((r) => setTimeout(r, 100));
-    refused = await report(1);
+    refused = await report(2);
   }
   assert.equal(refused.status, 409);
 });

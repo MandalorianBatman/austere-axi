@@ -7,10 +7,14 @@ import { mergeStatements } from "@openuidev/lang-core";
 import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
-import { splitStatements } from "../shared/statements.ts";
+import { splitStatements, statementMap } from "../shared/statements.ts";
 import { commandPort, ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
 import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
 import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from "./hub.ts";
+import { planCopy, parseSource, recordOrigins, originsOf } from "./copy.ts";
+import type { CopyPlan } from "./copy.ts";
+import { changesOutput, decisionsOutput, findOutput, historyOutput, outlineOutput, programAt, showOutput } from "./history-cmds.ts";
+import { ageOf, recordWithHub, reindex, restoredProgram } from "./history.ts";
 import { addRoot, copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { lockStateDir } from "./lock.ts";
@@ -27,7 +31,7 @@ import type { FeedbackItem } from "../shared/feedback.ts";
 import { VERSION, applyDevDefaults, assetPath, canonicalFile, quote, stateDir } from "./paths.ts";
 import { listComponents, searchComponents, showComponents } from "./components.ts";
 import type { InstallError } from "./install.ts";
-import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
+import { installedPacks, isThirdParty, neededPacks, packDefining, pagePacks, setPacksMeta } from "./packs.ts";
 import type { InstalledPack } from "./packs.ts";
 import { isScope, readTrustList, trustFile, updateTrustList } from "./trust.ts";
 import { defaultRegistry, npmView, readRegistries, registriesFile, registryEntry, registryFor, writeRegistries } from "./registries.ts";
@@ -54,6 +58,7 @@ interface Flags {
   [flag: string]: string | true | string[] | undefined;
   "also-listen"?: string[];
   invite?: string[];
+  from?: string[];
 }
 
 /** A command's entry in COMMANDS. */
@@ -78,6 +83,7 @@ program instead of a whole HTML page; the reviewer annotates it in the browser;
 their feedback comes back to you addressed by statement name.
 
 WORKFLOW
+  0. ${BIN} find <words>         a page may cover this already: patch it, or patch --from <page>#<part>
   1. ${BIN} spec                 component reference (read once per session)
   2. Write an .html file:
        <!doctype html>
@@ -123,6 +129,7 @@ ${LOOKS_RULE.map((l) => `  ${l}`).join("\n")}
 COMMANDS
   ${BIN} check <file>            validate without a browser   [--fix: declare packs] [--render]
   ${BIN} feedback [file]         notes no agent has answered yet (no file: this checkout)
+  ${BIN} outline <file>          page tree; show <file> <statement…> reads parts; history, restore
   ${BIN} archive <file>          hide a page; only if the user asks
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
@@ -255,10 +262,63 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "check plan.html",
   },
   patch: {
-    usage: "patch <file> < statements",
-    summary: "merge statements from stdin: same name replaces, new name adds, `name = null` deletes",
-    flags: { session: SESSION_FLAG },
-    example: "patch plan.html <<'EOF'\n  intro = Card([CardHeader(\"New title\")])\n  EOF",
+    usage: "patch <file> [--from <src>#<a>[,<b>…] [--rev n]] < statements",
+    summary:
+      "merge statements from stdin: same name replaces, new name adds, `name = null` deletes. --from copies statements and everything they reference from another page first (a name that clashes is renamed: flow becomes flow2); stdin may reference them, and a copied part nothing references is dropped",
+    flags: {
+      from: "copy <src>#<statement>[,<statement>…] from another page (repeatable)",
+      rev: "with --from: copy from this revision of the page (see history)",
+      session: SESSION_FLAG,
+    },
+    example: "patch plan.html <<'EOF'\n  intro = Card([CardHeader(\"New title\")])\n  EOF   |   patch new.html --from plan.html#flowDiagram <<'EOF'\n  root = Stack([flowDiagram])\n  EOF",
+  },
+  find: {
+    usage: "find <words> [--project p] [--component c] [--limit n] [--all]",
+    summary:
+      "search the text of every page's statements: title, file, copy, statement, component, snippet, age. Default: the project of this folder, 8 results; archived pages and files that are gone are left out. The last line says how to copy a part: patch --from",
+    flags: {
+      project: "search this project: a name, an id, or a folder inside one of its roots (default: the project of this folder)",
+      component: "only statements of this component, e.g. Table or Architecture",
+      limit: "up to n results (default 8)",
+      all: "also archived pages and copies whose file is gone",
+    },
+    example: "find rollout options   |   find session --component Table",
+  },
+  outline: { usage: "outline <file>", summary: "the page as a tree from root: each statement's name, component, first words and child count; far cheaper than reading the file", flags: {}, example: "outline plan.html" },
+  show: {
+    usage: "show <file> [statement…] [--text|--source] [--deps] [--rev n]",
+    summary: "read parts of a page: the statements' source (default) or their plain text (a table as Markdown, a diagram as its edges); no statement names: all of them. --rev reads an earlier version",
+    flags: {
+      text: "plain text instead of source",
+      source: "OpenUI Lang source (the default)",
+      deps: "also every statement they reference",
+      rev: "an earlier revision (see history)",
+    },
+    example: "show plan.html options --text   |   show plan.html flowDiagram --deps",
+  },
+  history: {
+    usage: "history <file> [--statement name] [--since rev] [--limit n]",
+    summary: "every version of a page, newest first: when, what made it, the statements it changed and the note behind it. Revisions are kept whole in hub.db, never in the project",
+    flags: { statement: "only revisions that changed this statement", since: "only revisions after this one", limit: "the newest n revisions (default 20)" },
+    example: "history plan.html --statement options",
+  },
+  restore: {
+    usage: "restore <file> --rev n [statement…]",
+    summary: "put the page, or the named statements, back as they were at revision n: written like a patch and kept as a new revision, so nothing is lost",
+    flags: { rev: "the revision to go back to (see history)", session: SESSION_FLAG },
+    example: "restore plan.html --rev 2 options",
+  },
+  changes: {
+    usage: "changes [<file>] [--project p] [--since cursor] [--limit n]",
+    summary: "what changed on pages since a cursor: for each revision the statements before and after, as text, the notes that caused it and the agent's reply. Prints `cursor:` for the next call. No file: the project of this folder",
+    flags: { project: "a project: a name, an id, or a folder inside one of its roots", since: "revisions after this cursor (default 0: from the start)", limit: "up to n revisions (default 20)" },
+    example: "changes --since 41",
+  },
+  decisions: {
+    usage: "decisions [<file>] [--project p] [--since cursor] [--limit n]",
+    summary: "the reviewer's decisions: forms submitted and buttons pressed (with their values) and batches sent with Send & finish, with page, statement, time and author. Prints `cursor:` for the next call. No file: the project of this folder",
+    flags: { project: "a project: a name, an id, or a folder inside one of its roots", since: "decisions after this cursor (default 0)", limit: "up to n decisions (default 50)" },
+    example: "decisions --project shop",
   },
   spec: {
     usage: "spec [group|pack...]",
@@ -307,7 +367,7 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "export plan.html --out review.html",
   },
   hub: {
-    usage: "hub [list|notes|open] [words] [--project p] [--archived] [--all] [--unanswered] [--limit n]",
+    usage: "hub [list|notes|open|reindex] [words] [--project p] [--archived] [--all] [--unanswered] [--limit n]",
     summary: "the owner's home page: every page by project (one entry per page, a copy per worktree), every note",
     flags: {
       project: "only pages or notes from this project: a name, an id, or a folder inside one of its roots (list, notes)",
@@ -316,7 +376,7 @@ const COMMANDS: Record<string, CommandSpec> = {
       unanswered: "only notes no agent answered (notes)",
       limit: "show up to n pages or notes (default 40)",
     },
-    example: "hub notes --unanswered",
+    example: "hub notes --unanswered   |   hub reindex",
   },
   project: {
     usage: "project [list [--roots] | add <dir> [--name n] [--yes] | merge <a> <b> | rename <p> <name> | forget-root <dir> [--drop]]",
@@ -384,12 +444,12 @@ const COMMANDS: Record<string, CommandSpec> = {
     },
     example: "server install --link-url https://austere.example.com",
   },
-  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch components sessions_list run_list run_log attach_status as tools", flags: {}, example: "mcp" },
+  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch find outline show history restore changes decisions components sessions_list run_list run_log attach_status as tools", flags: {}, example: "mcp" },
   help: { usage: "help [command]", summary: "the full workflow, or one command's help", flags: {}, example: "help poll" },
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "limit", "session", "extra-args", "command", "mode", "model", "harness"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "limit", "session", "extra-args", "command", "mode", "model", "harness", "statement", "since", "rev", "component", "from"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -409,7 +469,7 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
         if (i + 1 >= argv.length) return { flags, pos, error: `--${key} needs a value` };
         val = argv[++i];
       }
-      if (key === "also-listen" || key === "invite") (flags[key] ||= []).push(String(val));
+      if (key === "also-listen" || key === "invite" || key === "from") (flags[key] ||= []).push(String(val));
       else flags[key] = val;
     } else if (a === "-h") flags.help = true;
     else if (a === "-v" || a === "-V") flags.version = true;
@@ -588,6 +648,10 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
     session: sessionLine(caller),
     project: d.project?.name,
   };
+  if (d.similar?.length) {
+    out.similar = d.similar.map((x) => ({ title: x.title || undefined, file: x.file, age: ageOf(x.updatedAt) }));
+    out.similar_note = `A page may already cover this: \`${BIN} find <words>\` searches them, \`${BIN} patch ${quote(file)} --from <page>#<statement>\` copies a part.`;
+  }
   if (d.pending) out.queued_feedback = d.pending;
   if (d.held) out.held_notes = `${d.held} from teammates, waiting for the owner to send them`;
   // From this folder a bare poll means this checkout: name the page's project when the page is in another one.
@@ -886,6 +950,8 @@ async function cmdCheck(file: string | undefined, flags: Flags = {}): Promise<vo
   if (flags.fix) ({ html, changes: fixed } = fixPacks(abs, html));
   const result = checkHtml(html, { file: quote(file) });
   await registerWithHub(abs, result.title, sessionId(abs));
+  // An edit made while no server watched the page becomes a revision.
+  await recordWithHub(sessionId(abs), html, "open", callerOf(flags));
   const out: Printed = { status: result.ok ? "ok" : "errors", file: abs, statements: result.statements };
   if (fixed.length) out.fixed = fixed;
   if (result.errors.length) out.errors = result.errors;
@@ -918,31 +984,198 @@ async function renderOut(html: string, dir: string): Promise<Printed> {
   return out;
 }
 
+/** The hub for a command that only reads it, or null when it cannot be opened (the commands that need it then say what they could not do). */
+async function readHub(): Promise<Hub | null> {
+  try {
+    return await openHubDirect({ write: false });
+  } catch {
+    return null;
+  }
+}
+
+/** Before a command rewrites a page: the page as it is becomes a revision when the hub has none of it yet (or a hand edit nobody recorded), so the version before the change is kept. */
+async function recordBaseline(abs: string, html: string): Promise<void> {
+  const id = sessionId(abs);
+  await registerWithHub(abs, readArtifact(html).title, id);
+  await recordWithHub(id, html, "open", null);
+}
+
 async function cmdPatch(file: string | undefined, flags: Flags): Promise<void> {
   const abs = needFile(file, "patch");
   if (!abs || file === undefined) return; // needFile reported a missing file
   if (process.stdin.isTTY) return usage(`pipe the changed statements on stdin: ${BIN} patch ${quote(file)} <<'EOF' ... EOF`, "patch");
+  const rev = intFlag(flags, "rev", 1, "patch");
+  if (rev === null) return;
+  const from = flags.from ?? [];
+  if (rev !== undefined && !from.length) return usage("--rev is for --from: the revision of the page copied from", "patch");
   const patch = await readStdin();
-  if (!patch.trim()) return fail("stdin was empty");
+  if (!patch.trim()) return fail(from.length ? "stdin was empty: reference the copied statements from a parent (for example, root = Stack([..., name]))" : "stdin was empty");
   const html = fs.readFileSync(abs, "utf8");
   const art = readArtifact(html);
   if (art.program == null) return fail('no <script type="text/openui"> block to patch');
-  const merged = mergeStatements(art.program.trim(), patch.trim(), "root");
+  let copy: CopyPlan | null = null;
+  if (from.length) {
+    const hub = await readHub();
+    try {
+      copy = planCopy(hub?.db ?? null, art.program, from.map(parseSource), rev);
+    } catch (err) {
+      return fail(messageOf(err));
+    } finally {
+      hub?.close();
+    }
+  }
+  const incoming = copy ? `${copy.text}\n${patch.trim()}` : patch.trim();
+  const merged = mergeStatements(art.program.trim(), incoming, "root");
   // mergeStatements garbage-collects statements unreachable from root; report patched ones it dropped (`x = null` deletes are intended).
   const kept = new Set(splitStatements(merged).map((s) => s.id));
-  const patched = new Set(splitStatements(patch).filter((s) => !/=\s*null\s*;?$/.test(s.text)).map((s) => s.id));
+  const patched = new Set(splitStatements(incoming).filter((s) => !/=\s*null\s*;?$/.test(s.text)).map((s) => s.id));
   const dropped = [...patched].filter((id) => !kept.has(id));
   const next = replaceProgram(html, merged);
-  fs.writeFileSync(abs, next);
-  const result = checkHtml(next, { file: quote(file) });
   const id = sessionId(abs);
-  await registerWithHub(abs, result.title, id);
+  // The page as it is now is kept first; it also registers the page.
+  await recordBaseline(abs, html);
   // No server here: record the caller in hub.db directly, as registerWithHub does the page.
   const caller = callerOf(flags);
   const registered = caller ? await registerWithHubDb(caller, [id], "patch") : false;
+  const origins = copy?.origins.filter((o) => kept.has(o.name)) ?? [];
+  // The revision is recorded before the file changes: a server watching the page then finds nothing left to record as its own, so the revision keeps its source and agent.
+  // Should the write fail, the next open or check sees the file differ from the head and records it again.
+  await recordWithHub(id, next, "patch", caller, (db) => recordOrigins(db, id, origins));
+  fs.writeFileSync(abs, next);
+  const result = checkHtml(next, { file: quote(file) });
   const out: Printed = { status: "patched", file: abs };
+  if (copy) {
+    out.copied = origins.map((o) => o.name);
+    if (Object.keys(copy.renamed).length) out.renamed = copy.renamed;
+    const packed = [...new Set([...copy.text.matchAll(/\b([A-Z][A-Za-z0-9]*)\(/g)].map((m) => m[1]))].filter((c) => packDefining(c));
+    if (packed.length) out.next = `The copied parts use pack components (${packed.join(", ")}): run \`${BIN} check --fix ${quote(file)}\` so the page declares the pack.`;
+  }
   if (dropped.length) Object.assign(out, { dropped, warning: `unreferenced statement(s) dropped: ${dropped.join(", ")} (reference them from a parent to keep them on the page)` });
   print({ ...out, check: compactCheck(result), session: sessionLine(caller, registered) });
+}
+
+/** A whole-number flag: undefined when absent, null (after a usage error) when it is not a whole number of at least `min`. */
+function intFlag(flags: Flags, name: string, min: number, cmd: string): number | undefined | null {
+  const v = flags[name];
+  if (v === undefined) return undefined;
+  if (typeof v !== "string" || !/^\d+$/.test(v) || Number(v) < min) {
+    usage(`--${name} takes a whole number of ${min} or more, not ${JSON.stringify(v)}`, cmd);
+    return null;
+  }
+  return Number(v);
+}
+
+/** The copy of a page the history commands read: its file and the id the hub keys it by. */
+function pageArg(file: string | undefined, cmd: string): { abs: string; id: string } | null {
+  const abs = needFile(file, cmd, false);
+  return abs ? { abs, id: sessionId(abs) } : null;
+}
+
+/** `history <file> [--statement name] [--since rev]` */
+async function cmdHistory(file: string | undefined, flags: Flags): Promise<void> {
+  const page = pageArg(file, "history");
+  const since = intFlag(flags, "since", 0, "history");
+  const limit = intFlag(flags, "limit", 1, "history");
+  if (!page || since === null || limit === null) return;
+  return withHub(false, (hub) => print(historyOutput(hub.db, page.id, page.abs, { statement: typeof flags.statement === "string" ? flags.statement : undefined, since, limit: limit ?? 20 })));
+}
+
+/** `show <file> [statement…] [--text|--source] [--deps] [--rev n]` */
+async function cmdShow(file: string | undefined, names: string[], flags: Flags): Promise<void> {
+  const page = pageArg(file, "show");
+  const rev = intFlag(flags, "rev", 1, "show");
+  if (!page || rev === null) return;
+  if (flags.text && flags.source) return usage("--text and --source choose one thing to print", "show");
+  const hub = rev === undefined ? null : await readHub();
+  try {
+    const at = programAt(hub?.db ?? null, page.id, page.abs, rev);
+    print(showOutput(at.program, at.html, page.abs, names, { text: !!flags.text, deps: !!flags.deps, rev: at.rev }));
+  } catch (err) {
+    fail(messageOf(err));
+  } finally {
+    hub?.close();
+  }
+}
+
+/** `outline <file>` */
+async function cmdOutline(file: string | undefined): Promise<void> {
+  const page = pageArg(file, "outline");
+  if (!page) return;
+  const hub = await readHub();
+  try {
+    const at = programAt(hub?.db ?? null, page.id, page.abs, undefined);
+    const copied = new Map(hub ? originsOf(hub.db, page.id).map((o): [string, string] => [o.name, `${o.file ? path.basename(o.file) : "?"}#${o.statement}`]) : []);
+    print(outlineOutput(at.program, at.html, page.abs, copied));
+  } catch (err) {
+    fail(messageOf(err));
+  } finally {
+    hub?.close();
+  }
+}
+
+/** `restore <file> --rev n [statement…]`: write an earlier version back, as a new revision. */
+async function cmdRestore(file: string | undefined, names: string[], flags: Flags): Promise<void> {
+  const page = pageArg(file, "restore");
+  const rev = intFlag(flags, "rev", 1, "restore");
+  if (!page || rev === null || file === undefined) return;
+  if (rev === undefined) return usage(`restore needs --rev n: ${BIN} history ${quote(file)} lists the revisions`, "restore");
+  if (!fs.existsSync(page.abs)) return fail(`no such file: ${page.abs}`);
+  const hub = await readHub();
+  try {
+    const old = programAt(hub?.db ?? null, page.id, page.abs, rev);
+    const html = fs.readFileSync(page.abs, "utf8");
+    const art = readArtifact(html);
+    if (art.program == null) return fail('no <script type="text/openui"> block to patch');
+    const then = statementMap(old.program);
+    const missing = names.filter((n) => !then.has(n));
+    if (missing.length) return fail(`revision ${rev} has no statement ${missing.join(", ")}; it has: ${[...then.keys()].join(", ")}`);
+    const merged = restoredProgram(art.program, old.program, names);
+    if (merged === null) return print({ status: "unchanged", file: page.abs, note: `The page already reads as revision ${rev}${names.length ? ` in ${names.join(", ")}` : ""}.` });
+    const next = replaceProgram(html, merged);
+    const id = page.id;
+    await recordBaseline(page.abs, html);
+    const caller = callerOf(flags);
+    const registered = caller ? await registerWithHubDb(caller, [id], "patch") : false;
+    // Recorded before the write, as `patch` does, so a watching server keeps the source.
+    const recorded = await recordWithHub(id, next, "restore", caller);
+    fs.writeFileSync(page.abs, next);
+    const result = checkHtml(next, { file: quote(file) });
+    print({ status: "restored", file: page.abs, from: rev, statements: names.length ? names : undefined, rev: recorded?.rev, check: compactCheck(result), session: sessionLine(caller, registered) });
+  } catch (err) {
+    fail(messageOf(err));
+  } finally {
+    hub?.close();
+  }
+}
+
+/** Which pages `changes` and `decisions` read: the file, `--project`, or the project of this folder (else everything). */
+function historyScope(hub: Hub, file: string | undefined, flags: Flags): { artifactId?: string; projectId?: string } {
+  if (file) return { artifactId: sessionId(canonicalFile(file)) };
+  const projectId = projectFlag(hub, flags);
+  return { projectId: projectId || findProject(hub.db, process.cwd())?.id || undefined };
+}
+
+/** `changes [<file>] [--project p] [--since cursor] [--limit n]` and `decisions`, which read the same way. */
+async function cmdChanges(kind: "changes" | "decisions", file: string | undefined, flags: Flags): Promise<void> {
+  const since = intFlag(flags, "since", 0, kind);
+  const limit = intFlag(flags, "limit", 1, kind);
+  if (since === null || limit === null) return;
+  return withHub(false, (hub) => {
+    const scope = historyScope(hub, file, flags);
+    if (kind === "changes") print(changesOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 20, ...scope }));
+    else print(decisionsOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 50, ...scope }));
+  });
+}
+
+/** `find <words…> [--project p] [--component c] [--limit n] [--all]` */
+async function cmdFind(words: string[], flags: Flags): Promise<void> {
+  if (!words.length) return usage(`find needs words: ${BIN} find <words>`, "find");
+  const limit = intFlag(flags, "limit", 1, "find");
+  if (limit === null) return;
+  return withHub(false, (hub) => {
+    const projectId = projectFlag(hub, flags) || findProject(hub.db, process.cwd())?.id || "";
+    print(findOutput(hub.db, words.join(" "), { projectId, component: typeof flags.component === "string" ? flags.component : "", limit: limit ?? 8, all: !!flags.all }));
+  });
 }
 
 /** A pack's part of the reference: its signatures and notes, as `spec` prints core groups. */
@@ -1594,6 +1827,11 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
         });
       });
     }
+    case "reindex":
+      return withHub(true, (hub) => {
+        const r = reindex(hub.db);
+        print({ status: "reindexed", pages: r.copies, statements: r.statements, missing: r.missing || undefined, note: r.missing ? "Copies whose file is gone are not in the index (their revisions stay)." : undefined });
+      });
     case "open": {
       await ensureServer();
       const noOpen = browserDisabled();
@@ -1601,7 +1839,7 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
       return print({ status: opened ? "opened" : "open the url", url, note: noOpen ? "AUSTERE_AXI_NO_OPEN is set: no browser was started" : undefined, sign_in: opened ? undefined : signInHint() });
     }
     default:
-      return usage(`unknown hub command: ${sub}. One of: list notes open`, "hub");
+      return usage(`unknown hub command: ${sub}. One of: list notes open reindex`, "hub");
   }
 }
 
@@ -2551,6 +2789,19 @@ async function main(): Promise<unknown> {
       return cmdArchive(rest[0], false);
     case "patch":
       return cmdPatch(rest[0], flags);
+    case "history":
+      return cmdHistory(rest[0], flags);
+    case "show":
+      return cmdShow(rest[0], rest.slice(1), flags);
+    case "restore":
+      return cmdRestore(rest[0], rest.slice(1), flags);
+    case "outline":
+      return cmdOutline(rest[0]);
+    case "changes":
+    case "decisions":
+      return cmdChanges(cmd, rest[0], flags);
+    case "find":
+      return cmdFind(rest, flags);
     case "attach":
       return cmdAttach(rest[0], rest.slice(1), flags);
     case "run":

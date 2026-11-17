@@ -13,6 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type * as sqlite from "node:sqlite";
 import { bindText, itemText, openDatabase } from "./hub.ts";
+import { headRevision, headRevisions } from "./history.ts";
 import { resolveProject } from "./projects.ts";
 import type { ArtifactRow } from "./hub.ts";
 
@@ -239,7 +240,9 @@ export class SessionStore {
   }
 
   load(): void {
-    for (const row of this.q.sessions.all() as unknown as ArtifactRow[]) this.sessions.set(row.id, hydrate(row));
+    // A session's revision counter starts at the copy's stored revision, so it keeps counting up across restarts.
+    const revs = headRevisions(this.db);
+    for (const row of this.q.sessions.all() as unknown as ArtifactRow[]) this.sessions.set(row.id, { ...hydrate(row), revision: revs.get(row.id) ?? 0 });
     for (const row of this.q.notes.all() as unknown as NoteRow[]) {
       const s = this.sessions.get(row.artifact_id);
       if (s) s.transcript.push(noteEntry(row));
@@ -279,7 +282,7 @@ export class SessionStore {
         this.q.ensure.run(id, file, loc.root, path.basename(file), now, now, loc.projectId, loc.root, loc.pageId);
         return this.q.session.get(id) as unknown as ArtifactRow;
       });
-      s = hydrate(row);
+      s = { ...hydrate(row), revision: headRevision(this.db, id)?.rev ?? 0 };
       this.sessions.set(id, s);
     }
     return s;
