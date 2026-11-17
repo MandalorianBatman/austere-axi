@@ -528,7 +528,7 @@ test("on a phone the dock says what the agent does; with nobody listening the co
 
     await page.fill(".composer textarea", "tighten the intro");
     await page.click(".composer .send");
-    await page.waitForSelector(".dock .dock-presence:has-text('1 waiting')");
+    await page.waitForSelector(".dock .dock-presence:has-text('1 not answered yet')");
     const res = await api("/api/poll", { file, timeoutMs: 5000 });
     assert.equal(res.status, "feedback");
     // The poll that took the notes is gone and never replies: working, then stale.
