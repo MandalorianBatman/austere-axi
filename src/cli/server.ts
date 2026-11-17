@@ -71,8 +71,8 @@ export interface HealthInfo {
   addresses?: AddressSettings;
 }
 
-/** Whether an agent listens on a session, works on its notes, or neither. */
-export type Presence = "listening" | "working" | "idle";
+/** Whether an agent listens on a session, works on its notes, took them and has gone quiet for STALE_WORKING_MS, or none of these. */
+export type Presence = "listening" | "working" | "stale" | "idle";
 
 /** The owner's links to a page. `remote` carries the owner key. */
 export interface SessionLinks {
@@ -356,6 +356,12 @@ const SSE_MAX_PER_SESSION = 16;
 const PROJECT_REFRESH_MS = 30_000;
 // How long a page poll's unacknowledged batch keeps its page out of the project poll. An agent that never acknowledges loses the page after this.
 const PAGE_HOLD_MS = 10 * 60_000;
+/**
+ * How long an agent that took a page's notes may go without a sign of life (a reply, a poll, a change to the
+ * file) before the page says `stale`: "took your notes N min ago, no reply yet". As long as the page hold, so a
+ * stale page is also one the project poll may take back. AUSTERE_AXI_STALE_WORKING_MS overrides it (tests).
+ */
+export const STALE_WORKING_MS = 10 * 60_000;
 
 export async function runServer({
   port,
@@ -445,6 +451,9 @@ export async function runServer({
   // A supervised server is always on: its supervisor decides when it stops.
   const idleMs = persist || persistEnv() || supervisorName ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
   const pageHoldMs = msEnv("AUSTERE_AXI_PAGE_HOLD_MS", PAGE_HOLD_MS);
+  const staleWorkingMs = msEnv("AUSTERE_AXI_STALE_WORKING_MS", STALE_WORKING_MS);
+  // Per page: the timer that tells its open review pages when a quiet agent turns stale.
+  const staleTimers = new Map<string, NodeJS.Timeout>();
 
   const activity = () => {
     lastActivity = Date.now();
@@ -606,8 +615,27 @@ export async function runServer({
 
   function presence(s: Session): Presence {
     if (listener(s)) return "listening";
-    if (s.workingSince) return "working";
-    return "idle";
+    if (!s.workingSince) return "idle";
+    return staleWorkingMs && Date.now() - (s.agentAt ?? s.workingSince) >= staleWorkingMs ? "stale" : "working";
+  }
+
+  /** Presence as the review page gets it: `since`, while an agent has the notes, is when it took them; `now` lets the page read it against its own clock. */
+  function presenceInfo(s: Session): { presence: Presence; since?: number; now: number } {
+    const p = presence(s);
+    return { presence: p, since: p === "working" || p === "stale" ? (s.workingSince ?? undefined) : undefined, now: Date.now() };
+  }
+
+  /** The agent working on `s` showed a sign of life: the page reads `working` again, and turns `stale` (told to its open pages) after staleWorkingMs more of silence. */
+  function agentActive(s: Session): void {
+    s.agentAt = Date.now();
+    clearTimeout(staleTimers.get(s.id));
+    if (!staleWorkingMs) return;
+    const timer = setTimeout(() => {
+      staleTimers.delete(s.id);
+      broadcastPresence(s);
+    }, staleWorkingMs);
+    timer.unref();
+    staleTimers.set(s.id, timer);
   }
 
   function publicSession(s: Session): PublicSession {
@@ -804,7 +832,7 @@ export async function runServer({
   }
 
   function broadcastPresence(s: Session): void {
-    broadcast(s.id, "presence", { presence: presence(s), archived: Boolean(s.archivedAt), unread: store.unread(s).length });
+    broadcast(s.id, "presence", { ...presenceInfo(s), archived: Boolean(s.archivedAt), unread: store.unread(s).length });
   }
 
   /** A hosted viewer's presence frame for the owner's review page, unchanged. */
@@ -886,6 +914,11 @@ export async function runServer({
       title: art.title,
       thirdPartyPacks: thirdPartyPacks(html),
     });
+    // An agent that has the notes and changes the page is working on them, not gone.
+    if (s.workingSince) {
+      agentActive(s);
+      broadcastPresence(s);
+    }
   }
 
   /** Packs on this page not published by austere-axi: the chrome warns that their code runs in it. */
@@ -904,6 +937,7 @@ export async function runServer({
     finishPoll(s, poll, body, () => {
       store.markDelivered(s, entries);
       s.workingSince = Date.now();
+      agentActive(s);
       const cursor = body.cursor as number;
       if (!s.pageHold || s.pageHold.seq <= cursor) {
         s.pageHold = { seq: cursor, at: s.workingSince };
@@ -965,6 +999,7 @@ export async function runServer({
         s.workingSince = Date.now();
         // A checkout's batch keeps its page from the project poll until acknowledged, as a page poll's does.
         if (poll.root && (!s.pageHold || s.pageHold.seq <= (body.cursor as number))) s.pageHold = { seq: body.cursor as number, at: s.workingSince, root: true };
+        agentActive(s);
         broadcastTranscript(s, entries);
         broadcastPresence(s);
       }
@@ -1831,7 +1866,7 @@ export async function runServer({
       const visible = s.transcript.filter((e) => !e.discarded && canSee(e, who));
       const snapshot = {
         session: reviewer ? { ...publicSession(s), file: "" } : publicSession(s),
-        presence: presence(s),
+        ...presenceInfo(s),
         transcript: visible.slice(-PAGE),
         more: visible.length > PAGE,
         revision: s.revision,
