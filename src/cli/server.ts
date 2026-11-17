@@ -273,6 +273,8 @@ const MAX_HELD_PER_REVIEWER = 200;
 const SSE_MAX_PER_SESSION = 16;
 // How often a waiting project poll re-reads which pages it covers, to keep their hosted connections right.
 const PROJECT_REFRESH_MS = 30_000;
+// How long a page poll's unacknowledged batch keeps its page out of the project poll. An agent that never acknowledges loses the page after this.
+const PAGE_HOLD_MS = 10 * 60_000;
 
 export async function runServer({
   port,
@@ -346,6 +348,7 @@ export async function runServer({
   let lastActivity = Date.now();
   // A supervised server is always on: its supervisor decides when it stops.
   const idleMs = persist || persistEnv() || supervisorName ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
+  const pageHoldMs = msEnv("AUSTERE_AXI_PAGE_HOLD_MS", PAGE_HOLD_MS);
 
   const activity = () => {
     lastActivity = Date.now();
@@ -482,9 +485,16 @@ export async function runServer({
   function listener(s: Session): Poll | undefined {
     const own = polls.get(s.id);
     if (own && !own.done) return own;
+    if (heldByPage(s)) return undefined;
     const pid = store.projectIdOf(s);
     const shared = pid ? projectPolls.get(pid) : undefined;
     return shared && !shared.done ? shared : undefined;
+  }
+
+  /** A page poll handed this page a batch its agent has not acknowledged yet: the page stays that agent's, not the project poll's, for up to `pageHoldMs`. */
+  function heldByPage(s: Session): boolean {
+    const hold = s.pageHold;
+    return Boolean(hold && s.ackedSeq < hold.seq && Date.now() - hold.at < pageHoldMs);
   }
 
   function presence(s: Session): Presence {
@@ -623,6 +633,10 @@ export async function runServer({
     finishPoll(s, poll, body, () => {
       store.markDelivered(s, entries);
       s.workingSince = Date.now();
+      const cursor = body.cursor as number;
+      if (!s.pageHold || s.pageHold.seq <= cursor) {
+        s.pageHold = { seq: cursor, at: s.workingSince };
+      }
       broadcastTranscript(s, entries);
       broadcastPresence(s);
     });
@@ -643,11 +657,11 @@ export async function runServer({
     return root ? copyLabel(root) : path.basename(path.dirname(s.file));
   }
 
-  /** The pages a project poll listens for: every review of the project without a poll of its own. Read each time, so a page registered later counts. */
+  /** The pages a project poll listens for: every review of the project without a poll of its own or an unacknowledged page-poll batch. Read each time, so a page registered later counts. */
   function covered(projectId: string): Session[] {
     return store.inProject(projectId).filter((s) => {
       const own = polls.get(s.id);
-      return !(own && !own.done);
+      return !(own && !own.done) && !heldByPage(s);
     });
   }
 
@@ -698,13 +712,13 @@ export async function runServer({
   }
 
   /**
-   * The agent acknowledges what it got: up to `cursor`, or, when it replies without one,
-   * the notes the last poll handed it, stopping at one it was never handed (an `--after` replay skips some).
+   * The agent acknowledges what it got: up to `cursor`, or, when it replies without one, up to the last note a poll handed it.
+   * Either way it stops at a note no poll handed over (an `--after` replay skips some), so that note comes back.
    * A bare poll acknowledges nothing, so an agent that lost an answer gets it again.
    */
   function acknowledge(s: Session, body: RequestBody, replying: boolean): UserEntry[] {
     const cursor = seqParam(body.cursor);
-    if (cursor != null) return store.ack(s, cursor);
+    if (cursor != null) return store.ackDelivered(s, cursor);
     return replying ? store.ackDelivered(s, s.deliveredSeq) : [];
   }
 
