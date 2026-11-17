@@ -231,3 +231,38 @@ test("settings at phone width: one column, no sideways scroll", async (t) => {
     await context.close();
   }
 });
+
+test("the page's Share with the default auto and attach on: untouched it holds the notes; choosing auto again is refused", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const owner = { cookie: ownerHeaders(STATE).cookie, origin: `http://127.0.0.1:${port}` };
+  const file = writePage(path.join(SHOP, "docs", "attached.html"), "Attached page");
+  const id = (await call<{ session: { id: string } }>("POST", "/api/open", { file })).data.session.id;
+  assert.equal((await call("POST", "/api/share/default", { auto: true })).status, 200);
+  const on = await call("POST", `/s/${id}/attach`, { state: "on" }, owner);
+  assert.equal(on.status, 200, JSON.stringify(on.data));
+  const { page, context, problems } = await ownerTab();
+  const share = async (name: string) => {
+    await page.goto(`http://127.0.0.1:${port}/s/${id}`);
+    await page.waitForSelector(".composer textarea");
+    await page.click(".menu-btn");
+    await page.click('[data-cmd="share"]');
+    await page.waitForSelector("dialog.share[open]");
+    assert.ok(await page.locator('dialog.share input[name=mode][value=auto]').isChecked(), "the dialog starts at the default");
+    await page.fill("dialog.share input[name=name]", name);
+  };
+  try {
+    await share("Gil");
+    await page.click("dialog.share button[type=submit]");
+    await page.locator("dialog.share", { hasText: "Their notes wait for you." }).waitFor();
+
+    await share("Hal");
+    await page.locator("dialog.share label", { hasText: "Go straight to the agent" }).click();
+    await page.click("dialog.share button[type=submit]");
+    await page.locator("dialog.share .share-error:not([hidden])").waitFor();
+    assert.match(await page.locator("dialog.share .share-error:not([hidden])").innerText(), /attach/i);
+    assert.deepEqual(problems.filter((p) => !/409/.test(p)), []);
+  } finally {
+    await context.close();
+    await call("POST", "/api/share/default", { auto: false });
+  }
+});

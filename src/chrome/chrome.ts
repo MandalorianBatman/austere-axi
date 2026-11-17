@@ -1869,10 +1869,13 @@ async function sharePage() {
     h("div", { class: "confirm-actions" }, h("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: close }), create),
   );
   // An untouched notes choice is the saved default: leave it to the server, which holds the notes where an attached agent rules auto out.
+  // A click counts too: clicking the radio that is already selected fires no `change`, and it is still the owner's choice.
   let modeTouched = false;
-  form.addEventListener("change", (e) => {
+  const touch = (e: Event): void => {
     if ((e.target as HTMLInputElement).name === "mode") modeTouched = true;
-  });
+  };
+  form.addEventListener("change", touch);
+  form.addEventListener("click", touch);
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const data = new FormData(form);
