@@ -108,13 +108,16 @@ export interface OpenResponse {
   browsers: number;
   pending: number;
   held: number;
+  /** The page's project: `ref` names it for `--project` (its name, or its id when another project has that name); `here`: the folder the CLI ran in (`cwd`) is in it. */
+  project?: { name: string; ref: string; here: boolean };
 }
 
 /**
  * /api/poll, and how a listening poll ends. `replaced`: a newer poll took over this page. `interrupted`: the server stopped.
+ * `moved`: a project poll's project is gone, its pages taken into another one (a guessed folder above them, `project merge`).
  */
 export interface PollResponse {
-  status: "feedback" | "timeout" | "replaced" | "interrupted";
+  status: "feedback" | "timeout" | "replaced" | "interrupted" | "moved";
   /** feedback: the notes' items, and the cursor that acknowledges them */
   items?: NoteItem[];
   /** feedback: the highest seq in the answer (a project poll's cursor covers every page). */
@@ -341,6 +344,8 @@ const MAX_HELD_PER_REVIEWER = 200;
 const SSE_MAX_PER_SESSION = 16;
 // How often a waiting project poll re-reads which pages it covers, to keep their hosted connections right.
 const PROJECT_REFRESH_MS = 30_000;
+// How long a page poll's unacknowledged batch keeps its page out of the project poll. An agent that never acknowledges loses the page after this.
+const PAGE_HOLD_MS = 10 * 60_000;
 
 export async function runServer({
   port,
@@ -427,6 +432,7 @@ export async function runServer({
   let lastActivity = Date.now();
   // A supervised server is always on: its supervisor decides when it stops.
   const idleMs = persist || persistEnv() || supervisorName ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
+  const pageHoldMs = msEnv("AUSTERE_AXI_PAGE_HOLD_MS", PAGE_HOLD_MS);
 
   const activity = () => {
     lastActivity = Date.now();
@@ -563,9 +569,16 @@ export async function runServer({
   function listener(s: Session): Poll | undefined {
     const own = polls.get(s.id);
     if (own && !own.done) return own;
+    if (heldByPage(s)) return undefined;
     const pid = store.projectIdOf(s);
     const shared = pid ? projectPolls.get(pid) : undefined;
     return shared && !shared.done ? shared : undefined;
+  }
+
+  /** A page poll handed this page a batch its agent has not acknowledged yet: the page stays that agent's, not the project poll's, for up to `pageHoldMs`. */
+  function heldByPage(s: Session): boolean {
+    const hold = s.pageHold;
+    return Boolean(hold && s.ackedSeq < hold.seq && Date.now() - hold.at < pageHoldMs);
   }
 
   function presence(s: Session): Presence {
@@ -854,6 +867,10 @@ export async function runServer({
     finishPoll(s, poll, body, () => {
       store.markDelivered(s, entries);
       s.workingSince = Date.now();
+      const cursor = body.cursor as number;
+      if (!s.pageHold || s.pageHold.seq <= cursor) {
+        s.pageHold = { seq: cursor, at: s.workingSince };
+      }
       broadcastTranscript(s, entries);
       broadcastPresence(s);
     });
@@ -874,11 +891,11 @@ export async function runServer({
     return root ? copyLabel(root) : path.basename(path.dirname(s.file));
   }
 
-  /** The pages a project poll listens for: every review of the project without a poll of its own. Read each time, so a page registered later counts. */
+  /** The pages a project poll listens for: every review of the project without a poll of its own or an unacknowledged page-poll batch. Read each time, so a page registered later counts. */
   function covered(projectId: string): Session[] {
     return store.inProject(projectId).filter((s) => {
       const own = polls.get(s.id);
-      return !(own && !own.done);
+      return !(own && !own.done) && !heldByPage(s);
     });
   }
 
@@ -940,13 +957,13 @@ export async function runServer({
   }
 
   /**
-   * The agent acknowledges what it got: up to `cursor`, or, when it replies without one,
-   * the notes the last poll handed it, stopping at one it was never handed (an `--after` replay skips some).
+   * The agent acknowledges what it got: up to `cursor`, or, when it replies without one, up to the last note a poll handed it.
+   * Either way it stops at a note no poll handed over (an `--after` replay skips some), so that note comes back.
    * A bare poll acknowledges nothing, so an agent that lost an answer gets it again.
    */
   function acknowledge(s: Session, body: RequestBody, replying: boolean): UserEntry[] {
     const cursor = seqParam(body.cursor);
-    if (cursor != null) return store.ack(s, cursor);
+    if (cursor != null) return store.ackDelivered(s, cursor);
     return replying ? store.ackDelivered(s, s.deliveredSeq) : [];
   }
 
@@ -1011,15 +1028,21 @@ export async function runServer({
   function rescanProjectPoll(projectId: string): void {
     const poll = projectPolls.get(projectId);
     if (!poll || poll.done) return;
+    // Its pages went to another project, which this poll does not listen to: end it so the agent polls that one.
+    if (!hub.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) return finishProjectPoll(poll, { status: "moved" });
     refreshWatch(projectId);
     const batches = projectBatches(poll);
     if (batches.length) deliverProject(poll, batches);
   }
 
-  /** A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll. */
+  /**
+   * A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll.
+   * Registering it may have taken another project's pages in (a guessed folder above them): that project's poll ends now.
+   */
   function joinProjectPoll(s: Session): void {
     const pid = store.projectIdOf(s);
     if (pid) rescanProjectPoll(pid);
+    for (const other of [...projectPolls.keys()]) if (other !== pid) rescanProjectPoll(other);
   }
 
   /**
@@ -1214,6 +1237,8 @@ export async function runServer({
     // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
     const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
     if (!file) return send(res, 400, { error: "file is required" });
+    // The folder the CLI ran in: a page without a project may take it as its root.
+    const cwd = typeof body.cwd === "string" && path.isAbsolute(body.cwd) ? body.cwd : undefined;
 
     if (route === "share") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
@@ -1225,7 +1250,7 @@ export async function runServer({
       }
       let inv: Invite;
       try {
-        const s = store.ensure(file);
+        const s = store.ensure(file, cwd);
         // An --auto invite gives a reviewer's notes a seq without the owner: never while an agent is attached (Q3, A17).
         if (body.auto && effectiveAttach(store.db, s.id).state === "on") {
           return send(res, 409, { error: `attach is on for ${file}: an --auto invite would let a reviewer's notes start the attached agent without you. Run \`austere-axi attach off ${file}\` first, or share without --auto.` });
@@ -1244,17 +1269,30 @@ export async function runServer({
     if (route === "open") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
       await ensureTailnetListener();
-      const s = store.ensure(file);
+      const s = store.ensure(file, cwd);
       watch(s);
       joinProjectPoll(s);
       store.touch(s);
       noteCaller(caller, [s.id], "open");
+      const pid = store.projectIdOf(s);
+      const p = pid ? findProject(hub.db, pid, { folders: false }) : null;
+      let project: OpenResponse["project"];
+      if (p) {
+        let ref = p.id;
+        try {
+          if (findProject(hub.db, p.name, { folders: false })?.id === p.id) ref = p.name;
+        } catch {
+          // another project has the name: the id
+        }
+        project = { name: p.name, ref, here: cwd !== undefined && findProject(hub.db, cwd)?.id === p.id };
+      }
       return send(res, 200, {
         session: publicSession(s),
         links: links(s.id),
         browsers: clientCount(s.id),
         pending: store.unread(s).length,
         held: store.heldEntries(s).length,
+        project,
       } satisfies OpenResponse);
     }
 

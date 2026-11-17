@@ -72,10 +72,13 @@ export interface Session {
   archivedAt: number | null;
   ackedSeq: number;
   transcript: TranscriptEntry[];
+  /** The highest seq a poll handed over: a reply without a cursor acknowledges up to it. Seeded at load from the notes marked seen. */
   deliveredSeq: number;
   revision: number;
   lastDeliveredAt: number | null;
   workingSince: number | null;
+  /** The newest batch a page poll handed over (its cursor and when): until acknowledged, the page is not the project poll's. */
+  pageHold: { seq: number; at: number } | null;
 }
 
 /** A note as `feedback` reports it. */
@@ -239,7 +242,11 @@ export class SessionStore {
       const s = this.sessions.get(row.artifact_id);
       if (s) s.transcript.push({ id: row.id, role: "agent", at: row.at, text: row.text });
     }
-    for (const s of this.sessions.values()) s.transcript.sort((a, b) => a.at - b.at);
+    for (const s of this.sessions.values()) {
+      s.transcript.sort((a, b) => a.at - b.at);
+      // A restart forgets which batch went out; the notes marked seen say it, so a reply without a cursor still acknowledges them.
+      for (const e of s.transcript) if (e.role === "user" && e.seenAt && e.seq != null) s.deliveredSeq = Math.max(s.deliveredSeq, e.seq);
+    }
   }
 
   get(id: string): Session | null {
@@ -254,14 +261,15 @@ export class SessionStore {
     return Array.from(this.sessions.values()).sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
-  ensure(file: string): Session {
+  /** The session of a file, made on first sight; `cwd`: the folder the CLI ran in, which a page without a project may take as its root. */
+  ensure(file: string, cwd?: string): Session {
     const id = sessionId(file);
     let s = this.sessions.get(id);
     if (!s) {
       const now = Date.now();
       // One transaction: a merge or forget-root in another process cannot prune the page between the two.
       const row = this.tx(() => {
-        const loc = resolveProject(this.db, file);
+        const loc = resolveProject(this.db, file, cwd);
         this.q.ensure.run(id, file, loc.root, path.basename(file), now, now, loc.projectId, loc.root, loc.pageId);
         return this.q.session.get(id) as unknown as ArtifactRow;
       });
@@ -453,8 +461,8 @@ export class SessionStore {
   }
 
   /**
-   * A project poll's cursor: acknowledge up to `cursor`, but only the run of notes a poll already handed over (`seenAt`).
-   * A page registered, merged or written to after the batch was made keeps its unseen notes unread.
+   * A cursor from the agent (`poll`, `reply`, or a project poll): acknowledge up to `cursor`, but only the run of notes a poll already handed over (`seenAt`).
+   * A note skipped by `--after`, or a page registered, merged or written to after the batch was made, keeps its unseen notes unread.
    */
   ackDelivered(s: Session, cursor: number): QueuedEntry[] {
     let target = 0;
@@ -607,5 +615,6 @@ function hydrate(row: ArtifactRow): Session {
     revision: 0,
     lastDeliveredAt: null,
     workingSince: null,
+    pageHold: null,
   };
 }

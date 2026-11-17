@@ -471,28 +471,87 @@ test("one project poll receives notes from two pages, each batch naming its file
 
 const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-test("a page poll takes its page; the project poll takes the pages without a listener of their own", () =>
-  withServer(async ({ port, state, id }) => {
-    const id2 = await open(port, FILE2);
-    const pagePoll = request(port, "POST", "/api/poll", { file: FILE });
-    await settle(100);
-    const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK);
-    await settle(500);
+test("a page poll takes its page; the project poll takes the pages without a listener of their own, also past its look again", () =>
+  withServer(
+    async ({ port, state, id }) => {
+      const id2 = await open(port, FILE2);
+      const pagePoll = request(port, "POST", "/api/poll", { file: FILE });
+      await settle(100);
+      const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK);
+      let projectSettled = false;
+      void projectPoll.then(() => (projectSettled = true));
+      await settle(500);
 
-    await send(port, id, "for the page listener");
-    const first = await pagePoll;
-    assert.deepEqual(first.data.items.map((i) => i.text), ["for the page listener"]);
-    // The page agent acknowledges and listens again, so the plan stays its own.
-    const pageAgain = request(port, "POST", "/api/poll", { file: FILE, cursor: first.data.cursor, timeoutMs: 1500 });
-    await settle(100);
+      await send(port, id, "for the page listener");
+      const first = await pagePoll;
+      assert.deepEqual(first.data.items.map((i) => i.text), ["for the page listener"]);
+      // The page agent works on its batch without a poll open; the project poll looks again several times meanwhile.
+      await settle(1000);
+      assert.equal(projectSettled, false, "an unacknowledged page-poll batch is not handed to the project poll");
+      // The page agent acknowledges and listens again, so the plan stays its own.
+      const pageAgain = request(port, "POST", "/api/poll", { file: FILE, cursor: first.data.cursor, timeoutMs: 1500 });
+      await settle(100);
 
-    await send(port, id2, "for the project listener");
-    const got = await projectPoll;
-    assert.ok(got.out.includes(format({ file: FILE2 })), got.out);
-    assert.ok(!got.out.includes(format({ file: FILE })), "the plan is the page listener's");
-    assert.match(got.out, /message: for the project listener/);
-    assert.doesNotMatch(got.out, /for the page listener/);
-    assert.equal((await pageAgain).data.status, "timeout");
+      await send(port, id2, "for the project listener");
+      const got = await projectPoll;
+      assert.ok(got.out.includes(format({ file: FILE2 })), got.out);
+      assert.ok(!got.out.includes(format({ file: FILE })), "the plan is the page listener's");
+      assert.match(got.out, /message: for the project listener/);
+      assert.doesNotMatch(got.out, /for the page listener/);
+      assert.equal((await pageAgain).data.status, "timeout");
+    },
+    { AUSTERE_AXI_PROJECT_REFRESH_MS: "200" },
+  ));
+
+test("a page-poll batch nobody acknowledges goes to the project poll once the hold runs out", () =>
+  withServer(
+    async ({ port, state, id }) => {
+      await send(port, id, "the page agent went away");
+      const first = await request(port, "POST", "/api/poll", { file: FILE });
+      assert.equal(first.data.status, "feedback");
+      const startedAt = Date.now();
+      const got = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "5000");
+      assert.match(got.out, /message: the page agent went away/, got.out);
+      assert.ok(Date.now() - startedAt >= 1000, "not before the hold ran out");
+    },
+    { AUSTERE_AXI_PROJECT_REFRESH_MS: "200", AUSTERE_AXI_PAGE_HOLD_MS: "1500" },
+  ));
+
+test("reply with a cursor acknowledges only what a poll handed over: a note skipped by --after comes back", () =>
+  withServer(async ({ port, id }) => {
+    // Fresh database: the notes are seq 1, 2 and 3.
+    await send(port, id, "first, skipped by --after");
+    await send(port, id, "second");
+    await send(port, id, "third");
+    const replay = await request(port, "POST", "/api/poll", { file: FILE, after: 1 });
+    assert.deepEqual(replay.data.items.map((i) => i.text), ["second", "third"]);
+    assert.equal(replay.data.cursor, 3);
+
+    assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done", cursor: replay.data.cursor })).status, 200);
+    const again = await request(port, "POST", "/api/poll", { file: FILE, timeoutMs: 1000 });
+    assert.equal(again.data.status, "feedback", "the skipped note was never shown, so it is not answered");
+    assert.equal(again.data.items[0].text, "first, skipped by --after");
+  }));
+
+test("after a server restart, reply without a cursor still acknowledges what the project poll handed over", () =>
+  withServer(async ({ port, state, id, proc }) => {
+    await send(port, id, "before the restart");
+    const got = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "2000");
+    assert.match(got.out, /message: before the restart/, got.out);
+    const cursor = Number((/^cursor: (\d+)$/m.exec(got.out) as RegExpExecArray)[1]);
+
+    await kill(proc);
+    const restarted = startServer(port, state);
+    try {
+      await up(port);
+      assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status, 200);
+      assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 0, "the delivered note is acknowledged");
+      const again = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "300");
+      assert.match(again.out, /^status: timeout$/m, "the batch does not come again");
+      assert.ok(got.out.includes(`reply <file> --cursor ${cursor}`), "the project hint passes the cursor to reply");
+    } finally {
+      await kill(restarted);
+    }
   }));
 
 test("a page registered after the project poll started is included", () =>
@@ -608,6 +667,81 @@ test("project feedback with no server reads hub.db and labels each copy as the s
       assert.equal(offline.out.match(label)?.length, 2, "the same label as with a server");
     } finally {
       fs.rmSync(repo, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    }
+  }));
+
+// ── folders without git: the project is the folder the CLI ran in ──
+
+/** A scratch folder with copies of the plan at `rels`; its real path. */
+function folderWith(prefix: string, ...rels: string[]): string {
+  const dir = fs.realpathSync(tmp(prefix));
+  for (const rel of rels) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.copyFileSync(FILE, path.join(dir, rel));
+  }
+  return dir;
+}
+
+const rmDir = (dir: string) => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+
+test("without git, pages in two subfolders opened from the parent are one project, and a bare poll there covers both", () =>
+  withServer(async ({ port, state }) => {
+    const notes = folderWith("austere-durable-notes-", "a/sprint.html", "b/plan.html");
+    try {
+      const opened = await cliIn(notes, port, state, "a/sprint.html");
+      assert.match(opened.out, new RegExp(`^project: ${path.basename(notes)}$`, "m"), opened.out);
+      assert.match(opened.out, /^next: "Run `austere-axi poll` /m, "the next step works from this folder");
+      assert.doesNotMatch(opened.out, /--project/);
+      await cliIn(notes, port, state, "b/plan.html");
+      await send(port, await open(port, path.join(notes, "b", "plan.html")), "on b");
+      const r = await cliIn(notes, port, state, "poll", "--timeout-ms", "5000");
+      assert.match(r.out, /^status: feedback$/m, r.out);
+      assert.match(r.out, /^pages: 2$/m);
+      assert.match(r.out, /message: on b/);
+    } finally {
+      rmDir(notes);
+    }
+  }));
+
+test("nested folders opened from each: a poll on the child ends as moved, and feedback from the parent lists the child's note", () =>
+  withServer(async ({ port, state }) => {
+    const work = folderWith("austere-durable-nested-", "notes.html", "reviews/plan.html");
+    try {
+      await cliIn(path.join(work, "reviews"), port, state, "plan.html");
+      const childPoll = cliIn(path.join(work, "reviews"), port, state, "poll", "--timeout-ms", "20000");
+      await settle(1500);
+      await cliIn(work, port, state, "notes.html");
+      const moved = await childPoll;
+      assert.match(moved.out, /^status: moved$/m, moved.out);
+      await send(port, await open(port, path.join(work, "reviews", "plan.html")), "unanswered in reviews");
+      const r = await cliIn(work, port, state, "feedback", "--peek");
+      assert.match(r.out, /message: unanswered in reviews/, r.out);
+      assert.match(r.out, /^pages: 2$/m);
+    } finally {
+      rmDir(work);
+    }
+  }));
+
+test("a project with no open page says so instead of waiting; opening another project's page names it in next", () =>
+  withServer(async ({ port, state }) => {
+    const empty = folderWith("austere-durable-empty-", "draft.html");
+    try {
+      await cliIn(empty, port, state, "check", "draft.html"); // known to the hub, never opened for review
+      const started = Date.now();
+      const poll = await cliIn(empty, port, state, "poll", "--timeout-ms", "20000");
+      assert.ok(Date.now() - started < 15_000, "it does not wait");
+      assert.match(poll.out, /^pages: 0$/m, poll.out);
+      assert.match(poll.out, /no page of this project is open: `austere-axi <file>`/);
+      const feedback = await cliIn(empty, port, state, "feedback");
+      assert.match(feedback.out, /^pages: 0$/m, feedback.out);
+      assert.match(feedback.out, /no page of this project is open: `austere-axi <file>`/);
+
+      // The plan's project is WORK; a page of another project opened from WORK.
+      const other = await cliIn(WORK, port, state, OTHER);
+      assert.match(other.out, new RegExp(`^project: ${path.basename(OTHER_DIR)}$`, "m"), other.out);
+      assert.match(other.out, new RegExp(`^next: "Run \`austere-axi poll --project ${path.basename(OTHER_DIR)}\` `, "m"));
+    } finally {
+      rmDir(empty);
     }
   }));
 

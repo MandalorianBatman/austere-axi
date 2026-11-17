@@ -443,11 +443,11 @@ export class Hub {
     this.db.close();
   }
 
-  /** An artifact `check` or `patch` saw (not necessarily reviewed). */
-  register({ id, file, title, at = Date.now() }: { id: string; file: string; title?: string | null; at?: number }): void {
+  /** An artifact `check` or `patch` saw (not necessarily reviewed); `cwd`: the folder the CLI ran in. */
+  register({ id, file, title, at = Date.now(), cwd }: { id: string; file: string; title?: string | null; at?: number; cwd?: string }): void {
     // One transaction: a merge or forget-root in another process cannot prune the page between the two.
     inTransaction(this.db, () => {
-      const loc = resolveProject(this.db, file);
+      const loc = resolveProject(this.db, file, cwd);
       this.q.upsertArtifact.run(id, file, loc.root, title || null, at, at, 0, loc.projectId, loc.root, loc.pageId);
     });
   }
@@ -652,7 +652,7 @@ export async function registerWithHub(file: string, title: string | null | undef
   try {
     const hub = await openHubDirect({ write: true });
     try {
-      hub.register({ id, file, title });
+      hub.register({ id, file, title, cwd: process.cwd() });
     } finally {
       hub.close();
     }
