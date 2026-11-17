@@ -87,6 +87,7 @@ form{margin:18px 0 8px}input{width:100%;box-sizing:border-box;background:#141417
 input:focus{outline:none;border-color:#5b6b99}
 section{margin-top:28px}h2{font-size:15px;font-weight:600;margin:0 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
 h2 a{color:#e8e8ec;text-decoration:none}h2 small{color:#8a8a94;font-weight:400;font-size:12px;overflow-wrap:anywhere}
+p.same{color:#8a8a94;font-size:12.5px;margin:0 0 4px;overflow-wrap:anywhere}p.same code{color:#e8e8ec}
 ul{list-style:none;padding:0;margin:0}li{border-bottom:1px solid #1c1c20}
 li>a{display:grid;gap:2px;padding:10px 0;min-height:28px;text-decoration:none;color:inherit}
 li strong{color:#a9c1ff;font-weight:600;overflow-wrap:anywhere}li>a:hover strong{text-decoration:underline}
@@ -145,12 +146,15 @@ export function hubPage(
   const sections = [...byProject.entries()]
     .map(([id, list]) => {
       const roots = info.get(id)?.roots || [];
+      const same = info.get(id)?.sameAs;
       const name = list[0].project;
       const waiting = list.reduce((n, p) => n + unanswered(p), 0);
       const where = roots.length ? `${shortPath(roots[0])}${roots.length > 1 ? ` · +${roots.length - 1} more ${roots.length === 2 ? "folder" : "folders"}` : ""}` : "";
+      // A hint only: the owner merges two clones of one repository, or keeps them apart.
+      const hint = same ? `<p class="same">Same repository as project ${escapeHtml(same.name)}: <code>austere-axi ${escapeHtml(same.merge)}</code></p>` : "";
       return `<section><h2><a href="${homeLink({ project: id, [view]: view === "default" ? "" : "1" })}">${escapeHtml(name)}</a>${
         where ? ` <small title="${escapeHtml(roots.join("\n"))}">${escapeHtml(where)}</small>` : ""
-      }${waiting ? ` <b class="open">${waiting} unanswered</b>` : ""}</h2><ul>${list.map((p) => row(p, listening)).join("")}</ul></section>`;
+      }${waiting ? ` <b class="open">${waiting} unanswered</b>` : ""}</h2>${hint}<ul>${list.map((p) => row(p, listening)).join("")}</ul></section>`;
     })
     .join("");
   const viewLink = (v: HubView, text: string): string => `<a href="${homeLink({ project, q, [v]: v === "default" ? "" : "1" })}">${text}</a>`;

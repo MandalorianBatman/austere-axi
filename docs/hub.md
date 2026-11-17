@@ -24,6 +24,10 @@ The hub finds a page's project without git; it never runs it. Walking up from th
 
 A bare `poll` or `feedback` finds its project from the folder it runs in by the same rule, so it covers the pages opened from there.
 
+A new project takes the repository's name: the `url` of its `origin` remote in the repository's `config` (`…/austere-axi.git` → `austere-axi`), for a bare repository and its worktrees too. With no origin it takes the folder's name without `.git` (a `.bare` folder: its parent's). When another project already has the name, the parent folder is added: `shop (work)`. The section heading on the home page, and `project list`, show the project's main root first: a root you assigned, else the repository, else a guessed folder, else a worktree; the first stored of a kind.
+
+Two clones of one repository (one origin) that git does not tie together, such as a normal clone and a bare repository's worktrees, stay two projects. The newer one says so on the home page and in `project list`: `same repository as project austere-axi: austere-axi project merge austere-axi <id>`. Merging is your call; nothing is grouped on its own.
+
 What it finds is stored, so it does not look again. Change it with `project`:
 
 ```sh

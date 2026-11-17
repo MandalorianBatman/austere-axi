@@ -7,6 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type * as sqlite from "node:sqlite";
 import { Hub, openDatabase } from "../src/cli/hub.ts";
+import { hubPage } from "../src/cli/hub-page.ts";
 import { addRoot, copyLabel, findProject, forgetRoot, listProjects, mergeProjects, pageIdOf, pathKey, renameProject, resolveProject, within } from "../src/cli/projects.ts";
 
 function tmp(): string {
@@ -32,6 +33,30 @@ function worktree(main: string, dir: string, head: string): string {
   fs.mkdirSync(gitdir, { recursive: true });
   fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
   fs.writeFileSync(path.join(gitdir, "HEAD"), head + "\n");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, ".git"), `gitdir: ${gitdir}\n`);
+  return dir;
+}
+
+/** A `config` with `url` under `[remote "origin"]`, or none, and other sections around it, as git writes them. */
+function gitConfig(origin?: string): string {
+  return `[core]\n\trepositoryformatversion = 0\n\tbare = true\n${origin ? `[remote "origin"]\n\turl = ${origin}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n` : ""}[branch "main"]\n\tremote = origin\n\turl = https://example.com/not-origin.git\n`;
+}
+
+/** A bare repository at `dir` (`HEAD` and `config` in the folder itself), as multica keeps one: `.repos/<ws>/github.com+owner+name.git`. */
+function bare(dir: string, origin?: string): string {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "HEAD"), "ref: refs/heads/main\n");
+  fs.writeFileSync(path.join(dir, "config"), gitConfig(origin));
+  return dir;
+}
+
+/** A linked worktree of the bare repository `repoDir` at `dir`: its git dir is `<repoDir>/worktrees/<name>`. */
+function bareWorktree(repoDir: string, dir: string, branch: string): string {
+  const gitdir = path.join(repoDir, "worktrees", path.basename(path.dirname(dir)) + path.basename(dir));
+  fs.mkdirSync(gitdir, { recursive: true });
+  fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
+  fs.writeFileSync(path.join(gitdir, "HEAD"), `ref: refs/heads/${branch}\n`);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, ".git"), `gitdir: ${gitdir}\n`);
   return dir;
@@ -435,3 +460,81 @@ test("paths inside a root keep spaces and non-ASCII; Windows paths compare case-
 test("projects never run git", () => {
   for (const f of ["src/cli/projects.ts", "src/cli/hub.ts"]) assert.doesNotMatch(fs.readFileSync(f, "utf8"), /child_process/, f);
 });
+
+test("a bare repository with worktrees: one project named from its origin, the repository is the main root", () =>
+  withDb((db, dir) => {
+    const hub = new Hub(db);
+    const repoDir = bare(path.join(dir, ".repos", "ws", "github.com+MandalorianBatman+austere-axi.git"), "https://github.com/MandalorianBatman/austere-axi.git");
+    const a = bareWorktree(repoDir, path.join(dir, "runs", "a", "austere-axi"), "agent/a");
+    const b = bareWorktree(repoDir, path.join(dir, "runs", "b", "austere-axi"), "agent/b");
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(b, "docs", "plan.html")) });
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(a, "docs", "plan.html")) });
+    const projects = listProjects(db);
+    assert.deepEqual(
+      projects.map((p) => [p.name, p.roots]),
+      [["austere-axi", [{ root: repoDir, kind: "git" }, { root: b, kind: "worktree" }, { root: a, kind: "worktree" }]]],
+      "named after the repository, not github.com+…; the repository first, then its worktrees in the order stored",
+    );
+    assert.equal(projects[0].sameAs, undefined);
+    assert.deepEqual(hub.projects()[0].roots[0], repoDir);
+    assert.match(hubPage(hub.list({ all: true }), { version: "1", q: "", project: "", view: "all", projects: hub.projects(), counts: hub.viewCounts() }), /<h2><a [^>]*>austere-axi<\/a> <small title="[^"]*">[^<]*\+austere-axi\.git · \+2 more folders<\/small>/);
+  }));
+
+test("no origin: the folder's name without .git; a .bare folder takes its parent's", () =>
+  withDb((db, dir) => {
+    const named = bare(path.join(dir, "named.git"));
+    const wt = resolveProject(db, write(path.join(bareWorktree(named, path.join(dir, "wt", "feat"), "feat"), "a.html")));
+    assert.equal(findProject(db, wt.projectId)?.name, "named");
+    const dotBare = bare(path.join(dir, "proj", ".bare"));
+    const main = resolveProject(db, write(path.join(bareWorktree(dotBare, path.join(dir, "proj", "main"), "main"), "a.html")));
+    assert.equal(findProject(db, main.projectId)?.name, "proj");
+    const plain = resolveProject(db, write(path.join(repo(path.join(dir, "plain")), "a.html")));
+    assert.equal(findProject(db, plain.projectId)?.name, "plain", "a .git with no config file");
+  }));
+
+test("two repositories with one name: the second takes its parent folder as a suffix", () =>
+  withDb((db, dir) => {
+    const one = resolveProject(db, write(path.join(repo(path.join(dir, "a", "shop")), "x.html")));
+    const two = resolveProject(db, write(path.join(repo(path.join(dir, "b", "shop")), "x.html")));
+    const three = resolveProject(db, write(path.join(repo(path.join(dir, "deeper", "b", "shop")), "x.html")));
+    assert.deepEqual([one, two, three].map((l) => findProject(db, l.projectId)?.name), ["shop", "shop (b)", "shop (b) 2"]);
+    assert.equal(findProject(db, "shop")?.id, one.projectId, "the name finds one project");
+    const c = path.join(dir, "c", "shop");
+    fs.mkdirSync(c, { recursive: true });
+    assert.equal(addRoot(db, c).project.name, "shop (c)", "project add without --name too");
+  }));
+
+test("two clones of one repository: the newer project gets a merge hint, nothing is grouped", () =>
+  withDb((db, dir) => {
+    const hub = new Hub(db);
+    const clone = repo(path.join(dir, "Austere"));
+    fs.writeFileSync(path.join(clone, ".git", "config"), gitConfig("git@github.com:MandalorianBatman/austere-axi.git"));
+    const repoDir = bare(path.join(dir, ".repos", "ws", "github.com+MandalorianBatman+austere-axi.git"), "https://github.com/MandalorianBatman/austere-axi");
+    const wt = bareWorktree(repoDir, path.join(dir, "runs", "a", "austere-axi"), "agent/a");
+    const other = repo(path.join(dir, "other"));
+    fs.writeFileSync(path.join(other, ".git", "config"), gitConfig("https://github.com/MandalorianBatman/austere-cloud.git"));
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(clone, "plan.html")) });
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(wt, "plan.html")) });
+    hub.register({ id: "cccccccccccc", file: write(path.join(other, "plan.html")) });
+
+    let projects = listProjects(db);
+    const older = projects.find((p) => p.roots[0].root === clone);
+    const newer = projects.find((p) => p.roots[0].root === repoDir);
+    assert.ok(older && newer && older.id !== newer.id, "two projects: suggest only, never grouped");
+    assert.deepEqual([older.name, newer.name], ["austere-axi", "austere-axi (ws)"]);
+    assert.equal(older.sameAs, undefined, "the hint is on the newer project");
+    assert.deepEqual(newer.sameAs, { id: older.id, name: "austere-axi", merge: `project merge austere-axi ${newer.id}` }, "a name with a space is given as its id");
+    assert.equal(projects.find((p) => p.name === "austere-cloud")?.sameAs, undefined, "another repository: no hint");
+    const html = hubPage(hub.list({ all: true }), { version: "1", q: "", project: "", view: "all", projects: hub.projects(), counts: hub.viewCounts() });
+    assert.ok(html.includes(`<p class="same">Same repository as project austere-axi: <code>austere-axi project merge austere-axi ${newer.id}</code></p>`), "the hub shows the hint");
+    assert.equal(html.match(/class="same"/g)?.length, 1);
+
+    // The owner follows the hint: one project, the first clone is its main root, and the hint is gone.
+    mergeProjects(db, "austere-axi", newer.id);
+    projects = listProjects(db).filter((p) => p.name !== "austere-cloud");
+    assert.deepEqual(
+      projects.map((p) => [p.name, p.roots.map((r) => r.root), p.sameAs]),
+      [["austere-axi", [clone, repoDir, wt], undefined]],
+    );
+    assert.equal(hub.list({ all: true }).filter((p) => p.rel_path === "plan.html" && p.project === "austere-axi")[0].copies.length, 2, "one page, two copies");
+  }));

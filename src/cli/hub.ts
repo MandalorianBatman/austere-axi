@@ -8,7 +8,8 @@ import path from "node:path";
 import type * as sqlite from "node:sqlite";
 import { stateDirHolder } from "./lock.ts";
 import { VERSION, stateDir } from "./paths.ts";
-import { backfillProjects, copyLabel, inTransaction, resolveProject } from "./projects.ts";
+import { backfillProjects, copyLabel, inTransaction, listProjects, resolveProject } from "./projects.ts";
+import type { SameRepository } from "./projects.ts";
 import type { NoteItem } from "./sessions.ts";
 
 /** A row of `artifacts`: every artifact reviewed or checked on this machine (a copy of a page), and its review state. */
@@ -71,11 +72,12 @@ export interface HubPage extends HubCounts {
   copies: HubCopy[];
 }
 
-/** Hub.projects(): a project and its root folders. */
+/** Hub.projects(): a project, its root folders (main root first) and an older project of the same repository, if any. */
 export interface HubProject {
   id: string;
   name: string;
   roots: string[];
+  sameAs?: SameRepository;
 }
 
 /** Hub.notes(): one item of a note, with its page and copy. */
@@ -543,13 +545,9 @@ export class Hub {
       .slice(0, limit);
   }
 
-  /** Every project and its root folders. */
+  /** Every project, its root folders (main root first) and an older project of the same repository, if any. */
   projects(): HubProject[] {
-    const roots = this.db.prepare("SELECT root, project_id FROM project_roots ORDER BY root").all() as unknown as { root: string; project_id: string }[];
-    return (this.db.prepare("SELECT id, name FROM projects ORDER BY name COLLATE NOCASE").all() as unknown as { id: string; name: string }[]).map((p) => ({
-      ...p,
-      roots: roots.filter((r) => r.project_id === p.id).map((r) => r.root),
-    }));
+    return listProjects(this.db).map((p) => ({ id: p.id, name: p.name, roots: p.roots.map((r) => r.root), ...(p.sameAs ? { sameAs: p.sameAs } : {}) }));
   }
 
   /**
