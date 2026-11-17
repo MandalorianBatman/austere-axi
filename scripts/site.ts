@@ -86,9 +86,18 @@ function render(html: string, rel: string, vars: Record<string, string> = {}): s
   return out.replaceAll("{{root}}", root);
 }
 
-/** The `latest` dist-tag on npm. The build fails rather than print a version nobody can install. */
+/**
+ * The `latest` dist-tag on npm. The build fails rather than print a version nobody can install.
+ * After Publish, pages.yml has already waited until npm names the release and passes that version in
+ * AUSTERE_AXI_SITE_VERSION, so a second, possibly cached registry answer cannot undo it.
+ */
 async function publishedVersion(): Promise<string> {
-  const res = await fetch(NPM_LATEST, { signal: AbortSignal.timeout(15_000) });
+  const given = process.env.AUSTERE_AXI_SITE_VERSION;
+  if (given) {
+    if (!/^\d+\.\d+\.\d+/.test(given)) throw new Error(`AUSTERE_AXI_SITE_VERSION is not a version: ${given}`);
+    return given;
+  }
+  const res = await fetch(NPM_LATEST, { headers: { "cache-control": "no-cache" }, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`${NPM_LATEST}: HTTP ${res.status}`);
   const { version } = (await res.json()) as { version?: unknown };
   if (typeof version !== "string" || !/^\d+\.\d+\.\d+/.test(version)) throw new Error(`${NPM_LATEST}: no version in the answer`);
