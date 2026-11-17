@@ -319,10 +319,11 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "hub notes --unanswered",
   },
   project: {
-    usage: "project [list | add <dir> [--name n] [--yes] | merge <a> <b> | rename <p> <name> | forget-root <dir> [--drop]]",
+    usage: "project [list [--roots] | add <dir> [--name n] [--yes] | merge <a> <b> | rename <p> <name> | forget-root <dir> [--drop]]",
     summary:
       "projects in the hub: a name and its root folders, found without git (a .git folder or a worktree's .git file, else the folder you ran in when the page is inside it, else the page's folder); add assigns a root (never /, the temp folder or a folder holding the home folder), merge moves b's roots into a, forget-root drops one and says where its pages went (a folder with a .git is found again at once)",
     flags: {
+      roots: "list every root folder with its kind; without it list prints the main root and how many roots of each kind (list)",
       name: "the project to add the root to, made if there is none (add); not empty, not shaped like an id",
       yes: "take in the other projects' roots and pages the new root holds; without it add lists them and changes nothing (add)",
       drop: "forget a root whose folder is gone, archiving its pages (notes kept) instead of filing them under folders that do not exist (forget-root)",
@@ -1613,14 +1614,21 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
       return withHub(false, (hub) => {
         const projects = listProjects(hub.db);
         if (!projects.length) return print({ projects: "none", note: "A page you check or open for review files itself under a project." });
+        // A project can hold hundreds of worktrees: by default the main root and a count per kind.
+        const kinds = (roots: { kind: string }[]): string => {
+          const n = new Map<string, number>();
+          for (const r of roots) n.set(r.kind, (n.get(r.kind) ?? 0) + 1);
+          return [...n].map(([k, c]) => `${c} ${k}`).join(", ");
+        };
         print({
           projects: projects.map((p) => ({
             name: p.name,
             id: p.id,
             pages: p.pages,
-            roots: p.roots.map((r) => `${r.root} (${r.kind})`),
+            ...(flags.roots ? { roots: p.roots.map((r) => `${r.root} (${r.kind})`) } : { root: p.roots[0] ? `${p.roots[0].root} (${p.roots[0].kind})` : undefined, roots: kinds(p.roots) || undefined }),
             ...(p.sameAs ? { hint: `same repository as project ${p.sameAs.name}: \`${BIN} ${p.sameAs.merge}\`` } : {}),
           })),
+          ...(flags.roots || !projects.some((p) => p.roots.length > 1) ? {} : { next: `\`${BIN} project list --roots\` lists every root folder` }),
         });
       });
     case "add":
