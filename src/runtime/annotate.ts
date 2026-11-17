@@ -574,8 +574,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     if (act === "cancel") close();
     if (act === "queue") queue();
     if (act === "history" && draft) {
+      // The note box stays open: the owner may read the history and still queue what they typed.
       post({ type: "history", id: draft.targetId });
-      close();
     }
   });
   popText.addEventListener("keydown", (e) => {

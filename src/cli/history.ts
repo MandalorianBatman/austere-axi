@@ -192,7 +192,10 @@ export function reindex(db: sqlite.DatabaseSync): { copies: number; statements: 
       const parsed = parseArtifact(html);
       const sources = statementMap(art.program);
       const texts = programText(art.program, parsed?.root ?? null, parsed?.spec);
-      inTransaction(db, () => writeIndex(db, c.id, art.title, head.rev, texts.map((t) => ({ ...t, source: sources.get(t.name)?.text ?? "" }))));
+      // Another process may have recorded a newer revision since: its index is not replaced by this snapshot.
+      inTransaction(db, () => {
+        if (headRevision(db, c.id)?.rev === head.rev) writeIndex(db, c.id, art.title, head.rev, texts.map((t) => ({ ...t, source: sources.get(t.name)?.text ?? "" })));
+      });
     } else {
       recordRevision(db, c.id, html, { source: "open" });
     }
@@ -227,6 +230,28 @@ export function causeNotes(db: sqlite.DatabaseSync, artifactId: string, from: nu
   return rows.map((r) => ({ seq: r.seq, at: r.at, author: r.author || "owner", target: r.target, text: r.text ?? "" }));
 }
 
+/** A statement with its whitespace collapsed outside string literals: a value's own spaces are part of it. */
+function squash(text: string): string {
+  let out = "";
+  let quote = "";
+  let space = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      out += c;
+      if (c === "\\") out += text[++i] ?? "";
+      else if (c === quote) quote = "";
+    } else if (/\s/.test(c)) space = true;
+    else {
+      if (space && out) out += " ";
+      space = false;
+      out += c;
+      if (c === '"' || c === "'") quote = c;
+    }
+  }
+  return out;
+}
+
 /** What a revision changed against the one before it (none before it: every statement is new). */
 export function diffStatements(prev: string | null, next: string): { changed: string[]; removed: string[] } {
   const before = statementMap(prev);
@@ -234,7 +259,7 @@ export function diffStatements(prev: string | null, next: string): { changed: st
   const changed: string[] = [];
   for (const [id, s] of after) {
     const b = before.get(id);
-    if (!b || b.text.replace(/\s+/g, " ").trim() !== s.text.replace(/\s+/g, " ").trim()) changed.push(id);
+    if (!b || squash(b.text) !== squash(s.text)) changed.push(id);
   }
   return { changed, removed: [...before.keys()].filter((id) => !after.has(id)) };
 }
@@ -466,28 +491,29 @@ export function findStatements(db: sqlite.DatabaseSync, query: string, { project
   if (!ws.length) return { hits: [], fts: hasFts(db) };
   const filter = `AND (? = '' OR a.project_id = ?) AND (? = '' OR s.component = ?) AND (? = 1 OR a.archived_at IS NULL)`;
   const args = [projectId, projectId, component, component, all ? 1 : 0];
-  const fetch = limit * 6 + 20;
-  let rows: (FindRow & { score?: number })[] = [];
   let fts = hasFts(db);
-  if (fts) {
-    try {
-      for (const joiner of [" AND ", " OR "]) {
-        const match = ws.map((w) => `"${w.replace(/"/g, '""')}"*`).join(joiner);
-        rows = db
-          .prepare(
-            `SELECT s.artifact_id, s.name, s.component, s.text, a.title, a.file, a.page_id, a.root, a.project, a.updated_at, a.archived_at
-             FROM statements_fts f JOIN statements s ON s.id = f.rowid JOIN artifacts a ON a.id = s.artifact_id
-             WHERE statements_fts MATCH ? ${filter}
-             ORDER BY bm25(statements_fts, 3.0, 2.0, 0.5, 1.0), a.updated_at DESC LIMIT ?`,
-          )
-          .all(match, ...args, fetch) as unknown as FindRow[];
-        if (rows.length || ws.length === 1) break;
+  /** Candidate statements, best first: at most `fetch` of them. */
+  const candidates = (fetch: number): FindRow[] => {
+    let rows: FindRow[] = [];
+    if (fts) {
+      try {
+        for (const joiner of [" AND ", " OR "]) {
+          const match = ws.map((w) => `"${w.replace(/"/g, '""')}"*`).join(joiner);
+          rows = db
+            .prepare(
+              `SELECT s.artifact_id, s.name, s.component, s.text, a.title, a.file, a.page_id, a.root, a.project, a.updated_at, a.archived_at
+               FROM statements_fts f JOIN statements s ON s.id = f.rowid JOIN artifacts a ON a.id = s.artifact_id
+               WHERE statements_fts MATCH ? ${filter}
+               ORDER BY bm25(statements_fts, 3.0, 2.0, 0.5, 1.0), a.updated_at DESC LIMIT ?`,
+            )
+            .all(match, ...args, fetch) as unknown as FindRow[];
+          if (rows.length || ws.length === 1) break;
+        }
+        return rows;
+      } catch {
+        fts = false;
       }
-    } catch {
-      fts = false;
     }
-  }
-  if (!fts) {
     const like = (w: string): string => `%${w.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     const sql = (joiner: string): string => ws.map(() => "(s.text LIKE ? ESCAPE '\\' OR s.name LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')").join(joiner);
     for (const joiner of [" AND ", " OR "]) {
@@ -500,24 +526,35 @@ export function findStatements(db: sqlite.DatabaseSync, query: string, { project
         .all(...ws.flatMap((w) => [like(w), like(w), like(w)]), ...args, fetch) as unknown as FindRow[];
       if (rows.length || ws.length === 1) break;
     }
+    return rows;
+  };
+  /** The hits among `rows`: one per page and statement, at most 3 a page (one page must not fill the list), and no copy whose file is gone unless `all`. */
+  const pick = (rows: FindRow[]): FindHit[] => {
+    const seen = new Set<string>();
+    const perPage = new Map<string, number>();
+    const hits: FindHit[] = [];
+    for (const r of rows) {
+      const missing = !fs.existsSync(r.file);
+      // A copy that is gone must not hide the same statement in a copy that is there.
+      if (missing && !all) continue;
+      const page = r.page_id ?? r.artifact_id;
+      const key = `${page}\0${r.name}`;
+      if (seen.has(key) || (perPage.get(page) ?? 0) >= 3) continue;
+      seen.add(key);
+      perPage.set(page, (perPage.get(page) ?? 0) + 1);
+      hits.push({ artifact_id: r.artifact_id, page_id: r.page_id, title: r.title, file: r.file, copy: copyLabel(r.root || r.project), statement: r.name, component: r.component, snippet: snippetOf(r.text || r.name, ws), updated_at: r.updated_at, archived: r.archived_at != null, missing });
+      if (hits.length >= limit) break;
+    }
+    return hits;
+  };
+  // The limit is for the hits, not the candidates: ask for more until enough survive the filters, or none are left.
+  let fetch = limit * 6 + 20;
+  for (;;) {
+    const rows = candidates(fetch);
+    const hits = pick(rows);
+    if (hits.length >= limit || rows.length < fetch || fetch >= 20_000) return { hits, fts };
+    fetch *= 4;
   }
-  // A page is one hit per statement, at most 3 a page: one page must not fill the list.
-  const seen = new Set<string>();
-  const perPage = new Map<string, number>();
-  const hits: FindHit[] = [];
-  for (const r of rows) {
-    const missing = !fs.existsSync(r.file);
-    // A copy that is gone must not hide the same statement in a copy that is there.
-    if (missing && !all) continue;
-    const page = r.page_id ?? r.artifact_id;
-    const key = `${page}\0${r.name}`;
-    if (seen.has(key) || (perPage.get(page) ?? 0) >= 3) continue;
-    seen.add(key);
-    perPage.set(page, (perPage.get(page) ?? 0) + 1);
-    hits.push({ artifact_id: r.artifact_id, page_id: r.page_id, title: r.title, file: r.file, copy: copyLabel(r.root || r.project), statement: r.name, component: r.component, snippet: snippetOf(r.text || r.name, ws), updated_at: r.updated_at, archived: r.archived_at != null, missing });
-    if (hits.length >= limit) break;
-  }
-  return { hits, fts };
 }
 
 interface FindRow {

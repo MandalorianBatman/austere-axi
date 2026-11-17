@@ -1000,6 +1000,16 @@ async function recordBaseline(abs: string, html: string): Promise<void> {
   await recordWithHub(id, html, "open", null);
 }
 
+/** Whether hub.db can be written from here (another version may hold the state dir). */
+async function hubWritable(): Promise<boolean> {
+  try {
+    (await openHubDirect({ write: true })).close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function cmdPatch(file: string | undefined, flags: Flags): Promise<void> {
   const abs = needFile(file, "patch");
   if (!abs || file === undefined) return; // needFile reported a missing file
@@ -1015,9 +1025,17 @@ async function cmdPatch(file: string | undefined, flags: Flags): Promise<void> {
   if (art.program == null) return fail('no <script type="text/openui"> block to patch');
   let copy: CopyPlan | null = null;
   if (from.length) {
+    const sources = from.map(parseSource);
+    // A source page as it is now becomes a revision first, so the revision the copy names holds what was copied.
+    if (rev === undefined) {
+      for (const src of sources) {
+        const srcAbs = canonicalFile(src.file);
+        if (fs.existsSync(srcAbs)) await recordBaseline(srcAbs, fs.readFileSync(srcAbs, "utf8"));
+      }
+    }
     const hub = await readHub();
     try {
-      copy = planCopy(hub?.db ?? null, art.program, from.map(parseSource), rev);
+      copy = planCopy(hub?.db ?? null, art.program, sources, rev);
     } catch (err) {
       return fail(messageOf(err));
     } finally {
@@ -1133,6 +1151,8 @@ async function cmdRestore(file: string | undefined, names: string[], flags: Flag
     if (merged === null) return print({ status: "unchanged", file: page.abs, note: `The page already reads as revision ${rev}${names.length ? ` in ${names.join(", ")}` : ""}.` });
     const next = replaceProgram(html, merged);
     const id = page.id;
+    // "Nothing is lost" needs the page as it is kept first: with no way to write hub.db, the file is left as it is.
+    if (!(await hubWritable())) return fail(`${hubDbFile()} cannot be written (another austere-axi version may hold the state dir), so the current page cannot be kept first; ${page.abs} is unchanged`);
     await recordBaseline(page.abs, html);
     const caller = callerOf(flags);
     const registered = caller ? await registerWithHubDb(caller, [id], "patch") : false;
@@ -1162,7 +1182,9 @@ async function cmdChanges(kind: "changes" | "decisions", file: string | undefine
   if (since === null || limit === null) return;
   return withHub(false, (hub) => {
     const scope = historyScope(hub, file, flags);
-    if (kind === "changes") print(changesOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 20, ...scope }));
+    // The continuation names the same scope: the file, or the project that was asked for.
+    const named = file ? ` ${quote(file)}` : typeof flags.project === "string" ? ` --project ${quote(flags.project)}` : "";
+    if (kind === "changes") print(changesOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 20, ...scope }, named));
     else print(decisionsOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 50, ...scope }));
   });
 }

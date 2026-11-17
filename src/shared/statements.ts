@@ -131,12 +131,37 @@ function escapeRe(s: string): string {
   return s.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
 }
 
-/** Names of the statements `text` refers to: every identifier outside a string that is a key of `known`. */
+/**
+ * Names of the statements `text` refers to: every identifier that is a key of `known`, outside strings and comments,
+ * and not a member (`a.name`) or an object key (`{name: …}`).
+ */
 function mentionedIds(text: string, known: ReadonlyMap<string, unknown>, self: string): string[] {
-  const body = stripStrings(text.slice(text.indexOf("=") + 1));
+  const body = text.slice(text.indexOf("=") + 1);
   const out = new Set<string>();
-  // No lookbehind: this module runs in the browser bundles, and older Safari cannot parse one.
-  for (const m of body.matchAll(/[\w$]+/g)) if (/^[A-Za-z_$]/.test(m[0]) && m[0] !== self && known.has(m[0])) out.add(m[0]);
+  let last = ""; // the last significant character before the word
+  for (let i = 0; i < body.length; ) {
+    const c = body[i];
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < body.length && body[j] !== c) j += body[j] === "\\" ? 2 : 1;
+      i = j + 1;
+      last = c;
+    } else if (c === "#" || (c === "/" && body[i + 1] === "/")) {
+      while (i < body.length && body[i] !== "\n") i++;
+    } else if (/[A-Za-z_$]/.test(c)) {
+      let j = i + 1;
+      while (j < body.length && /[\w$]/.test(body[j])) j++;
+      const word = body.slice(i, j);
+      const after = /^\s*(.)/.exec(body.slice(j))?.[1];
+      const key = after === ":" && (last === "{" || last === ",");
+      if (last !== "." && !key && word !== self && known.has(word)) out.add(word);
+      i = j;
+      last = "a";
+    } else {
+      if (!/\s/.test(c)) last = c;
+      i++;
+    }
+  }
   return [...out];
 }
 

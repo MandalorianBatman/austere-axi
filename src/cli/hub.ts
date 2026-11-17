@@ -479,7 +479,10 @@ function migrate(db: sqlite.DatabaseSync, fts = true): void {
     // FTS5 may be missing from this SQLite: the index is then left out and `find` searches with LIKE.
     if (fts) {
       try {
+        const had = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'statements_fts'").get() != null;
         db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS statements_fts USING fts5(title, name, component, text)");
+        // A database that ran without FTS5 may hold statements already: index them with the new table.
+        if (!had) db.exec("INSERT INTO statements_fts (rowid, title, name, component, text) SELECT s.id, COALESCE(a.title, ''), s.name, s.component, s.text FROM statements s LEFT JOIN artifacts a ON a.id = s.artifact_id");
       } catch {
         // no FTS5
       }

@@ -1513,7 +1513,11 @@ async function refreshHistory() {
 const histPop = (): HTMLElement => $(".hist");
 let histPreview = false;
 
+/** Which opening of the history panel is current: an answer that comes back for an earlier one is dropped. */
+let histGen = 0;
+
 function closeHistory() {
+  histGen++;
   histPop().hidden = true;
   // The outline of a revision was a preview: back to what the control shows.
   if (histPreview) postHighlight(false);
@@ -1521,6 +1525,7 @@ function closeHistory() {
 }
 
 function openHistoryPanel(title: string): HTMLElement {
+  histGen++;
   const pop = histPop();
   pop.hidden = false;
   $(".hist-title", pop).textContent = title;
@@ -1531,8 +1536,10 @@ function openHistoryPanel(title: string): HTMLElement {
 
 /** Every revision, newest first: pick one to outline what it changed on the page. */
 async function showHistory() {
-  const data = await loadHistory();
   const body = openHistoryPanel("History");
+  const gen = histGen;
+  const data = await loadHistory();
+  if (gen !== histGen) return;
   if (!data) return void body.append(h2("hist-empty", "History could not be loaded. Check that austere-axi is still running."));
   if (!data.revisions.length) return void body.append(h2("hist-empty", "No revision is recorded yet."));
   // The same count the bar above the page shows.
@@ -1559,9 +1566,12 @@ async function showHistory() {
 /** One statement's earlier texts, each with the note that changed it and, for the owner, Restore. */
 async function showStatementHistory(name: string) {
   const body = openHistoryPanel(`History · ${name}`);
+  const gen = histGen;
   const r = await fetch(`${BASE}/history?statement=${encodeURIComponent(name)}`).catch(() => null);
+  if (gen !== histGen) return;
   if (!r?.ok) return void body.append(h2("hist-empty", "History could not be loaded. Check that austere-axi is still running."));
-  const versions = ((await r.json()) as { versions: StatementVersion[] }).versions;
+  const versions = ((await r.json().catch(() => ({ versions: [] }))) as { versions: StatementVersion[] }).versions;
+  if (gen !== histGen) return;
   if (!versions.length) return void body.append(h2("hist-empty", "No earlier version is recorded."));
   versions.forEach((v, i) => {
     const row = h2("hist-row", "");

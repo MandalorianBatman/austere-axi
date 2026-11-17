@@ -80,8 +80,11 @@ async function ownerPage(file: string, width = 1280) {
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
   });
   const { code } = await api<{ code: string }>("/api/login", {});
+  // The page tells the server it was seen: until that is answered, hiding the tab would leave nothing to compare with.
+  const seen = page.waitForResponse((r) => r.url().endsWith("/viewed") && r.request().method() === "POST" && r.ok());
   await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
   await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor({ timeout: 15_000 });
+  await seen;
   return { page, id: session.id, problems, context };
 }
 

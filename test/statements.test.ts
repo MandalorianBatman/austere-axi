@@ -52,3 +52,14 @@ client2 = Node("client", client2.name)`,
   );
   assert.equal(renameStatements("x = y", new Map()), "x = y");
 });
+
+test("closureOf: a name in a comment, an object key or a member is not a reference", () => {
+  const map = statementMap(`root = Stack([note])
+note = TextContent("visible") // other
+other = TextContent("not a dependency")
+keyed = Chart({other: 1}, thing.other)
+real = Card([other])`);
+  assert.deepEqual(closureOf(map, ["note"]), ["note"]);
+  assert.deepEqual(closureOf(map, ["keyed"]), ["keyed"]);
+  assert.deepEqual(closureOf(map, ["real"]), ["other", "real"]);
+});
