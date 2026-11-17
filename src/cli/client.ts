@@ -221,7 +221,7 @@ export async function ensureServer(): Promise<ServerHealth> {
  */
 export function serverAction(h: ServerHealth, version: string, unitOf: () => ServerUnit | null): { action: "use" } | { action: "replace" } | { action: "restart-unit"; unit: ServerUnit } {
   if (!h.legacy && !versionGt(version, h.version)) return { action: "use" };
-  const unit = unitOf() ?? (!h.legacy && h.supervised ? { supervisor: h.supervised, unit: h.supervised === "systemd" ? SYSTEMD_UNIT : LAUNCHD_LABEL } : null);
+  const unit = unitOf() ?? (!h.legacy && h.supervised ? { supervisor: h.supervised, unit: h.unit ?? (h.supervised === "systemd" ? SYSTEMD_UNIT : LAUNCHD_LABEL) } : null);
   return unit ? { action: "restart-unit", unit } : { action: "replace" };
 }
 
@@ -230,7 +230,7 @@ export async function probePort(port: number): Promise<PortProbe | null> {
   const h = await health(port);
   if (!h) return null;
   if (h.foreign) return { foreign: true };
-  return { stateDir: h.stateDir, supervised: h.supervised };
+  return { stateDir: h.stateDir, supervised: h.supervised, pid: h.pid };
 }
 
 /**

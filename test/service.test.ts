@@ -10,8 +10,9 @@ import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
 import { stateDirHolder } from "../src/cli/lock.ts";
 import { hasActiveWork, openDatabase } from "../src/cli/hub.ts";
-import { childEnv, detectSupervisor, installService, isAncestor, launchdPlist, npxWarning, parseSystemdShow, restartCommand, runsTheServer, serverUnit, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitInCgroup, unitPort, unitStateDir } from "../src/cli/service.ts";
+import { childEnv, detectUnit, installService, isAncestor, launchdPlist, npxWarning, parseSystemdShow, restartCommand, runsTheServer, serverUnit, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitInCgroup, unitPort, unitStateDir } from "../src/cli/service.ts";
 import type { ProcessView, RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
+import { launchdSettings, systemdSettings } from "../src/cli/unit-file.ts";
 import { freePort } from "./port.ts";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-service-"));
@@ -32,11 +33,16 @@ after(async () => {
 const SPEC: ServiceSpec = { node: "/usr/bin/node", cli: "/usr/lib/node_modules/austere-axi/dist/cli.mjs", port: 4388, linkUrl: "https://austere.example.com" };
 const CLI = "/usr/lib/node_modules/austere-axi/dist/cli.mjs";
 
-/** A context over a temp HOME, a fake service manager that records what it was asked, and no lock holder. */
-function context(over: Partial<ServiceContext> = {}): { ctx: ServiceContext; calls: string[] } {
+/**
+ * A context over a temp HOME and a fake service manager that records what it was asked: no lock
+ * holder, nothing on the port until the unit is started, then the unit's main process (pid 4242)
+ * answers. The owner says yes to every question, which `asked` records.
+ */
+function context(over: Partial<ServiceContext> = {}): { ctx: ServiceContext; calls: string[]; asked: string[] } {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "austere-home-"));
   HOMES.push(home);
   const calls: string[] = [];
+  const asked: string[] = [];
   const ctx: ServiceContext = {
     platform: "linux",
     home,
@@ -46,6 +52,8 @@ function context(over: Partial<ServiceContext> = {}): { ctx: ServiceContext; cal
       if (cmd === "loginctl") return { code: 0, stdout: "no\n", stderr: "" };
       if (args.includes("is-enabled")) return { code: 0, stdout: "enabled\n", stderr: "" };
       if (args.includes("is-active")) return { code: 0, stdout: "inactive\n", stderr: "" };
+      if (args[1] === "show" && args[2] === "austere-axi.service") return { code: 0, stdout: "MainPID=4242\n", stderr: "" };
+      if (cmd === "launchctl" && args[0] === "print" && args[1].includes("xyz.kasat.austere-axi")) return { code: 0, stdout: "\tpid = 4242\n", stderr: "" };
       return { code: 0, stdout: "", stderr: "" };
     },
     isTTY: true,
@@ -54,13 +62,23 @@ function context(over: Partial<ServiceContext> = {}): { ctx: ServiceContext; cal
     stateDir: STATE,
     uid: 501,
     holder: async () => null,
-    probe: async () => ({ stateDir: STATE, supervised: "systemd" }),
+    probe: async () => (calls.some((c) => c.includes("enable --now") || c.startsWith("launchctl bootstrap")) ? { stateDir: STATE, supervised: "systemd", pid: 4242 } : null),
+    unitOf: () => null,
+    isAncestor: (a, b) => a === b,
+    confirm: async (q) => {
+      asked.push(q);
+      return true;
+    },
     ...over,
   };
-  return { ctx, calls };
+  return { ctx, calls, asked };
 }
 
+/** What changed the machine, without the questions asked of it. */
+const changes = (calls: string[]): string[] => calls.filter((c) => !/ show-environment$| show | is-active | is-enabled |^launchctl print |^loginctl /.test(c));
+
 const unitPath = (home: string): string => path.join(home, ".config", "systemd", "user", "austere-axi.service");
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 test("the systemd unit runs the installed CLI with --persist, supervised, restarting on failure", () => {
   assert.equal(
@@ -126,8 +144,9 @@ test("install writes the unit under HOME, reloads systemd and enables it now", a
   const r = await installService({ linkUrl: "https://austere.example.com/" }, ctx);
   assert.equal(r.status, "installed");
   assert.equal(r.unit, unitPath(ctx.home));
-  assert.equal(fs.readFileSync(unitPath(ctx.home), "utf8"), systemdUnit({ ...SPEC, linkUrl: "https://austere.example.com" }));
-  assert.deepEqual(calls, ["systemctl --user daemon-reload", "systemctl --user is-active austere-axi.service", "systemctl --user enable --now austere-axi.service", "loginctl show-user ana --property=Linger --value"]);
+  assert.equal(fs.readFileSync(unitPath(ctx.home), "utf8"), systemdUnit({ ...SPEC, linkUrl: "https://austere.example.com", stateDir: STATE }));
+  assert.deepEqual(changes(calls), ["systemctl --user daemon-reload", "systemctl --user enable --now austere-axi.service"]);
+  assert.equal(calls[0], "systemctl --user show-environment", "the service manager is asked first");
   assert.deepEqual(r.ran, ["systemctl --user daemon-reload", "systemctl --user enable --now austere-axi.service"]);
   assert.match(String(r.notes), /loginctl enable-linger/);
   assert.equal(r.warning, undefined);
@@ -139,6 +158,7 @@ test("installing over a running unit restarts it, so it picks up the settings ju
       calls.push([cmd, ...args].join(" "));
       if (args.includes("is-active")) return { code: 0, stdout: "active\n", stderr: "" };
       if (args.includes("is-enabled")) return { code: 0, stdout: "enabled\n", stderr: "" };
+      if (args[1] === "show") return { code: 0, stdout: "MainPID=4242\n", stderr: "" };
       return { code: 0, stdout: "", stderr: "" };
     },
   });
@@ -152,13 +172,54 @@ test("install on macOS writes the plist and bootstraps it", async () => {
   const file = path.join(ctx.home, "Library", "LaunchAgents", "xyz.kasat.austere-axi.plist");
   assert.equal(r.unit, file);
   assert.match(fs.readFileSync(file, "utf8"), /<string>5000<\/string>/);
-  assert.deepEqual(calls, ["launchctl bootout gui/501/xyz.kasat.austere-axi", `launchctl bootstrap gui/501 ${file}`]);
+  assert.deepEqual(changes(calls), ["launchctl bootout gui/501/xyz.kasat.austere-axi", `launchctl bootstrap gui/501 ${file}`]);
+  assert.equal(calls[0], "launchctl print gui/501", "launchd is asked first");
   assert.match(String(r.notes), /AUSTERE_AXI_PORT=5000/);
 });
 
-test("install reports a failing systemctl", async () => {
-  const { ctx } = context({ run: () => ({ code: 1, stdout: "", stderr: "Failed to connect to bus: No medium found" }) });
-  await assert.rejects(installService({}, ctx), /systemctl --user daemon-reload` failed \(exit 1\): Failed to connect to bus/);
+test("a failed install leaves nothing behind: no systemd here, nothing is written and the next command is not stuck", async () => {
+  // WSL without systemd, a container, a `su -` shell: systemctl is missing or has no user bus.
+  for (const answer of [
+    { code: null, stdout: "", stderr: "spawnSync systemctl ENOENT" },
+    { code: 1, stdout: "", stderr: "Failed to connect to bus: No medium found" },
+  ]) {
+    const { ctx, calls, asked } = context({ run: (cmd, args) => (calls.push([cmd, ...args].join(" ")), answer) });
+    await assert.rejects(installService({ linkUrl: "https://austere.example.com" }, ctx), (err: Error) => {
+      assert.match(err.message, /systemd's user manager does not answer here/);
+      assert.ok(err.message.includes(answer.stderr), err.message);
+      assert.match(err.message, /nothing was written/);
+      // The manual way: the command to run at login, with its variable.
+      assert.match(err.message, /\/usr\/bin\/node \/usr\/lib\/node_modules\/austere-axi\/dist\/cli\.mjs server --persist --port 4388` with AUSTERE_AXI_LINK_URL=https:\/\/austere\.example\.com/);
+      return true;
+    });
+    assert.deepEqual(calls, ["systemctl --user show-environment"]);
+    assert.deepEqual(asked, []);
+    assert.equal(fs.existsSync(unitPath(ctx.home)), false);
+    // With no unit on disk, the next CLI command starts its own server instead of failing on systemctl.
+    assert.equal(startInstalledService(ctx, STATE, 4388), false);
+  }
+});
+
+test("a failed install after the unit was written puts back what was there", async () => {
+  // systemd answers, then refuses to enable: the unit it wrote goes again.
+  const failing = (calls: string[]) => (cmd: string, args: string[]): RunResult => {
+    calls.push([cmd, ...args].join(" "));
+    if (args.includes("enable")) return { code: 1, stdout: "", stderr: "Failed to enable unit: Unit file is masked." };
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  const calls: string[] = [];
+  const { ctx } = context({ run: failing(calls) });
+  await assert.rejects(installService({}, ctx), /enable --now austere-axi\.service` failed \(exit 1\): Failed to enable unit.*Nothing was changed: the unit it wrote was removed\. See why: journalctl --user -u austere-axi\.service/);
+  assert.equal(fs.existsSync(unitPath(ctx.home)), false);
+  // Over an earlier unit of its own: that unit is back as it was, and no backup is left over.
+  const again: string[] = [];
+  const { ctx: over } = context({ run: failing(again) });
+  const before = systemdUnit({ ...SPEC, port: 5000, stateDir: STATE });
+  fs.mkdirSync(path.dirname(unitPath(over.home)), { recursive: true });
+  fs.writeFileSync(unitPath(over.home), before);
+  await assert.rejects(installService({ port: 6000 }, over), /Nothing was changed: the units it replaced are back/);
+  assert.equal(fs.readFileSync(unitPath(over.home), "utf8"), before);
+  assert.deepEqual(fs.readdirSync(path.dirname(unitPath(over.home))), ["austere-axi.service"]);
 });
 
 test("install warns when the CLI runs from npx's cache", async () => {
@@ -229,7 +290,8 @@ test("status says a supervised server on an older version needs a restart", asyn
       return { code: 0, stdout: "", stderr: "" };
     },
   });
-  await installService({}, ctx);
+  fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
+  fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, stateDir: STATE }));
   const s = serviceStatus(ctx, { version: "0.0.1", pid: 42, port: 4388, supervised: "systemd" }, "0.0.2");
   assert.equal(s.installed, true);
   assert.equal(s.enabled, "enabled");
@@ -244,6 +306,8 @@ test("a CLI never replaces a supervised server; it says how to restart the unit"
   assert.deepEqual(serverAction(h({}), "0.11.0", noUnit), { action: "replace" });
   assert.deepEqual(serverAction(h({ legacy: true }), "0.10.0", noUnit), { action: "replace" });
   assert.deepEqual(serverAction(h({ supervised: "systemd" }), "0.11.0", noUnit), { action: "restart-unit", unit: { supervisor: "systemd", unit: "austere-axi.service" } });
+  // The unit's name comes from the server, so the hint restarts the unit that runs it.
+  assert.deepEqual(serverAction(h({ supervised: "systemd", unit: "austere.service" }), "0.11.0", noUnit), { action: "restart-unit", unit: { supervisor: "systemd", unit: "austere.service" } });
   assert.deepEqual(serverAction(h({ supervised: "launchd" }), "0.10.0", noUnit), { action: "use" });
   assert.equal(restartCommand("systemd"), "systemctl --user restart austere-axi.service");
   assert.equal(restartCommand("launchd", 501), "launchctl kickstart -k gui/501/xyz.kasat.austere-axi");
@@ -352,7 +416,7 @@ test("install refuses while a server it did not start holds server.lock, and say
       return true;
     });
     assert.equal(fs.existsSync(unitPath(ctx.home)), false);
-    assert.deepEqual(calls, []);
+    assert.deepEqual(changes(calls), []);
   } finally {
     await stop(child);
   }
@@ -398,7 +462,7 @@ test("a supervised server says so in server.lock and /api/health, never idles ou
   const script = path.join(STATE, "supervised-server.ts");
   // A file URL: a Windows path is not a valid module specifier.
   const serverModule = pathToFileURL(path.resolve("src/cli/server.ts")).href;
-  fs.writeFileSync(script, `import { runServer } from ${JSON.stringify(serverModule)};\nawait runServer({ port: Number(process.env.TEST_PORT), supervised: "systemd" });\n`);
+  fs.writeFileSync(script, `import { runServer } from ${JSON.stringify(serverModule)};\nawait runServer({ port: Number(process.env.TEST_PORT), unit: { supervisor: "systemd", unit: "austere-axi.service" } });\n`);
   const child = spawn(process.execPath, [script], {
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", TEST_PORT: String(port) },
     stdio: "ignore",
@@ -414,8 +478,11 @@ test("a supervised server says so in server.lock and /api/health, never idles ou
     const h = await health(port);
     assert.ok(h && !h.foreign);
     assert.equal(h.supervised, "systemd");
+    assert.equal(h.unit, "austere-axi.service");
     assert.equal(h.persist, true);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(STATE, "server.lock"), "utf8")).supervised, "systemd");
+    const lock = JSON.parse(fs.readFileSync(path.join(STATE, "server.lock"), "utf8"));
+    assert.deepEqual([lock.supervised, lock.unit], ["systemd", "austere-axi.service"]);
+    assert.equal((await stateDirHolder(STATE))?.unit, "austere-axi.service");
     const { ctx, calls } = context({ holder: stateDirHolder });
     const r = await installService({}, ctx);
     assert.equal(r.status, "installed");
@@ -464,7 +531,7 @@ test("install refuses to overwrite a unit it did not write, and uninstall leaves
   const file = unitPath(ctx.home);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, "[Unit]\nDescription=my own server\nEnvironment=AUSTERE_AXI_LINK_URL=https://mine.example\n");
-  await assert.rejects(installService({}, ctx), /did not write/);
+  await assert.rejects(installService({}, ctx), /did not write\. `austere-axi server install --adopt` takes its place/);
   assert.match(fs.readFileSync(file, "utf8"), /my own server/);
   const r = uninstallService(ctx);
   assert.equal(r.status, "not installed");
@@ -478,9 +545,10 @@ test("install refuses when something else already listens on the port", async ()
   assert.equal(fs.existsSync(unitPath(ctx.home)), false);
 });
 
-test("install fails when the service does not answer on its port", async () => {
+test("install fails when the service does not answer on its port, and takes the unit out again", async () => {
   const { ctx } = context({ probe: async () => null });
-  await assert.rejects(installService({}, ctx), /does not answer on port 4388/);
+  await assert.rejects(installService({}, ctx), /did not answer on port 4388 within 15 s \(nothing answers\)\. Nothing was changed: the unit it wrote was removed/);
+  assert.equal(fs.existsSync(unitPath(ctx.home)), false);
 });
 
 test("a CLI starts the installed service instead of one of its own", () => {
@@ -531,8 +599,8 @@ test("the state dir and port are read out of a systemd unit and a launchd agent 
 test("supervision is what the system says, not what a process claims", () => {
   // A variable cannot claim a supervisor: a CLI hands its environment to the server it
   // starts, and so does every shell.
-  assert.equal(detectSupervisor({ AUSTERE_AXI_SUPERVISED: "systemd" }, "linux"), null);
-  assert.equal(detectSupervisor({ INVOCATION_ID: "abc" }, "darwin"), null);
+  assert.equal(detectUnit({ AUSTERE_AXI_SUPERVISED: "systemd" }, "linux"), null);
+  assert.equal(detectUnit({ INVOCATION_ID: "abc" }, "darwin"), null);
   assert.equal(childEnv({ INVOCATION_ID: "abc", XPC_SERVICE_NAME: "x", AUSTERE_AXI_SUPERVISED: "systemd", PATH: "/bin" }).INVOCATION_ID, undefined);
   assert.equal(childEnv({ INVOCATION_ID: "abc", XPC_SERVICE_NAME: "x", AUSTERE_AXI_SUPERVISED: "systemd", PATH: "/bin" }).PATH, "/bin");
 });
@@ -554,7 +622,7 @@ test("uninstall removes the unit even when the service manager fails, and says s
     },
   });
   fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
-  fs.writeFileSync(unitPath(ctx.home), systemdUnit(SPEC));
+  fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, stateDir: STATE }));
   const r = uninstallService(ctx);
   assert.equal(fs.existsSync(unitPath(ctx.home)), false);
   assert.match(String(r.problems), /disable --now/);
@@ -583,4 +651,291 @@ test("only a unit that runs the austere server counts as the server's unit", () 
   const dev = "/home/ana/src/axi-fork/dist/cli.mjs";
   assert.equal(runsTheServer(`/usr/bin/node ${dev} server --persist --port 4388`, dev), true);
   assert.equal(runsTheServer("/usr/bin/node /home/ana/other/dist/cli.mjs server", dev), false);
+});
+
+// ── server install over what is already there (RLM-382) ──
+
+// The hand-written unit the old README taught, as one ran on a Linux host (paths renamed): a
+// wait for Tailscale, the network, a link url, a port, Restart=always.
+const HAND_WRITTEN_UNIT = `# ~/.config/systemd/user/austere-axi.service
+# austere-axi review server and hub, written by hand.
+
+[Unit]
+Description=austere-axi review server and hub
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=AUSTERE_AXI_PORT=4388
+Environment=AUSTERE_AXI_NO_OPEN=1
+Environment=AUSTERE_AXI_LINK_URL=https://austere.example.com
+Environment=OPENUI_TELEMETRY_DISABLED=1
+# The server binds the tailnet IP only if Tailscale is already up when it starts.
+ExecStartPre=/home/ana/.config/systemd/user/austere-axi-wait-tailscale.sh 90
+ExecStart=/usr/bin/node %h/.npm-global/lib/node_modules/austere-axi/dist/cli.mjs server --port 4388
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+`;
+
+/**
+ * What `systemctl --user show <unit> --property=FragmentPath --property=UnitFileState
+ * --property=ActiveState --property=MainPID` printed on Linux for that unit, disabled (paths renamed).
+ */
+const showText = (file: string, state = "disabled", active = "inactive", pid = 0): string => `MainPID=${pid}\nActiveState=${active}\nFragmentPath=${file}\nUnitFileState=${state}\n`;
+
+/**
+ * A machine with a unit at `file` (the hand-written one by default) on the default state dir, whose
+ * `show` says `before` until `server install` enables its own unit, which then runs as pid 4242.
+ */
+function machineWith(text: string | null, { before = "disabled inactive", failOn = "" }: { before?: string; failOn?: string } = {}) {
+  const c = context();
+  const { ctx, calls } = c;
+  ctx.stateDir = path.join(ctx.home, ".austere-axi");
+  const started = (): boolean => calls.some((x) => x.endsWith("enable --now austere-axi.service"));
+  const [state, active] = before.split(" ");
+  ctx.run = (cmd, args): RunResult => {
+    const line = [cmd, ...args].join(" ");
+    calls.push(line);
+    if (failOn && line.includes(failOn)) return { code: 1, stdout: "", stderr: `${failOn}: failed` };
+    if (args[1] === "show" && args[2] === "austere-axi.service") return { code: 0, stdout: started() ? showText(unitPath(ctx.home), "enabled", "active", 4242) : showText(unitPath(ctx.home), state, active), stderr: "" };
+    if (args.includes("is-active")) return { code: 0, stdout: started() ? "active\n" : `${active}\n`, stderr: "" };
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  ctx.probe = async () => (started() ? { stateDir: ctx.stateDir, supervised: "systemd", pid: 4242 } : null);
+  if (text != null) {
+    fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
+    fs.writeFileSync(unitPath(ctx.home), text);
+  }
+  return c;
+}
+
+test("a hand-written unit is read for what the new unit keeps: Environment=, ExecStartPre= and After= lines", () => {
+  const s = systemdSettings(HAND_WRITTEN_UNIT);
+  assert.equal(s.cli, "%h/.npm-global/lib/node_modules/austere-axi/dist/cli.mjs");
+  assert.equal(s.port, 4388);
+  assert.equal(s.linkUrl, "https://austere.example.com");
+  assert.equal(s.stateDir, null);
+  assert.deepEqual(s.kept, [
+    { section: "Unit", line: "After=network-online.target docker.service" },
+    { section: "Unit", line: "Wants=network-online.target" },
+    { section: "Service", line: "Environment=AUSTERE_AXI_NO_OPEN=1" },
+    { section: "Service", line: "Environment=OPENUI_TELEMETRY_DISABLED=1" },
+    { section: "Service", line: "ExecStartPre=/home/ana/.config/systemd/user/austere-axi-wait-tailscale.sh 90" },
+  ]);
+  assert.deepEqual(s.other, ["Type=simple", "Restart=always", "RestartSec=5", "WantedBy=default.target"]);
+  // Several assignments on one line: the new unit's own variables leave it, the rest stays as written.
+  const mixed = systemdSettings('[Service]\nEnvironment="A=1 2" AUSTERE_AXI_STATE_DIR=/srv/austere B=2\nExecStart=/usr/bin/node "/opt/my axi/cli.mjs" server\n');
+  assert.deepEqual(mixed.kept, [{ section: "Service", line: 'Environment="A=1 2" B=2' }]);
+  assert.equal(mixed.stateDir, "/srv/austere");
+  assert.equal(mixed.cli, "/opt/my axi/cli.mjs");
+  assert.equal(mixed.port, null);
+  // `--port=n`, as the CLI reads it, is the unit's port too.
+  assert.equal(systemdSettings("[Service]\nExecStart=/usr/bin/npx -y austere-axi server --persist --port=5000\n").port, 5000);
+  // The unit `server install` writes has nothing of its own to keep.
+  assert.deepEqual(systemdSettings(systemdUnit({ ...SPEC, stateDir: STATE })).kept, []);
+  assert.deepEqual(launchdSettings(launchdPlist({ ...SPEC, port: 5000, env: [["HTTPS_PROXY", "http://proxy:3128"]] }, "/tmp/log")), {
+    cli: SPEC.cli,
+    port: 5000,
+    stateDir: null,
+    linkUrl: SPEC.linkUrl,
+    kept: [{ section: "Service", line: "HTTPS_PROXY=http://proxy:3128" }],
+    other: [],
+  });
+});
+
+test("install --adopt takes the place of a hand-written unit: shows what it keeps, asks, backs it up, stops and disables it", async () => {
+  const refused = machineWith(HAND_WRITTEN_UNIT);
+  await assert.rejects(installService({}, refused.ctx), /there is already a unit at .* that `austere-axi server install` did not write\. `austere-axi server install --adopt` takes its place/);
+  assert.equal(fs.readFileSync(unitPath(refused.ctx.home), "utf8"), HAND_WRITTEN_UNIT);
+  assert.deepEqual(changes(refused.calls), []);
+
+  const { ctx, calls, asked } = machineWith(HAND_WRITTEN_UNIT);
+  const file = unitPath(ctx.home);
+  const dropIn = path.join(`${file}.d`, "kept.conf");
+  const r = await installService({ adopt: true }, ctx);
+  assert.equal(r.status, "installed");
+  // What the owner was asked: the command, the port, the state dir and the link url it runs
+  // with, what it keeps where, what it leaves out, and what happens to the old unit.
+  const question = asked[0];
+  for (const line of [
+    `ExecStart: /usr/bin/node ${CLI} server --persist --port 4388`,
+    "  port: 4388\n",
+    `  state dir: ${ctx.stateDir}\n`,
+    "  link url: https://austere.example.com\n",
+    `  keeps, in ${dropIn}:\n    After=network-online.target docker.service\n    Wants=network-online.target\n    Environment=AUSTERE_AXI_NO_OPEN=1\n    Environment=OPENUI_TELEMETRY_DISABLED=1\n    ExecStartPre=/home/ana/.config/systemd/user/austere-axi-wait-tailscale.sh 90\n`,
+    "  does not keep (the backup has them):\n    Type=simple\n    Restart=always\n  stops",
+    `  stops and disables austere-axi.service, and moves ${file} to ${file}.bak`,
+  ]) {
+    assert.ok(question.includes(line), `${JSON.stringify(line)} not in:\n${question}`);
+  }
+  assert.doesNotMatch(question, /WantedBy|RestartSec/); // the new unit has them too
+  // The old unit is stopped and disabled before its file moves; then the new one starts.
+  assert.deepEqual(changes(calls), ["systemctl --user disable --now austere-axi.service", "systemctl --user daemon-reload", "systemctl --user enable --now austere-axi.service"]);
+  assert.equal(fs.readFileSync(`${file}.bak`, "utf8"), HAND_WRITTEN_UNIT);
+  assert.equal(fs.readFileSync(file, "utf8"), systemdUnit({ ...SPEC, linkUrl: "https://austere.example.com" }));
+  const kept = fs.readFileSync(dropIn, "utf8");
+  assert.match(kept, /^# Written by `austere-axi server install`: what it kept of /);
+  assert.match(kept, /\[Unit\]\nAfter=network-online\.target docker\.service\nWants=network-online\.target\n\n\[Service\]\nEnvironment=AUSTERE_AXI_NO_OPEN=1\nEnvironment=OPENUI_TELEMETRY_DISABLED=1\nExecStartPre=\/home\/ana\/\.config\/systemd\/user\/austere-axi-wait-tailscale\.sh 90\n$/);
+  assert.doesNotMatch(kept, /AUSTERE_AXI_(PORT|LINK_URL)/);
+  assert.deepEqual([r.kept_in, r.stopped, r.backups], [dropIn, ["austere-axi.service"], [`${file}.bak`]]);
+
+  // Installed again while its server runs, nothing changes: no new backup, the drop-in as it was.
+  ctx.holder = async () => ({ pid: 4242, port: 4388, serving: true, supervised: "systemd", unit: "austere-axi.service" });
+  asked.length = 0;
+  const again = await installService({}, ctx);
+  assert.equal(again.backups, undefined);
+  assert.equal(fs.readFileSync(dropIn, "utf8"), kept);
+  assert.doesNotMatch(asked[0], /keeps|backs up/);
+  // Uninstall takes the drop-in with the unit; the backup of the owner's unit stays.
+  const u = uninstallService(ctx);
+  assert.equal(u.drop_in, dropIn);
+  assert.equal(fs.existsSync(`${file}.d`), false);
+  assert.deepEqual(fs.readdirSync(path.dirname(file)), ["austere-axi.service.bak"]);
+});
+
+test("a failed adoption puts the owner's unit back, enabled and running as it was", async () => {
+  const { ctx, calls } = machineWith(HAND_WRITTEN_UNIT, { before: "enabled active", failOn: "enable --now austere-axi.service" });
+  const file = unitPath(ctx.home);
+  await assert.rejects(installService({ adopt: true }, ctx), /enable --now austere-axi\.service` failed.*Nothing was changed: the units it replaced are back/);
+  assert.equal(fs.readFileSync(file, "utf8"), HAND_WRITTEN_UNIT);
+  assert.deepEqual(fs.readdirSync(path.dirname(file)), ["austere-axi.service"]);
+  const after = changes(calls).slice(changes(calls).indexOf("systemctl --user enable --now austere-axi.service") + 1);
+  assert.deepEqual(after, ["systemctl --user disable --now austere-axi.service", "systemctl --user daemon-reload", "systemctl --user enable austere-axi.service", "systemctl --user start austere-axi.service"]);
+});
+
+test("a server run by a hand-written unit under another name is that unit's: install says so, and --adopt takes it over", async () => {
+  // A server from before 0.12: its lock names no supervisor; the system names the unit.
+  const setup = (fragment: (home: string) => string) => {
+    const c = machineWith(null);
+    const { ctx } = c;
+    const own = path.join(path.dirname(unitPath(ctx.home)), "austere.service");
+    fs.mkdirSync(path.dirname(own), { recursive: true });
+    fs.writeFileSync(own, HAND_WRITTEN_UNIT);
+    ctx.holder = async () => ({ pid: 777, port: 4388, serving: true });
+    ctx.unitOf = (pid) => (pid === 777 ? { supervisor: "systemd", unit: "austere.service" } : null);
+    const base = ctx.run;
+    const stopped = (): boolean => c.calls.includes("systemctl --user disable --now austere.service");
+    ctx.run = (cmd, args) => (args[1] === "show" && args[2] === "austere.service" ? (c.calls.push([cmd, ...args].join(" ")), { code: 0, stdout: showText(fragment(ctx.home), "enabled", "active", 777), stderr: "" }) : base(cmd, args));
+    const probe = ctx.probe;
+    ctx.probe = async (port) => (await probe(port)) ?? (stopped() ? null : { stateDir: ctx.stateDir, supervised: undefined, pid: 777 });
+    return { ...c, own };
+  };
+  const { ctx, calls, own } = setup((home) => path.join(home, ".config", "systemd", "user", "austere.service"));
+  await assert.rejects(installService({}, ctx), (err: Error) => {
+    assert.match(err.message, /the server here \(pid 777\) runs under austere\.service \(.*austere\.service\), which `austere-axi server install` did not write\. `austere-axi server install --adopt` takes its place/);
+    assert.doesNotMatch(err.message, /not started by|austere-axi stop/);
+    return true;
+  });
+  const r = await installService({ adopt: true }, ctx);
+  assert.equal(r.status, "installed");
+  assert.deepEqual(r.stopped, ["austere.service"]);
+  assert.equal(fs.readFileSync(`${own}.bak`, "utf8"), HAND_WRITTEN_UNIT);
+  assert.equal(fs.existsSync(own), false);
+  assert.ok(calls.indexOf("systemctl --user disable --now austere.service") < calls.indexOf("systemctl --user enable --now austere-axi.service"));
+  // A unit outside the user's unit folder is not this command's to move.
+  const elsewhere = setup(() => "/etc/systemd/user/austere.service");
+  await assert.rejects(installService({ adopt: true }, elsewhere.ctx), /runs under austere\.service \(\/etc\/systemd\/user\/austere\.service\).*cannot take over.*`systemctl --user disable --now austere\.service`/);
+  assert.deepEqual(changes(elsewhere.calls), []);
+});
+
+test("install asks first, with what it will run; no changes nothing", async () => {
+  const { ctx, calls, asked } = context();
+  ctx.confirm = async (q) => (asked.push(q), false);
+  const r = await installService({ port: 5000, linkUrl: "https://austere.example.com" }, ctx);
+  assert.deepEqual(r, { status: "cancelled", unit: unitPath(ctx.home), note: "nothing was changed" });
+  assert.match(asked[0], new RegExp(`will write ${escapeRegExp(unitPath(ctx.home))}:\\n  ExecStart: /usr/bin/node ${escapeRegExp(CLI)} server --persist --port 5000\\n  port: 5000\\n  state dir: ${escapeRegExp(STATE)}\\n  link url: https://austere.example.com\\nGo ahead\\?$`));
+  assert.deepEqual(changes(calls), []);
+  assert.equal(fs.existsSync(unitPath(ctx.home)), false);
+});
+
+test("re-install keeps the unit's port, link url and hand edits, and backs up the unit it replaces", async () => {
+  const { ctx, asked } = context();
+  const file = unitPath(ctx.home);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // The owner added a wait to the generated unit and made it restart always.
+  const edited = systemdUnit({ ...SPEC, port: 5000, stateDir: STATE }).replace("Restart=on-failure", "ExecStartPre=/bin/sleep 5\nRestart=always");
+  fs.writeFileSync(file, edited);
+  ctx.probe = async () => (asked.length ? { stateDir: STATE, supervised: "systemd", pid: 4242 } : null);
+  const r = await installService({}, ctx);
+  assert.equal(r.port, 5000);
+  assert.equal(r.link_url, SPEC.linkUrl);
+  assert.match(asked[0], /  port: 5000\n/);
+  assert.match(asked[0], /keeps, in .*kept\.conf:\n    ExecStartPre=\/bin\/sleep 5\n  does not keep \(the backup has them\):\n    Restart=always\n  backs up the unit it replaces to .*austere-axi\.service\.bak\n/);
+  assert.equal(fs.readFileSync(`${file}.bak`, "utf8"), edited);
+  assert.match(fs.readFileSync(path.join(`${file}.d`, "kept.conf"), "utf8"), /\[Service\]\nExecStartPre=\/bin\/sleep 5\n$/);
+  // A new port is shown against the old one; an earlier backup is never overwritten.
+  asked.length = 0;
+  await installService({ port: 6000 }, ctx);
+  assert.match(asked[0], /  port: 6000 \(was 5000\)\n/);
+  assert.equal(fs.readFileSync(`${file}.bak`, "utf8"), edited);
+  assert.ok(fs.existsSync(`${file}.bak.1`));
+});
+
+test("install and uninstall refuse a unit of another state dir or another CLI unless --force", async () => {
+  // The owner's unit; then a CLI from a checkout, on its own state dir, runs install and uninstall.
+  const { ctx, calls } = context();
+  const file = unitPath(ctx.home);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const ownersState = path.resolve("/home/ana/.austere-axi");
+  const owners = systemdUnit({ ...SPEC, stateDir: ownersState });
+  fs.writeFileSync(file, owners);
+  const checkout = "/home/ana/src/austere-axi/src/cli/main.ts";
+  ctx.cli = checkout;
+  await assert.rejects(installService({ port: 5000 }, ctx), new RegExp(`${escapeRegExp(file)} serves the state dir ${escapeRegExp(ownersState)}, and this CLI uses ${escapeRegExp(STATE)}\\. .*add --force`));
+  assert.throws(() => uninstallService(ctx), new RegExp(`serves the state dir ${escapeRegExp(ownersState)}.*add --force to remove it anyway`));
+  assert.equal(fs.readFileSync(file, "utf8"), owners);
+  // Same state dir, another CLI: refused too.
+  fs.writeFileSync(file, systemdUnit({ ...SPEC, stateDir: STATE }));
+  await assert.rejects(installService({}, ctx), new RegExp(`runs ${escapeRegExp(CLI)}, and this CLI is ${escapeRegExp(checkout)}`));
+  assert.throws(() => uninstallService(ctx), new RegExp(`runs ${escapeRegExp(CLI)}, and this CLI is ${escapeRegExp(checkout)}`));
+  assert.deepEqual(changes(calls), []);
+  // --force: the owner meant it.
+  const r = await installService({ force: true }, ctx);
+  assert.equal(r.status, "installed");
+  assert.match(fs.readFileSync(file, "utf8"), new RegExp(`ExecStart=/usr/bin/node ${escapeRegExp(checkout)} server`));
+  fs.writeFileSync(file, owners);
+  assert.equal(uninstallService(ctx, { force: true }).status, "uninstalled");
+  // A unit npx's cache runs is not another CLI's: the npx warning says to install for good and run install again.
+  const { ctx: moved, asked } = context();
+  fs.mkdirSync(path.dirname(unitPath(moved.home)), { recursive: true });
+  const npx = "/home/ana/.npm/_npx/1a2b3c/node_modules/austere-axi/dist/cli.mjs";
+  fs.writeFileSync(unitPath(moved.home), systemdUnit({ ...SPEC, cli: npx, stateDir: STATE }));
+  assert.equal((await installService({}, moved)).status, "installed");
+  assert.match(asked[0], new RegExp(`ExecStart: /usr/bin/node ${escapeRegExp(CLI)} server --persist --port 4388 \\(was ${escapeRegExp(npx)}\\)`));
+});
+
+test("installed means the unit's own process answers, not a server another unit runs", async () => {
+  // A server of another state dir already on the port: refused before anything is written.
+  const taken = context({ probe: async () => ({ stateDir: "/home/ana/other", supervised: "systemd", pid: 5 }) });
+  await assert.rejects(installService({}, taken.ctx), /already listens on port 4388 \(an austere-axi server for \/home\/ana\/other\)/);
+  assert.deepEqual(changes(taken.calls), []);
+  // After the start, pid 999 answers while the unit's main process is 4242: not installed.
+  let started = false;
+  const { ctx } = context({ probe: async () => (started ? { stateDir: STATE, supervised: "systemd", pid: 999 } : null) });
+  const base = ctx.run;
+  ctx.run = (cmd, args) => {
+    if (args.includes("enable")) started = true;
+    return base(cmd, args);
+  };
+  await assert.rejects(installService({}, ctx), /did not answer on port 4388 within 15 s \(pid 999 answers, and the service's process is pid 4242\)\. Nothing was changed/);
+  assert.equal(fs.existsSync(unitPath(ctx.home)), false);
+});
+
+test("launchd: --adopt keeps the agent's own variables in the new one", async () => {
+  const { ctx, calls, asked } = context({ platform: "darwin" });
+  const file = path.join(ctx.home, "Library", "LaunchAgents", "xyz.kasat.austere-axi.plist");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const mine = launchdPlist({ ...SPEC, stateDir: STATE, env: [["HTTPS_PROXY", "http://proxy:3128"]] }, "/tmp/log").replace(/<!-- Written by[^\n]*\n/, "");
+  fs.writeFileSync(file, mine);
+  await assert.rejects(installService({}, ctx), /did not write\. `austere-axi server install --adopt` takes its place: it shows what it keeps of it \(its environment variables\)/);
+  const r = await installService({ adopt: true }, ctx);
+  assert.equal(r.status, "installed");
+  assert.match(asked[0], /keeps, in its environment:\n    HTTPS_PROXY=http:\/\/proxy:3128\n/);
+  assert.match(fs.readFileSync(file, "utf8"), /<key>HTTPS_PROXY<\/key><string>http:\/\/proxy:3128<\/string>/);
+  assert.equal(fs.readFileSync(`${file}.bak`, "utf8"), mine);
+  assert.deepEqual(changes(calls).slice(0, 1), ["launchctl bootout gui/501/xyz.kasat.austere-axi"]);
 });
