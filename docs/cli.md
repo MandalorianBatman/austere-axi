@@ -163,6 +163,10 @@ austere-axi trigger remove <id>
 - **A run like any other:** a row in `run list --project p` (`trigger: <id>`, the cursor range), `run log <id>`, `run stop --project p`. Same log (1 MB, 0600, 30 days), `maxTime` (else `maxMinutes` in `attach.json`) and `runsPerHour` (per trigger) and `maxConcurrent` limits as a note's run. Statuses: `done`, `failed` (`exit`, `timeout`, `rate_limit`, `unavailable`), `stopped`, `interrupted`.
 - **It needs a server:** a server with a trigger configured does not idle out. Without a running server nothing runs; `server install` keeps one.
 
+## Add-ons
+
+`austere-wiki`, a project wiki an agent keeps from your reviews and you check in the same review page, is an optional add-on in a separate private repository. It is not part of this package: it reaches the core only through this CLI (`changes`, `decisions`, `show`, `find`, `feedback`, `reply`, `adapter command`, `trigger`, with `AUSTERE_AXI_FORMAT=json`), keeps its own database (`<state>/wiki.db`), and starts its ingest with a [trigger](#triggers). With it uninstalled, nothing here changes.
+
 ## Attach
 
 Attach decides whether a note the owner sends starts an agent on a page (see [Attach an agent](attach.md) for the whole story). A page has its own setting, or uses its project's default; with neither it is off.
