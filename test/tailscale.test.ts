@@ -313,4 +313,16 @@ describe("the local-network listener", { skip: !LAN && "this computer has no loc
     assert.deepEqual([off.status, off.data.address, off.data.listening], [200, null, false]);
     await assert.rejects(call(srv.port, lan, "GET", `/s/${id}`));
   });
+
+  test("an AUSTERE_AXI_LINK_HOST that names the local-network address gets no owner key link", async () => {
+    const other = await startServer({ AUSTERE_AXI_LINK_HOST: lan });
+    try {
+      assert.equal((await api<LocalNetwork>(other, "POST", "/api/settings/lan", { lan })).status, 200);
+      const opened = await api<{ links: { local: string; remote?: string } }>(other, "POST", "/api/open", { file });
+      assert.equal(opened.data.links.remote, undefined, "the key would cross the local network in plain HTTP");
+      assert.match(opened.data.links.local, /^http:\/\/127\.0\.0\.1:/);
+    } finally {
+      await stopServer(other);
+    }
+  });
 });

@@ -633,7 +633,11 @@ export async function runServer({
   function links(id: string): SessionLinks {
     const out: SessionLinks = { local: `http://127.0.0.1:${port}/s/${id}` };
     const base = remoteBase();
-    if (base) out.remote = `${base}/s/${id}?key=${ownerToken}`;
+    // The owner key never travels in plain HTTP to the local-network listener, whatever override names it (P7);
+    // an HTTPS proxy in front of it is fine.
+    const target = base ? new URL(base) : null;
+    const toLan = target != null && lanHost != null && target.protocol === "http:" && target.hostname.replace(/^\[|\]$/g, "") === lanHost;
+    if (base && !toLan) out.remote = `${base}/s/${id}?key=${ownerToken}`;
     return out;
   }
 
@@ -3208,12 +3212,22 @@ export async function runServer({
     await followTailnet(await detectTailscale({ fresh: true }), true);
   }
 
+  /** The local-network change in progress: changes run one at a time. */
+  let lanChange: Promise<unknown> = Promise.resolve();
+
   /**
    * Settings → Network → Local network (P6): listen on `address`, one of this machine's local-network
    * addresses (lanAddresses), or stop (null). The choice is kept in hub.db, so a later server listens
-   * there too. The error in words, or "".
+   * there too. Changes run one at a time, so the last one decides both the listener and the saved
+   * setting. The error in words, or "".
    */
-  async function setLan(address: string | null): Promise<string> {
+  function setLan(address: string | null): Promise<string> {
+    const run = lanChange.then(() => applyLan(address));
+    lanChange = run.catch(() => undefined);
+    return run;
+  }
+
+  async function applyLan(address: string | null): Promise<string> {
     if (address !== null && !lanAddresses().some((a) => a.address === address)) return `${address} is not an address of this computer on a local network`;
     if (lanHost && lanHost !== address) leaveLan(lanHost);
     if (address && lanHost !== address) {
