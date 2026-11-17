@@ -31,6 +31,8 @@ const FRAME_CSP =
 interface Socket {
   ws: WebSocket;
   invite: string | undefined;
+  /** Let in on the owner's sign-in cookie. */
+  owner?: boolean;
 }
 
 // What the stub service has seen and holds.
@@ -61,6 +63,9 @@ const svc = {
   retryAfter: 1,
   /** When each mutation arrived (epoch ms), in step with `mutations`. */
   mutationTimes: [] as number[],
+  /** The single-use code `publish login` printed, until used; then the owner cookie's session. */
+  loginCode: null as string | null,
+  ownerSession: null as string | null,
 };
 let stub: http.Server | undefined;
 let origin: string;
@@ -102,9 +107,10 @@ function refuse(socket: Duplex, status: number, code: string) {
 }
 
 function shell() {
-  const boot = { id: ID, title: "Plan", artifactUrl: `${BASE}/a/`, version: "0.8.1", viewer: { role: "reviewer", name: "" }, hosted: { base: BASE, report: `${BASE}/report`, publishedAt: 1_000 } };
+  // As austere-cloud: the shell names no page; the title comes with the asset-token answer.
+  const boot = { id: ID, title: "Shared page", name: "Shared page", artifactUrl: `${BASE}/a/`, version: "0.8.1", viewer: { role: "reviewer", name: "" }, hosted: { base: BASE, report: `${BASE}/report`, publishedAt: 1_000 } };
   return `<!doctype html>
-<html lang="en" data-theme="dark"><head><meta charset="utf-8"><title>Plan · austere</title>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><title>Shared page · austere</title>
 <link rel="stylesheet" href="/rt/chrome/chrome.css">
 <script type="application/json" id="austere-boot">${JSON.stringify(boot).replace(/</g, "\\u003c")}</script>
 <script src="/rt/chrome/chrome.js" defer></script>
@@ -117,11 +123,25 @@ root = Stack([intro])
 intro = TextContent("hello")
 </script></body></html>`;
 
+/** The request carries the live owner session cookie. */
+const isOwner = (req: IncomingMessage) => svc.ownerSession !== null && /(?:^|;\s*)austere_owner=([^;]+)/.exec(req.headers.cookie ?? "")?.[1] === svc.ownerSession;
+
 async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "", origin);
   const invite = String(req.headers["x-austere-invite"] ?? "");
   svc.requests.push(`${req.method} ${url.pathname}${url.search}`);
   if (req.method === "POST" && req.headers.origin && req.headers.origin !== origin) return json(res, 403, { error: { code: "forbidden", message: "foreign origin" } });
+  if (url.pathname === BASE && url.searchParams.has("login")) {
+    // The single-use sign-in link: swap the code for the page-scoped owner cookie, then drop it from the URL.
+    if (svc.loginCode === null || url.searchParams.get("login") !== svc.loginCode) {
+      res.writeHead(403, { "content-type": "text/plain" });
+      return res.end("This sign-in link was used already or has expired.");
+    }
+    svc.loginCode = null;
+    svc.ownerSession = `session${Math.random().toString(36).slice(2)}`;
+    res.writeHead(303, { location: BASE, "set-cookie": `austere_owner=${svc.ownerSession}; Path=${BASE}; HttpOnly; SameSite=Lax` });
+    return res.end();
+  }
   if (url.pathname === BASE) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": SHELL_CSP });
     return res.end(shell());
@@ -139,11 +159,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (url.pathname === `${BASE}/asset-token` && req.method === "POST") {
     if (svc.stallAssetToken) return; // never answered
     svc.inviteHeaders.push(invite);
-    const name = svc.invites.get(invite);
+    const owner = isOwner(req);
+    const name = owner ? "Owner" : svc.invites.get(invite);
     if (!name && !svc.unlisted) return json(res, 403, { error: { code: "forbidden", message: "invite required" } });
     const token = `at${svc.assetTokens.size}x${Math.random().toString(36).slice(2)}`;
     svc.assetTokens.add(token);
-    return json(res, 200, { token, expiresAt: Date.now() + 600_000, name: name ?? null });
+    return json(res, 200, { token, expiresAt: Date.now() + 600_000, name: name ?? null, title: "Plan", owner });
   }
   if (url.pathname === `${BASE}/report` && req.method === "POST") {
     svc.reports.push({ body: await body(req), invite });
@@ -175,7 +196,7 @@ function reviewerSocket(s: Socket) {
       const key = `${frame.clientId}:${frame.n}`;
       if (!svc.applied.has(key)) {
         svc.applied.add(key);
-        const author = (s.invite && svc.invites.get(s.invite)) || frame.args.name || "Reviewer";
+        const author = s.owner ? "Owner" : (s.invite && svc.invites.get(s.invite)) || frame.args.name || "Reviewer";
         put({ v: 1, type: "note", id: `n${svc.seq + 1}`, seq: 0, author, items: frame.args.items, at: Date.now(), state: "held" } satisfies NoteRow);
       }
       send(s.ws, { v: SYNC_VERSION, t: "ack", clientId: frame.clientId, n: frame.n });
@@ -205,6 +226,16 @@ function revoke(token: string) {
   }
 }
 
+/** The owner's sign-in session ends: its sockets get `error` `forbidden`, then close 1008. */
+function signOut() {
+  svc.ownerSession = null;
+  for (const s of svc.sockets) {
+    if (!s.owner) continue;
+    send(s.ws, { v: SYNC_VERSION, t: "error", code: "forbidden", message: "sign-in expired" });
+    s.ws.close(1008, "forbidden");
+  }
+}
+
 before(async () => {
   for (const f of ["austere.js", "chrome/chrome.js", "chrome/chrome.css"]) {
     if (!fs.existsSync(path.join("dist", f))) {
@@ -227,8 +258,9 @@ before(async () => {
     if (!creds.sync) return refuse(socket, 426, "upgrade_required");
     if (svc.refuseUpgrades) return refuse(socket, 403, "forbidden");
     if (req.headers.origin !== origin) return refuse(socket, 403, "forbidden");
-    if (creds.invite ? !svc.invites.has(creds.invite) : !svc.unlisted) return refuse(socket, 403, "forbidden");
-    wss.handleUpgrade(req, socket, head, (ws) => reviewerSocket({ ws, invite: creds.invite }));
+    const owner = isOwner(req);
+    if (!owner && (creds.invite ? !svc.invites.has(creds.invite) : !svc.unlisted)) return refuse(socket, 403, "forbidden");
+    wss.handleUpgrade(req, socket, head, (ws) => reviewerSocket({ ws, invite: creds.invite, owner }));
   });
   stub = server;
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -243,7 +275,7 @@ after(async () => {
 
 beforeEach(() => {
   for (const s of svc.sockets) s.ws.terminate();
-  Object.assign(svc, { requests: [], inviteHeaders: [], rows: [], seq: 0, pulls: [], mutations: [], holdAcks: false, upgrades: 0, reports: [], unlisted: false, rateLimit: 0, retryAfter: 1, mutationTimes: [] });
+  Object.assign(svc, { requests: [], inviteHeaders: [], rows: [], seq: 0, pulls: [], mutations: [], holdAcks: false, upgrades: 0, reports: [], unlisted: false, rateLimit: 0, retryAfter: 1, mutationTimes: [], loginCode: null, ownerSession: null });
   svc.invites = new Map([[ANA, "Ana"]]);
   put(pageRow(1_000));
 });
@@ -347,6 +379,53 @@ test("hosted chrome: invite link, asset-token frame, synced rows, addNote as the
 
     // No local-server traffic and no old hosted routes.
     assert.ok(!svc.requests.some((r) => /\/events|\/bye|\/s\/|\/conversation|\/send/.test(r)), svc.requests.join("\n"));
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: the shell names no page until access is granted; the owner signs in with a single-use link", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await ctx.newPage();
+    const errors = watchErrors(page);
+
+    // No invite: the page stays nameless and says it is invite-only.
+    await page.goto(`${origin}${BASE}`);
+    await page.waitForSelector(".presence.ended");
+    assert.match(await page.locator(".presence").innerText(), /Invite required/);
+    assert.equal(await page.title(), "Shared page · austere");
+    assert.equal(await page.locator(".title").innerText(), "Shared page");
+
+    // The owner's link: the code is traded for the cookie and taken out of the address bar.
+    const code = "c0de0123456789abcdef0123456789abcdef01234ab";
+    svc.loginCode = code;
+    await page.goto(`${origin}${BASE}?login=${code}`);
+    await page.frameLocator(".frame").locator("text=hello").waitFor();
+    assert.equal(page.url(), `${origin}${BASE}`);
+    assert.equal(await page.title(), "Plan · austere");
+    assert.equal(await page.locator(".title").innerText(), "Plan");
+    assert.equal(svc.inviteHeaders.at(-1), "", "no invite is offered");
+    assert.match(await page.locator(".composer-hint").innerText(), /Posting as Owner/);
+    await page.fill(".composer textarea", "owner note");
+    await page.click(".composer .send");
+    await mutationsReceived(1);
+    await page.waitForSelector(".msg.user .receipt em:text('Sent to the page owner')");
+    assert.ok(svc.rows.some((r) => r.type === "note" && r.author === "Owner"));
+
+    // The same link again is refused: it was single-use.
+    const again = await ctx.newPage();
+    assert.equal((await again.goto(`${origin}${BASE}?login=${code}`))?.status(), 403);
+    await again.close();
+
+    // The sign-in expires: the socket is closed, and the page says how to sign in again.
+    signOut();
+    await page.waitForSelector(".presence.ended");
+    assert.match(await page.locator(".presence").innerText(), /Signed out/);
+    assert.match(await page.locator(".banner").innerText(), /publish login/);
+    assert.ok(await page.locator(".composer textarea").isDisabled());
     assert.deepEqual(errors, []);
   } finally {
     await ctx.close();

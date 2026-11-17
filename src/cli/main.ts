@@ -11,7 +11,7 @@ import { splitStatements } from "../shared/statements.ts";
 import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
 import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
 import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from "./hub.ts";
-import { addRoot, copyLabel, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
+import { addRoot, copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
 import { lockStateDir } from "./lock.ts";
@@ -93,7 +93,7 @@ WORKFLOW
      type; an array stays an array). Pass null to skip an optional one.
   3. ${BIN} <file.html>          validate + register + open for review; fix any errors it lists.
                                    --no-open: print the url for the user instead.
-  4. One loop for every page you open from this folder's project (--project <dir|name>: another):
+  4. One loop for every page you open in this checkout (--project <dir|name>: every checkout):
        ${BIN} poll               wait until the reviewer sends notes: one batch per page, each
                                    naming its file. On status: timeout, run it again. If your
                                    harness wakes you when a background job ends, run it as one.
@@ -123,7 +123,7 @@ ${LOOKS_RULE.map((l) => `  ${l}`).join("\n")}
 
 COMMANDS
   ${BIN} check <file>            validate without a browser   [--fix: declare packs] [--render]
-  ${BIN} feedback [file]         notes no agent has answered yet (no file: the whole project)
+  ${BIN} feedback [file]         notes no agent has answered yet (no file: this checkout)
   ${BIN} archive <file>          put a page away (unarchive: back)
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
@@ -155,7 +155,7 @@ ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
-  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)  AUSTERE_AXI_CLOUD_URL (https://austere.kasat.xyz)
+  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)  AUSTERE_AXI_CLOUD_URL (https://austere.blundertech.com)
   A scope's token variable (registry add --token-env), sent only to that scope's registry
 `;
 }
@@ -178,13 +178,13 @@ const COMMANDS: Record<string, CommandSpec> = {
   poll: {
     usage: "poll [file] [--project p] [--cursor n] [--agent-reply text | --agent-reply-file path|-]",
     summary:
-      "wait until the reviewer presses Send; returns the feedback batch and a cursor. With no file it listens to every page of the project (the folder you run it in, or --project): each batch names its file and copy, --cursor acknowledges every page, and a poll on one page wins for that page. Replies stay per page: use reply <file>",
+      "wait until the reviewer presses Send; returns the feedback batch and a cursor. With no file it listens to every page of this checkout (the root folder you run it in; --project: every checkout of a project): each batch names its file and copy, --cursor acknowledges every page, a poll on one page wins for that page and a checkout's poll wins over the project's. Replies stay per page: use reply <file>",
     flags: {
       cursor: "acknowledge feedback up to n (the cursor the last poll printed)",
       after: "return everything after n again",
       "agent-reply": "post a reply first: a small Markdown subset (paragraphs, - lists, `code`, **bold**, links), a line or two",
       "agent-reply-file": "read the reply from a file, or - for stdin",
-      project: "the project to listen to when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)",
+      project: "listen to every checkout of a project when no file is given: a name, an id, or a folder inside one of its roots (default: only the checkout of the current folder)",
       "timeout-ms": "return status: timeout after n ms (default: wait for feedback)",
       session: SESSION_FLAG,
     },
@@ -210,9 +210,9 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   feedback: {
     usage: "feedback [file] [--project p] [--all] [--peek]",
-    summary: "feedback no agent has answered yet; reading it acknowledges it, reply answers it. With no file it reads every page of the project (the folder you run it in, or --project)",
+    summary: "feedback no agent has answered yet; reading it acknowledges it, reply answers it. With no file it reads every page of this checkout (the root folder you run it in; --project: every checkout of a project)",
     flags: {
-      project: "the project to read when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)",
+      project: "read every checkout of a project when no file is given: a name, an id, or a folder inside one of its roots (default: only the checkout of the current folder)",
       all: "include feedback already answered",
       peek: "read without acknowledging",
       session: SESSION_FLAG,
@@ -342,9 +342,9 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   publish: {
     usage:
-      "publish <file> [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new] | publish invites <file> | publish revoke <file> <name> | publish list | publish rm <file|id>",
+      "publish <file> [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new] | publish invites <file> | publish revoke <file> <name> | publish login <file> | publish list | publish rm <file|id>",
     summary:
-      "hosted share link on austere.kasat.xyz: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. Pages are invite-only: each --invite prints that reviewer's own link, revocable with publish revoke. The only command that publishes a page; run it only when the user asks to share a page. Afterwards the local server syncs the page: its notes reach poll and feedback marked remote: true, held for the owner unless --auto, and replies and the owner's Send/Discard go to the hosted page",
+      "hosted share link on austere.blundertech.com: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. Pages are invite-only: each --invite prints that reviewer's own link, revocable with publish revoke; publish login prints a single-use link that signs your own browser in to the hosted page. The only command that publishes a page; run it only when the user asks to share a page. Afterwards the local server syncs the page: its notes reach poll and feedback marked remote: true, held for the owner unless --auto, and replies and the owner's Send/Discard go to the hosted page",
     flags: {
       invite: "invite a reviewer by name and print their link (repeatable); the same name again keeps its link",
       expires: "the invites of this publish stop working after this long: 30m, 12h, 7d, 2w (default: with the page)",
@@ -525,7 +525,7 @@ async function cmdHome() {
     sessions: shown.length ? shown : undefined,
     commands: Object.fromEntries(Object.entries(COMMANDS).map(([name, c]) => [name === "open" ? "<file>" : name, c.summary])),
     next: shown.length
-      ? `${BIN} poll waits for feedback on every page of this folder's project (${BIN} poll <file> for one page). ${BIN} --help: workflow and file skeleton.`
+      ? `${BIN} poll waits for feedback on every page of this checkout (${BIN} poll <file> for one page). ${BIN} --help: workflow and file skeleton.`
       : `${BIN} --help: workflow and file skeleton. ${BIN} spec: component reference. ${BIN} <command> --help: one command.`,
   });
 }
@@ -572,13 +572,13 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   };
   if (d.pending) out.queued_feedback = d.pending;
   if (d.held) out.held_notes = `${d.held} from teammates, waiting for the owner to send them`;
-  // From this folder a bare poll means this folder's project: name the page's when it is another.
+  // From this folder a bare poll means this checkout: name the page's project when the page is in another one.
   const poll = !d.project ? `${BIN} poll ${quote(file)}` : d.project.here ? `${BIN} poll` : `${BIN} poll --project ${quote(d.project.ref)}`;
   if (d.session.archived) {
     out.next = `The page is archived, so it takes no notes. Only if the user asks, run \`${BIN} unarchive ${quote(file)}\`, then \`${poll}\`.`;
   } else {
     const scope = d.project
-      ? ` One poll covers every page of ${d.project.name} you open, this one included: if it is already running, it has this page too (\`${BIN} poll ${quote(file)}\` for this page only).`
+      ? ` One poll covers every page ${d.project.here ? "of this checkout" : `of ${d.project.name}`} you open, this one included: if it is already running, it has this page too (\`${BIN} poll ${quote(file)}\` for this page only).`
       : "";
     out.next = check.ok ? `Run \`${poll}\`; on status: timeout, run it again.${scope}` : `Fix the errors above (the page renders what it can), then run \`${poll}\`.${scope}`;
   }
@@ -646,10 +646,12 @@ function seqFlag(flags: Flags, name: string): string | undefined {
 }
 
 /**
- * The project a poll or feedback with no file means: `--project` (a name, an id or a folder), else the folder the command runs in.
+ * What a poll or feedback with no file covers: the root the command runs in (this checkout), or, with `--project`
+ * (a name, an id or a folder), every root of that project. `covers` names that scope in the output.
  * `pages`: how many of its pages are open for review (not archived; copies count once); `reviewed`: any page was ever opened, archived ones included.
  */
-async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string; scope: string; files: string[]; pages: number; reviewed: boolean } | null> {
+async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string; root: string | null; scope: string; covers: string; files: string[]; pages: number; reviewed: boolean } | null> {
+  const wide = typeof flags.project === "string";
   const ref = typeof flags.project === "string" ? flags.project : process.cwd();
   let hub: Hub;
   try {
@@ -668,10 +670,20 @@ async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string;
       );
       return null;
     }
-    const rows = hub.db.prepare("SELECT file, reviewed, archived_at, page_id FROM artifacts WHERE project_id = ?").all(project.id) as { file: string; reviewed: number; archived_at: number | null; page_id: string | null }[];
-    const scope = typeof flags.project === "string" ? ` --project ${quote(flags.project)}` : "";
-    const pages = new Set(rows.filter((r) => r.reviewed && !r.archived_at).map((r) => r.page_id)).size;
-    return { id: project.id, name: project.name, scope, files: rows.map((r) => r.file), pages, reviewed: rows.some((r) => r.reviewed) };
+    const root = wide ? null : findRoot(hub.db, ref);
+    type Row = { file: string; reviewed: number; archived_at: number | null; page_id: string | null };
+    const cols = "SELECT file, reviewed, archived_at, page_id FROM artifacts";
+    const rows = (root ? hub.db.prepare(`${cols} WHERE root = ?`).all(root) : hub.db.prepare(`${cols} WHERE project_id = ?`).all(project.id)) as Row[];
+    return {
+      id: project.id,
+      name: project.name,
+      root,
+      scope: wide ? ` --project ${quote(flags.project as string)}` : "",
+      covers: root ? "this checkout" : `every checkout of ${project.name}`,
+      files: rows.map((r) => r.file),
+      pages: new Set(rows.filter((r) => r.reviewed && !r.archived_at).map((r) => r.page_id)).size,
+      reviewed: rows.some((r) => r.reviewed),
+    };
   } catch (err) {
     fail(messageOf(err));
     return null;
@@ -680,10 +692,16 @@ async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string;
   }
 }
 
-/** What `poll` and `feedback` print for a project with no page open, instead of waiting on nothing. */
-const noOpenPage = (project: { name: string }): Printed => ({ status: "none", project: project.name, pages: 0, next: `no page of this project is open: \`${BIN} <file>\`` });
+/** What `poll` and `feedback` print for a checkout or project with no page open, instead of waiting on nothing. */
+const noOpenPage = (project: { name: string; root: string | null; covers: string }): Printed => ({
+  status: "none",
+  project: project.name,
+  scope: project.covers,
+  pages: 0,
+  next: `no page of this ${project.root ? "checkout" : "project"} is open: \`${BIN} <file>\``,
+});
 
-/** `poll` with no file: one poll for every page of the project. Each batch names its file and copy; `--cursor` acknowledges all of them. */
+/** `poll` with no file: one poll for every page of this checkout, or of the whole project with `--project`. Each batch names its file and copy; `--cursor` acknowledges all of them. */
 async function cmdProjectPoll(flags: Flags): Promise<void> {
   if (flags["agent-reply"] !== undefined || flags["agent-reply-file"] !== undefined) {
     return usage(`a reply belongs to one page: run \`${BIN} reply <file> --cursor <n> --agent-reply "..."\` for each page, then \`${BIN} poll --cursor <n>\``, "poll");
@@ -696,13 +714,14 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
   const session = sessionLine(caller);
   if (!project.pages) return print(noOpenPage(project));
   await ensureServer();
-  process.stderr.write(`[${BIN}] waiting for feedback on every page of ${project.name} (${project.pages} open; interrupting is safe: feedback stays queued)\n`);
+  process.stderr.write(`[${BIN}] waiting for feedback on ${project.name}, ${project.covers} (${project.pages} open; interrupting is safe: feedback stays queued)\n`);
   const ticker = process.stderr.isTTY ? setInterval(() => process.stderr.write(`[${BIN}] still waiting…\n`), 60_000) : undefined;
   const again = `${BIN} poll${project.scope}`;
   let r;
   try {
     r = await request<PollResponse>("POST", "/api/poll", {
       project: project.id,
+      root: project.root ?? undefined,
       session: caller ?? undefined,
       cursor: seqFlag(flags, "cursor"),
       after: seqFlag(flags, "after"),
@@ -710,7 +729,7 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
     });
   } catch {
     clearInterval(ticker);
-    return print({ status: "interrupted", project: project.name, pages: project.pages, session, next: NEXT.interrupted(pollAgain(again, flags)) });
+    return print({ status: "interrupted", project: project.name, scope: project.covers, pages: project.pages, session, next: NEXT.interrupted(pollAgain(again, flags)) });
   }
   clearInterval(ticker);
   if (r.status !== 200) return fail(r.data?.error || `poll failed (${r.status})`);
@@ -723,6 +742,7 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
     const out: Printed = {
       status: "feedback",
       project: project.name,
+      scope: project.covers,
       pages,
       cursor: d.cursor,
       batches: batches.map((b) => ({ file: b.file, copy: b.copy, final: b.final, items: describeItems(b.file, b.items) })),
@@ -737,9 +757,9 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
         : `Then ${listen}, which acknowledges every page above and listens again.`);
     return print(out);
   }
-  const out: Printed = { status: d.status || "unknown", project: project.name, pages, session };
+  const out: Printed = { status: d.status || "unknown", project: project.name, scope: project.covers, pages, session };
   if (d.status === "timeout") out.next = `No feedback yet. Run \`${again}\` again.`;
-  if (d.status === "replaced") out.next = "A newer poll on this project took over (another one, or your own newer one); notes go to it. Stop this one.";
+  if (d.status === "replaced") out.next = `A newer poll of ${project.root ? "this checkout" : "this project"} took over (another one, or your own newer one); notes go to it. Stop this one.`;
   if (d.status === "interrupted") out.next = NEXT.interrupted(pollAgain(again, flags));
   if (d.status === "moved") out.next = `The pages of ${project.name} joined another project (a page in a folder above them was opened). Poll that one: \`${BIN} poll\` from that folder, or \`${BIN} poll --project <folder>\`; unread notes stay queued.`;
   print(out);
@@ -1381,7 +1401,7 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
   });
 }
 
-/** `feedback` with no file: the notes no agent has answered on every page of the project. */
+/** `feedback` with no file: the notes no agent has answered on every page of this checkout, or of the whole project with `--project`. */
 async function cmdProjectFeedback(flags: Flags): Promise<void> {
   const project = await projectOfFlags(flags);
   if (!project) return;
@@ -1395,7 +1415,7 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
   const published = cloud.readCloud().pages;
   if (project.files.some((f) => published[f])) await ensureServer();
   if (await serverIfRunning()) {
-    const r = await request<ProjectFeedbackResponse>("POST", "/api/feedback", { project: project.id, ...opts, session: caller ?? undefined }, { timeoutMs: 15_000 });
+    const r = await request<ProjectFeedbackResponse>("POST", "/api/feedback", { project: project.id, root: project.root ?? undefined, ...opts, session: caller ?? undefined }, { timeoutMs: 15_000 });
     if (r.status !== 200) return fail(r.data?.error || `feedback failed (${r.status})`);
     batches = r.data.batches;
   } else {
@@ -1404,7 +1424,7 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
       const store = await SessionStore.open(stateDir());
       try {
         const roots = new Hub(store.db);
-        const pages = store.inProject(project.id);
+        const pages = project.root ? store.inRoot(project.root) : store.inProject(project.id);
         registered = registerHere(store.db, caller, pages.map((s) => s.id));
         for (const s of pages) {
           const { entries } = store.feedback(s, opts);
@@ -1419,12 +1439,13 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
     }
   }
   const session = sessionLine(caller, registered);
-  if (!batches.length) return print({ status: "none", project: project.name, pages: project.pages, note: "Every piece of feedback in this project has been answered.", session });
+  if (!batches.length) return print({ status: "none", project: project.name, scope: project.covers, pages: project.pages, note: `Every piece of feedback in ${project.root ? "this checkout" : "this project"} has been answered.`, session });
   const final = batches.every((b) => endsWithFinal(b.entries));
   const gone = batches.some((b) => b.missing);
   print({
     status: "feedback",
     project: project.name,
+    scope: project.covers,
     pages: project.pages,
     batches: batches.map((b) => ({ file: b.file, copy: b.copy, archived: b.archived || undefined, missing: b.missing || undefined, final: endsWithFinal(b.entries) || undefined, items: feedbackItems(b.file, b.entries, opts.all) })),
     session,
@@ -2113,11 +2134,21 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
       const r = await cloud.removePage(cloud.readCloud().pages[asFile] ? asFile : key);
       return print({ status: "removed", id: r.id, file: r.file, note: r.gone ? "It was already gone from the service (expired or deleted)." : "The link stops working at once." });
     }
-    if (sub === "invites" || sub === "revoke") {
+    if (sub === "invites" || sub === "revoke" || sub === "login") {
       const [file, ...name] = more;
       if (!file) return usage(`${sub} needs a file: ${BIN} publish ${sub} <file>${sub === "revoke" ? " <name>" : ""}`, "publish");
       // The saved page entry is enough: the source may have been moved or deleted since it was published.
       const abs = canonicalFile(file);
+      if (sub === "login") {
+        if (name.length) return usage(`login takes one file; it got ${more.map((a) => `"${a}"`).join(" ")}`, "publish");
+        const r = await cloud.ownerLogin(abs);
+        return print({
+          id: r.id,
+          url: r.url,
+          expires: `after one use, or in ${Math.round(r.ttlMs / 1000)}s`,
+          note: "Open it in your browser to sign that browser in as the page's owner; the plain page url then works there for 30 days, without an invite. Do not forward it.",
+        });
+      }
       if (sub === "revoke") {
         if (!name.length) return usage(`revoke needs an invite name: ${BIN} publish revoke <file> <name> (see ${BIN} publish invites <file>)`, "publish");
         const r = await cloud.revokeInvite(abs, name.join(" "));

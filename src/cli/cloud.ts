@@ -22,7 +22,7 @@ import { bundledPacks, implicitPacks, pagePacks } from "./packs.ts";
 import { LIMITS, SYNC_VERSION, grantId, mutation, parseServerFrame, syncProtocols } from "../shared/sync.ts";
 import type { AclRow, MutationArgs, MutationName, PackRef, PageRow, PullFrame, ReceivedFrame, Row, SyncError } from "../shared/sync.ts";
 
-export const DEFAULT_CLOUD_URL = "https://austere.kasat.xyz";
+export const DEFAULT_CLOUD_URL = "https://austere.blundertech.com";
 
 /** Page ids are 16 random bytes, base64url. */
 export const PAGE_ID_RE = /^[A-Za-z0-9_-]{22}$/;
@@ -119,7 +119,7 @@ function stateFor(url: string): CloudState {
   const state = readCloud();
   if (state.token && state.url && state.url !== url) {
     throw new CloudError(
-      `${cloudFile()} holds an owner token for ${state.url}, not ${url}. Set AUSTERE_AXI_CLOUD_URL=${state.url}, or use another AUSTERE_AXI_STATE_DIR for ${url}.`,
+      `${cloudFile()} holds an owner token for ${state.url}, not ${url}. Set AUSTERE_AXI_CLOUD_URL=${state.url}, use another AUSTERE_AXI_STATE_DIR for ${url}, or, if ${state.url} is gone, move ${cloudFile()} aside to start over on ${url}.`,
     );
   }
   state.url = url;
@@ -564,6 +564,21 @@ export async function revokeInvite(abs: string, name: string): Promise<{ id: str
   delete entry.invites[n];
   writeCloud(state);
   return { id: entry.id, name: n };
+}
+
+/**
+ * A single-use sign-in link for the owner's browser: the service swaps its code for an owner
+ * cookie scoped to this page, so the owner can open the hosted page without an invite.
+ */
+export async function ownerLogin(abs: string): Promise<{ id: string; url: string; ttlMs: number }> {
+  const base = cloudUrl();
+  const state = stateFor(base);
+  const entry = entryOf(state, abs);
+  const data = await call<{ code?: unknown; ttlMs?: unknown }>(base, "POST", `/api/pages/${encodeURIComponent(entry.id)}/login`, { token: state.token });
+  if (!data || typeof data.code !== "string" || !/^[A-Za-z0-9_-]+$/.test(data.code) || typeof data.ttlMs !== "number") {
+    throw new CloudError(`${base} did not return a sign-in code`);
+  }
+  return { id: entry.id, url: `${base}/p/${entry.id}?login=${data.code}`, ttlMs: data.ttlMs };
 }
 
 export interface ListedPage {

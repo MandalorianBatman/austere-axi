@@ -354,6 +354,15 @@ function gitProjectOf(roots: RootRow[], dir: string, git: "dir" | "file"): strin
   return roots.find((r) => pathKey(r.root) === pathKey(main))?.project_id ?? assignedHolder(roots, main)?.project_id ?? null;
 }
 
+/**
+ * The root (checkout) a folder is in, by the rule `findProject` uses: the stored root that holds it, else the
+ * folder holding the nearest `.git` (a checkout not stored yet, which has no pages). The scope of a bare `poll` or `feedback`.
+ */
+export function findRoot(db: sqlite.DatabaseSync, dir: string): string | null {
+  const found = lookup(allRoots(db), canonicalFile(path.resolve(dir)));
+  return !found ? null : "row" in found ? found.row.root : found.at;
+}
+
 function needProject(db: sqlite.DatabaseSync, ref: string): ProjectRow {
   const p = findProject(db, ref);
   if (!p) throw new Error(`no project ${ref} (a project name, id, or a folder inside one of its roots)`);

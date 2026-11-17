@@ -591,7 +591,15 @@ const log = $(".log");
 const textarea = $<HTMLTextAreaElement>(".composer textarea");
 const banner = $(".banner");
 
-$(".title").textContent = BOOT.title;
+// A hosted shell names no page (austere-cloud keeps the title from anyone without access): the
+// asset-token answer and the frame bring the real one.
+let pageTitle = BOOT.title;
+function showTitle(title: string) {
+  pageTitle = title;
+  $(".title").textContent = title;
+  document.title = `${title} · austere`;
+}
+showTitle(BOOT.title);
 if (OWNER) $(".file").textContent = BOOT.name;
 renderViewer();
 
@@ -608,7 +616,6 @@ textarea.addEventListener("blur", () => presence.setWriting("composer", false));
 window.addEventListener("pagehide", () => presence.leave());
 
 $(".file").title = BOOT.file || "";
-document.title = `${BOOT.title} · austere`;
 
 // ── tiny markdown for agent replies ──
 
@@ -687,10 +694,7 @@ window.addEventListener("message", (e) => {
       break;
     case "ready":
       state.frameReady = true;
-      if (d.title) {
-        $(".title").textContent = d.title;
-        document.title = `${d.title} · austere`;
-      }
+      if (typeof d.title === "string" && d.title.trim()) showTitle(d.title.trim());
       // A reloaded frame starts unmarked; it handles "highlight" from the start.
       if (state.highlight) postHighlight(false);
       presence.redraw();
@@ -2183,6 +2187,8 @@ function connect() {
 let publishedAt = HOSTED?.publishedAt;
 // Highest row seq applied, kept for the tab: a reconnect pulls after it.
 let cursor = 0;
+// The service let this browser in on the owner's sign-in cookie (`publish login`), not an invite.
+let ownerView = false;
 
 /** Nothing more can be sent: say why in the presence label and the banner, and stop syncing. */
 function lock(label: string, message: string, actions: HTMLElement[] = []) {
@@ -2197,20 +2203,30 @@ function lock(label: string, message: string, actions: HTMLElement[] = []) {
 /** Locks on an answer that means this reviewer cannot get in (403) or the page is gone (404, 410). */
 function refused(status: number): boolean {
   if (status === 403) {
-    if (invite) lock("Invite no longer valid", "This invite is no longer valid. Ask the page owner for a new link.");
+    if (ownerView) lock("Signed out", "Your owner sign-in has expired. Run `austere-axi publish login <file>` for a new link.");
+    else if (invite) lock("Invite no longer valid", "This invite is no longer valid. Ask the page owner for a new link.");
     else lock("Invite required", "This page is invite-only. Open it from the link the page owner sent you.");
   } else if (status === 404 || status === 410) lock("Page removed", "This page is no longer available.");
   else return false;
   return true;
 }
 
-/** POST {base}/asset-token: trades the invite (none on an unlisted page) for a 10-minute frame token. */
-async function requestAssetToken(signal?: AbortSignal): Promise<{ status: number; token?: string; name?: string | null }> {
+/**
+ * POST {base}/asset-token: trades the invite (none on an unlisted page) or the owner's sign-in
+ * cookie for a 10-minute frame token, the page title and who the viewer is.
+ */
+async function requestAssetToken(signal?: AbortSignal): Promise<{ status: number; token?: string; name?: string | null; title?: string; owner?: boolean }> {
   const r = await fetch(`${BASE}/asset-token`, { method: "POST", headers: invite ? { "X-Austere-Invite": invite } : {}, signal });
   if (!r.ok) return { status: r.status };
-  const d = (await r.json().catch(() => null)) as { token?: unknown; name?: unknown } | null;
+  const d = (await r.json().catch(() => null)) as { token?: unknown; name?: unknown; title?: unknown; owner?: unknown } | null;
   const token = typeof d?.token === "string" && /^[A-Za-z0-9_-]+$/.test(d.token) ? d.token : undefined;
-  return { status: r.status, token, name: typeof d?.name === "string" && d.name ? d.name.slice(0, NAME_MAX) : null };
+  return {
+    status: r.status,
+    token,
+    name: typeof d?.name === "string" && d.name ? d.name.slice(0, NAME_MAX) : null,
+    title: typeof d?.title === "string" && d.title ? d.title : undefined,
+    owner: d?.owner === true,
+  };
 }
 
 /** Loads the frame from `${artifactUrl}<assetToken>/` and learns who the reviewer is. */
@@ -2223,6 +2239,8 @@ async function loadHostedFrame(): Promise<boolean> {
     ]);
     return false;
   }
+  if (typeof answer.title === "string" && answer.title.trim()) showTitle(answer.title.trim());
+  ownerView = !!answer.owner;
   inviteName = answer.name ?? null;
   if (inviteName) viewerName = inviteName;
   else {
@@ -2284,7 +2302,7 @@ async function downloadStandalone(): Promise<void> {
     let i = 0;
     const out = html.replace(HOSTED_SCRIPT_RE, () => (i++ ? "" : [...packed, LOADER_TAG].join("\n")));
     url = URL.createObjectURL(new Blob([out], { type: "text/html" }));
-    const slug = BOOT.title.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "page";
+    const slug = pageTitle.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "page";
     // In the document while clicked: Firefox ignores a click on a detached download anchor.
     const a = h("a", { href: url, download: `${slug}.html`, hidden: true });
     document.body.append(a);

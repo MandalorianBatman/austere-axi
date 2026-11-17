@@ -36,7 +36,7 @@ import { adapterFor, findOnPath, spawnSpec } from "./adapters/index.ts";
 import { readAdapters } from "./adapters/config.ts";
 import type { AdaptersConfig } from "./adapters/config.ts";
 import type { AttachMode } from "./adapters/types.ts";
-import { copyLabel, findProject } from "./projects.ts";
+import { copyLabel, findProject, findRoot } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
 import type { Invite } from "./invites.ts";
@@ -111,13 +111,13 @@ export interface OpenResponse {
   browsers: number;
   pending: number;
   held: number;
-  /** The page's project: `ref` names it for `--project` (its name, or its id when another project has that name); `here`: the folder the CLI ran in (`cwd`) is in it. */
+  /** The page's project: `ref` names it for `--project` (its name, or its id when another project has that name); `here`: the folder the CLI ran in (`cwd`) is in the page's checkout (root), so a bare poll there covers it. */
   project?: { name: string; ref: string; here: boolean };
 }
 
 /**
- * /api/poll, and how a listening poll ends. `replaced`: a newer poll took over this page. `interrupted`: the server stopped.
- * `moved`: a project poll's project is gone, its pages taken into another one (a guessed folder above them, `project merge`).
+ * /api/poll, and how a listening poll ends. `replaced`: a newer poll of the same scope (this page, this checkout or the whole project) took over. `interrupted`: the server stopped.
+ * `moved`: a shared poll's project (or, for a checkout's poll, its root) is gone, its pages taken into another one (a guessed folder above them, `project merge`).
  * `archived`: the page is archived and nothing is left to deliver, so a poll on it would wait for nothing.
  */
 export interface PollResponse {
@@ -282,10 +282,11 @@ interface Poll {
   done: boolean;
   /** A page poll's read point. */
   from: number;
-  /** A project poll: the project it listens for, the pages it watches, and `--after` (null: each page's own cursor). */
+  /** A shared poll: the project it listens for and, for a checkout's poll, that root (none: every root of the project); `--after` (null: each page's own cursor). */
   project?: string;
+  root?: string;
   after?: number | null;
-  /** A project poll's refresh of its pages' hosted connections (membership can change under it: `project merge`). */
+  /** A shared poll's refresh of its pages' hosted connections (membership can change under it: `project merge`). */
   refresh?: ReturnType<typeof setInterval>;
 }
 
@@ -404,7 +405,8 @@ export async function runServer({
   const logins = new LoginCodes(LOGIN_TTL_MS);
   const clients = new Map<string, Set<SseClient>>(); // id -> Set<{res, viewer}>
   const polls = new Map<string, Poll>(); // page id -> its poll
-  const projectPolls = new Map<string, Poll>(); // project id -> its poll
+  const rootPolls = new Map<string, Poll>(); // root folder -> its checkout's poll
+  const projectPolls = new Map<string, Poll>(); // project id -> its poll over every root
   const watchers = new Map<string, Watcher>(); // id -> { html, program, shell }
   const listeners = new Map<string, http.Server>(); // host -> http.Server
   // Hosted pages in cloud.json: their notes come in, the owner's Send/Discard and the agent's replies go out.
@@ -575,20 +577,31 @@ export async function runServer({
     }
   }
 
-  /** The poll that gets this page's notes: its own, else its project's. */
+  /** The poll that gets this page's notes: its own, else its checkout's, else its project's. */
   function listener(s: Session): Poll | undefined {
     const own = polls.get(s.id);
     if (own && !own.done) return own;
-    if (heldByPage(s)) return undefined;
-    const pid = store.projectIdOf(s);
-    const shared = pid ? projectPolls.get(pid) : undefined;
-    return shared && !shared.done ? shared : undefined;
+    return sharedListener(s);
   }
 
-  /** A page poll handed this page a batch its agent has not acknowledged yet: the page stays that agent's, not the project poll's, for up to `pageHoldMs`. */
-  function heldByPage(s: Session): boolean {
+  /** The shared poll a page without a poll of its own falls to: its root's (this checkout), else its project's, unless an unacknowledged batch holds it (`held`). */
+  function sharedListener(s: Session): Poll | undefined {
+    const root = store.rootOf(s);
+    const byRoot = root ? rootPolls.get(root) : undefined;
+    if (byRoot && !byRoot.done) return held(s, byRoot) ? undefined : byRoot;
+    const pid = store.projectIdOf(s);
+    const byProject = pid ? projectPolls.get(pid) : undefined;
+    return byProject && !byProject.done && !held(s, byProject) ? byProject : undefined;
+  }
+
+  /**
+   * A batch its agent has not acknowledged yet keeps the page with the scope that took it, for up to `pageHoldMs`:
+   * a page poll's batch keeps it from every shared poll, a checkout poll's batch from the project poll.
+   */
+  function held(s: Session, shared: Poll): boolean {
     const hold = s.pageHold;
-    return Boolean(hold && s.ackedSeq < hold.seq && Date.now() - hold.at < pageHoldMs);
+    if (!hold || s.ackedSeq >= hold.seq || Date.now() - hold.at >= pageHoldMs) return false;
+    return !(shared.root && hold.root);
   }
 
   function presence(s: Session): Presence {
@@ -915,17 +928,26 @@ export async function runServer({
     return root ? copyLabel(root) : path.basename(path.dirname(s.file));
   }
 
-  /** The pages a project poll listens for: every review of the project without a poll of its own or an unacknowledged page-poll batch. Read each time, so a page registered later counts. */
-  function covered(projectId: string): Session[] {
-    return store.inProject(projectId).filter((s) => {
+  /**
+   * The pages a shared poll listens for, by precedence page, then root, then project: a root poll gets its
+   * checkout's pages without a poll of their own; a project poll gets the project's pages that neither a page
+   * poll nor their checkout's poll holds, nor an unacknowledged batch of either (`held`). Read each time, so a page registered later counts.
+   */
+  function covered(poll: Poll): Session[] {
+    const pages = poll.root ? store.inRoot(poll.root) : store.inProject(poll.project as string);
+    return pages.filter((s) => {
       const own = polls.get(s.id);
-      return !(own && !own.done) && !heldByPage(s);
+      if ((own && !own.done) || held(s, poll)) return false;
+      if (poll.root) return true;
+      const root = store.rootOf(s);
+      const byRoot = root ? rootPolls.get(root) : undefined;
+      return !(byRoot && !byRoot.done);
     });
   }
 
-  /** What a project poll would hand over now: each covered page's notes after its own cursor (or after `--after`). */
+  /** What a shared poll would hand over now: each covered page's notes after its own cursor (or after `--after`). */
   function projectBatches(poll: Poll): { s: Session; entries: QueuedEntry[] }[] {
-    return covered(poll.project as string)
+    return covered(poll)
       .map((s) => ({ s, entries: store.after(s, poll.after ?? s.ackedSeq) }))
       .filter((b) => b.entries.length);
   }
@@ -941,22 +963,23 @@ export async function runServer({
       for (const { s, entries } of batches) {
         store.markDelivered(s, entries);
         s.workingSince = Date.now();
+        // A checkout's batch keeps its page from the project poll until acknowledged, as a page poll's does.
+        if (poll.root && (!s.pageHold || s.pageHold.seq <= (body.cursor as number))) s.pageHold = { seq: body.cursor as number, at: s.workingSince, root: true };
         broadcastTranscript(s, entries);
         broadcastPresence(s);
       }
     });
   }
 
-  /** A listening poll gets new notes at once: the page's own, else its project's. */
+  /** A listening poll gets new notes at once: the page's own, else its checkout's, else its project's. */
   function wake(s: Session): void {
     const own = polls.get(s.id);
     if (own && !own.done) {
       if (store.after(s, own.from).length) deliver(s, own);
       return;
     }
-    const pid = store.projectIdOf(s);
-    const shared = pid ? projectPolls.get(pid) : undefined;
-    if (!shared || shared.done) return;
+    const shared = sharedListener(s);
+    if (!shared) return;
     const batches = projectBatches(shared);
     if (batches.length) deliverProject(shared, batches);
   }
@@ -1026,13 +1049,13 @@ export async function runServer({
     broadcastPresence(s);
   }
 
-  /** A project poll has ended (answered, replaced, timed out or its client left): its pages stop being covered. */
+  /** A shared poll has ended (answered, replaced, timed out or its client left): its pages stop being covered by it. */
   function retireProjectPoll(poll: Poll): void {
     poll.done = true;
     clearInterval(poll.refresh);
-    const project = poll.project as string;
-    if (projectPolls.get(project) === poll) projectPolls.delete(project);
-    refreshWatch(project);
+    const [scope, key] = poll.root ? [rootPolls, poll.root] : [projectPolls, poll.project as string];
+    if (scope.get(key) === poll) scope.delete(key);
+    refreshWatch(poll.project as string);
   }
 
   function finishProjectPoll(poll: Poll, body: PollResponse, onDelivered?: () => void): void {
@@ -1059,33 +1082,35 @@ export async function runServer({
   }
 
   /**
-   * Coverage of a waiting project poll may have changed (a page registered, or `project merge` in another process):
+   * Coverage of a waiting shared poll may have changed (a page registered, or `project merge` in another process):
    * fix the hosted connections, then hand over notes a newly covered page already holds, as no insert will wake for them.
    */
-  function rescanProjectPoll(projectId: string): void {
-    const poll = projectPolls.get(projectId);
-    if (!poll || poll.done) return;
-    // Its pages went to another project, which this poll does not listen to: end it so the agent polls that one.
-    if (!hub.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) return finishProjectPoll(poll, { status: "moved" });
-    refreshWatch(projectId);
+  function rescanProjectPoll(poll: Poll): void {
+    if (poll.done) return;
+    // Its pages went to another project or root, which this poll does not listen to: end it so the agent polls that one.
+    const gone = poll.root
+      ? !hub.db.prepare("SELECT 1 FROM project_roots WHERE root = ?").get(poll.root)
+      : !hub.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(poll.project as string);
+    if (gone) return finishProjectPoll(poll, { status: "moved" });
+    refreshWatch(poll.project as string);
     const batches = projectBatches(poll);
     if (batches.length) deliverProject(poll, batches);
   }
 
   /**
-   * A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll.
-   * Registering it may have taken another project's pages in (a guessed folder above them): that project's poll ends now.
+   * A page registered while its checkout's or its project's poll listens is covered by it from now on: a published
+   * page's hosted socket opens too, and closes with the poll. Registering it may have taken other pages in (a guessed
+   * folder above them): every shared poll looks again, and one whose project or root is gone ends as moved.
    */
-  function joinProjectPoll(s: Session): void {
-    const pid = store.projectIdOf(s);
-    if (pid) rescanProjectPoll(pid);
-    for (const other of [...projectPolls.keys()]) if (other !== pid) rescanProjectPoll(other);
+  function rescanSharedPolls(): void {
+    for (const poll of [...rootPolls.values(), ...projectPolls.values()]) rescanProjectPoll(poll);
   }
 
   /**
-   * `poll` and `feedback` for a whole project (`project`: an id or a name; the CLI resolves a folder to one).
-   * A project poll gets every page of the project without a poll of its own, including pages registered after
-   * it started. `cursor` acknowledges the notes up to that seq on those pages. The newest project poll wins.
+   * `poll` and `feedback` over many pages (`project`: an id or a name; the CLI resolves a folder to one). With `root`
+   * (one of the project's root folders) they cover that checkout only; without, every root of the project.
+   * A shared poll gets its pages without a poll of their own (see `covered`), including pages registered after
+   * it started. `cursor` acknowledges the notes up to that seq on those pages. The newest poll of the same scope wins.
    */
   async function projectRoute(route: "poll" | "feedback", body: RequestBody, res: http.ServerResponse, caller: CallerReport | null): Promise<void> {
     let project: ProjectRow | null;
@@ -1095,11 +1120,15 @@ export async function runServer({
       return send(res, 400, { error: String((err as Error).message) });
     }
     if (!project) return send(res, 404, { error: `no project ${String(body.project)}` });
-    noteCaller(caller, store.inProject(project.id).map((s) => s.id), route);
+    const root = typeof body.root === "string" && body.root ? body.root : undefined;
+    if (root && !hub.db.prepare("SELECT 1 FROM project_roots WHERE root = ? AND project_id = ?").get(root, project.id)) {
+      return send(res, 404, { error: `${root} is not a root of project ${project.name}` });
+    }
+    noteCaller(caller, (root ? store.inRoot(root) : store.inProject(project.id)).map((s) => s.id), route);
 
     if (route === "feedback") {
       const batches: ProjectFeedbackResponse["batches"] = [];
-      const pages = store.inProject(project.id);
+      const pages = root ? store.inRoot(root) : store.inProject(project.id);
       await Promise.all(pages.map((s) => peer.pull(s.file))); // together, so slow hosted pages wait once, not each
       for (const s of pages) {
         const { entries, fresh } = store.feedback(s, { all: !!body.all, peek: !!body.peek });
@@ -1114,9 +1143,9 @@ export async function runServer({
 
     if (body.agentReply) return send(res, 400, { error: "a reply belongs to one page: use `reply <file> --agent-reply ...`" });
     const projectId = project.id;
-    const after = seqParam(body.after);
+    const poll: Poll = { res, startedAt: Date.now(), done: false, from: 0, project: projectId, root, after: seqParam(body.after) };
     const cursor = seqParam(body.cursor);
-    const mine = covered(projectId);
+    const mine = covered(poll);
     if (cursor != null) {
       for (const s of mine) {
         const acked = store.ackDelivered(s, cursor);
@@ -1127,15 +1156,15 @@ export async function runServer({
       s.workingSince = null;
       dispatcher.pollArrived(s);
     }
-    const existing = projectPolls.get(projectId);
+    const [scope, key] = root ? [rootPolls, root] : [projectPolls, projectId];
+    const existing = scope.get(key);
     if (existing && !existing.done) finishProjectPoll(existing, { status: "replaced" });
-    const poll: Poll = { res, startedAt: Date.now(), done: false, from: 0, project: projectId, after };
     const batches = projectBatches(poll);
     if (batches.length) return deliverProject(poll, batches);
-    projectPolls.set(projectId, poll);
+    scope.set(key, poll);
     refreshWatch(projectId);
     // Pages can join the project without this server hearing of it (`project merge` in another process): look again now and then.
-    poll.refresh = setInterval(() => rescanProjectPoll(projectId), msEnv("AUSTERE_AXI_PROJECT_REFRESH_MS", PROJECT_REFRESH_MS) || PROJECT_REFRESH_MS);
+    poll.refresh = setInterval(() => rescanProjectPoll(poll), msEnv("AUSTERE_AXI_PROJECT_REFRESH_MS", PROJECT_REFRESH_MS) || PROJECT_REFRESH_MS);
     res.on("close", () => {
       if (poll.done) return;
       retireProjectPoll(poll);
@@ -1295,7 +1324,7 @@ export async function runServer({
         }
         inv = invites.add({ name: body.name, sessionId: s.id, file: s.file, auto: !!body.auto });
         watch(s);
-        joinProjectPoll(s);
+        rescanSharedPolls();
         store.touch(s);
       } catch (err) {
         return send(res, 400, { error: String((err as Error).message || err) });
@@ -1309,11 +1338,12 @@ export async function runServer({
       await ensureTailnetListener();
       const s = store.ensure(file, cwd);
       watch(s);
-      joinProjectPoll(s);
+      rescanSharedPolls();
       store.touch(s);
       noteCaller(caller, [s.id], "open");
       const p = projectOfPage(s);
-      const project: OpenResponse["project"] = p && { name: p.name, ref: p.ref, here: cwd !== undefined && findProject(hub.db, cwd)?.id === p.id };
+      // A bare poll from `cwd` covers its checkout only: the page's root must be that one.
+      const project: OpenResponse["project"] = p && { name: p.name, ref: p.ref, here: cwd !== undefined && findRoot(hub.db, cwd) === store.rootOf(s) };
       return send(res, 200, {
         session: publicSession(s),
         links: links(s.id),
@@ -1945,9 +1975,10 @@ export async function runServer({
       const entry = state.token ? state.pages[s.file] : undefined;
       const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: peer.liveAuto(entry.id, entry.auto) } : undefined;
       const p = projectOfPage(s);
-      // An agent already polls this project: a second project poll would replace it, so the prompt names the page poll, which takes only this page.
+      // An agent already polls this project (a second project poll would replace it) or this page's checkout (it would keep
+      // the page from a project poll): the prompt names the page poll, which takes only this page.
       const shared = p ? projectPolls.get(p.id) : undefined;
-      const project = p && !(shared && !shared.done) ? { name: p.name, ref: p.ref } : undefined;
+      const project = p && !(shared && !shared.done) && !sharedListener(s) ? { name: p.name, ref: p.ref } : undefined;
       return send(res, 200, agentPrompt({ file: s.file, hosted, project }));
     }
     if (sub === "/export") {
@@ -2030,7 +2061,7 @@ export async function runServer({
       const s = store.get(id);
       if (s && !poll.done) finishPoll(s, poll, { status: "interrupted", reason });
     }
-    for (const poll of projectPolls.values()) finishProjectPoll(poll, { status: "interrupted", reason });
+    for (const poll of [...rootPolls.values(), ...projectPolls.values()]) finishProjectPoll(poll, { status: "interrupted", reason });
     for (const id of watchers.keys()) unwatch(id);
     peer.close();
     for (const server of listeners.values()) server.close();
@@ -2054,7 +2085,7 @@ export async function runServer({
       checking = true;
       void activeWorkNow()
         .then((working) => {
-          const busy = polls.size > 0 || projectPolls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || working;
+          const busy = polls.size > 0 || rootPolls.size > 0 || projectPolls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || working;
           if (busy) activity();
           else if (Date.now() - lastActivity > idleMs) shutdown("idle");
         })

@@ -450,7 +450,7 @@ test("one project poll receives notes from two pages, each batch naming its file
     await send(port, id, "on the plan");
     await send(port, id2, "on the second");
 
-    const first = await cliIn(WORK, port, state, "poll"); // no file: the project of the working directory
+    const first = await cliIn(WORK, port, state, "poll"); // no file: the checkout of the working directory
     assert.match(first.out, /^status: feedback$/m, first.out);
     assert.ok(first.out.includes(format({ file: FILE })) && first.out.includes(format({ file: FILE2 })), "each batch names its file");
     assert.match(first.out, /message: on the plan/);
@@ -458,12 +458,12 @@ test("one project poll receives notes from two pages, each batch naming its file
     const cursor = Number((/^cursor: (\d+)$/m.exec(first.out) as RegExpExecArray)[1]);
 
     // Not acknowledged: both come back.
-    const again = await cliIn(WORK, port, state, "poll", "--project", WORK);
+    const again = await cliIn(WORK, port, state, "poll");
     assert.match(again.out, /message: on the plan/);
     assert.match(again.out, /message: on the second/);
 
     // The project cursor acknowledges the notes of both pages.
-    const ack = await cliIn(WORK, port, state, "poll", "--project", WORK, "--cursor", String(cursor), "--timeout-ms", "300");
+    const ack = await cliIn(WORK, port, state, "poll", "--cursor", String(cursor), "--timeout-ms", "300");
     assert.match(ack.out, /^status: timeout$/m, ack.out);
     const pending = (await request(port, "GET", "/api/sessions")).data.sessions.map((s) => s.pending);
     assert.deepEqual(pending, [0, 0]);
@@ -731,10 +731,10 @@ test("a project with no open page says so instead of waiting; opening another pr
       const poll = await cliIn(empty, port, state, "poll", "--timeout-ms", "20000");
       assert.ok(Date.now() - started < 15_000, "it does not wait");
       assert.match(poll.out, /^pages: 0$/m, poll.out);
-      assert.match(poll.out, /no page of this project is open: `austere-axi <file>`/);
+      assert.match(poll.out, /no page of this checkout is open: `austere-axi <file>`/);
       const feedback = await cliIn(empty, port, state, "feedback");
       assert.match(feedback.out, /^pages: 0$/m, feedback.out);
-      assert.match(feedback.out, /no page of this project is open: `austere-axi <file>`/);
+      assert.match(feedback.out, /no page of this checkout is open: `austere-axi <file>`/);
 
       // The plan's project is WORK; a page of another project opened from WORK.
       const other = await cliIn(WORK, port, state, OTHER);
@@ -742,6 +742,122 @@ test("a project with no open page says so instead of waiting; opening another pr
       assert.match(other.out, new RegExp(`^next: "Run \`austere-axi poll --project ${path.basename(OTHER_DIR)}\`; `, "m"));
     } finally {
       rmDir(empty);
+    }
+  }));
+
+/** A repository `shop` on `main` and its linked worktree `shop-login` on `feature/login`, as git lays them out, each with docs/plan.html. */
+function shopWithWorktree(): { dir: string; shop: string; login: string; mainPlan: string; loginPlan: string } {
+  const dir = fs.realpathSync(tmp("austere-durable-shop-"));
+  const shop = path.join(dir, "shop");
+  const login = path.join(dir, "shop-login");
+  fs.mkdirSync(path.join(shop, ".git", "worktrees", "shop-login"), { recursive: true });
+  fs.writeFileSync(path.join(shop, ".git", "HEAD"), "ref: refs/heads/main\n");
+  const gitdir = path.join(shop, ".git", "worktrees", "shop-login");
+  fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
+  fs.writeFileSync(path.join(gitdir, "HEAD"), "ref: refs/heads/feature/login\n");
+  fs.mkdirSync(login);
+  fs.writeFileSync(path.join(login, ".git"), `gitdir: ${gitdir}\n`);
+  const [mainPlan, loginPlan] = [shop, login].map((root) => {
+    fs.mkdirSync(path.join(root, "docs"));
+    fs.copyFileSync(FILE, path.join(root, "docs", "plan.html"));
+    return path.join(root, "docs", "plan.html");
+  });
+  return { dir, shop, login, mainPlan, loginPlan };
+}
+
+test("two checkouts of one project, two bare polls: each gets only its own checkout's notes and neither is replaced", () =>
+  withServer(async ({ port, state }) => {
+    const { dir, shop, login, mainPlan, loginPlan } = shopWithWorktree();
+    try {
+      const mainId = await open(port, mainPlan);
+      const loginId = await open(port, loginPlan);
+      // The agent in the worktree listens first; the agent in the main checkout second.
+      const loginPoll = cliIn(login, port, state, "poll", "--timeout-ms", "8000");
+      await settle(500);
+      const mainPoll = cliIn(shop, port, state, "poll", "--timeout-ms", "8000");
+      await settle(500);
+
+      await send(port, mainId, "for the main checkout");
+      const main = await mainPoll;
+      assert.match(main.out, /^status: feedback$/m, main.out);
+      assert.match(main.out, /^scope: this checkout\npages: 1$/m, main.out);
+      assert.ok(main.out.includes(format({ file: mainPlan })), main.out);
+      assert.doesNotMatch(main.out, /shop-login/);
+
+      await send(port, loginId, "for the login checkout");
+      const other = await loginPoll;
+      assert.match(other.out, /^status: feedback$/m, other.out);
+      assert.ok(other.out.includes(format({ file: loginPlan })), other.out);
+      assert.ok(!other.out.includes(format({ file: mainPlan })), "the main checkout's page is not the worktree agent's");
+      assert.doesNotMatch(other.out, /for the main checkout/);
+      assert.match(other.out, /message: for the login checkout/);
+
+      // A bare feedback reads this checkout too; --project widens it to every checkout.
+      await send(port, mainId, "unanswered on main");
+      const here = await cliIn(login, port, state, "feedback", "--peek");
+      assert.match(here.out, /^scope: this checkout\npages: 1$/m, here.out);
+      assert.doesNotMatch(here.out, /unanswered on main/);
+      const wide = await cliIn(login, port, state, "feedback", "--peek", "--project", login);
+      assert.match(wide.out, /^scope: every checkout of shop\npages: 1$/m, wide.out);
+      assert.match(wide.out, /unanswered on main/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    }
+  }));
+
+test("a --project poll beside a checkout's poll: the checkout's poll wins for its pages, the project poll takes the rest", () =>
+  withServer(async ({ port, state }) => {
+    const { dir, shop, mainPlan, loginPlan } = shopWithWorktree();
+    try {
+      const mainId = await open(port, mainPlan);
+      const loginId = await open(port, loginPlan);
+      const rootPoll = cliIn(shop, port, state, "poll", "--timeout-ms", "8000");
+      await settle(500);
+      const projectPoll = cliIn(shop, port, state, "poll", "--project", shop, "--timeout-ms", "8000");
+      await settle(500);
+
+      await send(port, mainId, "for the checkout");
+      const root = await rootPoll;
+      assert.match(root.out, /^status: feedback$/m, root.out);
+      assert.match(root.out, /message: for the checkout/);
+      // The checkout's agent acknowledges and listens again, so its page stays its own.
+      const cursor = (/^cursor: (\d+)$/m.exec(root.out) as RegExpExecArray)[1];
+      const rootAgain = cliIn(shop, port, state, "poll", "--cursor", cursor, "--timeout-ms", "3000");
+      await settle(500);
+
+      await send(port, loginId, "for the project");
+      const wide = await projectPoll;
+      assert.match(wide.out, /^status: feedback$/m, wide.out);
+      assert.match(wide.out, /^scope: every checkout of shop\npages: 1$/m, wide.out);
+      assert.ok(wide.out.includes(format({ file: loginPlan })), wide.out);
+      assert.doesNotMatch(wide.out, /for the checkout/, "the checkout's poll took its page's note");
+      assert.match((await rootAgain).out, /^status: timeout$/m, "neither poll replaced the other");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    }
+  }));
+
+test("a checkout poll's unacknowledged batch is not handed to a --project poll while its agent works on it", () =>
+  withServer(async ({ port, state }) => {
+    const { dir, shop, mainPlan } = shopWithWorktree();
+    try {
+      const mainId = await open(port, mainPlan);
+      const rootPoll = cliIn(shop, port, state, "poll", "--timeout-ms", "8000");
+      await settle(500);
+      await send(port, mainId, "taken by the checkout");
+      const root = await rootPoll;
+      assert.match(root.out, /message: taken by the checkout/, root.out);
+
+      // The checkout's agent is patching (no poll waits); a --project poll starts meanwhile.
+      const wide = await cliIn(shop, port, state, "poll", "--project", shop, "--timeout-ms", "1500");
+      assert.match(wide.out, /^status: timeout$/m, wide.out);
+      assert.doesNotMatch(wide.out, /taken by the checkout/);
+
+      // Not acknowledged, so the checkout's own next poll gets it again.
+      const again = await cliIn(shop, port, state, "poll", "--timeout-ms", "3000");
+      assert.match(again.out, /message: taken by the checkout/, again.out);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     }
   }));
 
