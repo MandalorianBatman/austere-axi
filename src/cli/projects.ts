@@ -116,12 +116,28 @@ function gitDirFor(root: string): string | null {
   return null;
 }
 
-/** The main repository of a linked worktree (a `.git` file whose git dir holds `commondir`); null for anything else, a submodule included. */
-function mainRepoOf(dir: string): string | null {
+/**
+ * The common dir of the linked worktree at `dir`, when git registered it there: the git dir sits in
+ * `<commondir>/worktrees/` (writing there takes write access to the repository), and its back-pointer
+ * (`<gitdir>/gitdir`, absolute or relative to the git dir) names this folder's own `.git` entry, not
+ * followed through a symlink. Null for anything else: a submodule (no `commondir`), a git dir the
+ * folder carries itself, or a `.git` that only claims a repository, which must not join that
+ * repository's project.
+ */
+function worktreeCommonDir(dir: string): string | null {
   const gitDir = gitdirOf(dir);
-  const common = gitDir ? readText(path.join(gitDir, "commondir")) : null;
-  if (!gitDir || common == null || !common.trim()) return null;
-  const commonDir = canonicalFile(path.resolve(gitDir, common.trim()));
+  if (!gitDir) return null;
+  const common = (readText(path.join(gitDir, "commondir")) || "").trim();
+  const back = (readText(path.join(gitDir, "gitdir")) || "").trim();
+  if (!common || !back || pathKey(canonicalFile(path.resolve(gitDir, back))) !== pathKey(path.join(canonicalFile(dir), ".git"))) return null;
+  const commonDir = canonicalFile(path.resolve(gitDir, common));
+  return pathKey(path.dirname(gitDir)) === pathKey(canonicalFile(path.join(commonDir, "worktrees"))) ? commonDir : null;
+}
+
+/** The main repository of a linked worktree (`worktreeCommonDir`); null for anything else. */
+function mainRepoOf(dir: string): string | null {
+  const commonDir = worktreeCommonDir(dir);
+  if (!commonDir) return null;
   const main = path.basename(commonDir) === ".git" ? path.dirname(commonDir) : commonDir;
   return pathKey(main) === pathKey(dir) ? null : main;
 }
@@ -139,13 +155,12 @@ export function copyLabel(root: string): string {
   return path.basename(root) || root;
 }
 
-/** The `config` file of the repository at `root`: in its git dir, or the common dir a worktree's git dir names; a bare repository (`HEAD` and `config` in the folder itself) holds its own. */
+/** The `config` file of the repository at `root`: in its git dir, or the common dir of a linked worktree (`worktreeCommonDir`); a bare repository (`HEAD` and `config` in the folder itself) holds its own. */
 function repoConfigOf(root: string): string | null {
   const bare = fs.existsSync(path.join(root, "HEAD")) && fs.existsSync(path.join(root, "config"));
   const gitDir = gitDirFor(root) ?? (bare ? root : null);
   if (!gitDir) return null;
-  const common = (readText(path.join(gitDir, "commondir")) || "").trim();
-  return path.join(common ? path.resolve(gitDir, common) : gitDir, "config");
+  return path.join(worktreeCommonDir(root) ?? gitDir, "config");
 }
 
 /** The `url` under `[remote "origin"]` in the `config` file `file`; null without one. */
@@ -266,8 +281,9 @@ function lookup(roots: RootRow[], dir: string): { row: RootRow } | { at: string;
  * next lookup finds it stored. `cwd` is the folder the CLI ran in, if any. First match, walking up from `dir`:
  *  1. a stored root that `holds` it (the nearest);
  *  2. a `.git` entry: a directory makes a `git` root; a file points at a git dir, and a `commondir`
- *     there leads to the main repository, whose project this `worktree` root joins (no
- *     `commondir`: a submodule, its own project). Inside an assigned root, the folder holding
+ *     there leads to the main repository, whose project this `worktree` root joins, when the git
+ *     dir's `gitdir` points back at this `.git` (`worktreeCommonDir`; else, a submodule or a
+ *     forged `.git` file, its own project). Inside an assigned root, the folder holding
  *     `.git` is a root of the assigned root's project, and its pages' paths start with its folder
  *     inside the assigned root, so two repositories there keep apart; a repository's worktrees,
  *     wherever they are, share its prefix and so its pages;

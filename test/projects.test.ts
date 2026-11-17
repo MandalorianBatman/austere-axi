@@ -27,12 +27,13 @@ function repo(dir: string, branch = "main"): string {
   return dir;
 }
 
-/** A linked worktree of `main` at `dir`, as git lays it out: a `.git` file pointing at `.git/worktrees/<name>`, which holds `commondir`. */
+/** A linked worktree of `main` at `dir`, as git lays it out: a `.git` file pointing at `.git/worktrees/<name>`, which holds `commondir` and `gitdir` (back to the `.git` file). */
 function worktree(main: string, dir: string, head: string): string {
   const gitdir = path.join(main, ".git", "worktrees", path.basename(dir));
   fs.mkdirSync(gitdir, { recursive: true });
   fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
   fs.writeFileSync(path.join(gitdir, "HEAD"), head + "\n");
+  fs.writeFileSync(path.join(gitdir, "gitdir"), path.join(dir, ".git") + "\n");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, ".git"), `gitdir: ${gitdir}\n`);
   return dir;
@@ -57,6 +58,7 @@ function bareWorktree(repoDir: string, dir: string, branch: string): string {
   fs.mkdirSync(gitdir, { recursive: true });
   fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
   fs.writeFileSync(path.join(gitdir, "HEAD"), `ref: refs/heads/${branch}\n`);
+  fs.writeFileSync(path.join(gitdir, "gitdir"), path.join(dir, ".git") + "\n");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, ".git"), `gitdir: ${gitdir}\n`);
   return dir;
@@ -203,6 +205,70 @@ test("a submodule (a .git file with no commondir) is its own project", () =>
     assert.equal(inner.root, sub);
     assert.equal(inner.kind, "git");
     assert.equal(copyLabel(sub), "trunk", "a relative gitdir resolves from the folder holding .git");
+  }));
+
+test("a .git file that only claims a repository is its own project, whatever its git dir says", () =>
+  withDb((db, dir) => {
+    const main = repo(path.join(dir, "shop"));
+    fs.writeFileSync(path.join(main, ".git", "config"), gitConfig("https://github.com/owner/shop.git"));
+    const real = worktree(main, path.join(dir, "shop-feat"), "ref: refs/heads/feat");
+    const shop = resolveProject(db, write(path.join(main, "docs", "plan.html")));
+    // `.git` → `gitdir: meta`, `meta/commondir` → the real repository; `meta/gitdir` missing, naming
+    // another worktree's `.git`, then naming this folder's own `.git`: the forger writes `meta/` too.
+    const forged = path.join(dir, "copy");
+    const meta = path.join(forged, "meta");
+    fs.mkdirSync(meta, { recursive: true });
+    fs.writeFileSync(path.join(meta, "commondir"), path.join(main, ".git") + "\n");
+    fs.writeFileSync(path.join(meta, "HEAD"), "ref: refs/heads/main\n");
+    fs.writeFileSync(path.join(forged, ".git"), "gitdir: meta\n");
+    for (const back of [null, path.join(real, ".git"), path.join(forged, ".git")]) {
+      if (back) fs.writeFileSync(path.join(meta, "gitdir"), back + "\n");
+      assert.equal(findProject(db, forged), null, `nothing claims it before it is stored (back-pointer ${back})`);
+    }
+    const loc = resolveProject(db, write(path.join(forged, "docs", "plan.html")));
+    assert.notEqual(loc.projectId, shop.projectId);
+    assert.notEqual(loc.pageId, shop.pageId);
+    assert.equal(loc.root, forged);
+    assert.equal(loc.kind, "git");
+    const copy = listProjects(db).find((p) => p.id === loc.projectId);
+    assert.equal(copy?.name, "copy", "not named from the claimed repository's origin");
+    assert.equal(copy?.sameAs, undefined, "no hint to merge into the claimed repository's project");
+  }));
+
+test("a folder whose .git is a symlink to a real worktree's .git file is its own project", (t) =>
+  withDb((db, dir) => {
+    const main = repo(path.join(dir, "shop"));
+    const real = worktree(main, path.join(dir, "shop-feat"), "ref: refs/heads/feat");
+    const shop = resolveProject(db, write(path.join(main, "docs", "plan.html")));
+    const linked = path.join(dir, "linked");
+    fs.mkdirSync(linked);
+    try {
+      fs.symlinkSync(path.join(real, ".git"), path.join(linked, ".git"), "file");
+    } catch {
+      t.skip("no symlinks here");
+      return;
+    }
+    const loc = resolveProject(db, write(path.join(linked, "docs", "plan.html")));
+    assert.notEqual(loc.projectId, shop.projectId);
+    assert.equal(loc.kind, "git");
+  }));
+
+test("a worktree with relative paths both ways (worktree.useRelativePaths) groups with its repository", () =>
+  withDb((db, dir) => {
+    const main = repo(path.join(dir, "shop"));
+    const wt = path.join(dir, "shop-rel");
+    const gitdir = path.join(main, ".git", "worktrees", "shop-rel");
+    fs.mkdirSync(gitdir, { recursive: true });
+    fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
+    fs.writeFileSync(path.join(gitdir, "HEAD"), "ref: refs/heads/rel\n");
+    fs.writeFileSync(path.join(gitdir, "gitdir"), "../../../../shop-rel/.git\n");
+    fs.mkdirSync(wt, { recursive: true });
+    fs.writeFileSync(path.join(wt, ".git"), "gitdir: ../shop/.git/worktrees/shop-rel\n");
+    const b = resolveProject(db, write(path.join(wt, "docs", "plan.html")));
+    const a = resolveProject(db, write(path.join(main, "docs", "plan.html")));
+    assert.equal(b.kind, "worktree");
+    assert.equal(a.pageId, b.pageId);
+    assert.equal(copyLabel(wt), "rel");
   }));
 
 test("an assigned parent root wins over a nested .git: its project; the repository's folder starts its page paths", () =>

@@ -450,6 +450,7 @@ function shopWithWorktree(dir: string): { main: string; wt: string } {
   fs.writeFileSync(path.join(main, ".git", "HEAD"), "ref: refs/heads/main\n");
   fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
   fs.writeFileSync(path.join(gitdir, "HEAD"), "ref: refs/heads/feat\n");
+  fs.writeFileSync(path.join(gitdir, "gitdir"), path.join(wt, ".git") + "\n");
   fs.mkdirSync(path.join(wt, "docs"), { recursive: true });
   fs.mkdirSync(path.join(main, "docs"), { recursive: true });
   fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${gitdir}\n`);
@@ -558,6 +559,7 @@ test("archiving one of two copies names it, the copy that stays open and the not
     fs.mkdirSync(fixGit, { recursive: true });
     fs.writeFileSync(path.join(fixGit, "commondir"), "../..\n");
     fs.writeFileSync(path.join(fixGit, "HEAD"), "ref: refs/heads/fix\n");
+    fs.writeFileSync(path.join(fixGit, "gitdir"), path.join(fix, ".git") + "\n");
     fs.mkdirSync(path.join(fix, "docs"), { recursive: true });
     fs.writeFileSync(path.join(fix, ".git"), `gitdir: ${fixGit}\n`);
     const c = path.join(fix, "docs", "plan.html");
