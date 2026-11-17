@@ -189,20 +189,24 @@ statement_origins (artifact_id TEXT NOT NULL, name TEXT NOT NULL,
 A separate file, `<state>/wiki.db`, mode 0600, owned by the wiki package (A2). The core never opens it.
 
 ```sql
-wikis         (id, name, files_dir, export_dir)
-project_wikis (project_id, wiki_id)                 -- several projects may share one wiki; its files folder is a root of the first one only (Q8)
-wiki_pages    (id, wiki_id, slug, title, position)
-blocks        (id,                                  -- "b" + base36: a valid statement name
+wikis         (id, name UNIQUE, files_dir, export_dir, harness, model, created_at)
+project_wikis (project_id PRIMARY KEY,              -- a project has one wiki; several projects may share it, and its files folder is a root of the first one only (Q8)
+               wiki_id, project_name, project_dir)
+wiki_pages    (id, wiki_id, slug, title, position)  -- UNIQUE (wiki_id, slug)
+blocks        (id,                                  -- "b" + 4 base36 characters; the page's statements are <id>, <id>_t, _m, _s, _g, _b
                page_id, position,
                kind,                                -- heading | text | list | table
-               md,
+               md,                                  -- at most 1,200 characters; the "[unreviewed]" marker is never stored
                state,                               -- unreviewed | reviewed | stale
+               stale_reason, prior_state,           -- what made it stale; the state to go back to when that is undone
                created_run, updated_run, updated_at)
 block_refs    (block_id, artifact_id, file, statement, rev,
-               kind)                                -- page | note | reply | decision
-block_history (block_id, run_id, before_md, after_md, at)
+               kind,                                -- page | note | reply | decision
+               title)
+block_history (block_id, run_id, before_md, after_md, at)   -- Revert goes back to the last before_md
 wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
-               harness, model, status, summary)
+               harness, model, status, summary, prompt_version)
+feeds         (wiki_id, project_id, changes_cursor, decisions_cursor)   -- moved only by commit-run
 ```
 
 ## CLI before and after
@@ -390,7 +394,7 @@ One PR per stage (A3). A stage starts when the stages it depends on have merged.
 | 3 | RLM-341 attach | RLM-342 (spike, may run from stage 1) → RLM-343, RLM-344 → RLM-345 → RLM-346. RLM-347 stays parked. | RLM-337 | Built, in 0.12.0 (RLM-347 parked) |
 | 4 | RLM-348 history and reuse | RLM-349 → RLM-350 → RLM-351, RLM-352 → RLM-353, RLM-354 | RLM-332 (RLM-334); may run beside stage 3 | Built, in 0.13.0 |
 | 5 | RLM-355 dashboard shell | RLM-356 → RLM-357 → RLM-358 | RLM-336, RLM-346, RLM-349, RLM-350 | Not built |
-| 6 | RLM-359 wiki | core PR: RLM-360. `austere-wiki` repo: RLM-361 → RLM-362 → RLM-363 → RLM-364 → RLM-365 → RLM-366. RLM-367 stays parked. | RLM-345, RLM-351, RLM-352 | Not built |
+| 6 | RLM-359 wiki | core PR: RLM-360. `austere-wiki` repo: RLM-361 → RLM-362 → RLM-363 → RLM-364 → RLM-365 → RLM-366. RLM-367 stays parked. | RLM-345, RLM-351, RLM-352 | Core: PR #108 merged (RLM-360). `austere-wiki` repo (RLM-361–366): built, in review |
 
 Every PR runs `npm run build && npm test && npm run typecheck`; a chrome or hub UI change also runs `npm run test:browser` and screenshots at 1280 and 390 px. Each PR updates the guide in `docs/` and `HELP`/`COMMANDS` for every user-facing change it makes.
 
