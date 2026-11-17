@@ -115,6 +115,10 @@ code {
 .seg button[data-mode="annotate"].on {
   color: var(--accent);
 }
+.seg button:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
 .changes {
   border: 1px solid rgba(242, 196, 109, 0.35);
   background: rgba(242, 196, 109, 0.08);
@@ -875,6 +879,42 @@ textarea.edit {
   font-size: 12px;
   color: var(--faint);
   padding: 6px;
+}
+.confirm {
+  width: min(480px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 18px 20px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+.confirm::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.confirm h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.confirm p,
+.confirm ul {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.confirm ul {
+  padding-left: 18px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .btn {

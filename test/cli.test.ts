@@ -258,12 +258,40 @@ test("archive --missing puts away every gone copy, only in --project when given,
   }));
 
 test("archive takes a file or --missing, and --project only with --missing", () => {
-  for (const args of [["archive", "x.html", "--missing"], ["archive", "x.html", "--project", "p"], ["archive"], ["unarchive", "--missing"]]) {
+  for (const args of [["archive", "x.html", "--missing"], ["archive", "x.html", "--project", "p"], ["archive"], ["unarchive", "--missing"], ["archive", "--missing", "--every-copy"], ["unarchive", "x.html", "--every-copy"]]) {
     const r = cli(...args);
     assert.equal(r.code, 2, args.join(" "));
     assert.match(r.out, /code: USAGE/);
   }
 });
+
+test("poll on an archived page returns what is queued, then status: archived at once with a stop; open says archived", () =>
+  scratch(async ({ run, project }) => {
+    const { files } = await project("a");
+    const [file] = files;
+    assert.equal((await run("archive", file)).code, 0);
+    // The note sent before archiving still comes back.
+    let r = await run("poll", file, "--timeout-ms", "5000");
+    assert.match(r.out, /^status: feedback$/m, r.out);
+    const cursor = (/^cursor: (\d+)$/m.exec(r.out) as RegExpExecArray)[1];
+    // Nothing left: a poll would wait for a note the page can never take.
+    const started = Date.now();
+    r = await run("poll", file, "--cursor", cursor, "--timeout-ms", "20000");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /^status: archived$/m, r.out);
+    assert.ok(Date.now() - started < 15_000, "it answers at once instead of timing out");
+    assert.match(r.out, /Stop polling: the owner archived this page.*Unarchive only if the user asks: `austere-axi unarchive [^`]+a\.html[^`]*`/);
+    assert.doesNotMatch(r.out, /No feedback yet/);
+
+    r = await run(file, "--no-open");
+    assert.match(r.out, /^status: archived$/m, r.out);
+    assert.doesNotMatch(r.out, /^status: open$/m, "not open and archived at once");
+
+    // Unarchived, the page listens again.
+    assert.match((await run("unarchive", file)).out, /status: unarchived/);
+    r = await run("poll", file, "--timeout-ms", "300");
+    assert.match(r.out, /^status: timeout$/m, r.out);
+  }));
 
 // ── one loop (RLM-380): open names the project poll; final ends one page, not the loop ──
 

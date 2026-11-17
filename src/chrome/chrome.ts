@@ -98,6 +98,20 @@ interface SessionInfo {
   unread?: number;
 }
 
+/** A copy of the page in `/archive`'s answer (ArchiveCopy in src/cli/hub.ts). */
+interface ArchiveCopy {
+  file: string;
+  copy: string;
+  unanswered: number;
+}
+
+/** `/archive`: this copy's label, the copies archiving takes and the copies that stay open (ArchivePlan in src/cli/hub.ts). */
+interface ArchivePlan {
+  copy: string;
+  archived: ArchiveCopy[];
+  others: ArchiveCopy[];
+}
+
 interface SnapshotEvent {
   transcript?: Entry[];
   presence: string;
@@ -1067,7 +1081,12 @@ function renderLog(scrollToEnd = false) {
     log.append(q);
   }
   if (state.archived) {
-    log.append(h("div", { class: "archived-note", text: OWNER ? "This page is archived. Unarchive it from the ⋯ menu to add notes." : "The owner archived this page." }));
+    log.append(
+      h("div", {
+        class: "archived-note",
+        text: OWNER ? "This page is archived. Unarchive it from the ⋯ menu to add notes." : "The owner archived this page. Ask them to reopen it if you have more notes.",
+      }),
+    );
   }
   const count = rows.length + state.queue.length;
   if (scrollToEnd || atBottom || count !== lastLogCount) log.scrollTop = log.scrollHeight;
@@ -1236,8 +1255,14 @@ function setMode(mode: string | undefined) {
   const wasExploring = html.classList.contains("exploring");
   html.classList.toggle("exploring", state.mode === "explore");
   if (wasExploring && state.mode === "annotate") log.scrollTop = log.scrollHeight;
-  for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) b.classList.toggle("on", b.dataset.mode === state.mode);
-  post({ type: "mode", mode: state.archived ? "explore" : state.mode });
+  // An archived page takes no notes: the frame is in Explore, and the switch says so.
+  const shown: Mode = state.archived ? "explore" : state.mode;
+  for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) {
+    b.classList.toggle("on", b.dataset.mode === shown);
+    b.disabled = state.archived && b.dataset.mode === "annotate";
+    if (b.dataset.mode === "annotate") b.title = state.archived ? "The page is archived: it takes no notes" : "Click anything to comment on it (⌘/Ctrl+I)";
+  }
+  post({ type: "mode", mode: shown });
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) b.addEventListener("click", () => setMode(b.dataset.mode));
 document.addEventListener("keydown", (e) => {
@@ -1270,7 +1295,6 @@ function renderPresence() {
         : cls === "hosted"
           ? "Notes go to the page owner. Replies show up here as they are posted."
           : "";
-  document.documentElement.classList.toggle("is-archived", state.archived);
   if (OWNER) {
     $('[data-cmd="archive"]').hidden = state.archived;
     $('[data-cmd="unarchive"]').hidden = !state.archived;
@@ -1407,12 +1431,85 @@ menuPop.addEventListener("click", async (e) => {
     await downloadStandalone();
     menuPop.hidden = true;
   }
-  if (cmd === "archive") {
-    if (!confirm("Archive this page? It leaves the hub's lists and no one can add notes until you unarchive it.")) return;
-    await fetch(`${BASE}/archive`, { method: "POST" }).catch(() => {});
-  }
-  if (cmd === "unarchive") await fetch(`${BASE}/unarchive`, { method: "POST" }).catch(() => {});
+  if (cmd === "archive") await archivePage();
+  if (cmd === "unarchive") await unarchivePage();
 });
+
+/** The server's reason for a failed request, else its status. */
+async function failure(r: Response): Promise<string> {
+  const d = (await r.json().catch(() => ({}))) as { error?: string };
+  return d.error || `error ${r.status}`;
+}
+
+const UNREACHABLE = "Could not reach austere-axi. Check that it is still running.";
+
+/** Shows why archive or unarchive failed; the next attempt that works takes it away, and leaves any other banner alone. */
+let archiveError = "";
+function showArchiveError(text: string) {
+  archiveError = text;
+  showBanner(text);
+}
+function clearArchiveError() {
+  if (archiveError && banner.textContent === archiveError) showBanner("");
+  archiveError = "";
+}
+
+/**
+ * Asks before archiving: which copy goes, the unanswered notes that go with it, and the copies of the page
+ * (its other worktrees) that stay open. Resolves to null (cancel), false (this copy) or true (every copy).
+ */
+function askArchive(plan: ArchivePlan): Promise<boolean | null> {
+  const several = plan.others.length > 0;
+  const waiting = plan.archived[0]?.unanswered ?? 0;
+  const { promise, resolve } = Promise.withResolvers<boolean | null>();
+  const dialog = h("dialog", { class: "confirm", "aria-labelledby": "confirm-title" });
+  const answer = (v: boolean | null) => {
+    dialog.close();
+    dialog.remove();
+    resolve(v);
+  };
+  dialog.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    answer(null);
+  });
+  const parts = [
+    h("h2", { id: "confirm-title", text: several ? `Archive this copy (${plan.copy})?` : "Archive this page?" }),
+    h("p", { text: several ? "This copy leaves the hub's lists and no one can add notes to it until you unarchive it." : "It leaves the hub's lists and no one can add notes until you unarchive it." }),
+    waiting ? h("p", { text: waiting === 1 ? "1 unanswered note goes with it: it is kept, but leaves the hub's counts." : `${waiting} unanswered notes go with it: they are kept, but leave the hub's counts.` }) : null,
+    several ? h("p", { text: plan.others.length === 1 ? "This copy stays open:" : "These copies stay open:" }) : null,
+    several ? h("ul", {}, plan.others.map((c) => h("li", { title: c.file, text: c.unanswered ? `${c.copy} · ${c.unanswered} unanswered note${c.unanswered === 1 ? "" : "s"}` : c.copy }))) : null,
+    h(
+      "div",
+      { class: "confirm-actions" },
+      h("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: () => answer(null) }),
+      several ? h("button", { type: "button", class: "btn", "data-archive": "every", text: "Archive every copy", onclick: () => answer(true) }) : null,
+      h("button", { type: "button", class: "btn primary", "data-archive": "this", text: several ? "Archive this copy" : "Archive page", onclick: () => answer(false) }),
+    ),
+  ];
+  dialog.append(...parts.filter((el) => el !== null));
+  document.body.append(dialog);
+  dialog.showModal();
+  return promise;
+}
+
+async function archivePage() {
+  const r = await fetch(`${BASE}/archive`).catch(() => null);
+  if (!r) return showArchiveError(UNREACHABLE);
+  if (!r.ok) return showArchiveError(`Could not archive this page: ${await failure(r)}`);
+  const every = await askArchive((await r.json()) as ArchivePlan);
+  if (every === null) return;
+  const done = await fetch(`${BASE}/archive`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ every }) }).catch(() => null);
+  if (!done) return showArchiveError(UNREACHABLE);
+  if (!done.ok) return showArchiveError(`Could not archive this page: ${await failure(done)}`);
+  clearArchiveError();
+}
+
+async function unarchivePage() {
+  const r = await fetch(`${BASE}/unarchive`, { method: "POST" }).catch(() => null);
+  if (!r) return showArchiveError(UNREACHABLE);
+  if (!r.ok) return showArchiveError(`Could not unarchive this page: ${await failure(r)}`);
+  clearArchiveError();
+}
 
 // ── attach: the Agent pill (RLM-346; the owner's only, never on a reviewer's or a hosted page) ──
 

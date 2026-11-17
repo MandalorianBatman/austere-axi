@@ -115,7 +115,7 @@ const TOOLS: Record<string, Tool> = {
   },
   poll: {
     title: "Wait for feedback",
-    description: `Wait for the reviewer's feedback. One poll covers every page of the project of the server's working folder (project: another one); each batch names its file. file: that page only. On status timeout, call poll again: nothing is lost. replaced: a newer poll took over, maybe your own: stop this one. final: true on a batch means that page is done (Send & End): apply it and reply, keep polling while another page you opened is still in review. Feedback comes back until acknowledged: reply for each page (or agent_reply on a file poll), then poll with the cursor it returned.`,
+    description: `Wait for the reviewer's feedback. One poll covers every page of the project of the server's working folder (project: another one); each batch names its file. file: that page only. On status timeout, call poll again: nothing is lost. replaced: a newer poll took over, maybe your own: stop this one. archived (file poll): the owner archived the page, so it takes no notes: stop, and unarchive only if the user asks. final: true on a batch means that page is done (Send & End): apply it and reply, keep polling while another page you opened is still in review. Feedback comes back until acknowledged: reply for each page (or agent_reply on a file poll), then poll with the cursor it returned.`,
     properties: {
       file: { type: "string", description: "Path of the .html page to wait on. Leave out to wait on every page of the project. Use an absolute path." },
       project: { type: "string", description: "Without file: the project to wait on, a name, an id, or a folder inside one of its roots (default: the server's working folder)." },

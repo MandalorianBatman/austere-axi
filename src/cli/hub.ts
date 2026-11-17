@@ -111,6 +111,25 @@ export interface HubViewCounts {
   checked: number;
 }
 
+/** A copy an archive puts away or leaves open: its file, its label and the notes no agent has answered on it. */
+export interface ArchiveCopy {
+  id: string;
+  file: string;
+  /** The copy's label (copyLabel of its root): its branch, else its folder. */
+  copy: string;
+  unanswered: number;
+}
+
+/**
+ * Hub.archivePlan(): what archiving one copy does. `copy` is that copy's label; `archived` the copies put away
+ * (that copy, or with `every` each copy of its page not archived yet); `others` the copies of the page that stay open.
+ */
+export interface ArchivePlan {
+  copy: string;
+  archived: ArchiveCopy[];
+  others: ArchiveCopy[];
+}
+
 export function hubDbFile(): string {
   return path.join(stateDir(), "hub.db");
 }
@@ -461,6 +480,27 @@ export class Hub {
   /** Archive a copy (`at`), or bring it back (null). False when it is not in the hub. */
   setArchived(id: string, at: number | null): boolean {
     return Number(this.db.prepare("UPDATE artifacts SET archived_at = ? WHERE id = ?").run(at, id).changes) > 0;
+  }
+
+  /**
+   * What archiving the copy `id` would do, without doing it: see ArchivePlan. The other copies are those opened for review
+   * and not archived (the ones the hub lists); a copy only checked is neither archived with them nor said to stay open.
+   * Null when the hub does not know `id`. The caller archives each copy in `archived`, so a running server can lock each one's open page too.
+   */
+  archivePlan(id: string, every = false): ArchivePlan | null {
+    const rows = this.db
+      .prepare(
+        `SELECT a.id, a.file, COALESCE(a.root, a.project) AS root,
+                (SELECT COUNT(*) FROM items i WHERE i.artifact_id = a.id AND i.status IN ('open', 'received', 'held')) AS unanswered
+         FROM artifacts a
+         WHERE a.id = ? OR (a.reviewed = 1 AND a.archived_at IS NULL AND a.page_id = (SELECT page_id FROM artifacts WHERE id = ?))
+         ORDER BY a.id = ? DESC, a.updated_at DESC`,
+      )
+      .all(id, id, id) as unknown as { id: string; file: string; root: string; unanswered: number }[];
+    if (rows[0]?.id !== id) return null;
+    const live = rows.map((r): ArchiveCopy => ({ id: r.id, file: r.file, copy: copyLabel(r.root), unanswered: r.unanswered }));
+    const archived = every ? live : live.slice(0, 1);
+    return { copy: live[0].copy, archived, others: live.slice(archived.length) };
   }
 
   /**
