@@ -531,7 +531,8 @@ test("two worktrees holding docs/plan.html: one row, two chips, notes per copy, 
     const shell = shellPages(hub, {}, () => false);
     assert.deepEqual(shell.map((p) => p.rel_path), ["docs/plan.html", "docs/other.html"], "unanswered first, then by last activity");
     const row = shell[0];
-    assert.deepEqual(row.copies.map((c) => [c.label, c.unanswered, c.held]), [["feat", 2, 1], ["main", 1, 0]], "a chip per copy, unanswered first");
+    // Both copies have unanswered notes, so their order falls to last activity, which can tie within a millisecond.
+    assert.deepEqual(row.copies.map((c) => [c.label, c.unanswered, c.held]).sort(), [["feat", 2, 1], ["main", 1, 0]], "a chip per copy, with its own counts");
     assert.equal(row.unanswered, 3);
     assert.equal(row.group, "needs_you", "a note held for the owner needs the owner");
     assert.equal(row.taker, "nobody");
