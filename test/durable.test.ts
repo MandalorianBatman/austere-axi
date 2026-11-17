@@ -471,28 +471,87 @@ test("one project poll receives notes from two pages, each batch naming its file
 
 const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-test("a page poll takes its page; the project poll takes the pages without a listener of their own", () =>
-  withServer(async ({ port, state, id }) => {
-    const id2 = await open(port, FILE2);
-    const pagePoll = request(port, "POST", "/api/poll", { file: FILE });
-    await settle(100);
-    const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK);
-    await settle(500);
+test("a page poll takes its page; the project poll takes the pages without a listener of their own, also past its look again", () =>
+  withServer(
+    async ({ port, state, id }) => {
+      const id2 = await open(port, FILE2);
+      const pagePoll = request(port, "POST", "/api/poll", { file: FILE });
+      await settle(100);
+      const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK);
+      let projectSettled = false;
+      void projectPoll.then(() => (projectSettled = true));
+      await settle(500);
 
-    await send(port, id, "for the page listener");
-    const first = await pagePoll;
-    assert.deepEqual(first.data.items.map((i) => i.text), ["for the page listener"]);
-    // The page agent acknowledges and listens again, so the plan stays its own.
-    const pageAgain = request(port, "POST", "/api/poll", { file: FILE, cursor: first.data.cursor, timeoutMs: 1500 });
-    await settle(100);
+      await send(port, id, "for the page listener");
+      const first = await pagePoll;
+      assert.deepEqual(first.data.items.map((i) => i.text), ["for the page listener"]);
+      // The page agent works on its batch without a poll open; the project poll looks again several times meanwhile.
+      await settle(1000);
+      assert.equal(projectSettled, false, "an unacknowledged page-poll batch is not handed to the project poll");
+      // The page agent acknowledges and listens again, so the plan stays its own.
+      const pageAgain = request(port, "POST", "/api/poll", { file: FILE, cursor: first.data.cursor, timeoutMs: 1500 });
+      await settle(100);
 
-    await send(port, id2, "for the project listener");
-    const got = await projectPoll;
-    assert.ok(got.out.includes(format({ file: FILE2 })), got.out);
-    assert.ok(!got.out.includes(format({ file: FILE })), "the plan is the page listener's");
-    assert.match(got.out, /message: for the project listener/);
-    assert.doesNotMatch(got.out, /for the page listener/);
-    assert.equal((await pageAgain).data.status, "timeout");
+      await send(port, id2, "for the project listener");
+      const got = await projectPoll;
+      assert.ok(got.out.includes(format({ file: FILE2 })), got.out);
+      assert.ok(!got.out.includes(format({ file: FILE })), "the plan is the page listener's");
+      assert.match(got.out, /message: for the project listener/);
+      assert.doesNotMatch(got.out, /for the page listener/);
+      assert.equal((await pageAgain).data.status, "timeout");
+    },
+    { AUSTERE_AXI_PROJECT_REFRESH_MS: "200" },
+  ));
+
+test("a page-poll batch nobody acknowledges goes to the project poll once the hold runs out", () =>
+  withServer(
+    async ({ port, state, id }) => {
+      await send(port, id, "the page agent went away");
+      const first = await request(port, "POST", "/api/poll", { file: FILE });
+      assert.equal(first.data.status, "feedback");
+      const startedAt = Date.now();
+      const got = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "5000");
+      assert.match(got.out, /message: the page agent went away/, got.out);
+      assert.ok(Date.now() - startedAt >= 1000, "not before the hold ran out");
+    },
+    { AUSTERE_AXI_PROJECT_REFRESH_MS: "200", AUSTERE_AXI_PAGE_HOLD_MS: "1500" },
+  ));
+
+test("reply with a cursor acknowledges only what a poll handed over: a note skipped by --after comes back", () =>
+  withServer(async ({ port, id }) => {
+    // Fresh database: the notes are seq 1, 2 and 3.
+    await send(port, id, "first, skipped by --after");
+    await send(port, id, "second");
+    await send(port, id, "third");
+    const replay = await request(port, "POST", "/api/poll", { file: FILE, after: 1 });
+    assert.deepEqual(replay.data.items.map((i) => i.text), ["second", "third"]);
+    assert.equal(replay.data.cursor, 3);
+
+    assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done", cursor: replay.data.cursor })).status, 200);
+    const again = await request(port, "POST", "/api/poll", { file: FILE, timeoutMs: 1000 });
+    assert.equal(again.data.status, "feedback", "the skipped note was never shown, so it is not answered");
+    assert.equal(again.data.items[0].text, "first, skipped by --after");
+  }));
+
+test("after a server restart, reply without a cursor still acknowledges what the project poll handed over", () =>
+  withServer(async ({ port, state, id, proc }) => {
+    await send(port, id, "before the restart");
+    const got = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "2000");
+    assert.match(got.out, /message: before the restart/, got.out);
+    const cursor = Number((/^cursor: (\d+)$/m.exec(got.out) as RegExpExecArray)[1]);
+
+    await kill(proc);
+    const restarted = startServer(port, state);
+    try {
+      await up(port);
+      assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status, 200);
+      assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 0, "the delivered note is acknowledged");
+      const again = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "300");
+      assert.match(again.out, /^status: timeout$/m, "the batch does not come again");
+      assert.ok(got.out.includes(`reply <file> --cursor ${cursor}`), "the project hint passes the cursor to reply");
+    } finally {
+      await kill(restarted);
+    }
   }));
 
 test("a page registered after the project poll started is included", () =>
