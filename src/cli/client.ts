@@ -4,12 +4,12 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { CLI_ENTRY, VERSION, port as configuredPort, stateDir, versionGt } from "./paths.ts";
+import { CLI_ENTRY, VERSION, stateDir, versionGt } from "./paths.ts";
 import { ownerKey } from "./invites.ts";
 import { withAddressSettings } from "./net.ts";
 import type { AddressSettings } from "./net.ts";
 import type { HealthInfo, LoginResponse } from "./server.ts";
-import { childEnv, installedServiceFor, lockedOutNote, restartCommand, serverUnit, serviceContext, startInstalledService, SYSTEMD_UNIT, UNKNOWN_LAUNCHD_LABEL } from "./service.ts";
+import { childEnv, installedServiceFor, lockedOutNote, restartHint, restartUnit, serverPort, serverUnit, serviceContext, startInstalledService, SYSTEMD_UNIT, UNKNOWN_LAUNCHD_LABEL } from "./service.ts";
 import type { PortProbe, ServerUnit } from "./service.ts";
 
 /** The `error` a control route answers with when it refuses. */
@@ -40,7 +40,7 @@ export function request<T extends object = ApiError>(
   method: string,
   route: string,
   body?: unknown,
-  { timeoutMs = 0, port = configuredPort(), auth = true }: { timeoutMs?: number; port?: number; auth?: boolean } = {},
+  { timeoutMs = 0, port = serverPort(), auth = true }: { timeoutMs?: number; port?: number; auth?: boolean } = {},
 ): Promise<ApiResult<T>> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -153,9 +153,13 @@ function leaveNote(note: string): void {
   process.stderr.write(`[austere-axi] ${note}\n`);
 }
 
-/** Make sure a compatible server is running; returns its health info. */
-export async function ensureServer(): Promise<ServerHealth> {
-  const port = configuredPort();
+/**
+ * Make sure a compatible server is running; returns its health info. `restart` restarts the one
+ * that runs: the unit that runs it restarts it (and a stopped service is started), and a server no
+ * unit runs is replaced, as an older one is.
+ */
+export async function ensureServer({ restart = false }: { restart?: boolean } = {}): Promise<ServerHealth> {
+  const port = serverPort();
   let h = await health(port);
   let exited: () => number | "signal" | null = () => null;
   if (h?.foreign) {
@@ -167,22 +171,25 @@ export async function ensureServer(): Promise<ServerHealth> {
   // Asked of the system at most once, and only when the answer matters.
   let found: ServerUnit | null | undefined;
   const unitOf = (s: ServerHealth): ServerUnit | null => (found === undefined ? (found = serverUnit(s.pid)) : found);
-  const plan = h ? serverAction(h, VERSION, () => unitOf(h as ServerHealth)) : null;
-  if (h && plan?.action === "restart-unit") {
+  const plan = h ? serverAction(h, VERSION, () => unitOf(h as ServerHealth), { restart }) : null;
+  // The server a restart replaces: the new one must not be mistaken for it while it is still going.
+  const old = h;
+  if (h && restart && plan?.action === "restart-unit") {
+    restartUnit(serviceContext(probePort), plan.unit);
+    h = null;
+  } else if (h && plan?.action === "restart-unit") {
     // A server a unit runs is never replaced: two would fight over the port and the state dir. It still serves.
-    const { supervisor, unit } = plan.unit;
-    leaveNote(`The server runs v${h.version} under ${supervisor} and this CLI is v${VERSION}; it keeps serving. Restart it to update: ${restartCommand(supervisor, undefined, unit)}`);
+    leaveNote(`The server runs v${h.version} under ${plan.unit.supervisor} and this CLI is v${VERSION}; it keeps serving. Restart it to update: ${restartHint(plan.unit)}`);
   } else if (h && plan?.action === "replace") {
     // A newer CLI replaces an older server; sessions are on disk. The new one listens where the
     // old one did, keeps --persist and the old one's address variables (link url, allowed hosts).
-    const old = h;
-    const { tailnet } = old;
-    const keep = (old.listen || []).filter((x) => x !== "127.0.0.1" && (!tailnet || x !== tailnet.ip));
-    await shutdownServer(old, port);
+    const { tailnet } = h;
+    const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!tailnet || x !== tailnet.ip));
+    await shutdownServer(h, port);
     for (let i = 0; i < 40 && (await health(port)); i++) await sleep(100);
+    exited = spawnServer(port, { alsoListen: keep, persist: !!h.persist, addresses: h.addresses });
+    process.stderr.write(`[austere-axi] replaced server ${h.version} (pid ${h.pid}) with ${VERSION} from ${CLI_ENTRY}\n`);
     h = null;
-    exited = spawnServer(port, { alsoListen: keep, persist: !!old.persist, addresses: old.addresses });
-    process.stderr.write(`[austere-axi] replaced server ${old.version} (pid ${old.pid}) with ${VERSION} from ${CLI_ENTRY}\n`);
   } else if (!h) {
     // No server answers. If a service is installed for this state dir, start it: a CLI that
     // starts its own server instead takes the port and the state dir away from the unit,
@@ -195,14 +202,17 @@ export async function ensureServer(): Promise<ServerHealth> {
     while (Date.now() < deadline) {
       await sleep(100);
       h = await health(port);
-      if (h && !h.foreign && !h.legacy) break;
+      if (h && !h.foreign && !h.legacy && h.pid !== old?.pid) break;
       if (exited() != null) {
         // It may have lost the port to a server another command started at the same time.
         h = await health(port);
         break;
       }
     }
-    if (!h || h.foreign || h.legacy) throw new Error(`server did not start on port ${port}; see ${path.join(stateDir(), "server.log")}`);
+    if (!h || h.foreign || h.legacy || h.pid === old?.pid) {
+      const why = plan?.action === "restart-unit" && plan.unit.supervisor === "systemd" ? `journalctl --user -u ${plan.unit.unit} -n 50` : path.join(stateDir(), "server.log");
+      throw new Error(`server did not start on port ${port}; see ${why}`);
+    }
     found = undefined; // another process now
   }
   // A server the installed service did not start holds its port: the unit fails (or loops)
@@ -219,8 +229,13 @@ export async function ensureServer(): Promise<ServerHealth> {
  * `unitOf` asks the system which unit runs it: a server from before 0.12 does not say it is
  * supervised, and is the unit's all the same.
  */
-export function serverAction(h: ServerHealth, version: string, unitOf: () => ServerUnit | null): { action: "use" } | { action: "replace" } | { action: "restart-unit"; unit: ServerUnit } {
-  if (!h.legacy && !versionGt(version, h.version)) return { action: "use" };
+export function serverAction(
+  h: ServerHealth,
+  version: string,
+  unitOf: () => ServerUnit | null,
+  { restart = false }: { restart?: boolean } = {},
+): { action: "use" } | { action: "replace" } | { action: "restart-unit"; unit: ServerUnit } {
+  if (!restart && !h.legacy && !versionGt(version, h.version)) return { action: "use" };
   // The server says a supervisor runs it but the system would not say which unit: systemd's is the one
   // `server install` writes; a launchd agent may carry any label, so the hint does not guess one.
   const unit = unitOf() ?? (!h.legacy && h.supervised ? { supervisor: h.supervised, unit: h.unit ?? (h.supervised === "systemd" ? SYSTEMD_UNIT : UNKNOWN_LAUNCHD_LABEL) } : null);
@@ -240,12 +255,12 @@ export async function probePort(port: number): Promise<PortProbe | null> {
  * which is good for nothing but shutdownServer.
  */
 export async function serverIfRunning({ legacy = false }: { legacy?: boolean } = {}): Promise<ServerHealth | null> {
-  const h = await health(configuredPort());
+  const h = await health(serverPort());
   return h && !h.foreign && (legacy || !h.legacy) ? h : null;
 }
 
 /** Ask the server `h` to stop. A legacy server asks for no key; do not hand one to a listener that has not proven itself. */
-export function shutdownServer(h: ServerHealth, port = configuredPort()): Promise<ApiResult<ApiError> | void> {
+export function shutdownServer(h: ServerHealth, port = serverPort()): Promise<ApiResult<ApiError> | void> {
   return request("POST", "/api/shutdown", {}, { timeoutMs: 2000, port, auth: !h.legacy }).catch(() => {});
 }
 

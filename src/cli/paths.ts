@@ -85,11 +85,6 @@ export function stateDir(): string {
   return dir;
 }
 
-export function port(): number {
-  const p = Number(process.env.AUSTERE_AXI_PORT);
-  return Number.isInteger(p) && p > 0 && p < 65536 ? p : REAL_PORT;
-}
-
 export function msEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw == null || raw === "") return fallback;

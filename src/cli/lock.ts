@@ -116,6 +116,25 @@ function readFile(file: string): string | null {
 }
 
 /**
+ * The port the server named in `dir`'s server.lock listens on, while the process that wrote it
+ * lives; null for no lock, a lock without a port (a command holds it) or a dead holder. Read
+ * without asking the port, so a CLI can find a server another port than the default runs on.
+ */
+export function lockedPort(dir: string): number | null {
+  let lock: LockFile;
+  try {
+    lock = JSON.parse(fs.readFileSync(path.join(dir, "server.lock"), "utf8")) as LockFile;
+  } catch {
+    return null;
+  }
+  if (!lock || typeof lock !== "object") return null;
+  const pid = Number(lock.pid);
+  const port = lock.port;
+  if (typeof port !== "number" || !Number.isInteger(port) || port <= 0 || port >= 65536) return null;
+  return Number.isInteger(pid) && pid > 0 && processAlive(pid) ? port : null;
+}
+
+/**
  * Who holds the lock, or null when it is stale. A server that answers on the port in
  * the lock with the same pid and state dir holds it. A lock naming no port (a command,
  * or a server from before locks named one) or a server that does not answer yet holds

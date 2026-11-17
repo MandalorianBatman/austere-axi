@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { resolveSibling } from "./assets.ts";
 import fs from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 import { readArtifact, rewriteRuntime, escapeHtml } from "./artifact.ts";
 import { agentPrompt } from "./agent-prompt.ts";
@@ -2310,14 +2311,51 @@ export async function runServer({
     });
   }
 
+  /** AUSTERE_AXI_HOST, when it names one address: the server listens there instead of on the tailnet. */
+  const fixedHost = process.env.AUSTERE_AXI_HOST && !/^(0\.0\.0\.0|::|\*)$/.test(process.env.AUSTERE_AXI_HOST) ? process.env.AUSTERE_AXI_HOST : null;
+
   async function ensureTailnetListener(): Promise<void> {
-    const explicit = process.env.AUSTERE_AXI_HOST;
-    if (explicit && !/^(0\.0\.0\.0|::|\*)$/.test(explicit)) {
-      await listen(explicit);
+    if (fixedHost) {
+      await listen(fixedHost);
       return;
     }
     tailnet = await detectTailscale();
     if (tailnet && !listeners.has(tailnet.ip)) await listen(tailnet.ip);
+  }
+
+  /** Whether a connection to `host` on this port is accepted, within 2 s. */
+  function accepts(host: string): Promise<boolean> {
+    const { promise, resolve } = Promise.withResolvers<boolean>();
+    const socket = net.connect({ host, port, timeout: 2000 });
+    socket.once("connect", () => resolve(true));
+    socket.once("timeout", () => resolve(false));
+    socket.once("error", () => resolve(false));
+    return promise.finally(() => socket.destroy());
+  }
+
+  /**
+   * Ask Tailscale again: it may have come up after the server (a service started at boot) or
+   * restarted under it. Listen on the address it has now, again when the listener there no longer
+   * accepts, and let go of an address it no longer has. While Tailscale does not answer, the
+   * listeners stay: its address comes back with it.
+   */
+  async function recheckTailnet(): Promise<void> {
+    const now = await detectTailscale({ fresh: true });
+    if (!now || stopping) return;
+    const before = tailnet;
+    tailnet = now;
+    if (before && before.ip !== now.ip && !alsoListen.includes(before.ip)) {
+      listeners.get(before.ip)?.close();
+      listeners.delete(before.ip);
+      log("tailnet", `left ${before.ip}`);
+    }
+    const current = listeners.get(now.ip);
+    if (current && !(await accepts(now.ip))) {
+      current.close();
+      listeners.delete(now.ip);
+      log("tailnet", `${now.ip} stopped accepting; listening again`);
+    }
+    if (!listeners.has(now.ip) && !stopping) await listen(now.ip);
   }
 
   const ok = await listen("127.0.0.1");
@@ -2328,6 +2366,17 @@ export async function runServer({
   }
   for (const h of alsoListen) await listen(h);
   await ensureTailnetListener();
+  const tailnetCheckMs = msEnv("AUSTERE_AXI_TAILNET_CHECK_MS", 60_000);
+  if (!fixedHost && tailnetCheckMs > 0) {
+    let checking = false;
+    setInterval(() => {
+      if (checking) return;
+      checking = true;
+      void recheckTailnet().finally(() => {
+        checking = false;
+      });
+    }, tailnetCheckMs).unref();
+  }
 
   let stopping = false;
   function shutdown(reason: string): void {

@@ -30,6 +30,8 @@ export interface KeptLine {
 export interface UnitSettings {
   /** The script node runs (the CLI), with systemd's `%%` and `$$` undone; specifiers such as `%h` are left as written. */
   cli: string | null;
+  /** The node the unit runs the CLI with, as written, or null. */
+  node: string | null;
   port: number | null;
   stateDir: string | null;
   linkUrl: string | null;
@@ -89,9 +91,12 @@ function words(value: string): { raw: string; text: string }[] {
   return out;
 }
 
+/** Where node is in a command: the word that is `node` (or `nodejs`), or -1. */
+const nodeIndex = (argv: string[]): number => argv.findIndex((a) => /(^|\/)(node|nodejs)$/.test(a));
+
 /** The script a command runs with node: the word after `node` (or `nodejs`), or null. */
 function scriptOf(argv: string[]): string | null {
-  const i = argv.findIndex((a) => /(^|\/)(node|nodejs)$/.test(a));
+  const i = nodeIndex(argv);
   return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null;
 }
 
@@ -137,6 +142,7 @@ export function systemdSettings(text: string): UnitSettings {
   }
   return {
     cli: scriptOf(argv),
+    node: argv[nodeIndex(argv)] ?? null,
     port: portArg(argv) ?? portOf(env.get("AUSTERE_AXI_PORT")),
     stateDir: env.get("AUSTERE_AXI_STATE_DIR") || null,
     linkUrl: env.get("AUSTERE_AXI_LINK_URL") || null,
@@ -161,6 +167,7 @@ export function launchdSettings(text: string): UnitSettings {
   }
   return {
     cli: scriptOf(argv),
+    node: argv[nodeIndex(argv)] ?? null,
     port: portArg(argv) ?? portOf(env.get("AUSTERE_AXI_PORT")),
     stateDir: env.get("AUSTERE_AXI_STATE_DIR") || null,
     linkUrl: env.get("AUSTERE_AXI_LINK_URL") || null,
