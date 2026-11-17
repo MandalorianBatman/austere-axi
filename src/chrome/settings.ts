@@ -492,7 +492,7 @@ function tailscaleNames(on: boolean, projects: ProjectSummary[], defaultMode: st
   );
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    void act<AccessSummary>("/hub/api/people/tailscale", { login: login.value.trim(), name: name.value.trim() || undefined, ...scopeBody(scope.value), auto: mode.value === "auto" }, (d) => `${d.verifiedLogin ?? d.name} is in on any of their Tailscale devices: ${d.reaches}. Listed under Devices; Revoke there.`);
+    void act<AccessSummary>("/hub/api/people/tailscale", { login: login.value.trim(), name: name.value.trim() || undefined, ...scopeBody(scope.value), auto: chosenAuto(mode) }, (d) => `${d.verifiedLogin ?? d.name} is in on any of their Tailscale devices: ${d.reaches}. Listed under Devices; Revoke there.`);
   });
   return [
     h("span", { class: "meta", text: status }),
