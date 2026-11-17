@@ -11,7 +11,8 @@ import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-cli-"));
-const env = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_OPEN: "1", AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_PORT: "4997" };
+const PORT = await freePort();
+const env = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_OPEN: "1", AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_PORT: String(PORT) };
 const cliWith = (e: NodeJS.ProcessEnv, ...args: string[]) => {
   const r = spawnSync(process.execPath, ["src/cli/main.ts", ...args], { encoding: "utf8", env: e });
   return { code: r.status, out: r.stdout };
@@ -132,7 +133,7 @@ test("hub open honours AUSTERE_AXI_NO_OPEN: no browser is started and the sign-i
     const r = cliWith({ ...withOpener, AUSTERE_AXI_NO_OPEN: "1" }, "hub", "open");
     assert.equal(r.code, 0);
     assert.match(r.out, /status: open the url/);
-    assert.match(r.out, /url: http:\/\/127\.0\.0\.1:4997\//);
+    assert.match(r.out, new RegExp(`url: http://127\\.0\\.0\\.1:${PORT}/`));
     assert.match(r.out, /note: "?AUSTERE_AXI_NO_OPEN is set/);
     assert.match(r.out, /sign_in: .*austere-axi login/);
     await new Promise((res) => setTimeout(res, 500));
