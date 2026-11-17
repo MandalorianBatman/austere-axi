@@ -20,7 +20,7 @@ import { runPrompt } from "./agent-prompt.ts";
 import { effectiveAttach, newestContinuation, resolveTarget } from "./attach.ts";
 import type { RunTarget } from "./attach.ts";
 import { systemProcessTable } from "./caller.ts";
-import { stateDir } from "./paths.ts";
+import { CLI_ENTRY, stateDir } from "./paths.ts";
 import { childEnv } from "./service.ts";
 import { RENDER_CHECK_AUTHOR } from "./sessions.ts";
 import type { QueuedEntry, Session, SessionStore, TranscriptEntry } from "./sessions.ts";
@@ -238,6 +238,29 @@ export function runEnv(runId: string, port: number, base: NodeJS.ProcessEnv = pr
   env.AUSTERE_AXI_STATE_DIR = stateDir();
   env.AUSTERE_AXI_PORT = String(port);
   return env;
+}
+
+/**
+ * Put this server's own CLI first on a run's PATH, as `austere-axi`. The prompt tells the agent to
+ * run `austere-axi feedback|patch|reply`; without the shim that resolves to whatever is installed
+ * globally, which may be an older version that does not register the session or know the flags.
+ * Written into `<state>/runs/bin` (0700) on each launch, so it follows the running server.
+ */
+export function withCliShim(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
+  const dir = path.join(runsDir(), "bin");
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (platform === "win32") {
+    fs.writeFileSync(path.join(dir, "austere-axi.cmd"), `@"${process.execPath}" "${CLI_ENTRY}" %*\r\n`, { mode: 0o700 });
+  } else {
+    const sh = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+    const file = path.join(dir, "austere-axi");
+    fs.writeFileSync(file, `#!/bin/sh\nexec ${sh(process.execPath)} ${sh(CLI_ENTRY)} "$@"\n`, { mode: 0o700 });
+    fs.chmodSync(file, 0o700);
+  }
+  // Windows spells it `Path`; keep whichever key the environment already uses.
+  const key = Object.keys(env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+  const delimiter = platform === "win32" ? ";" : ":";
+  return { ...env, [key]: env[key] ? `${dir}${delimiter}${env[key]}` : dir };
 }
 
 /** Kill a run's whole process tree: its process group (POSIX, the run is spawned detached), `taskkill /T` on Windows. */
@@ -642,11 +665,13 @@ export class Dispatcher {
         // the next start sweeps it
       }
     };
+    let childEnvVars: NodeJS.ProcessEnv;
     try {
       const dir = runsDir();
       promptFile = path.join(dir, `${row.id}.prompt`);
       logFile = path.join(dir, `${row.id}.log`);
       fs.writeFileSync(promptFile, runPrompt({ file: s.file, cursor: seqTo }), { mode: 0o600 });
+      childEnvVars = withCliShim(env);
     } catch (err) {
       return fail("unavailable", `Could not write the run's prompt file: ${(err as Error).message}`);
     }
@@ -691,7 +716,7 @@ export class Dispatcher {
     try {
       child = spawn(spec.file, spec.args, {
         cwd: built.cwd,
-        env: { ...env, ...built.env },
+        env: { ...childEnvVars, ...built.env },
         stdio: [promptFd, "pipe", "pipe"],
         detached: process.platform !== "win32",
         windowsHide: true,

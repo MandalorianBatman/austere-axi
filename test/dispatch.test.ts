@@ -3,7 +3,7 @@
 // harnesses: they read the prompt on stdin, print what the real ones print, and drive the real
 // CLI (feedback, patch, reply), or fail as a marker file tells them to.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
@@ -20,6 +20,7 @@ import type { QueuedEntry } from "../src/cli/sessions.ts";
 import { ownerKey } from "../src/cli/invites.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
+import { VERSION } from "../src/cli/paths.ts";
 
 const skip = process.platform === "win32" && "the fake harnesses are POSIX shell scripts, and runs are killed by process group";
 
@@ -321,6 +322,11 @@ test("an owner's note starts exactly one run: the agent patches the page and rep
     assert.ok(!text.includes(key), `the owner key is in the run's ${what}`);
   }
   assert.equal(fs.existsSync(path.join(STATE, "runs", `${run.id}.prompt`)), false, "the prompt file is gone");
+  // `austere-axi` on the run's PATH is this server's CLI, not whatever is installed globally.
+  const shimDir = rec.env.PATH.split(path.delimiter)[0];
+  assert.equal(shimDir, path.join(STATE, "runs", "bin"));
+  const version = spawnSync(path.join(shimDir, "austere-axi"), ["--version"], { encoding: "utf8" });
+  assert.equal(version.stdout.trim(), VERSION, version.stderr);
 
   const list = await cli("run", "list", file);
   assert.match(list.out, new RegExp(`id: ${run.id}`));
