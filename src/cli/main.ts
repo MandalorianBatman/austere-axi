@@ -294,15 +294,17 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
   server: {
-    usage: "server [install|uninstall|status] [--persist] [--port n] [--verbose] [--link-url u]",
+    usage: "server [install|uninstall|status] [--persist] [--port n] [--verbose] [--link-url u] [--adopt] [--force]",
     summary:
-      "run the server in the foreground (behind a reverse proxy); `server install` (at a terminal only) makes it always on as a per-user systemd or launchd service that starts at login and restarts on failure, `server uninstall` removes it, `server status` shows it",
+      "run the server in the foreground (behind a reverse proxy); `server install` (at a terminal only) makes it always on as a per-user systemd or launchd service that starts at login and restarts on failure: it shows what it will write and asks first, and puts back what was there when the service does not start. `server uninstall` removes it, `server status` shows it",
     flags: {
       persist: "never idle out",
-      port: "listen port (default: AUSTERE_AXI_PORT or 4388); with install, the port the service listens on",
+      port: "listen port (default: AUSTERE_AXI_PORT or 4388); with install, the port the service listens on (default: the installed unit's)",
       verbose: "log requests",
       "also-listen": "extra address to listen on (repeatable)",
-      "link-url": "install: the address reviewers reach the server at, e.g. https://austere.example.com (AUSTERE_AXI_LINK_URL in the unit)",
+      "link-url": "install: the address reviewers reach the server at, e.g. https://austere.example.com (AUSTERE_AXI_LINK_URL in the unit; default: the installed unit's)",
+      adopt: "install: take the place of a unit you wrote yourself: keep its Environment=, ExecStartPre= and After= lines in a drop-in, back it up, stop and disable it",
+      force: "install, uninstall: go ahead although the installed unit runs another CLI or another state dir",
     },
     example: "server install --link-url https://austere.example.com",
   },
@@ -1692,20 +1694,21 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
   }
   if (!["install", "uninstall", "status"].includes(sub)) return usage(`unknown server subcommand: ${sub}. One of: install uninstall status`, "server");
   if (rest.length > 1) return usage(`server ${sub} takes no arguments; it got ${rest.slice(1).map((a) => `"${a}"`).join(" ")}`, "server");
-  const extra = Object.keys(flags).filter((k) => !(sub === "install" ? ["port", "link-url"] : sub === "status" ? ["port"] : []).includes(k));
+  const allowed = sub === "install" ? ["port", "link-url", "adopt", "force"] : sub === "uninstall" ? ["force"] : ["port"];
+  const extra = Object.keys(flags).filter((k) => !allowed.includes(k));
   if (extra.length) return usage(`server ${sub} does not take ${extra.map((k) => `--${k}`).join(" ")}`, "server");
-  const ctx = serviceContext(probePort);
+  const ctx = serviceContext(probePort, confirm);
   try {
     if (sub === "install") {
       const linkUrl = typeof flags["link-url"] === "string" ? flags["link-url"] : undefined;
-      return print(await installService({ port: p, linkUrl }, ctx));
+      return print(await installService({ port: p, linkUrl, adopt: !!flags.adopt, force: !!flags.force }, ctx));
     }
-    if (sub === "uninstall") return print(uninstallService(ctx));
+    if (sub === "uninstall") return print(uninstallService(ctx, { force: !!flags.force }));
     const h = await health(p ?? port());
     const running = h && !h.foreign && !h.legacy ? h : null;
     // A server from before 0.12 does not say a unit runs it; the system does.
     const unit = running ? serverUnit(running.pid) : null;
-    return print(serviceStatus(ctx, running && { ...running, supervised: running.supervised ?? unit?.supervisor, unit: unit?.unit }, VERSION));
+    return print(serviceStatus(ctx, running && { ...running, supervised: running.supervised ?? unit?.supervisor, unit: unit?.unit ?? running.unit }, VERSION));
   } catch (err) {
     return fail(messageOf(err));
   }
