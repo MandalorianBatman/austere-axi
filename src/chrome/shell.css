@@ -1,4 +1,4 @@
-/* The hub shell (shell.ts): sidebar of projects and pages, the views Inbox · Pages · Notes · Runs. Tokens as in chrome.css. */
+/* The hub shell (shell.ts): sidebar of projects and pages, the views Inbox · Pages · Notes · Runs · Settings. Tokens as in chrome.css. */
 :root {
   --bg: #0b0b0d;
   --bg-2: #111114;
@@ -593,6 +593,160 @@ details.more > .chips {
   font-size: 13px;
 }
 
+/* ── settings (settings.ts) ── */
+.set-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+.set-nav a {
+  padding: 4px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.set-nav a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+section.set {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-2);
+  scroll-margin-top: 12px;
+}
+section.set > h2 {
+  font-size: 17px;
+}
+section.sub {
+  margin-top: 18px;
+}
+section.sub > h2 {
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.btn.primary {
+  border-color: rgba(143, 176, 255, 0.5);
+  background: rgba(143, 176, 255, 0.14);
+}
+.row-actions.wrap {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  max-width: 60%;
+}
+.row-actions select,
+.new-link select,
+.new-link input {
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 12.5px;
+  max-width: 100%;
+}
+.row-actions a {
+  font-size: 12.5px;
+}
+.new-link {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+.new-link > .btn {
+  justify-self: start;
+}
+.field {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.switches {
+  display: grid;
+  gap: 4px;
+}
+.switch {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 30px;
+}
+.switch input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+.switch.off {
+  color: var(--faint);
+}
+fieldset.modes {
+  display: grid;
+  gap: 2px;
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+fieldset.modes legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+dl.facts {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 12px 0 0;
+}
+dl.facts dt {
+  color: var(--muted);
+}
+dl.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+dd.slot {
+  padding-left: 10px;
+  border-left: 2px dashed var(--line-2);
+}
+ul.plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+ul.plain .k {
+  display: inline-block;
+  min-width: 150px;
+  color: var(--muted);
+}
+ul.folders li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 12.5px;
+}
+code {
+  font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+.warn {
+  color: var(--amber);
+}
+p.missing {
+  margin: 12px 0 0;
+}
+
 .scrim {
   display: none;
 }
@@ -647,5 +801,19 @@ details.more > .chips {
   }
   .filters {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .new-link {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .row-actions.wrap {
+    max-width: none;
+    justify-content: flex-start;
+  }
+  dl.facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  dl.facts dd {
+    margin-bottom: 10px;
   }
 }

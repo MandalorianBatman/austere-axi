@@ -1215,6 +1215,30 @@ test("the page menu's Share and People: owner-only, and narrowing a device's sco
   }
 });
 
+test("a project merge from Settings closes the open streams of a reviewer whose project the page left", async () => {
+  const origin = `http://127.0.0.1:${srv.port}`;
+  const e = projectPage("epsilon", "e");
+  const z = projectPage("zeta", "z");
+  const ide = await openPage(e);
+  await openPage(z);
+  const made = await shareAs(e, "Pia", { scope: "project" });
+  assert.equal(made.status, 200, JSON.stringify(made.data));
+  const pia = await claimLink(srv.port, made.data.link);
+  const live = stream(srv.port, `/s/${ide}/events`, { cookie: pia });
+  try {
+    assert.ok(await until(() => live.events.some((ev) => ev.name === "snapshot")));
+    const projects = (await request<{ projects: { id: string; name: string }[] }>(srv.port, "GET", "/hub/api/projects")).data.projects;
+    const [eps, zet] = ["epsilon", "zeta"].map((n) => projects.find((p) => p.name === n)!.id);
+    const merged = await request(srv.port, "POST", `/hub/api/projects/${zet}/merge`, { body: { from: eps }, headers: { origin } });
+    assert.equal(merged.status, 200, JSON.stringify(merged.data));
+    assert.ok(await until(() => live.isEnded()), "the page left Pia's project: its stream is closed at once");
+    assert.ok(live.events.some((ev) => ev.name === "server" && ev.data.state === "revoked"));
+  } finally {
+    live.close();
+    await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Pia" } });
+  }
+});
+
 test("over HTTPS (a proxy says so) the device cookie is Secure", async () => {
   const r = await shareAs(FILE, "Pia");
   const token = new URL(r.data.link).searchParams.get("invite") as string;

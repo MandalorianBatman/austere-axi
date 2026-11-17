@@ -50,7 +50,7 @@ Repeat until it is right. When you are done, press **Done** (or **Send & finish*
 
 ## What else it does
 
-- **Bring in a teammate.** Ask your agent to publish the page and invite someone by name. Each person gets their own link, and their notes appear under their name. You see their notes first and decide which ones go to the agent. [More on sharing](docs/hosted-pages.md).
+- **Bring in a teammate.** Ask your agent to publish the page and invite someone by name. Each person gets their own link, and their notes appear under their name. You see their notes first and decide which ones go to the agent. [More on sharing](docs/hosted-pages.md). On your own network, the hub's **Settings** makes a named link, lets people ask for access, and shows who has it ([Team review](docs/team-review.md), [Settings](docs/hub.md#settings)).
 - **Review from your phone.** The review page has a phone layout. This needs [Tailscale](https://tailscale.com) on your computer and phone. [How it works](docs/how-it-works.md#the-review-loop).
 - **Send someone a copy.** "Download standalone HTML" in the page's ⋯ menu saves the page as one file that opens in any browser, offline.
 - **Nothing gets lost.** Every note is saved the moment you send it. If the agent is busy or your computer restarts, the notes are waiting when the agent comes back.

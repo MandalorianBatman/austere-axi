@@ -414,14 +414,15 @@ const COMMANDS: Record<string, CommandSpec> = {
   unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
   share: {
     usage:
-      'share <file> --as "<name>" [--project <p> | --all] [--auto] [--expires <dur>] | share list [--links] | share revoke <name|id> | share requests [on|off] [--project <p>] | share approve <id> [--project <p> | --all] [--auto] [--as "<name>"] | share deny <id> | share block <id>',
+      'share <file> --as "<name>" [--project <p> | --all] [--auto | --hold] [--expires <dur>] | share list [--links] | share revoke <name|id> | share requests [on|off] [--project <p>] | share approve <id> [--project <p> | --all] [--auto | --hold] [--as "<name>"] | share deny <id> | share block <id> | share default [hold|auto]',
     summary:
-      "named link for a teammate on your tailnet. The first browser that opens it becomes that person's device and the link stops working; a link nobody opens expires (default 7d). It reaches the page, or with --project the page's project, or with --all every page. Their notes wait for you unless --auto. list shows the links nobody has opened yet and the devices; revoke cuts one off at once. Requests (off by default): with `requests on` (every page) or `requests on --project <p>`, a browser without a link that opens a page's address can type a name and ask; `requests` lists who waits, approve lets that browser in (the page, or --project / --all), deny refuses it (it may ask again), block stops that browser asking",
+      "named link for a teammate on your tailnet. The first browser that opens it becomes that person's device and the link stops working; a link nobody opens expires (default 7d). It reaches the page, or with --project the page's project, or with --all every page. Their notes wait for you unless --auto (`default auto` makes that the default). list shows the links nobody has opened yet and the devices; revoke cuts one off at once. Requests (off by default): with `requests on` (every page) or `requests on --project <p>`, a browser without a link that opens a page's address can type a name and ask; `requests` lists who waits, approve lets that browser in (the page, or --project / --all), deny refuses it (it may ask again), block stops that browser asking",
     flags: {
       as: "the reviewer's name; with approve: let them in under this name instead of the one they typed",
       project: "reach every page of this project (the page's own: a name, an id, or a folder inside one of its roots); with requests on|off: that project only",
       all: "reach every page on this machine",
       auto: "send this reviewer's notes straight to the agent",
+      hold: "hold this reviewer's notes for you (when `share default auto` is set)",
       expires: "an unopened link stops working after this long: 30m, 12h, 7d, 2w (default 7d)",
       links: "show the links (list)",
     },
@@ -2549,6 +2550,8 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
     });
   }
   if (sub === "requests") return shareRequests(more, flags);
+  if (flags.auto && flags.hold) return usage("--auto and --hold exclude each other: pick one", "share");
+  if (sub === "default") return shareDefault(more);
   if (sub === "approve" || sub === "deny" || sub === "block") {
     const [rid] = more;
     if (!rid) return usage(`${sub} needs a request id: ${BIN} share ${sub} <id> (see ${BIN} share requests)`, "share");
@@ -2557,7 +2560,7 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
     await ensureServer();
     // A folder names the project whose root holds it; the server has no working directory to resolve it against.
     const project = typeof flags.project === "string" ? (fs.existsSync(flags.project) ? path.resolve(flags.project) : flags.project) : undefined;
-    const body = sub === "approve" ? { id: rid, scope: flags.all ? "all" : flags.project !== undefined ? "project" : "page", project, auto: !!flags.auto, name: flags.as } : { id: rid };
+    const body = sub === "approve" ? { id: rid, scope: flags.all ? "all" : flags.project !== undefined ? "project" : "page", project, auto: notesMode(flags), name: flags.as } : { id: rid };
     const r = await request<RequestDecisionResponse>("POST", `/api/share/${sub}`, body);
     if (r.status !== 200) return fail(r.data?.error || `${sub} failed (${r.status})`);
     const { request: q, device } = r.data;
@@ -2598,7 +2601,7 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
   }
   const scope = flags.all ? "all" : flags.project !== undefined ? "project" : "page";
   await ensureServer();
-  const r = await request<ShareResponse>("POST", "/api/share", { file: abs, name: flags.as, auto: !!flags.auto, scope, project: flags.project, expiresAt, cwd: process.cwd() });
+  const r = await request<ShareResponse>("POST", "/api/share", { file: abs, name: flags.as, auto: notesMode(flags), scope, project: flags.project, expiresAt, cwd: process.cwd() });
   if (r.status !== 200) return fail(r.data?.error || `share failed (${r.status})`);
   const d = r.data;
   print({
@@ -2610,6 +2613,27 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
     expires: `${shortDate(d.expiresAt)} if nobody opens it`,
     note: `The first browser that opens this link becomes ${d.name}'s device, and the link stops working. Send it only to ${d.name}.`,
     next: `${BIN} share revoke ${JSON.stringify(d.name)} cuts it off.`,
+  });
+}
+
+/** `--auto` or `--hold` for one share or approval; neither: undefined, and the server uses the owner's default (`share default`). */
+function notesMode(flags: Flags): boolean | undefined {
+  return flags.auto ? true : flags.hold ? false : undefined;
+}
+
+/** `share default [hold|auto]`: where a new reviewer's notes go unless a share says (Settings → Review defaults in the hub). */
+async function shareDefault(args: string[]): Promise<void> {
+  const [mode] = args;
+  if (mode !== undefined && mode !== "hold" && mode !== "auto") return usage(`share default takes hold or auto: ${BIN} share default [hold|auto]`, "share");
+  await ensureServer();
+  const r = mode === undefined ? await request<{ auto: boolean }>("GET", "/api/share/default") : await request<{ auto: boolean }>("POST", "/api/share/default", { auto: mode === "auto" });
+  // An older server does not know the route.
+  if (r.status === 404) return fail(`the running server is older than this CLI and does not know share default: run \`${BIN} stop\` (or restart its service), then try again`);
+  if (r.status !== 200) return fail(r.data?.error || `share default failed (${r.status})`);
+  print({
+    status: mode === undefined ? undefined : "saved",
+    default: r.data.auto ? "auto: a new reviewer's notes go straight to the agent" : "hold: a new reviewer's notes wait until the owner sends them on",
+    note: "A share or an approval with --auto or --hold says for itself. Reviewers you let in already keep their own.",
   });
 }
 

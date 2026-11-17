@@ -160,6 +160,20 @@ export class RequestStore {
     });
   }
 
+  /**
+   * The owner's default for a new reviewer's notes (RLM-396): held for the owner (false, the default) or
+   * straight to the agent (true). A share or an approval that does not say takes it. Kept in access_settings
+   * as the row (scope 'notes', scope_id ''), `requests` 1 for straight to the agent: no schema change.
+   */
+  defaultAuto(): boolean {
+    const row = this.db.prepare("SELECT requests FROM access_settings WHERE scope = 'notes' AND scope_id = ''").get() as { requests: number } | undefined;
+    return row?.requests === 1;
+  }
+
+  setDefaultAuto(auto: boolean): void {
+    this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('notes', '', ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests").run(auto ? 1 : 0);
+  }
+
   /** Waiting requests nobody decided within WAITING_TTL_MS lapse: they leave the queue, and their browsers may ask again. */
   private lapse(): void {
     const now = this.now();
