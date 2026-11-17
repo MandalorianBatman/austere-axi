@@ -415,7 +415,9 @@ const NODE_RELEASE = /[\\/](?:node-)?v?\d+\.\d+\.\d+[^\\/]*[\\/]/;
  * The node a unit should run. `node` when its path names no release; else a `node` on PATH (or in
  * /usr/local/bin, /usr/bin, /opt/homebrew/bin) whose path names none and that resolves to the
  * same file, as Homebrew's or a hand-made link does: an update moves the link, not the unit.
- * `node` itself when there is no such link.
+ * `node` itself when there is no such link. A link in a folder that lasts one session (fnm's
+ * `fnm_multishells`, anything under XDG_RUNTIME_DIR) is not one: it is gone after logout, sooner
+ * than the release folder.
  */
 export function stableNode(node: string, env: NodeJS.ProcessEnv = process.env): string {
   if (!NODE_RELEASE.test(node)) return node;
@@ -425,9 +427,10 @@ export function stableNode(node: string, env: NodeJS.ProcessEnv = process.env): 
   } catch {
     return node;
   }
+  const runtime = env.XDG_RUNTIME_DIR && path.isAbsolute(env.XDG_RUNTIME_DIR) ? path.resolve(env.XDG_RUNTIME_DIR) + path.sep : null;
   for (const dir of [...(env.PATH ?? "").split(path.delimiter), "/usr/local/bin", "/usr/bin", "/opt/homebrew/bin"]) {
     const candidate = path.join(dir, "node");
-    if (!path.isAbsolute(dir) || NODE_RELEASE.test(candidate)) continue;
+    if (!path.isAbsolute(dir) || NODE_RELEASE.test(candidate) || /[\\/]fnm_multishells[\\/]/.test(candidate) || (runtime && candidate.startsWith(runtime))) continue;
     try {
       if (fs.realpathSync(candidate) === real) return candidate;
     } catch {

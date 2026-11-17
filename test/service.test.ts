@@ -1178,6 +1178,15 @@ test("a node from a folder of one release is warned about, and a link to it with
   fs.symlinkSync(release, path.join(links, "node"));
   assert.equal(stableNode(release, { PATH: ["relative/bin", links].join(path.delimiter) }), path.join(links, "node"));
   assert.equal(nodeWarning(path.join(links, "node")), null);
+  // A link that lasts one shell session (fnm's multishell folder, XDG_RUNTIME_DIR) is passed over for a lasting one.
+  const multishell = path.join(home, "run", "fnm_multishells", "4123_1700000000000", "bin");
+  fs.mkdirSync(multishell, { recursive: true });
+  fs.symlinkSync(release, path.join(multishell, "node"));
+  assert.equal(stableNode(release, { PATH: [multishell, links].join(path.delimiter) }), path.join(links, "node"));
+  const runtime = path.join(home, "xdg-runtime");
+  fs.mkdirSync(path.join(runtime, "bin"), { recursive: true });
+  fs.symlinkSync(release, path.join(runtime, "bin", "node"));
+  assert.equal(stableNode(release, { PATH: path.join(runtime, "bin"), XDG_RUNTIME_DIR: runtime }), release);
 });
 
 test("a command echoed for the owner to paste is quoted: a link url can carry shell syntax", async () => {

@@ -172,6 +172,10 @@ export async function ensureServer({ restart = false }: { restart?: boolean } = 
   let found: ServerUnit | null | undefined;
   const unitOf = (s: ServerHealth): ServerUnit | null => (found === undefined ? (found = serverUnit(s.pid)) : found);
   const plan = h ? serverAction(h, VERSION, () => unitOf(h as ServerHealth), { restart }) : null;
+  if (h && restart && plan?.action === "replace" && !h.legacy && versionGt(h.version, VERSION)) {
+    // Restarting would put this older CLI's server in place of a newer one.
+    throw new Error(`the server runs v${h.version}, newer than this CLI (v${VERSION}); restarting it from here would replace it with v${VERSION}. Run \`austere-axi server restart\` with the newer CLI that started it, or \`austere-axi stop\`.`);
+  }
   // The server a restart replaces: the new one must not be mistaken for it while it is still going.
   const old = h;
   if (h && restart && plan?.action === "restart-unit") {

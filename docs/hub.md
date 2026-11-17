@@ -75,7 +75,7 @@ austere-axi server uninstall    # stop it and remove the unit
 
 `server install` writes a per-user service that runs the installed CLI as `server --persist`, starts at login and restarts it when it fails:
 
-- **Linux:** a systemd user unit, `~/.config/systemd/user/austere-axi.service`, then `systemctl --user daemon-reload` and `systemctl --user enable --now austere-axi.service`. With linger off (the default), systemd starts it when you log in and stops it when your last session ends: you log out, or the last ssh connection closes. Run `loginctl enable-linger` once to keep it running without a session and start it at boot. `server install` and `server status` say which applies (`linger: on|off`, `starts: at login|at boot`).
+- **Linux:** a systemd user unit, `~/.config/systemd/user/austere-axi.service`, then `systemctl --user daemon-reload` and `systemctl --user enable --now austere-axi.service`. With linger off (the default), systemd starts it when you log in and stops it when your last session ends: you log out, or the last ssh connection closes. Run `loginctl enable-linger` once to keep it running without a session and start it at boot. `server install` says so when linger is off; `server status` shows which applies (`linger: on|off`, `starts: at login|at boot`).
 - **macOS:** a launchd agent, `~/Library/LaunchAgents/xyz.kasat.austere-axi.plist`, loaded with `launchctl bootstrap gui/<uid>`.
 - **Windows:** it prints the Task Scheduler commands (`schtasks`) to do it by hand and changes nothing.
 
@@ -87,7 +87,7 @@ It shows what it will do and asks (y/N): the command the unit runs, the port, th
 
 `server status` reports the service for this state dir in plain words: `running`, `starting`, `failing to start` (systemd restarts it in a loop, or gave up after 5 tries; launchd's last start exited with an error) or `stopped`; when it starts (`at login`, `at boot` with linger on, or `not on its own` when disabled); and the server that answers, with its version and pid and whether a service runs it. A unit that serves another state dir (`AUSTERE_AXI_STATE_DIR` points elsewhere) is named as `not installed for this state dir`; its state is not reported as this one's.
 
-`server restart` restarts the server for this state dir and waits until the new one answers. Under a service it restarts the unit that runs it (`systemctl --user reset-failed` and `restart`, or `launchctl kickstart -k`), whatever its name, and starts a stopped one. A server no service runs is stopped and started again where it listened, with `--persist` if it had it. With no server and no service it starts one, as any command would.
+`server restart` restarts the server for this state dir and waits until the new one answers. Under a service it restarts the unit that runs it (`systemctl --user reset-failed` and `restart`, or `launchctl kickstart -k`), whatever its name, and starts a stopped one. A server no service runs is stopped and started again where it listened, with `--persist` if it had it; a CLI older than that server refuses, rather than put its own older version in its place. With no server and no service it starts one, as any command would.
 
 `server install` and `server uninstall` refuse a unit that runs another CLI or another state dir than the one they run with: a build from a checkout, which uses a state dir of its own, must not repoint or remove the owner's service. `--force` goes ahead. A unit that runs from npx's cache is not refused for its CLI: moving it to an installed CLI is what the npx warning asks for.
 
