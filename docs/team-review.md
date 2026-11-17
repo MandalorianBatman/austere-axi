@@ -30,6 +30,26 @@ Send the link to that one person. It needs Tailscale (or `AUSTERE_AXI_HOST`, or 
 
 `share list` shows, for a link: its scope, mode, when it was made and when it expires (`--links` adds the link, to copy it again); for a device: its scope, mode, when it joined, when it was last seen and from which address.
 
+## Ask for access (no link)
+
+Off until you turn it on. Then a teammate opens a page's plain address, types a name and asks; you let that browser in once.
+
+```sh
+austere-axi share requests on                   # every page
+austere-axi share requests on --project shop    # one project's pages (off again: share requests off --project shop)
+austere-axi share requests                      # who is waiting: name, page, address and hostname, browser
+austere-axi share approve r0123456789           # that page; or --project <p> (the page's own) / --all, and --auto
+austere-axi share deny r0123456789              # refused; that browser may ask again
+austere-axi share block r0123456789             # refused; that browser cannot ask again
+```
+
+- **What the teammate sees.** A browser with no reviewer cookie that opens a page where requests are on gets "Ask the owner for access", a name field and **Send**. The page's title, file and content stay hidden. After Send it shows "Waiting for the owner" and checks every 2 seconds; once you approve, it opens the page by itself. Where requests are off, it gets the same 403 as before.
+- **What you see.** The name typed, the page it asked from, the address, its hostname when a reverse lookup finds one, the browser and system, and when. Over Tailscale the login and device will be added (RLM-399).
+- **Bound to the browser that asked.** Send sets a random 192-bit pending secret in an `HttpOnly`, `SameSite=Lax` cookie (`austere_rq`); `hub.db` keeps its SHA-256. Approval makes a device with no secret yet. Only the browser holding the pending secret can collect it, once, and gets a fresh device secret (`austere_rv_<id>`) in exchange. Another browser that typed the same name gets nothing. The address and hostname are evidence for you, never the key.
+- **Limits.** 5 requests per address an hour, 50 waiting at most, names cleaned as link names are (1 to 40 characters, one line, not `owner`, `you`, `agent`, `me` or `render check`). One waiting request per browser.
+- The request form is a same-origin POST, checked again after its body arrives: a request that finishes after you turn requests off is refused.
+- An approved device is like a claimed one: `share list`, rename, scope, revoke. Its `origin` is `request`.
+
 ## Links from before (0.12 and older)
 
 Invites in `invites.json` move into `hub.db` the first time this version opens it (the file is renamed `invites.json.imported`). Each becomes an **old-style link**: reusable, no expiry, the same URL as before, and the cookie it gave reviewers keeps working. Each new browser that opens an old-style link becomes a device of its own. `share list` marks these links; revoke one and share again to get a single-use link. (The hub's People view, RLM-396, will offer this in one click; the server already has it: `POST /hub/api/people/<id>/single-use`.)
@@ -51,8 +71,12 @@ The owner's browser (owner cookie, same-origin) can use these; a device never ca
 
 | Route | Does |
 |---|---|
-| `GET /hub/api/people` | `{ links, devices }`: live links nobody has claimed (with `link`, to copy again) and live devices, each with `id`, `name`, `scope`, `scopeId`, `reaches`, `auto`, `createdAt`, `reusable`, `expiresAt`, `claimedAt`, `lastSeenAt`, `lastAddr`, `lastHost`, `userAgent` |
+| `GET /hub/api/people` | `{ links, devices }`: live links nobody has claimed (with `link`, to copy again) and live devices, each with `id`, `name`, `origin` (`link` or `request`), `scope`, `scopeId`, `reaches`, `auto`, `createdAt`, `reusable`, `expiresAt`, `claimedAt`, `lastSeenAt`, `lastAddr`, `lastHost`, `userAgent` |
 | `POST /hub/api/people/<id>/rename` `{ name }` | rename a link or device |
 | `POST /hub/api/people/<id>/scope` `{ scope: "page", page }` \| `{ scope: "project", project }` \| `{ scope: "all" }` | change what it reaches; its open pages outside the new scope are cut off |
 | `POST /hub/api/people/<id>/revoke` | revoke it |
 | `POST /hub/api/people/<id>/single-use` `[{ expiresAt }]` | an old-style link gets a fresh single-use link; the old URL and cookie stop working |
+| `GET /hub/api/people/requests` | `{ waiting, blocked, switch }`: requests waiting (the oldest first; the hub header's count is `waiting.length`) and blocked ones, each with `id`, `name`, `status`, `page`, `file`, `project`, `addr`, `host`, `userAgent`, `browser`, `verifiedLogin`, `tailscaleDevice`, `createdAt`, `decidedAt`; and `switch: { all, projects: [{ id, name }] }` |
+| `POST /hub/api/people/requests/switch` `{ on, project? }` | requests on or off for one project (id or name), or without `project` for every page |
+| `POST /hub/api/people/requests/<id>/approve` `[{ scope: "page" \| "project" \| "all", auto }]` | let that browser in; scope as for a share, relative to the page it asked from (default the page). Returns `{ request, device }` |
+| `POST /hub/api/people/requests/<id>/deny`, `/block` | refuse it; a blocked browser cannot ask again |

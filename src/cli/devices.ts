@@ -21,7 +21,7 @@ export interface Scope {
   id: string | null;
 }
 
-/** How a device came in. Only `link` exists today; `request` and `tailscale` are kept for the ways in that come later. */
+/** How a device came in: a named link, a request the owner approved (RLM-398), or Tailscale (RLM-399). */
 export type DeviceOrigin = "link" | "request" | "tailscale";
 
 /** A row of `devices`: an unclaimed link (claimed_at null), or a device (claimed). */
@@ -97,7 +97,7 @@ export function hashSecret(secret: string): string {
 }
 
 /** A fresh random secret or link token: 192 bits, base64url. */
-function randomToken(): string {
+export function randomToken(): string {
   return crypto.randomBytes(24).toString("base64url");
 }
 
@@ -275,11 +275,11 @@ export class DeviceStore {
 }
 
 /** A device id: short, random, not derived from any secret. */
-function newDeviceId(): string {
+export function newDeviceId(): string {
   return "d" + crypto.randomBytes(5).toString("hex");
 }
 
-function clip(v: string | null | undefined): string | null {
+export function clip(v: string | null | undefined): string | null {
   return v ? String(v).slice(0, 300) : null;
 }
 

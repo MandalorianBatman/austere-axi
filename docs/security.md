@@ -16,6 +16,7 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. Never 
 - `Host` headers must be on an allowlist (DNS-rebinding defense).
 - Browser routes that change state refuse a foreign `Origin`.
 - Share links are random, claimed by one browser only, and expire unopened. Claiming swaps the link for a fresh device secret in an `HttpOnly` cookie; `hub.db` keeps only its hash. Tokens and secrets are kept out of the log. A device reaches only the page, project or every page its link named, and only to read and add notes. See [Team review](team-review.md).
+- Requests for access are off until the owner turns them on, for a project or every page. An unknown browser then sees a name form, never the page's title or content. An approval binds the browser that asked (a pending secret in an `HttpOnly` cookie, hashed in `hub.db`), not its address or name. Limits: 5 requests per address an hour, 50 waiting.
 - The server serves files only from the page's own directory, with no dotfiles.
 
 **Page sandbox.** The page runs in a sandboxed iframe with no same-origin access; packs run there too. Page files are also served with `Content-Security-Policy: sandbox`, so a page opened in a popup or its own tab stays sandboxed. In review, the review page opens new-window links only if they are external `http(s):` or `mailto:` links. A popup the frame opens any other way stays sandboxed.
