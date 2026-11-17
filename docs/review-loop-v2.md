@@ -237,7 +237,7 @@ wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
 | New | `find <words> [--project] [--component] [--limit]` | RLM-351 | `main.ts`, `statements_fts` |
 | New | `hub reindex` | RLM-350 | `cmdHub` |
 | New | `trigger add\|list\|remove` (`add` TTY only) | RLM-360 | `main.ts`, `server.ts` |
-| New | `server install\|uninstall\|status` | RLM-340 | `service.ts`, `main.ts` |
+| New | `server install\|uninstall\|status\|restart` | RLM-340, RLM-391 | `service.ts`, `main.ts` |
 
 The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, else an error with the command for the user to run). `adapter set` refuses as a usage error, exit 2 (the call cannot work from where it was made), not exit 1.
 

@@ -65,7 +65,7 @@ test("the packed npm build uses ~/.austere-axi and port 4388", () => {
     assert.equal(root, null);
     const env: NodeJS.ProcessEnv = {};
     assert.equal(applyDevDefaults(env, root), null);
-    assert.deepEqual(env, {}, "stateDir() and port() fall back to ~/.austere-axi and 4388");
+    assert.deepEqual(env, {}, "stateDir() and serverPort() fall back to ~/.austere-axi and 4388");
   } finally {
     fs.rmSync(project, { recursive: true, force: true });
   }
