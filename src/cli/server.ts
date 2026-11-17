@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { resolveSibling } from "./assets.ts";
 import fs from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 import { readArtifact, rewriteRuntime, escapeHtml } from "./artifact.ts";
 import { agentPrompt } from "./agent-prompt.ts";
@@ -2617,14 +2618,59 @@ export async function runServer({
     });
   }
 
+  /** AUSTERE_AXI_HOST, when it names one address: the server listens there instead of on the tailnet. */
+  const fixedHost = process.env.AUSTERE_AXI_HOST && !/^(0\.0\.0\.0|::|\*)$/.test(process.env.AUSTERE_AXI_HOST) ? process.env.AUSTERE_AXI_HOST : null;
+  /** The tailnet address the server listens on, kept apart from `tailnet` (what Tailscale said last), so a move always lets go of it. */
+  let tailnetBound: string | null = null;
+  let stopping = false;
+
   async function ensureTailnetListener(): Promise<void> {
-    const explicit = process.env.AUSTERE_AXI_HOST;
-    if (explicit && !/^(0\.0\.0\.0|::|\*)$/.test(explicit)) {
-      await listen(explicit);
+    if (fixedHost) {
+      await listen(fixedHost);
       return;
     }
-    tailnet = await detectTailscale();
-    if (tailnet && !listeners.has(tailnet.ip)) await listen(tailnet.ip);
+    await followTailnet(await detectTailscale(), false);
+  }
+
+  /** Whether a connection to `host` on this port is accepted, within 2 s. */
+  function accepts(host: string): Promise<boolean> {
+    const { promise, resolve } = Promise.withResolvers<boolean>();
+    const socket = net.connect({ host, port, timeout: 2000 });
+    socket.once("connect", () => resolve(true));
+    socket.once("timeout", () => resolve(false));
+    socket.once("error", () => resolve(false));
+    return promise.finally(() => socket.destroy());
+  }
+
+  /**
+   * Listen on the address Tailscale has now (`now`), and let go of one it no longer has. `probe`
+   * also listens again when the listener there no longer accepts (Tailscale restarted under it).
+   * While Tailscale does not answer, the listeners stay: its address comes back with it.
+   */
+  async function followTailnet(now: Tailnet | null, probe: boolean): Promise<void> {
+    if (!now || stopping) return;
+    tailnet = now;
+    if (tailnetBound && tailnetBound !== now.ip) {
+      if (!alsoListen.includes(tailnetBound)) {
+        listeners.get(tailnetBound)?.close();
+        listeners.delete(tailnetBound);
+        log("tailnet", `left ${tailnetBound}`);
+      }
+      tailnetBound = null;
+    }
+    const current = listeners.get(now.ip);
+    if (probe && current && !(await accepts(now.ip))) {
+      current.close();
+      listeners.delete(now.ip);
+      log("tailnet", `${now.ip} stopped accepting; listening again`);
+    }
+    if (!listeners.has(now.ip) && !stopping) await listen(now.ip);
+    if (listeners.has(now.ip)) tailnetBound = now.ip;
+  }
+
+  /** Ask Tailscale again: it may have come up after the server (a service started at boot), restarted under it, or moved. */
+  async function recheckTailnet(): Promise<void> {
+    await followTailnet(await detectTailscale({ fresh: true }), true);
   }
 
   const ok = await listen("127.0.0.1");
@@ -2635,8 +2681,18 @@ export async function runServer({
   }
   for (const h of alsoListen) await listen(h);
   await ensureTailnetListener();
+  const tailnetCheckMs = msEnv("AUSTERE_AXI_TAILNET_CHECK_MS", 60_000);
+  if (!fixedHost && tailnetCheckMs > 0) {
+    let checking = false;
+    setInterval(() => {
+      if (checking) return;
+      checking = true;
+      void recheckTailnet().finally(() => {
+        checking = false;
+      });
+    }, Math.min(tailnetCheckMs, MAX_TIMER_MS)).unref();
+  }
 
-  let stopping = false;
   function shutdown(reason: string): void {
     if (stopping) return;
     stopping = true;

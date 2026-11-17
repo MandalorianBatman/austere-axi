@@ -36,7 +36,7 @@ austere-axi publish login <file>   single-use link that signs your browser in to
 austere-axi publish list|rm <file|id>   your hosted pages; delete one now
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out
-austere-axi server install|uninstall|status   always-on server as a per-user systemd or launchd service (see Hub)   [--port n] [--link-url u] [--adopt] [--force]
+austere-axi server install|uninstall|status|restart   always-on server as a per-user systemd or launchd service (see Hub)   [--port n] [--link-url u] [--adopt] [--force]
 austere-axi mcp                  MCP server on stdio (see MCP)
 ```
 
@@ -142,13 +142,14 @@ austere-axi attach inherit <file>                        the page goes back to i
 
 | Variable | Default | |
 |---|---|---|
-| `AUSTERE_AXI_PORT` | `4388` | server port |
+| `AUSTERE_AXI_PORT` | the port in the state dir's `server.lock` while its server runs, else the installed service's, else `4388` | server port |
 | `AUSTERE_AXI_STATE_DIR` | `~/.austere-axi` | sessions, owner key, server log (mode 0700 on macOS and Linux) |
 | `AUSTERE_AXI_NO_OPEN` | | `1` = never open a browser |
 | `AUSTERE_AXI_HOST` | | extra bind address (never `0.0.0.0`) |
 | `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |
+| `AUSTERE_AXI_TAILNET_CHECK_MS` | `60000` | how often the server asks Tailscale for its address again (it came up later, restarted, or changed); `0` disables |
 | `AUSTERE_AXI_LINK_HOST` | | host in the printed remote link (`http://<host>:<port>`) |
-| `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS` |
+| `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS`. The host may hold only letters, digits, dots, hyphens and underscores (or be a bracketed IPv6 address) |
 | `AUSTERE_AXI_ALLOWED_HOSTS` | | extra `Host` headers to accept (reverse proxy) |
 | `AUSTERE_AXI_IDLE_TIMEOUT_MS` | `1800000` | idle shutdown; `0` disables |
 | `AUSTERE_AXI_PERSIST` | | `1`: never idle out, as `server --persist` |

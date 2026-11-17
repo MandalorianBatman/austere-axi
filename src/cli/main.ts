@@ -8,7 +8,7 @@ import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
-import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
+import { commandPort, ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
 import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
 import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
@@ -24,7 +24,7 @@ import { renderCheck } from "./render-check.ts";
 import { format, print as printOutput } from "./output.ts";
 import { describeItem, locator } from "../shared/feedback.ts";
 import type { FeedbackItem } from "../shared/feedback.ts";
-import { VERSION, applyDevDefaults, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
+import { VERSION, applyDevDefaults, assetPath, canonicalFile, quote, stateDir } from "./paths.ts";
 import { listComponents, searchComponents, showComponents } from "./components.ts";
 import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
@@ -151,7 +151,7 @@ NOTES
   (\`${BIN} run list\`); limits in <state dir>/attach.json. A run gets AUSTERE_AXI_RUN_ID.
 
 ENV
-  AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
+  AUSTERE_AXI_PORT (the running server's, else the service's, else 4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
   AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)  AUSTERE_AXI_CLOUD_URL (https://austere.blundertech.com)
@@ -369,12 +369,12 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
   server: {
-    usage: "server [install|uninstall|status] [--persist] [--port n] [--verbose] [--link-url u] [--adopt] [--force]",
+    usage: "server [install|uninstall|status|restart] [--persist] [--port n] [--verbose] [--link-url u] [--adopt] [--force]",
     summary:
-      "run the server in the foreground (behind a reverse proxy); `server install` (at a terminal only) makes it always on as a per-user systemd or launchd service that starts at login and restarts on failure: it shows what it will write and asks first, and puts back what was there when the service does not start. `server uninstall` removes it, `server status` shows it",
+      "run the server in the foreground (behind a reverse proxy); `server install` (at a terminal only) makes it always on as a per-user systemd or launchd service that starts at login and restarts on failure: it shows what it will write and asks first, and puts back what was there when the service does not start. `server status` says whether it runs, `server restart` restarts it (after an upgrade too), `server uninstall` removes it",
     flags: {
       persist: "never idle out",
-      port: "listen port (default: AUSTERE_AXI_PORT or 4388); with install, the port the service listens on (default: the installed unit's)",
+      port: "listen port (default: AUSTERE_AXI_PORT, else the port in the state dir's server.lock, else the installed service's, else 4388); with install, the port the service listens on (default: the installed unit's)",
       verbose: "log requests",
       "also-listen": "extra address to listen on (repeatable)",
       "link-url": "install: the address reviewers reach the server at, e.g. https://austere.example.com (AUSTERE_AXI_LINK_URL in the unit; default: the installed unit's)",
@@ -532,7 +532,7 @@ async function cmdHome() {
   print({
     bin: `${BIN} ${VERSION}`,
     description: "review pages written in OpenUI Lang; the reviewer annotates them in the browser and notes come back by statement name",
-    server: h ? `running on ${port()} (v${h.version})` : "not running",
+    server: h ? `running on ${commandPort()} (v${h.version})` : "not running",
     open_sessions: sessions.length > shown.length ? `${shown.length} of ${sessions.length} shown` : sessions.length,
     sessions: shown.length ? shown : undefined,
     commands: Object.fromEntries(Object.entries(COMMANDS).map(([name, c]) => [name === "open" ? "<file>" : name, c.summary])),
@@ -1529,7 +1529,7 @@ function browserDisabled(): boolean {
 }
 
 async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
-  const url = `http://127.0.0.1:${port()}/`;
+  const url = `http://127.0.0.1:${commandPort()}/`;
   switch (sub) {
     case "on":
     case "off":
@@ -2379,10 +2379,12 @@ async function cmdStop(): Promise<void> {
   // A server from before the health proof is stopped too (without the key).
   const h = await serverIfRunning({ legacy: true });
   if (!h) return print({ status: "not running" });
-  await shutdownServer(h);
+  // The port that server answered on, read before it stops and lets go of server.lock.
+  const port = commandPort();
+  await shutdownServer(h, port);
   print({
     status: "stopped",
-    port: port(),
+    port,
     note: h.supervised ? `It runs under ${h.supervised}; the next command that needs a server starts the service again. \`${BIN} server uninstall\` takes the service away for good.` : undefined,
   });
 }
@@ -2393,7 +2395,7 @@ function signInHint(file?: string): string {
 }
 
 async function cmdLogin(file: string | undefined): Promise<void> {
-  let url = `http://127.0.0.1:${port()}/`;
+  let url = `http://127.0.0.1:${commandPort()}/`;
   let abs: string | null = null;
   if (file) {
     abs = needFile(file, "login");
@@ -2422,16 +2424,16 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
     if (flags["link-url"] !== undefined) return usage("--link-url is for `server install`; a foreground server reads AUSTERE_AXI_LINK_URL", "server");
     // A foreground server and an installed service want the same port and the same state
     // dir: the service would restart in a loop while this one holds them.
-    const installed = installedServiceFor(serviceContext(probePort), stateDir(), p ?? port());
+    const installed = installedServiceFor(serviceContext(probePort), stateDir(), p ?? commandPort());
     if (installed) {
       process.stderr.write(`a service for this state dir is installed (${installed.file}); it will keep restarting while this server holds the port. Stop it with \`${BIN} server uninstall\`, or run this server on another port.\n`);
     }
     const { runServer } = await import("./server.ts");
-    return void (await runServer({ port: p ?? port(), verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist }));
+    return void (await runServer({ port: p ?? commandPort(), verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist }));
   }
-  if (!["install", "uninstall", "status"].includes(sub)) return usage(`unknown server subcommand: ${sub}. One of: install uninstall status`, "server");
+  if (!["install", "uninstall", "status", "restart"].includes(sub)) return usage(`unknown server subcommand: ${sub}. One of: install uninstall status restart`, "server");
   if (rest.length > 1) return usage(`server ${sub} takes no arguments; it got ${rest.slice(1).map((a) => `"${a}"`).join(" ")}`, "server");
-  const allowed = sub === "install" ? ["port", "link-url", "adopt", "force"] : sub === "uninstall" ? ["force"] : ["port"];
+  const allowed = sub === "install" ? ["port", "link-url", "adopt", "force"] : sub === "uninstall" ? ["force"] : sub === "restart" ? [] : ["port"];
   const extra = Object.keys(flags).filter((k) => !allowed.includes(k));
   if (extra.length) return usage(`server ${sub} does not take ${extra.map((k) => `--${k}`).join(" ")}`, "server");
   const ctx = serviceContext(probePort, confirm);
@@ -2441,7 +2443,18 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
       return print(await installService({ port: p, linkUrl, adopt: !!flags.adopt, force: !!flags.force }, ctx));
     }
     if (sub === "uninstall") return print(uninstallService(ctx, { force: !!flags.force }));
-    const h = await health(p ?? port());
+    if (sub === "restart") {
+      // A server from before the health proof counts: restarting replaces it, as an upgrade does.
+      const before = await serverIfRunning({ legacy: true });
+      const h = await ensureServer({ restart: true });
+      return print({
+        status: before ? "restarted" : "started",
+        server: `v${h.version}, pid ${h.pid}, port ${h.port}, ${h.supervised ? `run by ${h.unit ?? h.supervised}` : "not run by a service"}`,
+        was: before ? `v${before.version}, pid ${before.pid}` : "not running",
+        note: h.supervised ? undefined : `No service runs it: it stops after 30 idle minutes unless it was started with --persist, and the next command that needs a server starts one. \`${BIN} server install\` keeps one running.`,
+      });
+    }
+    const h = await health(p ?? commandPort());
     const running = h && !h.foreign && !h.legacy ? h : null;
     // A server from before 0.12 does not say a unit runs it; the system does.
     const unit = running ? serverUnit(running.pid) : null;

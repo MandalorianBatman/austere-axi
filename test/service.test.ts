@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,8 +12,9 @@ import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
 import { stateDirHolder } from "../src/cli/lock.ts";
 import { hasActiveWork, openDatabase } from "../src/cli/hub.ts";
-import { childEnv, detectUnit, installService, isAncestor, launchdPlist, npxWarning, parseLaunchctlList, parsePsScript, parseSystemdShow, restartCommand, runsTheServer, serverUnit, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitInCgroup, unitPort, unitStateDir } from "../src/cli/service.ts";
+import { childEnv, detectUnit, installedServiceFor, installService, isAncestor, launchdPlist, nodeWarning, npxWarning, parseLaunchctlList, parsePsScript, parseSystemdShow, restartCommand, restartHint, restartUnit, runsTheServer, serverPort, serverUnit, serviceStatus, stableNode, startInstalledService, systemdUnit, uninstallService, unitInCgroup } from "../src/cli/service.ts";
 import type { ProcessView, RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
+import { format } from "../src/cli/output.ts";
 import { launchdSettings, systemdSettings } from "../src/cli/unit-file.ts";
 import { freePort } from "./port.ts";
 
@@ -148,8 +151,9 @@ test("install writes the unit under HOME, reloads systemd and enables it now", a
   assert.deepEqual(changes(calls), ["systemctl --user daemon-reload", "systemctl --user enable --now austere-axi.service"]);
   assert.equal(calls[0], "systemctl --user show-environment", "the service manager is asked first");
   assert.deepEqual(r.ran, ["systemctl --user daemon-reload", "systemctl --user enable --now austere-axi.service"]);
-  assert.match(String(r.notes), /loginctl enable-linger/);
-  assert.equal(r.warning, undefined);
+  assert.match(String(r.notes), /stops it when your last session ends \(you log out, or the last ssh connection closes\)\. Run `loginctl enable-linger` once/);
+  assert.equal(r.warnings, undefined);
+  assert.equal(r.next, "austere-axi server status shows it; austere-axi server restart restarts it (after upgrading austere-axi, too); austere-axi server uninstall removes it.");
 });
 
 test("installing over a running unit restarts it, so it picks up the settings just written", async () => {
@@ -174,7 +178,11 @@ test("install on macOS writes the plist and bootstraps it", async () => {
   assert.match(fs.readFileSync(file, "utf8"), /<string>5000<\/string>/);
   assert.deepEqual(changes(calls), ["launchctl bootout gui/501/xyz.kasat.austere-axi", `launchctl bootstrap gui/501 ${file}`]);
   assert.equal(calls[0], "launchctl print gui/501", "launchd is asked first");
-  assert.match(String(r.notes), /AUSTERE_AXI_PORT=5000/);
+  assert.match(String(r.notes), /It listens on port 5000\. CLI commands on this state dir find it there: the server's server\.lock names its port, and the unit does while it is stopped\./);
+  // AUSTERE_AXI_PORT outranks both: the note says it points elsewhere.
+  const { ctx: pinned } = context({ platform: "darwin", env: { USER: "ana", AUSTERE_AXI_PORT: "4400" } });
+  const p = await installService({ port: 5000 }, pinned);
+  assert.match(String(p.notes), /AUSTERE_AXI_PORT=4400 sends CLI commands to another one: set it to 5000, or unset it/);
 });
 
 test("a failed install leaves nothing behind: no systemd here, nothing is written and the next command is not stuck", async () => {
@@ -229,7 +237,7 @@ test("install warns when the CLI runs from npx's cache", async () => {
   assert.match(String(npxWarning("C:\\Users\\ana\\AppData\\Local\\npm-cache\\_npx\\1a\\node_modules\\austere-axi\\dist\\cli.mjs")), /npx's cache/);
   const { ctx } = context({ cli: npx });
   const r = await installService({}, ctx);
-  assert.match(String(r.warning), /npm install -g austere-axi/);
+  assert.match(String(r.warnings), /npm install -g austere-axi/);
 });
 
 test("install refuses without a terminal and changes nothing", async () => {
@@ -282,21 +290,154 @@ test("uninstall disables the unit and removes it", async () => {
   assert.deepEqual(calls, ["systemctl --user disable --now austere-axi.service", "systemctl --user daemon-reload"]);
 });
 
-test("status says a supervised server on an older version needs a restart", async () => {
-  const { ctx } = context({
+/**
+ * A machine with the unit `server install` writes for STATE, run by node at `<home>/bin/node`;
+ * systemd's `show` answers `show`, loginctl says linger is `lingerValue`, launchctl print answers `print`.
+ */
+function statusMachine({ show = "", lingerValue = "no", print = null, platform = "linux", node, stateDir = STATE }: { show?: string; lingerValue?: string; print?: string | null; platform?: NodeJS.Platform; node?: string; stateDir?: string } = {}) {
+  const c = context({
+    platform,
     run: (cmd, args): RunResult => {
-      if (args.includes("is-enabled")) return { code: 0, stdout: "enabled\n", stderr: "" };
-      if (args.includes("is-active")) return { code: 0, stdout: "active\n", stderr: "" };
+      c.calls.push([cmd, ...args].join(" "));
+      if (cmd === "loginctl") return { code: 0, stdout: `${lingerValue}\n`, stderr: "" };
+      if (cmd === "systemctl" && args[1] === "show") return { code: 0, stdout: show, stderr: "" };
+      if (cmd === "launchctl" && args[0] === "print") return print == null ? { code: 113, stdout: "", stderr: "Could not find service" } : { code: 0, stdout: print, stderr: "" };
       return { code: 0, stdout: "", stderr: "" };
     },
   });
-  fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
-  fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, stateDir: STATE }));
-  const s = serviceStatus(ctx, { version: "0.0.1", pid: 42, port: 4388, supervised: "systemd" }, "0.0.2");
-  assert.equal(s.installed, true);
-  assert.equal(s.enabled, "enabled");
-  assert.equal(s.active, "active");
-  assert.match(String(s.next), /systemctl --user restart austere-axi.service/);
+  const bin = path.join(c.ctx.home, "bin", "node");
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, "");
+  const spec = { node: node ?? bin, cli: CLI, port: 4388, stateDir };
+  const file = platform === "darwin" ? path.join(c.ctx.home, "Library", "LaunchAgents", "xyz.kasat.austere-axi.plist") : unitPath(c.ctx.home);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, platform === "darwin" ? launchdPlist(spec, "/tmp/log") : systemdUnit(spec));
+  return c;
+}
+
+/**
+ * What `server status` prints, with the temp HOME as `/HOME`, the state dir as `$STATE` and `/` for
+ * a separator. The values are rewritten before format(), which escapes backslashes on Windows.
+ */
+const shown = (ctx: ServiceContext, out: object): string =>
+  format(JSON.parse(JSON.stringify(out, (_k, v: unknown) => (typeof v === "string" ? v.replaceAll(STATE, "$STATE").replaceAll(ctx.home, "/HOME").replaceAll("\\", "/") : v))) as object);
+
+const RUNNING = "ActiveState=active\nSubState=running\nUnitFileState=enabled\nMainPID=4242\n";
+const SERVED = { version: "0.12.0", pid: 4242, port: 4388, supervised: "systemd" as const, unit: "austere-axi.service" };
+
+test("status snapshot: running, starts at login, linger off says what logout does", () => {
+  const { ctx } = statusMachine({ show: RUNNING });
+  assert.equal(
+    shown(ctx, serviceStatus(ctx, SERVED, "0.12.0")),
+    [
+      "service: running",
+      "supervisor: systemd",
+      "unit: /HOME/.config/systemd/user/austere-axi.service",
+      "port: 4388",
+      "starts: at login",
+      "linger: off",
+      "server: v0.12.0, pid 4242, port 4388, run by austere-axi.service",
+      'note: "linger is off: systemd starts the service when you log in and stops it when your last session ends (you log out, or the last ssh connection closes). Run `loginctl enable-linger` once to keep it running without a session and start it at boot."',
+    ].join("\n"),
+  );
+});
+
+test("status snapshot: a unit that restarts in a loop is failing to start, with linger on it starts at boot", () => {
+  const { ctx } = statusMachine({ show: "ActiveState=activating\nSubState=auto-restart\nUnitFileState=enabled\n", lingerValue: "yes" });
+  assert.equal(
+    shown(ctx, serviceStatus(ctx, null, "0.12.0")),
+    [
+      "service: failing to start",
+      "supervisor: systemd",
+      "unit: /HOME/.config/systemd/user/austere-axi.service",
+      "port: 4388",
+      "starts: at boot",
+      "linger: on",
+      "server: not running",
+      'next: "It does not stay up. See why: journalctl --user -u austere-axi.service -n 50; then `austere-axi server restart`."',
+    ].join("\n"),
+  );
+  // A unit that hit its start limit says the same; one that is only starting says so.
+  const failed = statusMachine({ show: "ActiveState=failed\nSubState=failed\nUnitFileState=enabled\n", lingerValue: "yes" }).ctx;
+  assert.equal(serviceStatus(failed, null, "0.12.0").service, "failing to start");
+  const starting = statusMachine({ show: "ActiveState=activating\nSubState=start\nUnitFileState=enabled\n", lingerValue: "yes" }).ctx;
+  assert.equal(serviceStatus(starting, null, "0.12.0").service, "starting");
+});
+
+test("status snapshot: stopped and disabled, and how to start it", () => {
+  const { ctx } = statusMachine({ show: "ActiveState=inactive\nSubState=dead\nUnitFileState=disabled\n", lingerValue: "yes" });
+  assert.equal(
+    shown(ctx, serviceStatus(ctx, null, "0.12.0")),
+    [
+      "service: stopped",
+      "supervisor: systemd",
+      "unit: /HOME/.config/systemd/user/austere-axi.service",
+      "port: 4388",
+      "starts: not on its own (disabled)",
+      "linger: on",
+      "server: not running",
+      'next: "Start it: `austere-axi server restart` (the next command that needs a server starts it too)."',
+    ].join("\n"),
+  );
+});
+
+test("status: a supervised server on an older version is restarted with server restart", () => {
+  const { ctx } = statusMachine({ show: RUNNING, lingerValue: "yes" });
+  const s = serviceStatus(ctx, { ...SERVED, version: "0.0.1" }, "0.0.2");
+  assert.equal(s.next, "The server runs v0.0.1 and this CLI is v0.0.2. Restart it: austere-axi server restart");
+  // A launchd agent whose label was not found is restarted by hand.
+  const mac = statusMachine({ platform: "darwin", print: "\tstate = running\n\tpid = 4242\n" }).ctx;
+  assert.match(String(serviceStatus(mac, { version: "0.0.1", pid: 4242, port: 4388, supervised: "launchd" }, "0.0.2").next), /Restart it: launchctl kickstart -k gui\/501\/<launchd-label> \(`launchctl list` shows the label\)/);
+});
+
+test("status snapshot: a unit for another state dir is named, and its state is not reported as this one's", () => {
+  const { ctx, calls } = statusMachine({ show: RUNNING, stateDir: "/home/ana/.austere-axi" });
+  calls.length = 0;
+  assert.equal(
+    shown(ctx, serviceStatus(ctx, null, "0.12.0")),
+    [
+      "service: not installed for this state dir",
+      "supervisor: systemd",
+      "unit: /HOME/.config/systemd/user/austere-axi.service",
+      "server: not running",
+      `note: "that unit serves ${path.resolve("/home/ana/.austere-axi").replaceAll("\\", "/")}, and this CLI uses $STATE; its state is not this state dir's."`,
+    ].join("\n"),
+  );
+  assert.deepEqual(calls, [], "the real unit's state is not asked for");
+});
+
+test("status snapshot: launchd agent running, then failing after a failed exit", () => {
+  const { ctx } = statusMachine({ platform: "darwin", print: "\tstate = running\n\tpid = 4242\n" });
+  assert.equal(
+    shown(ctx, serviceStatus(ctx, { ...SERVED, supervised: "launchd", unit: "xyz.kasat.austere-axi" }, "0.12.0")),
+    [
+      "service: running",
+      "supervisor: launchd",
+      "unit: /HOME/Library/LaunchAgents/xyz.kasat.austere-axi.plist",
+      "port: 4388",
+      "starts: at login",
+      "server: v0.12.0, pid 4242, port 4388, run by xyz.kasat.austere-axi",
+    ].join("\n"),
+  );
+  const failing = statusMachine({ platform: "darwin", print: "\tstate = not running\n\tlast exit code = 1\n" }).ctx;
+  assert.equal(serviceStatus(failing, null, "0.12.0").service, "failing to start");
+  assert.equal(serviceStatus(statusMachine({ platform: "darwin", print: "\tstate = spawn scheduled\n" }).ctx, null, "0.12.0").service, "failing to start");
+  const unloaded = statusMachine({ platform: "darwin" }).ctx;
+  assert.equal(serviceStatus(unloaded, null, "0.12.0").service, "stopped");
+});
+
+test("status warns when the unit runs node from a folder of one release, and when that node is gone", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "austere-node-"));
+  HOMES.push(home);
+  const versioned = path.join(home, "node-v24.22.3-linux-x64", "bin", "node");
+  fs.mkdirSync(path.dirname(versioned), { recursive: true });
+  fs.writeFileSync(versioned, "");
+  const { ctx } = statusMachine({ show: RUNNING, lingerValue: "yes", node: versioned });
+  assert.deepEqual(serviceStatus(ctx, SERVED, "0.12.0").warnings, [nodeWarning(versioned)]);
+  const gone = statusMachine({ show: RUNNING, lingerValue: "yes", node: "/opt/node-v24.0.0-linux-x64/bin/node" }).ctx;
+  assert.deepEqual(serviceStatus(gone, SERVED, "0.12.0").warnings, [
+    "the unit runs node from /opt/node-v24.0.0-linux-x64/bin/node, which is not there any more: the service cannot start. Run `austere-axi server install` again.",
+  ]);
 });
 
 test("a CLI never replaces a supervised server; it says how to restart the unit", () => {
@@ -453,21 +594,14 @@ test("a stray server in another service's cgroup is not that service's, and is r
 });
 
 test("status names the pid and the fix when a server the service did not start holds its port", () => {
-  const { ctx } = context({
-    run: (cmd, args): RunResult => {
-      if (args.includes("is-enabled")) return { code: 0, stdout: "enabled\n", stderr: "" };
-      if (args.includes("is-active")) return { code: 3, stdout: "failed\n", stderr: "" };
-      return { code: 0, stdout: "", stderr: "" };
-    },
-  });
-  fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
-  fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, stateDir: STATE }));
+  const { ctx } = statusMachine({ show: "ActiveState=failed\nSubState=failed\nUnitFileState=enabled\n", lingerValue: "yes" });
   const s = serviceStatus(ctx, { version: "0.12.0", pid: 3106419, port: 4388 }, "0.12.0");
-  assert.equal(s.active, "failed");
+  assert.equal(s.service, "failing to start");
+  assert.equal(s.server, "v0.12.0, pid 3106419, port 4388, not run by a service");
   assert.equal(s.next, "the service cannot start: pid 3106419 holds port 4388 and was not started by the service. Run `austere-axi stop`.");
   // The same server, run by the unit (what serverUnit found for one from before 0.12): no lock-out.
   const ok = serviceStatus(ctx, { version: "0.10.4", pid: 4242, port: 4388, supervised: "systemd", unit: "austere-axi.service" }, "0.12.0");
-  assert.match(String(ok.next), /Restart it: systemctl --user restart austere-axi\.service/);
+  assert.equal(ok.next, "The server runs v0.10.4 and this CLI is v0.12.0. Restart it: austere-axi server restart");
 });
 
 /** Start a real server on this state dir; `env` adds to its environment. */
@@ -663,21 +797,30 @@ test("when the installed service does not start, the error says how to see why a
   });
 });
 
-test("the state dir and port are read out of a systemd unit and a launchd agent alike", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-unit-"));
-  HOMES.push(dir);
-  const systemd = path.join(dir, "austere-axi.service");
-  fs.writeFileSync(systemd, systemdUnit({ ...SPEC, stateDir: "/home/ana/My State" }));
-  assert.equal(unitStateDir(systemd), path.resolve("/home/ana/My State"));
-  assert.equal(unitPort(systemd), 4388);
-  const plain = path.join(dir, "plain.service");
-  fs.writeFileSync(plain, systemdUnit({ ...SPEC, port: 5000 }));
-  assert.equal(unitStateDir(plain), path.join(os.homedir(), ".austere-axi"));
-  assert.equal(unitPort(plain), 5000);
-  const plist = path.join(dir, "austere-axi.plist");
-  fs.writeFileSync(plist, launchdPlist({ ...SPEC, port: 5000, stateDir: "/home/ana/other" }, "/tmp/server.log"));
-  assert.equal(unitStateDir(plist), path.resolve("/home/ana/other"));
-  assert.equal(unitPort(plist), 5000);
+test("the installed unit's state dir and port are read as install reads them: quoting, %h, AUSTERE_AXI_PORT, XML escapes", () => {
+  const write = (file: string, text: string): void => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+  };
+  // A state dir with a space, the port from --port.
+  const spaced = context().ctx;
+  const dir = path.join(spaced.home, "My State");
+  write(unitPath(spaced.home), systemdUnit({ ...SPEC, port: 5000, stateDir: dir }));
+  assert.equal(serverPort(spaced, dir), 5000);
+  assert.ok(installedServiceFor(spaced, dir, 5000));
+  assert.equal(installedServiceFor(spaced, dir, 4388), null, "it serves another port");
+  // A hand-written unit: %h, and the port in Environment= rather than on the command line.
+  const env = context().ctx;
+  write(unitPath(env.home), "[Service]\nExecStart=/usr/bin/node /opt/cli.mjs server --persist\nEnvironment=AUSTERE_AXI_PORT=5001 AUSTERE_AXI_STATE_DIR=%h/state\n");
+  assert.equal(serverPort(env, path.join(env.home, "state")), 5001);
+  assert.equal(serverPort(env, STATE), 4388, "another state dir's unit");
+  // A launchd agent whose state dir holds `&`: read unescaped, so it is this state dir's unit.
+  const mac = context({ platform: "darwin" }).ctx;
+  const amp = path.join(mac.home, "R&D");
+  write(path.join(mac.home, "Library", "LaunchAgents", "xyz.kasat.austere-axi.plist"), launchdPlist({ ...SPEC, port: 5002, stateDir: amp }, "/tmp/server.log"));
+  assert.equal(serverPort(mac, amp), 5002);
+  assert.ok(installedServiceFor(mac, amp, 5002));
+  assert.notEqual(serviceStatus({ ...mac, stateDir: amp }, null, "0.12.0").service, "not installed for this state dir", "status reads it the same way");
 });
 
 test("supervision is what the system says, not what a process claims", () => {
@@ -823,6 +966,7 @@ test("a hand-written unit is read for what the new unit keeps: Environment=, Exe
   assert.deepEqual(systemdSettings(systemdUnit({ ...SPEC, stateDir: STATE })).kept, []);
   assert.deepEqual(launchdSettings(launchdPlist({ ...SPEC, port: 5000, env: [["HTTPS_PROXY", "http://proxy:3128"]] }, "/tmp/log")), {
     cli: SPEC.cli,
+    node: SPEC.node,
     port: 5000,
     stateDir: null,
     linkUrl: SPEC.linkUrl,
@@ -1022,4 +1166,298 @@ test("launchd: --adopt keeps the agent's own variables in the new one", async ()
   assert.match(fs.readFileSync(file, "utf8"), /<key>HTTPS_PROXY<\/key><string>http:\/\/proxy:3128<\/string>/);
   assert.equal(fs.readFileSync(`${file}.bak`, "utf8"), mine);
   assert.deepEqual(changes(calls).slice(0, 1), ["launchctl bootout gui/501/xyz.kasat.austere-axi"]);
+});
+
+test("a node from a folder of one release is warned about, and a link to it without a version is run instead", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "austere-node-"));
+  HOMES.push(home);
+  const release = path.join(home, "node-v24.22.3-linux-x64", "bin", "node");
+  fs.mkdirSync(path.dirname(release), { recursive: true });
+  fs.writeFileSync(release, "");
+  assert.equal(nodeWarning("/usr/bin/node"), null);
+  assert.equal(nodeWarning("/opt/homebrew/bin/node"), null);
+  for (const versioned of [release, "/home/ana/.nvm/versions/node/v24.1.0/bin/node", "/opt/homebrew/Cellar/node/24.1.0/bin/node"]) {
+    assert.match(String(nodeWarning(versioned)), /a folder of one Node release; a Node update or `nvm uninstall` removes it, and the service then stops starting/, versioned);
+  }
+  // No link: the node it runs on, warned about.
+  assert.equal(stableNode(release, { PATH: "" }), release);
+  assert.equal(stableNode("/usr/bin/node", { PATH: "" }), "/usr/bin/node");
+  const { ctx } = context({ node: release });
+  const r = await installService({}, ctx);
+  assert.deepEqual(r.warnings, [nodeWarning(release)]);
+  if (process.platform === "win32") return; // symlinks need rights a Windows runner may not have
+  // A link on PATH that leads to it, as Homebrew's or a hand-made one does: the unit runs the link.
+  const links = path.join(home, "links");
+  fs.mkdirSync(links);
+  fs.symlinkSync(release, path.join(links, "node"));
+  assert.equal(stableNode(release, { PATH: ["relative/bin", links].join(path.delimiter) }), path.join(links, "node"));
+  assert.equal(nodeWarning(path.join(links, "node")), null);
+  // A link that lasts one shell session (fnm's multishell folder, XDG_RUNTIME_DIR) is passed over for a lasting one.
+  const multishell = path.join(home, "run", "fnm_multishells", "4123_1700000000000", "bin");
+  fs.mkdirSync(multishell, { recursive: true });
+  fs.symlinkSync(release, path.join(multishell, "node"));
+  assert.equal(stableNode(release, { PATH: [multishell, links].join(path.delimiter) }), path.join(links, "node"));
+  const runtime = path.join(home, "xdg-runtime");
+  fs.mkdirSync(path.join(runtime, "bin"), { recursive: true });
+  fs.symlinkSync(release, path.join(runtime, "bin", "node"));
+  assert.equal(stableNode(release, { PATH: path.join(runtime, "bin"), XDG_RUNTIME_DIR: runtime }), release);
+  // A CLI that nvm installed beside one release goes with it, whatever node runs it.
+  assert.match(String(nodeWarning("/usr/bin/node", "/home/ana/.nvm/versions/node/v24.1.0/lib/node_modules/austere-axi/dist/cli.mjs")), /installed in a folder of one Node release/);
+  assert.equal(nodeWarning("/usr/bin/node", CLI), null);
+});
+
+test("a link url with shell syntax in its host is refused, and a command echoed for the owner to paste is quoted", async () => {
+  // WHATWG URL accepts `$(…)`, backticks and `&` in a host; PowerShell would run them inside "…".
+  for (const url of ["https://a$(id).example.com", "https://a`id`.example.com", "https://a&b.example.com"]) {
+    await assert.rejects(installService({ linkUrl: url }, context({ isTTY: false }).ctx), /--link-url is not a url: .*host may hold only letters, digits, dots, hyphens and underscores/, url);
+  }
+  const { ctx } = context({ isTTY: false });
+  await assert.rejects(installService({ linkUrl: "https://austere_1.example.com:8443", port: 5000 }, ctx), (e: Error) => {
+    assert.ok(e.message.includes("Ask the user to run `austere-axi server install --port 5000 --link-url https://austere_1.example.com:8443` themselves."), e.message);
+    return true;
+  });
+  // A path with a space or a quote, in the command to run at login by hand.
+  const odd = context({ cli: "/opt/ana's axi/cli.mjs", run: () => ({ code: 1, stdout: "", stderr: "Failed to connect to bus" }) }).ctx;
+  await assert.rejects(installService({}, odd), (e: Error) => {
+    assert.ok(e.message.includes(`\`/usr/bin/node '/opt/ana'\\''s axi/cli.mjs' server --persist --port 4388\``), e.message);
+    return true;
+  });
+});
+
+test("CLI commands find the server on the port in server.lock, then on the installed unit's port", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-port-"));
+  HOMES.push(dir);
+  const { ctx } = context();
+  const lock = path.join(dir, "server.lock");
+  assert.equal(serverPort(ctx, dir), 4388);
+  // A unit installed for this state dir on another port.
+  fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
+  fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, port: 5000, stateDir: dir }));
+  assert.equal(serverPort(ctx, dir), 5000);
+  // ...but not for another state dir.
+  assert.equal(serverPort(ctx, STATE), 4388);
+  // A live server's lock names its port: it wins over the unit.
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, port: 5100, at: Date.now() }));
+  assert.equal(serverPort(ctx, dir), 5100);
+  // A dead holder's lock, or a command's lock without a port, does not count.
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid as number;
+  fs.writeFileSync(lock, JSON.stringify({ pid: dead, port: 5100, at: Date.now() }));
+  assert.equal(serverPort(ctx, dir), 5000);
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() }));
+  assert.equal(serverPort(ctx, dir), 5000);
+  // AUSTERE_AXI_PORT outranks both.
+  assert.equal(serverPort({ ...ctx, env: { AUSTERE_AXI_PORT: "4400" } }, dir), 4400);
+});
+
+test("restartUnit resets and restarts the unit that runs the server; an unknown launchd label is the owner's to restart", () => {
+  const { ctx, calls } = context();
+  assert.deepEqual(restartUnit(ctx, { supervisor: "systemd", unit: "austere.service" }), ["systemctl --user reset-failed austere.service", "systemctl --user restart austere.service"]);
+  const mac = context({ platform: "darwin" });
+  assert.deepEqual(restartUnit(mac.ctx, { supervisor: "launchd", unit: "com.ana.austere" }), ["launchctl kickstart -k gui/501/com.ana.austere"]);
+  assert.throws(() => restartUnit(mac.ctx, { supervisor: "launchd", unit: "<launchd-label>" }), /`launchctl list` shows it/);
+  const refusing = context({ run: (cmd, args) => (args.includes("restart") ? { code: 1, stdout: "", stderr: "Job failed" } : { code: 0, stdout: "", stderr: "" }) });
+  assert.throws(() => restartUnit(refusing.ctx, { supervisor: "systemd", unit: "austere-axi.service" }), /Job failed.*see why: systemctl --user status austere-axi\.service/);
+  assert.equal(restartHint({ supervisor: "systemd", unit: "austere.service" }), "austere-axi server restart");
+  assert.equal(calls.length, 2);
+});
+
+test("server restart replaces a server no unit runs; the CLI then finds it by server.lock", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "austere-home-"));
+  HOMES.push(home);
+  const { child, port } = await startServer({ HOME: home });
+  // A runner's own AUSTERE_AXI_PORT would hide the lookup through server.lock.
+  const { AUSTERE_AXI_PORT: _runnerPort, ...base } = process.env;
+  const env = { ...base, HOME: home, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" };
+  let replacement: number | null = null;
+  try {
+    const before = await health(port);
+    assert.ok(before && !before.foreign);
+    const r = spawnSync(process.execPath, ["src/cli/main.ts", "server", "restart"], { env: { ...env, AUSTERE_AXI_PORT: String(port) }, encoding: "utf8", timeout: 60_000 });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /^status: restarted$/m);
+    assert.match(r.stdout, new RegExp(`^was: v\\S+, pid ${before.pid}$`, "m"));
+    // This process's pooled connection went to the old server: the first ask after it may fail.
+    let after = await health(port);
+    for (let i = 0; i < 20 && !after; i++) after = await health(port);
+    assert.ok(after && !after.foreign);
+    replacement = after.pid;
+    assert.notEqual(after.pid, before.pid);
+    assert.match(r.stdout, new RegExp(`^server: v\\S+, pid ${after.pid}, port ${port}, not run by a service$`, "m"));
+    // Without AUSTERE_AXI_PORT the CLI reads the port from server.lock, and stops the server there.
+    const stopped = spawnSync(process.execPath, ["src/cli/main.ts", "stop"], { env, encoding: "utf8", timeout: 30_000 });
+    assert.match(stopped.stdout, new RegExp(`^status: stopped\\nport: ${port}$`, "m"), stopped.stdout + stopped.stderr);
+    // A real process exits on its own schedule: wait for its port to close.
+    for (let i = 0; i < 100 && (await health(port)); i++) await new Promise((res) => setTimeout(res, 100));
+    assert.equal(await health(port), null);
+  } finally {
+    await stop(child);
+    // The detached replacement: stopped above, or still up when an assertion failed first.
+    await retire(replacement ?? lockPid(), child.pid);
+  }
+});
+
+/** The pid in STATE's server.lock, or null. */
+function lockPid(): number | null {
+  let lock: unknown;
+  try {
+    lock = JSON.parse(fs.readFileSync(path.join(STATE, "server.lock"), "utf8"));
+  } catch {
+    return null;
+  }
+  return lock && typeof lock === "object" && "pid" in lock && typeof lock.pid === "number" ? lock.pid : null;
+}
+
+/**
+ * Wait for a detached server to exit, and kill it when it has not within 5 s. Until it exits it
+ * holds files in STATE (hub.db, server.log), and Windows then refuses to remove the folder.
+ */
+async function retire(pid: number | null, keep?: number): Promise<void> {
+  if (pid == null || pid === keep) return;
+  const alive = (): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // A real process exits on its own schedule: poll until it has.
+  for (let i = 0; i < 50 && alive(); i++) await new Promise((res) => setTimeout(res, 100));
+  if (!alive()) return;
+  try {
+    process.kill(pid);
+  } catch (err) {
+    // It exited between the check and the kill.
+    if ((err as NodeJS.ErrnoException).code !== "ESRCH") throw err;
+  }
+  for (let i = 0; i < 50 && alive(); i++) await new Promise((res) => setTimeout(res, 100));
+}
+
+/** Run the CLI without blocking this process (a fake server here has to answer it). */
+function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const { promise, resolve } = Promise.withResolvers<{ code: number | null; stdout: string; stderr: string }>();
+  const child = spawn(process.execPath, ["src/cli/main.ts", ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (d: Buffer) => (stdout += d));
+  child.stderr.on("data", (d: Buffer) => (stderr += d));
+  child.on("close", (code) => resolve({ code, stdout, stderr }));
+  return promise;
+}
+
+test("server restart replaces a server from before the health proof, and says what ran before", async () => {
+  // A pre-0.12 server: health without a proof. It stops when asked, as an old server does.
+  const port = await freePort();
+  let asked = false;
+  const legacy = http.createServer((req, res) => {
+    if (req.url?.startsWith("/api/health")) {
+      res.setHeader("content-type", "application/json");
+      return res.end(JSON.stringify({ name: "austere-axi", version: "0.9.0", pid: process.pid, port, stateDir: STATE, listen: ["127.0.0.1"] }));
+    }
+    if (req.url === "/api/shutdown") {
+      asked = true;
+      res.end("{}");
+      legacy.close();
+      legacy.closeAllConnections();
+      return;
+    }
+    res.statusCode = 404;
+    res.end();
+  });
+  const { promise: listening, resolve } = Promise.withResolvers<void>();
+  legacy.listen(port, "127.0.0.1", () => resolve());
+  await listening;
+  const env = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_PORT: String(port), AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" };
+  try {
+    const r = await runCli(["server", "restart"], env);
+    assert.equal(r.code, 0, r.stdout + r.stderr);
+    assert.ok(asked, "the old server was asked to stop");
+    assert.match(r.stdout, /^status: restarted$/m);
+    assert.match(r.stdout, new RegExp(`^was: v0\\.9\\.0, pid ${process.pid}$`, "m"));
+    assert.match(r.stdout, new RegExp(`^server: v\\S+, pid \\d+, port ${port}, not run by a service$`, "m"));
+  } finally {
+    legacy.close();
+    // The replacement is detached: stop it and wait until it has exited and let go of STATE.
+    const pid = lockPid();
+    await runCli(["stop"], env);
+    for (let i = 0; i < 50 && (await health(port)); i++) await new Promise((res) => setTimeout(res, 100));
+    await retire(pid, process.pid);
+  }
+});
+
+test("status says unknown when launchctl cannot run, and a state dir in another case is the same on macOS", () => {
+  const { ctx } = statusMachine({ platform: "darwin", print: "\tstate = running\n" });
+  ctx.run = () => ({ code: null, stdout: "", stderr: "spawnSync launchctl ENOENT" });
+  const s = serviceStatus(ctx, null, "0.12.0");
+  assert.equal(s.service, "unknown: launchctl could not run here");
+  assert.equal(s.starts, "unknown");
+  // macOS ignores case by default: the unit's .../State is this CLI's .../STATE too.
+  const mac = context({ platform: "darwin" }).ctx;
+  fs.mkdirSync(path.join(mac.home, "Library", "LaunchAgents"), { recursive: true });
+  fs.writeFileSync(path.join(mac.home, "Library", "LaunchAgents", "xyz.kasat.austere-axi.plist"), launchdPlist({ ...SPEC, port: 5003, stateDir: path.join(mac.home, "State") }, "/tmp/log"));
+  assert.equal(serverPort(mac, path.join(mac.home, "STATE")), 5003);
+  assert.equal(serverPort(mac, path.join(mac.home, "Other")), 4388);
+});
+
+test("status says unknown, not stopped or disabled, when systemd's user manager does not answer", () => {
+  const { ctx } = statusMachine({ lingerValue: "yes" });
+  ctx.run = (cmd, args) => (cmd === "systemctl" && args[1] === "show" ? { code: 1, stdout: "", stderr: "Failed to connect to bus: No medium found" } : { code: 0, stdout: "yes\n", stderr: "" });
+  const s = serviceStatus(ctx, null, "0.12.0");
+  assert.equal(s.service, "unknown: systemd's user manager does not answer here");
+  assert.equal(s.starts, "unknown");
+  assert.equal(s.next, undefined);
+});
+
+test("status on a server a unit of another name runs points at restart and --adopt, not at a fresh install", () => {
+  const { ctx } = context();
+  const s = serviceStatus(ctx, { version: "0.12.0", pid: 4242, port: 4388, supervised: "systemd", unit: "austere.service" }, "0.12.0");
+  assert.equal(s.service, "not installed");
+  assert.equal(s.next, "It runs under austere.service, a unit `austere-axi server install` did not write; `austere-axi server restart` restarts it, `austere-axi server install --adopt` takes its place.");
+  assert.equal(serviceStatus(ctx, null, "0.12.0").next, "austere-axi server install sets it up (at a terminal).");
+});
+
+test("a restart with the installed unit active but silent restarts it; a start would do nothing", () => {
+  const { ctx, calls } = context();
+  fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
+  fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, stateDir: STATE }));
+  assert.equal(startInstalledService(ctx, STATE, 4388, { restart: true }), true);
+  assert.deepEqual(calls, ["systemctl --user reset-failed austere-axi.service", "systemctl --user restart austere-axi.service"]);
+});
+
+test("the server listens on Tailscale's address when Tailscale comes up after it, and moves when the address changes", { skip: process.platform !== "linux" && "127.0.0.2 is loopback only on Linux" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-tailscale-"));
+  HOMES.push(dir);
+  const ipFile = path.join(dir, "ip");
+  // Tailscale down: `status --json` says so (a CLI that fails would send detection on to a real one).
+  fs.writeFileSync(
+    path.join(dir, "tailscale"),
+    `#!/bin/sh\nif [ -f "${ipFile}" ]; then printf '{"BackendState":"Running","Self":{"TailscaleIPs":["%s"],"DNSName":""}}' "$(cat "${ipFile}")"; else printf '{"BackendState":"Stopped"}'; fi\n`,
+    { mode: 0o755 },
+  );
+  const accepts = (host: string, port: number): Promise<boolean> => {
+    const { promise, resolve } = Promise.withResolvers<boolean>();
+    const socket = net.connect({ host, port });
+    socket.once("connect", () => resolve(true));
+    socket.once("error", () => resolve(false));
+    return promise.finally(() => socket.destroy());
+  };
+  // The server re-checks on its own timer in another process: poll for what it does, up to 5 s.
+  const until = async (check: () => Promise<boolean>): Promise<boolean> => {
+    for (let i = 0; i < 50; i++) {
+      if (await check()) return true;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return false;
+  };
+  const { child, port } = await startServer({ PATH: `${dir}${path.delimiter}${process.env.PATH}`, AUSTERE_AXI_NO_TAILSCALE: "", AUSTERE_AXI_TAILNET_CHECK_MS: "100" });
+  try {
+    assert.equal(await accepts("127.0.0.2", port), false);
+    fs.writeFileSync(ipFile, "127.0.0.2");
+    assert.ok(await until(() => accepts("127.0.0.2", port)), "listens on the address Tailscale came up with");
+    fs.writeFileSync(ipFile, "127.0.0.3");
+    assert.ok(await until(() => accepts("127.0.0.3", port)), "listens on the new address");
+    assert.ok(await until(async () => !(await accepts("127.0.0.2", port))), "lets go of the old one");
+  } finally {
+    await stop(child);
+  }
 });

@@ -114,6 +114,10 @@ export function parseLinkUrl(value: string): { base: string; host: string } | nu
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error(`AUSTERE_AXI_LINK_URL must be http or https: ${raw}`);
   if (u.pathname !== "/" || u.search || u.hash || u.username || u.password) throw new Error(`AUSTERE_AXI_LINK_URL must be just scheme, host and optional port, like https://austere.example.com: ${raw}`);
+  // A host name of letters, digits, dots, hyphens and underscores (an IDN is already punycode here),
+  // or a bracketed IPv6 address. WHATWG URL keeps `$`, backticks, `&` and `;` in a host; the url goes
+  // into a unit and into commands printed for the owner to paste, where a shell would run them.
+  if (!/^(?:[a-z0-9._-]+|\[[0-9a-f:.]+\])$/i.test(u.hostname)) throw new Error(`AUSTERE_AXI_LINK_URL host may hold only letters, digits, dots, hyphens and underscores: ${raw}`);
   return { base: u.origin, host: u.hostname.toLowerCase() };
 }
 
