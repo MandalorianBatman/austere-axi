@@ -82,10 +82,10 @@ function revisions(file: string): Rev[] {
 }
 
 /** Waits for a condition the server will make true (a watched file is read within about half a second). */
-async function until<T>(read: () => T | undefined | false, what: string): Promise<T> {
+async function until<T>(read: () => T | undefined | false | Promise<T | undefined | false>, what: string): Promise<T> {
   const deadline = Date.now() + 10_000;
   for (;;) {
-    const v = read();
+    const v = await read();
     if (v) return v;
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, 50));
@@ -155,6 +155,8 @@ test("an edit made while no server ran becomes a revision on the next open", asy
   const file = page("offline", PROGRAM);
   assert.equal((await cli(file)).code, 0);
   assert.equal((await cli("stop")).code, 0);
+  // `stop` answers before the server has quite gone; its watcher would still record an edit made now as its own.
+  await until(async () => (await fetch(`http://127.0.0.1:${PORT}/api/health`).then(() => false, () => true)) || undefined, "the server to be gone");
   fs.writeFileSync(file, html(PROGRAM.replace('"hello"', '"edited while stopped"')));
   assert.equal(revisions(file).length, 1);
   assert.equal((await cli(file)).code, 0);
