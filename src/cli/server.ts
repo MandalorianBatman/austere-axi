@@ -100,9 +100,10 @@ export interface OpenResponse {
 
 /**
  * /api/poll, and how a listening poll ends. `replaced`: a newer poll took over this page. `interrupted`: the server stopped.
+ * `moved`: a project poll's project is gone, its pages taken into another one (a guessed folder above them, `project merge`).
  */
 export interface PollResponse {
-  status: "feedback" | "timeout" | "replaced" | "interrupted";
+  status: "feedback" | "timeout" | "replaced" | "interrupted" | "moved";
   /** feedback: the notes' items, and the cursor that acknowledges them */
   items?: NoteItem[];
   /** feedback: the highest seq in the answer (a project poll's cursor covers every page). */
@@ -759,15 +760,21 @@ export async function runServer({
   function rescanProjectPoll(projectId: string): void {
     const poll = projectPolls.get(projectId);
     if (!poll || poll.done) return;
+    // Its pages went to another project, which this poll does not listen to: end it so the agent polls that one.
+    if (!hub.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) return finishProjectPoll(poll, { status: "moved" });
     refreshWatch(projectId);
     const batches = projectBatches(poll);
     if (batches.length) deliverProject(poll, batches);
   }
 
-  /** A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll. */
+  /**
+   * A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll.
+   * Registering it may have taken another project's pages in (a guessed folder above them): that project's poll ends now.
+   */
   function joinProjectPoll(s: Session): void {
     const pid = store.projectIdOf(s);
     if (pid) rescanProjectPoll(pid);
+    for (const other of [...projectPolls.keys()]) if (other !== pid) rescanProjectPoll(other);
   }
 
   /**

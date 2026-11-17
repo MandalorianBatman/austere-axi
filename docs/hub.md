@@ -18,9 +18,9 @@ A project is a name and a list of root folders. A page is a path inside a root, 
 
 The hub finds a page's project without git; it never runs it. Walking up from the page's folder it takes the first of:
 
-1. a root it already knows: a root holds every folder below it, except a folder it guessed at `/` or your home folder, which holds only that folder;
+1. a root it already knows: a root holds every folder below it, except a folder it guessed at `/`, your home folder or the temp folder, which holds only that folder;
 2. a folder with a `.git` entry: a `.git` directory is a repository; a `.git` file of a worktree joins the project of its main repository; a submodule is its own project. Inside a root you assigned (`project add`), the repository or worktree joins that root's project, and its page paths start with the repository's folder inside that root (`shop/docs/plan.html`), so two repositories there stay apart and the repository's worktrees, wherever they are, share its pages;
-3. a guessed folder: the folder the command ran in when the page is inside it (never `/` or your home folder), else the page's own folder. So `cd notes && austere-axi a/sprint.html` and `austere-axi b/plan.html` make one project, `notes`. A guessed folder takes in the folders guessed below it earlier, with their pages.
+3. a guessed folder: the folder the command ran in when the page is inside it (never `/`, your home folder or the temp folder), else the page's own folder. So `cd notes && austere-axi a/sprint.html` and `austere-axi b/plan.html` make one project, `notes`. A guessed folder takes in the folders guessed below it earlier, with their pages; a project `poll` waiting on one of those ends with `status: moved`.
 
 A bare `poll` or `feedback` finds its project from the folder it runs in by the same rule, so it covers the pages opened from there.
 

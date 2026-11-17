@@ -505,7 +505,7 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   } else {
     // From this folder a bare poll means this folder's project: name the page's when it is another.
     const poll = !d.project ? `${BIN} poll ${quote(file)}` : d.project.here ? `${BIN} poll` : `${BIN} poll --project ${quote(d.project.ref)}`;
-    const scope = d.project ? ` It waits for notes on every open page of ${d.project.name} (\`${BIN} poll ${quote(file)}\` for this page only).` : "";
+    const scope = d.project ? ` One poll covers every page of ${d.project.name} you open, this one included (\`${BIN} poll ${quote(file)}\` for this page only).` : "";
     out.next = check.ok
       ? `Run \`${poll}\` and leave it running until it returns.${scope}`
       : `Fix the errors above (the page renders what it can), then run \`${poll}\`.${scope}`;
@@ -560,8 +560,11 @@ function seqFlag(flags: Flags, name: string): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-/** The project a poll or feedback with no file means: `--project` (a name, an id or a folder), else the folder the command runs in. `pages`: how many of its pages are open for review. */
-async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string; scope: string; files: string[]; pages: number } | null> {
+/**
+ * The project a poll or feedback with no file means: `--project` (a name, an id or a folder), else the folder the command runs in.
+ * `pages`: how many of its pages are open for review (not archived; copies count once); `reviewed`: any page was ever opened, archived ones included.
+ */
+async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string; scope: string; files: string[]; pages: number; reviewed: boolean } | null> {
   const ref = typeof flags.project === "string" ? flags.project : process.cwd();
   let hub: Hub;
   try {
@@ -580,9 +583,10 @@ async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string;
       );
       return null;
     }
-    const rows = hub.db.prepare("SELECT file, reviewed FROM artifacts WHERE project_id = ?").all(project.id) as { file: string; reviewed: number }[];
+    const rows = hub.db.prepare("SELECT file, reviewed, archived_at, page_id FROM artifacts WHERE project_id = ?").all(project.id) as { file: string; reviewed: number; archived_at: number | null; page_id: string | null }[];
     const scope = typeof flags.project === "string" ? ` --project ${quote(flags.project)}` : "";
-    return { id: project.id, name: project.name, scope, files: rows.map((r) => r.file), pages: rows.filter((r) => r.reviewed).length };
+    const pages = new Set(rows.filter((r) => r.reviewed && !r.archived_at).map((r) => r.page_id)).size;
+    return { id: project.id, name: project.name, scope, files: rows.map((r) => r.file), pages, reviewed: rows.some((r) => r.reviewed) };
   } catch (err) {
     fail(messageOf(err));
     return null;
@@ -644,6 +648,7 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
   if (d.status === "timeout") out.next = `No feedback yet. Run \`${again}\` again.`;
   if (d.status === "replaced") out.next = "A newer poll took over this project. Stop polling here.";
   if (d.status === "interrupted") out.next = `The server restarted; the feedback is safe and still unread. Run the same poll again: \`${again}\`.`;
+  if (d.status === "moved") out.next = `The pages of ${project.name} joined another project (a page in a folder above them was opened). Poll that one: \`${BIN} poll\` from that folder, or \`${BIN} poll --project <folder>\`; unread notes stay queued.`;
   print(out);
 }
 
@@ -1162,7 +1167,8 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
 async function cmdProjectFeedback(flags: Flags): Promise<void> {
   const project = await projectOfFlags(flags);
   if (!project) return;
-  if (!project.pages) return print(noOpenPage(project));
+  // Archived pages still list their notes: only a project with no page ever opened has nothing to read.
+  if (!project.reviewed) return print(noOpenPage(project));
   const opts = { all: !!flags.all, peek: !!flags.peek };
   let batches: ProjectFeedbackResponse["batches"] = [];
   // Hosted notes come in through the server: start it when a page of the project is published.

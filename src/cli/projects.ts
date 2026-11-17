@@ -163,15 +163,16 @@ function storeRoot(db: sqlite.DatabaseSync, root: string, kind: RootKind, projec
 
 const placeOf = (r: RootRow): Place => ({ projectId: r.project_id, root: r.root, kind: r.kind, prefix: r.prefix });
 
-/** Whether `dir` is a file system root or the home folder: a guessed root there holds only its own folder. */
+/** Whether `dir` is a file system root, the home folder or the temp folder: a guessed root there holds only its own folder. */
 function broad(dir: string): boolean {
-  return path.dirname(dir) === dir || pathKey(dir) === pathKey(canonicalFile(os.homedir()));
+  const key = pathKey(dir);
+  return path.dirname(dir) === dir || key === pathKey(canonicalFile(os.homedir())) || key === pathKey(canonicalFile(os.tmpdir()));
 }
 
 /**
  * Whether the stored root `r` holds the folder `dir` at or below it. The one rule for opening a page
  * and for finding a project by folder: every root holds everything below it, except a `folder` root
- * at `/` or the home folder, which holds only that folder.
+ * at `/`, the home folder or the temp folder (`broad`), which holds only that folder.
  */
 const holds = (r: RootRow, dir: string): boolean => r.kind !== "folder" || pathKey(r.root) === pathKey(dir) || !broad(r.root);
 
@@ -199,7 +200,7 @@ function lookup(roots: RootRow[], dir: string): { row: RootRow } | { at: string;
  *     `.git` is a root of the assigned root's project, and its pages' paths start with its folder
  *     inside the assigned root, so two repositories there keep apart; a repository's worktrees,
  *     wherever they are, share its prefix and so its pages;
- *  3. a guessed `folder` root: `cwd` when `dir` is inside it and it is not `/` or the home folder,
+ *  3. a guessed `folder` root: `cwd` when `dir` is inside it and it is not `broad`,
  *     else `dir`. It takes in the guessed roots below it (`takeIn`).
  */
 export function resolveDir(db: sqlite.DatabaseSync, dir: string, cwd?: string): Place {

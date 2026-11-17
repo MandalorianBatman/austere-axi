@@ -644,12 +644,16 @@ test("without git, pages in two subfolders opened from the parent are one projec
     }
   }));
 
-test("nested folders opened from each: feedback from the parent lists the child's note", () =>
+test("nested folders opened from each: a poll on the child ends as moved, and feedback from the parent lists the child's note", () =>
   withServer(async ({ port, state }) => {
     const work = folderWith("austere-durable-nested-", "notes.html", "reviews/plan.html");
     try {
       await cliIn(path.join(work, "reviews"), port, state, "plan.html");
+      const childPoll = cliIn(path.join(work, "reviews"), port, state, "poll", "--timeout-ms", "20000");
+      await settle(1500);
       await cliIn(work, port, state, "notes.html");
+      const moved = await childPoll;
+      assert.match(moved.out, /^status: moved$/m, moved.out);
       await send(port, await open(port, path.join(work, "reviews", "plan.html")), "unanswered in reviews");
       const r = await cliIn(work, port, state, "feedback", "--peek");
       assert.match(r.out, /message: unanswered in reviews/, r.out);
