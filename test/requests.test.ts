@@ -268,6 +268,11 @@ test("request → approve: the browser that asked gets in, another browser with 
     assert.equal(still.status, 403);
     assert.ok(!still.data.includes(TITLE));
 
+    // A repeated POST while approved redirects without overwriting the pending secret, so it can still be collected.
+    const rep = await ask("127.0.0.3", "Ana repeated", id, ana.cookie);
+    assert.equal(rep.res.status, 303);
+    assert.equal(rep.cookie, "", "no new cookie is set");
+
     // The waiting page's poll lets the browser that asked in, once.
     const poll = await browser("127.0.0.3", "GET", `/s/${id}/request`, { cookie: ana.cookie });
     assert.deepEqual(JSON.parse(poll.data), { state: "approved" });
@@ -462,9 +467,10 @@ test("the CLI: share requests on|off, lists who waits, approves under another na
     const taken = await cli("share", "approve", ids[1]);
     assert.notEqual(taken.code, 0);
     assert.match(taken.out, /gus\\?" already has access with this scope/);
-    const renamed = await cli("share", "approve", ids[1], "--as", "Gus 2");
+    const renamed = await cli("share", "approve", ids[1], "--as", "Gus 2", "--project", WORK);
     assert.equal(renamed.code, 0, renamed.out);
     assert.match(renamed.out, /reviewer: Gus 2\n/);
+    assert.match(renamed.out, /reaches: project/);
     await cli("share", "revoke", "Gus");
     await cli("share", "revoke", "Gus 2");
   } finally {

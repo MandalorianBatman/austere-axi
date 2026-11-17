@@ -861,8 +861,14 @@ export async function runServer({
       send(res, 403, { error: "cross-origin request refused" });
       return true;
     }
-    if (requestStateOf(req) === "blocked") {
+    const pre = requests.bySecret(tokenFromCookie(req.headers.cookie, REQUEST_COOKIE));
+    if (pre?.status === "blocked") {
       send(res, 403, requestPage(req, s), REQUEST_PAGE_HEADERS);
+      return true;
+    }
+    if (pre?.status === "approved" || pre?.status === "waiting") {
+      res.writeHead(303, { location: `/s/${s.id}`, "cache-control": "no-store" });
+      res.end();
       return true;
     }
     const chunks: Buffer[] = [];
@@ -877,9 +883,9 @@ export async function runServer({
     }
     // The body can take its time: check the page, the switch and this browser's standing again now.
     if (!store.get(s.id) || !requests.enabled(store.projectIdOf(s))) return false;
-    const state = requestStateOf(req);
-    if (state === "blocked" || state === "waiting") {
-      // Blocked: the page says so. Waiting: one request per browser, so the page shows that one.
+    const mine = requests.bySecret(tokenFromCookie(req.headers.cookie, REQUEST_COOKIE));
+    if (mine?.status === "blocked" || mine?.status === "waiting" || mine?.status === "approved") {
+      // Blocked: the page says so. Waiting: one request per browser. Approved: collect it on the GET.
       res.writeHead(303, { location: `/s/${s.id}`, "cache-control": "no-store" });
       res.end();
       return true;

@@ -2146,7 +2146,9 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
     if (sub === "approve" && flags.project !== undefined && flags.all) return usage("--project and --all exclude each other: pick one scope", "share");
     if (sub === "approve" && flags.as !== undefined && (typeof flags.as !== "string" || !flags.as.trim())) return usage(`--as needs a name: ${BIN} share approve ${rid} --as "<name>"`, "share");
     await ensureServer();
-    const body = sub === "approve" ? { id: rid, scope: flags.all ? "all" : flags.project !== undefined ? "project" : "page", project: typeof flags.project === "string" ? flags.project : undefined, auto: !!flags.auto, name: flags.as } : { id: rid };
+    // A folder names the project whose root holds it; the server has no working directory to resolve it against.
+    const project = typeof flags.project === "string" ? (fs.existsSync(flags.project) ? path.resolve(flags.project) : flags.project) : undefined;
+    const body = sub === "approve" ? { id: rid, scope: flags.all ? "all" : flags.project !== undefined ? "project" : "page", project, auto: !!flags.auto, name: flags.as } : { id: rid };
     const r = await request<RequestDecisionResponse>("POST", `/api/share/${sub}`, body);
     if (r.status !== 200) return fail(r.data?.error || `${sub} failed (${r.status})`);
     const { request: q, device } = r.data;
