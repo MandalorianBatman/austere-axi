@@ -117,18 +117,21 @@ function gitDirFor(root: string): string | null {
 }
 
 /**
- * The common dir of the linked worktree at `dir`: its git dir's `commondir`, only when git's
- * back-pointer (`<gitdir>/gitdir`, absolute or relative to the git dir) names this folder's `.git`.
- * Null for anything else: a submodule (no `commondir`), or a `.git` file that only claims a
- * repository, which must not join that repository's project.
+ * The common dir of the linked worktree at `dir`, when git registered it there: the git dir sits in
+ * `<commondir>/worktrees/` (writing there takes write access to the repository), and its back-pointer
+ * (`<gitdir>/gitdir`, absolute or relative to the git dir) names this folder's own `.git` entry, not
+ * followed through a symlink. Null for anything else: a submodule (no `commondir`), a git dir the
+ * folder carries itself, or a `.git` that only claims a repository, which must not join that
+ * repository's project.
  */
 function worktreeCommonDir(dir: string): string | null {
   const gitDir = gitdirOf(dir);
   if (!gitDir) return null;
   const common = (readText(path.join(gitDir, "commondir")) || "").trim();
   const back = (readText(path.join(gitDir, "gitdir")) || "").trim();
-  if (!common || !back || pathKey(canonicalFile(path.resolve(gitDir, back))) !== pathKey(canonicalFile(path.join(dir, ".git")))) return null;
-  return canonicalFile(path.resolve(gitDir, common));
+  if (!common || !back || pathKey(canonicalFile(path.resolve(gitDir, back))) !== pathKey(path.join(canonicalFile(dir), ".git"))) return null;
+  const commonDir = canonicalFile(path.resolve(gitDir, common));
+  return pathKey(path.dirname(gitDir)) === pathKey(canonicalFile(path.join(commonDir, "worktrees"))) ? commonDir : null;
 }
 
 /** The main repository of a linked worktree (`worktreeCommonDir`); null for anything else. */
