@@ -464,6 +464,22 @@ test("forget-root on a root whose folder is gone: refused without --drop; --drop
     assert.equal(merged.page_id, pageIdOf(keep.projectId, "docs/plan.html"));
   }));
 
+test("project add takes in a guessed folder root whose folder is gone: its copy joins the new root's project", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const plans = path.join(dir, "plans");
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(plans, "q1", "plan.html")) });
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(plans, "q2", "plan.html")) });
+    fs.rmSync(path.join(plans, "q1"), { recursive: true });
+    const r = addRoot(db, plans, undefined, { yes: true });
+    assert.deepEqual(r.absorbed.map((a) => [a.project, a.pages, a.roots]).sort(), [["q1", 1, [path.join(plans, "q1")]], ["q2", 1, [path.join(plans, "q2")]]]);
+    const row = hub.artifact("aaaaaaaaaaaa")!;
+    assert.equal(row.project_id, r.project.id);
+    assert.equal(row.root, plans);
+    assert.equal(row.page_id, pageIdOf(r.project.id, "q1/plan.html"));
+    assert.deepEqual(listProjects(db).map((p) => [p.name, p.pages, p.roots.length]), [["plans", 2, 1]]);
+  }));
+
 test("forget-root --drop under a root above: the copies stay in their project, and a later merge carries them to its target", async () =>
   withDb(async (db, dir) => {
     const hub = new Hub(db);

@@ -660,6 +660,15 @@ export function addRoot(db: sqlite.DatabaseSync, dir: string, name?: string, { y
       ).run(existing ? existing.root : root, projectId, Date.now());
       settlePrefixes(db, projectId);
       rekey(db, root, projectId);
+      // A copy of a guessed root taken in whose folder is gone: `placeArtifact` leaves it (its root is no longer stored), but the owner said take it in.
+      const here = db.prepare("SELECT * FROM project_roots WHERE root = ?").get(existing ? existing.root : root) as unknown as RootRow;
+      const orphan = db.prepare("SELECT id, file FROM artifacts WHERE root = ?");
+      for (const r of taken) {
+        for (const a of orphan.all(r) as unknown as { id: string; file: string }[]) {
+          const loc = locatedIn(db, placeOf(here), canonicalFile(a.file));
+          db.prepare("UPDATE artifacts SET project_id = ?, root = ?, page_id = ? WHERE id = ?").run(loc.projectId, loc.root, loc.pageId, a.id);
+        }
+      }
       prune(db);
       const result: Added = {
         added: true,

@@ -1664,7 +1664,8 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
         let failed: unknown = null;
         for (const file of archived) {
           try {
-            await request("POST", "/api/archive", { file }, { timeoutMs: 10_000 });
+            const res = await request("POST", "/api/archive", { file }, { timeoutMs: 10_000 });
+            if (res.status !== 200) throw new Error(`the running server did not archive ${file}: ${res.data?.error || `status ${res.status}`}`);
           } catch (err) {
             failed ??= err;
           }
