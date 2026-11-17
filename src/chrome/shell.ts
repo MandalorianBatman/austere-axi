@@ -369,7 +369,12 @@ async function flip(p: ShellPage, button: HTMLButtonElement, action: "archive" |
     onclick: async () => {
       if (undoButton.disabled) return;
       undoButton.disabled = true;
-      say((await post(`/hub/api/page/${p.open_id}/${undo}`, { ids: done.ids })) ? "" : `Could not undo. ${UNREACHABLE}`);
+      if (!(await post(`/hub/api/page/${p.open_id}/${undo}`, { ids: done.ids }))) {
+        // Keep the way back: the owner can try again once austere-axi answers.
+        undoButton.disabled = false;
+        return say(`Could not undo. ${UNREACHABLE}`, undoButton);
+      }
+      say("");
       void refresh();
       void loadSide();
     },
