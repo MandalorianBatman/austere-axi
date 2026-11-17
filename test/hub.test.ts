@@ -660,6 +660,15 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
       // Default list: the check-only page is hidden, and the copy closed under 0.10.4 is archived.
       assert.deepEqual(hub.list().map((p) => [p.rel_path, p.copies.map((c) => c.label)]), [["docs/plan.html", ["main"]]]);
       assert.deepEqual(hub.notes().map((n) => n.text).sort(), ["on feat", "on main"], "notes survive");
+      // RLM-343: the session registry's tables are there, with the columns the design note names.
+      const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('agent_sessions', 'page_sessions') ORDER BY name").all() as { name: string }[]).map((r) => r.name);
+      assert.deepEqual(tables, ["agent_sessions", "page_sessions"]);
+      const columns = (table: string) => (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+      assert.deepEqual(columns("agent_sessions"), ["id", "harness", "session_id", "session_file", "cwd", "model", "parent_id", "parent_kind", "pid", "pid_start", "first_seen", "last_seen"]);
+      assert.deepEqual(columns("page_sessions"), ["artifact_id", "agent_session_id", "role", "at"]);
+      // RLM-345: the attach settings and the runs, with the columns the design note names (plus `requeued_from`, `pid`, `pid_start` and `bin`, A20).
+      assert.deepEqual(columns("attach_settings"), ["scope", "scope_id", "state", "mode", "session", "harness", "model"]);
+      assert.deepEqual(columns("runs"), ["id", "kind", "artifact_id", "project_id", "agent_session_id", "harness", "mode", "model", "seq_from", "seq_to", "started_at", "ended_at", "exit_code", "status", "reason", "log_file", "requeued_from", "pid", "pid_start", "bin"]);
     } finally {
       hub.close();
     }
@@ -744,7 +753,7 @@ test("hub list on a state dir a server of another version holds: hub.db is left 
     for (const recorded of [true, false]) {
       if (!recorded) {
         const db = new DatabaseSync(file);
-        assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, 1, "migrate() records the schema version");
+        assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, 2, "migrate() records the schema version");
         db.exec("PRAGMA user_version = 0");
         db.close();
       }

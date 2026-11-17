@@ -159,6 +159,9 @@ code {
 .presence.ended::before {
   background: var(--red);
 }
+.presence.attached {
+  display: none;
+}
 @keyframes blink {
   50% {
     opacity: 0.35;
@@ -284,6 +287,288 @@ code {
   white-space: nowrap;
   color: var(--text);
   user-select: all;
+}
+
+/* ── the Agent pill and its popover (RLM-346, owner only) ── */
+.attach {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.attach-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 280px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.attach-pill:hover,
+.attach-pill[aria-expanded="true"] {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+.attach-pill.on {
+  color: var(--text);
+  border-color: rgba(116, 211, 160, 0.4);
+}
+.attach-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.attach-short {
+  display: none;
+}
+.attach-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.attach-pill.on .attach-dot {
+  background: var(--green);
+}
+.attach-pill[data-run="running"] .attach-dot,
+.attach-pill[data-run="queued"] .attach-dot,
+.attach-pill[data-run="waiting_for_session"] .attach-dot {
+  background: var(--amber);
+  animation: blink 1.2s infinite;
+}
+.attach-pill[data-run="failed"] .attach-dot {
+  background: var(--red);
+}
+.run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--amber);
+  white-space: nowrap;
+}
+.run-state[hidden] {
+  display: none;
+}
+.run-state.failed {
+  color: var(--red);
+}
+.run-elapsed {
+  font-variant-numeric: tabular-nums;
+}
+.attach-pop {
+  position: absolute;
+  right: 0;
+  top: 38px;
+  z-index: 20;
+  width: 380px;
+  max-height: calc(100dvh - var(--bar-h) - 24px);
+  overflow: auto;
+  padding: 12px 14px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.attach-pop[hidden] {
+  display: none;
+}
+.attach-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.attach-close {
+  width: 28px;
+  height: 28px;
+}
+.attach-note,
+.attach-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.attach-state {
+  display: flex;
+}
+.attach-state button {
+  flex: 1 1 auto;
+  padding: 5px 8px;
+}
+.attach-state button.on {
+  color: var(--accent);
+}
+.attach-state button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.attach-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.attach-field legend {
+  padding: 0 0 4px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.attach-radio {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.attach-radio:hover {
+  background: var(--surface-2);
+}
+.attach-radio.disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+.attach-radio input {
+  margin: 0;
+  align-self: center;
+}
+.attach-session small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-align: right;
+}
+.attach-reason {
+  color: var(--amber);
+  font-size: 12px;
+}
+.attach-select,
+.attach-input {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.attach-select:disabled,
+.attach-input:disabled {
+  color: var(--muted);
+}
+.attach-warn {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(242, 196, 109, 0.35);
+  border-radius: 8px;
+  background: rgba(242, 196, 109, 0.06);
+  color: #f3dfae;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.attach-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.attach-cmd code {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.attach-error {
+  color: var(--red);
+  font-size: 12.5px;
+}
+.attach-run-slot:empty {
+  display: none;
+}
+.attach-run {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.attach-run-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.attach-run-head .run-label {
+  margin-right: auto;
+}
+.attach-run.failed .run-label {
+  color: var(--red);
+}
+.attach-run.running .run-label,
+.attach-run.queued .run-label,
+.attach-run.waiting_for_session .run-label {
+  color: var(--amber);
+}
+.attach-log {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  font: 11.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Run start and end in the Conversation panel. */
+.run-mark {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  padding: 2px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.run-mark time {
+  flex: none;
+  color: var(--faint);
+  font-size: 11px;
+}
+.run-mark.failed {
+  color: var(--red);
+}
+.run-mark.done {
+  color: var(--green);
 }
 
 .banner {
@@ -763,6 +1048,28 @@ textarea.edit {
   .bar-title .file,
   .presence {
     display: none;
+  }
+  /* The run's state and buttons live in the popover on a phone; the pill's dot shows it. */
+  .run-state {
+    display: none;
+  }
+  .attach-pill {
+    padding: 0 9px;
+  }
+  .attach-pill.on .attach-detail {
+    display: none;
+  }
+  .attach-pill.on .attach-short {
+    display: inline;
+  }
+  .attach-pop {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: calc(var(--bar-h) + 4px);
+    width: auto;
+    max-height: calc(100dvh - var(--bar-h) - 16px);
+    z-index: 40;
   }
   .bar {
     grid-template-columns: minmax(0, 1fr) auto auto;

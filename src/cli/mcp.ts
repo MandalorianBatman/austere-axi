@@ -39,6 +39,8 @@ type ToolArgs = {
   command: string;
   args?: string[];
   pack?: string;
+  session?: string;
+  id: string;
 };
 
 interface Tool {
@@ -75,6 +77,10 @@ const INSTRUCTIONS = `austere-axi turns plans, comparisons, decisions, code revi
 
 const file: ArgSchema = { type: "string", description: "Path of the .html page. Use an absolute path; a relative one resolves against the server's working directory." };
 
+/** `--session`: for a client whose harness does not name its session in the environment. */
+const session: ArgSchema = { type: "string", description: "Optional: the agent session you run in, as <harness>:<id> (omp, copilot, dsh), when your harness does not set PI_SESSION_ID, COPILOT_AGENT_SESSION_ID or DSH_SESSION_ID. Stays on this machine." };
+const withSession = (a: ToolArgs): string[] => (typeof a.session === "string" ? ["--session", a.session] : []);
+
 const TOOLS: Record<string, Tool> = {
   spec: {
     title: "Workflow and component reference",
@@ -102,9 +108,10 @@ const TOOLS: Record<string, Tool> = {
     properties: {
       file,
       no_open: { type: "boolean", description: "Do not launch a browser; give the user the printed url." },
+      session,
     },
     required: ["file"],
-    run: (a) => [{ args: ["open", ...(a.no_open ? ["--no-open"] : []), "--", a.file] }],
+    run: (a) => [{ args: ["open", ...(a.no_open ? ["--no-open"] : []), ...withSession(a), "--", a.file] }],
   },
   poll: {
     title: "Wait for feedback",
@@ -115,6 +122,7 @@ const TOOLS: Record<string, Tool> = {
       agent_reply: { type: "string", description: "File polls only. One line for the reviewer: what you changed. For a project poll use the reply tool on each page." },
       cursor: { type: "integer", minimum: 0, description: "The cursor the last poll returned: acknowledges that feedback, so it is not returned again. A reply acknowledges it too. On a project poll it acknowledges every page in the answer." },
       timeout_ms: { type: "integer", minimum: 0, description: `Return status timeout after this long (default ${POLL_TIMEOUT_MS}). 0 waits until feedback arrives; use it only if your client allows long tool calls.` },
+      session,
     },
     reject: (a) => {
       if (typeof a.file === "string" && typeof a.project === "string") return "pass a file or a project, not both";
@@ -122,7 +130,7 @@ const TOOLS: Record<string, Tool> = {
       return null;
     },
     run: (a) => {
-      const args = ["poll", "--timeout-ms", String(a.timeout_ms ?? POLL_TIMEOUT_MS)];
+      const args = ["poll", "--timeout-ms", String(a.timeout_ms ?? POLL_TIMEOUT_MS), ...withSession(a)];
       if (Number.isInteger(a.cursor)) args.push("--cursor", String(a.cursor));
       // No file: the CLI resolves the project from --project, else from its working folder (this server's).
       if (typeof a.file !== "string") return [{ args: [...args, ...(typeof a.project === "string" ? ["--project", a.project] : [])] }];
@@ -137,16 +145,17 @@ const TOOLS: Record<string, Tool> = {
       file,
       text: { type: "string", description: "A line or two; a small Markdown subset renders." },
       cursor: { type: "integer", minimum: 0, description: "The cursor the last poll returned; without it the reply acknowledges what that poll handed over." },
+      session,
     },
     required: ["file", "text"],
-    run: (a) => [{ args: ["reply", ...(Number.isInteger(a.cursor) ? ["--cursor", String(a.cursor)] : []), "--agent-reply-file", "-", "--", a.file], stdin: a.text }],
+    run: (a) => [{ args: ["reply", ...(Number.isInteger(a.cursor) ? ["--cursor", String(a.cursor)] : []), ...withSession(a), "--agent-reply-file", "-", "--", a.file], stdin: a.text }],
   },
   patch: {
     title: "Merge statements into a page",
     description: "Merge OpenUI Lang statements into the page's program: a statement with an existing name replaces it, a new name adds it, `name = null` deletes it. Returns the check result.",
-    properties: { file, statements: { type: "string", description: "One or more `name = ...` statements." } },
+    properties: { file, statements: { type: "string", description: "One or more `name = ...` statements." }, session },
     required: ["file", "statements"],
-    run: (a) => [{ args: ["patch", "--", a.file], stdin: a.statements }],
+    run: (a) => [{ args: ["patch", ...withSession(a), "--", a.file], stdin: a.statements }],
   },
   components: {
     title: "Find and install components",
@@ -170,6 +179,62 @@ const TOOLS: Record<string, Tool> = {
       return null;
     },
     run: (a) => [{ args: ["components", a.command, ...(a.pack !== undefined ? ["--pack", a.pack] : []), "--", ...(a.args ?? [])] }],
+  },
+  sessions_list: {
+    title: "Agent sessions of a page",
+    description:
+      "The agent sessions that opened, patched, polled, replied to or read the feedback of a page: harness, short id, role (author, editor, listener), last seen, and whether the harness process still runs (alive, exited, unknown). Pass a file for one page, or a project (a name, an id or a folder) for every page of it.",
+    readOnly: true,
+    properties: {
+      file: { type: "string", description: "Path of the .html page. Leave out to list a project. Use an absolute path." },
+      project: { type: "string", description: "The project to list when no file is given: a name, an id, or a folder inside one of its roots." },
+    },
+    reject: (a) => {
+      if (typeof a.file === "string" && typeof a.project === "string") return "pass a file or a project, not both";
+      if (typeof a.file !== "string" && typeof a.project !== "string") return "pass a file, or a project to list all of its pages";
+      return null;
+    },
+    run: (a) => [{ args: typeof a.project === "string" ? ["sessions", "list", "--project", a.project] : ["sessions", "list", "--", a.file] }],
+  },
+  run_list: {
+    title: "Runs of the attached agent",
+    description:
+      "The runs the owner's attach setting started on a page (a note the owner sent or released starts the attached harness headless): status (queued, waiting_for_session, running, done, failed, stopped, interrupted), why it failed, harness and mode, the notes it was for. Pass a file for one page, or a project (a name, an id or a folder) for every page of it.",
+    readOnly: true,
+    properties: {
+      file: { type: "string", description: "Path of the .html page. Leave out to list a project. Use an absolute path." },
+      project: { type: "string", description: "The project to list when no file is given: a name, an id, or a folder inside one of its roots." },
+    },
+    reject: (a) => {
+      if (typeof a.file === "string" && typeof a.project === "string") return "pass a file or a project, not both";
+      if (typeof a.file !== "string" && typeof a.project !== "string") return "pass a file, or a project to list all of its pages";
+      return null;
+    },
+    run: (a) => [{ args: typeof a.project === "string" ? ["run", "list", "--project", a.project] : ["run", "list", "--", a.file] }],
+  },
+  run_log: {
+    title: "Log of one run",
+    description: "What one run of the attached agent printed (its stdout and stderr, up to 1 MB, kept 30 days), with its status and reason. The id comes from run_list.",
+    readOnly: true,
+    properties: { id: { type: "string", description: "The run's id, as run_list shows it." } },
+    required: ["id"],
+    run: (a) => [{ args: ["run", "log", "--", a.id] }],
+  },
+  attach_status: {
+    title: "Attach setting of a page",
+    description:
+      "Whether an agent is attached to a page (a note the owner sends or releases starts the page's harness headless) and what would stop a run: the setting that applies (the page's, else its project's, else off) and where it comes from, the mode, the session a run resumes, the harness, the model, the last run, and warnings such as a harness without the write grant. Read-only: only the user turns attach on or off, at a terminal or from the review page. Pass a file for one page, or a project (a name, an id or a folder) for its default.",
+    readOnly: true,
+    properties: {
+      file: { type: "string", description: "Path of the .html page. Leave out to show a project's default. Use an absolute path." },
+      project: { type: "string", description: "The project to show when no file is given: a name, an id, or a folder inside one of its roots." },
+    },
+    reject: (a) => {
+      if (typeof a.file === "string" && typeof a.project === "string") return "pass a file or a project, not both";
+      if (typeof a.file !== "string" && typeof a.project !== "string") return "pass a file, or a project to show its default";
+      return null;
+    },
+    run: (a) => [{ args: typeof a.project === "string" ? ["attach", "status", "--project", a.project] : ["attach", "status", "--", a.file] }],
   },
 };
 

@@ -135,16 +135,18 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
 /**
  * hub.db's schema version, kept in `PRAGMA user_version`. Raise it with every change to migrate():
  * a build whose schema is newer than a database's must not read it without migrating it.
- * 1 is the schema of 0.12.0, the first build that records it.
+ * 1 is the schema of 0.12.0, the first build that records it. 2 adds attach (RLM-343–346):
+ * `agent_sessions`, `page_sessions`, `attach_settings`, `runs`.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** The schema version `db` is at. Before builds recorded it (0), a database 0.12.0 migrated already has version 1's last columns. */
 function schemaVersion(db: sqlite.DatabaseSync): number {
   const recorded = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
   if (recorded) return recorded;
   const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
-  return has("artifacts", "archived_at") && has("project_roots", "prefix") ? 1 : 0;
+  if (!has("artifacts", "archived_at") || !has("project_roots", "prefix")) return 0;
+  return has("runs", "requeued_from") && has("page_sessions", "role") ? 2 : 1;
 }
 
 /** Open hub.db with the schema in place; `readOnly`: as it is, refused when it is older than this build's schema. */
@@ -282,6 +284,75 @@ CREATE INDEX IF NOT EXISTS project_roots_project ON project_roots(project_id);
 CREATE TABLE IF NOT EXISTS pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, rel_path TEXT NOT NULL, UNIQUE (project_id, rel_path));
 `;
 
+// Attach (agent-sessions.ts, RLM-343): the harness sessions that ran a CLI command on a page.
+// A session id stays on this machine: nothing here is published, exported or synced.
+// page_sessions keeps one row per page, session and role; `at` is the last time.
+const AGENT_SESSIONS = `
+CREATE TABLE IF NOT EXISTS agent_sessions (
+  id TEXT PRIMARY KEY,
+  harness TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  session_file TEXT,
+  cwd TEXT,
+  model TEXT,
+  parent_id TEXT,
+  parent_kind TEXT,
+  pid INTEGER,
+  pid_start TEXT,
+  first_seen INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  UNIQUE (harness, session_id)
+);
+CREATE TABLE IF NOT EXISTS page_sessions (
+  artifact_id TEXT NOT NULL,
+  agent_session_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS page_sessions_key ON page_sessions(artifact_id, agent_session_id, role);
+CREATE INDEX IF NOT EXISTS page_sessions_session ON page_sessions(agent_session_id);
+`;
+
+// Attach (attach.ts, dispatch.ts, RLM-345/346): the owner's attach setting per page (`pages.id`)
+// and per project, and the agent runs the dispatcher started. A run's log is a file beside
+// hub.db (`log_file`); `requeued_from` names the run a restart interrupted, so it is queued once;
+// `pid`, `pid_start` and `bin` (the file it spawned) are its process, which a restart after a crash kills.
+const ATTACH = `
+CREATE TABLE IF NOT EXISTS attach_settings (
+  scope TEXT NOT NULL,
+  scope_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  mode TEXT,
+  session TEXT,
+  harness TEXT,
+  model TEXT,
+  PRIMARY KEY (scope, scope_id)
+);
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  artifact_id TEXT,
+  project_id TEXT,
+  agent_session_id TEXT,
+  harness TEXT,
+  mode TEXT,
+  model TEXT,
+  seq_from INTEGER,
+  seq_to INTEGER,
+  started_at INTEGER,
+  ended_at INTEGER,
+  exit_code INTEGER,
+  status TEXT NOT NULL,
+  reason TEXT,
+  log_file TEXT,
+  requeued_from TEXT,
+  pid INTEGER,
+  pid_start TEXT,
+  bin TEXT
+);
+CREATE INDEX IF NOT EXISTS runs_artifact ON runs(artifact_id, status);
+`;
+
 /** Bring hub.db to the current schema in one transaction; a second run changes nothing. */
 function migrate(db: sqlite.DatabaseSync): void {
   db.exec(PRAGMAS);
@@ -311,6 +382,12 @@ function migrate(db: sqlite.DatabaseSync): void {
     db.exec("UPDATE artifacts SET archived_at = COALESCE(archived_at, closed_at), closed_at = NULL WHERE closed_at IS NOT NULL");
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
+    db.exec(AGENT_SESSIONS);
+    db.exec(ATTACH);
+    // Databases from before runs recorded their process.
+    if (!has("runs", "pid")) db.exec("ALTER TABLE runs ADD COLUMN pid INTEGER");
+    if (!has("runs", "pid_start")) db.exec("ALTER TABLE runs ADD COLUMN pid_start TEXT");
+    if (!has("runs", "bin")) db.exec("ALTER TABLE runs ADD COLUMN bin TEXT");
     backfillProjects(db);
     // Recorded from now on; a newer build's database keeps its number: the steps above are all this build adds.
     if (Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);

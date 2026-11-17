@@ -5,6 +5,7 @@
 //   /s/:id/events server-sent events for the chrome
 //   /__austere/*  runtime, bundled packs, chrome assets
 //   /__austere/installed-packs/<name@version>/pack.js  packs from `components add`
+import { spawn } from "node:child_process";
 import { resolveSibling } from "./assets.ts";
 import fs from "node:fs";
 import http from "node:http";
@@ -16,13 +17,24 @@ import { exportHtml } from "./export.ts";
 import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
 import type { AddressSettings, Tailnet } from "./net.ts";
 import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
-import { SessionStore, newId, sessionId } from "./sessions.ts";
+import { RENDER_CHECK_AUTHOR, SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
+import { listSessions, liveness, parseCallerReport, registerSession, shortId } from "./agent-sessions.ts";
+import type { CallerReport, SessionAction } from "./agent-sessions.ts";
+import type { Liveness } from "./caller.ts";
 import { detectUnit } from "./service.ts";
 import type { ServerUnit, Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub, activeWorkNow } from "./hub.ts";
+import { Dispatcher, getRun, listRuns, logTail, summary } from "./dispatch.ts";
+import type { RunEvent, RunSummary } from "./dispatch.ts";
+import { AttachRefused, attachReport, authorOf, autoConflict, changeSetting, effectiveAttach, harnessInfos, isAttachMode, resolveSessionValue, scopeIds } from "./attach.ts";
+import type { AttachFields, AttachSettingRow, AttachState, AttachWhere, EffectiveAttach, HarnessInfo, LiveAuto } from "./attach.ts";
+import { adapterFor, findOnPath, spawnSpec } from "./adapters/index.ts";
+import { readAdapters } from "./adapters/config.ts";
+import type { AdaptersConfig } from "./adapters/config.ts";
+import type { AttachMode } from "./adapters/types.ts";
 import { copyLabel, findProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
@@ -184,6 +196,66 @@ export interface LoginResponse {
   ttlMs: number;
 }
 
+/** /api/run/stop and /s/:id/run/stop: how many runs of the page ended (RLM-345). */
+export interface RunStopResponse {
+  ok: true;
+  stopped: number;
+}
+
+/** GET /s/:id/runs (RLM-346): the page's runs, the newest first. */
+export interface RunsResponse {
+  runs: RunSummary[];
+}
+
+/** GET /s/:id/run/:runId/log: the last lines of a run's log. */
+export interface RunLogResponse {
+  run: RunSummary;
+  tail: string[];
+}
+
+/** GET /s/:id/attach (RLM-346): what the owner's attach popover shows. */
+export interface AttachInfo {
+  effective: EffectiveAttach;
+  /** The page's own row (shared by every copy, A19), and the project's. */
+  page: AttachSettingRow | null;
+  project: { id: string; name: string; setting: AttachSettingRow | null } | null;
+  /** Where a run would go now; `session` is the short id of the session it resumes or forks, null for a new one. */
+  target: { mode: AttachMode; harness: string; session: string | null };
+  /** The page's author session, which `author` resolves to (Q11). */
+  author: { id: string; harness: string; short: string } | null;
+  /** The agent sessions registered for this copy (RLM-343). */
+  sessions: { id: string; harness: string; short: string; roles: string[]; lastSeen: number; liveness: Liveness }[];
+  /** Every adapter by name; omp's model list when `omp models` answered in time. */
+  harnesses: Record<string, HarnessInfo & { models?: string[] }>;
+  run: RunSummary | null;
+  /** The size of the session file a same or fork run resends, when known. */
+  sessionFileSize: number | null;
+  warnings: string[];
+  auto: string | null;
+}
+
+/** How many lines of a run's log "View log" shows. */
+const LOG_TAIL_LINES = 200;
+
+/** The chat model selectors in `omp models --json` output (`{ models: [{ selector, kind }] }`), or null. */
+function modelSelectors(json: string): string[] | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== "object" || !("models" in data) || !Array.isArray(data.models)) return null;
+  const names: string[] = [];
+  for (const m of data.models as unknown[]) {
+    if (!m || typeof m !== "object" || !("selector" in m) || typeof m.selector !== "string" || m.selector.length > 200) continue;
+    if ("kind" in m && m.kind !== "chat") continue;
+    names.push(m.selector);
+    if (names.length >= 500) break;
+  }
+  return names.length ? names : null;
+}
+
 /** Who is asking for a page: the owner, or a team reviewer with a valid invite. */
 type OwnerViewer = { role: "owner"; name: string };
 type ReviewerViewer = { role: "reviewer"; name: string; auto: boolean; token: string };
@@ -260,8 +332,7 @@ export function persistEnv() {
 const LOGIN_TTL_MS = 60_000;
 const OWNER: OwnerViewer = Object.freeze({ role: "owner", name: "" });
 const REVIEWER_KINDS = new Set<unknown>(["annotation", "message"]);
-// Render failures the owner's page reports on its own; they reach the agent as notes from this author.
-const RENDER_CHECK_AUTHOR = "Render check";
+// Render failures the owner's page reports on its own reach the agent as notes from RENDER_CHECK_AUTHOR.
 const MAX_RENDER_ERRORS = 20;
 // Transcript entries a page gets at once; it asks for older ones as the reader scrolls back.
 const PAGE = 200;
@@ -336,13 +407,26 @@ export async function runServer({
     listening: (s) => Boolean(listener(s)),
     changed: (s, entries) => {
       broadcastTranscript(s, entries);
-      wake(s);
+      // A hosted note that arrived released (or was released on another machine) is the owner's (RLM-345).
+      wakeOrRun(s, entries.some((e) => e.role === "user" && e.seq != null && !e.held && !e.discarded && !e.doneAt));
       broadcastPresence(s);
     },
     viewing: (s) => Array.from(clients.get(s.id) || []).some((c) => c.viewer.role === "owner"),
     relay: (s, frame) => {
       for (const c of Array.from(clients.get(s.id) || [])) if (c.viewer.role === "owner") sseWrite(clients.get(s.id) as Set<SseClient>, c, viewerEvent(frame));
     },
+  });
+  const liveAuto: LiveAuto = (pageId, fallback) => peer.liveAuto(pageId, fallback);
+  // Attached agents (RLM-345): a note the owner sent or released starts a run when no poll holds the page.
+  const dispatcher = new Dispatcher({
+    db: store.db,
+    store,
+    port,
+    log,
+    listening: (s) => Boolean(listener(s)),
+    // The page row the last pull cached counts too: --auto may have been turned on elsewhere since; either saying auto refuses.
+    autoConflict: (s) => autoConflict(s.file, s.id, invites.list(), liveAuto),
+    emit: (id, event) => broadcastOwners(id, "run", event),
   });
   // Render errors already sent per session, for one revision; a repeat or a second tab adds nothing.
   const renderReported = new Map<string, { revision: number; keys: Set<string> }>();
@@ -549,6 +633,156 @@ export async function runServer({
     for (const c of Array.from(set)) sseWrite(set, c, msg);
   }
 
+  /** An event for the owner's review pages of a copy only, never a reviewer's. */
+  function broadcastOwners(id: string, event: "run" | "attach", data: RunEvent | Record<string, never>): void {
+    const set = clients.get(id);
+    if (!set) return;
+    const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const c of Array.from(set)) if (c.viewer.role === "owner") sseWrite(set, c, msg);
+  }
+
+  /** `omp models` for the popover's model list (ompModels). */
+  let modelCache: { at: number; models: string[] | null; pending: Promise<string[] | null> | null } = { at: 0, models: null, pending: null };
+
+  /** What the owner's attach popover shows for a copy (RLM-346). A malformed adapters.json is a warning here, not an error. */
+  async function attachInfo(s: Session): Promise<AttachInfo> {
+    let cfg: AdaptersConfig = { extraArgs: {}, commands: {} };
+    let configError: string | null = null;
+    try {
+      cfg = readAdapters();
+    } catch (err) {
+      configError = (err as Error).message;
+    }
+    const report = attachReport(store.db, s.id, s.file, invites.list(), cfg, process.env, liveAuto);
+    const harnesses: AttachInfo["harnesses"] = harnessInfos(cfg);
+    if (harnesses.omp?.found) {
+      const models = await ompModels();
+      if (models) harnesses.omp.models = models;
+    }
+    const author = authorOf(store.db, s.id);
+    const session = report.target.session;
+    let sessionFileSize: number | null = null;
+    if (session?.session_file && report.target.mode !== "new") {
+      try {
+        sessionFileSize = fs.statSync(session.session_file).size;
+      } catch {
+        // gone, or not readable here
+      }
+    }
+    const last = listRuns(store.db, { artifactId: s.id }, 1)[0];
+    return {
+      effective: report.effective,
+      page: report.page,
+      project: report.project,
+      target: { mode: report.target.mode, harness: report.target.harness, session: session ? shortId(session.session_id) : null },
+      author: author ? { id: author.id, harness: author.harness, short: shortId(author.session_id) } : null,
+      sessions: listSessions(store.db, { artifactId: s.id }).map((p) => ({
+        id: p.session.id,
+        harness: p.session.harness,
+        short: shortId(p.session.session_id),
+        roles: p.roles,
+        lastSeen: p.session.last_seen,
+        liveness: liveness(p.session),
+      })),
+      harnesses,
+      run: last ? summary(last) : null,
+      sessionFileSize,
+      warnings: configError ? [configError, ...report.warnings] : report.warnings,
+      auto: report.auto,
+    };
+  }
+
+  /**
+   * omp's model selectors from `omp models --json`, cached for ten minutes. A request waits at most
+   * a second: a slow answer fills the cache for the next one. Null when omp gave none.
+   */
+  function ompModels(): Promise<string[] | null> {
+    const cache = modelCache;
+    if (cache.pending) {
+      const waited = Promise.withResolvers<string[] | null>();
+      setTimeout(() => waited.resolve(cache.models), 1000).unref();
+      return Promise.race([cache.pending, waited.promise]);
+    }
+    if (cache.at && Date.now() - cache.at < 10 * 60_000) return Promise.resolve(cache.models);
+    const bin = findOnPath("omp");
+    if (!bin) return Promise.resolve(null);
+    const listed = Promise.withResolvers<string[] | null>();
+    // A .cmd shim on Windows goes through cmd.exe; spawn can still throw at once (EINVAL, EACCES): no models then.
+    try {
+      const spec = spawnSpec(bin, ["models", "--json"]);
+      const child = spawn(spec.file, spec.args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, windowsVerbatimArguments: spec.windowsVerbatimArguments, timeout: 15_000 });
+      let out = "";
+      child.stdout.on("data", (c: Buffer) => {
+        if (out.length < 4 * 1024 * 1024) out += c.toString("utf8");
+      });
+      child.on("error", () => listed.resolve(null));
+      child.on("close", () => listed.resolve(modelSelectors(out)));
+    } catch (err) {
+      log("omp-models", (err as Error).message);
+      listed.resolve(null);
+    }
+    cache.pending = listed.promise.then((models) => {
+      modelCache = { at: Date.now(), models, pending: null };
+      return models;
+    });
+    return ompModels();
+  }
+
+  /** The body of POST /s/:id/attach, or why it is malformed. */
+  function parseAttachChange(body: Record<string, unknown>): { state: AttachState; fields: AttachFields } | string {
+    const state = body.state;
+    if (state !== "on" && state !== "off" && state !== "inherit") return "state must be on, off or inherit";
+    const fields: AttachFields = {};
+    if (body.mode !== undefined && body.mode !== null) {
+      if (!isAttachMode(body.mode)) return "mode must be same, fork or new";
+      fields.mode = body.mode;
+    }
+    for (const key of ["session", "harness"] as const) {
+      const v = body[key];
+      if (v === undefined || v === null) continue;
+      if (typeof v !== "string" || !v || v.length > 200) return `${key} must be a non-empty string`;
+      fields[key] = v;
+    }
+    if (body.model !== undefined) {
+      const m = body.model;
+      if (m !== null && (typeof m !== "string" || m.length > 200 || /[\s\0-\x1f]/.test(m))) return "model must be a name without spaces, or empty";
+      fields.model = m || null;
+    }
+    return { state, fields };
+  }
+
+  /**
+   * The owner's attach change, from the review page's popover or the CLI: the row written, and the
+   * owner tabs of every copy it decides for told to look again. An HTTP error, or null when done.
+   */
+  function changeAttach(where: AttachWhere, body: RequestBody): { status: number; error: string; code?: string } | null {
+    const change = parseAttachChange(body);
+    if (typeof change === "string") return { status: 400, error: change };
+    let cfg: AdaptersConfig;
+    try {
+      cfg = readAdapters();
+      if (change.fields.harness !== undefined && !adapterFor(change.fields.harness, cfg)) return { status: 400, error: `no adapter named ${change.fields.harness}` };
+      if (change.fields.session !== undefined) change.fields.session = resolveSessionValue(store.db, change.fields.session);
+    } catch (err) {
+      return { status: 400, error: (err as Error).message };
+    }
+    try {
+      changeSetting(store.db, where, change.state, change.fields, cfg, invites.list(), liveAuto);
+    } catch (err) {
+      if (err instanceof AttachRefused) return { status: 409, error: err.message, code: err.code };
+      throw err;
+    }
+    // A page row decides for every copy of the page (A19), a project row for every copy in the project.
+    const copies = (
+      "page" in where
+        ? store.db.prepare("SELECT id FROM artifacts WHERE page_id = ? OR id = ?").all(scopeIds(store.db, where.page.artifactId).page, where.page.artifactId)
+        : store.db.prepare("SELECT id FROM artifacts WHERE project_id = ?").all(where.projectId)
+    ) as { id: string }[];
+    for (const c of copies) broadcastOwners(c.id, "attach", {});
+    log("attach", "page" in where ? where.page.artifactId : `project:${where.projectId}`, change.state);
+    return null;
+  }
+
   function broadcastPresence(s: Session): void {
     broadcast(s.id, "presence", { presence: presence(s), archived: Boolean(s.archivedAt), unread: store.unread(s).length });
   }
@@ -720,6 +954,17 @@ export async function runServer({
     if (batches.length) deliverProject(shared, batches);
   }
 
+  /**
+   * New notes on `s`: a listening poll gets them, else, when the owner sent or released them
+   * (`ownersNote`), the attached agent's run is queued (RLM-345). Who listens is read before the
+   * wake, which ends the poll it answers.
+   */
+  function wakeOrRun(s: Session, ownersNote: boolean): void {
+    const held = Boolean(listener(s));
+    wake(s);
+    if (ownersNote && !held) dispatcher.noteSeq(s);
+  }
+
   /** The `cursor` or `after` of a poll or reply: a whole number, or null when absent. */
   function seqParam(v: unknown): number | null {
     if (v == null || v === "") return null;
@@ -822,7 +1067,7 @@ export async function runServer({
    * A project poll gets every page of the project without a poll of its own, including pages registered after
    * it started. `cursor` acknowledges the notes up to that seq on those pages. The newest project poll wins.
    */
-  async function projectRoute(route: "poll" | "feedback", body: RequestBody, res: http.ServerResponse): Promise<void> {
+  async function projectRoute(route: "poll" | "feedback", body: RequestBody, res: http.ServerResponse, caller: CallerReport | null): Promise<void> {
     let project: ProjectRow | null;
     try {
       project = findProject(hub.db, String(body.project), { folders: false });
@@ -830,6 +1075,7 @@ export async function runServer({
       return send(res, 400, { error: String((err as Error).message) });
     }
     if (!project) return send(res, 404, { error: `no project ${String(body.project)}` });
+    noteCaller(caller, store.inProject(project.id).map((s) => s.id), route);
 
     if (route === "feedback") {
       const batches: ProjectFeedbackResponse["batches"] = [];
@@ -857,7 +1103,10 @@ export async function runServer({
         if (acked.length) broadcastTranscript(s, acked);
       }
     }
-    for (const s of mine) s.workingSince = null;
+    for (const s of mine) {
+      s.workingSince = null;
+      dispatcher.pollArrived(s);
+    }
     const existing = projectPolls.get(projectId);
     if (existing && !existing.done) finishProjectPoll(existing, { status: "replaced" });
     const poll: Poll = { res, startedAt: Date.now(), done: false, from: 0, project: projectId, after };
@@ -879,6 +1128,16 @@ export async function runServer({
       }, timeoutMs);
     }
     for (const s of mine) broadcastPresence(s);
+  }
+
+  /** Record the agent session a CLI command runs in and link it to the pages it works on (RLM-343). Never fails the request. */
+  function noteCaller(caller: CallerReport | null, artifactIds: string[], action: SessionAction): void {
+    if (!caller) return;
+    try {
+      registerSession(store.db, caller, { artifactIds, action });
+    } catch (err) {
+      log("session-register", String((err as Error).message));
+    }
   }
 
 
@@ -952,6 +1211,13 @@ export async function runServer({
     }
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req);
+    // The agent session the command runs in (RLM-343); recorded once the route knows its pages.
+    let caller: CallerReport | null;
+    try {
+      caller = parseCallerReport(body.session);
+    } catch (err) {
+      return send(res, 400, { error: String((err as Error).message) });
+    }
     if (route === "share/revoke") {
       const gone = invites.revoke(String(body.key || ""));
       if (!gone.length) return send(res, 404, { error: "no invite matches that name or id" });
@@ -959,8 +1225,26 @@ export async function runServer({
       log("share-revoke", gone.map((i) => `${i.name}(${inviteId(i)})`).join(","));
       return send(res, 200, { revoked: gone.map((i) => ({ id: inviteId(i), name: i.name, file: i.file })) } satisfies RevokeResponse);
     }
+    // `attach on|off|inherit` at a terminal while this server runs: written here, so open owner tabs hear it.
+    if (route === "attach") {
+      let where: AttachWhere;
+      if (typeof body.project === "string" && body.project && !body.file) {
+        if (!store.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(body.project)) return send(res, 404, { error: `no such project: ${body.project}` });
+        where = { projectId: body.project };
+      } else {
+        const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
+        if (!file) return send(res, 400, { error: "file or project is required" });
+        if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
+        const s = store.ensure(file);
+        where = { page: { artifactId: s.id, file: s.file } };
+      }
+      const change = body.change && typeof body.change === "object" ? (body.change as RequestBody) : {};
+      const failed = changeAttach(where, change);
+      if (failed) return send(res, failed.status, { error: failed.error, code: failed.code });
+      return send(res, 200, { ok: true });
+    }
     // A whole project: `poll` and `feedback` with no file.
-    if ((route === "poll" || route === "feedback") && typeof body.project === "string" && body.project && !body.file) return projectRoute(route, body, res);
+    if ((route === "poll" || route === "feedback") && typeof body.project === "string" && body.project && !body.file) return projectRoute(route, body, res, caller);
     // Put away every copy whose file is gone (`archive --missing`): the CLI names a project by id, or none for all.
     if (route === "archive" && body.missing) {
       const copies = hub.missingCopies(typeof body.project === "string" ? body.project : "");
@@ -985,6 +1269,10 @@ export async function runServer({
       let inv: Invite;
       try {
         const s = store.ensure(file, cwd);
+        // An --auto invite gives a reviewer's notes a seq without the owner: never while an agent is attached (Q3, A17).
+        if (body.auto && effectiveAttach(store.db, s.id).state === "on") {
+          return send(res, 409, { error: `attach is on for ${file}: an --auto invite would let a reviewer's notes start the attached agent without you. Run \`austere-axi attach off ${file}\` first, or share without --auto.` });
+        }
         inv = invites.add({ name: body.name, sessionId: s.id, file: s.file, auto: !!body.auto });
         watch(s);
         joinProjectPoll(s);
@@ -1003,6 +1291,7 @@ export async function runServer({
       watch(s);
       joinProjectPoll(s);
       store.touch(s);
+      noteCaller(caller, [s.id], "open");
       const p = projectOfPage(s);
       const project: OpenResponse["project"] = p && { name: p.name, ref: p.ref, here: cwd !== undefined && findProject(hub.db, cwd)?.id === p.id };
       return send(res, 200, {
@@ -1020,9 +1309,17 @@ export async function runServer({
       return send(res, 200, { ok: true });
     }
 
+    if (route === "run/stop") {
+      const s = store.byFile(file);
+      const stopped = s ? await dispatcher.stop(s.id) : 0;
+      return send(res, 200, { ok: true, stopped } satisfies RunStopResponse);
+    }
+
     // A published page's notes may be waiting on the service: catch up first (for a file never opened here too).
     if (route === "feedback") await peer.pull(file);
     const s = store.byFile(file);
+    const pageRoute = route === "reply" || route === "feedback" || route === "poll" ? route : null;
+    if (pageRoute) noteCaller(caller, s ? [s.id] : [], pageRoute);
     if (!s) return send(res, 404, { error: "no session for this file; open it first" });
 
     if (route === "reply") {
@@ -1056,6 +1353,7 @@ export async function runServer({
 
     if (route === "poll") {
       const after = seqParam(body.after);
+      dispatcher.pollArrived(s);
       const acked = acknowledge(s, body, !!body.agentReply);
       if (body.agentReply) {
         const entry = store.tx(() => {
@@ -1521,7 +1819,7 @@ export async function runServer({
       if (hold && store.heldEntries(s).filter((e) => e.author === who.name).length >= MAX_HELD_PER_REVIEWER) return send(res, 429, { error: "too many notes awaiting the owner; wait for them to be released" });
       const entry = store.addUserBatch(s, items, { end, author: who.name, hold });
       broadcastTranscript(s, [entry]);
-      wake(s);
+      wakeOrRun(s, !reviewer);
       broadcastPresence(s);
       return send(res, 200, { ok: true, entry });
     }
@@ -1560,13 +1858,42 @@ export async function runServer({
         return d;
       });
       if (done.length) broadcastTranscript(s, done);
-      if (sub === "/release") wake(s);
+      if (sub === "/release") wakeOrRun(s, done.length > 0);
       broadcastPresence(s);
       return send(res, 200, { ok: true, count: done.length });
     }
     if ((sub === "/archive" || sub === "/unarchive") && req.method === "POST") {
       setArchived(s.file, sub === "/archive" ? Date.now() : null);
       return send(res, 200, { ok: true });
+    }
+    // The attach popover and the run panel (RLM-346): the owner's only, as reviewers are refused above.
+    // A GET from a foreign Origin is refused too: it lists the page's agent sessions.
+    if ((sub === "/attach" || sub === "/runs" || sub.startsWith("/run/")) && !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+    if (sub === "/run/stop" && req.method === "POST") {
+      const stopped = await dispatcher.stop(s.id);
+      return send(res, 200, { ok: true, stopped } satisfies RunStopResponse);
+    }
+    if (sub === "/run/retry" && req.method === "POST") {
+      // Retry is the owner's act: a failed run is never retried on its own.
+      const r = dispatcher.retry(s.id);
+      if ("error" in r) return send(res, 409, { error: r.error });
+      return send(res, 200, { ok: true, run: summary(r.run) });
+    }
+    const logRoute = /^\/run\/(r[a-f0-9]{12})\/log$/.exec(sub);
+    if (logRoute && req.method === "GET") {
+      const row = getRun(store.db, logRoute[1]);
+      if (!row || row.artifact_id !== s.id) return send(res, 404, { error: "no such run on this page" });
+      return send(res, 200, { run: summary(row), tail: logTail(row.log_file, LOG_TAIL_LINES) } satisfies RunLogResponse);
+    }
+    if (sub === "/runs" && req.method === "GET") {
+      const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit")) || 20));
+      return send(res, 200, { runs: listRuns(store.db, { artifactId: s.id }, limit).map(summary) } satisfies RunsResponse);
+    }
+    if (sub === "/attach" && req.method === "GET") return send(res, 200, await attachInfo(s));
+    if (sub === "/attach" && req.method === "POST") {
+      const failed = changeAttach({ page: { artifactId: s.id, file: s.file } }, await readBody(req, 4096));
+      if (failed) return send(res, failed.status, { error: failed.error, code: failed.code });
+      return send(res, 200, await attachInfo(s));
     }
     if (sub === "/presence" && req.method === "POST") {
       // The owner's own status and focus for the hosted page's viewers; nothing happens when the file is not published.
@@ -1670,12 +1997,15 @@ export async function runServer({
     for (const id of watchers.keys()) unwatch(id);
     peer.close();
     for (const server of listeners.values()) server.close();
-    // Everything is already on disk; let a replacement server take the state dir at once.
-    releaseLock();
-    setTimeout(() => {
-      store.close();
-      process.exit(0);
-    }, 100).unref();
+    // The runs' process trees go first (dispatcher.close waits for them): until then a harness could
+    // still write the page, so the lock stays. Everything else is on disk; then a replacement server can take the state dir.
+    void dispatcher.close().finally(() => {
+      releaseLock();
+      setTimeout(() => {
+        store.close();
+        process.exit(0);
+      }, 100).unref();
+    });
   }
 
   if (idleMs > 0) {
@@ -1699,6 +2029,7 @@ export async function runServer({
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   log("started", `v${VERSION}`, `pid=${process.pid}`);
+  dispatcher.start();
   peer.start();
   return { port, shutdown };
 }
