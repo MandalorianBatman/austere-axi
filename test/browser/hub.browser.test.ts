@@ -177,6 +177,12 @@ test("the inbox: needs you, waiting on agent, quiet; archive and undo; a chip op
     assert.deepEqual(await rowTitles(page, "Quiet"), []);
     const listed = await call<{ pages: { title: string }[] }>("GET", "/hub/api/pages", undefined, asOwner());
     assert.ok(!listed.data.pages.some((p) => p.title === "Quiet page"), "archived in hub.db");
+    // A failed Undo keeps the button beside the error; the retry brings the row back.
+    await page.route("**/hub/api/page/*/unarchive", (route) => route.abort(), { times: 1 });
+    await page.locator(".status").getByRole("button", { name: "Undo" }).click();
+    await page.locator(".status", { hasText: "Could not undo." }).waitFor();
+    // The browser logs the aborted request it was told to fail: expected, not a page error.
+    problems.splice(0, problems.length, ...problems.filter((p) => !p.includes("Failed to load resource")));
     await page.locator(".status").getByRole("button", { name: "Undo" }).click();
     await group(page, "Quiet").locator(".row-title", { hasText: "Quiet page" }).waitFor();
 
