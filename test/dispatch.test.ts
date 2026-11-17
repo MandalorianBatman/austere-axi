@@ -14,7 +14,7 @@ import { after, before, test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { autoConflict } from "../src/cli/attach.ts";
 import { systemProcessTable } from "../src/cli/caller.ts";
-import { Dispatcher, readAttachLimits, unreleasedNotes } from "../src/cli/dispatch.ts";
+import { Dispatcher, readAttachLimits, unreleasedNotes, windowsLeftover } from "../src/cli/dispatch.ts";
 import { RENDER_CHECK_AUTHOR, SessionStore } from "../src/cli/sessions.ts";
 import type { QueuedEntry } from "../src/cli/sessions.ts";
 import { ownerKey } from "../src/cli/invites.ts";
@@ -746,6 +746,27 @@ test("run stop without a server kills a crashed server's leftover run before it 
     if (leftover.exitCode === null && leftover.signalCode === null) leftover.kill("SIGKILL");
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("Windows leftover: the recorded pid's image decides; another image is a reused pid, a failed tasklist cannot tell", () => {
+  const row = (image: string, pid = 4242) => `"${image}","${pid}","Console","1","12,345 K"\r\n`;
+  const none = "INFO: No tasks are running which match the specified criteria.\r\n";
+  const asked: number[] = [];
+  const fake = (out: string | null) => (pid: number) => (asked.push(pid), out);
+  // The binary the run spawned (recorded), in any case.
+  assert.equal(windowsLeftover(4242, "cmd.exe", fake(row("CMD.EXE"))), true);
+  assert.deepEqual(asked, [4242]);
+  // Another program has the pid now: the run's own process is gone, so nothing is killed.
+  assert.equal(windowsLeftover(4242, "omp.exe", fake(row("notepad.exe"))), false);
+  assert.equal(windowsLeftover(4242, "omp.exe", fake(row("node.exe"))), false, "only the recorded binary when one is recorded");
+  // A row from before `runs.bin`: any image a run can be.
+  assert.equal(windowsLeftover(4242, null, fake(row("node.exe"))), true);
+  assert.equal(windowsLeftover(4242, null, fake(row("explorer.exe"))), false);
+  // No such process; a row for another pid is not this one.
+  assert.equal(windowsLeftover(4242, "omp.exe", fake(none)), false);
+  assert.equal(windowsLeftover(4242, "omp.exe", fake(row("omp.exe", 42))), false);
+  // tasklist failed or timed out: cannot tell, the row stays running.
+  assert.equal(windowsLeftover(4242, "omp.exe", fake(null)), null);
 });
 
 test("a leftover whose identity cannot be confirmed (no start time recorded) is neither killed nor marked ended: restart and run stop leave it running", { skip }, async () => {

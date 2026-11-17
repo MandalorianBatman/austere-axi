@@ -1770,9 +1770,9 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       return cmdRun(sub, args, flags);
     }
     try {
-      let rows: { id: string; status: string; pid: number | null; pid_start: string | null }[] = [];
+      let rows: { id: string; status: string; pid: number | null; pid_start: string | null; bin: string | null }[] = [];
       await withHub(false, (hub) => {
-        rows = hub.db.prepare("SELECT id, status, pid, pid_start FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").all(sessionId(abs)) as unknown as typeof rows;
+        rows = hub.db.prepare("SELECT id, status, pid, pid_start, bin FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").all(sessionId(abs)) as unknown as typeof rows;
       });
       if (process.exitCode) return;
       // A `running` row is a crashed server's run: its harness may still write the page, so its tree
@@ -1780,7 +1780,7 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       const stopped: string[] = [];
       const kept: string[] = [];
       for (const row of rows) {
-        if (row.status !== "running" || (await endLeftover(row.pid, row.pid_start))) stopped.push(row.id);
+        if (row.status !== "running" || (await endLeftover(row))) stopped.push(row.id);
         else kept.push(row.id);
       }
       await withHub(true, (hub) => {

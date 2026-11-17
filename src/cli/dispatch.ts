@@ -4,7 +4,7 @@
 // 0600 log in `<state>/runs/`. Limits come from `<state>/attach.json`, read only from the state
 // dir (docs/review-loop-v2.md "Security"). The adapters build the command line; this module
 // decides when a run starts, spawns it, times it out, kills its process tree and judges it.
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -71,6 +71,8 @@ export interface RunRow {
   /** The run's process (its group's leader on POSIX) and its start time, while it runs: restart recovery kills a crashed server's orphan. */
   pid: number | null;
   pid_start: string | null;
+  /** The file the run spawned (`omp.exe`, or `cmd.exe` for a `.cmd` shim): on Windows, with no start time, it tells a run's process from a later one with the same pid. */
+  bin: string | null;
 }
 
 /** What the owner's review page hears about a run (SSE `run`). */
@@ -309,6 +311,42 @@ function pidExists(pid: number): boolean {
   }
 }
 
+/** What `tasklist /FI "PID eq <pid>" /FO CSV /NH` printed, or null when it could not run (or timed out). */
+export type Tasklist = (pid: number) => string | null;
+
+function runTasklist(pid: number): string | null {
+  try {
+    return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000, windowsHide: true });
+  } catch {
+    return null;
+  }
+}
+
+/** The images a run's own process can be when no binary was recorded (a row from before `runs.bin`). */
+const RUN_IMAGES = ["cmd.exe", "node.exe", "omp.exe", "copilot.exe", "bun.exe"];
+
+/**
+ * Windows has no start time to tell a recorded pid from a later process that reused it, so its
+ * image name decides: true when the pid runs the run's own binary (`runs.bin`, the file spawned:
+ * `cmd.exe` for a `.cmd` shim; else one a run can be), false when no process has the pid or it runs
+ * something else (reused: the run's own process is gone), null when `tasklist` fails.
+ */
+export function windowsLeftover(pid: number, bin: string | null, tasklist: Tasklist = runTasklist): boolean | null {
+  const out = tasklist(pid);
+  if (out === null) return null;
+  // One CSV row per match, `"image","pid",…`; no match prints an INFO line instead.
+  const image = out
+    .split(/\r?\n/)
+    .map((l) => /^"([^"]*)","(\d+)"/.exec(l.trim()))
+    .find((m) => m && Number(m[2]) === pid)?.[1];
+  if (image === undefined) return false;
+  const images = bin ? [bin] : RUN_IMAGES;
+  return images.some((i) => i.toLowerCase() === image.toLowerCase());
+}
+
+/** What a run's row records of its process. */
+type RunProcess = Pick<RunRow, "pid" | "pid_start" | "bin">;
+
 /**
  * Whether a run's recorded process tree still runs though no server owns it, failing safe: true
  * (it is the run's: kill it), false (nothing of it runs), or null (something may, but whether it is
@@ -316,12 +354,12 @@ function pidExists(pid: number): boolean {
  * POSIX: the leader with the recorded start time, or (it exited) the rest of its group, since a pid
  * is not reused while its group lives; a pid that is another process now is not the run's. With no
  * start recorded, or a table that cannot tell, only a group that is gone is an answer (false).
- * Windows has no process table and no start time: a live pid is taken as the run's, and its tree
- * goes with `taskkill /T /F`.
+ * Windows has no process table and no start time: the pid's image name decides (windowsLeftover).
  */
-function leftoverAlive(pid: number | null, pidStart: string | null): boolean | null {
+function leftoverAlive(run: RunProcess): boolean | null {
+  const { pid, pid_start: pidStart } = run;
   if (pid == null) return false;
-  if (process.platform === "win32") return pidExists(pid);
+  if (process.platform === "win32") return windowsLeftover(pid, run.bin);
   const leader = pidStart ? systemProcessTable()?.info(pid) : undefined;
   if (leader && leader !== "unreadable") return leader.start === pidStart;
   if (leader === null) return groupAlive(pid);
@@ -334,8 +372,9 @@ function leftoverAlive(pid: number | null, pidStart: string | null): boolean | n
  * that cannot be confirmed (leftoverAlive cannot tell, or the tree outlived the kill), so the caller
  * leaves the row `running`.
  */
-export async function endLeftover(pid: number | null, pidStart: string | null): Promise<boolean> {
-  const alive = leftoverAlive(pid, pidStart);
+export async function endLeftover(run: RunProcess): Promise<boolean> {
+  const alive = leftoverAlive(run);
+  const { pid } = run;
   if (alive !== true || pid == null) return alive !== null;
   killTree(pid, "SIGKILL");
   const still = () => (process.platform === "win32" ? pidExists(pid) : groupAlive(pid));
@@ -443,7 +482,7 @@ export class Dispatcher {
     const interrupted: string[] = [];
     for (const row of stale) {
       if (row.status === "running" && row.pid != null) {
-        const alive = leftoverAlive(row.pid, row.pid_start);
+        const alive = leftoverAlive(row);
         if (alive === null) {
           this.o.log("run-orphan-unconfirmed", row.id, `pid=${row.pid}`);
           continue;
@@ -567,7 +606,7 @@ export class Dispatcher {
         r.stopped = true;
         this.kill(r);
         waits.push(r.done);
-      } else if (row.status === "running" && !(await endLeftover(row.pid, row.pid_start))) {
+      } else if (row.status === "running" && !(await endLeftover(row))) {
         this.o.log("run-orphan-unconfirmed", row.id, `pid=${row.pid}`);
         continue;
       } else this.end(row, "stopped", "stopped", "Stopped by the owner.");
@@ -821,13 +860,14 @@ export class Dispatcher {
       return fail("unavailable", `Could not open the run's files: ${(err as Error).message}`);
     }
     this.announced.delete(row.id);
-    // The row as it now stands: the run keeps this copy, so nothing after the spawn reads the database before the child is owned.
-    const started: RunRow = { ...row, status: "running", started_at: Date.now(), harness: target.harness, mode: target.mode, model, agent_session_id: from?.id ?? null, seq_from: seqFrom, seq_to: seqTo, log_file: logFile, reason: null };
-    this.db
-      .prepare("UPDATE runs SET status = 'running', started_at = ?, harness = ?, mode = ?, model = ?, agent_session_id = ?, seq_from = ?, seq_to = ?, log_file = ?, reason = NULL WHERE id = ?")
-      .run(started.started_at, started.harness, started.mode, started.model, started.agent_session_id, seqFrom, seqTo, logFile, row.id);
     // A .cmd shim on Windows runs through cmd.exe (spawnSpec); the prompt stays on stdin either way.
     const spec = spawnSpec(bin, built.args, process.platform, env);
+    // The row as it now stands: the run keeps this copy, so nothing after the spawn reads the database
+    // before the child is owned. `bin` is the image its process runs (Windows restart recovery checks it).
+    const started: RunRow = { ...row, status: "running", started_at: Date.now(), harness: target.harness, mode: target.mode, model, agent_session_id: from?.id ?? null, seq_from: seqFrom, seq_to: seqTo, log_file: logFile, reason: null, bin: path.basename(spec.file) };
+    this.db
+      .prepare("UPDATE runs SET status = 'running', started_at = ?, harness = ?, mode = ?, model = ?, agent_session_id = ?, seq_from = ?, seq_to = ?, log_file = ?, reason = NULL, bin = ? WHERE id = ?")
+      .run(started.started_at, started.harness, started.mode, started.model, started.agent_session_id, seqFrom, seqTo, logFile, started.bin, row.id);
     let child: ChildProcess;
     try {
       child = spawn(spec.file, spec.args, {
