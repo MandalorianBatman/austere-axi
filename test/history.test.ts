@@ -74,6 +74,8 @@ interface Rev {
 /** The revisions of a page as hub.db has them, read with a connection of its own. */
 function revisions(file: string): Rev[] {
   const db = new DatabaseSync(path.join(STATE, "hub.db"), { readOnly: true });
+  // A server that is going down may still hold the file for a moment (Windows locks it hard).
+  db.exec("PRAGMA busy_timeout = 5000");
   try {
     return db.prepare("SELECT rev, source, program, run_id, seq_from, seq_to FROM revisions WHERE artifact_id = ? ORDER BY rev").all(sessionId(file)) as unknown as Rev[];
   } finally {
