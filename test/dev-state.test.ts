@@ -82,7 +82,8 @@ test("every test and script that runs the CLI or the server sets AUSTERE_AXI_STA
   for (const dir of ["test", "scripts", "bench"]) walk(dir);
   const missing = files.filter((f) => {
     const text = fs.readFileSync(path.join(ROOT, f), "utf8");
-    const runsCli = /\b(spawn|spawnSync|execFile|execFileSync|fork)\(/.test(text) && /src\/cli\/main\.ts|dist\/cli\.mjs|runServer/.test(text);
+    // The CLI by any spelling of its path ("src/cli/main.ts", path.join(ROOT, "dist", "cli.mjs")) or entry point.
+    const runsCli = /\b(spawn|spawnSync|execFile|execFileSync|fork)\(/.test(text) && /main\.ts|cli\.mjs|CLI_ENTRY|runServer/.test(text);
     return runsCli && !text.includes("AUSTERE_AXI_STATE_DIR");
   });
   assert.deepEqual(missing, [], "these run the CLI on the owner's state dir: set AUSTERE_AXI_STATE_DIR to a scratch dir");

@@ -570,15 +570,23 @@ test("hub list on a state dir a server of another version holds: hub.db is left 
     assert.match(add.out, /in use by austere-axi v0\.0\.1/);
     assert.deepEqual(snapshot(), before, "neither command touched hub.db");
 
-    // At this build's schema it is read as it is.
+    // At this build's schema it is read as it is: recorded, or a 0.12.0 database that predates the record.
     fs.rmSync(path.join(state, "server.lock"));
     (await Hub.open(file)).close();
-    holdAs("0.0.1");
-    const current = snapshot();
-    const readable = await cliWith(env, "hub", "list", "--all");
-    assert.equal(readable.code, 0, readable.out);
-    assert.match(readable.out, /plan\.html/);
-    assert.deepEqual(snapshot(), current, "read-only");
+    for (const recorded of [true, false]) {
+      if (!recorded) {
+        const db = new DatabaseSync(file);
+        assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, 1, "migrate() records the schema version");
+        db.exec("PRAGMA user_version = 0");
+        db.close();
+      }
+      holdAs("0.0.1");
+      const current = snapshot();
+      const readable = await cliWith(env, "hub", "list", "--all");
+      assert.equal(readable.code, 0, readable.out);
+      assert.match(readable.out, /plan\.html/);
+      assert.deepEqual(snapshot(), current, "read-only");
+    }
   } finally {
     try {
       fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });

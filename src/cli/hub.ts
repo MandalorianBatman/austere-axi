@@ -131,11 +131,16 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
 /**
  * hub.db's schema version, kept in `PRAGMA user_version`. Raise it with every change to migrate():
  * a build whose schema is newer than a database's must not read it without migrating it.
+ * 1 is the schema of 0.12.0, the first build that records it.
  */
 export const SCHEMA_VERSION = 1;
 
-function userVersion(db: sqlite.DatabaseSync): number {
-  return Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
+/** The schema version `db` is at. Before builds recorded it (0), a database 0.12.0 migrated already has version 1's last columns. */
+function schemaVersion(db: sqlite.DatabaseSync): number {
+  const recorded = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
+  if (recorded) return recorded;
+  const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  return has("artifacts", "archived_at") && has("project_roots", "prefix") ? 1 : 0;
 }
 
 /** Open hub.db with the schema in place; `readOnly`: as it is, refused when it is older than this build's schema. */
@@ -143,7 +148,7 @@ export async function openDatabase(file = hubDbFile(), { readOnly = false }: { r
   const Database = await loadSqlite();
   if (readOnly) {
     const db = new Database(file, { readOnly: true });
-    const version = userVersion(db);
+    const version = schemaVersion(db);
     if (version < SCHEMA_VERSION) {
       db.close();
       throw new Error(`its schema (version ${version}) is older than this build's (${SCHEMA_VERSION}) and can only be read after a migration`);
@@ -303,8 +308,8 @@ function migrate(db: sqlite.DatabaseSync): void {
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
     backfillProjects(db);
-    // A newer build's database keeps its number: the steps above are all this build adds.
-    if (userVersion(db) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    // Recorded from now on; a newer build's database keeps its number: the steps above are all this build adds.
+    if (Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   });
 }
 
