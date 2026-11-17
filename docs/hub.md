@@ -19,7 +19,7 @@ A project is a name and a list of root folders. A page is a path inside a root, 
 The hub finds a page's project without git; it never runs it. Walking up from the page's folder it takes the first of:
 
 1. a root it already knows: a root holds every folder below it, except a folder it guessed at `/`, your home folder or the temp folder, which holds only that folder;
-2. a folder with a `.git` entry: a `.git` directory is a repository; a `.git` file of a worktree joins the project of its main repository; a submodule is its own project. Inside a root you assigned (`project add`), the repository or worktree joins that root's project, and its page paths start with the repository's folder inside that root (`shop/docs/plan.html`), so two repositories there stay apart and the repository's worktrees, wherever they are, share its pages;
+2. a folder with a `.git` entry: a `.git` directory is a repository; a `.git` file of a worktree joins the project of its main repository when git registered it there: its git dir sits in the repository's `worktrees/` folder, and points back at that `.git` file (`<gitdir>/gitdir`, as `git worktree add` writes it). A submodule, or any other `.git` file, is its own project. A worktree moved by hand is one of those until you run `git worktree repair`; if a page was already opened from the moved folder, its root is stored (see below), so also run `austere-axi project forget-root <folder>` once after the repair. Inside a root you assigned (`project add`), the repository or worktree joins that root's project, and its page paths start with the repository's folder inside that root (`shop/docs/plan.html`), so two repositories there stay apart and the repository's worktrees, wherever they are, share its pages;
 3. a guessed folder: the folder the command ran in when the page is inside it (never `/`, your home folder or the temp folder), else the page's own folder. So `cd notes && austere-axi a/sprint.html` and `austere-axi b/plan.html` make one project, `notes`. A guessed folder takes in the folders guessed below it earlier, with their pages; a project `poll` waiting on one of those ends with `status: moved`.
 
 A bare `poll` or `feedback` finds its project from the folder it runs in by the same rule, so it covers the pages opened from there.
@@ -36,9 +36,14 @@ austere-axi project add ~/work/plans --name plans   # assign a root (a folder wi
 austere-axi project merge shop shop-clone    # the second project's roots move to the first
 austere-axi project rename shop storefront     # refused if another project is named storefront
 austere-axi project forget-root ~/old/clone  # its pages, and the project's other roots, are filed again
+austere-axi project forget-root ~/gone/repo --drop  # a root whose folder is gone: its pages are archived
 ```
 
-`project add` takes in the folders it guessed below the new root, and refuses a folder inside another project's root, or around one, naming that project; `project merge` is the way to join them. `--project` (on `poll`, `feedback`, `hub list` and `hub notes`) and the home page's project link take a name, an id, or any folder a root holds.
+`project add` takes in the folders it guessed below the new root, and refuses a folder inside another project's root, or around one, naming that project; `project merge` is the way to join them. When the new root would take roots or pages from other projects, `add` lists each one (name, id, pages, roots) and changes nothing until you run it again with `--yes`. It refuses `/`, the temp folder, and the home folder or any folder holding it. A name is never empty and never looks like an id (12 hex characters). When two projects share a name, an error asking for an id lists each one's id and main root.
+
+`forget-root` says where the root's pages went (`went:` each project, its root and page count). A folder with a `.git` is a root again at once, of a new project: `status: found again`, and the note gives the `project merge` that joins it back. A root whose folder is gone and holds pages needs `--drop`: its copies are archived (their notes are kept, `hub list --archived` shows them) and stay in their project, instead of being filed under folders that do not exist.
+
+`--project` (on `poll`, `feedback`, `hub list` and `hub notes`) and the home page's project link take a name, an id, or any folder a root holds.
 
 ## What the lists leave out
 

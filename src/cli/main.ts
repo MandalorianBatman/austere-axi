@@ -319,10 +319,14 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "hub notes --unanswered",
   },
   project: {
-    usage: "project [list | add <dir> [--name n] | merge <a> <b> | rename <p> <name> | forget-root <dir>]",
+    usage: "project [list | add <dir> [--name n] [--yes] | merge <a> <b> | rename <p> <name> | forget-root <dir> [--drop]]",
     summary:
-      "projects in the hub: a name and its root folders, found without git (a .git folder or a worktree's .git file, else the folder you ran in when the page is inside it, else the page's folder); add assigns a root, merge moves b's roots into a, forget-root drops one",
-    flags: { name: "the project to add the root to, made if there is none (add)" },
+      "projects in the hub: a name and its root folders, found without git (a .git folder or a worktree's .git file, else the folder you ran in when the page is inside it, else the page's folder); add assigns a root (never /, the temp folder or a folder holding the home folder), merge moves b's roots into a, forget-root drops one and says where its pages went (a folder with a .git is found again at once)",
+    flags: {
+      name: "the project to add the root to, made if there is none (add); not empty, not shaped like an id",
+      yes: "take in the other projects' roots and pages the new root holds; without it add lists them and changes nothing (add)",
+      drop: "forget a root whose folder is gone, archiving its pages (notes kept) instead of filing them under folders that do not exist (forget-root)",
+    },
     example: "project add ~/work/site --name site",
   },
   archive: {
@@ -1620,10 +1624,19 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
         });
       });
     case "add":
-      if (!need(1, `a folder: ${BIN} project add <dir> [--name n]`)) return;
+      if (!need(1, `a folder: ${BIN} project add <dir> [--name n] [--yes]`)) return;
       return withHub(true, (hub) => {
-        const r = addRoot(hub.db, args[0], typeof flags.name === "string" ? flags.name : undefined);
-        print({ status: "added", project: r.project.name, id: r.project.id, root: r.root });
+        const r = addRoot(hub.db, args[0], typeof flags.name === "string" ? flags.name : undefined, { yes: !!flags.yes });
+        const absorbed = r.absorbed.length ? r.absorbed.map((a) => ({ project: a.project, id: a.id, pages: a.pages, roots: a.roots.length ? a.roots : undefined })) : undefined;
+        if (r.added) return print({ status: "added", project: r.project.name, id: r.project.id, root: r.root, absorbed });
+        print({
+          status: "needs --yes",
+          root: r.root,
+          project: r.project.name,
+          absorbed,
+          next: `Nothing changed. These projects would lose the roots and pages listed to ${r.project.name}: \`${BIN} project add ${quote(args[0])}${typeof flags.name === "string" ? ` --name ${quote(flags.name)}` : ""} --yes\` takes them in; or add a folder that holds only this project's pages.`,
+        });
+        process.exitCode = 1;
       });
     case "merge":
       if (!need(2, `two projects: ${BIN} project merge <a> <b>`)) return;
@@ -1637,12 +1650,38 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
         const p = renameProject(hub.db, args[0], args.slice(1).join(" "));
         print({ status: "renamed", project: p.name, id: p.id });
       });
-    case "forget-root":
-      if (!need(1, `a folder: ${BIN} project forget-root <dir>`)) return;
-      return withHub(true, (hub) => {
-        const r = forgetRoot(hub.db, args[0]);
-        print({ status: "forgotten", root: r.root, project: r.project });
+    case "forget-root": {
+      if (!need(1, `a folder: ${BIN} project forget-root <dir> [--drop]`)) return;
+      const archived: string[] = [];
+      await withHub(true, (hub) => {
+        const r = forgetRoot(hub.db, args[0], { drop: !!flags.drop });
+        archived.push(...r.archived);
+        let note: string | undefined;
+        if (r.status === "dropped") note = `Its pages stay in ${r.project}, archived; their notes are kept: \`${BIN} hub list --archived\`.`;
+        else if (r.again) {
+          const why = r.again.kind === "git" || r.again.kind === "worktree" ? "has a .git" : "has pages in it and no root above";
+          const split = r.again.id !== r.id && hub.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(r.id);
+          note = split
+            ? `${r.root} ${why}, so it is a root again at once, of project ${r.again.project} (${r.again.id}), apart from ${r.project} (${r.id}): a page in both is two pages now. \`${BIN} project merge ${r.id} ${r.again.id}\` joins them back.`
+            : `${r.root} ${why}, so it is a root again at once, of project ${r.again.project} (${r.again.id}${r.again.id === r.id ? "" : `; it was ${r.id}`}).`;
+        }
+        print({ status: r.status, root: r.root, project: r.project, id: r.id, went: r.went.length ? r.went : undefined, archived: r.status === "dropped" ? archived.length : undefined, note });
       });
+      // A running server holds open pages in memory: it archives them too, so their composers lock. Every copy is tried; the first failure is reported after.
+      if (archived.length && (await serverIfRunning())) {
+        let failed: unknown = null;
+        for (const file of archived) {
+          try {
+            const res = await request("POST", "/api/archive", { file }, { timeoutMs: 10_000 });
+            if (res.status !== 200) throw new Error(`the running server did not archive ${file}: ${res.data?.error || `status ${res.status}`}`);
+          } catch (err) {
+            failed ??= err;
+          }
+        }
+        if (failed) throw failed;
+      }
+      return;
+    }
     default:
       return usage(`unknown project command: ${sub}. One of: list add merge rename forget-root`, "project");
   }

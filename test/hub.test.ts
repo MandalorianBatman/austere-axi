@@ -12,7 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { SessionStore, sessionId } from "../src/cli/sessions.ts";
 import { Hub, SCHEMA_VERSION, openDatabase, unanswered } from "../src/cli/hub.ts";
 import { hubPage, notesPage } from "../src/cli/hub-page.ts";
-import { findProject } from "../src/cli/projects.ts";
+import { findProject, listProjects, mergeProjects } from "../src/cli/projects.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
@@ -450,6 +450,7 @@ function shopWithWorktree(dir: string): { main: string; wt: string } {
   fs.writeFileSync(path.join(main, ".git", "HEAD"), "ref: refs/heads/main\n");
   fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
   fs.writeFileSync(path.join(gitdir, "HEAD"), "ref: refs/heads/feat\n");
+  fs.writeFileSync(path.join(gitdir, "gitdir"), path.join(wt, ".git") + "\n");
   fs.mkdirSync(path.join(wt, "docs"), { recursive: true });
   fs.mkdirSync(path.join(main, "docs"), { recursive: true });
   fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${gitdir}\n`);
@@ -558,6 +559,7 @@ test("archiving one of two copies names it, the copy that stays open and the not
     fs.mkdirSync(fixGit, { recursive: true });
     fs.writeFileSync(path.join(fixGit, "commondir"), "../..\n");
     fs.writeFileSync(path.join(fixGit, "HEAD"), "ref: refs/heads/fix\n");
+    fs.writeFileSync(path.join(fixGit, "gitdir"), path.join(fix, ".git") + "\n");
     fs.mkdirSync(path.join(fix, "docs"), { recursive: true });
     fs.writeFileSync(path.join(fix, ".git"), `gitdir: ${fixGit}\n`);
     const c = path.join(fix, "docs", "plan.html");
@@ -774,6 +776,81 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
     } catch (err) {
       if (process.platform !== "win32") throw err;
     }
+  }
+});
+
+test("a 0.10.4 hub.db whose folders are gone: its roots are kept as git roots, and a re-key leaves the pages in their projects", async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-migrate-gone-")));
+  const file = path.join(dir, "hub.db");
+  fs.copyFileSync(path.join(import.meta.dirname, "fixtures", "hub-0.10.4.db"), file);
+  try {
+    // The fixture's folders are pointed at this temp dir, where they were never made.
+    const old = new DatabaseSync(file);
+    old.prepare("UPDATE artifacts SET file = replace(file, '/FIXTURE', ?), project = replace(project, '/FIXTURE', ?)").run(dir, dir);
+    old.close();
+    const hub = await Hub.open(file);
+    try {
+      const shape = () => listProjects(hub.db).map((p) => [p.name, p.pages, p.roots.map((r) => `${path.relative(dir, r.root)} (${r.kind})`)]);
+      assert.deepEqual(shape(), [["shop", 2, ["shop (git)"]], ["shop-feat", 1, ["shop-feat (git)"]]]);
+      // A page in the folder above: a guessed root there takes in guessed roots below it, never these.
+      fs.writeFileSync(path.join(dir, "readme.html"), "<title>r</title>");
+      hub.register({ id: "dddddddddddd", file: path.join(dir, "readme.html") });
+      assert.deepEqual(shape().filter((p) => p[0] !== path.basename(dir)), [["shop", 2, ["shop (git)"]], ["shop-feat", 1, ["shop-feat (git)"]]]);
+      // The review's repro: a merge re-keys every page of both projects.
+      mergeProjects(hub.db, "shop", "shop-feat");
+      assert.deepEqual(shape().filter((p) => p[0] !== path.basename(dir)), [["shop", 2, ["shop (git)", "shop-feat (git)"]]]);
+      assert.deepEqual(hub.list({ all: true }).filter((p) => p.project === "shop").map((p) => [p.rel_path, p.copies.length]).sort(), [["docs/checked.html", 1], ["docs/plan.html", 2]]);
+    } finally {
+      hub.close();
+    }
+  } finally {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    } catch (err) {
+      if (process.platform !== "win32") throw err;
+    }
+  }
+});
+
+test("project add and forget-root say what they did: needs --yes lists what a root would take in; forget-root names where pages went", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-project-cli-state-"));
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-project-cli-work-")));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(await freePort()) };
+  try {
+    const notes = path.join(work, "notes");
+    const shop = path.join(work, "shop");
+    fs.mkdirSync(path.join(shop, ".git"), { recursive: true });
+    const hub = await Hub.open(path.join(state, "hub.db"));
+    try {
+      for (const [id, f] of [["aaaaaaaaaaaa", path.join(notes, "a", "x.html")], ["bbbbbbbbbbbb", path.join(notes, "b", "x.html")], ["cccccccccccc", path.join(shop, "x.html")]]) {
+        fs.mkdirSync(path.dirname(f), { recursive: true });
+        fs.writeFileSync(f, "<title>x</title>");
+        hub.register({ id, file: f });
+      }
+    } finally {
+      hub.close();
+    }
+    const asked = await cliWith(env, "project", "add", notes);
+    assert.equal(asked.code, 1, asked.out);
+    assert.match(asked.out, /status: needs --yes/);
+    assert.match(asked.out, /project: a\b[\s\S]*project: b\b/, "names each project it would take in");
+    assert.match(asked.out, /Nothing changed/);
+    const added = await cliWith(env, "project", "add", notes, "--yes");
+    assert.equal(added.code, 0, added.out);
+    assert.match(added.out, /status: added[\s\S]*absorbed/);
+
+    const forgot = await cliWith(env, "project", "forget-root", shop);
+    assert.equal(forgot.code, 0, forgot.out);
+    assert.match(forgot.out, /status: found again/);
+    assert.match(forgot.out, /went/);
+    assert.match(forgot.out, /has a \.git, so it is a root again at once/);
+
+    const empty = await cliWith(env, "project", "rename", "notes", "");
+    assert.equal(empty.code, 1, empty.out);
+    assert.match(empty.out, /cannot be empty/);
+  } finally {
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 

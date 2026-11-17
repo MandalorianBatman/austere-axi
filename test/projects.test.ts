@@ -27,12 +27,13 @@ function repo(dir: string, branch = "main"): string {
   return dir;
 }
 
-/** A linked worktree of `main` at `dir`, as git lays it out: a `.git` file pointing at `.git/worktrees/<name>`, which holds `commondir`. */
+/** A linked worktree of `main` at `dir`, as git lays it out: a `.git` file pointing at `.git/worktrees/<name>`, which holds `commondir` and `gitdir` (back to the `.git` file). */
 function worktree(main: string, dir: string, head: string): string {
   const gitdir = path.join(main, ".git", "worktrees", path.basename(dir));
   fs.mkdirSync(gitdir, { recursive: true });
   fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
   fs.writeFileSync(path.join(gitdir, "HEAD"), head + "\n");
+  fs.writeFileSync(path.join(gitdir, "gitdir"), path.join(dir, ".git") + "\n");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, ".git"), `gitdir: ${gitdir}\n`);
   return dir;
@@ -57,6 +58,7 @@ function bareWorktree(repoDir: string, dir: string, branch: string): string {
   fs.mkdirSync(gitdir, { recursive: true });
   fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
   fs.writeFileSync(path.join(gitdir, "HEAD"), `ref: refs/heads/${branch}\n`);
+  fs.writeFileSync(path.join(gitdir, "gitdir"), path.join(dir, ".git") + "\n");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, ".git"), `gitdir: ${gitdir}\n`);
   return dir;
@@ -205,6 +207,70 @@ test("a submodule (a .git file with no commondir) is its own project", () =>
     assert.equal(copyLabel(sub), "trunk", "a relative gitdir resolves from the folder holding .git");
   }));
 
+test("a .git file that only claims a repository is its own project, whatever its git dir says", () =>
+  withDb((db, dir) => {
+    const main = repo(path.join(dir, "shop"));
+    fs.writeFileSync(path.join(main, ".git", "config"), gitConfig("https://github.com/owner/shop.git"));
+    const real = worktree(main, path.join(dir, "shop-feat"), "ref: refs/heads/feat");
+    const shop = resolveProject(db, write(path.join(main, "docs", "plan.html")));
+    // `.git` → `gitdir: meta`, `meta/commondir` → the real repository; `meta/gitdir` missing, naming
+    // another worktree's `.git`, then naming this folder's own `.git`: the forger writes `meta/` too.
+    const forged = path.join(dir, "copy");
+    const meta = path.join(forged, "meta");
+    fs.mkdirSync(meta, { recursive: true });
+    fs.writeFileSync(path.join(meta, "commondir"), path.join(main, ".git") + "\n");
+    fs.writeFileSync(path.join(meta, "HEAD"), "ref: refs/heads/main\n");
+    fs.writeFileSync(path.join(forged, ".git"), "gitdir: meta\n");
+    for (const back of [null, path.join(real, ".git"), path.join(forged, ".git")]) {
+      if (back) fs.writeFileSync(path.join(meta, "gitdir"), back + "\n");
+      assert.equal(findProject(db, forged), null, `nothing claims it before it is stored (back-pointer ${back})`);
+    }
+    const loc = resolveProject(db, write(path.join(forged, "docs", "plan.html")));
+    assert.notEqual(loc.projectId, shop.projectId);
+    assert.notEqual(loc.pageId, shop.pageId);
+    assert.equal(loc.root, forged);
+    assert.equal(loc.kind, "git");
+    const copy = listProjects(db).find((p) => p.id === loc.projectId);
+    assert.equal(copy?.name, "copy", "not named from the claimed repository's origin");
+    assert.equal(copy?.sameAs, undefined, "no hint to merge into the claimed repository's project");
+  }));
+
+test("a folder whose .git is a symlink to a real worktree's .git file is its own project", (t) =>
+  withDb((db, dir) => {
+    const main = repo(path.join(dir, "shop"));
+    const real = worktree(main, path.join(dir, "shop-feat"), "ref: refs/heads/feat");
+    const shop = resolveProject(db, write(path.join(main, "docs", "plan.html")));
+    const linked = path.join(dir, "linked");
+    fs.mkdirSync(linked);
+    try {
+      fs.symlinkSync(path.join(real, ".git"), path.join(linked, ".git"), "file");
+    } catch {
+      t.skip("no symlinks here");
+      return;
+    }
+    const loc = resolveProject(db, write(path.join(linked, "docs", "plan.html")));
+    assert.notEqual(loc.projectId, shop.projectId);
+    assert.equal(loc.kind, "git");
+  }));
+
+test("a worktree with relative paths both ways (worktree.useRelativePaths) groups with its repository", () =>
+  withDb((db, dir) => {
+    const main = repo(path.join(dir, "shop"));
+    const wt = path.join(dir, "shop-rel");
+    const gitdir = path.join(main, ".git", "worktrees", "shop-rel");
+    fs.mkdirSync(gitdir, { recursive: true });
+    fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
+    fs.writeFileSync(path.join(gitdir, "HEAD"), "ref: refs/heads/rel\n");
+    fs.writeFileSync(path.join(gitdir, "gitdir"), "../../../../shop-rel/.git\n");
+    fs.mkdirSync(wt, { recursive: true });
+    fs.writeFileSync(path.join(wt, ".git"), "gitdir: ../shop/.git/worktrees/shop-rel\n");
+    const b = resolveProject(db, write(path.join(wt, "docs", "plan.html")));
+    const a = resolveProject(db, write(path.join(main, "docs", "plan.html")));
+    assert.equal(b.kind, "worktree");
+    assert.equal(a.pageId, b.pageId);
+    assert.equal(copyLabel(wt), "rel");
+  }));
+
 test("an assigned parent root wins over a nested .git: its project; the repository's folder starts its page paths", () =>
   withDb((db, dir) => {
     const work = path.join(dir, "work");
@@ -280,7 +346,7 @@ test("project add around a repository of the same project re-keys its pages unde
     const shop = repo(path.join(work, "shop"));
     hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(shop, "plan.html")) });
     hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(work, "plan.html")) });
-    addRoot(db, work, "shop");
+    addRoot(db, work, "shop", { yes: true });
     assert.deepEqual(hub.list({ all: true }).map((p) => [p.project, p.rel_path]).sort(), [["shop", "plan.html"], ["shop", "shop/plan.html"]]);
   }));
 
@@ -310,24 +376,48 @@ test("project add absorbs a guessed folder root below it, even of the project it
     hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(plans, "sub", "plan.html")) });
     assert.equal(findProject(db, "sub")?.name, "sub", "the guessed project is named after its folder");
     hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(plans, "plan.html")) });
-    addRoot(db, plans, "sub");
+    addRoot(db, plans, "sub", { yes: true });
     const pages = hub.list({ all: true });
     assert.deepEqual(pages.map((p) => [p.rel_path, p.copies.length]).sort(), [["plan.html", 1], ["sub/plan.html", 1]], "two pages, not two copies of one");
     assert.deepEqual(listProjects(db).map((p) => [p.name, p.roots.map((r) => r.kind)]), [["sub", ["assigned"]]]);
   }));
 
-test("project add <folder>: pages in two subfolders become one project", async () =>
+test("project add <folder>: pages in two subfolders become one project, after it lists the projects it takes in and gets yes", async () =>
   withDb(async (db, dir) => {
     const hub = new Hub(db);
     const folder = path.join(dir, "plans");
     hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(folder, "q1", "plan.html")) });
     hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(folder, "q2", "plan.html")) });
-    assert.equal(new Set(hub.list({ all: true }).map((p) => p.project_id)).size, 2);
-    const { project } = addRoot(db, folder);
+    renameProject(db, "q1", "roadmap");
+    const before = listProjects(db);
+    assert.equal(before.length, 2);
+    // Without yes: what it would take in, by name (the owner's too), and nothing changes.
+    const asked = addRoot(db, folder);
+    assert.equal(asked.added, false);
+    assert.deepEqual(
+      asked.absorbed.map((a) => [a.project, a.pages, a.roots]).sort(),
+      [["q2", 1, [path.join(folder, "q2")]], ["roadmap", 1, [path.join(folder, "q1")]]],
+    );
+    assert.deepEqual(listProjects(db), before, "nothing changed");
+    const { project, added, absorbed } = addRoot(db, folder, undefined, { yes: true });
+    assert.equal(added, true);
+    assert.equal(absorbed.length, 2, "the result still says what it took in");
     assert.equal(project.name, "plans");
     const pages = hub.list({ all: true });
     assert.deepEqual(pages.map((p) => [p.project, p.rel_path]).sort(), [["plans", "q1/plan.html"], ["plans", "q2/plan.html"]]);
     assert.deepEqual(listProjects(db).map((p) => p.name), ["plans"], "the guessed folder projects are gone");
+    // A root of its own project only: nothing to confirm.
+    fs.mkdirSync(path.join(dir, "empty"));
+    assert.equal(addRoot(db, path.join(dir, "empty")).added, true);
+  }));
+
+test("project add refuses /, the home folder and a folder holding it", () =>
+  withDb((db) => {
+    const home = fs.realpathSync(os.homedir());
+    for (const dir of [path.parse(home).root, home, path.dirname(home)]) {
+      assert.throws(() => addRoot(db, dir, "everything", { yes: true }), /cannot be a root/, dir);
+    }
+    assert.equal(rootCount(db), 0);
   }));
 
 test("project add refuses a root inside, or around, another project's root", () =>
@@ -377,6 +467,115 @@ test("project rename refuses a name another project has", () =>
     assert.throws(() => renameProject(db, b.projectId, "shop"), /already named shop/);
     assert.equal(findProject(db, "shop")?.id, shop.projectId, "the name still finds one project");
     assert.equal(renameProject(db, "shop", "shop").name, "shop", "a project may keep its own name");
+  }));
+
+test("names: never empty, never shaped like an id; two projects of one name are told apart by their main root", () =>
+  withDb((db, dir) => {
+    const one = resolveProject(db, write(path.join(repo(path.join(dir, "one", "shop")), "a.html")));
+    const two = resolveProject(db, write(path.join(repo(path.join(dir, "two", "shop")), "a.html")));
+    assert.throws(() => renameProject(db, one.projectId, ""), /cannot be empty/);
+    assert.throws(() => renameProject(db, one.projectId, "   "), /cannot be empty/);
+    assert.throws(() => renameProject(db, one.projectId, two.projectId), /shaped like a project id/);
+    fs.mkdirSync(path.join(dir, "x"));
+    assert.throws(() => addRoot(db, path.join(dir, "x"), ""), /cannot be empty/);
+    assert.throws(() => addRoot(db, path.join(dir, "x"), two.projectId), /shaped like a project id/);
+    assert.equal(rootCount(db), 2, "nothing stored");
+    // New projects of one name get a suffix (RLM-390); one made before that, or by hand, can still share it.
+    db.prepare("UPDATE projects SET name = 'shop' WHERE id IN (?, ?)").run(one.projectId, two.projectId);
+    assert.throws(
+      () => findProject(db, "shop"),
+      (err: Error) => err.message.includes(`${one.projectId} (${path.join(dir, "one", "shop")})`) && err.message.includes(`${two.projectId} (${path.join(dir, "two", "shop")})`),
+    );
+    assert.equal(renameProject(db, one.projectId, "  first  ").name, "first", "trimmed");
+  }));
+
+test("forget-root on a root with a .git: it is found again at once, and the result says where its pages went", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const shop = repo(path.join(dir, "shop"));
+    const feat = worktree(shop, path.join(dir, "shop-feat"), "ref: refs/heads/feat");
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(shop, "plan.html")) });
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(feat, "plan.html")) });
+    const old = findProject(db, "shop")!;
+    const r = forgetRoot(db, shop);
+    assert.equal(r.status, "found again");
+    assert.ok(r.again && r.again.id !== old.id, "a new project");
+    assert.deepEqual(r.went, [{ project: r.again.project, id: r.again.id, root: shop, pages: 1 }]);
+    assert.equal(resolveProject(db, path.join(feat, "plan.html")).projectId, old.id, "the worktree stays in the old project");
+  }));
+
+test("forget-root on a root whose folder is gone: refused without --drop; --drop archives its pages and stores no root", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const moved = repo(path.join(dir, "moved"));
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(moved, "docs", "plan.html")) });
+    const keep = resolveProject(db, write(path.join(repo(path.join(dir, "keep")), "a.html")));
+    const project = findProject(db, "moved")!;
+    assert.throws(() => forgetRoot(db, moved, { drop: true }), /still there/);
+    fs.rmSync(moved, { recursive: true });
+    assert.throws(() => forgetRoot(db, moved), /is gone: its 1 page copies .* --drop/);
+    const r = forgetRoot(db, moved, { drop: true });
+    assert.equal(r.status, "dropped");
+    assert.deepEqual(r.archived, [path.join(moved, "docs", "plan.html")]);
+    const row = hub.artifact("aaaaaaaaaaaa")!;
+    assert.ok(row.archived_at, "archived, not deleted: its notes are kept");
+    assert.equal(row.project_id, project.id, "it stays in its project");
+    const rootsUnder = (): string[] => listProjects(db).flatMap((p) => p.roots.map((x) => x.root)).filter((x) => within(moved, x));
+    assert.deepEqual(rootsUnder(), []);
+    // A later re-key of its project files nothing under the folder that is gone; a merge carries the copy by its page path.
+    mergeProjects(db, keep.projectId, project.id);
+    assert.deepEqual(rootsUnder(), []);
+    const merged = hub.artifact("aaaaaaaaaaaa")!;
+    assert.equal(merged.project_id, keep.projectId);
+    assert.equal(merged.page_id, pageIdOf(keep.projectId, "docs/plan.html"));
+  }));
+
+test("project add takes in a guessed folder root whose folder is gone: its copy joins the new root's project", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const plans = path.join(dir, "plans");
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(plans, "q1", "plan.html")) });
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(plans, "q2", "plan.html")) });
+    fs.rmSync(path.join(plans, "q1"), { recursive: true });
+    const r = addRoot(db, plans, undefined, { yes: true });
+    assert.deepEqual(r.absorbed.map((a) => [a.project, a.pages, a.roots]).sort(), [["q1", 1, [path.join(plans, "q1")]], ["q2", 1, [path.join(plans, "q2")]]]);
+    const row = hub.artifact("aaaaaaaaaaaa")!;
+    assert.equal(row.project_id, r.project.id);
+    assert.equal(row.root, plans);
+    assert.equal(row.page_id, pageIdOf(r.project.id, "q1/plan.html"));
+    assert.deepEqual(listProjects(db).map((p) => [p.name, p.pages, p.roots.length]), [["plans", 2, 1]]);
+  }));
+
+test("forget-root --drop under a root above: the copies stay in their project, and a later merge carries them to its target", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const plans = path.join(dir, "plans");
+    const gone = repo(path.join(plans, "repo"));
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(gone, "y.html")) });
+    hub.register({ id: "bbbbbbbbbbbb", file: write(path.join(plans, "top.html")) });
+    const project = findProject(db, "repo")!;
+    fs.rmSync(gone, { recursive: true });
+    forgetRoot(db, gone, { drop: true });
+    assert.equal(hub.artifact("aaaaaaaaaaaa")!.project_id, project.id);
+    assert.deepEqual(listProjects(db).map((p) => [p.name, p.pages]), [["plans", 1], ["repo", 1]]);
+    // A merge re-keys every copy of both projects: the dropped copy goes to the target by its page path, not to the root above.
+    const keep = resolveProject(db, write(path.join(repo(path.join(dir, "keep")), "a.html")));
+    mergeProjects(db, keep.projectId, project.id);
+    const moved = hub.artifact("aaaaaaaaaaaa")!;
+    assert.equal(moved.project_id, keep.projectId);
+    assert.equal(moved.page_id, pageIdOf(keep.projectId, "y.html"));
+    assert.deepEqual(listProjects(db).map((p) => [p.name, p.pages]), [["keep", 1], ["plans", 1]]);
+  }));
+
+test("forget-root on a folder root with pages in it: found again as a folder, not as a .git", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const plans = path.join(dir, "plans");
+    hub.register({ id: "aaaaaaaaaaaa", file: write(path.join(plans, "a.html")) });
+    addRoot(db, plans);
+    const r = forgetRoot(db, plans);
+    assert.equal(r.status, "found again");
+    assert.equal(r.again?.kind, "folder");
   }));
 
 test("forget-root settles the other roots' prefixes and re-keys their pages", async () =>
