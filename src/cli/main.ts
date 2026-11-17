@@ -382,7 +382,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   hub: {
     usage: "hub [list|notes|open|reindex] [words] [--project p] [--archived] [--all] [--unanswered] [--limit n]",
-    summary: "the owner's home page: every page by project (one entry per page, a copy per worktree), every note",
+    summary: "the owner's home page: an inbox of what needs you, every page by project (one entry per page, a copy per worktree), every note and run, search over pages and their parts",
     flags: {
       project: "only pages or notes from this project: a name, an id, or a folder inside one of its roots (list, notes)",
       archived: "list archived pages instead (list)",

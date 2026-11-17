@@ -30,7 +30,7 @@ austere-axi trust list|add|remove   packs your agent may add without --trust (se
 austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
 austere-axi adapter list|command|set     how a run starts an agent: harness binaries, capabilities, the owner's extra arguments (see Adapters)
 austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
-austere-axi hub [list|notes|open|reindex]   home page with every page by project and every note; reindex rebuilds the text index   [--project p] [--archived] [--all] [--unanswered]
+austere-axi hub [list|notes|open|reindex]   home page: an inbox of what needs you, every page by project, notes, runs, search (see Hub); reindex rebuilds the text index   [--project p] [--archived] [--all] [--unanswered]
 austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)
 austere-axi archive <file>       put a page away from the hub's lists; it stops taking notes; unarchive <file> brings it back
 austere-axi archive --missing    the same for every copy whose file is gone   [--project p]

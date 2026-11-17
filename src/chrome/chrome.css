@@ -78,6 +78,124 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The owner's way to the hub and other pages (nav.ts, RLM-358). */
+.crumbs {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+.crumb {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  text-decoration: none;
+}
+.crumb:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.crumb-sep {
+  color: var(--faint);
+}
+.copy-switch {
+  flex: none;
+  align-self: center;
+  max-width: 160px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+.crumb:focus-visible,
+.copy-switch:focus-visible,
+.qs-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.qs {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 12px 12px;
+  background: rgba(0, 0, 0, 0.5);
+}
+.qs[hidden] {
+  display: none;
+}
+.qs-box {
+  width: min(560px, 100%);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.qs-input {
+  margin: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--text);
+  font: inherit;
+}
+.qs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 6px;
+  overflow-y: auto;
+}
+.qs-item {
+  display: grid;
+  gap: 1px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.qs-item[aria-selected="true"] {
+  background: var(--surface-2);
+}
+.qs-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qs-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.qs-item.part .qs-title::before {
+  content: "Part · ";
+  color: var(--faint);
+}
+.qs-empty {
+  padding: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.qs-foot {
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 11.5px;
+}
 .bar-mid {
   display: flex;
   align-items: center;
@@ -1282,6 +1400,22 @@ textarea.edit {
   .presence {
     display: none;
   }
+  .bar-title {
+    gap: 6px;
+  }
+  .crumbs {
+    flex: 0 1 auto;
+    min-width: 3.5em;
+  }
+  .crumbs .crumb {
+    max-width: 22vw;
+  }
+  .bar-title .title {
+    min-width: 4.5em;
+  }
+  .copy-switch {
+    max-width: 84px;
+  }
   /* The run's state and buttons live in the popover on a phone; the pill's dot shows it. */
   .run-state {
     display: none;
@@ -1461,4 +1595,31 @@ textarea.edit {
 }
 .held-bar span {
   margin-right: auto;
+}
+
+/* A phone: the title keeps its room. The crumb is a "‹" back to the hub (its name stays the link's text);
+   the copies stay one tap away through the hub's chips and Go to page. */
+@media (max-width: 480px) {
+  .crumbs {
+    flex: none;
+    min-width: 0;
+  }
+  .crumbs .crumb {
+    font-size: 0;
+  }
+  .crumbs .crumb::before {
+    content: "‹";
+    padding: 0 6px 0 0;
+    font-size: 20px;
+    line-height: 1;
+  }
+  .crumb-sep {
+    display: none;
+  }
+  .bar-title .title {
+    min-width: 0;
+  }
+  .copy-switch {
+    display: none;
+  }
 }

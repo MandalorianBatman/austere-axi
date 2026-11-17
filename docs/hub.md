@@ -3,14 +3,33 @@
 The server starts when needed and stops after 30 idle minutes; to keep it running for good, see [Always on](#always-on). The hub has no on/off switch: it is the home page over `~/.austere-axi/hub.db` (SQLite), which keeps every page you open for review, `check` or `patch`, and its notes. It is there whenever the server runs:
 
 ```sh
-austere-axi hub open    # http://127.0.0.1:4388/, signed in: pages by project, with search
+austere-axi hub open    # http://127.0.0.1:4388/, signed in: the inbox, every page by project, notes, runs, search
 austere-axi hub list    # the same, for an agent: [words] [--project p] [--archived] [--all] [--limit n]
 austere-axi hub notes   # every note, same for an agent: [words] [--project p] [--unanswered] [--limit n]
 ```
 
-The home page has one section per project and one row per page. A row shows the page's path in the project, its last activity, and its unanswered and answered notes across copies; a quiet page shows nothing more, and a page an agent is polling for says **agent listening**. Pages with unanswered notes come first, then by last activity. The header counts the pages, projects and unanswered notes of the view shown. The views are **Open** (pages opened for review, not archived), **Everything** and **Archived**, each with its page count for the current search and project; when a view is empty, the page names the other views that are not. `/notes` lists every note, newest first, with its project and copy, and search, status and project filters.
+The home page has a sidebar and four views. The sidebar lists the projects, each with its pages open for review and its unanswered notes; a page in several worktrees has a small chip per copy. ▸ folds a project away. The views:
+
+- **Inbox** (the first time; then the view you used last): the pages open for review, in three groups, newest activity first in each.
+  - **Needs you:** the agent changed the page since you last had it open (`Changed since you looked: 2 revisions`), a reviewer's notes wait for you to release them, or the last agent run on it failed. A page you never had open in a browser is not "changed".
+  - **Waiting on agent:** notes no agent has answered, with who takes them: **an agent is listening** (a `poll` covers the page); **agent on**, the attached agent (see [Attach](attach.md)): **a run is working on them**, or **your next note starts a run** (turning attach on does not start a run for notes already there); or **nobody is taking them**, with a **Turn agent on** link that opens the page's Agent popover.
+  - **Quiet:** the rest.
+  A row shows the page's title (it opens the page), its path, project, last activity, its newest unanswered notes, and its chips. **Archive** puts every open copy of the page away (notes kept); **Undo** right after brings back exactly those copies.
+- **Pages:** one section per project and one row per page, pages with unanswered notes first. **Open** (opened for review, not archived), **Everything** and **Archived** each show their page count; when a view is empty it names the others that are not. In **Archived** a row has **Unarchive**.
+- **Notes:** every note, newest first, with its project and copy; search, status and author filters. `/notes` (and its old links, with their filters) opens this view.
+- **Runs:** the newest 100 agent runs, with their state, page, harness and reason.
+
+The search box at the top looks for pages by title, path or project, and for **parts**: statements whose text matches (the same index as `find`). A part opens its page with that part outlined. Every view and filter is in the address (`/?view=pages&project=shop`), so the back button and bookmarks work.
 
 `hub list` and `hub notes` show 40 and say `40 of 45 pages shown` when there are more; `--limit n` shows more. `hub open` starts a browser unless `AUSTERE_AXI_NO_OPEN=1` is set (a machine with no screen); then it prints the url and how to sign in.
+
+### From a review page
+
+The owner's review header has a breadcrumb, **project ›** title, back to the hub (filtered to that project), and, on a page with copies in several worktrees, a list that opens the same page in another copy. On a phone the breadcrumb is a **‹** and the list is left out for room: the hub's chips and the quick switcher open the other copies. **Ctrl+K** (**⌘K** on a Mac; anywhere on the page, the composer and the page itself too), or **Go to page…** in the `⋯` menu, opens a quick switcher: pages you opened lately first, then type to find pages and parts. **Next unanswered page** in the `⋯` menu goes to the next page in the inbox with notes no agent answered, at the copy that has them. A reviewer's page, and a hosted page, has none of this.
+
+### What the hub sends
+
+The hub is a small app over `/hub/api/` (`projects`, `pages`, `inbox`, `search`, `page/<copy id>`, `notes`, `runs`, and `page/<copy id>/archive|unarchive`). Like the hub, every route needs the owner's cookie: loopback alone, a reviewer's device and another site's page get 403, and a host not on the allowlist too.
 
 ## Projects and copies
 

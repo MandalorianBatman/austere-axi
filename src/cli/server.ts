@@ -10,6 +10,7 @@ import { resolveSibling } from "./assets.ts";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { readArtifact, replaceProgram, rewriteRuntime, escapeHtml } from "./artifact.ts";
 import { agentPrompt } from "./agent-prompt.ts";
@@ -50,7 +51,9 @@ import { RequestRefused, RequestStore, describeAgent } from "./requests.ts";
 import type { AccessRequestRow, RequestStatus } from "./requests.ts";
 import dns from "node:dns";
 import { reviewerItem } from "./items.ts";
-import { hubPage, missingPage, notesPage } from "./hub-page.ts";
+import { missingPage } from "./hub-page.ts";
+import { copiesToFlip, copySummary, shellInbox, shellPages, shellProjects, shellRuns, shellSearch } from "./hub-api.ts";
+import type { ArchiveResult, CopySummary, InboxResponse, NotesResponse, PagesResponse, PagesView, ProjectsResponse, HubRunsResponse, SearchResponse } from "../shared/hub-api.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
 import { Peer } from "./peer.ts";
 import { parseClientFrame } from "../shared/sync.ts";
@@ -2189,36 +2192,96 @@ export async function runServer({
     return p ? { ref, id: p.id, name: p.name } : { ref, id: "\0none", name: ref };
   }
 
-  function hubHome(url: URL): string {
-    const q = (url.searchParams.get("q") || "").slice(0, 200);
-    const project = projectParam(url);
-    const view = url.searchParams.has("all") ? "all" : url.searchParams.has("archived") ? "archived" : "default";
-    const pages = hub.list({ q, project: project.id, archived: view === "archived", all: view === "all" });
-    const listening = new Set<string>();
-    for (const p of pages) {
-      for (const c of p.copies) {
-        const s = store.get(c.id);
-        if (s && listener(s)) listening.add(c.id);
-      }
+  /** The `project` field of an answer: null for every project; `id` empty when `?project=` matched nothing. */
+  function projectField(p: { ref: string; id: string; name: string }): { id: string; name: string; ref: string } | null {
+    return p.ref ? { id: p.id === "\0none" ? "" : p.id, name: p.name, ref: p.ref } : null;
+  }
+
+  /** The hub (RLM-357): a client app over /hub/api, built like the review chrome (src/chrome/shell.ts). */
+  function hubShell(): string {
+    const boot = { version: VERSION, home: os.homedir(), sep: path.sep };
+    return `<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>austere-axi hub</title>
+<link rel="stylesheet" href="/__austere/chrome/shell.css?v=${VERSION}">
+<script>window.__AUSTERE_HUB__=${JSON.stringify(boot).replace(/</g, "\\u003c")}</script>
+<script src="/__austere/chrome/shell.js?v=${VERSION}" defer></script>
+</head>
+<body><noscript>The hub needs JavaScript. <code>austere-axi hub list</code> and <code>austere-axi hub notes</code> show the same pages and notes.</noscript></body>
+</html>`;
+  }
+
+  /** Whether an agent polls for a copy's notes, for the shell's attention fields. */
+  function copyListening(id: string): boolean {
+    const s = store.get(id);
+    return Boolean(s && listener(s));
+  }
+
+  /**
+   * The hub shell's data (RLM-356), the owner's only: GET /hub/api/projects, /pages?project=&view=open|all|archived,
+   * /inbox?project=, /search?q=, /page/<copy id>, /notes?q=&status=&project=&author=&device=, /runs?project=;
+   * POST /hub/api/page/<copy id>/archive (every open copy of the page) and /unarchive (every archived copy); with `{ids}`, exactly those copies of the page (Undo).
+   */
+  async function hubApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
+    // Every page and note: never for another site, GET included.
+    if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+    const route = url.pathname.slice("/hub/api/".length);
+    const flip = /^page\/([a-f0-9]{12})\/(archive|unarchive)$/.exec(route);
+    if (flip) {
+      if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
+      const body = await readBody(req, 16 * 1024);
+      const asked = Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === "string") : null;
+      const archive = flip[2] === "archive";
+      const ids = copiesToFlip(hub, flip[1], archive, asked);
+      if (!ids) return send(res, 404, { error: "not in the hub" });
+      const at = archive ? Date.now() : null;
+      for (const id of ids) setArchived(id, at);
+      return send(res, 200, { ok: true, ids } satisfies ArchiveResult);
     }
-    return hubPage(pages, { version: VERSION, q, project: project.ref, projectName: project.name, view, projects: hub.projects(), counts: hub.viewCounts({ q, project: project.id }), listening });
-  }
-
-  function hubNotes(url: URL): string {
-    const q = (url.searchParams.get("q") || "").slice(0, 200);
+    if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
     const project = projectParam(url);
-    const st = url.searchParams.get("status");
-    const status = st === "unanswered" || st === "answered" ? st : "all";
-    const author = (url.searchParams.get("author") || "").slice(0, 80);
-    // One person's notes by device (People links here), where two reviewers may share a name.
-    const deviceId = (url.searchParams.get("device") || "").slice(0, 40);
-    const row = deviceId ? devices.get(deviceId) : null;
-    const rows = hub.notes({ q, project: project.id, author, device: deviceId, status: status === "all" ? "" : status });
-    return notesPage(rows, { version: VERSION, q, project: project.ref, projectName: project.name, status, author, authors: hub.authors(), device: deviceId ? { id: deviceId, name: row?.name ?? deviceId } : null });
+    if (route === "projects") return send(res, 200, { projects: shellProjects(hub, copyListening) } satisfies ProjectsResponse);
+    if (route === "pages") {
+      const v = url.searchParams.get("view");
+      const view: PagesView = v === "all" || v === "archived" ? v : "open";
+      const pages = shellPages(hub, { project: project.id, view }, copyListening);
+      return send(res, 200, { view, project: projectField(project), pages, counts: hub.viewCounts({ project: project.id }) } satisfies PagesResponse);
+    }
+    if (route === "inbox") return send(res, 200, { project: projectField(project), ...shellInbox(hub, { project: project.id }, copyListening) } satisfies InboxResponse);
+    if (route === "search") return send(res, 200, shellSearch(hub, (url.searchParams.get("q") || "").slice(0, 200), copyListening) satisfies SearchResponse);
+    const page = /^page\/([a-f0-9]{12})$/.exec(route);
+    if (page) {
+      const summary = copySummary(hub, page[1]);
+      return summary ? send(res, 200, summary satisfies CopySummary) : send(res, 404, { error: "not in the hub" });
+    }
+    if (route === "notes") {
+      const st = url.searchParams.get("status");
+      // One person's notes by device (People links here), where two reviewers may share a name.
+      const deviceId = (url.searchParams.get("device") || "").slice(0, 40);
+      const rows = hub.notes({
+        q: (url.searchParams.get("q") || "").slice(0, 200),
+        project: project.id,
+        author: (url.searchParams.get("author") || "").slice(0, 80),
+        device: deviceId,
+        status: st === "unanswered" || st === "answered" ? st : "",
+      });
+      const notes = rows.map((n) => ({ ...n, remote: Boolean(n.remote) }));
+      const device = deviceId ? { id: deviceId, name: devices.get(deviceId)?.name ?? deviceId } : null;
+      return send(res, 200, { notes, authors: hub.authors(), device, project: projectField(project) } satisfies NotesResponse);
+    }
+    if (route === "runs") return send(res, 200, { runs: shellRuns(hub, { project: project.id }), project: projectField(project) } satisfies HubRunsResponse);
+    return send(res, 404, { error: "not found" });
   }
 
-  /** Open an indexed artifact for review (it may never have had a session) and go to it. A copy whose file is gone gets its notes and an Archive button. */
-  function hubOpen(res: http.ServerResponse, id: string): void {
+  /**
+   * Open an indexed artifact for review (it may never have had a session) and go to it. A copy whose file is gone gets its notes and an Archive button.
+   * `?part=<statement>` opens the page outlining that part (a search hit); `?attach=1` opens its agent popover (the inbox's "Turn agent on").
+   */
+  function hubOpen(res: http.ServerResponse, id: string, url: URL): void {
     const a = /^[a-f0-9]{12}$/.test(id) ? hub.artifact(id) : null;
     if (!a) return send(res, 404, "not in the hub");
     if (!fs.existsSync(a.file)) {
@@ -2229,7 +2292,11 @@ export async function runServer({
     const existed = store.byFile(a.file);
     const s = store.ensure(a.file);
     if (!existed) store.touch(s);
-    res.writeHead(302, { location: `/s/${s.id}` });
+    const fragment = new URLSearchParams();
+    const part = url.searchParams.get("part") || "";
+    if (/^[A-Za-z_][\w$-]{0,199}$/.test(part)) fragment.set("part", part);
+    if (url.searchParams.get("attach") === "1") fragment.set("attach", "1");
+    res.writeHead(302, { location: `/s/${s.id}${fragment.size ? `#${fragment}` : ""}` });
     res.end();
   }
 
@@ -2342,16 +2409,23 @@ export async function runServer({
     // The hub lists every page and every note: the owner's only.
     const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
     if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
-    // The hub shows pages and opens reviews by link. It takes a POST for the Archive button of a missing copy, and for People (/hub/api/people).
+    // The hub shows pages and opens reviews by link. It takes a POST for the Archive button of a missing copy, for People (/hub/api/people), and for the shell's archive (/hub/api/page/<id>/archive).
     const archiveId = req.method === "POST" && ownerOnly && url.pathname.startsWith("/hub/archive/") ? url.pathname.slice("/hub/archive/".length) : null;
     const people = ownerOnly && (url.pathname === "/hub/api/people" || url.pathname.startsWith("/hub/api/people/"));
-    if (ownerOnly && archiveId === null && !people && req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
+    const api = ownerOnly && !people && url.pathname.startsWith("/hub/api/");
+    if (ownerOnly && archiveId === null && !people && !api && req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
     // Owner browsing the hub keeps the server up.
     if (ownerOnly) activity();
-    if (url.pathname === "/") return send(res, 200, hubHome(url), { "content-type": "text/html; charset=utf-8" });
-    if (url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
+    if (url.pathname === "/") return send(res, 200, hubShell(), { "content-type": "text/html; charset=utf-8" });
+    // The Notes view moved into the shell; its old links (People's per-device link among them) keep their filters.
+    if (url.pathname === "/notes") {
+      url.searchParams.set("view", "notes");
+      res.writeHead(302, { location: `/?${url.searchParams}` });
+      return res.end();
+    }
     if (archiveId !== null) return hubArchive(res, archiveId);
-    if (url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
+    if (url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length), url);
+    if (api) return hubApi(req, res, url);
     if (people) return hubPeople(req, res, url);
     if (url.pathname === "/favicon.ico") return send(res, 204, "");
 

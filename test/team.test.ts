@@ -1103,10 +1103,10 @@ test("a link is claimed by the first browser only: a second is refused, and the 
     const device = listed.data.devices.find((d) => d.name === "Ivy");
     assert.ok(device && device.claimedAt && device.lastSeenAt, JSON.stringify(listed.data));
     assert.equal(listed.data.links.some((l) => l.name === "Ivy"), false, "a claimed link leaves the links");
-    const mine = await request<string>(srv.port, "GET", `/notes?device=${device.id}`);
-    assert.match(mine.data, /from Ivy&#39;s laptop|from Ivy's laptop/);
-    const others = await request<string>(srv.port, "GET", "/notes?device=d0000000000");
-    assert.doesNotMatch(others.data, /from Ivy/);
+    const mine = await request<{ notes: { text: string; device_id: string }[] }>(srv.port, "GET", `/hub/api/notes?device=${device.id}`);
+    assert.deepEqual(mine.data.notes.map((n) => [n.text, n.device_id]), [["from Ivy's laptop", device.id]]);
+    const others = await request<{ notes: unknown[] }>(srv.port, "GET", "/hub/api/notes?device=d0000000000");
+    assert.deepEqual(others.data.notes, []);
   } finally {
     await request(srv.port, "POST", "/api/share/revoke", { body: { key: "Ivy" } });
     await request(srv.port, "POST", `/s/${id}/discard`, { body: { all: true }, headers: { origin: `http://127.0.0.1:${srv.port}` } });

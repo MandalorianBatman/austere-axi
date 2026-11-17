@@ -55,7 +55,7 @@ Repeat until it is right. When you are done, press **Done** (or **Send & finish*
 - **Send someone a copy.** "Download standalone HTML" in the page's ⋯ menu saves the page as one file that opens in any browser, offline.
 - **Nothing gets lost.** Every note is saved the moment you send it. If the agent is busy or your computer restarts, the notes are waiting when the agent comes back.
 - **Let the agent answer on its own.** Click the Agent pill at the top of a review page and turn it on: each note you send starts your coding agent, which patches the page and replies while you watch. Stop and Retry are right there. [More on attach](docs/attach.md).
-- **Find old pages.** Ask your agent to open the austere home page. It lists every page by project, and every note, with search. To put a page away, choose Archive page in its ⋯ menu; the Archived link on the home page shows pages you put away. [More on the home page](docs/hub.md).
+- **Find old pages.** Ask your agent to open the austere home page. Its inbox puts first the pages that need you: the agent changed them since you looked, or a run failed. A sidebar lists every project and its pages, and search finds a page or any part of one. From a review page, the project name goes back to the home page and Ctrl+K jumps to another page. To put a page away, choose Archive on its row or in its ⋯ menu. [More on the home page](docs/hub.md).
 
 ## Get started
 
