@@ -63,7 +63,7 @@ Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/ad
 
 **Visual checks:** `npm run gallery`, `npm run shot`, and `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
 
-**Website:** `npm run site` builds `_site/` (needs Chrome or `CHROME_PATH`). `site/` holds the hand-written pages and CSS, `examples/` feeds the gallery (add a file there and it appears with a generated thumbnail), `scripts/site.ts` builds `_site/`, and `.github/workflows/pages.yml` deploys it to GitHub Pages on every push to `main`. Examples need a `<meta name="description">` for the gallery blurb. None of it is published to npm.
+**Website:** `npm run site` builds `_site/` (needs Chrome or `CHROME_PATH`, and the npm registry: the footer names npm's latest version, not `package.json`'s). `site/` holds the hand-written pages and CSS, `examples/` feeds the gallery (add a file there and it appears with a generated thumbnail), `scripts/site.ts` builds `_site/`, and `.github/workflows/pages.yml` deploys it to GitHub Pages on every push to `main` and after each npm release. Examples need a `<meta name="description">` for the gallery blurb. None of it is published to npm.
 
 **Playground** (`/play/`, source in `site/play/`): a textarea editor beside a sandboxed frame running `dist/austere.js`. It plays the part of the review chrome over the same `postMessage` bridge, so edits re-render in place and clicks arrive as the annotations `poll` prints. Problems come from `src/shared/check-program.ts`, the same code as `austere-axi check`, bundled for the browser by `scripts/site.ts` (with the spec, the component catalog and one template per example in `play/data.json`). The program travels in the URL hash (`#code=v1.<deflate-raw, base64url>`), so there is no server. `test/browser/play.browser.test.ts` drives it in headless Chrome as part of `npm run test:browser`. Packs other than the bundled ones are not available there.
 
@@ -71,7 +71,7 @@ Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/ad
 
 **CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). `action.yml` runs the GitHub Action on fixture pages (`test/fixtures/action/`).
 
-**Release:** bump `version` in `package.json`, push, and publish a GitHub Release. `publish.yml` tests again and publishes to npm with trusted publishing.
+**Release:** bump `version` in `package.json`, date its entry in [`CHANGELOG.md`](CHANGELOG.md), push, and publish a GitHub Release whose notes are that entry (and, for a breaking release, its upgrade guide in `docs/`). `publish.yml` tests again and publishes to npm with trusted publishing; `pages.yml` then redeploys the site with the new version.
 
 ## Pull requests
 
