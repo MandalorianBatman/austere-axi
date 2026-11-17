@@ -9,7 +9,7 @@ import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
 import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
-import { Hub, hubDbFile, registerWithHub, unanswered } from "./hub.ts";
+import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
 import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, copyLabel, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
@@ -24,7 +24,7 @@ import { renderCheck } from "./render-check.ts";
 import { format, print as printOutput } from "./output.ts";
 import { describeItem, locator } from "../shared/feedback.ts";
 import type { FeedbackItem } from "../shared/feedback.ts";
-import { VERSION, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
+import { VERSION, applyDevDefaults, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
 import { listComponents, searchComponents, showComponents } from "./components.ts";
 import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
@@ -561,7 +561,7 @@ async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string;
   const ref = typeof flags.project === "string" ? flags.project : process.cwd();
   let hub: Hub;
   try {
-    hub = await Hub.open();
+    hub = await openHubDirect({ write: false });
   } catch (err) {
     fail(`could not open hub.db: ${messageOf(err)}`);
     return null;
@@ -1193,11 +1193,14 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
 
 // ── hub ──
 
-/** Run `fn` on hub.db: a database that cannot be opened, or an error `fn` throws, fails the command. */
-async function withHub(fn: (hub: Hub) => void): Promise<void> {
+/**
+ * Run `fn` on hub.db without the server: a database that cannot be opened, or an error `fn` throws,
+ * fails the command. `write`: `fn` changes it, which a state dir another version holds refuses.
+ */
+async function withHub(write: boolean, fn: (hub: Hub) => void): Promise<void> {
   let hub: Hub;
   try {
-    hub = await Hub.open();
+    hub = await openHubDirect({ write });
   } catch (err) {
     return fail(`${hubDbFile()} cannot be opened: ${messageOf(err)}`);
   }
@@ -1259,7 +1262,7 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
     case "list": {
       const limit = limitFlag(flags);
       if (limit === null) return;
-      return withHub((hub) => {
+      return withHub(false, (hub) => {
         const found: HubPage[] = hub.list({ q: args.join(" "), project: projectFlag(hub, flags), archived: !!flags.archived, all: !!flags.all, limit: Infinity });
         const { shown: pages, shownNote } = limited(found, limit, "pages");
         if (!pages.length) return print({ pages: "none", note: flags.all || flags.archived ? undefined : "pages only checked (never opened for review) and archived ones are left out: --all lists them" });
@@ -1285,7 +1288,7 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
     case "notes": {
       const limit = limitFlag(flags);
       if (limit === null) return;
-      return withHub((hub) => {
+      return withHub(false, (hub) => {
         const found: HubNoteRow[] = hub.notes({ q: args.join(" "), project: projectFlag(hub, flags), status: flags.unanswered ? "unanswered" : "", limit: -1 });
         const { shown: rows, shownNote } = limited(found, limit, "notes");
         if (!rows.length) return print({ notes: "none" });
@@ -1328,32 +1331,32 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
   switch (sub) {
     case undefined:
     case "list":
-      return withHub((hub) => {
+      return withHub(false, (hub) => {
         const projects = listProjects(hub.db);
         if (!projects.length) return print({ projects: "none", note: "A page you check or open for review files itself under a project." });
         print({ projects: projects.map((p) => ({ name: p.name, id: p.id, pages: p.pages, roots: p.roots.map((r) => `${r.root} (${r.kind})`) })) });
       });
     case "add":
       if (!need(1, `a folder: ${BIN} project add <dir> [--name n]`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const r = addRoot(hub.db, args[0], typeof flags.name === "string" ? flags.name : undefined);
         print({ status: "added", project: r.project.name, id: r.project.id, root: r.root });
       });
     case "merge":
       if (!need(2, `two projects: ${BIN} project merge <a> <b>`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const p = mergeProjects(hub.db, args[0], args[1]);
         print({ status: "merged", project: p.name, id: p.id, roots: listProjects(hub.db).find((x) => x.id === p.id)?.roots.map((r) => r.root) });
       });
     case "rename":
       if (!need(2, `a project and a name: ${BIN} project rename <p> <name>`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const p = renameProject(hub.db, args[0], args.slice(1).join(" "));
         print({ status: "renamed", project: p.name, id: p.id });
       });
     case "forget-root":
       if (!need(1, `a folder: ${BIN} project forget-root <dir>`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const r = forgetRoot(hub.db, args[0]);
         print({ status: "forgotten", root: r.root, project: r.project });
       });
@@ -1384,7 +1387,7 @@ async function cmdArchive(file: string | undefined, archive: boolean): Promise<v
   // No server: hold the state dir's lock so hub.db is not written while a server runs or starts on it.
   const release = await lockStateDir(stateDir(), { wait: 5000 });
   try {
-    await withHub((hub) => {
+    await withHub(true, (hub) => {
       if (!hub.setArchived(sessionId(abs), archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
       done();
     });
@@ -1642,6 +1645,8 @@ async function main(): Promise<unknown> {
     const valid = allowed.length ? `valid: ${allowed.map((k) => `--${k}`).join(" ")}` : "it takes no flags";
     return usage(`unknown flag${unknown.length > 1 ? "s" : ""} for ${name ?? BIN}: ${unknown.map((k) => `--${k}`).join(" ")}; ${valid}`, name);
   }
+  const dev = applyDevDefaults();
+  if (dev) process.stderr.write(`[${BIN}] ${dev}\n`);
   stateDir();
   switch (cmd) {
     case undefined:

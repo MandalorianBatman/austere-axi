@@ -41,7 +41,8 @@ npm run social       # re-render docs/social-preview.png, 1200x630 (after build;
   - Browser POST routes reject a foreign `Origin`.
   - Artifact files are served from the artifact's own directory only, with no dotfiles.
   - The frame's subresources send no cookie (opaque origin), so the frame's URL carries a per-viewer token, `/s/:id/a/<token>/<file>` (`assetToken` in `src/cli/server.ts`). It opens only what that route already serves; keep `allow-same-origin` out of the sandbox. `export` reads sibling images through the same `resolveSibling` rules (`src/cli/assets.ts`).
-- Tests that start the server, or read packs or the hub, set `AUSTERE_AXI_STATE_DIR` and use an ephemeral port.
+- Any run of the CLI from a checkout sets `AUSTERE_AXI_STATE_DIR` to a scratch dir: tests, scripts, and commands you run by hand or from an agent. Tests that start the server also use an ephemeral port. Without the variable a checkout falls back to `.dev/state` and a port of its own (`src/cli/paths.ts`), never `~/.austere-axi` and 4388, but name the dir anyway. `test/dev-state.test.ts` fails when a test or script runs the CLI without it.
+- A change to hub.db's schema goes in `migrate()` (`src/cli/hub.ts`), additive, and raises `SCHEMA_VERSION`.
 - Nothing an installed pack ships runs in the CLI or the server; its code runs only in the sandboxed artifact frame. (`components build` does load the pack being built, in Node, to read its components.)
 - Only `dist`, `skills`, `README.md` and `LICENSE` are published (`package.json` `files`). `.agents/`, `.dev/`, `bench/`, `scripts/` and `test/` are maintainer-only. `docs/` holds the user guides, read on GitHub and not shipped in the npm package.
 - The website lives in `site/` (hand-written) and `examples/` (gallery source), built to `_site/` by `scripts/site.ts` and deployed by `.github/workflows/pages.yml`. Keep links relative (the site is served under `/austere-axi/`) and keep `site/` out of `package.json` `files`.
