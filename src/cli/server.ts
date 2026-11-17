@@ -1276,7 +1276,7 @@ export async function runServer({
     if (!a) return send(res, 404, "not in the hub");
     if (!fs.existsSync(a.file)) {
       const project = (a.project_id ? findProject(hub.db, a.project_id, { folders: false })?.name : null) ?? a.project;
-      const page = missingPage(a, { version: VERSION, project, label: copyLabel(a.root || a.project), notes: hub.notes({ artifact: a.id, limit: 500 }) });
+      const page = missingPage(a, { version: VERSION, project, label: a.root ? copyLabel(a.root) : "", notes: hub.notes({ artifact: a.id, limit: 500 }) });
       return send(res, 410, page, { "content-type": "text/html; charset=utf-8" });
     }
     const existed = store.byFile(a.file);

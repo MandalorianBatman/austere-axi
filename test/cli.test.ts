@@ -253,7 +253,7 @@ test("archive --missing puts away every gone copy, only in --project when given,
   }));
 
 test("archive takes a file or --missing, and --project only with --missing", () => {
-  for (const args of [["archive", "x.html", "--missing"], ["archive", "--project", "p"], ["archive"], ["unarchive", "--missing"]]) {
+  for (const args of [["archive", "x.html", "--missing"], ["archive", "x.html", "--project", "p"], ["archive"], ["unarchive", "--missing"]]) {
     const r = cli(...args);
     assert.equal(r.code, 2, args.join(" "));
     assert.match(r.out, /code: USAGE/);
