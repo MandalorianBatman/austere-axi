@@ -1441,11 +1441,12 @@ export async function runServer({
     });
   }
 
-  /** What a shared poll would hand over now: each covered page's notes after its own cursor (or after `--after`). */
+  /** What a shared poll would hand over now: each covered page's notes after its own cursor (or after `--after`), the page with the oldest note first, so the agent reads them in the order they were sent. */
   function projectBatches(poll: Poll): { s: Session; entries: QueuedEntry[] }[] {
     return covered(poll)
       .map((s) => ({ s, entries: store.after(s, poll.after ?? s.ackedSeq) }))
-      .filter((b) => b.entries.length);
+      .filter((b) => b.entries.length)
+      .sort((a, b) => a.entries[0].seq - b.entries[0].seq);
   }
 
   function deliverProject(poll: Poll, batches: { s: Session; entries: QueuedEntry[] }[]): void {

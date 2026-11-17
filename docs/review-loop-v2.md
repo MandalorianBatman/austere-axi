@@ -96,7 +96,7 @@ An `artifacts` row is one **copy**: a page in one root. Its id stays `sessionId(
 | `archived_at INTEGER` | RLM-335 | set by `archive`; replaces `closed_at` |
 | `last_viewed_rev INTEGER` | RLM-352 | the owner's last seen `revisions.rev` (A7) |
 
-`ended_at`, `ended_by`, `status` and `closed_at` stay in the table and are no longer written (additive rule).
+`ended_at`, `ended_by` and `status` stay in the table and are no longer written (additive rule). `closed_at` stays too and is written once more: each time hub.db opens, `migrate()` moves a set `closed_at` into `archived_at` and clears it, because 0.11.0 added `archived_at` without copying it and a 0.10.4 CLI sharing the database can still close a page.
 
 ### Projects and pages (RLM-333, RLM-334)
 

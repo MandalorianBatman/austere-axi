@@ -43,6 +43,7 @@ Ask the user about each item. Default: no.
 
 - **Global command.** `npm install -g austere-axi`. Then `austere-axi` works without `npx -y`. Update it later with `npm update -g austere-axi`.
 - **Phone review.** If Tailscale is running, the server also listens on the tailnet, and `open` prints a phone link. Nothing to install. Run `tailscale status` to check.
+- **Always-on server.** `austere-axi server install` makes the server a per-user service (systemd or launchd) that starts at login, so the hub and notes are there without an agent running. The user runs it at a terminal: it shows what it will write and asks first. See `docs/hub.md`.
 
 On a machine with no screen (SSH, CI, container), tell the user to set `AUSTERE_AXI_NO_OPEN=1`, so the CLI prints links and does not try to open a browser. A browser the CLI did not open gets "403" at a printed link until it signs in: run `npx -y austere-axi login <file>` and give the user the link it prints. It works once, within 60 seconds.
 

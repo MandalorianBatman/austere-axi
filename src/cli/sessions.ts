@@ -77,7 +77,6 @@ export interface Session {
   /** The highest seq a poll handed over: a reply without a cursor acknowledges up to it. Seeded at load from the notes marked seen. */
   deliveredSeq: number;
   revision: number;
-  lastDeliveredAt: number | null;
   workingSince: number | null;
   /** While an agent works on the page: its last sign of life (the handover, then each change to the file). Presence reads `stale` once it is older than STALE_WORKING_MS. */
   agentAt: number | null;
@@ -444,7 +443,6 @@ export class SessionStore {
   markDelivered(s: Session, entries: UserEntry[]): void {
     const now = Date.now();
     this.updateNotes(s, entries.filter((e) => !e.seenAt).map((e): NoteChange => [e, { seenAt: now }]));
-    s.lastDeliveredAt = now;
     s.deliveredSeq = Math.max(s.deliveredSeq, ...entries.map((e) => Number(e.seq)));
   }
 
@@ -632,7 +630,6 @@ function hydrate(row: ArtifactRow): Session {
     // runtime-only
     deliveredSeq: Number(row.acked_seq || 0),
     revision: 0,
-    lastDeliveredAt: null,
     workingSince: null,
     agentAt: null,
     pageHold: null,
