@@ -10,6 +10,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
+import { DatabaseSync } from "node:sqlite";
 import { after, before, beforeEach, test } from "node:test";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
@@ -67,6 +68,8 @@ const stub = {
   /** On the next pull, first re-grant this name with another token, as another machine would. */
   regrantBeforePull: null as string | null,
   seq: 0,
+  /** Everything that reached the service: each HTTP request (headers and body, unzipped) and each socket handshake and frame, as text. */
+  wire: [] as string[],
 };
 let CLOUD = "";
 let server: http.Server;
@@ -89,6 +92,7 @@ function send(ws: WebSocket, frame: ServerFrame | Record<string, unknown>) {
 /** The owner socket: mutations checked by the shared parser, publish and delete applied, pull answered. */
 function ownerSocket(ws: WebSocket, id: string) {
   ws.on("message", (data) => {
+    stub.wire.push(data.toString());
     const parsed = parseClientFrame(data.toString());
     if (!parsed.ok) {
       stub.requests.push(`ws invalid: ${parsed.error.message}`);
@@ -182,6 +186,8 @@ before(async () => {
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
       const url = req.url ?? "";
+      const raw = Buffer.concat(chunks);
+      stub.wire.push(`${req.method} ${url} ${JSON.stringify(req.headers)} ${(req.headers["content-encoding"] === "gzip" ? zlib.gunzipSync(raw) : raw).toString("utf8")}`);
       stub.requests.push(`${req.method} ${url}`);
       if (stub.fail) {
         const { status, error } = stub.fail;
@@ -223,6 +229,7 @@ before(async () => {
     const m = /^\/api\/pages\/([^/]+)\/sync$/.exec(u.pathname);
     const creds = readProtocols(req.headers["sec-websocket-protocol"]);
     stub.requests.push(`WS ${u.pathname}`);
+    stub.wire.push(`WS ${req.url} ${JSON.stringify(req.headers)}`);
     if (stub.refuse) {
       const r = stub.refuse;
       stub.refuse = null;
@@ -249,6 +256,7 @@ after(() => {
 beforeEach(() => {
   stub.requests.length = 0;
   stub.publishes.length = 0;
+  stub.wire.length = 0;
   stub.fail = null;
   stub.ackError = null;
   stub.ackErrorOn = null;
@@ -429,6 +437,35 @@ test("a page that cannot be bundled fails before any request", async () => {
   assert.equal(r.code, 1);
   assert.match(r.out, /images the hosted page could not show: nope\.png \(no such file next to the page\)/);
   assert.deepEqual(stub.requests, []);
+});
+
+test("session ids stay on this machine: nothing publish sends carries the agent session the hub registered (RLM-343)", async () => {
+  const sid = "5e55d343-aaaa-4bbb-8ccc-0123456789ab";
+  const env = { PI_SESSION_ID: sid, PI_SESSION_FILE: path.join(STATE, `${sid}.jsonl`) };
+  const file = path.join(WORK, "session.html");
+  fs.writeFileSync(file, page('root = Stack([intro])\nintro = TextContent("hello")'));
+  const patched = await new Promise<string>((resolve) => {
+    const child = spawn(process.execPath, ["src/cli/main.ts", "patch", file], { env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: STATE, ...env } });
+    let out = "";
+    child.stdout.on("data", (c: Buffer) => (out += c));
+    child.on("close", () => resolve(out));
+    child.stdin.end('intro = TextContent("patched")\n');
+  });
+  assert.match(patched, /^session: omp 6789ab registered$/m);
+  const db = new DatabaseSync(path.join(STATE, "hub.db"), { readOnly: true });
+  try {
+    assert.equal((db.prepare("SELECT count(*) AS n FROM agent_sessions WHERE session_id = ?").get(sid) as { n: number }).n, 1, "the session is registered here");
+  } finally {
+    db.close();
+  }
+
+  const r = await cli(["publish", file, "--invite", "Ana"], env);
+  assert.equal(r.code, 0, r.out);
+  assert.ok(stub.wire.some((w) => w.includes("patched")), "the page itself went out");
+  for (const secret of [sid, "6789ab", env.PI_SESSION_FILE]) {
+    assert.ok(!stub.wire.some((w) => w.includes(secret)), `${secret} reached the service`);
+    assert.ok(!r.out.includes(secret), `${secret} is in the printed links`);
+  }
 });
 
 // ── invites ──

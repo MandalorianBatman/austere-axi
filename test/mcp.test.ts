@@ -105,7 +105,7 @@ test("initializes and lists the review tools", async () => {
   const list = await rpc("tools/list", {});
   assert.deepEqual(
     list.result.tools.map((t) => t.name),
-    ["spec", "check", "open", "poll", "reply", "patch", "components"],
+    ["spec", "check", "open", "poll", "reply", "patch", "components", "sessions_list"],
   );
   for (const t of list.result.tools) assert.equal(t.inputSchema.type, "object");
   const components = list.result.tools.find((t) => t.name === "components")!;

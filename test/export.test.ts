@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -101,4 +102,23 @@ test("an export from before packing counts as an exported copy", () => {
   assert.ok(hasInlineRuntime(legacy));
   assert.equal(rewriteRuntime(legacy, '<script src="/__austere/austere.js"></script>'), legacy);
   assert.ok(!hasInlineRuntime(page("root = Stack([])")), "a page with a runtime tag is not");
+});
+
+test("session ids stay on this machine: export of a page an agent session patched carries no session id (RLM-343)", () => {
+  const state = path.join(ROOT, "state");
+  const file = path.join(PAGE, "session.html");
+  const sid = "5e55d343-aaaa-4bbb-8ccc-0123456789ab";
+  const env = { ...process.env, AUSTERE_AXI_STATE_DIR: state, OPENUI_TELEMETRY_DISABLED: "1", PI_SESSION_ID: sid, PI_SESSION_FILE: path.join(state, `${sid}.jsonl`) };
+  fs.writeFileSync(file, page('root = Stack([intro])\nintro = TextContent("hello")'));
+  const patch = spawnSync(process.execPath, ["src/cli/main.ts", "patch", file], { env, input: 'intro = TextContent("patched")\n', encoding: "utf8" });
+  assert.match(patch.stdout, /^session: omp 6789ab registered$/m, patch.stdout + patch.stderr);
+  const out = path.join(ROOT, "session.export.html");
+  const exp = spawnSync(process.execPath, ["src/cli/main.ts", "export", file, "--out", out], { env, encoding: "utf8" });
+  assert.equal(exp.status, 0, exp.stdout + exp.stderr);
+  const html = fs.readFileSync(out, "utf8");
+  assert.ok(html.includes("patched"), "the export is of the patched page");
+  for (const secret of [sid, "6789ab", env.PI_SESSION_FILE]) {
+    assert.ok(!html.includes(secret), `${secret} is in the exported page`);
+    assert.ok(!exp.stdout.includes(secret), `${secret} is in the export output`);
+  }
 });

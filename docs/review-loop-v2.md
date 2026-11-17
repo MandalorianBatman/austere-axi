@@ -147,6 +147,8 @@ trigger_state   (trigger_id TEXT PRIMARY KEY,       -- A8; RLM-360
 
 The effective attach setting of a copy: its `page` row, unless `inherit` → the `project` row → off.
 
+`page_sessions` roles (RLM-343): the first session to `open` or `patch` a copy is its `author`, a different one later an `editor` (and a continuation, A14); `poll`, `reply` and `feedback` make a `listener` (a project `poll` or `feedback`: of every page in the project). One row per `(artifact_id, agent_session_id, role)`, kept by a unique index; a repeat moves `at`. A later registration with no harness process found keeps the last `pid` and `pid_start`.
+
 Files beside hub.db, written only at a terminal and never read from a project or a page: `<state>/adapters.json` (RLM-344, extra arguments and `command` adapters), `<state>/attach.json` (RLM-345 limits), `<state>/triggers.json` (RLM-360).
 
 ### History and the content index (RLM-349, RLM-350, RLM-354)

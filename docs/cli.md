@@ -10,6 +10,7 @@ austere-axi reply <file>         post a reply without polling   [--cursor n]
 
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback [file]      feedback no agent has answered yet; no file: every page of the project   [--project p] [--all] [--peek]
+austere-axi sessions list [file]   agent sessions that opened, patched or listened to a page; no file: the project   [--project p]
 austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]
 austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
@@ -50,6 +51,15 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 - An `Image` src that is a path relative to the page (png, jpg, gif, webp, svg, avif) loads under review for the owner and for invited reviewers, and `export` inlines it as a data URI. Both read only regular files in the page's own folder, never dotfiles or links that leave it; `export` skips an image over 10 MB. A file `export` cannot read stays as written, and the output names it in `notices`.
 - `feedback <file>` returns notes no agent has answered, from any day. Reading them acknowledges them; `reply` marks them answered.
 - **Render failures reach the agent without a click:** an unknown component or a component that throws. The owner's open review page sends them as a note from "Render check", once per page revision, and `poll` returns them as `render_error` items. With no review tab open, nothing renders, so nothing is sent. `check --render <file>` renders the page in headless Chrome (an installed Chrome, Chromium or Edge, or `CHROME_PATH`) at 1280 and 390 px, opens each tab in turn, and prints render errors and the statements that make the page scroll sideways, as text, with no screenshot. Agents run it only when the user asks for a check.
+
+## Agent sessions
+
+- **The command names its session:** `open`, `patch`, `poll`, `reply` and `feedback` find the agent session they run in from the harness's environment only: omp `PI_SESSION_ID` (and `PI_SESSION_FILE`), Copilot CLI `COPILOT_AGENT_SESSION_ID`, dsh `DSH_SESSION_ID`. `--session <harness>:<id>` names it when the environment does not (harness `omp`, `copilot` or `dsh`; a malformed value exits 2). There are no hooks and nothing searches for sessions.
+- **One output line:** each of these commands prints `session: omp 1a2b3c registered` (the harness and the last six characters of the id; omp ids start with a timestamp, so their first characters repeat) or `session: "not detected (attach: new only)"`: with no session to go back to, attach can only start a new one.
+- **Roles:** the first session to `open` or `patch` a copy of a page is its `author`; a different session that opens or patches it later is an `editor`. `poll`, `reply` and `feedback` make a session a `listener` of the page (every page of the project for a project `poll` or `feedback`). A repeat only moves the time.
+- **Liveness:** when a command registers, it walks its parent processes to the harness's own (`/proc` on Linux, `ps` on macOS) and records that pid and its start time. `sessions list` shows `alive` while that process runs, `exited` once it is gone, `unknown` when none was found (always on Windows).
+- **`sessions list [file]`:** harness, short id, role, last seen and liveness of each session of a page; with no file, of every page of the project of the current folder, or `--project`. It reads hub.db and needs no server.
+- **Session ids stay on this machine:** they are in `hub.db` only, never in `publish`, `export`, hosted sync or a printed link.
 
 ## Environment
 

@@ -19,6 +19,8 @@ import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
 import { SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
+import { parseCallerReport, registerSession } from "./agent-sessions.ts";
+import type { CallerReport, SessionAction } from "./agent-sessions.ts";
 import { detectSupervisor } from "./service.ts";
 import type { Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
@@ -773,7 +775,7 @@ export async function runServer({
    * A project poll gets every page of the project without a poll of its own, including pages registered after
    * it started. `cursor` acknowledges the notes up to that seq on those pages. The newest project poll wins.
    */
-  async function projectRoute(route: "poll" | "feedback", body: RequestBody, res: http.ServerResponse): Promise<void> {
+  async function projectRoute(route: "poll" | "feedback", body: RequestBody, res: http.ServerResponse, caller: CallerReport | null): Promise<void> {
     let project: ProjectRow | null;
     try {
       project = findProject(hub.db, String(body.project), { folders: false });
@@ -781,6 +783,7 @@ export async function runServer({
       return send(res, 400, { error: String((err as Error).message) });
     }
     if (!project) return send(res, 404, { error: `no project ${String(body.project)}` });
+    noteCaller(caller, store.inProject(project.id).map((s) => s.id), route);
 
     if (route === "feedback") {
       const batches: ProjectFeedbackResponse["batches"] = [];
@@ -830,6 +833,16 @@ export async function runServer({
       }, timeoutMs);
     }
     for (const s of mine) broadcastPresence(s);
+  }
+
+  /** Record the agent session a CLI command runs in and link it to the pages it works on (RLM-343). Never fails the request. */
+  function noteCaller(caller: CallerReport | null, artifactIds: string[], action: SessionAction): void {
+    if (!caller) return;
+    try {
+      registerSession(store.db, caller, { artifactIds, action });
+    } catch (err) {
+      log("session-register", String((err as Error).message));
+    }
   }
 
 
@@ -899,6 +912,13 @@ export async function runServer({
     }
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req);
+    // The agent session the command runs in (RLM-343); recorded once the route knows its pages.
+    let caller: CallerReport | null;
+    try {
+      caller = parseCallerReport(body.session);
+    } catch (err) {
+      return send(res, 400, { error: String((err as Error).message) });
+    }
     if (route === "share/revoke") {
       const gone = invites.revoke(String(body.key || ""));
       if (!gone.length) return send(res, 404, { error: "no invite matches that name or id" });
@@ -907,7 +927,7 @@ export async function runServer({
       return send(res, 200, { revoked: gone.map((i) => ({ id: inviteId(i), name: i.name, file: i.file })) } satisfies RevokeResponse);
     }
     // A whole project: `poll` and `feedback` with no file.
-    if ((route === "poll" || route === "feedback") && typeof body.project === "string" && body.project && !body.file) return projectRoute(route, body, res);
+    if ((route === "poll" || route === "feedback") && typeof body.project === "string" && body.project && !body.file) return projectRoute(route, body, res, caller);
     // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
     const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
     if (!file) return send(res, 400, { error: "file is required" });
@@ -941,6 +961,7 @@ export async function runServer({
       watch(s);
       joinProjectPoll(s);
       store.touch(s);
+      noteCaller(caller, [s.id], "open");
       return send(res, 200, {
         session: publicSession(s),
         links: links(s.id),
@@ -958,6 +979,8 @@ export async function runServer({
     // A published page's notes may be waiting on the service: catch up first (for a file never opened here too).
     if (route === "feedback") await peer.pull(file);
     const s = store.byFile(file);
+    const pageRoute = route === "reply" || route === "feedback" || route === "poll" ? route : null;
+    if (pageRoute) noteCaller(caller, s ? [s.id] : [], pageRoute);
     if (!s) return send(res, 404, { error: "no session for this file; open it first" });
 
     if (route === "reply") {

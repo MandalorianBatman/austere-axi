@@ -492,6 +492,12 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
       // Default list: the check-only page is hidden, and the copy closed under 0.10.4 is archived.
       assert.deepEqual(hub.list().map((p) => [p.rel_path, p.copies.map((c) => c.label)]), [["docs/plan.html", ["main"]]]);
       assert.deepEqual(hub.notes().map((n) => n.text).sort(), ["on feat", "on main"], "notes survive");
+      // RLM-343: the session registry's tables are there, with the columns the design note names.
+      const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('agent_sessions', 'page_sessions') ORDER BY name").all() as { name: string }[]).map((r) => r.name);
+      assert.deepEqual(tables, ["agent_sessions", "page_sessions"]);
+      const columns = (table: string) => (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+      assert.deepEqual(columns("agent_sessions"), ["id", "harness", "session_id", "session_file", "cwd", "model", "parent_id", "parent_kind", "pid", "pid_start", "first_seen", "last_seen"]);
+      assert.deepEqual(columns("page_sessions"), ["artifact_id", "agent_session_id", "role", "at"]);
     } finally {
       hub.close();
     }

@@ -233,6 +233,35 @@ CREATE INDEX IF NOT EXISTS project_roots_project ON project_roots(project_id);
 CREATE TABLE IF NOT EXISTS pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, rel_path TEXT NOT NULL, UNIQUE (project_id, rel_path));
 `;
 
+// Attach (agent-sessions.ts, RLM-343): the harness sessions that ran a CLI command on a page.
+// A session id stays on this machine: nothing here is published, exported or synced.
+// page_sessions keeps one row per page, session and role; `at` is the last time.
+const AGENT_SESSIONS = `
+CREATE TABLE IF NOT EXISTS agent_sessions (
+  id TEXT PRIMARY KEY,
+  harness TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  session_file TEXT,
+  cwd TEXT,
+  model TEXT,
+  parent_id TEXT,
+  parent_kind TEXT,
+  pid INTEGER,
+  pid_start TEXT,
+  first_seen INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  UNIQUE (harness, session_id)
+);
+CREATE TABLE IF NOT EXISTS page_sessions (
+  artifact_id TEXT NOT NULL,
+  agent_session_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS page_sessions_key ON page_sessions(artifact_id, agent_session_id, role);
+CREATE INDEX IF NOT EXISTS page_sessions_session ON page_sessions(agent_session_id);
+`;
+
 /** Bring hub.db to the current schema in one transaction; a second run changes nothing. */
 function migrate(db: sqlite.DatabaseSync): void {
   db.exec(PRAGMAS);
@@ -262,6 +291,7 @@ function migrate(db: sqlite.DatabaseSync): void {
     db.exec("UPDATE artifacts SET archived_at = COALESCE(archived_at, closed_at), closed_at = NULL WHERE closed_at IS NOT NULL");
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
+    db.exec(AGENT_SESSIONS);
     backfillProjects(db);
   });
 }
