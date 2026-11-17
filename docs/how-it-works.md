@@ -35,7 +35,7 @@ A full page (KPIs, diagram, table, chart, diff, decision form) is about 1,000 to
 agent writes plan.html ──► austere-axi plan.html ──► local server + browser review
                                                         │  reviewer annotates, picks options,
                                                         │  types, presses Send
-agent patches changes  ◄── austere-axi poll plan.html ◄─┘  (long-poll returns the batch)
+agent patches changes  ◄── austere-axi poll ◄───────────┘  (long-poll returns the batch)
           │
           └─► page updates in place and flashes the changed statements
 ```

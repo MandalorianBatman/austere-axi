@@ -1,9 +1,9 @@
 // The prompts an agent gets about a review page. `agentPrompt`: what the owner hands to an agent
-// so it starts polling (the review page's "Copy agent prompt" menu item fetches it from the
-// server, `GET /s/:id/agent-prompt`, which knows the file and whether it is published).
-// `runPrompt`: what the dispatcher pipes to an attached harness (RLM-345). Both name the page and
-// the commands the CLI documents (`austere-axi --help`); neither carries a key, token, invite link
-// or note text.
+// so it starts polling; the review page's "Copy agent prompt" menu item fetches it from the server
+// (`GET /s/:id/agent-prompt`), which knows the file, its project and whether it is published. It
+// teaches the loop `austere-axi --help` documents (one poll for the page's project). `runPrompt`:
+// what the dispatcher pipes to an attached harness (RLM-345). Neither carries a key, token,
+// invite link or note text.
 import { quote } from "./paths.ts";
 
 const BIN = "austere-axi";
@@ -21,9 +21,11 @@ export interface AgentPromptInput {
   file: string;
   /** Set when the file is published: the service's page address and whether notes skip the owner's hold. */
   hosted?: { url: string; auto: boolean };
+  /** The page's project, when no agent polls it yet: `ref` names it for `--project` from any folder. Absent: the prompt names the page poll. */
+  project?: { name: string; ref: string };
 }
 
-export function agentPrompt({ file, hosted }: AgentPromptInput): string {
+export function agentPrompt({ file, hosted, project }: AgentPromptInput): string {
   const f = quote(file);
   const lines = [
     `Listen for feedback on my austere-axi review page and revise it as notes arrive.`,
@@ -31,11 +33,13 @@ export function agentPrompt({ file, hosted }: AgentPromptInput): string {
     `File: ${file}`,
   ];
   if (hosted) lines.push(`Shared page: ${hosted.url}`);
+  // One loop: a project poll covers this page and every other page of its project. Without a project, the page poll, which takes only this page.
+  const poll = project ? `${BIN} poll --project ${quote(project.ref)}` : `${BIN} poll ${f}`;
   lines.push(
     ``,
-    `1. Run \`${BIN} poll ${f}\` in the foreground and leave it running until it returns. If the call times out (status: timeout), run it again.`,
-    `2. When it returns feedback, change the page with \`${BIN} patch ${f}\` (send only the changed statements on stdin), then run \`${BIN} poll ${f} --cursor <n> --agent-reply "<one line: what changed>"\` with the cursor it printed. That acknowledges the feedback, posts your reply and listens again.`,
-    `3. When the batch has \`final: true\`, I pressed Send & End: apply it, reply, then stop polling and continue in chat. A note I send later waits for your next poll. When it returns status: replaced, a newer poll took over this page: stop polling here.`,
+    `1. Run \`${poll}\`. It returns when I send notes${project ? `, one batch per page of ${project.name} (this one included), each naming its file` : ""}. If it returns status: timeout, run it again. If your harness wakes you when a background job ends, run it as one.`,
+    `2. For each batch: change that page with \`${BIN} patch <file>\` (send only the changed statements on stdin), then \`${BIN} reply <file> --cursor <n> --agent-reply "<one line: what changed>"\` with the cursor the poll printed. Then \`${poll} --cursor <n>\` to listen again.`,
+    `3. A batch with \`final: true\` means I pressed Send & End: that page is done. Apply it and reply; keep polling while another page you opened is still in review, else stop and continue in chat. A note I send later waits for your next poll. On status: replaced, a newer poll took over (maybe your own): stop that one.`,
   );
   if (hosted) {
     lines.push(
