@@ -285,7 +285,8 @@ function modelSelectors(json: string): string[] | null {
 
 /** Who is asking for a page: the owner, or a team reviewer on a live device whose scope reaches the page. */
 type OwnerViewer = { role: "owner"; name: string };
-type ReviewerViewer = { role: "reviewer"; name: string; auto: boolean; deviceId: string };
+/** `credential` is the device's current `secret_hash`: the frame's asset token is bound to it, so a replaced secret kills old tokens. */
+type ReviewerViewer = { role: "reviewer"; name: string; auto: boolean; deviceId: string; credential: string };
 type Viewer = OwnerViewer | ReviewerViewer;
 
 /** A browser's event stream. `stalledSince`: when its socket backed up. */
@@ -710,7 +711,7 @@ export async function runServer({
     const row = cookieDevices(req).find((r) => covers(r, s.id, pid));
     if (!row) return null;
     devices.seen(row, seenMeta(req));
-    return { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id };
+    return { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id, credential: row.secret_hash as string };
   }
 
   /** A note this reviewer wrote: by device, or by name for a note from before devices. */
@@ -1758,11 +1759,12 @@ export async function runServer({
    * The artifact frame is sandboxed without `allow-same-origin`, so its opaque origin sends no
    * cookie on subresource requests: a relative `Image` src never reaches the cookie check. Instead
    * the frame's own URL carries a token, `/s/:id/a/<token>/<file>`, and relative URLs inherit it.
-   * One token per viewer, derived from the owner key: a revoked device stops working, and the token
-   * opens only what `serveArtifact` serves anyway.
+   * One token per viewer, derived from the owner key and, for a device, its current secret's hash:
+   * revoking, making single-use, or a later claim that replaces the secret all kill older tokens. The
+   * token opens only what `serveArtifact` serves anyway.
    */
   function assetToken(s: Session, viewer: Viewer): string {
-    const who = viewer.role === "owner" ? "owner" : `device:${viewer.deviceId}`;
+    const who = viewer.role === "owner" ? "owner" : `device:${viewer.deviceId}\0${viewer.credential}`;
     return crypto.createHmac("sha256", ownerToken).update(`austere-axi asset\0${s.id}\0${who}`).digest("base64url");
   }
 
@@ -1772,7 +1774,7 @@ export async function runServer({
     const pid = store.projectIdOf(s);
     for (const row of devices.list()) {
       if (row.secret_hash == null || !isLive(row) || !covers(row, s.id, pid)) continue;
-      if (safeEqual(token, assetToken(s, { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id }))) ok = true;
+      if (safeEqual(token, assetToken(s, { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id, credential: row.secret_hash }))) ok = true;
     }
     return ok;
   }
@@ -1940,7 +1942,8 @@ export async function runServer({
         const refused = row.auto ? autoAttachConflict(scope) : "";
         if (refused) return send(res, 409, { error: refused });
         const changed = devices.setScope(id, scope);
-        if (changed.claimed_at != null) cutOff(id, changed);
+        // Every row: an old-style link's token is a live cookie too (claimed_at stays null); cutOff keeps the pages still covered.
+        cutOff(id, changed);
         log("share-scope", id, scope.kind);
         return send(res, 200, accessSummary(changed, true));
       }

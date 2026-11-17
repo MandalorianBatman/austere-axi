@@ -144,7 +144,7 @@ export class DeviceStore {
     const expires = expiresAt ?? now + LINK_TTL_MS;
     if (expires <= now) throw new Error("the link would expire before anyone could open it");
     return inTransaction(this.db, () => {
-      const same = (this.db.prepare("SELECT * FROM devices WHERE lower(name) = lower(?) AND scope_kind = ? AND scope_id IS ?").all(clean, scope.kind, scope.id) as unknown as DeviceRow[]).filter((r) => isLive(r, now));
+      const same = (this.db.prepare("SELECT * FROM devices WHERE scope_kind = ? AND scope_id IS ?").all(scope.kind, scope.id) as unknown as DeviceRow[]).filter((r) => sameName(r.name, clean) && isLive(r, now));
       if (same.length) throw new Error(`"${clean}" already has access with this scope; revoke it first (share revoke "${clean}")`);
       const token = randomToken();
       const id = newDeviceId();
@@ -223,9 +223,8 @@ export class DeviceStore {
     if (!k) return [];
     const now = this.now();
     return inTransaction(this.db, () => {
-      const rows = (this.db.prepare("SELECT * FROM devices WHERE revoked_at IS NULL AND (id = ? OR lower(name) = lower(?))").all(k, k) as unknown as DeviceRow[]).filter(
-        (r) => r.id === k || isLive(r, now),
-      );
+      // Names compare in JS: SQLite's lower() folds ASCII only, so "Éva" and "éva" would differ there.
+      const rows = (this.db.prepare("SELECT * FROM devices WHERE revoked_at IS NULL").all() as unknown as DeviceRow[]).filter((r) => r.id === k || (sameName(r.name, k) && isLive(r, now)));
       const stmt = this.db.prepare("UPDATE devices SET revoked_at = ?, secret_hash = NULL, link_token = NULL WHERE id = ?");
       for (const r of rows) stmt.run(now, r.id);
       return rows.map((r) => ({ ...r, revoked_at: now, secret_hash: null, link_token: null }));
@@ -345,4 +344,9 @@ export function importInvites(db: sqlite.DatabaseSync, dir: string): number {
     // another process moved it first
   }
   return added;
+}
+
+/** Two reviewer names are the same person's when they match ignoring case, in any script. */
+function sameName(a: string, b: string): boolean {
+  return a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
 }

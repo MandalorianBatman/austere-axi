@@ -258,10 +258,12 @@ function request<T = Api>(port: number, method: string, route: string, { body, h
 function stream(port: number, route: string, headers: Headers = {}) {
   const events: StreamEvent[] = [];
   let ended = false;
+  let status = 0;
   const owner = !headers.cookie ? owners.get(port) || {} : {};
   const r = http.request({ host: "127.0.0.1", port, path: route, headers: { host: `127.0.0.1:${port}`, ...owner, ...headers } });
   const done = new Promise<void>((resolve) => {
     r.on("response", (res) => {
+      status = res.statusCode ?? 0;
       let buf = "";
       res.on("data", (c) => {
         buf += c;
@@ -283,7 +285,7 @@ function stream(port: number, route: string, headers: Headers = {}) {
     r.on("error", () => resolve());
   });
   r.end();
-  return { events, done, isEnded: () => ended, close: () => r.destroy() };
+  return { events, done, isEnded: () => ended, status: () => status, close: () => r.destroy() };
 }
 
 const until = async (fn: () => boolean | Promise<boolean>, ms = 3000) => {
@@ -1056,8 +1058,10 @@ async function reviewerRoutes(pid: string, cookie: string): Promise<Record<strin
   out.file = (await request(srv.port, "GET", `/s/${pid}/a/`, { headers })).status ?? 0;
   out.send = (await request(srv.port, "POST", `/s/${pid}/send`, { body: { items: [{ kind: "message", text: "scope check" }] }, headers })).status ?? 0;
   const live = stream(srv.port, `/s/${pid}/events`, { cookie });
-  await until(() => live.events.length > 0 || live.isEnded(), 1500);
-  out.events = live.events.some((e) => e.name === "snapshot") ? 200 : 403;
+  // The route's own status: a 500 or a hang must not pass as "refused".
+  assert.ok(await until(() => live.status() !== 0, 3000), `${pid}/events answered`);
+  out.events = live.status();
+  if (out.events === 200) assert.ok(await until(() => live.events.some((e) => e.name === "snapshot")), `${pid}/events sent its snapshot`);
   live.close();
   return out;
 }

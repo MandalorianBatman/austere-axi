@@ -1410,7 +1410,8 @@ function copyLegacy(text: string): boolean {
   ta.value = text;
   ta.setAttribute("readonly", "");
   ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
-  document.body.append(ta);
+  // A modal dialog makes everything outside it inert: copy from inside the open one.
+  (document.querySelector("dialog[open]") ?? document.body).append(ta);
   ta.select();
   let ok = false;
   try {
@@ -1597,7 +1598,8 @@ async function sharePage() {
     const done = await fetch(`${BASE}/share`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: String(data.get("name") || ""), scope: String(data.get("scope") || "page"), auto: data.get("mode") === "auto" }),
+      // The project the dialog offered: the server refuses the share if the page has moved since.
+      body: JSON.stringify({ name: String(data.get("name") || ""), scope: String(data.get("scope") || "page"), project: offer.project?.id, auto: data.get("mode") === "auto" }),
     }).catch(() => null);
     create.disabled = false;
     if (!done || !done.ok) {

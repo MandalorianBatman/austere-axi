@@ -2090,6 +2090,8 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
     const r = await request<ShareListResponse>("GET", `/api/share/list${withLinks ? "?links=1" : ""}`);
     if (r.status !== 200) return fail(r.data?.error || `share list failed (${r.status})`);
     const { links, devices } = r.data;
+    // A server from before devices (kept running by its supervisor) answers with `invites`.
+    if (!Array.isArray(links) || !Array.isArray(devices)) return fail(`the running server is older than this CLI and does not list links or devices: run \`${BIN} stop\` (or restart its service), then share list again`);
     if (!links.length && !devices.length) return print({ links: "none", devices: "none", next: `${BIN} share <file> --as "<name>"` });
     return print({
       links: links.length ? links.map(accessRow) : "none waiting",
