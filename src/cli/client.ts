@@ -223,7 +223,7 @@ export function serverAction(h: ServerHealth, version: string, unitOf: () => Ser
   if (!h.legacy && !versionGt(version, h.version)) return { action: "use" };
   // The server says a supervisor runs it but the system would not say which unit: systemd's is the one
   // `server install` writes; a launchd agent may carry any label, so the hint does not guess one.
-  const unit = unitOf() ?? (!h.legacy && h.supervised ? { supervisor: h.supervised, unit: h.supervised === "systemd" ? SYSTEMD_UNIT : UNKNOWN_LAUNCHD_LABEL } : null);
+  const unit = unitOf() ?? (!h.legacy && h.supervised ? { supervisor: h.supervised, unit: h.unit ?? (h.supervised === "systemd" ? SYSTEMD_UNIT : UNKNOWN_LAUNCHD_LABEL) } : null);
   return unit ? { action: "restart-unit", unit } : { action: "replace" };
 }
 
@@ -232,7 +232,7 @@ export async function probePort(port: number): Promise<PortProbe | null> {
   const h = await health(port);
   if (!h) return null;
   if (h.foreign) return { foreign: true };
-  return { stateDir: h.stateDir, supervised: h.supervised };
+  return { stateDir: h.stateDir, supervised: h.supervised, pid: h.pid };
 }
 
 /**
