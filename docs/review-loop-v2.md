@@ -39,7 +39,7 @@ Each row is: Accepted 2026-11-16 (owner away, proceed-with-assumptions instructi
 
 | # | Was | Decision | Issue | Status |
 |---|---|---|---|---|
-| Q1 | P1 | The newest listener wins. The older poll returns `replaced` and its hint says stop. No `--takeover`, no `listener_active`. | RLM-338 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
+| Q1 | P1 | The newest listener wins within its scope. The older poll returns `replaced` and its hint says stop. No `--takeover`, no `listener_active`. Amended 2026-11-17 (RLM-377): a bare `poll` and `feedback` cover this checkout (the root they run in), not every worktree; `--project` widens them to every root. Page, root and project polls coexist with precedence page, then root, then project; `replaced` only within the same scope (same page, same root, same project). An unacknowledged batch keeps its pages from wider polls (RLM-379's hold, extended to checkout polls). The output names the scope next to RLM-378's page count (`scope: this checkout`, `pages: 3`). | RLM-338, RLM-377 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction); amended by sid.kasat 2026-11-17 |
 | Q2 | P2 | `browser_disconnected` is removed. A poll waits for notes or `--timeout-ms`. `armGrace` goes. | RLM-338 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q3 | P3 | Attach and `publish --auto` are mutually exclusive. An unattended run with full permissions reads only text the owner sent or released. | RLM-345 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
 | Q4 | P4 | Only the owner turns attach on: from the review page (owner cookie) or at a terminal. An agent can read the setting, not change it. | RLM-346 | Accepted 2026-11-16 (owner away, proceed-with-assumptions instruction) |
@@ -216,8 +216,8 @@ wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
 | Removed | `open --reopen` | RLM-338 | `body.reopen` in `server.ts` |
 | Removed | `poll --takeover` | RLM-338 | `body.takeover` in the `poll` route |
 | Removed | `hub on\|off\|status` | RLM-335 | `cmdHub`, `hubEnabled`, `setHubEnabled`, `homePage` |
-| Changed | `poll [<file>]` | RLM-338, RLM-339 | `cmdPoll`: no file → the project of the current directory; `--project`; `replaced` and `final`; no `browser_disconnected` |
-| Changed | `feedback [<file>]` | RLM-339 | `cmdFeedback`: no file → the project |
+| Changed | `poll [<file>]` | RLM-338, RLM-339, RLM-377 | `cmdPoll`: no file → the root (checkout) of the current directory; `--project`: every root of the project; `replaced` and `final`; no `browser_disconnected` |
+| Changed | `feedback [<file>]` | RLM-339, RLM-377 | `cmdFeedback`: no file → the root of the current directory; `--project`: the whole project |
 | Changed | `patch --from <src>#<a>[,<b>] [--rev n]` | RLM-354 | `cmdPatch` |
 | Changed | `hub list --project <name\|id\|dir> [--archived] [--all]` | RLM-333, RLM-335 | `cmdHub`, `Hub.list` |
 | Changed | `open`, `patch`, `poll`, `reply`, `feedback` print `session:` and accept `--session <harness>:<id>` | RLM-343 | `cmdOpen`, `cmdPatch`, `cmdPoll`, `cmdFeedback` |
@@ -250,7 +250,7 @@ The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, 
 | RLM-335 | `hubEnabled`, `setHubEnabled`, the early return in `registerWithHub`; the `hubEnabled()` checks in `server.ts`; `homePage`; `cmdHub`; `skills/austere-setup/SKILL.md` step 4; `docs/hub.md` |
 | RLM-336 | `hubPage`, `notesPage` in `src/cli/hub-page.ts` |
 | RLM-338 | `Session.status`, `endedBy`, `endedAt`, `closedAt`, `SessionStore.end`, `closeReview`, `reopen` in `sessions.ts`; routes `end`, `close`, `reopen`, the takeover branch of `poll`, `armGrace`, `closeReview` in `server.ts`; the owner menu in `src/chrome/chrome.ts` (End/Close/Reopen review → Archive/Unarchive); `src/cli/agent-prompt.ts`; `docs/cli.md` "Session rules" |
-| RLM-339 | the `poll` route in `server.ts` (listener registry keyed by page, project fallback); `SessionStore.nextSeq` as the project cursor; `cmdPoll`, `cmdFeedback`; MCP `poll` |
+| RLM-339 | the `poll` route in `server.ts` (listener registry keyed by page, then root, then project, RLM-377); `SessionStore.nextSeq` as the project cursor; `cmdPoll`, `cmdFeedback`; MCP `poll` |
 | RLM-340 | new `src/cli/service.ts` (the unit, the plist, install/uninstall/status); `main.ts` (`server` subcommands, `HELP`/`COMMANDS`); `client.ts` (a CLI never replaces a supervised server; it starts the installed one); `lock.ts` (the lock names the supervisor and is refreshed while held); `server.ts` (the idle exit waits for a run or an attach); `hub.ts` (`hasActiveWork`); `net.ts` (`parseLinkUrl`); `paths.ts` (the state dir is an absolute path); `docs/hub.md` "Always on", `docs/cli.md` |
 | RLM-343 | `cmdOpen`, `cmdPatch`, `cmdPoll`, `cmdFeedback`, `reply`; new caller detection module; `export.ts` and the `publish` payload must not carry session ids |
 | RLM-344 | new `src/cli/adapters/types.ts`, `omp.ts`, `copilot.ts`, `command.ts`; argv as in [Harness facts](#harness-facts-rlm-342) |
