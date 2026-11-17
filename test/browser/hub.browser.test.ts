@@ -174,7 +174,8 @@ test("the inbox: needs you, waiting on agent, quiet; archive and undo; a chip op
     // Archive takes the row away; Undo brings it back.
     await group(page, "Quiet").getByRole("button", { name: "Archive Quiet page" }).click();
     await page.locator(".status", { hasText: "Archived Quiet page." }).waitFor();
-    assert.deepEqual(await rowTitles(page, "Quiet"), []);
+    // The view is read again after the archive: wait for that, not for the status line.
+    await group(page, "Quiet").locator(".row-title", { hasText: "Quiet page" }).waitFor({ state: "detached" });
     const listed = await call<{ pages: { title: string }[] }>("GET", "/hub/api/pages", undefined, asOwner());
     assert.ok(!listed.data.pages.some((p) => p.title === "Quiet page"), "archived in hub.db");
     // A failed Undo keeps the button beside the error; the retry brings the row back.
