@@ -28,8 +28,9 @@ austere-axi archive <file>       put a page away from the hub's lists and lock i
 austere-axi archive --missing    the same for every copy whose file is gone   [--project p]
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
-austere-axi publish <file>       hosted copy of the page on austere.kasat.xyz   [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new]
+austere-axi publish <file>       hosted copy of the page on austere.blundertech.com   [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new]
 austere-axi publish invites|revoke <file> [name]   see a page's invites, cut one off
+austere-axi publish login <file>   single-use link that signs your browser in to your hosted page
 austere-axi publish list|rm <file|id>   your hosted pages; delete one now
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out
@@ -150,7 +151,7 @@ austere-axi attach inherit <file>                        the page goes back to i
 | `AUSTERE_AXI_PROJECT_REFRESH_MS` | `30000` | how often a waiting project `poll` looks again for pages that joined the project from another process (`project merge`) |
 | `AUSTERE_AXI_PAGE_HOLD_MS` | `600000` | how long a page poll's unacknowledged batch keeps the page out of the project `poll`; `0` disables |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them, except scopes mapped with `registry add` |
-| `AUSTERE_AXI_CLOUD_URL` | `https://austere.kasat.xyz` | the service `publish` talks to (self-hosting, tests) |
+| `AUSTERE_AXI_CLOUD_URL` | `https://austere.blundertech.com` | the service `publish` talks to (self-hosting, tests) |
 | `AUSTERE_AXI_SYNC_RETRY_MS` | `1000` | first wait before the local server reconnects to a hosted page; it doubles up to 60 s |
 | `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
 

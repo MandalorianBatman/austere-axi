@@ -23,7 +23,7 @@ Out of scope: a paid tier (teams, private pages, longer history; see RLM-249), G
 | # | Topic | Decision |
 |---|---|---|
 | Q1 | Hosting | Cloudflare Workers, R2 for page blobs, and D1 for pages, notes, tokens and reports. Free tier. **Replaced in part** (Q13): notes and replies live in each page's Durable Object, not D1. |
-| Q2 | Domain | `https://austere.kasat.xyz`, with pages at `/p/<id>`. No separate user-content domain; the sandbox's opaque origin isolates the artifact. A brandable alias can be added later. |
+| Q2 | Domain | `https://austere.blundertech.com`, with pages at `/p/<id>`. No separate user-content domain; the sandbox's opaque origin isolates the artifact. A brandable alias can be added later. (Changed in RLM-384: the first default was a test host on a personal domain, which now refuses requests.) |
 | Q3 | Upload | The raw artifact plus third-party pack bundles. The service serves pinned runtime, chrome and `@austere-axi/*` packs by CLI version. Relative images are inlined as data URLs within the size cap. |
 | Q4 | Republish | `publish` on the same file updates the same URL. The page id is stored in local state, keyed by absolute path. `--new` forces a fresh link. Old versions are not kept. |
 | Q5 | Identity | An anonymous owner token, created on first `publish` and stored in `~/.austere-axi/cloud.json`. GitHub login comes later. |
@@ -142,13 +142,14 @@ Owner routes need `Authorization: Bearer <token>`. They return JSON and are not 
 | `PUT /api/objects/:sha256` | Uploads one object (page HTML or pack JS); see [Objects and pages](#objects-and-pages-http). |
 | `GET /api/pages` | Lists the owner's live pages, newest first: `{ pages: [{ id, title, url, expiresAt, notes }] }`. `notes` comes with the page object (RLM-268); `publish list` leaves it out until the service sends it. |
 | `GET /api/pages/:id/sync` | The owner peer's WebSocket; see [WebSocket endpoints](#websocket-endpoints). |
+| `POST /api/pages/:id/login` | A single-use owner sign-in code for the page, `{ code, ttlMs }` (`publish login`); see [Access](#access-q16). 404 for an unpublished page or another owner's. |
 
 Reviewer routes are same-origin from the hosted chrome, and a foreign `Origin` is rejected:
 
 | Route | Purpose |
 |---|---|
-| `GET /p/:id`, `GET /p/:id/a/<assetToken>/` | Shell and artifact (above). Returns 404 when expired or deleted, and 410 Gone when taken down. |
-| `POST /p/:id/asset-token` | Trades the invite (`X-Austere-Invite`) for a short-lived `assetToken`; see [Access](#access-q16). |
+| `GET /p/:id`, `GET /p/:id/a/<assetToken>/` | Shell and artifact (above). Returns 404 when expired or deleted, and 410 Gone when taken down. `GET /p/:id?login=<code>` trades an owner sign-in code for the owner cookie. |
+| `POST /p/:id/asset-token` | Trades the invite (`X-Austere-Invite`) or the owner cookie for a short-lived `assetToken`; see [Access](#access-q16). |
 | `GET /p/:id/sync` | The reviewer chrome's WebSocket. |
 | `POST /p/:id/report` | `{ reason }`. Inserts a report row and emails the admin. |
 
@@ -169,14 +170,14 @@ Reviewer routes are same-origin from the hosted chrome, and a foreign `Origin` i
 New state: `~/.austere-axi/cloud.json` (mode 0600)
 
 ```json
-{ "url": "https://austere.kasat.xyz", "token": "…",
+{ "url": "https://austere.blundertech.com", "token": "…",
   "pages": { "/abs/path/plan.html": { "id": "…", "auto": false, "unlisted": false, "presence": true,
                                        "invites": { "Ana": { "token": "…", "expiresAt": null } } } } }
 ```
 
 `invites` keeps each invite's token so a republish with the same `--invite` name, and `publish invites`, print the same link. Only the token's SHA-256 is ever sent. `publish invites` shows a name's link only while the service's `acl` row names this token: its `grant` equals `grantId(tokenHash)` of the saved token. A re-grant from another machine changes `grant`, so this machine then lists the name as live without a link, with a note that re-sending it from here makes this machine's link the live one again. Lost rows after a publish change nothing, since the check runs on every `publish invites`. `publish revoke` drops the name. `publish invites` and `publish revoke` work from this entry, even after the source file is moved or deleted, also through a symlinked folder (the path resolves through its nearest existing folder). Invite names are 1–40 UTF-16 units (the schema's `LIMITS.nameChars`), checked before any request.
 
-The service URL defaults to `https://austere.kasat.xyz`, and `AUSTERE_AXI_CLOUD_URL` overrides it for tests and self-hosting. A token belongs to the `url` it was created on: when `AUSTERE_AXI_CLOUD_URL` names another service, `publish` stops with an error instead of sending the token there. Copying `cloud.json` to another machine makes that machine a peer of the same pages (Q14). It holds no [idempotency](#idempotency) `clientId`: those belong to one queue each.
+The service URL defaults to `https://austere.blundertech.com`, and `AUSTERE_AXI_CLOUD_URL` overrides it for tests and self-hosting. A token belongs to the `url` it was created on: when `AUSTERE_AXI_CLOUD_URL` names another service, `publish` stops with an error instead of sending the token there. Copying `cloud.json` to another machine makes that machine a peer of the same pages (Q14). It holds no [idempotency](#idempotency) `clientId`: those belong to one queue each.
 
 A publish, in order: bundle the page (any error stops here, before a request); `POST /api/owners` on the first publish (the token is saved at once); `PUT /api/objects/:sha256` for the page HTML and each pack; `POST /api/pages` unless `cloud.json` already maps the file (or `--new`); then the owner socket, with a fresh `clientId`: the `publish` mutation (`n: 1`), one `grant` per `--invite` (`n: 2…`), their `ack`s, and `pull { after: 0 }` for the `page` row, whose `expiresAt` the command prints. `publish rm` sends `delete`, and `publish revoke` sends `revoke`, the same way; `publish invites` only pulls and reads the `acl` rows. `unlisted` is `true` only with `--unlisted` (each publish sets it); `presence` is `true` unless `--no-presence` is given (each publish sets it, like `--auto`). When the `publish` is acked but a `grant` is not, the page is still recorded, so a retry updates the same link. A republish whose handshake answers 404 points at `--new`; `rm` of a page the service no longer has still drops it from `cloud.json`. A `rate_limited` ack is reported with its `retryAfter`, not waited out, since `publish` is a one-shot command.
 
@@ -256,7 +257,7 @@ import type { Mutation, Row } from "austere-axi/sync";
 | Endpoint | Client | Credential |
 |---|---|---|
 | `GET /api/pages/:id/sync?cli=<version>` | Owner peer: the local server, and `publish` | Owner token |
-| `GET /p/:id/sync` | Reviewer chrome (same origin; a foreign `Origin` is rejected) | Invite token; none on an unlisted page |
+| `GET /p/:id/sync` | Reviewer chrome (same origin; a foreign `Origin` is rejected) | Owner cookie, else invite token; none on an unlisted page |
 
 - Browsers cannot set headers on a WebSocket, and query strings end up in logs, so credentials ride in `Sec-WebSocket-Protocol`. The client offers `austere-sync.1` followed by `austere-owner.<token>` or `austere-invite.<token>` (`syncProtocols`); the server reads them with `readProtocols` and answers `Sec-WebSocket-Protocol: austere-sync.1`, never echoing a credential.
 - A handshake that fails is a plain HTTP response with `{ "error": { "code", "message" } }`: 403 `forbidden` (missing, wrong, revoked or expired credential), 404 (unknown, unpublished, expired or deleted page), 410 (taken down), 426 `upgrade_required` (no `austere-sync.1` offered, or CLI version missing or below `MIN_CLI_VERSION`), 429 `rate_limited`. A client retries 429 after `Retry-After` and does not retry 403, 404, 410 or 426 on its own: the CLI stops syncing that page and reports why; the chrome shows the reason.
@@ -355,10 +356,11 @@ After a 1008 close a client does not reconnect on its own. After any other close
 
 ### Access (Q16)
 
-- `grant` makes an invite: the CLI generates the token (32 random bytes, base64url), sends only its SHA-256 (`tokenHash`), and prints `https://austere.kasat.xyz/p/<id>#i=<token>`. The fragment is never sent to the server, so the token stays out of server logs and `Referer`.
+- `grant` makes an invite: the CLI generates the token (32 random bytes, base64url), sends only its SHA-256 (`tokenHash`), and prints `https://austere.blundertech.com/p/<id>#i=<token>`. The fragment is never sent to the server, so the token stays out of server logs and `Referer`.
 - The chrome reads `#i=`, stores it in localStorage under `austere:invite:<id>`, and removes it from the address bar (`history.replaceState`). Another invite link opened in the same tab changes only the fragment, so the chrome reloads on `hashchange` to take it. It sends the token as `X-Austere-Invite` on same-origin HTTP calls and as `austere-invite.<token>` on the socket. The server hashes it and looks the hash up among the page's live invites.
-- `GET /p/:id` (the shell) holds no content and needs no invite. The artifact, the row feed and `addNote` need a live invite, unless the page is unlisted. The owner token is not accepted on reviewer routes; the owner reviews through the local server.
-- The frame cannot carry a header or a cookie. The chrome trades its invite for an `assetToken` with `POST /p/:id/asset-token` (answer `{ token, expiresAt, name }`, valid 10 minutes, for this page only) and loads the frame from `/p/:id/a/<assetToken>/`, the pattern the local server uses for `/s/:id/a/<token>/<file>`. `name` is the invite name, or `null` on the open link (the chrome then shows the name prompt). Without a live invite on a page that is not unlisted the answer is 403 `forbidden`. An asset token stops working when it expires, when its invite is revoked, replaced or expires, or (on the open link) when a publish clears `unlisted`; the artifact then answers 403.
+- `GET /p/:id` (the shell) holds no content and needs no invite. It names no page either: its `<title>` is `Shared page · austere` and its boot object's `title` is `Shared page`, so a page title such as a customer's name does not leak to whoever holds the plain URL (RLM-384). The artifact, the row feed and `addNote` need a live invite, the owner's sign-in cookie (below), or an unlisted page. The owner token itself is not accepted on reviewer routes.
+- The frame cannot carry a header or a cookie. The chrome trades its invite for an `assetToken` with `POST /p/:id/asset-token` (answer `{ token, expiresAt, name, title, owner }`, valid 10 minutes, for this page only) and loads the frame from `/p/:id/a/<assetToken>/`, the pattern the local server uses for `/s/:id/a/<token>/<file>`. `name` is the invite name, `Owner` for the owner's sign-in, or `null` on the open link (the chrome then shows the name prompt). `title` is the page title, which the chrome shows from then on; `owner` is true for the owner's sign-in. Without a live invite or sign-in on a page that is not unlisted the answer is 403 `forbidden`. An asset token stops working when it expires, when its invite is revoked, replaced or expires, when its sign-in expires, or (on the open link) when a publish clears `unlisted`; the artifact then answers 403.
+- Owner sign-in (RLM-384, option b): `publish login <file>` calls `POST /api/pages/:id/login` with the owner token and gets `{ code, ttlMs }`: a single-use code, valid 60 s, of which the page object stores only the SHA-256. It prints `https://<service>/p/<id>?login=<code>`. `GET /p/:id?login=<code>` consumes the code and answers 303 to `/p/:id` with `Set-Cookie: austere_owner=<session>; Path=/p/<id>; HttpOnly; SameSite=Lax; Max-Age=2592000` (plus `Secure` over https); a used, expired or unknown code is 403. The cookie is scoped to that one page by its path and by the page object, which stores only the session's SHA-256 and lets it in for 30 days. With a live session, `asset-token` and the reviewer socket let the browser in as a reviewer named `Owner`, ahead of any invite it also offers; when the session expires, its sockets are closed (`error` `forbidden`, 1008) like an expired invite's. An owner link (an invite to oneself) and Cloudflare Access in front of the host were the other options; Access stays something an owner may add in front of the host, with no code here.
 - `grant` with a name's current token only moves its expiry and keeps the `acl` row's `grantedAt`; a new token sets `grantedAt` to now and closes the sockets that came in with the old one (`error` `forbidden`, 1008). A past `expiresAt`, or a `tokenHash` another name holds, is `invalid`. An expired invite's sockets are closed when it expires.
 - A reviewer's name is their invite name. One name has one live token; granting the name again replaces the token.
 - `unlisted: true` on `publish` opts the page into the open link: no invite needed, and `addNote` takes the self-declared `name` from the prompt (Q6). A later `publish` with `unlisted: false` closes the sockets that came in without an invite (see [Errors](#errors)).

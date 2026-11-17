@@ -155,7 +155,7 @@ ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
-  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)  AUSTERE_AXI_CLOUD_URL (https://austere.kasat.xyz)
+  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)  AUSTERE_AXI_CLOUD_URL (https://austere.blundertech.com)
   A scope's token variable (registry add --token-env), sent only to that scope's registry
 `;
 }
@@ -342,9 +342,9 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   publish: {
     usage:
-      "publish <file> [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new] | publish invites <file> | publish revoke <file> <name> | publish list | publish rm <file|id>",
+      "publish <file> [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new] | publish invites <file> | publish revoke <file> <name> | publish login <file> | publish list | publish rm <file|id>",
     summary:
-      "hosted share link on austere.kasat.xyz: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. Pages are invite-only: each --invite prints that reviewer's own link, revocable with publish revoke. The only command that publishes a page; run it only when the user asks to share a page. Afterwards the local server syncs the page: its notes reach poll and feedback marked remote: true, held for the owner unless --auto, and replies and the owner's Send/Discard go to the hosted page",
+      "hosted share link on austere.blundertech.com: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. Pages are invite-only: each --invite prints that reviewer's own link, revocable with publish revoke; publish login prints a single-use link that signs your own browser in to the hosted page. The only command that publishes a page; run it only when the user asks to share a page. Afterwards the local server syncs the page: its notes reach poll and feedback marked remote: true, held for the owner unless --auto, and replies and the owner's Send/Discard go to the hosted page",
     flags: {
       invite: "invite a reviewer by name and print their link (repeatable); the same name again keeps its link",
       expires: "the invites of this publish stop working after this long: 30m, 12h, 7d, 2w (default: with the page)",
@@ -2073,11 +2073,21 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
       const r = await cloud.removePage(cloud.readCloud().pages[asFile] ? asFile : key);
       return print({ status: "removed", id: r.id, file: r.file, note: r.gone ? "It was already gone from the service (expired or deleted)." : "The link stops working at once." });
     }
-    if (sub === "invites" || sub === "revoke") {
+    if (sub === "invites" || sub === "revoke" || sub === "login") {
       const [file, ...name] = more;
       if (!file) return usage(`${sub} needs a file: ${BIN} publish ${sub} <file>${sub === "revoke" ? " <name>" : ""}`, "publish");
       // The saved page entry is enough: the source may have been moved or deleted since it was published.
       const abs = canonicalFile(file);
+      if (sub === "login") {
+        if (name.length) return usage(`login takes one file; it got ${more.map((a) => `"${a}"`).join(" ")}`, "publish");
+        const r = await cloud.ownerLogin(abs);
+        return print({
+          id: r.id,
+          url: r.url,
+          expires: `after one use, or in ${Math.round(r.ttlMs / 1000)}s`,
+          note: "Open it in your browser to sign that browser in as the page's owner; the plain page url then works there for 30 days, without an invite. Do not forward it.",
+        });
+      }
       if (sub === "revoke") {
         if (!name.length) return usage(`revoke needs an invite name: ${BIN} publish revoke <file> <name> (see ${BIN} publish invites <file>)`, "publish");
         const r = await cloud.revokeInvite(abs, name.join(" "));
