@@ -243,11 +243,25 @@ export interface ArchiveResult {
 
 // ── Settings (RLM-396): the owner's page for the local server. People uses /hub/api/people (src/cli/server.ts). ──
 
-/** An address the server answers on: this computer (loopback), Tailscale, or one added at a terminal (`AUSTERE_AXI_HOST`, `--also-listen`). */
+/**
+ * An address the server answers on: this computer (loopback), Tailscale, the local network Settings switched on
+ * (reviewers only), or one added at a terminal (`AUSTERE_AXI_HOST`, `--also-listen`).
+ */
 export interface ListenAddress {
-  kind: "this_computer" | "tailscale" | "added";
+  kind: "this_computer" | "tailscale" | "local_network" | "added";
   host: string;
   url: string;
+}
+
+/**
+ * Settings → Network → Local network (RLM-399): the address switched on (null: off, the default), whether the server
+ * listens there now and at which URL, and this computer's local-network addresses.
+ */
+export interface LocalNetwork {
+  address: string | null;
+  listening: boolean;
+  url: string | null;
+  choices: { address: string; iface: string }[];
 }
 
 /** How the server stays up: a service runs it (`server install`), it was started to stay on, or it stops after `idle_minutes` without use. */
@@ -273,9 +287,12 @@ export interface SettingsResponse {
     port: number;
     addresses: ListenAddress[];
     /** The address links for teammates and phones use, and what set it; null: only this computer listens, so no link can be shared. */
-    share: { url: string; from: "link_url" | "link_host" | "tailscale" | "host" } | null;
+    share: { url: string; from: "link_url" | "link_host" | "tailscale" | "host" | "lan" } | null;
     /** This machine on Tailscale, as Tailscale said last; null: Tailscale is not running here (or is turned off for this server). */
     tailscale: { ip: string; dns_name: string | null } | null;
+    /** Whether the server listens on the tailnet, so `tailscale whois` names who comes in over it (RLM-399). */
+    tailscale_names: boolean;
+    lan: LocalNetwork;
     always_on: AlwaysOn;
   };
   review: {

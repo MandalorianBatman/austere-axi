@@ -4,7 +4,7 @@
 // terminal. Every setting here has a CLI form too; the hints name it.
 import { h } from "./dom.ts";
 import type { Child } from "./dom.ts";
-import type { PagesResponse, ProjectActionResult, ProjectSummary, ProjectsResponse, SettingsResponse, ShellPage } from "../shared/hub-api.ts";
+import type { LocalNetwork, PagesResponse, ProjectActionResult, ProjectSummary, ProjectsResponse, SettingsResponse, ShellPage } from "../shared/hub-api.ts";
 import type { AccessRequestSummary, AccessRequestsResponse, AccessSummary, ShareListResponse, ShareResponse } from "../cli/server.ts";
 
 /** What the shell lends Settings: its status line, its formatting, and a way to read again after a change. */
@@ -113,7 +113,7 @@ export async function renderSettings(ui: SettingsUi): Promise<Child[]> {
 
   const requestRow = (q: AccessRequestSummary): HTMLElement => {
     const page = q.file ? ui.tilde(q.file) : "a page no longer in the hub";
-    const from = [q.verifiedLogin ? `${q.verifiedLogin} (Tailscale)` : null, q.addr, q.host ? `(${q.host})` : null, q.browser].filter(Boolean).join(" · ");
+    const from = [q.verifiedLogin ? `${q.verifiedLogin}${q.tailscaleDevice ? ` on ${q.tailscaleDevice}` : ""} (verified by Tailscale)` : null, q.addr, q.host ? `(${q.host})` : null, q.browser].filter(Boolean).join(" · ");
     const scope = select("scope", scopeOptions(projects, Boolean(q.file), q.project), "page", `What ${q.name} can review`);
     const mode = select("mode", NOTES, defaultMode, `Where ${q.name}'s notes go`);
     return h(
@@ -175,6 +175,7 @@ export async function renderSettings(ui: SettingsUi): Promise<Child[]> {
       if (name && name.trim() && name.trim() !== d.name) void act<AccessSummary>(`/hub/api/people/${d.id}/rename`, { name: name.trim() }, (s) => `Renamed ${d.name} to ${s.name}.`);
     };
     const seen = [d.lastSeenAt ? `last seen ${ui.when(d.lastSeenAt)}` : "not seen yet", d.lastAddr ? `from ${d.lastAddr}${d.lastHost ? ` (${d.lastHost})` : ""}` : null].filter(Boolean).join(" ");
+    const verified = d.verifiedLogin ? h("span", { class: "meta verified", text: `Tailscale: ${d.verifiedLogin} (verified)` }) : null;
     return h(
       "li",
       { class: "row person", "data-device": d.id },
@@ -184,6 +185,7 @@ export async function renderSettings(ui: SettingsUi): Promise<Child[]> {
         h("span", { class: "row-title", text: d.name }),
         h("span", { class: "meta", text: `${ORIGIN[d.origin] ?? d.origin} ${ui.when(d.claimedAt)} · reaches ${d.reaches} · ${d.auto ? "notes go straight to the agent" : "notes held for you"}` }),
         h("span", { class: "meta", text: seen }),
+        verified,
       ),
       h(
         "div",
@@ -226,8 +228,8 @@ export async function renderSettings(ui: SettingsUi): Promise<Child[]> {
   // ── Network ──
 
   const net = settings.network;
-  const KIND: Record<string, string> = { this_computer: "This computer", tailscale: "Tailscale", added: "Added at a terminal" };
-  const FROM: Record<string, string> = { link_url: "set by AUSTERE_AXI_LINK_URL", link_host: "set by AUSTERE_AXI_LINK_HOST", tailscale: "this computer's Tailscale address", host: "the address AUSTERE_AXI_HOST names" };
+  const KIND: Record<string, string> = { this_computer: "This computer", tailscale: "Tailscale", local_network: "Local network (reviewers only)", added: "Added at a terminal" };
+  const FROM: Record<string, string> = { link_url: "set by AUSTERE_AXI_LINK_URL", link_host: "set by AUSTERE_AXI_LINK_HOST", tailscale: "this computer's Tailscale address", host: "the address AUSTERE_AXI_HOST names", lan: "the local-network address you switched on" };
   const always = net.always_on;
   const alwaysText =
     always.mode === "service"
@@ -259,20 +261,14 @@ export async function renderSettings(ui: SettingsUi): Promise<Child[]> {
         { class: "share-addr" },
         net.share
           ? [h("code", { text: net.share.url }), " ", button("Copy", () => copy(ui, net.share!.url, "The address")), h("span", { class: "meta", text: ` ${FROM[net.share.from]}` })]
-          : h("span", { class: "warn", text: "None: only this computer can reach the server, so no link can be shared. Start Tailscale, or set AUSTERE_AXI_HOST at a terminal." }),
+          : h("span", { class: "warn", text: "None: only this computer can reach the server, so no link can be shared. Start Tailscale, switch on the local network below, or set AUSTERE_AXI_HOST at a terminal." }),
       ),
       h("dt", { text: "Tailscale" }),
       h("dd", { text: net.tailscale ? `${net.tailscale.dns_name ? `${net.tailscale.dns_name} · ` : ""}${net.tailscale.ip}` : "Not running here." }),
-      // RLM-399 fills these two: the reviewer's name from Tailscale, and the switch for the local network.
       h("dt", { text: "Names from Tailscale" }),
-      h("dd", { class: "slot", "data-slot": "tailscale-identity" }, h("span", { class: "meta", text: "Not yet: a reviewer on Tailscale is named by the device you let in, not by their Tailscale login." })),
+      h("dd", { class: "setting", "data-slot": "tailscale-identity" }, tailscaleNames(net.tailscale_names, projects, defaultMode, act)),
       h("dt", { text: "Local network" }),
-      h(
-        "dd",
-        { class: "slot", "data-slot": "local-network" },
-        h("label", { class: "switch off" }, h("input", { type: "checkbox", disabled: true, "aria-describedby": "lan-warn" }), h("span", { text: "Listen on the local network: off" })),
-        h("p", { class: "meta", id: "lan-warn" }, words("The switch is not here yet. At a terminal, `AUSTERE_AXI_HOST` or `server --also-listen <address>` adds an address. Traffic on a local network is not encrypted: others on it could read pages, notes and reviewers' access. Use it on a network you trust, or use Tailscale or HTTPS.")),
-      ),
+      h("dd", { class: "setting", "data-slot": "local-network" }, localNetwork(net.lan, act)),
       h("dt", { text: "Always on" }),
       h("dd", { "data-always": always.mode }, h("span", { text: alwaysText }), always.mode === "service" ? null : h("span", { class: "meta" }, words(" To keep it on, run `austere-axi server install` at a terminal."))),
     ),
@@ -467,4 +463,67 @@ function newLinkForm(ui: SettingsUi, pages: ShellPage[], projects: ProjectSummar
     ui.again();
   });
   return h("div", {}, form, error);
+}
+
+/** Run a change, say how it went, and read Settings again (renderSettings' `act`). */
+type Act = <T>(route: string, body: object, ok: (data: T) => string) => Promise<void>;
+
+/**
+ * Settings → Network → Names from Tailscale (RLM-399): what Tailscale tells about reviewers here, and a
+ * form that lets a Tailscale login in without a link (`share tailscale <login>`).
+ */
+function tailscaleNames(on: boolean, projects: ProjectSummary[], defaultMode: string, act: Act): Child[] {
+  const status = on
+    ? "On: a reviewer who comes in over Tailscale is named by Tailscale (login and device, shown as verified). Asked only for connections to this server's Tailscale address, never from a header."
+    : "Off: the server does not listen on Tailscale here, so nobody is named by it. A reviewer is known by the device you let in.";
+  const login = h("input", { type: "text", name: "login", maxlength: "200", required: true, placeholder: "ana@example.com", "aria-label": "Tailscale login", autocomplete: "off" });
+  const name = h("input", { type: "text", name: "name", maxlength: "40", placeholder: "Name to show (default: the login)", "aria-label": "Name to show", autocomplete: "off" });
+  const reach = scopeOptions(projects, false, null);
+  const scope = select("scope", reach, reach[0][0], "They can review");
+  const mode = select("mode", NOTES, defaultMode, "Their notes");
+  const form = h(
+    "form",
+    { class: "login-form", "data-form": "tailscale-login" },
+    field("Tailscale login", login),
+    field("Name", name),
+    field("They can review", scope),
+    field("Their notes", mode),
+    h("button", { type: "submit", class: "btn", text: "Let in" }),
+  );
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    void act<AccessSummary>("/hub/api/people/tailscale", { login: login.value.trim(), name: name.value.trim() || undefined, ...scopeBody(scope.value), auto: mode.value === "auto" }, (d) => `${d.verifiedLogin ?? d.name} is in on any of their Tailscale devices: ${d.reaches}. Listed under Devices; Revoke there.`);
+  });
+  return [
+    h("span", { class: "meta", text: status }),
+    h("p", { class: "meta" }, words("Let a login in without a link or a request: any device signed in to Tailscale as that login opens what it reaches, over Tailscale only. At a terminal: `austere-axi share tailscale <login> --all`.")),
+    form,
+  ];
+}
+
+/** The text the local-network switch shows (P6). */
+const LAN_WARNING = "Traffic on this network is not encrypted. Others on the same network could read pages, notes and reviewers' access. Use it on a network you trust, or use Tailscale or HTTPS.";
+
+/** Settings → Network → Local network (P6): off by default; on, the server also listens on the chosen address, for reviewers only. */
+function localNetwork(lan: LocalNetwork, act: Act): Child[] {
+  const on = lan.address != null;
+  // The address switched on stays listed when this computer no longer has it, so the owner can switch it off.
+  const options: [string, string][] = lan.choices.map((c) => [c.address, `${c.address} (${c.iface})`]);
+  if (lan.address && !options.some(([a]) => a === lan.address)) options.unshift([lan.address, `${lan.address} (not on this computer now)`]);
+  const address = select("lan-address", options, lan.address ?? options[0]?.[0] ?? "", "Address on the local network");
+  address.disabled = on || !options.length;
+  const box = h("input", { type: "checkbox", checked: on, disabled: !options.length, "aria-describedby": "lan-warn" });
+  box.addEventListener("change", () => {
+    if (box.checked && !confirm(`Listen on ${address.value}? ${LAN_WARNING}`)) {
+      box.checked = false;
+      return;
+    }
+    void act<ProjectActionResult>("/hub/api/settings/network", { lan: box.checked ? address.value : null }, (d) => d.message);
+  });
+  const state = !on ? "off" : lan.listening ? `on at ${lan.url}` : `on, but this computer does not have ${lan.address} now`;
+  return [
+    h("label", { class: "switch" }, box, h("span", { text: `Listen on the local network: ${state}` })),
+    options.length ? h("div", { class: "login-form" }, field("Address", address)) : h("span", { class: "meta", text: "This computer is on no local network." }),
+    h("p", { class: "meta", id: "lan-warn" }, words(`Reviewers only: the owner never signs in there, and no link with the owner key points there. ${LAN_WARNING} At a terminal: \`austere-axi server lan <address>\`.`)),
+  ];
 }

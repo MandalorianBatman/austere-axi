@@ -16,8 +16,8 @@ import { readArtifact, replaceProgram, rewriteRuntime, escapeHtml } from "./arti
 import { agentPrompt } from "./agent-prompt.ts";
 import { cloudUrl, readCloud } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
-import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
-import type { AddressSettings, Tailnet } from "./net.ts";
+import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, lanAddresses, linkUrl, whoIs } from "./net.ts";
+import type { AddressSettings, Tailnet, TailscalePerson } from "./net.ts";
 import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir, versionGt } from "./paths.ts";
 import { RENDER_CHECK_AUTHOR, SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
@@ -44,7 +44,7 @@ import type { AdaptersConfig } from "./adapters/config.ts";
 import type { AttachMode } from "./adapters/types.ts";
 import { copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
-import { COOKIE, LoginCodes, OWNER_COOKIE, ownerCookie, ownerKey, reviewerCookies, safeEqual, tokenFromCookie } from "./invites.ts";
+import { COOKIE, LoginCodes, OWNER_COOKIE, cleanName, ownerCookie, ownerKey, reviewerCookies, safeEqual, tokenFromCookie } from "./invites.ts";
 import { DeviceStore, covers, isLive } from "./devices.ts";
 import type { DeviceOrigin, DeviceRow, Scope, ScopeKind, SeenMeta } from "./devices.ts";
 import { RequestRefused, RequestStore, describeAgent } from "./requests.ts";
@@ -53,7 +53,7 @@ import dns from "node:dns";
 import { reviewerItem } from "./items.ts";
 import { missingPage } from "./hub-page.ts";
 import { copiesToFlip, copySummary, shellInbox, shellPages, shellProjects, shellRuns, shellSearch } from "./hub-api.ts";
-import type { ArchiveResult, CopySummary, InboxResponse, NotesResponse, PagesResponse, PagesView, ProjectActionResult, ProjectsResponse, HubRunsResponse, SearchResponse, SettingsResponse } from "../shared/hub-api.ts";
+import type { ArchiveResult, CopySummary, InboxResponse, LocalNetwork, NotesResponse, PagesResponse, PagesView, ProjectActionResult, ProjectsResponse, HubRunsResponse, SearchResponse, SettingsResponse } from "../shared/hub-api.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
 import { Peer } from "./peer.ts";
 import { parseClientFrame } from "../shared/sync.ts";
@@ -72,6 +72,8 @@ export interface HealthInfo {
   stateDir: string;
   proof?: string;
   listen: string[];
+  /** The local-network address Settings switched on (RLM-399): a CLI that replaces this server leaves it out of --also-listen, as the new one reads the setting itself. */
+  lan?: string;
   tailnet?: Tailnet;
   remote?: string;
   persist: boolean;
@@ -217,6 +219,8 @@ export interface AccessSummary {
   lastAddr: string | null;
   lastHost: string | null;
   userAgent: string | null;
+  /** The Tailscale login this device or person is: given by the owner (origin tailscale), or the first one Tailscale named behind its cookie. Null: never seen over Tailscale. */
+  verifiedLogin: string | null;
   /** Links only, when asked for (`?links=1`, and always in /hub/api/people). */
   link?: string;
 }
@@ -420,6 +424,8 @@ const DEVICE_COOKIE_MAX_AGE = 400 * 86_400;
 const LINK_INVALID = "This link is not valid. It may have been revoked; ask for a new one.";
 const LINK_USED = "This link was already used on another device. Each link opens on one device only; ask the owner for a new one.";
 const LINK_EXPIRED = "This link expired before anyone opened it. Ask the owner for a new one.";
+/** Why the owner cannot sign in on the local-network listener (P7). */
+const LAN_NO_OWNER = "The owner does not sign in over the local network: its traffic is not encrypted. Use this computer, Tailscale or HTTPS.";
 // A browser that asked for access (RLM-398) holds its request's pending secret here until the owner decides.
 const REQUEST_COOKIE = "austere_rq";
 const REQUEST_COOKIE_MAX_AGE = 30 * 86_400;
@@ -557,10 +563,34 @@ export async function runServer({
   const staleWorkingMs = msEnv("AUSTERE_AXI_STALE_WORKING_MS", STALE_WORKING_MS);
   // Per page: the timer that tells its open review pages when a quiet agent turns stale.
   const staleTimers = new Map<string, NodeJS.Timeout>();
+  /**
+   * The local-network address Settings → Network switched on, while the server listens there (RLM-399).
+   * That listener serves reviewers only: no owner sign-in, cookie or link works on it (P7).
+   */
+  let lanHost: string | null = null;
+  /** The address each accepted connection's listener is bound to: the listener a request came in on, never what the request says. */
+  const boundHost = new WeakMap<net.Socket, string>();
 
   const activity = () => {
     lastActivity = Date.now();
   };
+
+  /**
+   * The listener a request came in on: this computer (loopback), the tailnet address, the local
+   * network one Settings switched on, or one added at a terminal (`AUSTERE_AXI_HOST`, `--also-listen`).
+   * A socket of no known listener counts as the local network, the strictest.
+   */
+  function via(req: http.IncomingMessage): "loopback" | "tailnet" | "lan" | "added" {
+    const host = boundHost.get(req.socket);
+    if (host === undefined || host === lanHost) return "lan";
+    if (host === tailnetBound) return "tailnet";
+    return host === "127.0.0.1" ? "loopback" : "added";
+  }
+
+  /** `http://host:port` for a listener's address. */
+  function hostUrl(host: string): string {
+    return `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
+  }
 
   // ── helpers ──
 
@@ -578,38 +608,39 @@ export async function runServer({
     if (linkHost) return linkHost;
     if (tailnet && listeners.has(tailnet.ip)) return tailnet.dnsName || tailnet.ip;
     const explicit = process.env.AUSTERE_AXI_HOST;
-    if (explicit && !/^(0\.0\.0\.0|::|\*)$/.test(explicit) && listeners.has(explicit)) return explicit;
+    // Never the local-network listener: the owner's remote link must not point there (P7).
+    if (explicit && !/^(0\.0\.0\.0|::|\*)$/.test(explicit) && explicit !== lanHost && listeners.has(explicit)) return explicit;
     return null;
   }
 
-  /** Where a teammate or phone reaches this server, without a trailing slash, or null when only loopback listens. */
+  /** Where the owner's phone reaches this server, without a trailing slash, or null when only loopback listens. Never the local-network listener. */
   function remoteBase(): string | null {
     if (linkBase) return linkBase.base;
     const host = remoteHost();
     return host ? `http://${host}:${port}` : null;
   }
 
-  /** The page's address for a remote reviewer, without any key, or null. */
-  function remoteUrl(id: string): string | null {
-    const base = remoteBase();
-    return base ? `${base}/s/${id}` : null;
+  /** Where a teammate reaches this server: as the owner's phone does, else the local-network address Settings switched on. Null: only loopback listens. */
+  function reviewerBase(): string | null {
+    return remoteBase() ?? (lanHost ? hostUrl(lanHost) : null);
   }
 
   /**
-   * The owner's links. The remote one carries the owner key, which the server swaps for a cookie. The
-   * local one does not: the CLI opens it with a single-use login code (client.ts loginUrl).
+   * The owner's links. The remote one carries the owner key, which the server swaps for a cookie; it
+   * never points at the local-network listener (remoteBase). The local one does not: the CLI opens it
+   * with a single-use login code (client.ts loginUrl).
    */
   function links(id: string): SessionLinks {
     const out: SessionLinks = { local: `http://127.0.0.1:${port}/s/${id}` };
-    const remote = remoteUrl(id);
-    if (remote) out.remote = `${remote}?key=${ownerToken}`;
+    const base = remoteBase();
+    if (base) out.remote = `${base}/s/${id}?key=${ownerToken}`;
     return out;
   }
 
   /** The link a teammate opens: the page plus the link token, which the server swaps for a device secret. Null when only loopback listens. */
   function shareLink(sessionId: string, token: string): string | null {
-    const page = remoteUrl(sessionId);
-    return page ? `${page}?invite=${token}` : null;
+    const base = reviewerBase();
+    return base ? `${base}/s/${sessionId}?invite=${token}` : null;
   }
 
   /** What a row's scope reaches, in words. */
@@ -637,6 +668,7 @@ export async function runServer({
       lastAddr: row.last_addr,
       lastHost: row.last_host,
       userAgent: row.user_agent,
+      verifiedLogin: row.verified_login,
       link: landing && row.link_token ? (shareLink(landing, row.link_token) ?? undefined) : undefined,
     };
   }
@@ -690,8 +722,8 @@ export async function runServer({
   /** A new link for the page `s`, from the CLI or the review page's Share. An HTTP error, or the link. */
   async function createShare(s: Session, body: RequestBody): Promise<{ status: number; error: string } | ShareResponse> {
     await ensureTailnetListener();
-    if (!remoteBase()) {
-      return { status: 409, error: "no tailnet address: Tailscale is not running here and neither AUSTERE_AXI_HOST nor AUSTERE_AXI_LINK_URL is set, so a teammate could not open the link" };
+    if (!reviewerBase()) {
+      return { status: 409, error: "no address a teammate can reach: Tailscale is not running here, the local network is off (Settings → Network), and neither AUSTERE_AXI_HOST nor AUSTERE_AXI_LINK_URL is set, so a teammate could not open the link" };
     }
     const scope = scopeFor(s, body);
     if (typeof scope === "string") return { status: 400, error: scope };
@@ -714,6 +746,41 @@ export async function runServer({
     log("share", made.row.name, made.row.id, made.row.scope_kind, made.row.auto ? "auto" : "hold");
     const { row } = made;
     return { id: row.id, name: row.name, auto: Boolean(row.auto), scope: row.scope_kind, reaches: reachesText(row), link: shareLink(s.id, made.token) as string, file: s.file, expiresAt: row.link_expires_at as number };
+  }
+
+  /**
+   * Let a Tailscale login in without a link or a request (P5's option): `{ login, name?, scope?, project?, auto? }`.
+   * The scope is relative to page `s` when there is one, as for a share; else `all`, or a `project` by id or
+   * name (from the CLI, a folder inside one of its roots). The name defaults to the login.
+   */
+  function allowTailscale(s: Session | null, body: RequestBody): { status: number; error: string } | AccessSummary {
+    let scope: Scope | string;
+    if (s) scope = scopeFor(s, body);
+    else if (body.scope === "all") scope = { kind: "all", id: null };
+    else if (body.scope === "project" && typeof body.project === "string" && body.project) {
+      let found: ProjectRow | null;
+      try {
+        found = findProject(hub.db, body.project, { folders: path.isAbsolute(body.project) });
+      } catch (err) {
+        return { status: 400, error: (err as Error).message };
+      }
+      if (!found) return { status: 404, error: `no project ${body.project}` };
+      scope = { kind: "project", id: found.id };
+    } else return { status: 400, error: "say what the login reaches: a page (its file), a project, or every page (scope all)" };
+    if (typeof scope === "string") return { status: 400, error: scope };
+    const auto = shareAuto(body.auto, scope);
+    if (typeof auto === "string") return { status: 409, error: auto };
+    const login = typeof body.login === "string" ? body.login.trim() : "";
+    let row: DeviceRow;
+    try {
+      row = devices.allowLogin({ login, name: typeof body.name === "string" && body.name.trim() ? body.name : login.slice(0, 40), scope, auto });
+    } catch (err) {
+      return { status: 400, error: String((err as Error).message || err) };
+    }
+    if (s) watch(s);
+    rescanSharedPolls();
+    log("share-tailscale", row.name, row.id, row.scope_kind, row.auto ? "auto" : "hold");
+    return accessSummary(row, false);
   }
 
   /** Revoke what `key` names (an id, or a name) and cut its open pages off. */
@@ -836,8 +903,9 @@ export async function runServer({
   /**
    * The page an unknown browser sees where requests are on. It names neither the page's title nor
    * its file, and holds nothing of its content: only the form, or where the browser's request stands.
+   * Over the tailnet listener, Tailscale names the person: the form then asks under that name.
    */
-  function requestPage(req: http.IncomingMessage, s: Session, error = ""): string {
+  function requestPage(req: http.IncomingMessage, s: Session, person: TailscalePerson | null, error = ""): string {
     const state = requestStateOf(req);
     const head = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Ask for access</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:28rem;margin:12vh auto;padding:0 1rem;color:#222}input{font:inherit;padding:.4rem .5rem;width:100%;box-sizing:border-box;margin:.25rem 0 .75rem}button{font:inherit;padding:.4rem 1rem}.err{color:#b00020}.muted{color:#666}</style>`;
     if (state === "blocked") return `${head}<h1>No access</h1><p>The owner has blocked this browser from asking for access.</p>`;
@@ -847,17 +915,33 @@ export async function runServer({
     const denied = state === "denied" ? `<p class="err">The owner declined your last request. You can ask again.</p>` : "";
     const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
     const local = isLoopback(clientAddr(req)) ? `<p class="muted">If this is your page, sign this browser in instead: run <code>austere-axi login</code> and open the link it prints.</p>` : "";
+    if (person) {
+      const device = person.device ? ` on <strong>${escapeHtml(person.device)}</strong>` : "";
+      return `${head}<h1>Ask the owner for access</h1>${denied}${err}<p>Tailscale says you are <strong>${escapeHtml(person.name)}</strong> (${escapeHtml(person.login)})${device}.</p><form method="post" action="/s/${s.id}/request"><button>Ask as ${escapeHtml(personName(person))}</button></form><p class="muted">The owner sees your Tailscale login and device, your address and your browser, and lets this browser in.</p>`;
+    }
     return `${head}<h1>Ask the owner for access</h1>${denied}${err}<form method="post" action="/s/${s.id}/request"><label>Your name<input name="name" maxlength="40" autocomplete="name" required autofocus></label><button>Send</button></form><p class="muted">The owner sees your name, your address and your browser, and lets this browser in.</p>${local}`;
+  }
+
+  /** A reviewer name from what Tailscale says: the display name, else the login, cut to a name's 40 characters. */
+  function personName(person: TailscalePerson): string {
+    for (const raw of [person.name, person.login]) {
+      try {
+        return cleanName(raw.slice(0, 40));
+      } catch {
+        // reserved ("owner") or empty: try the next
+      }
+    }
+    return "Tailscale user";
   }
 
   /** Headers for a page of the request flow: not framed, and a form POST keeps its Origin (see the join page). */
   const REQUEST_PAGE_HEADERS = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "same-origin", "x-frame-options": "DENY" };
 
   /**
-   * The hostname of a request's address, stored once it resolves both ways: a reverse lookup alone
-   * is whatever the address's owner put in its PTR record. Best effort, never waited for.
+   * The hostname of address `addr`, handed to `save` once it resolves both ways: a reverse lookup
+   * alone is whatever the address's owner put in its PTR record. Best effort, never waited for.
    */
-  function lookUpHost(id: string, addr: string | null): void {
+  function lookUpHost(addr: string | null, save: (name: string) => void): void {
     if (!addr) return;
     const ip = addr.replace(/^::ffff:/, "");
     dns.promises
@@ -865,26 +949,28 @@ export async function runServer({
       .then(async (names) => {
         for (const name of names.slice(0, 3)) {
           const back = await dns.promises.lookup(name, { all: true }).catch(() => []);
-          if (back.some((a) => a.address.replace(/^::ffff:/, "") === ip)) return requests.setHost(id, name);
+          if (back.some((a) => a.address.replace(/^::ffff:/, "") === ip)) return save(name);
         }
       })
-      // No name, a slow resolver, or a database closed by shutdown in the meantime: the request keeps no hostname.
+      // No name, a slow resolver, or a database closed by shutdown in the meantime: no hostname is kept.
       .catch(() => {});
   }
 
   /**
    * The request flow for a browser with no reviewer cookie, where requests are on for the page:
    * GET the page (the form, or where its request stands), GET /request (the waiting page's poll),
-   * POST /request (send). False: requests are off here, so the caller answers as without them.
+   * POST /request (send). `person`: who Tailscale says asks, over the tailnet listener only; the
+   * request then takes their name and keeps their login and device. False: requests are off here,
+   * so the caller answers as without them.
    */
-  async function requestRoute(req: http.IncomingMessage, res: http.ServerResponse, s: Session, sub: string): Promise<boolean> {
+  async function requestRoute(req: http.IncomingMessage, res: http.ServerResponse, s: Session, sub: string, person: TailscalePerson | null): Promise<boolean> {
     if (!requests.enabled(store.projectIdOf(s))) return false;
     if (sub === "/request" && req.method === "GET") {
       send(res, 200, { state: requestStateOf(req) });
       return true;
     }
     if (sub !== "/request") {
-      send(res, 403, requestPage(req, s), REQUEST_PAGE_HEADERS);
+      send(res, 403, requestPage(req, s, person), REQUEST_PAGE_HEADERS);
       return true;
     }
     // A same-origin browser POST: Origin present and equal to Host, as for /join.
@@ -894,7 +980,7 @@ export async function runServer({
     }
     const pre = requests.bySecret(tokenFromCookie(req.headers.cookie, REQUEST_COOKIE));
     if (pre?.status === "blocked") {
-      send(res, 403, requestPage(req, s), REQUEST_PAGE_HEADERS);
+      send(res, 403, requestPage(req, s, person), REQUEST_PAGE_HEADERS);
       return true;
     }
     if (pre?.status === "approved" || pre?.status === "waiting") {
@@ -921,16 +1007,17 @@ export async function runServer({
       res.end();
       return true;
     }
-    const name = new URLSearchParams(Buffer.concat(chunks).toString("utf8")).get("name");
+    const name = person ? personName(person) : new URLSearchParams(Buffer.concat(chunks).toString("utf8")).get("name");
     let made: { row: AccessRequestRow; secret: string };
     try {
-      made = requests.ask({ name, page: s.id, meta: seenMeta(req) });
+      made = requests.ask({ name, page: s.id, meta: seenMeta(req), tailscale: person });
     } catch (err) {
       if (!(err instanceof RequestRefused)) throw err;
-      send(res, err.status, requestPage(req, s, err.message), REQUEST_PAGE_HEADERS);
+      send(res, err.status, requestPage(req, s, person, err.message), REQUEST_PAGE_HEADERS);
       return true;
     }
-    lookUpHost(made.row.id, made.row.addr);
+    const { id } = made.row;
+    lookUpHost(made.row.addr, (host) => requests.setHost(id, host));
     log("share-request", made.row.id, made.row.name, made.row.addr ?? "");
     res.writeHead(303, { location: `/s/${s.id}`, "set-cookie": requestCookie(req, made.secret), "cache-control": "no-store" });
     res.end();
@@ -949,10 +1036,14 @@ export async function runServer({
     return net.isIP(forwarded) ? forwarded : socket;
   }
 
-  /** Where a request came from, for a device's last-seen fields and an access request. */
-  function seenMeta(req: http.IncomingMessage): SeenMeta {
+  /**
+   * Where a request came from, for a device's last-seen fields and an access request: the address and
+   * the User-Agent. The hostname is the Tailscale device's name when Tailscale named the person, else
+   * left for a reverse lookup (lookUpHost); the Host header names this server, not the browser.
+   */
+  function seenMeta(req: http.IncomingMessage, person: TailscalePerson | null = null): SeenMeta {
     const ua = req.headers["user-agent"];
-    return { addr: clientAddr(req) ?? null, host: hostOnly(req.headers.host) || null, userAgent: typeof ua === "string" ? ua : null };
+    return { addr: clientAddr(req) ?? null, host: person?.device || null, userAgent: typeof ua === "string" ? ua : null };
   }
 
   /** Whether the browser reached this server over HTTPS: a proxy says so, or the link URL is https and this is its host. */
@@ -964,15 +1055,17 @@ export async function runServer({
   /**
    * Only a request with the owner cookie is the owner, on loopback too: another OS user on this
    * machine can reach 127.0.0.1 but cannot read owner.key (mode 0600). The cookie holds a value
-   * derived from the key, not the key (see ownerCookie).
+   * derived from the key, not the key (see ownerCookie). Never on the local-network listener (P7).
    */
   function isOwner(req: http.IncomingMessage): boolean {
+    if (via(req) === "lan") return false;
     const value = tokenFromCookie(req.headers.cookie, OWNER_COOKIE);
     return value != null && safeEqual(value, ownerCookieValue);
   }
 
   /** The 403 text for a request that is not the owner. On loopback it is most likely the owner in a browser without the cookie yet. */
   function notOwner(req: http.IncomingMessage, text = "Only the owner can open this. Ask the owner for a link to the page.") {
+    if (via(req) === "lan") return `${text}\n${LAN_NO_OWNER}`;
     if (!isLoopback(req.socket.remoteAddress)) return text;
     return `${text}\nIf this is your page, sign this browser in: run \`austere-axi login\` (or \`austere-axi login <file>\`) and open the single-use link it prints.`;
   }
@@ -1012,17 +1105,48 @@ export async function runServer({
   }
 
   /**
-   * A team reviewer (a reviewer cookie of a live device whose scope reaches this page), else the
-   * owner (the owner key cookie, set from a link the CLI opened or the owner's own remote link), else
-   * nobody. A request with a reviewer cookie is never the owner, so revoking cuts access.
+   * Who `tailscale whois` says is behind a request, over the tailnet listener only, asked with the
+   * socket's own remote address: never a header (`X-Forwarded-For`, `Tailscale-User-*`), which
+   * anyone can send. A connection from this machine's own tailnet address is this computer, not a
+   * person on the tailnet. Null: another listener, Tailscale off or failing, or a tagged device.
    */
-  function identify(req: http.IncomingMessage, s: Session): Viewer | null {
-    if (!reviewerCookies(req.headers.cookie).length) return isOwner(req) ? OWNER : null;
+  function tailnetPerson(req: http.IncomingMessage): Promise<TailscalePerson | null> {
+    if (via(req) !== "tailnet") return Promise.resolve(null);
+    const addr = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+    return addr && addr !== tailnetBound ? whoIs(addr) : Promise.resolve(null);
+  }
+
+  /** What a row proves a reviewer with: its secret's hash, or for a Tailscale login the owner let in, that login. */
+  function credentialOf(row: DeviceRow): string | null {
+    if (row.secret_hash) return row.secret_hash;
+    return row.origin === "tailscale" && row.verified_login ? `tailscale\0${row.verified_login}` : null;
+  }
+
+  /** Record that `row` was seen now, and look up the address's hostname when Tailscale did not name the device. */
+  function seenDevice(row: DeviceRow, req: http.IncomingMessage, person: TailscalePerson | null): void {
+    const meta = seenMeta(req, person);
+    const addr = meta.addr;
+    if (devices.seen(row, meta) && !meta.host && addr) lookUpHost(addr, (host) => devices.setHost(row.id, addr, host));
+  }
+
+  /**
+   * Who is asking, in this order (RLM-399): the owner (the owner key cookie, on any listener but the
+   * local network's, with no reviewer cookie); a person Tailscale names (`person`) whose login the owner
+   * let in for this page; a device the owner approved (a reviewer cookie of a live device whose scope
+   * reaches this page; over the tailnet, only for the login first seen behind it); else nobody. A
+   * request with a reviewer cookie is never the owner, so revoking cuts access.
+   */
+  function identify(req: http.IncomingMessage, s: Session, person: TailscalePerson | null): Viewer | null {
+    const cookies = reviewerCookies(req.headers.cookie).length > 0;
+    if (!cookies && isOwner(req)) return OWNER;
     const pid = store.projectIdOf(s);
-    const row = cookieDevices(req).find((r) => covers(r, s.id, pid));
+    const allowed = person ? devices.byLogin(person.login).find((r) => covers(r, s.id, pid)) : undefined;
+    const row = allowed ?? (cookies ? cookieDevices(req).find((r) => covers(r, s.id, pid) && (!person || r.verified_login == null || r.verified_login === person.login)) : undefined);
     if (!row) return null;
-    devices.seen(row, seenMeta(req));
-    return { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id, credential: row.secret_hash as string };
+    // An old-style link's token is many browsers' cookie: it belongs to no one login.
+    if (person && !row.reusable) devices.bindLogin(row, person.login);
+    seenDevice(row, req, person);
+    return { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id, credential: credentialOf(row) as string };
   }
 
   /** A note this reviewer wrote: by device, or by name for a note from before devices. */
@@ -1790,6 +1914,7 @@ export async function runServer({
         // Bound to the port this server listens on: a listener elsewhere cannot relay it as its own.
         proof: nonce ? crypto.createHmac("sha256", ownerToken).update(`${port}:${nonce}`).digest("base64url") : undefined,
         listen: Array.from(listeners.keys()),
+        lan: lanHost ?? undefined,
         tailnet: tailnet || undefined,
         remote: remoteBase() || undefined,
         persist: idleMs === 0,
@@ -1823,6 +1948,8 @@ export async function runServer({
     if (route === "share/requests" && req.method === "GET") return send(res, 200, requestsList() satisfies AccessRequestsResponse);
     // `share default [hold|auto]`: the owner's default for a new reviewer's notes, as Settings → Review defaults sets it.
     if (route === "share/default" && req.method === "GET") return send(res, 200, { auto: requests.defaultAuto() });
+    // `server lan`: the local-network switch of Settings → Network (RLM-399).
+    if (route === "settings/lan" && req.method === "GET") return send(res, 200, settingsView().network.lan satisfies LocalNetwork);
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req);
     // The agent session the command runs in (RLM-343); recorded once the route knows its pages.
@@ -1842,6 +1969,28 @@ export async function runServer({
       const done = revokeAccess(body.key);
       if (!done.revoked.length) return send(res, 404, { error: "no link or device matches that name or id" });
       return send(res, 200, done satisfies RevokeResponse);
+    }
+    if (route === "settings/lan") {
+      const lan = body.lan;
+      if (lan !== null && typeof lan !== "string") return send(res, 400, { error: "lan must be one of this computer's local-network addresses, or null" });
+      const failed = await setLan(lan || null);
+      if (failed) return send(res, 400, { error: failed });
+      return send(res, 200, settingsView().network.lan satisfies LocalNetwork);
+    }
+    // `share tailscale <login> [file] [--project <p> | --all]`: let a Tailscale login in without a link (RLM-399).
+    if (route === "share/tailscale") {
+      let s: Session | null = null;
+      if (typeof body.file === "string" && body.file) {
+        const file = canonicalFile(body.file);
+        if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
+        try {
+          s = store.ensure(file, typeof body.cwd === "string" && path.isAbsolute(body.cwd) ? body.cwd : undefined);
+        } catch (err) {
+          return send(res, 400, { error: String((err as Error).message || err) });
+        }
+      }
+      const made = allowTailscale(s, body);
+      return "error" in made ? send(res, made.status, { error: made.error }) : send(res, 200, made satisfies AccessSummary);
     }
     // Access requests (RLM-398): `share requests on|off [--project]`, `share approve|deny|block <id>`.
     if (route === "share/requests" || route === "share/approve" || route === "share/deny" || route === "share/block") {
@@ -2158,8 +2307,9 @@ export async function runServer({
     let ok = safeEqual(token, assetToken(s, OWNER));
     const pid = store.projectIdOf(s);
     for (const row of devices.list()) {
-      if (row.secret_hash == null || !isLive(row) || !covers(row, s.id, pid)) continue;
-      if (safeEqual(token, assetToken(s, { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id, credential: row.secret_hash }))) ok = true;
+      const credential = credentialOf(row);
+      if (credential == null || !isLive(row) || !covers(row, s.id, pid)) continue;
+      if (safeEqual(token, assetToken(s, { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id, credential }))) ok = true;
     }
     return ok;
   }
@@ -2314,21 +2464,22 @@ export async function runServer({
     return send(res, 404, { error: "not found" });
   }
 
-  /** Where the address teammates get comes from: the same order as remoteBase(). Null: only this computer listens. */
+  /** Where the address teammates get comes from: the same order as reviewerBase(). Null: only this computer listens. */
   function shareAddress(): SettingsResponse["network"]["share"] {
     if (linkBase) return { url: linkBase.base, from: "link_url" };
     const host = remoteHost();
-    if (!host) return null;
+    if (!host) return lanHost ? { url: hostUrl(lanHost), from: "lan" } : null;
     const from = process.env.AUSTERE_AXI_LINK_HOST ? "link_host" : tailnet && listeners.has(tailnet.ip) ? "tailscale" : "host";
     return { url: `http://${host}:${port}`, from };
   }
 
   function settingsView(): SettingsResponse {
     const addresses = Array.from(listeners.keys()).map((host) => ({
-      kind: host === "127.0.0.1" ? ("this_computer" as const) : host === tailnetBound ? ("tailscale" as const) : ("added" as const),
+      kind: host === "127.0.0.1" ? ("this_computer" as const) : host === tailnetBound ? ("tailscale" as const) : host === lanHost ? ("local_network" as const) : ("added" as const),
       host,
-      url: `http://${host.includes(":") ? `[${host}]` : host}:${port}`,
+      url: hostUrl(host),
     }));
+    const lanChosen = requests.lanAddress();
     // Who has which page open now: one entry per person per page, the owner's tabs as one.
     const viewing: SettingsResponse["review"]["viewing"] = [];
     for (const [id, set] of clients) {
@@ -2343,6 +2494,8 @@ export async function runServer({
         addresses,
         share: shareAddress(),
         tailscale: tailnet ? { ip: tailnet.ip, dns_name: tailnet.dnsName } : null,
+        tailscale_names: tailnetBound != null,
+        lan: { address: lanChosen, listening: lanChosen != null && lanHost === lanChosen, url: lanHost === lanChosen && lanHost ? hostUrl(lanHost) : null, choices: lanAddresses() },
         always_on: {
           mode: runBy ? "service" : idleMs === 0 ? "kept_on" : "idles",
           supervisor: supervisorName,
@@ -2378,6 +2531,14 @@ export async function runServer({
       requests.setDefaultAuto(body.auto);
       log("settings-review", body.auto ? "auto" : "hold");
       return done(body.auto ? "New reviewers' notes go straight to the agent." : "New reviewers' notes wait for you.");
+    }
+    // The local network (P6): `{ lan: "<address>" }` listens there, `{ lan: null }` stops. `server lan` at a terminal does the same.
+    if (route === "settings/network") {
+      const lan = body.lan;
+      if (lan !== null && typeof lan !== "string") return send(res, 400, { error: "lan must be one of this computer's local-network addresses, or null" });
+      const failed = await setLan(lan || null);
+      if (failed) return send(res, 400, { error: failed });
+      return done(lan ? `Listening on the local network at ${hostUrl(lan)}: reviewers only, unencrypted.` : "Not listening on the local network.");
     }
     if (route === "projects/archive-missing") {
       const project = typeof body.project === "string" ? body.project : "";
@@ -2470,7 +2631,9 @@ export async function runServer({
    * Requests (RLM-398), for People → Waiting and the hub header's count: GET /hub/api/people/requests;
    * POST /hub/api/people/requests/switch {on, project?}; POST /hub/api/people/requests/<id>/approve
    * {scope?, project?, auto?, name?}, /deny, /block. Settings → People → New link: POST /hub/api/people/share
-   * {page (a copy's id), name, scope?, project?, auto?} (auto left out: the owner's default). The owner's only.
+   * {page (a copy's id), name, scope?, project?, auto?} (auto left out: the owner's default). Settings →
+   * Network → Names from Tailscale (RLM-399): POST /hub/api/people/tailscale {login, name?, scope (all or
+   * project), project?, auto?} lets a Tailscale login in without a link. The owner's only.
    */
   async function hubPeople(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     // It holds the links: never for another site, GET included.
@@ -2494,6 +2657,11 @@ export async function runServer({
       if (!fs.existsSync(a.file)) return send(res, 409, { error: `the file is gone: ${a.file}` });
       const made = await createShare(store.ensure(a.file), body);
       return "error" in made ? send(res, made.status, { error: made.error }) : send(res, 200, made satisfies ShareResponse);
+    }
+    if (url.pathname === "/hub/api/people/tailscale") {
+      if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
+      const made = allowTailscale(null, await readBody(req, 16 * 1024));
+      return "error" in made ? send(res, made.status, { error: made.error }) : send(res, 200, made satisfies AccessSummary);
     }
     if (url.pathname === "/hub/api/people") {
       if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
@@ -2546,6 +2714,15 @@ export async function runServer({
     const host = hostOnly(req.headers.host);
     if (!hostsAllowed().has(host) && process.env.AUSTERE_AXI_ALLOWED_HOSTS !== "*") {
       return send(res, 403, "host not allowed");
+    }
+    // The local-network listener serves reviewers only (P7): no control route, no hub, and no owner
+    // sign-in, link or cookie. An owner cookie sent there is refused and cleared.
+    if (via(req) === "lan") {
+      const ownerCookieSent = tokenFromCookie(req.headers.cookie, OWNER_COOKIE) != null;
+      const ownerPath = url.pathname.startsWith("/api/") || url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
+      if (ownerPath || ownerCookieSent || url.searchParams.has("key") || url.searchParams.has("login")) {
+        return send(res, 403, LAN_NO_OWNER, ownerCookieSent ? { "set-cookie": `${OWNER_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0` } : {});
+      }
     }
     if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
     if (url.pathname.startsWith("/__austere/")) return serveAsset(req, res, url.pathname.slice("/__austere/".length), url);
@@ -2626,8 +2803,13 @@ export async function runServer({
       const refused = linkRefusal(link, s);
       if (refused || !link) return send(res, 403, refused);
       // Claimed once: a second browser racing the first gets null here. The cookie is a fresh secret, never the link token.
-      const claimed = devices.claim(link, seenMeta(req));
+      const person = await tailnetPerson(req);
+      const claimed = devices.claim(link, seenMeta(req, person));
       if (!claimed) return send(res, 403, LINK_USED);
+      // Opened over the tailnet: the device is that login's from now on (identify). Else its address may have a hostname.
+      const { device } = claimed;
+      if (person) devices.bindLogin(device, person.login);
+      else if (device.last_addr) lookUpHost(device.last_addr, (name) => devices.setHost(device.id, device.last_addr as string, name));
       log("share-claim", claimed.device.name, claimed.device.id);
       res.writeHead(303, {
         location: `/s/${s.id}`,
@@ -2655,11 +2837,12 @@ export async function runServer({
       }
     }
 
-    const who = identify(req, s);
+    const person = await tailnetPerson(req);
+    const who = identify(req, s, person);
     if (!who) {
       const presented = reviewerCookies(req.headers.cookie);
       // An unknown browser may ask for access where the owner turned requests on (RLM-398).
-      if (!presented.length && asking && (await requestRoute(req, res, s, sub))) return;
+      if (!presented.length && asking && (await requestRoute(req, res, s, sub, person))) return;
       if (!presented.length) return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
       // A live device whose scope does not reach this page keeps its cookie: it still opens the pages it does reach.
       if (cookieDevices(req).length) return send(res, 403, "This page is not shared with you. Ask the owner for access to it.");
@@ -2873,7 +3056,7 @@ export async function runServer({
     if (sub === "/share" && req.method === "GET") {
       if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
       const p = projectOfPage(s);
-      return send(res, 200, { project: p ? { id: p.id, name: p.name } : null, remote: Boolean(remoteBase()), auto: requests.defaultAuto() });
+      return send(res, 200, { project: p ? { id: p.id, name: p.name } : null, remote: Boolean(reviewerBase()), auto: requests.defaultAuto() });
     }
     // The attach popover and the run panel (RLM-346): the owner's only, as reviewers are refused above.
     // A GET from a foreign Origin is refused too: it lists the page's agent sessions.
@@ -2953,6 +3136,8 @@ export async function runServer({
           else res.end();
         });
       });
+      // Which listener accepted a connection decides what it may do (via): the owner never on the local network's, whois only on the tailnet's.
+      server.on("connection", (socket: net.Socket) => boundHost.set(socket, host));
       server.keepAliveTimeout = 65_000;
       server.requestTimeout = 0;
       server.headersTimeout = 60_000;
@@ -3023,12 +3208,57 @@ export async function runServer({
     await followTailnet(await detectTailscale({ fresh: true }), true);
   }
 
+  /**
+   * Settings → Network → Local network (P6): listen on `address`, one of this machine's local-network
+   * addresses (lanAddresses), or stop (null). The choice is kept in hub.db, so a later server listens
+   * there too. The error in words, or "".
+   */
+  async function setLan(address: string | null): Promise<string> {
+    if (address !== null && !lanAddresses().some((a) => a.address === address)) return `${address} is not an address of this computer on a local network`;
+    if (lanHost && lanHost !== address) leaveLan(lanHost);
+    if (address && lanHost !== address) {
+      const failed = await joinLan(address);
+      if (failed) return failed;
+    }
+    requests.setLanAddress(address);
+    log("settings-lan", address ?? "off");
+    return "";
+  }
+
+  /** Listen on the local-network address. It counts as the local network's before the first connection can arrive. */
+  async function joinLan(address: string): Promise<string> {
+    lanHost = address;
+    if (await listen(address)) return "";
+    lanHost = null;
+    return `could not listen on ${address}:${port}`;
+  }
+
+  /**
+   * Stop listening on the local network. An address also given at a terminal (`--also-listen`,
+   * `AUSTERE_AXI_HOST`) keeps its listener; either way, every connection made there ends now.
+   */
+  function leaveLan(address: string): void {
+    lanHost = null;
+    const server = listeners.get(address);
+    if (!alsoListen.includes(address) && address !== fixedHost) {
+      server?.close();
+      listeners.delete(address);
+    }
+    server?.closeAllConnections();
+    log("lan", `left ${address}`);
+  }
+
   const ok = await listen("127.0.0.1");
   if (!ok) {
     store.close();
     releaseLock();
     throw new Error(`could not listen on 127.0.0.1:${port} (is another server using it? set AUSTERE_AXI_PORT)`);
   }
+  // The local network, when Settings switched it on: unless this computer no longer has that address
+  // (another network, a new lease). The setting stays; Settings says the server is not listening there.
+  const savedLan = requests.lanAddress();
+  if (savedLan && lanAddresses().some((a) => a.address === savedLan)) await joinLan(savedLan);
+  else if (savedLan) log("lan", `${savedLan} is not an address of this computer now`);
   for (const h of alsoListen) await listen(h);
   await ensureTailnetListener();
   const tailnetCheckMs = msEnv("AUSTERE_AXI_TAILNET_CHECK_MS", 60_000);

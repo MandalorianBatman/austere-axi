@@ -200,8 +200,9 @@ export async function ensureServer({ restart = false }: { restart?: boolean } = 
   } else if (h && plan?.action === "replace") {
     // A newer CLI replaces an older server; sessions are on disk. The new one listens where the
     // old one did, keeps --persist and the old one's address variables (link url, allowed hosts).
-    const { tailnet } = h;
-    const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!tailnet || x !== tailnet.ip));
+    // The local-network address is Settings', which the new one reads itself: as --also-listen it would let the owner in there.
+    const { tailnet, lan } = h;
+    const keep = (h.listen || []).filter((x) => x !== "127.0.0.1" && (!tailnet || x !== tailnet.ip) && x !== lan);
     await shutdownServer(h, port);
     for (let i = 0; i < 40 && (await health(port)); i++) await sleep(100);
     exited = spawnServer(port, { alsoListen: keep, persist: !!h.persist, addresses: h.addresses });

@@ -209,12 +209,55 @@ export class DeviceStore {
     return row ?? null;
   }
 
-  /** Record that a device was seen, at most once a minute. */
-  seen(row: DeviceRow, meta: SeenMeta): void {
+  /** Record that a device was seen, at most once a minute. True: it was written now. */
+  seen(row: DeviceRow, meta: SeenMeta): boolean {
     const now = this.now();
-    if (row.last_seen_at != null && now - row.last_seen_at < SEEN_EVERY_MS) return;
+    if (row.last_seen_at != null && now - row.last_seen_at < SEEN_EVERY_MS) return false;
     row.last_seen_at = now;
     this.db.prepare("UPDATE devices SET last_seen_at = ?, last_addr = ?, last_host = ?, user_agent = COALESCE(?, user_agent) WHERE id = ?").run(now, clip(meta.addr), clip(meta.host), clip(meta.userAgent), row.id);
+    return true;
+  }
+
+  /** The hostname a reverse lookup found for the address a device was last seen at, while it still is that address. */
+  setHost(id: string, addr: string, host: string): void {
+    this.db.prepare("UPDATE devices SET last_host = ? WHERE id = ? AND last_addr = ? AND last_host IS NULL").run(clip(host), id, clip(addr));
+  }
+
+  /**
+   * A Tailscale login the owner lets in without a link or a request (RLM-399): the row is the person,
+   * found again by `tailscale whois` on every visit over the tailnet listener, so it has no secret
+   * and no cookie. Refused, as a link is, when a live row of that name or that login already has this scope.
+   */
+  allowLogin({ login, name, scope, auto = false }: { login: unknown; name: unknown; scope: Scope; auto?: boolean }): DeviceRow {
+    const who = String(login ?? "").trim();
+    if (!who || who.length > 200 || /[\s\u0000-\u001f\u007f]/.test(who)) throw new Error("a Tailscale login is required, as Tailscale shows it (e.g. ana@example.com or ana@github)");
+    if (who === "tagged-devices") throw new Error("tagged devices belong to no person; let a person's login in instead");
+    const clean = cleanName(name);
+    const now = this.now();
+    return inTransaction(this.db, () => {
+      const same = (this.db.prepare("SELECT * FROM devices WHERE scope_kind = ? AND scope_id IS ?").all(scope.kind, scope.id) as unknown as DeviceRow[]).filter((r) => isLive(r, now) && (sameName(r.name, clean) || (r.origin === "tailscale" && r.verified_login === who)));
+      if (same.length) throw new Error(`"${same[0].name}" already has access with this scope; revoke it first (share revoke "${same[0].name}")`);
+      const id = newDeviceId();
+      this.db
+        .prepare("INSERT INTO devices (id, name, origin, verified_login, scope_kind, scope_id, auto, created_at, claimed_at) VALUES (?, ?, 'tailscale', ?, ?, ?, ?, ?, ?)")
+        .run(id, clean, who, scope.kind, scope.id, auto ? 1 : 0, now, now);
+      return this.get(id) as DeviceRow;
+    });
+  }
+
+  /** The live rows that let Tailscale login `login` in by itself (allowLogin), the oldest first. */
+  byLogin(login: string): DeviceRow[] {
+    return this.db.prepare("SELECT * FROM devices WHERE origin = 'tailscale' AND verified_login = ? AND revoked_at IS NULL ORDER BY created_at, rowid").all(login) as unknown as DeviceRow[];
+  }
+
+  /**
+   * The first Tailscale login seen behind a device's cookie becomes the device's: from then on the
+   * cookie works over the tailnet only for that login (see server.ts identify).
+   */
+  bindLogin(row: DeviceRow, login: string): void {
+    if (row.verified_login != null) return;
+    row.verified_login = login;
+    this.db.prepare("UPDATE devices SET verified_login = ? WHERE id = ? AND verified_login IS NULL").run(login, row.id);
   }
 
   /** Revoke what `key` names: a row's id, or every live row with that name. Returns the rows revoked. */

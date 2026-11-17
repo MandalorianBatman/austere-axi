@@ -253,7 +253,7 @@ test("request → approve: the browser that asked gets in, another browser with 
       ["Ana", "127.0.0.3", "Chrome on Linux", path.join(WORK, "plan.html")],
       ["Ana", "127.0.0.4", "Chrome on Linux", path.join(WORK, "plan.html")],
     ]);
-    assert.ok(list.data.waiting.every((r) => r.verifiedLogin === null && r.tailscaleDevice === null), "Tailscale fields stay empty until RLM-399");
+    assert.ok(list.data.waiting.every((r) => r.verifiedLogin === null && r.tailscaleDevice === null), "off the tailnet listener nobody is named by Tailscale");
     assert.ok(!JSON.stringify(list.data).includes(ana.cookie.split("=")[1]), "the pending secret is never listed");
 
     const approved = await hub<RequestDecisionResponse>("POST", `/hub/api/people/requests/${list.data.waiting[0].id}/approve`, { scope: "page" });

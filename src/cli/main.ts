@@ -22,6 +22,7 @@ import { installService, installedServiceFor, serverUnit, serviceContext, servic
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
 import type { AccessRequestSummary, AccessRequestsResponse, AccessSummary, ArchiveMissingResponse, ArchiveResponse, FeedbackResponse, OpenResponse, PollResponse, ProjectFeedbackResponse, RequestDecisionResponse, RequestSwitchResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import type { LocalNetwork } from "../shared/hub-api.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
@@ -414,11 +415,11 @@ const COMMANDS: Record<string, CommandSpec> = {
   unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
   share: {
     usage:
-      'share <file> --as "<name>" [--project <p> | --all] [--auto | --hold] [--expires <dur>] | share list [--links] | share revoke <name|id> | share requests [on|off] [--project <p>] | share approve <id> [--project <p> | --all] [--auto | --hold] [--as "<name>"] | share deny <id> | share block <id> | share default [hold|auto]',
+      'share <file> --as "<name>" [--project <p> | --all] [--auto | --hold] [--expires <dur>] | share list [--links] | share revoke <name|id> | share requests [on|off] [--project <p>] | share approve <id> [--project <p> | --all] [--auto | --hold] [--as "<name>"] | share deny <id> | share block <id> | share default [hold|auto] | share tailscale <login> [<file>] [--project <p> | --all] [--as "<name>"] [--auto | --hold]',
     summary:
-      "named link for a teammate on your tailnet. The first browser that opens it becomes that person's device and the link stops working; a link nobody opens expires (default 7d). It reaches the page, or with --project the page's project, or with --all every page. Their notes wait for you unless --auto (`default auto` makes that the default). list shows the links nobody has opened yet and the devices; revoke cuts one off at once. Requests (off by default): with `requests on` (every page) or `requests on --project <p>`, a browser without a link that opens a page's address can type a name and ask; `requests` lists who waits, approve lets that browser in (the page, or --project / --all), deny refuses it (it may ask again), block stops that browser asking",
+      "named link for a teammate on your tailnet. The first browser that opens it becomes that person's device and the link stops working; a link nobody opens expires (default 7d). It reaches the page, or with --project the page's project, or with --all every page. Their notes wait for you unless --auto (`default auto` makes that the default). list shows the links nobody has opened yet and the devices; revoke cuts one off at once. Requests (off by default): with `requests on` (every page) or `requests on --project <p>`, a browser without a link that opens a page's address can type a name and ask; `requests` lists who waits, approve lets that browser in (the page, or --project / --all), deny refuses it (it may ask again), block stops that browser asking. Over Tailscale the server asks `tailscale whois` who is behind the connection: a request then carries that person's Tailscale name, login and device, and `share tailscale <login>` lets that login in on any of their devices without a link (the page, its project, or --project / --all)",
     flags: {
-      as: "the reviewer's name; with approve: let them in under this name instead of the one they typed",
+      as: "the reviewer's name; with approve: let them in under this name instead of the one they typed; with tailscale: the name to show (default: the login)",
       project: "reach every page of this project (the page's own: a name, an id, or a folder inside one of its roots); with requests on|off: that project only",
       all: "reach every page on this machine",
       auto: "send this reviewer's notes straight to the agent",
@@ -426,7 +427,7 @@ const COMMANDS: Record<string, CommandSpec> = {
       expires: "an unopened link stops working after this long: 30m, 12h, 7d, 2w (default 7d)",
       links: "show the links (list)",
     },
-    example: 'share plan.html --as "Ana"   |   share plan.html --as "Bo" --project shop --expires 2d   |   share requests on --project shop   |   share approve r0123456789',
+    example: 'share plan.html --as "Ana"   |   share plan.html --as "Bo" --project shop --expires 2d   |   share requests on --project shop   |   share approve r0123456789   |   share tailscale ana@example.com --project shop',
   },
   publish: {
     usage:
@@ -445,9 +446,9 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
   server: {
-    usage: "server [install|uninstall|status|restart] [--persist] [--port n] [--also-listen addr]... [--verbose] [--link-url u] [--adopt] [--force]",
+    usage: "server [install|uninstall|status|restart] [--persist] [--port n] [--also-listen addr]... [--verbose] [--link-url u] [--adopt] [--force] | server lan [<address>|off]",
     summary:
-      "run the server in the foreground (behind a reverse proxy); `server install` (at a terminal only) makes it always on as a per-user systemd or launchd service that starts at login and restarts on failure: it shows what it will write and asks first, and puts back what was there when the service does not start. `server status` says whether it runs, `server restart` restarts it (after an upgrade too), `server uninstall` removes it",
+      "run the server in the foreground (behind a reverse proxy); `server install` (at a terminal only) makes it always on as a per-user systemd or launchd service that starts at login and restarts on failure: it shows what it will write and asks first, and puts back what was there when the service does not start. `server status` says whether it runs, `server restart` restarts it (after an upgrade too), `server uninstall` removes it. `server lan <address>` also listens on one of this computer's local-network addresses, for reviewers only (the owner never signs in there; its traffic is not encrypted); `server lan off` stops; `server lan` lists the addresses (Settings → Network does the same)",
     flags: {
       persist: "never idle out",
       port: "listen port (default: AUSTERE_AXI_PORT, else the port in the state dir's server.lock, else the installed service's, else 4388); with install, the port the service listens on (default: the installed unit's)",
@@ -2528,7 +2529,7 @@ function accessRow(a: AccessSummary): Printed {
     mode: a.auto ? "auto" : "hold",
     ...(a.claimedAt == null
       ? { kind: a.reusable ? "old-style link: reusable, no expiry; revoke it and share again for a single-use one" : "link", created: ago(a.createdAt), expires: a.expiresAt == null ? undefined : shortDate(a.expiresAt), link: a.link }
-      : { joined: ago(a.claimedAt), seen: a.lastSeenAt == null ? undefined : ago(a.lastSeenAt), from: a.lastAddr ?? undefined }),
+      : { joined: ago(a.claimedAt), seen: a.lastSeenAt == null ? undefined : ago(a.lastSeenAt), from: [a.lastAddr, a.lastHost && `(${a.lastHost})`].filter(Boolean).join(" ") || undefined, tailscale: a.verifiedLogin ?? undefined }),
   };
 }
 
@@ -2576,6 +2577,34 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
       });
     }
     return print({ status: q.status, request: `${q.name} (${q.id})`, note: q.status === "blocked" ? "That browser can no longer ask." : "That browser may ask again.", next: `${BIN} share requests lists who else waits.` });
+  }
+  if (sub === "tailscale") {
+    const [login, file] = more;
+    if (!login) return usage(`tailscale needs a login, as Tailscale shows it: ${BIN} share tailscale <login> [<file>] [--project <p> | --all]`, "share");
+    if (flags.project !== undefined && flags.all) return usage("--project and --all exclude each other: pick one scope", "share");
+    if (flags.as !== undefined && (typeof flags.as !== "string" || !flags.as.trim())) return usage(`--as needs a name: ${BIN} share tailscale ${login} --as "<name>"`, "share");
+    if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project)) return usage(`--project needs a project: ${BIN} share tailscale ${login} --project <name>`, "share");
+    let abs: string | null = null;
+    if (file !== undefined) {
+      abs = needFile(file, "share");
+      if (!abs) return;
+    } else if (!flags.all && flags.project === undefined) return usage(`say what ${login} reaches: a page (${BIN} share tailscale ${login} <file>), --project <p>, or --all`, "share");
+    await ensureServer();
+    // A folder names the project whose root holds it; the server has no working directory to resolve it against.
+    const project = typeof flags.project === "string" ? (fs.existsSync(flags.project) ? path.resolve(flags.project) : flags.project) : undefined;
+    const scope = flags.all ? "all" : flags.project !== undefined ? "project" : "page";
+    const r = await request<AccessSummary>("POST", "/api/share/tailscale", { login, file: abs, name: flags.as, scope, project, auto: notesMode(flags), cwd: process.cwd() });
+    if (r.status !== 200) return fail(r.data?.error || `share tailscale failed (${r.status})`);
+    const d = r.data;
+    return print({
+      status: "allowed",
+      reviewer: d.name,
+      tailscale: d.verifiedLogin ?? login,
+      reaches: d.reaches,
+      mode: d.auto ? "auto: their notes go straight to the agent" : "hold: their notes wait until the owner sends them on",
+      note: `Any device signed in to Tailscale as ${login} opens the pages this reaches, over this computer's Tailscale address, with no link: Tailscale vouches for the login. Not on this computer, the local network or HTTPS.`,
+      next: `${BIN} share revoke ${d.id} cuts it off.`,
+    });
   }
   if (sub === "revoke") {
     const key = more.join(" ");
@@ -2639,7 +2668,8 @@ async function shareDefault(args: string[]): Promise<void> {
 
 /** One row of `share requests`. */
 function requestRow(q: AccessRequestSummary): Printed {
-  return { name: q.name, id: q.id, asked: shortDate(q.createdAt), page: q.file ?? q.page, from: [q.addr, q.host && `(${q.host})`].filter(Boolean).join(" ") || undefined, browser: q.browser, tailscale: q.verifiedLogin ?? undefined };
+  const tailscale = q.verifiedLogin ? `${q.verifiedLogin}${q.tailscaleDevice ? ` on ${q.tailscaleDevice}` : ""} (verified by Tailscale)` : undefined;
+  return { name: q.name, id: q.id, asked: shortDate(q.createdAt), page: q.file ?? q.page, from: [q.addr, q.host && `(${q.host})`].filter(Boolean).join(" ") || undefined, browser: q.browser, tailscale };
 }
 
 /** `share requests` lists who waits; `share requests on|off [--project <p>]` turns requests on or off. */
@@ -2866,7 +2896,11 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
     const { runServer } = await import("./server.ts");
     return void (await runServer({ port: p ?? commandPort(), verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist }));
   }
-  if (!["install", "uninstall", "status", "restart"].includes(sub)) return usage(`unknown server subcommand: ${sub}. One of: install uninstall status restart`, "server");
+  if (sub === "lan") {
+    if (rest.length > 2 || Object.keys(flags).length) return usage(`server lan takes one address or off: ${BIN} server lan [<address>|off]`, "server");
+    return serverLan(rest[1]);
+  }
+  if (!["install", "uninstall", "status", "restart"].includes(sub)) return usage(`unknown server subcommand: ${sub}. One of: install uninstall status restart lan`, "server");
   if (rest.length > 1) return usage(`server ${sub} takes no arguments; it got ${rest.slice(1).map((a) => `"${a}"`).join(" ")}`, "server");
   const allowed = sub === "install" ? ["port", "link-url", "adopt", "force"] : sub === "uninstall" ? ["force"] : sub === "restart" ? [] : ["port"];
   const extra = Object.keys(flags).filter((k) => !allowed.includes(k));
@@ -2897,6 +2931,24 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
   } catch (err) {
     return fail(messageOf(err));
   }
+}
+
+/** `server lan [<address>|off]`: Settings → Network → Local network, at a terminal (RLM-399). */
+async function serverLan(arg: string | undefined): Promise<void> {
+  await ensureServer();
+  const r = arg === undefined ? await request<LocalNetwork>("GET", "/api/settings/lan") : await request<LocalNetwork>("POST", "/api/settings/lan", { lan: arg === "off" ? null : arg });
+  if (r.status !== 200) return fail(r.data?.error || `server lan failed (${r.status})`);
+  if (!Array.isArray(r.data.choices)) return fail(`the running server is older than this CLI and has no local-network switch: run \`${BIN} stop\` (or restart its service), then try again`);
+  const d = r.data;
+  return print({
+    status: arg === undefined ? undefined : "saved",
+    lan: !d.address ? "off" : d.listening ? `on: reviewers reach this server at ${d.url}` : `on for ${d.address}, but this computer does not have that address now; the server listens there once it does and restarts`,
+    addresses: d.choices.length ? d.choices.map((c) => `${c.address} (${c.iface})`) : "none: this computer is on no local network",
+    note: d.address
+      ? "Reviewers only: the owner never signs in on this address. Traffic on this network is not encrypted. Others on the same network could read pages, notes and reviewers' access. Use it on a network you trust, or use Tailscale or HTTPS."
+      : undefined,
+    next: d.address ? `${BIN} server lan off stops.` : `${BIN} server lan <address> listens on one of these, for reviewers only.`,
+  });
 }
 
 /** The oldest Node this CLI supports: node:sqlite, and type stripping for development. Keep in step with `engines`. */
