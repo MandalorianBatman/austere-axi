@@ -3,6 +3,8 @@ name: Pages
 # Builds the website (site/ plus a page per file in examples/) into _site/ and
 # deploys it to GitHub Pages on every push to main, and again once Publish has
 # put a release on npm: the footer names npm's latest version, not package.json's.
+# npm's `latest` can lag the Publish run by minutes, so that run first waits until
+# it names the release tag, and fails if it does not within 10 minutes.
 # Pull requests only build it.
 # One-time setup: repo Settings > Pages > Source: GitHub Actions.
 
@@ -27,6 +29,30 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Wait until npm latest is the release tag
+        if: github.event_name == 'workflow_run'
+        shell: bash
+        env:
+          # Publish runs on a release, so its head_branch is the tag (v0.12.0).
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          want="${TAG#v}"
+          if [[ ! "$want" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Publish ran for '$TAG', which is not a version tag"
+            exit 1
+          fi
+          got=""
+          for i in $(seq 1 40); do
+            got="$(curl -fsS -H 'Cache-Control: no-cache' https://registry.npmjs.org/austere-axi/latest | jq -r .version || true)"
+            if [ "$got" = "$want" ]; then
+              echo "npm latest is $got"
+              exit 0
+            fi
+            echo "npm latest is ${got:-unknown}, waiting for $want ($i/40)"
+            sleep 15
+          done
+          echo "::error::npm latest is still ${got:-unknown} after 10 minutes, not $want (tag $TAG); run Pages again by hand once npm shows it"
+          exit 1
       - uses: actions/checkout@v7
         with:
           persist-credentials: false

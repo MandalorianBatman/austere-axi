@@ -400,7 +400,9 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
       pos.push(...argv.slice(i + 1));
       break;
     }
-    if (a.startsWith("--")) {
+    // Page ids are base64url, so one may start with "--": after `publish rm` it is the id, not a flag (RLM-403).
+    if (pos.length === 2 && pos[0] === "publish" && pos[1] === "rm" && cloud.PAGE_ID_RE.test(a)) pos.push(a);
+    else if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const key = eq > 0 ? a.slice(2, eq) : a.slice(2);
       let val: string | true = true;
@@ -2507,7 +2509,9 @@ async function main(): Promise<unknown> {
   const unknown = Object.keys(flags).filter((k) => !allowed.includes(k));
   if (unknown.length) {
     const valid = allowed.length ? `valid: ${allowed.map((k) => `--${k}`).join(" ")}` : "it takes no flags";
-    return usage(`unknown flag${unknown.length > 1 ? "s" : ""} for ${name ?? BIN}: ${unknown.map((k) => `--${k}`).join(" ")}; ${valid}`, name);
+    // A page id that starts with "-" and is not a full id still reads as a flag: name the way out.
+    const idHint = name === "publish" && pos[1] === "rm" ? `. A page id that starts with - goes after --: ${BIN} publish rm -- <id>` : "";
+    return usage(`unknown flag${unknown.length > 1 ? "s" : ""} for ${name ?? BIN}: ${unknown.map((k) => `--${k}`).join(" ")}; ${valid}${idHint}`, name);
   }
   // A caller's `<harness>:<id>`; attach's --session is its own selector (author, a short or full id).
   if (typeof flags.session === "string" && name && COMMANDS[name].flags.session === SESSION_FLAG) {

@@ -52,6 +52,8 @@ const stub = {
   objects: new Map<string, { type: string; data: Buffer }>(),
   pages: new Map<string, StubPage>(),
   publishes: [] as MutationArgs["publish"][],
+  /** The next `POST /api/pages` gets this id instead of a random one. */
+  nextPageId: null as string | null,
   /** The next HTTP request gets this answer. */
   fail: null as { status: number; error: string } | null,
   /** The next mutation (named `ackErrorOn`, or any) is acked with this error. */
@@ -211,7 +213,8 @@ before(async () => {
         return res.end();
       }
       if (req.method === "POST" && url === "/api/pages") {
-        const id = crypto.randomBytes(16).toString("base64url");
+        const id = stub.nextPageId ?? crypto.randomBytes(16).toString("base64url");
+        stub.nextPageId = null;
         stub.pages.set(id, { owner: auth, row: null, notes: 0, acl: new Map() });
         return json(res, 201, { id, url: `${CLOUD}/p/${id}` });
       }
@@ -302,6 +305,8 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   const file = path.join(WORK, "plan.html");
   fs.writeFileSync(file, page('root = Stack([intro])\nintro = TextContent("hello")'));
   const abs = fs.realpathSync(file);
+  // An id that starts with "--" reads like a flag; `publish rm <id>` below must still take it.
+  stub.nextPageId = `--${crypto.randomBytes(15).toString("base64url")}`;
 
   let r = await cli(["publish", file]);
   assert.equal(r.code, 0, r.out);
@@ -358,7 +363,11 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   assert.equal(r.out.match(/^ {2}- id: /gm)?.length, 2);
   assert.ok(r.out.includes(format({ file: abs })), r.out);
 
-  // rm by id (the first page, no longer mapped), then by file: each a delete mutation.
+  // rm by id (the first page, no longer mapped, its id starting with "--"), then by file: each a delete mutation.
+  assert.ok(id.startsWith("--"), id);
+  r = await cli(["publish", "rm", "--not-a-page-id"]);
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /starts with - goes after --: austere-axi publish rm -- <id>/);
   stub.requests.length = 0;
   r = await cli(["publish", "rm", id]);
   assert.equal(r.code, 0, r.out);
