@@ -93,7 +93,7 @@ export interface FeedbackEntry {
   items: NoteItem[];
   status: NoteStatus;
   remote?: true;
-  /** Sent with Send & End. */
+  /** Sent with Done or Send & finish. */
   end?: true;
 }
 
@@ -435,9 +435,9 @@ export class SessionStore {
     return s.transcript.filter((e): e is QueuedEntry => deliverable(e) && e.seq > from).sort((a, b) => a.seq - b.seq);
   }
 
-  /** Notes the agent has not acknowledged. */
+  /** Notes the agent has not acknowledged. A Done (an empty final batch) is not a note to answer, so it does not count. */
   unread(s: Session): QueuedEntry[] {
-    return this.after(s, s.ackedSeq);
+    return this.after(s, s.ackedSeq).filter((e) => (e.items || []).length > 0);
   }
 
   /** A poll answer with these notes went out. They stay unread until the agent acknowledges them. */
