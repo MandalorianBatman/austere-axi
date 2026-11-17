@@ -36,6 +36,8 @@ You click the exact thing you want changed and write a note, the way you would c
 
 Repeat until it is right. When you are done, press **Done** (or **Send & finish** with a last note) and carry on in the chat. The agent stops listening; a note you add later waits until an agent checks.
 
+**Come back any time.** Open the page and add a note. If it says *Agent not listening*, tell your agent to check your austere notes.
+
 ## What people review with it
 
 | | Example |
@@ -53,7 +55,7 @@ Repeat until it is right. When you are done, press **Done** (or **Send & finish*
 - **Send someone a copy.** "Download standalone HTML" in the page's ⋯ menu saves the page as one file that opens in any browser, offline.
 - **Nothing gets lost.** Every note is saved the moment you send it. If the agent is busy or your computer restarts, the notes are waiting when the agent comes back.
 - **Let the agent answer on its own.** Click the Agent pill at the top of a review page and turn it on: each note you send starts your coding agent, which patches the page and replies while you watch. Stop and Retry are right there. [More on attach](docs/attach.md).
-- **Find old reviews.** The hub is always on: `austere-axi hub open` shows a home page that lists every page by project and every note, with search. Archived pages are hidden by default; the Archived link on the home page (or `austere-axi hub list --archived`) shows them. [More on the hub](docs/hub.md).
+- **Find old pages.** Ask your agent to open the austere home page. It lists every page by project, and every note, with search. To put a page away, choose Archive page in its ⋯ menu; the Archived link on the home page shows pages you put away. [More on the home page](docs/hub.md).
 
 ## Get started
 
@@ -116,7 +118,7 @@ The reference material lives in [`docs/`](docs/README.md).
 |---|---|
 | [Install and quick start](docs/install.md) | Setup skill, Claude Code plugin, Claude Desktop, Cursor, Codex |
 | [How it works](docs/how-it-works.md) | What the agent writes, the review loop, how it compares with lavish-axi |
-| [CLI reference](docs/cli.md) | Every command, the rules of a review session, settings |
+| [CLI reference](docs/cli.md) | Every command, the review rules, settings |
 | [Components and packs](docs/components-and-packs.md) | What can go on a page, and how to add more |
 | [Writing a pack](docs/writing-a-pack.md) | Build and publish your own components |
 | [Team review](docs/team-review.md) | Invite teammates over your own private network |

@@ -453,7 +453,7 @@ document.body.innerHTML = `
           <button type="button" data-cmd="share" title="A named link for one teammate's device">Share…</button>
           <button type="button" data-cmd="copy-agent-prompt" title="A prompt that tells your agent to poll this page for feedback">Copy agent prompt</button>
           ${HOSTED ? '<div class="menu-note" data-share-note hidden>Only the owner can share this page. To invite someone, they run<code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.</div>' : ""}
-          <button type="button" data-cmd="reload">Reload artifact</button>
+          <button type="button" data-cmd="reload">Reload page</button>
           ${HOSTED ? '<button type="button" data-cmd="export">Download standalone HTML</button>' : `<a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>`}
           <button type="button" data-cmd="archive">Archive page</button>
           <button type="button" data-cmd="unarchive">Unarchive page</button>

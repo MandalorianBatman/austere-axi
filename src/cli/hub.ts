@@ -1,7 +1,7 @@
 // hub.db (SQLite, node:sqlite): the record of every review session (its notes,
 // replies and the agent's cursor; see sessions.ts), plus an index of every
 // artifact reviewed or checked on this machine, by project and page (projects.ts).
-// The hub is the owner's view of it, always on: the home page lists every page by
+// The hub is the owner's view of it, with no on/off switch: the home page lists every page by
 // project, /notes every note.
 import fs from "node:fs";
 import path from "node:path";
