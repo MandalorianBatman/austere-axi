@@ -234,3 +234,43 @@ ${STYLE}</style></head>
 ${filter}${items ? `<ul>${items}</ul>` : `<p class="empty">${empty}</p>`}
 </main></body></html>`;
 }
+
+/**
+ * What a link to a copy whose file is gone opens: where it was, the notes it still holds, and a button to put it away.
+ * An archived copy has nothing left to do, so it gets no button. The copy's id goes in the form action; the server checks it.
+ * @param notes Hub.notes() rows of this copy
+ */
+export function missingPage(
+  copy: { id: string; file: string; title: string | null; archived_at: number | null; updated_at: number },
+  { version, project, label, notes }: { version: string; project: string; label: string; notes: Omit<HubNoteRow, "kind">[] },
+): string {
+  const rows = notes
+    .map((n) => {
+      const waiting = n.status !== "addressed";
+      return `<li class="n"><p class="note">${escapeHtml(n.text || "(no text)")}</p>
+  <span class="note-t">${n.author ? `<b class="by">${escapeHtml(n.author)}</b> · ` : ""}${n.target ? `on ${escapeHtml(n.target)} · ` : ""}${escapeHtml(`${day(n.at)} ${time(n.at)}`)} · <span class="st ${waiting ? "waiting" : "done"}">${STATUS_LABEL[n.status] || escapeHtml(n.status)}</span></span></li>`;
+    })
+    .join("");
+  const where = label && label !== project ? `${project} · ${label}` : project;
+  const action = copy.archived_at
+    ? `<p class="meta">Archived ${escapeHtml(`${day(copy.archived_at)} ${time(copy.archived_at)}`)}. The hub's lists leave it out; its notes are kept.</p>`
+    : `<form method="post" action="/hub/archive/${escapeHtml(copy.id)}"><button type="submit">Archive this copy</button></form><p class="meta">Archiving leaves it out of the hub's lists. Its notes are kept.</p>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File missing · austere-axi hub</title><meta name="color-scheme" content="dark">
+<style>
+${STYLE}</style></head>
+<body><main>
+<header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><nav class="nav"><a href="/">Pages</a><a href="/notes">Notes</a></nav></header>
+<section>
+<h2>${escapeHtml(copy.title || path.basename(copy.file))} <small><em class="gone">file missing</em></small></h2>
+<p class="meta">${escapeHtml(where)} · last activity ${escapeHtml(`${day(copy.updated_at)} ${time(copy.updated_at)}`)}</p>
+<p>This copy's file is no longer on this machine:</p>
+<p class="meta" title="${escapeHtml(copy.file)}">${escapeHtml(tilde(copy.file))}</p>
+${action}
+</section>
+<section>
+<h2>Notes <small>${notes.length ? `${notes.length} kept` : "none"}</small></h2>
+${rows ? `<ul>${rows}</ul>` : `<p class="empty">No notes on this copy.</p>`}
+</section>
+</main></body></html>`;
+}
