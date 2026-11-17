@@ -755,6 +755,7 @@ function shopWithWorktree(): { dir: string; shop: string; login: string; mainPla
   const gitdir = path.join(shop, ".git", "worktrees", "shop-login");
   fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
   fs.writeFileSync(path.join(gitdir, "HEAD"), "ref: refs/heads/feature/login\n");
+  fs.writeFileSync(path.join(gitdir, "gitdir"), path.join(login, ".git") + "\n");
   fs.mkdirSync(login);
   fs.writeFileSync(path.join(login, ".git"), `gitdir: ${gitdir}\n`);
   const [mainPlan, loginPlan] = [shop, login].map((root) => {

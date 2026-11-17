@@ -380,6 +380,7 @@ function twoCopies(dir: string, name: string, program: string): { main: string; 
   fs.writeFileSync(path.join(main, ".git", "HEAD"), "ref: refs/heads/main\n");
   fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
   fs.writeFileSync(path.join(gitdir, "HEAD"), "ref: refs/heads/feat\n");
+  fs.writeFileSync(path.join(gitdir, "gitdir"), path.join(wt, ".git") + "\n");
   fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${gitdir}\n`);
   const html = htmlPage("Two copies", program, CDN_RUNTIME_URL);
   for (const root of [main, wt]) fs.writeFileSync(path.join(root, name), html);
