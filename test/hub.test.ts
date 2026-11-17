@@ -666,9 +666,9 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
       const columns = (table: string) => (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
       assert.deepEqual(columns("agent_sessions"), ["id", "harness", "session_id", "session_file", "cwd", "model", "parent_id", "parent_kind", "pid", "pid_start", "first_seen", "last_seen"]);
       assert.deepEqual(columns("page_sessions"), ["artifact_id", "agent_session_id", "role", "at"]);
-      // RLM-345: the attach settings and the runs, with the columns the design note names (plus `requeued_from`, A20).
+      // RLM-345: the attach settings and the runs, with the columns the design note names (plus `requeued_from`, `pid` and `pid_start`, A20).
       assert.deepEqual(columns("attach_settings"), ["scope", "scope_id", "state", "mode", "session", "harness", "model"]);
-      assert.deepEqual(columns("runs"), ["id", "kind", "artifact_id", "project_id", "agent_session_id", "harness", "mode", "model", "seq_from", "seq_to", "started_at", "ended_at", "exit_code", "status", "reason", "log_file", "requeued_from"]);
+      assert.deepEqual(columns("runs"), ["id", "kind", "artifact_id", "project_id", "agent_session_id", "harness", "mode", "model", "seq_from", "seq_to", "started_at", "ended_at", "exit_code", "status", "reason", "log_file", "requeued_from", "pid", "pid_start"]);
     } finally {
       hub.close();
     }

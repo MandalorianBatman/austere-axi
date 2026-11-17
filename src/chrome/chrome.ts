@@ -1435,14 +1435,32 @@ const RUN_REASONS: Record<string, string> = {
 const attachPill = OWNER ? $<HTMLButtonElement>(".attach-pill") : null;
 const attachPop = OWNER ? $(".attach-pop") : null;
 const runStateEl = OWNER ? $(".run-state") : null;
-const attach: { info: AttachInfo | null; run: RunSummary | null; message: string; log: string[] | null; busy: boolean; error: string } = {
+/**
+ * The Agent pill's state. Each settings load or save takes the next `infoGen`; an answer shows only
+ * when it left after the one shown (`infoShown`), so an older load cannot put back an older setting.
+ * A run event moves `runGen` on: an answer that left before it keeps the event's run (a `running`
+ * event that beat a slow `/attach` keeps its Stop).
+ */
+const attach: { info: AttachInfo | null; run: RunSummary | null; message: string; log: string[] | null; busy: boolean; error: string; infoGen: number; infoShown: number; runGen: number } = {
   info: null,
   run: null,
   message: "",
   log: null,
   busy: false,
   error: "",
+  infoGen: 0,
+  infoShown: 0,
+  runGen: 0,
 };
+
+/** Show a settings answer from request `gen`, sent while the run events stood at `runGen`, unless a later request's answer shows already. */
+function applyAttach(info: AttachInfo, gen: number, runGen: number): void {
+  if (gen < attach.infoShown) return;
+  attach.infoShown = gen;
+  attach.info = info;
+  if (runGen === attach.runGen) attach.run = info.run;
+}
+
 let elapsedTimer = 0;
 
 function clock(ms: number): string {
@@ -1483,11 +1501,12 @@ function addRunMarks(run: RunSummary, message?: string) {
 }
 
 async function loadAttach() {
+  const gen = ++attach.infoGen;
+  const runGen = attach.runGen;
   try {
     const r = await fetch(`${BASE}/attach`);
     if (!r.ok) return;
-    attach.info = (await r.json()) as AttachInfo;
-    attach.run = attach.info.run;
+    applyAttach((await r.json()) as AttachInfo, gen, runGen);
   } catch {
     return; // the pill keeps what it showed
   }
@@ -1590,12 +1609,16 @@ async function openLog() {
   const run = attach.run;
   if (!run || !attachPop) return;
   openAttach();
+  let log: string[];
   try {
     const r = await fetch(`${BASE}/run/${run.id}/log`);
-    attach.log = r.ok ? ((await r.json()) as { tail: string[] }).tail : [`Could not read the log (${r.status}).`];
+    log = r.ok ? ((await r.json()) as { tail: string[] }).tail : [`Could not read the log (${r.status}).`];
   } catch {
-    attach.log = ["Could not reach austere-axi."];
+    log = ["Could not reach austere-axi."];
   }
+  // A retry may have started another run meanwhile: this log is not its.
+  if (attach.run?.id !== run.id) return;
+  attach.log = log;
   renderAttachRun();
   attachPop.querySelector(".attach-log")?.scrollIntoView({ block: "nearest" });
 }
@@ -1628,14 +1651,14 @@ async function saveAttach(change: AttachChange) {
   const body: AttachChange = own ? { state: own, ...change } : { state: "inherit", mode: e.mode, session: e.session, harness: e.harness, model: e.model, ...change };
   attach.busy = true;
   attach.error = "";
+  const gen = ++attach.infoGen;
+  const runGen = attach.runGen;
   renderAttachPop();
   try {
     const r = await fetch(`${BASE}/attach`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const d = (await r.json().catch(() => ({}))) as AttachInfo & { error?: string };
-    if (r.ok) {
-      attach.info = d;
-      attach.run = d.run;
-    } else attach.error = d.error || `Could not change it (${r.status}).`;
+    if (r.ok) applyAttach(d, gen, runGen);
+    else attach.error = d.error || `Could not change it (${r.status}).`;
   } catch {
     attach.error = "Could not reach austere-axi. Check that it is still running.";
   }
@@ -1961,6 +1984,7 @@ function connect() {
       const d = JSON.parse(e.data) as RunEvent;
       const ended = !ACTIVE.has(d.run.status) || d.run.status === "failed";
       if (attach.run?.id !== d.run.id) attach.log = null;
+      attach.runGen++;
       attach.run = d.run;
       attach.message = d.message ?? "";
       addRunMarks(d.run, d.message);

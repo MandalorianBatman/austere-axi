@@ -108,7 +108,10 @@ test("session ids stay on this machine: export of a page an agent session patche
   const state = path.join(ROOT, "state");
   const file = path.join(PAGE, "session.html");
   const sid = "5e55d343-aaaa-4bbb-8ccc-0123456789ab";
-  const env = { ...process.env, AUSTERE_AXI_STATE_DIR: state, OPENUI_TELEMETRY_DISABLED: "1", PI_SESSION_ID: sid, PI_SESSION_FILE: path.join(state, `${sid}.jsonl`) };
+  // The test may itself run inside a harness: only this omp session may be the caller.
+  const sessionFile = path.join(state, `${sid}.jsonl`);
+  const env: NodeJS.ProcessEnv = { ...process.env, AUSTERE_AXI_STATE_DIR: state, OPENUI_TELEMETRY_DISABLED: "1", PI_SESSION_ID: sid, PI_SESSION_FILE: sessionFile };
+  for (const name of ["COPILOT_AGENT_SESSION_ID", "DSH_SESSION_ID"]) delete env[name];
   fs.writeFileSync(file, page('root = Stack([intro])\nintro = TextContent("hello")'));
   const patch = spawnSync(process.execPath, ["src/cli/main.ts", "patch", file], { env, input: 'intro = TextContent("patched")\n', encoding: "utf8" });
   assert.match(patch.stdout, /^session: omp 6789ab registered$/m, patch.stdout + patch.stderr);
@@ -117,7 +120,7 @@ test("session ids stay on this machine: export of a page an agent session patche
   assert.equal(exp.status, 0, exp.stdout + exp.stderr);
   const html = fs.readFileSync(out, "utf8");
   assert.ok(html.includes("patched"), "the export is of the patched page");
-  for (const secret of [sid, "6789ab", env.PI_SESSION_FILE]) {
+  for (const secret of [sid, "6789ab", sessionFile]) {
     assert.ok(!html.includes(secret), `${secret} is in the exported page`);
     assert.ok(!exp.stdout.includes(secret), `${secret} is in the export output`);
   }

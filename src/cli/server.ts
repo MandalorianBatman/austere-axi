@@ -1946,14 +1946,16 @@ export async function runServer({
     for (const poll of projectPolls.values()) finishProjectPoll(poll, { status: "interrupted", reason });
     for (const id of watchers.keys()) unwatch(id);
     peer.close();
-    dispatcher.close();
     for (const server of listeners.values()) server.close();
-    // Everything is already on disk; let a replacement server take the state dir at once.
-    releaseLock();
-    setTimeout(() => {
-      store.close();
-      process.exit(0);
-    }, 100).unref();
+    // The runs' process trees go first (dispatcher.close waits for them): until then a harness could
+    // still write the page, so the lock stays. Everything else is on disk; then a replacement server can take the state dir.
+    void dispatcher.close().finally(() => {
+      releaseLock();
+      setTimeout(() => {
+        store.close();
+        process.exit(0);
+      }, 100).unref();
+    });
   }
 
   if (idleMs > 0) {

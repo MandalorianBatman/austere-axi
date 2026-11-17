@@ -6,7 +6,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const COOKIE = "austere_rv";
-const RESERVED = new Set(["owner", "you", "agent", "me"]);
+// "render check" is the author of the notes the owner's page writes on its own (sessions.ts RENDER_CHECK_AUTHOR).
+const RESERVED = new Set(["owner", "you", "agent", "me", "render check"]);
 
 /** One invite: a token tied to one page (session) and a reviewer name. `auto` sends the reviewer's notes on without the owner. */
 export interface Invite {

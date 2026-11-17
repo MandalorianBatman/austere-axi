@@ -8,9 +8,11 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { resolveSetting } from "../src/cli/attach.ts";
+import { AttachRefused, changeSetting, readSetting, resolveSetting } from "../src/cli/attach.ts";
 import type { AttachSettingRow, AttachState } from "../src/cli/attach.ts";
 import { shellJoin } from "../src/cli/adapters/config.ts";
+import type { AdaptersConfig } from "../src/cli/adapters/config.ts";
+import { openDatabase } from "../src/cli/hub.ts";
 import { COOKIE } from "../src/cli/invites.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
@@ -90,6 +92,30 @@ test("the effective setting: the page's row, unless inherit, then the project's,
   assert.deepEqual(resolveSetting(null, null), { state: "off", source: "default", mode: "same", session: "author", harness: "omp", model: null });
 });
 
+test("a project change is checked against each copy's own target: a copy Copilot wrote cannot go on in fork", async () => {
+  const db = await openDatabase(":memory:");
+  try {
+    const cfg: AdaptersConfig = { extraArgs: {}, commands: {} };
+    const now = Date.now();
+    db.prepare("INSERT INTO projects (id, name, created_at) VALUES ('p', 'site', ?)").run(now);
+    const copy = db.prepare("INSERT INTO artifacts (id, file, project, created_at, updated_at, project_id) VALUES (?, ?, 'site', ?, ?, 'p')");
+    copy.run("a-omp", "/w/omp.html", now, now);
+    copy.run("a-cop", "/w/cop.html", now, now);
+    db.prepare("INSERT INTO agent_sessions (id, harness, session_id, first_seen, last_seen) VALUES ('s-cop', 'copilot', 'c1', ?, ?)").run(now, now);
+    db.prepare("INSERT INTO page_sessions (artifact_id, agent_session_id, role, at) VALUES ('a-cop', 's-cop', 'author', ?)").run(now);
+    // The setting itself (omp, fork) is fine; the Copilot copy resolves to Copilot, which has no fork.
+    assert.throws(
+      () => changeSetting(db, { projectId: "p" }, "on", { mode: "fork", harness: "omp" }, cfg, []),
+      (err: unknown) => err instanceof AttachRefused && err.code === "unsupported" && /\/w\/cop\.html: copilot cannot run mode fork/.test(err.message),
+    );
+    assert.equal(readSetting(db, "project", "p"), null, "nothing written");
+    // Mode same is fine for both copies.
+    assert.equal(changeSetting(db, { projectId: "p" }, "on", { mode: "same", harness: "omp" }, cfg, []).state, "on");
+  } finally {
+    db.close();
+  }
+});
+
 let server: ChildProcess | null = null;
 
 before(async () => {
@@ -160,6 +186,14 @@ test("at a terminal: on, off and inherit write the page's row; an auto page and 
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /copilot cannot run mode fork: Copilot CLI has no fork/);
   assert.match(cli(["attach", "status", file]).out, /attach: off/);
+
+  // --session here is attach's own selector (author, a short or full id), not a caller's <harness>:<id>.
+  r = cli(["attach", "on", file, "--session", "author"], { tty: true });
+  assert.equal(r.code, 0, r.out);
+  r = cli(["attach", "on", file, "--session", "abc123"], { tty: true });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /no agent session abc123/);
+  assert.equal(cli(["attach", "off", file], { tty: true }).code, 0);
 
   // Published with --auto (Q3, A17): attach on refuses and names why.
   fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t", pages: { [file]: { id: "p1", auto: true, unlisted: false, presence: true, invites: {} } } }));

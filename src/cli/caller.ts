@@ -78,9 +78,9 @@ export interface ProcInfo {
   argv: () => string[];
 }
 
-/** Looks a process up by pid; null when there is none (or it cannot be read). */
+/** Looks a process up by pid: null when there is none, `unreadable` when the table could not tell (a failed read, `ps` timing out). */
 export interface ProcessTable {
-  info(pid: number): ProcInfo | null;
+  info(pid: number): ProcInfo | null | "unreadable";
 }
 
 /** Linux: `<root>/<pid>/stat` (comm, ppid, starttime) and `<root>/<pid>/cmdline`. */
@@ -90,18 +90,18 @@ export function procfsTable(root = "/proc"): ProcessTable {
       let stat: string;
       try {
         stat = fs.readFileSync(path.join(root, String(pid), "stat"), "utf8");
-      } catch {
-        return null;
+      } catch (err) {
+        return (err as NodeJS.ErrnoException).code === "ENOENT" ? null : "unreadable";
       }
       // `pid (comm) state ppid …`: comm may hold spaces and parentheses, so cut at the last ')'.
       const open = stat.indexOf("(");
       const close = stat.lastIndexOf(")");
-      if (open < 0 || close < open) return null;
+      if (open < 0 || close < open) return "unreadable";
       const fields = stat.slice(close + 2).split(" ");
       // fields[0] is field 3 (state): ppid is field 4, starttime field 22.
       const ppid = Number(fields[1]);
       const start = fields[19];
-      if (!Number.isInteger(ppid) || !start) return null;
+      if (!Number.isInteger(ppid) || !start) return "unreadable";
       return {
         pid,
         ppid,
@@ -119,15 +119,16 @@ export function procfsTable(root = "/proc"): ProcessTable {
   };
 }
 
-/** Runs `ps` with these arguments and returns what it printed, or null when it fails. */
+/** Runs `ps` with these arguments and returns what it printed ("" when no process matched), or null when it fails. */
 export type PsRunner = (args: string[]) => string | null;
 
 function runPs(args: string[]): string | null {
   try {
     // lstart is printed in the locale and time zone of the environment: one fixed form, so every caller's string compares equal.
     return execFileSync("ps", args, { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, stdio: ["ignore", "pipe", "ignore"], timeout: 2000, windowsHide: true });
-  } catch {
-    return null;
+  } catch (err) {
+    // `ps -p` exits 1 when no process matched; a timeout or a missing `ps` says nothing about the process.
+    return err instanceof Error && "status" in err && err.status === 1 ? "" : null;
   }
 }
 
@@ -136,9 +137,11 @@ export function psTable(run: PsRunner = runPs): ProcessTable {
   return {
     info(pid) {
       const out = run(["-o", "ppid=,lstart=,comm=", "-p", String(pid)]);
+      if (out === null) return "unreadable";
+      if (!out.trim()) return null;
       // lstart is five words: `Mon Nov 17 04:01:42 2026`.
-      const m = out && /^\s*(\d+)\s+(\S+\s+\S+\s+\d+\s+[\d:]+\s+\d+)\s+(.+?)\s*$/m.exec(out);
-      if (!m) return null;
+      const m = /^\s*(\d+)\s+(\S+\s+\S+\s+\d+\s+[\d:]+\s+\d+)\s+(.+?)\s*$/m.exec(out);
+      if (!m) return "unreadable";
       return {
         pid,
         ppid: Number(m[1]),
@@ -187,7 +190,7 @@ export function findHarnessProcess(harnesses: readonly CallerHarness[], table: P
   for (let pid = startPid; pid > 0 && !seen.has(pid) && seen.size < 64; ) {
     seen.add(pid);
     const p = table.info(pid);
-    if (!p) return null;
+    if (!p || p === "unreadable") return null;
     const harness = harnesses.find((h) => isHarnessProcess(p, h));
     if (harness) return { harness, pid: p.pid, start: p.start };
     pid = p.ppid;
@@ -202,8 +205,14 @@ export function callerProcess(caller: Caller, table: ProcessTable | null = syste
 
 export type Liveness = "alive" | "exited" | "unknown";
 
-/** `alive`: that pid still runs and started when it did; `exited`: it does not; `unknown`: no pid was recorded, or no process table here. */
+/**
+ * `alive`: that pid still runs and started when it did; `exited`: the table says it does not (or the
+ * pid is another process now); `unknown`: no pid was recorded, no process table here, or the table
+ * could not tell (a resume must not start on a session that may still be open).
+ */
 export function processLiveness(pid: number | null, start: string | null, table: ProcessTable | null = systemProcessTable()): Liveness {
   if (pid == null || !start || !table) return "unknown";
-  return table.info(pid)?.start === start ? "alive" : "exited";
+  const p = table.info(pid);
+  if (p === "unreadable") return "unknown";
+  return p?.start === start ? "alive" : "exited";
 }

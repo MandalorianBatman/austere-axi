@@ -27,9 +27,11 @@ function isExecutable(file: string, windows: boolean): boolean {
 }
 
 /**
- * Where `bin` would run from: a path with a separator is taken as is (relative to `cwd`), a bare
- * name is looked up in `PATH`. On Windows only names with a `PATHEXT` extension count: npm puts
- * an extensionless sh script beside each `.cmd` shim, which Windows cannot run. Null when not found.
+ * Where `bin` would run from, as an absolute path: a path with a separator is taken as is
+ * (relative to `cwd`), a bare name is looked up in `PATH`, whose relative entries are relative to
+ * `cwd` too (a run spawns in another directory, so the hit must not depend on its own). On Windows
+ * only names with a `PATHEXT` extension count: npm puts an extensionless sh script beside each
+ * `.cmd` shim, which Windows cannot run. Null when not found.
  */
 export function findOnPath(bin: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, cwd = process.cwd()): string | null {
   const windows = platform === "win32";
@@ -42,7 +44,7 @@ export function findOnPath(bin: string, env: NodeJS.ProcessEnv = process.env, pl
     // A name that already has one (`omp.cmd`) is taken as written.
     exts = pathext.some((e) => bin.toLowerCase().endsWith(e.toLowerCase())) ? [""] : pathext;
   }
-  const bases = bin.includes("/") || (windows && bin.includes("\\")) ? [p.resolve(cwd, bin)] : (get("PATH") || "").split(windows ? ";" : ":").filter(Boolean).map((dir) => p.join(dir, bin));
+  const bases = bin.includes("/") || (windows && bin.includes("\\")) ? [p.resolve(cwd, bin)] : (get("PATH") || "").split(windows ? ";" : ":").filter(Boolean).map((dir) => p.resolve(cwd, dir, bin));
   for (const base of bases) {
     const hit = exts.map((e) => base + e).find((f) => isExecutable(f, windows));
     if (hit) return hit;

@@ -66,8 +66,6 @@ export interface RunOutput {
   stdout: string;
   stderr: string;
   exitCode: number | null;
-  /** The command the run was built from: its chosen session id backs up the output. */
-  command?: BuiltCommand;
 }
 
 /** Why a run failed, when its output says (the `runs.reason` values an adapter can tell). */

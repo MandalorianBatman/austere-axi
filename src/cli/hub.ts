@@ -315,7 +315,8 @@ CREATE INDEX IF NOT EXISTS page_sessions_session ON page_sessions(agent_session_
 
 // Attach (attach.ts, dispatch.ts, RLM-345/346): the owner's attach setting per page (`pages.id`)
 // and per project, and the agent runs the dispatcher started. A run's log is a file beside
-// hub.db (`log_file`); `requeued_from` names the run a restart interrupted, so it is queued once.
+// hub.db (`log_file`); `requeued_from` names the run a restart interrupted, so it is queued once;
+// `pid` and `pid_start` are its process, which a restart after a crash kills.
 const ATTACH = `
 CREATE TABLE IF NOT EXISTS attach_settings (
   scope TEXT NOT NULL,
@@ -344,7 +345,9 @@ CREATE TABLE IF NOT EXISTS runs (
   status TEXT NOT NULL,
   reason TEXT,
   log_file TEXT,
-  requeued_from TEXT
+  requeued_from TEXT,
+  pid INTEGER,
+  pid_start TEXT
 );
 CREATE INDEX IF NOT EXISTS runs_artifact ON runs(artifact_id, status);
 `;
@@ -380,6 +383,9 @@ function migrate(db: sqlite.DatabaseSync): void {
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
     db.exec(AGENT_SESSIONS);
     db.exec(ATTACH);
+    // Databases from before runs recorded their process.
+    if (!has("runs", "pid")) db.exec("ALTER TABLE runs ADD COLUMN pid INTEGER");
+    if (!has("runs", "pid_start")) db.exec("ALTER TABLE runs ADD COLUMN pid_start TEXT");
     backfillProjects(db);
     // Recorded from now on; a newer build's database keeps its number: the steps above are all this build adds.
     if (Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);

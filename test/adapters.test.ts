@@ -144,13 +144,13 @@ test("omp readResult: line 1 header, continuation (A14), exit 3 is the cost cap"
   assert.deepEqual(ADAPTERS.omp.readResult({ stdout: "Error: Session \"x\" not found.\n", stderr: "", exitCode: 1 }), {});
 });
 
-test("copilot readResult: last result line, else session.start, else the minted id; SessionInUseError", () => {
+test("copilot readResult: last result line, else session.start, never an unconfirmed minted id; SessionInUseError", () => {
   const start = JSON.stringify({ type: "session.start", data: { sessionId: "from-start", selectedModel: "auto" } });
   const result = JSON.stringify({ type: "result", sessionId: "from-result", exitCode: 0 });
   assert.deepEqual(ADAPTERS.copilot.readResult({ stdout: `${start}\n{"type":"assistant.message"}\n${result}\n`, stderr: "", exitCode: 0 }), { sessionId: "from-result" });
   assert.deepEqual(ADAPTERS.copilot.readResult({ stdout: `${start}\nnot json\n`, stderr: "", exitCode: 0 }), { sessionId: "from-start" });
-  const command = ADAPTERS.copilot.build(input("new"));
-  assert.deepEqual(ADAPTERS.copilot.readResult({ stdout: "", stderr: "", exitCode: 1, command }), { sessionId: UUID });
+  // A run that printed no session line made no session: the id we minted is not recorded (A18).
+  assert.deepEqual(ADAPTERS.copilot.readResult({ stdout: "", stderr: "Error: could not start\n", exitCode: 1 }), {});
   const inUse = `Error: Session '${ID}' was found but could not be loaded. SessionInUseError: Session ${ID} is in use by another Copilot process`;
   assert.deepEqual(ADAPTERS.copilot.readResult({ stdout: "", stderr: inUse, exitCode: 1 }), { reason: "session_in_use" });
   assert.deepEqual(ADAPTERS.copilot.readResult({ stdout: inUse, stderr: "", exitCode: 1 }), { reason: "session_in_use" });
@@ -204,6 +204,8 @@ test("a missing binary makes every capability unavailable with the reason; findO
     assert.equal(findOnPath("omp", { PATH: `/nonexistent${path.delimiter}${empty}` })?.toLowerCase(), file.toLowerCase());
     assert.deepEqual(capabilitiesOf(ADAPTERS.omp, { PATH: empty }), ADAPTERS.omp.capabilities);
     assert.equal(findOnPath(file, { PATH: "" }), file, "a path is checked as is");
+    // A relative PATH entry is relative to cwd, and the hit is absolute: a run spawns in the project's directory.
+    assert.equal(findOnPath("omp", { PATH: path.basename(empty) }, process.platform, path.dirname(empty))?.toLowerCase(), file.toLowerCase());
   } finally {
     fs.rmSync(empty, { recursive: true, force: true });
   }
@@ -372,7 +374,7 @@ test("fake binaries on PATH: build → spawn → readResult for every supported 
       assert.equal(rec.stdin, prompt, "the prompt arrived on stdin");
       assert.ok(!rec.args.some((a) => a.includes("SECRET-PROMPT")), "no prompt text in argv");
       assert.equal(fs.realpathSync(rec.cwd), fs.realpathSync(work));
-      const result = adapter.readResult({ ...out, command: built });
+      const result = adapter.readResult(out);
       if ("expectId" in c) assert.equal(result.sessionId, c.expectId, `${c.h} ${c.mode}`);
       else assert.match(result.sessionId ?? "", /^omp-/, `${c.h} ${c.mode}: a new session id`);
       if ("expectParent" in c) assert.equal(result.parentSessionId, c.expectParent);

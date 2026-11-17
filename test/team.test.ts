@@ -38,6 +38,7 @@ test("an invite token maps to its reviewer, and revoking removes it", () => {
 
     assert.throws(() => store.add({ name: "ana", sessionId: "aaaaaaaaaaaa", file: "/p/plan.html" }), /already shared/);
     assert.throws(() => store.add({ name: "Owner", sessionId: "bbbbbbbbbbbb", file: "/p/x.html" }), /reserved/);
+    assert.throws(() => cleanName(" render  Check "), /reserved/, "the render check's author is no reviewer's name");
     assert.throws(() => cleanName(""), /name is required/);
     assert.equal(cleanName("A\u0000\nB"), "A B");
 

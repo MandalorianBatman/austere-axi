@@ -319,21 +319,23 @@ export type AttachWhere = { page: { artifactId: string; file: string } } | { pro
  * The owner's change (Q4: `attach on|off|inherit` at a terminal, or the review page's popover).
  * Refused, with nothing written, when a copy the change leaves on is auto (Q3, A17): whether its
  * page turned on, went back to a project default that is on, or its project's default turned on.
- * Also when the harness, or the session it resumes, cannot run the mode. Returns the row as stored.
+ * Also when the harness, or the session it resumes, cannot run the mode: for the setting itself,
+ * and for each copy it leaves on (each resolves its own author, A19). Returns the row as stored.
  */
 export function changeSetting(db: sqlite.DatabaseSync, where: AttachWhere, state: AttachState, fields: AttachFields, cfg: AdaptersConfig, invites: readonly Invite[], liveAuto?: LiveAuto): AttachSettingRow {
   return inTransaction(db, () => {
     const page = "page" in where ? where.page : null;
     const ids = page ? scopeIds(db, page.artifactId) : { page: null, project: (where as { projectId: string }).projectId };
     const row = ids.page !== null ? writeSetting(db, "page", ids.page, state, fields) : writeSetting(db, "project", ids.project as string, state, fields);
+    // The copies this row decides for, as the change leaves them on: every copy of the page (A19), or every copy in the project.
+    const on: { id: string; file: string }[] = [];
     if (state !== "off") {
-      // The copies this row decides for: every copy of the page (A19), or every copy in the project.
       const copies = (
         ids.page !== null ? db.prepare("SELECT id, file FROM artifacts WHERE page_id = ? OR id = ?").all(ids.page, page?.artifactId ?? null) : db.prepare("SELECT id, file FROM artifacts WHERE project_id = ?").all(ids.project)
       ) as { id: string; file: string }[];
       if (page && !copies.some((c) => c.id === page.artifactId)) copies.push({ id: page.artifactId, file: page.file });
-      for (const c of copies) {
-        if (effectiveAttach(db, c.id).state !== "on") continue;
+      on.push(...copies.filter((c) => effectiveAttach(db, c.id).state === "on"));
+      for (const c of on) {
         const conflict = autoConflict(c.file, c.id, invites, liveAuto);
         if (!conflict) continue;
         // Throwing rolls the row back.
@@ -345,6 +347,11 @@ export function changeSetting(db: sqlite.DatabaseSync, where: AttachWhere, state
       const project = ids.page !== null && ids.project ? readSetting(db, "project", ids.project) : null;
       const problem = settingProblem(db, page?.artifactId ?? null, resolveSetting(ids.page !== null ? row : null, ids.page !== null ? project : row), cfg);
       if (problem) throw new AttachRefused("unsupported", problem);
+    }
+    // Each copy runs its own target: a project's `author` is one copy's Copilot session and another's omp one.
+    for (const c of on) {
+      const problem = settingProblem(db, c.id, effectiveAttach(db, c.id), cfg);
+      if (problem) throw new AttachRefused("unsupported", `${c.file}: ${problem}`);
     }
     return row;
   });

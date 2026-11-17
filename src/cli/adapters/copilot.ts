@@ -28,7 +28,11 @@ function build(input: BuildInput): BuiltCommand {
   return built;
 }
 
-/** The last `{type:"result", sessionId}` line, else line 1 `session.start` `data.sessionId`, else the id we minted. */
+/**
+ * The last `{type:"result", sessionId}` line, else line 1 `session.start` `data.sessionId`. The id
+ * we minted counts only once the output names it: a run that failed before Copilot made the
+ * session has none, and `--resume` of that UUID would fail every later run (A18).
+ */
 function readResult(out: RunOutput): RunResult {
   const result: RunResult = {};
   const all = lines(out.stdout);
@@ -42,7 +46,6 @@ function readResult(out: RunOutput): RunResult {
     const data = head && head.type === "session.start" ? head.data : undefined;
     if (data && typeof data === "object") id = str((data as Record<string, unknown>).sessionId);
   }
-  id ??= out.command?.sessionId;
   if (id) result.sessionId = id;
   if (out.exitCode === 1 && `${out.stderr}\n${out.stdout}`.includes("SessionInUseError")) result.reason = "session_in_use";
   return result;

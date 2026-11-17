@@ -1739,11 +1739,23 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       if (r.status !== 200) return fail(r.data?.error || `run stop failed (${r.status})`);
       return print({ status: r.data.stopped ? "stopped" : "nothing to stop", file: abs, runs: r.data.stopped || undefined });
     }
-    // No server, so nothing runs: a queued or waiting run ends here, before a server could start it.
-    return withHub(true, (hub) => {
-      const n = Number(hub.db.prepare("UPDATE runs SET status = 'stopped', reason = 'stopped', ended_at = ? WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").run(Date.now(), sessionId(abs)).changes);
-      print({ status: n ? "stopped" : "nothing to stop", file: abs, runs: n || undefined });
-    });
+    // No server, so nothing runs: a queued or waiting run ends here, under the state dir's lock so
+    // no server starts meanwhile and launches it. A server that took the lock first stops it itself.
+    let release: () => void;
+    try {
+      release = await lockStateDir(stateDir(), { wait: 5000 });
+    } catch (err) {
+      if (!(await serverIfRunning())) throw err;
+      return cmdRun(sub, args, flags);
+    }
+    try {
+      return await withHub(true, (hub) => {
+        const n = Number(hub.db.prepare("UPDATE runs SET status = 'stopped', reason = 'stopped', ended_at = ? WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").run(Date.now(), sessionId(abs)).changes);
+        print({ status: n ? "stopped" : "nothing to stop", file: abs, runs: n || undefined });
+      });
+    } finally {
+      release();
+    }
   }
   if (sub === "log") {
     if (args.length !== 1) return usage(`run log takes a run id: ${BIN} run log <id> (see ${BIN} run list)`, "run");
@@ -2050,7 +2062,13 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
     if (!abs || !sub) return;
     // --auto gives reviewers' notes to the agent without the owner: never while an agent is attached (Q3).
     if (flags.auto) {
-      const hub = await Hub.open();
+      // Read only, and not at all when a server of another version owns the schema: no migration before publishing.
+      let hub: Hub;
+      try {
+        hub = await openHubDirect({ write: false });
+      } catch (err) {
+        return fail(`${hubDbFile()} cannot be opened: ${messageOf(err)}`);
+      }
       let on: boolean;
       try {
         on = effectiveAttach(hub.db, sessionId(abs)).state === "on";
@@ -2196,7 +2214,8 @@ async function main(): Promise<unknown> {
     const valid = allowed.length ? `valid: ${allowed.map((k) => `--${k}`).join(" ")}` : "it takes no flags";
     return usage(`unknown flag${unknown.length > 1 ? "s" : ""} for ${name ?? BIN}: ${unknown.map((k) => `--${k}`).join(" ")}; ${valid}`, name);
   }
-  if (typeof flags.session === "string") {
+  // A caller's `<harness>:<id>`; attach's --session is its own selector (author, a short or full id).
+  if (typeof flags.session === "string" && name && COMMANDS[name].flags.session === SESSION_FLAG) {
     try {
       parseSessionOverride(flags.session);
     } catch (err) {

@@ -140,10 +140,13 @@ test("procfs: comm, ppid and start time from stat (comm may hold spaces and pare
     proc(100, "omp", 1, 7777, ["omp"]);
     const table = procfsTable(root);
     const p = table.info(300);
-    assert.equal(p?.comm, "a (b) c");
-    assert.equal(p?.ppid, 200);
-    assert.equal(p?.start, "9999");
-    assert.deepEqual(table.info(200)?.argv(), ["node", "/opt/copilot/index.js"]);
+    assert.ok(p && p !== "unreadable");
+    assert.equal(p.comm, "a (b) c");
+    assert.equal(p.ppid, 200);
+    assert.equal(p.start, "9999");
+    const node = table.info(200);
+    assert.ok(node && node !== "unreadable");
+    assert.deepEqual(node.argv(), ["node", "/opt/copilot/index.js"]);
     assert.equal(table.info(4242), null);
     assert.deepEqual(findHarnessProcess(["copilot"], table, 300), { harness: "copilot", pid: 200, start: "8888" });
     assert.deepEqual(findHarnessProcess(["omp"], table, 300), { harness: "omp", pid: 100, start: "7777" });
@@ -153,6 +156,12 @@ test("procfs: comm, ppid and start time from stat (comm may hold spaces and pare
     assert.equal(processLiveness(4242, "1", table), "exited");
     assert.equal(processLiveness(null, null, table), "unknown");
     assert.equal(processLiveness(100, "7777", null), "unknown", "no process table (Windows)");
+    // A stat it cannot read or parse is no proof the process exited: unknown, so no resume starts on it.
+    fs.mkdirSync(path.join(root, "500"));
+    fs.writeFileSync(path.join(root, "500", "stat"), "garbled");
+    assert.equal(table.info(500), "unreadable");
+    assert.equal(processLiveness(500, "1", table), "unknown");
+    assert.equal(findHarnessProcess(["omp"], table, 500), null);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -166,11 +175,16 @@ test("ps (macOS): ppid, lstart and comm in one call, args only when needed", () 
     return args.at(-1) === "77" ? "   12 Mon Nov 17 04:01:42 2026     /usr/local/bin/node\n" : "";
   });
   const p = table.info(77);
-  assert.deepEqual([p?.ppid, p?.start, p?.comm], [12, "Mon Nov 17 04:01:42 2026", "/usr/local/bin/node"]);
+  assert.ok(p && p !== "unreadable");
+  assert.deepEqual([p.ppid, p.start, p.comm], [12, "Mon Nov 17 04:01:42 2026", "/usr/local/bin/node"]);
   assert.equal(calls.length, 1);
-  assert.ok(p && isHarnessProcess(p, "copilot"));
+  assert.ok(isHarnessProcess(p, "copilot"));
   assert.equal(calls.length, 2);
-  assert.equal(table.info(78), null);
+  assert.equal(table.info(78), null, "ps printed nothing: no such process");
+  // ps failed (a timeout, no ps): the process may still run.
+  const failing = psTable(() => null);
+  assert.equal(failing.info(77), "unreadable");
+  assert.equal(processLiveness(77, "Mon Nov 17 04:01:42 2026", failing), "unknown");
 });
 
 // ── the registry ──

@@ -422,8 +422,11 @@ test("a note an --auto invite delivered keeps runs off after the invite is revok
 
 test("unreleasedNotes names reviewers' notes with a seq the owner never gave; not the owner's, released, hosted or render-check notes", () => {
   const note = (extra: Partial<QueuedEntry>): QueuedEntry => ({ id: "u", role: "user", at: 0, items: [], seenAt: null, doneAt: null, seq: 1, ...extra });
-  assert.equal(unreleasedNotes([note({}), note({ author: "Ana", releasedAt: 5 }), note({ author: "Bo", remote: true }), note({ author: RENDER_CHECK_AUTHOR })]), null);
+  const rendered = { kind: "render-error", message: "boom" };
+  assert.equal(unreleasedNotes([note({}), note({ author: "Ana", releasedAt: 5 }), note({ author: "Bo", remote: true }), note({ author: RENDER_CHECK_AUTHOR, items: [rendered] })]), null);
   assert.match(String(unreleasedNotes([note({}), note({ author: "Ana" }), note({ author: "Ana" }), note({ author: "Bo" })])), /^3 notes from Ana, Bo reached the inbox/);
+  // A reviewer an invite named "Render check" before the name was reserved: its notes are a reviewer's (their items say so).
+  assert.match(String(unreleasedNotes([note({ author: RENDER_CHECK_AUTHOR, items: [{ kind: "message", text: "hi" }] })])), /^A note from Render check/);
 });
 
 test("attach.json limits are capped: a timer past setTimeout's range, or an absurd count, is refused", { skip }, () => {
@@ -529,7 +532,10 @@ test("mode same waits while the session's process runs, then runs when it exits"
   const table = systemProcessTable();
   assert.ok(table);
   const live = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
-  const start = await until("the process's start time", () => table.info(live.pid as number)?.start);
+  const start = await until("the process's start time", () => {
+    const p = table.info(live.pid as number);
+    return p && p !== "unreadable" ? p.start : undefined;
+  });
   const now = Date.now();
   exec("INSERT INTO agent_sessions (id, harness, session_id, pid, pid_start, first_seen, last_seen) VALUES ('as-live', 'omp', 'sess-live', ?, ?, ?, ?)", live.pid as number, start, now, now);
   exec("INSERT INTO page_sessions (artifact_id, agent_session_id, role, at) VALUES (?, 'as-live', 'author', ?)", id, now);
@@ -553,7 +559,10 @@ test("two pages on one author session in mode same: the second waits for the fir
   assert.ok(table);
   // The author's own process has exited: only the dispatcher's runs can hold the session.
   const dead = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
-  const start = await until("the process's start time", () => table.info(dead.pid as number)?.start);
+  const start = await until("the process's start time", () => {
+    const p = table.info(dead.pid as number);
+    return p && p !== "unreadable" ? p.start : undefined;
+  });
   const exited = once(dead, "exit");
   dead.kill();
   await exited;
@@ -632,29 +641,43 @@ test("with a listener on the page the note goes to its poll and no run starts", 
   assert.equal(runsOf(id).length, 0);
 });
 
-test("after a restart a running or waiting run is interrupted and queued once more; a requeued one is not", { skip }, async () => {
+test("after a restart a running or waiting run is interrupted and queued once more; a requeued one is not; a crashed server's orphan is killed first", { skip }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-dispatch-restart-"));
   const store = await SessionStore.open(dir);
+  const table = systemProcessTable();
+  assert.ok(table);
+  // The harness of a run whose server crashed: still running in its own process group.
+  const orphan = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore", detached: true });
+  const exited = once(orphan, "exit");
   try {
+    const start = await until("the orphan's start time", () => {
+      const p = table.info(orphan.pid as number);
+      return p && p !== "unreadable" ? p.start : undefined;
+    });
     const s = store.ensure(path.join(PROJECT, "november.html"));
-    const add = store.db.prepare("INSERT INTO runs (id, kind, artifact_id, seq_from, seq_to, status, started_at, requeued_from) VALUES (?, 'note', ?, 1, 2, ?, 1, ?)");
-    add.run("r-running", s.id, "running", null);
-    add.run("r-waiting", s.id, "waiting_for_session", null);
-    add.run("r-again", s.id, "running", "r-before");
+    const add = store.db.prepare("INSERT INTO runs (id, kind, artifact_id, seq_from, seq_to, status, started_at, requeued_from, pid, pid_start) VALUES (?, 'note', ?, 1, 2, ?, 1, ?, ?, ?)");
+    add.run("r-running", s.id, "running", null, orphan.pid as number, start);
+    add.run("r-waiting", s.id, "waiting_for_session", null, null, null);
+    add.run("r-again", s.id, "running", "r-before", null, null);
+    // A recorded pid that is another process now (its start differs) is left alone.
+    add.run("r-reused", s.id, "running", "r-before", process.pid, "not-my-start");
     const dispatcher = new Dispatcher({ db: store.db, store, port: PORT, log: () => {}, listening: () => false, autoConflict: () => null, emit: () => {} });
     dispatcher.start();
-    dispatcher.close();
+    await dispatcher.close();
+    await exited;
     const rows = store.db.prepare("SELECT id, status, requeued_from, seq_from, seq_to FROM runs ORDER BY rowid").all() as unknown as { id: string; status: string; requeued_from: string | null; seq_from: number; seq_to: number }[];
-    assert.deepEqual(rows.slice(0, 3).map((r) => [r.id, r.status]), [
+    assert.deepEqual(rows.slice(0, 4).map((r) => [r.id, r.status]), [
       ["r-running", "interrupted"],
       ["r-waiting", "interrupted"],
       ["r-again", "interrupted"],
+      ["r-reused", "interrupted"],
     ]);
-    assert.deepEqual(rows.slice(3).map((r) => [r.status, r.requeued_from, r.seq_from, r.seq_to]), [
+    assert.deepEqual(rows.slice(4).map((r) => [r.status, r.requeued_from, r.seq_from, r.seq_to]), [
       ["queued", "r-running", 1, 2],
       ["queued", "r-waiting", 1, 2],
     ]);
   } finally {
+    if (orphan.exitCode === null && orphan.signalCode === null) orphan.kill("SIGKILL");
     store.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }

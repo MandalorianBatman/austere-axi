@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type * as sqlite from "node:sqlite";
+import { setTimeout as sleep } from "node:timers/promises";
 import { adapterFor, capabilitiesOf, findOnPath, spawnSpec } from "./adapters/index.ts";
 import { extraArgsFor, isHarness, readAdapters } from "./adapters/config.ts";
 import { AdapterError } from "./adapters/types.ts";
@@ -67,6 +68,9 @@ export interface RunRow {
   reason: RunReasonCode | null;
   log_file: string | null;
   requeued_from: string | null;
+  /** The run's process (its group's leader on POSIX) and its start time, while it runs: restart recovery kills a crashed server's orphan. */
+  pid: number | null;
+  pid_start: string | null;
 }
 
 /** What the owner's review page hears about a run (SSE `run`). */
@@ -219,6 +223,9 @@ export function logTail(file: string | null, n = 20): string[] {
 const LOG_CAP = 1024 * 1024;
 const OUTPUT_KEEP = 64 * 1024;
 const KILL_GRACE_MS = 5000;
+// A stopping server waits this long for its runs' trees after SIGTERM, then SIGKILLs them: short,
+// since a replacement server waits only 3 s for the state dir's lock.
+const SHUTDOWN_GRACE_MS = 1000;
 const LOG_DAYS = 30;
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -276,6 +283,12 @@ function killTree(pid: number, signal: NodeJS.Signals): void {
   }
 }
 
+/** The start time of `pid` in this OS's process table; null when there is no such process, no table, or it cannot tell. */
+function startOf(pid: number): string | null {
+  const p = systemProcessTable()?.info(pid);
+  return p && p !== "unreadable" ? p.start : null;
+}
+
 function groupAlive(pid: number): boolean {
   if (process.platform === "win32") return false;
   try {
@@ -314,10 +327,12 @@ const deliverable = (e: TranscriptEntry): e is QueuedEntry => e.role === "user" 
  * Why the open notes keep a run from starting (A17), or null: a reviewer's note that has a seq
  * the owner never gave it (no `releasedAt`), as an `--auto` invite, since revoked, gave it. Notes
  * from a hosted page are the hosted page's to release (a hosted `--auto` page is refused as a
- * whole), and the page's own render check is not a reviewer.
+ * whole), and the page's own render check is not a reviewer: its notes hold only `render-error`
+ * items, which a reviewer cannot send (server.ts keeps a reviewer to annotations and messages),
+ * so a reviewer whose invite took that name before it was reserved still counts.
  */
 export function unreleasedNotes(open: readonly QueuedEntry[]): string | null {
-  const notes = open.filter((e) => e.author && e.author !== RENDER_CHECK_AUTHOR && !e.releasedAt && !e.remote);
+  const notes = open.filter((e) => e.author && !(e.author === RENDER_CHECK_AUTHOR && e.items.length > 0 && e.items.every((i) => i.kind === "render-error")) && !e.releasedAt && !e.remote);
   if (!notes.length) return null;
   const names = [...new Set(notes.map((e) => e.author))].join(", ");
   const [these, them] = notes.length === 1 ? ["A note", "it"] : [`${notes.length} notes`, "them"];
@@ -376,6 +391,15 @@ export class Dispatcher {
     const now = Date.now();
     const stale = this.db.prepare("SELECT * FROM runs WHERE status IN ('running', 'waiting_for_session')").all() as unknown as RunRow[];
     for (const row of stale) {
+      // A server that crashed left its run running: that tree goes before a replacement can start on the page.
+      if (row.status === "running" && row.pid != null && row.pid_start) {
+        const leader = systemProcessTable()?.info(row.pid);
+        // The leader itself, or (it exited) the rest of its group: a pid is not reused while its group lives.
+        if ((leader && leader !== "unreadable" && leader.start === row.pid_start) || (leader === null && groupAlive(row.pid))) {
+          killTree(row.pid, "SIGKILL");
+          this.o.log("run-orphan-killed", row.id, `pid=${row.pid}`);
+        }
+      }
       this.db.prepare("UPDATE runs SET status = 'interrupted', ended_at = ? WHERE id = ?").run(now, row.id);
       if (row.requeued_from || !row.artifact_id) continue;
       this.db
@@ -395,17 +419,30 @@ export class Dispatcher {
   }
 
   /**
-   * Stop the timers and kill every run's process tree. Their rows stay `running`: the next start
-   * marks them interrupted and queues them again (finish leaves a closed dispatcher's rows alone).
+   * Stop the timers and kill every run's process tree; resolves once the trees are gone (SIGKILL
+   * after SHUTDOWN_GRACE_MS for what ignores SIGTERM), so a stopping server keeps the state dir until
+   * no harness it started can still write the page. Their rows stay `running`: the next start marks
+   * them interrupted and queues them again (finish leaves a closed dispatcher's rows alone).
    */
-  close(): void {
+  async close(): Promise<void> {
     this.closed = true;
     for (const t of this.intervals) clearInterval(t);
     for (const t of this.timers.values()) clearTimeout(t);
-    for (const r of this.running.values()) {
+    const runs = [...this.running.values()];
+    const pids: number[] = [];
+    for (const r of runs) {
       clearTimeout(r.timer);
-      if (r.child.pid) killTree(r.child.pid, "SIGTERM");
+      if (r.child.pid) {
+        killTree(r.child.pid, "SIGTERM");
+        pids.push(r.child.pid);
+      }
     }
+    if (!runs.length) return;
+    for (const deadline = Date.now() + SHUTDOWN_GRACE_MS; pids.some(groupAlive) && Date.now() < deadline; ) await sleep(50);
+    for (const pid of pids) if (groupAlive(pid)) killTree(pid, "SIGKILL");
+    for (const deadline = Date.now() + 500; pids.some(groupAlive) && Date.now() < deadline; ) await sleep(50);
+    // Windows has no group to probe (taskkill /T /F ends the tree): wait for the runs' own exit.
+    await Promise.race([Promise.all(runs.map((r) => r.done)), sleep(500)]);
   }
 
   /** Logs older than 30 days go; at start, prompt files a crash left behind go too. */
@@ -594,12 +631,7 @@ export class Dispatcher {
           continue;
         }
         if (live === "alive") {
-          this.db.prepare("UPDATE runs SET status = 'waiting_for_session', agent_session_id = ?, harness = ?, mode = ?, model = ? WHERE id = ?").run(target.session.id, target.harness, target.mode, setting.model, row.id);
-          if (!this.announced.has(row.id)) {
-            this.announced.add(row.id);
-            const why = holder ? `run ${holder.row.id} is using it` : "it is still running";
-            this.emit(row.id, { message: `Waiting for ${target.harness} session ${target.session.session_id} to be free: ${why}.` });
-          }
+          this.park(row, target.session, target, setting.model, holder);
           continue;
         }
       }
@@ -613,6 +645,15 @@ export class Dispatcher {
         if (current && !this.running.has(row.id) && (current.status === "queued" || current.status === "running")) this.end(current, "failed", "unavailable", `Could not start the run: ${(err as Error).message}`);
       }
     }
+  }
+
+  /** Wait for `session` to be free (a run of this dispatcher, or its own process, holds it): announced once per run. */
+  private park(row: RunRow, session: AgentSessionRow, target: Pick<RunTarget, "harness" | "mode">, model: string | null, holder: Running | null): void {
+    this.db.prepare("UPDATE runs SET status = 'waiting_for_session', agent_session_id = ?, harness = ?, mode = ?, model = ? WHERE id = ?").run(session.id, target.harness, target.mode, model, row.id);
+    if (this.announced.has(row.id)) return;
+    this.announced.add(row.id);
+    const why = holder ? `run ${holder.row.id} is using it` : "it is still running";
+    this.emit(row.id, { message: `Waiting for ${target.harness} session ${session.session_id} to be free: ${why}.` });
   }
 
   /** The session the first `new` run on this copy made with this harness, followed through continuations (A18). */
@@ -653,7 +694,15 @@ export class Dispatcher {
     let buildMode = target.mode;
     if (target.mode === "new" && adapter.id !== "command") {
       from = this.dispatcherSession(s.id, target.harness);
-      if (from) buildMode = "same";
+      if (from) {
+        // Now a resume of that session: it waits, as a `same` run does, while a run of this
+        // dispatcher or a harness process (one that resumed it since and registered) holds it.
+        // A session nobody can observe (no process recorded, as the dispatcher records its own) is free.
+        const holder = this.holderOf(from);
+        const live = holder ? "alive" : liveness(from);
+        if (live === "alive" || (live === "unknown" && from.pid != null)) return this.park(row, from, target, model, holder);
+        buildMode = "same";
+      }
     }
     // The run's files: a failure here (a full disk, a runs dir it cannot write) fails the run, not the server.
     let promptFile: string;
@@ -729,6 +778,9 @@ export class Dispatcher {
     } finally {
       fs.closeSync(promptFd);
     }
+    // The run's process, for a restart after a crash (start); its group is the run's tree on POSIX.
+    const pidStart = child.pid ? startOf(child.pid) : null;
+    if (child.pid) this.db.prepare("UPDATE runs SET pid = ?, pid_start = ? WHERE id = ?").run(child.pid, pidStart, row.id);
     const { promise: done, resolve } = Promise.withResolvers<void>();
     const r: Running = {
       row: getRun(this.db, row.id) as RunRow,
@@ -832,8 +884,9 @@ export class Dispatcher {
       return;
     }
     const stdout = r.head.length + r.tail.length <= OUTPUT_KEEP || r.tail.startsWith(r.head) ? r.tail : `${r.head}\n${r.tail}`;
-    const result = r.adapter.readResult({ stdout, stderr: r.stderr, exitCode: code, command: r.built });
-    const agentSessionId = this.recordSession(r, result.sessionId ?? r.built.sessionId);
+    const result = r.adapter.readResult({ stdout, stderr: r.stderr, exitCode: code });
+    // Only a session the output names: a minted id the harness never confirmed was never made (A18).
+    const agentSessionId = this.recordSession(r, result.sessionId);
     const { row, s } = r;
     let status: RunStatus = "done";
     let reason: RunReasonCode | null = null;
@@ -877,7 +930,7 @@ export class Dispatcher {
         return next.id;
       }
       const now = Date.now();
-      const start = r.child.pid ? (systemProcessTable()?.info(r.child.pid)?.start ?? null) : null;
+      const start = r.child.pid ? startOf(r.child.pid) : null;
       const row = this.db
         .prepare(
           `INSERT INTO agent_sessions (id, harness, session_id, cwd, model, pid, pid_start, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
