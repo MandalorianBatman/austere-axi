@@ -450,6 +450,7 @@ document.body.innerHTML = `
         <div class="menu-pop" hidden>
           <button type="button" data-cmd="copy-path">Copy file path</button>
           <button type="button" data-cmd="copy-link"${HOSTED ? " hidden" : ""}>${HOSTED ? "Copy page link" : "Copy review link"}</button>
+          <button type="button" data-cmd="share" title="A named link for one teammate's device">Share…</button>
           <button type="button" data-cmd="copy-agent-prompt" title="A prompt that tells your agent to poll this page for feedback">Copy agent prompt</button>
           ${HOSTED ? '<div class="menu-note" data-share-note hidden>Only the owner can share this page. To invite someone, they run<code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.</div>' : ""}
           <button type="button" data-cmd="reload">Reload artifact</button>
@@ -494,7 +495,7 @@ document.body.innerHTML = `
 // RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
 // from all of them (RLM-322).
 if (!OWNER) {
-  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', ".copy-prompt", '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach"];
+  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', ".copy-prompt", '[data-cmd="share"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach"];
   if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
   for (const sel of ownerOnly) $(sel)?.remove();
 }
@@ -1409,7 +1410,8 @@ function copyLegacy(text: string): boolean {
   ta.value = text;
   ta.setAttribute("readonly", "");
   ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
-  document.body.append(ta);
+  // A modal dialog makes everything outside it inert: copy from inside the open one.
+  (document.querySelector("dialog[open]") ?? document.body).append(ta);
   ta.select();
   let ok = false;
   try {
@@ -1466,6 +1468,7 @@ menuPop.addEventListener("click", async (e) => {
     await downloadStandalone();
     menuPop.hidden = true;
   }
+  if (cmd === "share") await sharePage();
   if (cmd === "archive") await archivePage();
   if (cmd === "unarchive") await unarchivePage();
 });
@@ -1544,6 +1547,85 @@ async function unarchivePage() {
   if (!r) return showArchiveError(UNREACHABLE);
   if (!r.ok) return showArchiveError(`Could not unarchive this page: ${await failure(r)}`);
   clearArchiveError();
+}
+
+// ── share (RLM-397): a named link for one teammate's device; the owner's only ──
+
+/** What POST /share answers (ShareResponse in src/cli/server.ts). */
+interface ShareMade {
+  name: string;
+  link: string;
+  reaches: string;
+  auto: boolean;
+  expiresAt: number;
+}
+
+/** The Share dialog: name, what it reaches, hold or auto; then the link with a Copy button. */
+async function sharePage() {
+  const r = await fetch(`${BASE}/share`).catch(() => null);
+  if (!r) return showBanner(UNREACHABLE);
+  if (!r.ok) return showBanner(`Could not share this page: ${await failure(r)}`);
+  const offer = (await r.json()) as { project: { id: string; name: string } | null; remote: boolean };
+  const dialog = h("dialog", { class: "confirm share", "aria-labelledby": "share-title" });
+  const close = () => {
+    dialog.close();
+    dialog.remove();
+  };
+  dialog.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    close();
+  });
+  const option = (group: string, value: string, label: string, checked: boolean) => h("label", { class: "share-opt" }, h("input", { type: "radio", name: group, value, checked }), h("span", { text: label }));
+  const name = h("input", { type: "text", name: "name", maxlength: "40", required: true, placeholder: "Their name", "aria-label": "Name", autocomplete: "off" });
+  const error = h("p", { class: "share-error", role: "alert", hidden: true });
+  const create = h("button", { type: "submit", class: "btn primary", text: "Create link" });
+  const form = h(
+    "form",
+    { class: "share-form" },
+    h("h2", { id: "share-title", text: "Share with one person" }),
+    h("p", { text: "The first browser that opens the link becomes their device, and the link stops working. An unopened link expires in 7 days." }),
+    name,
+    h("fieldset", {}, h("legend", { text: "They can review" }), option("scope", "page", "This page", true), offer.project ? option("scope", "project", `Every page in ${offer.project.name}`, false) : null, option("scope", "all", "Every page", false)),
+    h("fieldset", {}, h("legend", { text: "Their notes" }), option("mode", "hold", "Wait for me to send them on", true), option("mode", "auto", "Go straight to the agent", false)),
+    offer.remote ? null : h("p", { class: "share-error", text: "No tailnet address is up here, so a teammate could not open a link. Start Tailscale, or set AUSTERE_AXI_HOST." }),
+    error,
+    h("div", { class: "confirm-actions" }, h("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: close }), create),
+  );
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = new FormData(form);
+    create.disabled = true;
+    const done = await fetch(`${BASE}/share`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // The project the dialog offered: the server refuses the share if the page has moved since.
+      body: JSON.stringify({ name: String(data.get("name") || ""), scope: String(data.get("scope") || "page"), project: offer.project?.id, auto: data.get("mode") === "auto" }),
+    }).catch(() => null);
+    create.disabled = false;
+    if (!done || !done.ok) {
+      error.textContent = done ? await failure(done) : UNREACHABLE;
+      error.hidden = false;
+      return;
+    }
+    const made = (await done.json()) as ShareMade;
+    const field = h("input", { type: "text", class: "share-link", readonly: true, value: made.link, "aria-label": "Link" });
+    form.replaceChildren(
+      h("h2", { id: "share-title", text: `Link for ${made.name}` }),
+      h("p", { text: `Reaches ${made.reaches}. ${made.auto ? "Their notes go straight to the agent." : "Their notes wait for you."} Works once, until ${new Date(made.expiresAt).toLocaleString()} if nobody opens it. Send it only to ${made.name}.` }),
+      field,
+      h(
+        "div",
+        { class: "confirm-actions" },
+        h("button", { type: "button", class: "btn", "data-share": "copy", text: "Copy link", onclick: () => copyText(made.link, "Link") }),
+        h("button", { type: "button", class: "btn primary", text: "Done", onclick: close }),
+      ),
+    );
+    field.select();
+  });
+  dialog.append(form);
+  document.body.append(dialog);
+  dialog.showModal();
+  name.focus();
 }
 
 // ── attach: the Agent pill (RLM-346; the owner's only, never on a reviewer's or a hosted page) ──
@@ -2212,7 +2294,7 @@ function connect() {
     if (d.state === "revoked") {
       source.close();
       state.connected = false;
-      showBanner("Your invite was revoked. Ask the owner for a new link.");
+      showBanner("The owner revoked this device's access to this page. Ask them for a new link.");
       return;
     }
     if (d.state === "stopped") {

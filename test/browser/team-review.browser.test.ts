@@ -157,6 +157,66 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
   }
 });
 
+test("Share from the page menu: copy the link, open it in a second browser, and the note arrives under that name, held", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { session } = await api("/api/open", { file: FILE });
+  const ownerCtx = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] });
+  const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const thirdCtx = await browser.newContext();
+  try {
+    const owner = await ownerCtx.newPage();
+    await owner.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${KEY}`);
+    await owner.waitForSelector(".composer textarea");
+    await owner.click(".menu-btn");
+    await owner.click('[data-cmd="share"]');
+    await owner.waitForSelector("dialog.share[open]");
+    await owner.fill("dialog.share input[name=name]", "Cleo");
+    await owner.click("dialog.share button[type=submit]");
+    await owner.waitForSelector("dialog.share .share-link");
+    await owner.click('dialog.share [data-share="copy"]');
+    await owner.waitForSelector(".banner:has-text('Link copied.')");
+    const link = await owner.evaluate(() => navigator.clipboard.readText());
+    assert.match(link, new RegExp(`/s/${session.id}\\?invite=[A-Za-z0-9_-]{32,}$`));
+    assert.equal(await owner.inputValue("dialog.share .share-link"), link, "the dialog shows the link it copied");
+
+    const guest = await guestCtx.newPage();
+    await guest.goto(link);
+    await guest.click("form[action$='/join'] button");
+    await guest.waitForSelector(".composer textarea");
+    await guest.fill(".composer textarea", "from the menu link");
+    await guest.click(".composer .send");
+    await guest.waitForSelector(".msg.user.held");
+
+    await owner.click("dialog.share >> text=Done");
+    await owner.waitForSelector(".held-bar");
+    assert.match(await owner.locator(".msg.user.held .who").last().innerText(), /^Cleo/);
+
+    // The link was claimed: a third browser is refused.
+    const third = await (await thirdCtx.newPage()).goto(link);
+    assert.equal(third?.status(), 403);
+    await owner.click(".held-bar >> text=Discard all");
+
+    // A second link claimed in the same browser adds a device; the first one keeps working.
+    const second = path.join(path.dirname(FILE), "second.html");
+    fs.writeFileSync(second, fs.readFileSync(FILE, "utf8"));
+    const other = await api("/api/open", { file: second });
+    const more = await api("/api/share", { file: second, name: "Cleo" });
+    await guest.goto(more.link);
+    await guest.click("form[action$='/join'] button");
+    await guest.waitForSelector(".composer textarea");
+    assert.equal((await guestCtx.cookies()).filter((c) => c.name.startsWith("austere_rv_")).length, 2, "one cookie per device");
+    for (const sid of [session.id, other.session.id]) {
+      const res = await guest.goto(`http://127.0.0.1:${port}/s/${sid}`);
+      assert.equal(res?.status(), 200, sid);
+    }
+  } finally {
+    await ownerCtx.close();
+    await guestCtx.close();
+    await thirdCtx.close();
+    await api("/api/share/revoke", { key: "Cleo" });
+  }
+});
+
 test("a login code from the CLI signs the browser in as the owner, once", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const { session } = await api("/api/open", { file: FILE });

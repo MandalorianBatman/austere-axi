@@ -1,30 +1,13 @@
-// Invite links for team review. An invite is a random token tied to one page and
-// a reviewer name. The token in the link becomes a cookie; a request that carries
-// a valid token acts as that reviewer. Stored in the state dir (invites.json).
+// Who may open a review page: the owner's key, its cookie and login codes, and the helpers team
+// review (devices.ts) shares with them: the reviewer cookie's name, names, constant-time compares.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+/** The reviewer cookie: a device's secret (devices.ts), or an old-style invite token. */
 export const COOKIE = "austere_rv";
 // "render check" is the author of the notes the owner's page writes on its own (sessions.ts RENDER_CHECK_AUTHOR).
 const RESERVED = new Set(["owner", "you", "agent", "me", "render check"]);
-
-/** One invite: a token tied to one page (session) and a reviewer name. `auto` sends the reviewer's notes on without the owner. */
-export interface Invite {
-  token: string;
-  name: string;
-  sessionId: string;
-  file: string;
-  auto: boolean;
-  createdAt: number;
-}
-
-/** What invites.json holds for one invite, judged as loosely as before: a long enough token, a name and a page. */
-function isInvite(i: unknown): i is Invite {
-  if (!i || typeof i !== "object") return false;
-  const o = i as Record<string, unknown>;
-  return typeof o.token === "string" && o.token.length >= 22 && Boolean(o.name) && Boolean(o.sessionId);
-}
 
 /** Equal strings, compared in constant time. */
 export function safeEqual(a: string, b: string): boolean {
@@ -45,7 +28,7 @@ export function cleanName(raw: unknown): string {
   return name;
 }
 
-/** The value of cookie `name` (default: the invite cookie) in a Cookie header, or null. */
+/** The value of cookie `name` (default: an old-style reviewer cookie) in a Cookie header, or null. */
 export function tokenFromCookie(header: string | undefined, name = COOKIE): string | null {
   for (const part of String(header || "").split(";")) {
     const i = part.indexOf("=");
@@ -54,69 +37,19 @@ export function tokenFromCookie(header: string | undefined, name = COOKIE): stri
   return null;
 }
 
-/** The short id `share list` shows; `share revoke` takes it. */
-export function inviteId(inv: Invite): string {
-  return inv.token.slice(0, 8);
-}
-
-export class InviteStore {
-  file: string;
-  invites: Invite[];
-
-  /** @param dir state dir */
-  constructor(dir: string) {
-    this.file = path.join(dir, "invites.json");
-    this.invites = [];
-    try {
-      const raw = JSON.parse(fs.readFileSync(this.file, "utf8")) as { invites?: unknown };
-      if (Array.isArray(raw.invites)) {
-        this.invites = raw.invites.filter(isInvite);
-      }
-    } catch {
-      // none yet, or unreadable: start empty
-    }
+/**
+ * Every reviewer cookie in a Cookie header: `austere_rv_<device id>` (one per device, so a second
+ * link claimed in the same browser adds a cookie instead of replacing the first), and `austere_rv`,
+ * the cookie an old-style invite set.
+ */
+export function reviewerCookies(header: string | undefined): { name: string; value: string }[] {
+  const out: { name: string; value: string }[] = [];
+  for (const part of String(header || "").split(";")) {
+    const i = part.indexOf("=");
+    const name = i > 0 ? part.slice(0, i).trim() : "";
+    if (name === COOKIE || /^austere_rv_d[0-9a-f]{10}$/.test(name)) out.push({ name, value: part.slice(i + 1).trim() });
   }
-
-  save(): void {
-    const tmp = `${this.file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ invites: this.invites }, null, 2) + "\n", { mode: 0o600 });
-    fs.renameSync(tmp, this.file);
-  }
-
-  add({ name, sessionId, file, auto = false }: { name: unknown; sessionId: string; file: string; auto?: boolean }): Invite {
-    const clean = cleanName(name);
-    if (this.invites.some((i) => i.sessionId === sessionId && i.name.toLowerCase() === clean.toLowerCase())) {
-      throw new Error(`this page is already shared with "${clean}"; revoke that invite first (share revoke "${clean}")`);
-    }
-    const inv: Invite = { token: crypto.randomBytes(24).toString("base64url"), name: clean, sessionId, file, auto: Boolean(auto), createdAt: Date.now() };
-    this.invites.push(inv);
-    this.save();
-    return inv;
-  }
-
-  /** The invite for a token, or null. Compares every token, so timing does not show a near miss. */
-  find(token: unknown): Invite | null {
-    if (typeof token !== "string" || !token) return null;
-    let hit: Invite | null = null;
-    for (const inv of this.invites) if (safeEqual(inv.token, token) && !hit) hit = inv;
-    return hit;
-  }
-
-  list(): Invite[] {
-    return [...this.invites];
-  }
-
-  /** Remove the invites a key names: a full token, its short id, or a reviewer name. Returns what was removed. */
-  revoke(key: unknown): Invite[] {
-    const k = String(key || "").trim();
-    if (!k) return [];
-    const gone = this.invites.filter((i) => safeEqual(i.token, k) || (k.length === 8 && inviteId(i) === k) || i.name.toLowerCase() === k.toLowerCase());
-    if (gone.length) {
-      this.invites = this.invites.filter((i) => !gone.includes(i));
-      this.save();
-    }
-    return gone;
-  }
+  return out;
 }
 
 export const OWNER_COOKIE = "austere_owner";

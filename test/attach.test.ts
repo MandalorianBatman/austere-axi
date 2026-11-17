@@ -13,8 +13,7 @@ import type { AttachSettingRow, AttachState } from "../src/cli/attach.ts";
 import { commandLine } from "../src/cli/adapters/config.ts";
 import type { AdaptersConfig } from "../src/cli/adapters/config.ts";
 import { openDatabase } from "../src/cli/hub.ts";
-import { COOKIE } from "../src/cli/invites.ts";
-import { ownerHeaders } from "./owner.ts";
+import { claimLink, ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
 const STATE = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-attach-state-")));
@@ -105,12 +104,12 @@ test("a project change is checked against each copy's own target: a copy Copilot
     db.prepare("INSERT INTO page_sessions (artifact_id, agent_session_id, role, at) VALUES ('a-cop', 's-cop', 'author', ?)").run(now);
     // The setting itself (omp, fork) is fine; the Copilot copy resolves to Copilot, which has no fork.
     assert.throws(
-      () => changeSetting(db, { projectId: "p" }, "on", { mode: "fork", harness: "omp" }, cfg, []),
+      () => changeSetting(db, { projectId: "p" }, "on", { mode: "fork", harness: "omp" }, cfg),
       (err: unknown) => err instanceof AttachRefused && err.code === "unsupported" && /\/w\/cop\.html: copilot cannot run mode fork/.test(err.message),
     );
     assert.equal(readSetting(db, "project", "p"), null, "nothing written");
     // Mode same is fine for both copies.
-    assert.equal(changeSetting(db, { projectId: "p" }, "on", { mode: "same", harness: "omp" }, cfg, []).state, "on");
+    assert.equal(changeSetting(db, { projectId: "p" }, "on", { mode: "same", harness: "omp" }, cfg).state, "on");
   } finally {
     db.close();
   }
@@ -257,8 +256,7 @@ test("the owner's attach routes: reviewers and a foreign Origin get 403; the own
   assert.equal(opened.status, 200, opened.data);
   const id = (JSON.parse(opened.data) as { session: { id: string } }).session.id;
   const shared = await req("POST", "/api/share", owner, { file, name: "Ana" });
-  const token = new URL((JSON.parse(shared.data) as { link: string }).link).searchParams.get("invite");
-  const reviewer = { cookie: `${COOKIE}=${token}` };
+  const reviewer = { cookie: await claimLink(PORT, (JSON.parse(shared.data) as { link: string }).link) };
   const foreign = { cookie: owner.cookie, origin: "https://evil.example" };
 
   for (const [method, route, body] of [

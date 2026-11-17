@@ -205,7 +205,8 @@ export function notesPage(
     status,
     author = "",
     authors = [],
-  }: { version: string; q: string; project: string; projectName?: string; status: string; author?: string; authors?: string[] },
+    device = null,
+  }: { version: string; q: string; project: string; projectName?: string; status: string; author?: string; authors?: string[]; device?: { id: string; name: string } | null },
 ): string {
   const items = rows
     .map((n) => {
@@ -224,8 +225,10 @@ export function notesPage(
         .map((a) => `<option value="${escapeHtml(a)}"${author === a ? " selected" : ""}>${escapeHtml(a)}</option>`)
         .join("")}</select>`
     : "";
-  const filter = project ? `<p class="filter">Project ${escapeHtml(tilde(projectName))} · <a href="/notes">all projects</a></p>` : "";
-  const empty = q || project || author || status !== "all" ? "No notes match." : "No notes yet.";
+  const filter =
+    (project ? `<p class="filter">Project ${escapeHtml(tilde(projectName))} · <a href="/notes">all projects</a></p>` : "") +
+    (device ? `<p class="filter">Device ${escapeHtml(device.name)} (${escapeHtml(device.id)}) · <a href="/notes">everyone</a></p>` : "");
+  const empty = q || project || author || device || status !== "all" ? "No notes match." : "No notes yet.";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notes · austere-axi hub</title><meta name="color-scheme" content="dark">
 <style>
@@ -234,7 +237,7 @@ ${STYLE}</style></head>
 <header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><nav class="nav"><a href="/">Pages</a><a href="/notes">Notes</a></nav><span class="stats">${plural(rows.length, "note")}${
     rows.some((n) => n.status !== "addressed") ? ` · ${rows.filter((n) => n.status !== "addressed").length} unanswered` : ""
   }</span></header>
-<form class="f${authors.length ? " p" : ""}" method="get" action="/notes">${project ? `<input type="hidden" name="project" value="${escapeHtml(project)}">` : ""}<input type="search" name="q" value="${escapeHtml(q)}" placeholder="Search notes, targets, page titles" aria-label="Search notes"><select name="status" aria-label="Status">${opt("all", "All")}${opt("unanswered", "Unanswered")}${opt("answered", "Answered")}</select>${people}<button type="submit">Filter</button></form>
+<form class="f${authors.length ? " p" : ""}" method="get" action="/notes">${project ? `<input type="hidden" name="project" value="${escapeHtml(project)}">` : ""}${device ? `<input type="hidden" name="device" value="${escapeHtml(device.id)}">` : ""}<input type="search" name="q" value="${escapeHtml(q)}" placeholder="Search notes, targets, page titles" aria-label="Search notes"><select name="status" aria-label="Status">${opt("all", "All")}${opt("unanswered", "Unanswered")}${opt("answered", "Answered")}</select>${people}<button type="submit">Filter</button></form>
 ${filter}${items ? `<ul>${items}</ul>` : `<p class="empty">${empty}</p>`}
 </main></body></html>`;
 }

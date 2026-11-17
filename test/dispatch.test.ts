@@ -18,7 +18,7 @@ import { Dispatcher, readAttachLimits, unreleasedNotes, windowsLeftover } from "
 import { RENDER_CHECK_AUTHOR, SessionStore } from "../src/cli/sessions.ts";
 import type { QueuedEntry } from "../src/cli/sessions.ts";
 import { ownerKey } from "../src/cli/invites.ts";
-import { ownerHeaders } from "./owner.ts";
+import { claimLink, ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 import { VERSION } from "../src/cli/paths.ts";
 
@@ -162,6 +162,16 @@ function exec(sql: string, ...args: (string | number | null)[]): void {
   const d = db();
   try {
     d.prepare(sql).run(...args);
+  } finally {
+    d.close();
+  }
+}
+
+/** autoConflict over hub.db as the server sees it. */
+function autoOf(file: string, id: string, liveAuto?: (pageId: string, fallback: boolean) => boolean): string | null {
+  const d = db();
+  try {
+    return autoConflict(d, file, id, liveAuto);
   } finally {
     d.close();
   }
@@ -348,8 +358,8 @@ test("a reviewer's held note starts nothing; released by the owner, it does", { 
   attach(id);
   const shared = await owner("/api/share", { file, name: "Ana" });
   assert.equal(shared.status, 200, shared.data);
-  const token = new URL((JSON.parse(shared.data) as { link: string }).link).searchParams.get("invite") as string;
-  const sent = await post(`/s/${id}/send`, { items: [{ kind: "message", text: "please fix" }] }, { cookie: `austere_rv=${token}` });
+  const cookie = await claimLink(PORT, (JSON.parse(shared.data) as { link: string }).link);
+  const sent = await post(`/s/${id}/send`, { items: [{ kind: "message", text: "please fix" }] }, { cookie });
   assert.equal(sent.status, 200, sent.data);
   await sleep(700);
   assert.equal(runsOf(id).length, 0, "a held note started a run");
@@ -363,7 +373,7 @@ test("attach and unattended input exclude each other: publish --auto and share -
   const { file, id } = await page("charlie");
   // Published with --auto: the attach-on check says why, and a run refuses to start.
   fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t", pages: { [file]: { id: "p1", auto: true, unlisted: false, presence: true, invites: {} } } }));
-  assert.match(String(autoConflict(file, id, [])), /published with --auto/);
+  assert.match(String(autoOf(file, id)), /published with --auto/);
   attach(id);
   await say(id, "go");
   const refused = await runIn(id, "failed");
@@ -380,7 +390,7 @@ test("attach and unattended input exclude each other: publish --auto and share -
   attach(id, { state: "off" });
   const shared = await owner("/api/share", { file, name: "Cy", auto: true });
   assert.equal(shared.status, 200, shared.data);
-  assert.match(String(autoConflict(file, id, [{ token: "x".repeat(32), name: "Cy", sessionId: id, file, auto: true, createdAt: 0 }])), /shared with --auto \(Cy\)/);
+  assert.match(String(autoOf(file, id)), /shared with --auto \(Cy\)/);
   attach(id);
   await say(id, "again");
   await until("a second refusal", () => runsOf(id).filter((r) => r.reason === "auto_conflict").length === 2);
@@ -393,8 +403,8 @@ test("the server reads the hosted page's live auto flag: --auto turned on elsewh
   fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t", pages: { [file]: { id: "pq", auto: false, unlisted: false, presence: true, invites: {} } } }));
   exec("INSERT INTO cloud_rows (page_id, type, id, seq, body) VALUES ('pq', 'page', 'pq', 1, ?)", JSON.stringify({ type: "page", id: "pq", auto: true }));
   try {
-    assert.equal(autoConflict(file, id, []), null, "cloud.json alone says not auto");
-    assert.match(String(autoConflict(file, id, [], () => true)), /published with --auto/);
+    assert.equal(autoOf(file, id), null, "cloud.json alone says not auto");
+    assert.match(String(autoOf(file, id, () => true)), /published with --auto/);
     attach(id);
     await say(id, "go");
     const refused = await runIn(id, "failed", "done");
@@ -411,7 +421,7 @@ test("a cached page row that says not auto never overrides cloud.json's --auto: 
   fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t", pages: { [file]: { id: "pu", auto: true, unlisted: false, presence: true, invites: {} } } }));
   exec("INSERT INTO cloud_rows (page_id, type, id, seq, body) VALUES ('pu', 'page', 'pu', 1, ?)", JSON.stringify({ type: "page", id: "pu", auto: false }));
   try {
-    assert.match(String(autoConflict(file, id, [], () => false)), /published with --auto/, "a live false does not override cloud.json");
+    assert.match(String(autoOf(file, id, () => false)), /published with --auto/, "a live false does not override cloud.json");
     attach(id);
     await say(id, "go");
     const refused = await runIn(id, "failed", "done");
@@ -426,8 +436,8 @@ test("a note an --auto invite delivered keeps runs off after the invite is revok
   const { file, id } = await page("romeo");
   const shared = await owner("/api/share", { file, name: "Dee", auto: true });
   assert.equal(shared.status, 200, shared.data);
-  const token = new URL((JSON.parse(shared.data) as { link: string }).link).searchParams.get("invite") as string;
-  const sent = await post(`/s/${id}/send`, { items: [{ kind: "message", text: "rewrite everything" }] }, { cookie: `austere_rv=${token}` });
+  const cookie = await claimLink(PORT, (JSON.parse(shared.data) as { link: string }).link);
+  const sent = await post(`/s/${id}/send`, { items: [{ kind: "message", text: "rewrite everything" }] }, { cookie });
   assert.equal(sent.status, 200, sent.data);
   assert.equal((await owner("/api/share/revoke", { key: "Dee" })).status, 200);
   attach(id);
