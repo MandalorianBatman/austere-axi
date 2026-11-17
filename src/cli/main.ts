@@ -1381,10 +1381,10 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
 /** The project id `--project` names ("" when the flag is absent); null when it names none (withHub has told the user). */
 async function projectIdOfFlag(flags: Flags): Promise<string | null> {
   let id: string | null = null;
-  await withHub((hub) => {
+  await withHub(false, (hub) => {
     id = projectFlag(hub, flags);
   });
-  return id;
+  return process.exitCode ? null : id;
 }
 
 /** The most files `archive --missing` lists: with hundreds of dead worktrees the count is what matters. */
@@ -1406,14 +1406,19 @@ async function archiveMissing(flags: Flags): Promise<void> {
     const release = await lockStateDir(stateDir(), { wait: 5000 });
     try {
       copies = [];
-      await withHub((hub) => {
+      await withHub(true, (hub) => {
         const at = Date.now();
-        copies = hub.missingCopies(project);
-        for (const c of copies) hub.setArchived(c.id, at);
+        const found = hub.missingCopies(project);
+        const archived: typeof copies = [];
+        for (const c of found) {
+          if (hub.setArchived(c.id, at)) archived.push(c);
+        }
+        copies = archived;
       });
     } finally {
       release();
     }
+    if (process.exitCode) return;
   }
   if (!copies.length) return print({ status: "none", note: "No copy opened for review has a missing file." });
   const waiting = copies.reduce((n, c) => n + c.unanswered, 0);
