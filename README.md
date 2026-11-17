@@ -34,7 +34,7 @@ You click the exact thing you want changed and write a note, the way you would c
 2. **Click what you want changed and write a note.** Anything on the page works: a section, one cell of a table, one box in a diagram, one line of a code change, or a sentence you select. Where the page offers choices, pick one or fill in the form.
 3. **Press Send.** The agent gets each note attached to the part you clicked and changes only those parts. The page updates in place and highlights what changed, so you don't have to hunt for it.
 
-Repeat until it is right. When you are done, press **Send & End** and carry on in the chat.
+Repeat until it is right. When you are done, press **Done** (or **Send & finish** with a last note) and carry on in the chat. The agent stops listening; a note you add later waits until an agent checks.
 
 ## What people review with it
 

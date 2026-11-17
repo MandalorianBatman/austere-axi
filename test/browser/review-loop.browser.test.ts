@@ -325,27 +325,52 @@ test("a page using an installed pack renders it, warns about third-party code, a
   }
 });
 
-test("with no agent listening the reviewer can still send; Send & End marks the batch; only archiving locks the composer", async (t) => {
+test("with no agent listening the reviewer can still send; Send & finish and Done mark the batch final; only archiving locks the composer", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "archive-lock.html");
   fs.writeFileSync(file, htmlPage("Archive lock", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
   const { context, page, problems } = await openReview(file, VIEWPORTS[0]);
+  const finalLine = "You told the agent this was your last note. Notes you add later wait until an agent checks.";
   try {
     await page.waitForSelector(".presence:has-text('Agent not listening')");
     assert.equal(await page.locator(".composer textarea").isDisabled(), false);
     await page.fill(".composer textarea", "one more thing");
     await page.click(".composer .send");
-    await page.waitForSelector(".presence:has-text('1 waiting')");
+    await page.waitForSelector(".presence:has-text('1 not answered yet')");
+    assert.equal(await page.locator(".receipt em").textContent(), "waiting for the agent (1 not answered yet)");
     const res = await api("/api/poll", { file, timeoutMs: 5000 });
     assert.equal(res.status, "feedback");
     assert.equal(res.items[0].text, "one more thing");
     assert.equal(res.final, undefined);
 
     await page.fill(".composer textarea", "last words");
+    assert.equal(await page.locator(".composer .send-end").textContent(), "Send & finish");
     await page.click(".composer .send-end");
     const last = await api("/api/poll", { file, cursor: res.cursor, timeoutMs: 5000 });
     assert.equal(last.final, true);
-    await page.waitForSelector(".composer textarea:not([disabled])"); // the send finished; Send & End locks nothing
+    await page.waitForSelector(".composer textarea:not([disabled])"); // the send finished; Send & finish locks nothing
+    await page.waitForSelector(`.final-note:has-text("${finalLine}")`);
+
+    // Nothing typed or queued: the button is Done, and it sends an empty final batch.
+    const done = page.locator(".composer .send-end");
+    assert.equal(await done.textContent(), "Done");
+    assert.equal(await done.getAttribute("title"), "Tell the agent you have no more notes");
+    await done.click();
+    const empty = await api("/api/poll", { file, cursor: last.cursor, timeoutMs: 5000 });
+    assert.equal(empty.status, "feedback");
+    assert.equal(empty.final, true);
+    assert.deepEqual(empty.items, []);
+    await page.waitForFunction(() => document.querySelectorAll(".final-note").length === 2);
+    assert.equal(await page.locator(".log .msg.user").count(), 2, "Done adds the line only, no empty note");
+    assert.equal(await done.isDisabled(), true, "Done once is enough");
+
+    // A later note is still accepted.
+    await page.fill(".composer textarea", "after all, one more");
+    assert.equal(await done.isDisabled(), false);
+    await page.click(".composer .send");
+    const later = await api("/api/poll", { file, cursor: empty.cursor, timeoutMs: 5000 });
+    assert.deepEqual(later.items.map((i) => i.text), ["after all, one more"]);
+    assert.equal(later.final, undefined);
 
     await page.click(".menu-btn");
     await page.click('[data-cmd="archive"]');

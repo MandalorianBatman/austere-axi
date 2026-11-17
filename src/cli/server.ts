@@ -2450,7 +2450,8 @@ export async function runServer({
       let items: NoteItem[] = Array.isArray(body.items) ? body.items.filter((x: unknown) => x && typeof x === "object").slice(0, reviewer ? 50 : 200) : [];
       if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind)).map(reviewerItem);
       if (s.archivedAt) return send(res, 409, { error: "this page is archived; unarchive it to add notes" });
-      if (!items.length) return send(res, 400, { error: "nothing to send" });
+      // The owner's Done: an empty final batch only tells the agent there are no more notes.
+      if (!items.length && !end) return send(res, 400, { error: "nothing to send" });
       // The server decides who wrote a note. A reviewer's own item id could overwrite another note in the hub.
       for (const it of items) {
         delete it.author;

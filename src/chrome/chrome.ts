@@ -479,7 +479,7 @@ document.body.innerHTML = `
         <div class="composer-row">
           <span class="composer-hint">Enter sends · Shift+Enter newline</span>
           <span class="composer-actions">
-            <button type="button" class="btn ghost send-end">Send &amp; End</button>
+            <button type="button" class="btn ghost send-end">Done</button>
             <button type="submit" class="btn primary send">Send</button>
           </span>
         </div>
@@ -974,7 +974,7 @@ function receipt(entry: Entry): HTMLElement | null {
   if (!entry.seenAt) {
     row.append(
       h("em", {
-        text: state.presence === "listening" ? "" : state.unread ? `waiting for the agent (${state.unread} unread)` : "waiting for the agent",
+        text: state.presence === "listening" ? "" : state.unread ? `waiting for the agent (${state.unread} not answered yet)` : "waiting for the agent",
       }),
     );
   }
@@ -1046,11 +1046,25 @@ function renderLog(scrollToEnd = false) {
         ),
       );
     } else {
-      const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${whoLabel(entry)} · ${fmtTime(entry.at)}${entry.end ? " · Send & End" : ""}` }));
-      for (const it of entry.items || []) bubble.append(itemBody(it, { held: !!entry.held }));
-      const r = receipt(entry);
-      if (r) bubble.append(r);
-      log.append(bubble);
+      // A Done is an empty final batch: it has no bubble, only the line below.
+      if (entry.items?.length || !entry.end) {
+        const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${whoLabel(entry)} · ${fmtTime(entry.at)}` }));
+        for (const it of entry.items || []) bubble.append(itemBody(it, { held: !!entry.held }));
+        const r = receipt(entry);
+        if (r) bubble.append(r);
+        log.append(bubble);
+      }
+      if (entry.end) {
+        log.append(
+          h("div", {
+            class: "final-note",
+            title: fmtTime(entry.at),
+            text: OWNER
+              ? "You told the agent this was your last note. Notes you add later wait until an agent checks."
+              : "The owner told the agent this was their last note. Notes added later wait until an agent checks.",
+          }),
+        );
+      }
     }
   }
   const heldCount = OWNER ? state.transcript.filter((e) => e.held).length : 0;
@@ -1112,7 +1126,20 @@ function renderComposer() {
   textarea.disabled = archived || !!lockout || state.sending;
   // Hosted: nothing goes out until the service has said who this reviewer is.
   $<HTMLButtonElement>(".send").disabled = archived || !!lockout || state.sending || (!!HOSTED && inviteName === undefined);
-  if ($(".send-end")) $<HTMLButtonElement>(".send-end").disabled = archived || state.sending || (!n && !textarea.value.trim());
+  const sendEnd = $<HTMLButtonElement>(".send-end");
+  if (sendEnd) {
+    // With nothing typed or queued the button only tells the agent there are no more notes (an empty final batch).
+    const empty = !n && !textarea.value.trim();
+    const lastNote = state.transcript.findLast((e) => e.role === "user" && !e.held);
+    const alreadyDone = empty && !!lastNote?.end && !lastNote.items?.length;
+    sendEnd.disabled = archived || state.sending || alreadyDone;
+    sendEnd.textContent = empty ? "Done" : "Send & finish";
+    sendEnd.title = alreadyDone
+      ? "You already told the agent you have no more notes"
+      : empty
+        ? "Tell the agent you have no more notes"
+        : "Send these notes and tell the agent it can stop listening. You can still add notes later.";
+  }
   $(".send").textContent = state.sending ? "Sending…" : n ? `Send ${n}` : "Send";
   textarea.placeholder = archived ? "Page archived" : n ? "Add a message (optional)…" : "Message the agent…";
 }
@@ -1128,11 +1155,12 @@ async function sendAll(end = false) {
   const text = textarea.value.trim();
   const items: QueueItem[] = state.queue.map(({ qid, ...rest }) => rest);
   if (text) items.push({ kind: "message", text });
-  if (!items.length) {
+  if (end && !OWNER) return;
+  // Done (end with nothing typed or queued) goes out as an empty final batch.
+  if (!items.length && !end) {
     textarea.focus();
     return;
   }
-  if (end && !OWNER) return;
   if (HOSTED) return sendHosted(items);
   state.sending = true;
   composerError("");
@@ -1302,7 +1330,7 @@ function renderPresence() {
   else if (state.presence === "working") [label, cls] = [took ? `Agent working (${took})` : "Agent working", "working"];
   else if (state.presence === "stale") [label, cls] = [took ? `Took your notes ${took} ago, no reply yet` : "Took your notes, no reply yet", "stale"];
   else [label, cls] = ["Agent not listening", "idle"];
-  if (cls === "idle" && state.unread) label += ` · ${state.unread} waiting`;
+  if (cls === "idle" && state.unread) label += ` · ${state.unread} not answered yet`;
   // With an agent attached, "not listening" says nothing: the Agent pill tells what runs.
   const attached = cls === "idle" && attach.info?.effective.state === "on";
   el.className = `presence ${cls}${attached ? " attached" : ""}`;

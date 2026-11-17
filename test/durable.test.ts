@@ -226,6 +226,28 @@ test("a note sent after a final batch is kept, and the next poll returns it", ()
     assert.equal(mixed.data.final, undefined);
   }));
 
+test("Done: the owner's empty final batch tells the agent to stop and is not counted as a note", () =>
+  withServer(async ({ port, id }) => {
+    const empty = await request(port, "POST", `/s/${id}/send`, { items: [] }, page(port));
+    assert.equal(empty.status, 400, "an empty batch that is not final is still nothing to send");
+
+    const done = await request(port, "POST", `/s/${id}/send`, { items: [], end: true }, page(port));
+    assert.equal(done.status, 200);
+    const pending = async () => (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.pending;
+    assert.equal(await pending(), 0, "Done waits for no answer");
+    const poll = await request(port, "POST", "/api/poll", { file: FILE });
+    assert.equal(poll.data.status, "feedback");
+    assert.equal(poll.data.final, true);
+    assert.deepEqual(poll.data.items, []);
+
+    // The page still takes notes after Done, and the next poll's batch is not final.
+    assert.equal((await request(port, "POST", `/s/${id}/send`, message("one more"), page(port))).status, 200);
+    assert.equal(await pending(), 1);
+    const next = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
+    assert.deepEqual(next.data.items.map((i) => i.text), ["one more"]);
+    assert.equal(next.data.final, undefined);
+  }));
+
 test("a note survives the server being killed between send and poll", async () => {
   const port = await freePort();
   const state = tmp("austere-durable-crash-");
