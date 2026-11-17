@@ -258,14 +258,15 @@ export class SessionStore {
     return Array.from(this.sessions.values()).sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
-  ensure(file: string): Session {
+  /** The session of a file, made on first sight; `cwd`: the folder the CLI ran in, which a page without a project may take as its root. */
+  ensure(file: string, cwd?: string): Session {
     const id = sessionId(file);
     let s = this.sessions.get(id);
     if (!s) {
       const now = Date.now();
       // One transaction: a merge or forget-root in another process cannot prune the page between the two.
       const row = this.tx(() => {
-        const loc = resolveProject(this.db, file);
+        const loc = resolveProject(this.db, file, cwd);
         this.q.ensure.run(id, file, loc.root, path.basename(file), now, now, loc.projectId, loc.root, loc.pageId);
         return this.q.session.get(id) as unknown as ArtifactRow;
       });

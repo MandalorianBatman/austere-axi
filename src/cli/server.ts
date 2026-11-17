@@ -96,13 +96,16 @@ export interface OpenResponse {
   browsers: number;
   pending: number;
   held: number;
+  /** The page's project: `ref` names it for `--project` (its name, or its id when another project has that name); `here`: the folder the CLI ran in (`cwd`) is in it. */
+  project?: { name: string; ref: string; here: boolean };
 }
 
 /**
  * /api/poll, and how a listening poll ends. `replaced`: a newer poll took over this page. `interrupted`: the server stopped.
+ * `moved`: a project poll's project is gone, its pages taken into another one (a guessed folder above them, `project merge`).
  */
 export interface PollResponse {
-  status: "feedback" | "timeout" | "replaced" | "interrupted";
+  status: "feedback" | "timeout" | "replaced" | "interrupted" | "moved";
   /** feedback: the notes' items, and the cursor that acknowledges them */
   items?: NoteItem[];
   /** feedback: the highest seq in the answer (a project poll's cursor covers every page). */
@@ -630,7 +633,10 @@ export async function runServer({
     finishPoll(s, poll, body, () => {
       store.markDelivered(s, entries);
       s.workingSince = Date.now();
-      s.pageHold = { seq: body.cursor as number, at: s.workingSince };
+      const cursor = body.cursor as number;
+      if (!s.pageHold || s.pageHold.seq <= cursor) {
+        s.pageHold = { seq: cursor, at: s.workingSince };
+      }
       broadcastTranscript(s, entries);
       broadcastPresence(s);
     });
@@ -777,15 +783,21 @@ export async function runServer({
   function rescanProjectPoll(projectId: string): void {
     const poll = projectPolls.get(projectId);
     if (!poll || poll.done) return;
+    // Its pages went to another project, which this poll does not listen to: end it so the agent polls that one.
+    if (!hub.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(projectId)) return finishProjectPoll(poll, { status: "moved" });
     refreshWatch(projectId);
     const batches = projectBatches(poll);
     if (batches.length) deliverProject(poll, batches);
   }
 
-  /** A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll. */
+  /**
+   * A page registered while a project poll listens is covered by it from now on: a published page's hosted socket opens too, and closes with the poll.
+   * Registering it may have taken another project's pages in (a guessed folder above them): that project's poll ends now.
+   */
   function joinProjectPoll(s: Session): void {
     const pid = store.projectIdOf(s);
     if (pid) rescanProjectPoll(pid);
+    for (const other of [...projectPolls.keys()]) if (other !== pid) rescanProjectPoll(other);
   }
 
   /**
@@ -941,6 +953,8 @@ export async function runServer({
     // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
     const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
     if (!file) return send(res, 400, { error: "file is required" });
+    // The folder the CLI ran in: a page without a project may take it as its root.
+    const cwd = typeof body.cwd === "string" && path.isAbsolute(body.cwd) ? body.cwd : undefined;
 
     if (route === "share") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
@@ -952,7 +966,7 @@ export async function runServer({
       }
       let inv: Invite;
       try {
-        const s = store.ensure(file);
+        const s = store.ensure(file, cwd);
         inv = invites.add({ name: body.name, sessionId: s.id, file: s.file, auto: !!body.auto });
         watch(s);
         joinProjectPoll(s);
@@ -967,16 +981,29 @@ export async function runServer({
     if (route === "open") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
       await ensureTailnetListener();
-      const s = store.ensure(file);
+      const s = store.ensure(file, cwd);
       watch(s);
       joinProjectPoll(s);
       store.touch(s);
+      const pid = store.projectIdOf(s);
+      const p = pid ? findProject(hub.db, pid, { folders: false }) : null;
+      let project: OpenResponse["project"];
+      if (p) {
+        let ref = p.id;
+        try {
+          if (findProject(hub.db, p.name, { folders: false })?.id === p.id) ref = p.name;
+        } catch {
+          // another project has the name: the id
+        }
+        project = { name: p.name, ref, here: cwd !== undefined && findProject(hub.db, cwd)?.id === p.id };
+      }
       return send(res, 200, {
         session: publicSession(s),
         links: links(s.id),
         browsers: clientCount(s.id),
         pending: store.unread(s).length,
         held: store.heldEntries(s).length,
+        project,
       } satisfies OpenResponse);
     }
 
