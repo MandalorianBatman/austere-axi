@@ -85,6 +85,10 @@ export function format(obj: object): string {
   return lines.join("\n");
 }
 
+/**
+ * `AUSTERE_AXI_FORMAT=json` prints one JSON line instead of the compact YAML, for a program that reads the
+ * output (an add-on such as austere-wiki): the same fields, with none of the YAML quoting rules to parse.
+ */
 export function print(obj: object): void {
-  process.stdout.write(format(obj) + "\n");
+  process.stdout.write((process.env.AUSTERE_AXI_FORMAT === "json" ? JSON.stringify(obj) : format(obj)) + "\n");
 }

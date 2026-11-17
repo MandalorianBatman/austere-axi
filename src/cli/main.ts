@@ -47,7 +47,7 @@ import type { Capability } from "./adapters/types.ts";
 import { LOOKS_RULE } from "./agent-prompt.ts";
 import { adapterWarnings, attachReport, changeSetting, effectiveAttach, isAttachMode, readSetting, resolveSessionValue, resolveSetting } from "./attach.ts";
 import type { AttachFields, AttachSettingRow, AttachState } from "./attach.ts";
-import { endLeftover, getRun, listRuns, readRunLog } from "./dispatch.ts";
+import { endLeftover, getRun, listRuns, readAttachLimits, readRunLog } from "./dispatch.ts";
 import { newTriggerId, parseDuration, quietMs, readTriggers, triggerStatus, triggersFile, writeTriggers } from "./triggers.ts";
 import type { Trigger } from "./triggers.ts";
 import type { ListedRun } from "./dispatch.ts";
@@ -364,10 +364,11 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN",
   },
   adapter: {
-    usage: 'adapter [list | set <omp|copilot> --extra-args "…" | set <name> --command "<bin> <args…>"]',
+    usage: 'adapter [list | command <name> [--model m] | set <omp|copilot> --extra-args "…" | set <name> --command "<bin> <args…>"]',
     summary:
       "how runs start an agent: each harness's binary, what it can do (same/fork/new session, model, cost cap) and the owner's extra arguments. No adapter grants write permission by default; the owner does with set, at a terminal only (omp: --approval-mode yolo, copilot: --allow-all). An empty value clears",
     flags: {
+      model: "command: the model the command selects (the harness's own default when absent)",
       "extra-args": "set: arguments added last to every run of this harness, split like a shell line with no expansion",
       command: "set: a command adapter's fixed binary and arguments, the prompt on stdin (new session only)",
     },
@@ -1541,6 +1542,34 @@ function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void
         ...adapterListing(cfg),
         note: `No adapter grants write permission by default: without it a run cannot use \`${BIN} patch\` (omp and Copilot deny it and still exit 0). The user grants it at a terminal: \`${grantCommand("omp")}\`, \`${grantCommand("copilot")}\`.`,
       });
+    case "command": {
+      // What a `new` run of this adapter would run, for a program that starts the harness itself with its own prompt (the wiki's ingest). It reads; nothing starts.
+      const name = args[0];
+      if (!name) return usage(`command needs an adapter: ${BIN} adapter command <omp|copilot|name> [--model m]`, "adapter");
+      const adapter = adapterFor(name, cfg);
+      if (!adapter) return fail(`no adapter named ${name}: a harness (${HARNESSES.join(", ")}) or a command set with \`${BIN} adapter set\``);
+      const found = findOnPath(adapter.bin);
+      if (!found) return fail(`${adapter.bin} is not on PATH`);
+      const cap = capabilitiesOf(adapter).new;
+      if (!cap.ok) return fail(`${name} cannot start a new session: ${cap.reason}`);
+      let limits;
+      try {
+        limits = readAttachLimits();
+      } catch (err) {
+        return fail(messageOf(err));
+      }
+      const model = typeof flags.model === "string" ? flags.model : undefined;
+      if (model !== undefined && !capabilitiesOf(adapter).model.ok) return fail(`${name} cannot choose a model`);
+      const built = adapter.build({
+        mode: "new",
+        model,
+        promptFile: "<stdin>",
+        cwd: process.cwd(),
+        limits: { ...(limits.maxCost !== undefined ? { maxCost: limits.maxCost } : {}), ...(limits.maxAiCredits !== undefined ? { maxAiCredits: limits.maxAiCredits } : {}) },
+        extraArgs: isHarness(adapter.id) ? extraArgsFor(adapter.id, cfg) : [],
+      });
+      return print({ adapter: name, bin: found, args: built.args, env: Object.keys(built.env).length ? built.env : undefined, stdin: "the prompt", session_id: built.sessionId, max_minutes: limits.maxMinutes, note: "Run it with the prompt on stdin, never in argv; the owner's extra arguments and limits are in." });
+    }
     case "set": {
       const name = args[0];
       const extra = flags["extra-args"];
@@ -1580,7 +1609,7 @@ function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void
       return print({ status: words.length ? "set" : "cleared", ...adapterListing(cfg) });
     }
     default:
-      return usage(`unknown adapter command: ${sub}. One of: list set`, "adapter");
+      return usage(`unknown adapter command: ${sub}. One of: list command set`, "adapter");
   }
 }
 

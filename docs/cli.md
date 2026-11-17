@@ -28,7 +28,7 @@ austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narro
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
 austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
-austere-axi adapter list|set     how a run starts an agent: harness binaries, capabilities, the owner's extra arguments (see Adapters)
+austere-axi adapter list|command|set     how a run starts an agent: harness binaries, capabilities, the owner's extra arguments (see Adapters)
 austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
 austere-axi hub [list|notes|open|reindex]   home page with every page by project and every note; reindex rebuilds the text index   [--project p] [--archived] [--all] [--unanswered]
 austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)
@@ -102,6 +102,7 @@ An adapter turns a run (a note the owner sent to an attached page) into one comm
 
 ```
 austere-axi adapter list                                   each harness: bin, found (its path on PATH, or false), same/fork/new, model, max_cost, extra_args, write_grant
+austere-axi adapter command <name> [--model m]             the command a new run of that adapter would run (bin, args with the owner's extra arguments and limits, env; the prompt goes on stdin): for a program that starts the harness itself, such as an add-on
 austere-axi adapter set omp --extra-args "--approval-mode yolo"   arguments added last to every omp run ("" clears them)
 austere-axi adapter set copilot --extra-args "--allow-all"        the same for Copilot CLI
 austere-axi adapter set <name> --command "<bin> <args…>"          a command adapter: a fixed binary and arguments, new session only ("" removes it)
@@ -187,6 +188,7 @@ austere-axi attach inherit <file>                        the page goes back to i
 | `AUSTERE_AXI_NO_OPEN` | | `1` = never open a browser |
 | `AUSTERE_AXI_HOST` | | extra bind address (never `0.0.0.0`) |
 | `AUSTERE_AXI_NO_TAILSCALE` | | `1` = loopback only |
+| `AUSTERE_AXI_FORMAT` | | `json` = every command prints one JSON line instead of the compact YAML, for a program that reads the output (the same fields) |
 | `AUSTERE_AXI_TAILNET_CHECK_MS` | `60000` | how often the server asks Tailscale for its address again (it came up later, restarted, or changed); `0` disables |
 | `AUSTERE_AXI_LINK_HOST` | | host in the printed remote link (`http://<host>:<port>`) |
 | `AUSTERE_AXI_LINK_URL` | | full origin of the printed remote link, e.g. `https://austere.example.com` behind a TLS proxy; the host is accepted without `ALLOWED_HOSTS`. The host may hold only letters, digits, dots, hyphens and underscores (or be a bracketed IPv6 address) |

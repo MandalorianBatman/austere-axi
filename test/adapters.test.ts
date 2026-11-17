@@ -395,3 +395,39 @@ test("fake binaries on PATH: build → spawn → readResult for every supported 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("adapter command prints what a new run would run, with the owner's extra arguments and limits; AUSTERE_AXI_FORMAT=json prints one JSON line", { skip: process.platform === "win32" && "POSIX shebang scripts" }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-adapter-command-"));
+  const state = path.join(dir, "state");
+  fs.mkdirSync(state);
+  try {
+    const bin = path.join(dir, "bin");
+    fs.mkdirSync(bin);
+    for (const name of ["omp", "copilot"]) fs.writeFileSync(path.join(bin, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    fs.writeFileSync(path.join(state, "adapters.json"), JSON.stringify({ format: 1, extraArgs: { omp: ["--approval-mode", "yolo"] }, commands: { ingest: { bin: "my-agent", args: ["--quiet"] } } }));
+    fs.writeFileSync(path.join(state, "attach.json"), JSON.stringify({ maxMinutes: 7, maxCost: 1.5 }));
+    const env = { AUSTERE_AXI_STATE_DIR: state, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`, AUSTERE_AXI_FORMAT: "json" };
+
+    const omp = cli(["adapter", "command", "omp", "--model", "haiku"], { env });
+    assert.equal(omp.code, 0, omp.out);
+    const parsed = JSON.parse(omp.out.trim()) as { adapter: string; bin: string; args: string[]; max_minutes: number };
+    assert.equal(parsed.adapter, "omp");
+    assert.equal(fs.realpathSync(parsed.bin), fs.realpathSync(path.join(bin, "omp")));
+    assert.deepEqual(parsed.args, ["-p", "--mode", "json", "--wait-async", "--model", "haiku", "--max-cost", "1.5", "--approval-mode", "yolo"]);
+    assert.equal(parsed.max_minutes, 7);
+    assert.doesNotMatch(omp.out, /prompt\.md|<stdin>/, "no prompt file in the output");
+
+    const copilot = JSON.parse(cli(["adapter", "command", "copilot"], { env }).out.trim()) as { args: string[]; session_id: string };
+    assert.match(copilot.session_id, /^[0-9a-f-]{36}$/, "Copilot's new session id is chosen up front");
+    assert.ok(copilot.args.includes(copilot.session_id));
+
+    const yaml = cli(["adapter", "command", "omp"], { env: { ...env, AUSTERE_AXI_FORMAT: "" } });
+    assert.match(yaml.out, /^adapter: omp\nbin: /);
+
+    assert.equal(cli(["adapter", "command", "nope"], { env }).code, 1);
+    assert.equal(cli(["adapter", "command"], { env }).code, 2);
+    assert.equal(cli(["adapter", "command", "omp"], { env: { ...env, PATH: path.dirname(process.execPath) } }).code, 1, "a harness that is not on PATH");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
