@@ -563,13 +563,16 @@ function rekey(db: sqlite.DatabaseSync, root: string | null, projectId: string):
 
 /**
  * Recompute the page-path prefixes of a project's roots after its roots changed, so a root nested
- * in an assigned root keeps its folder in its pages' paths: assigned and git roots take their path
- * under the nearest assigned root of the project holding them; a git root held by none keeps its
- * prefix only while a worktree of it sits under an assigned root of the project (that worktree gave
- * it the prefix), else has none; a worktree takes its main repository's prefix when that repository
- * is in the project, else the shared prefix of the repository's worktrees here, else its path under
- * the assigned root holding it; one held by none keeps the prefix it has, so worktrees of two
- * repositories stay apart (which prefix such roots should take is RLM-368).
+ * in an assigned root keeps its folder in its pages' paths, and one repository is one prefix:
+ *  1. assigned roots, and git roots an assigned root holds, take their path under the nearest
+ *     assigned root of the project holding them (shortest first, so a holder settles first);
+ *  2. a repository's worktrees share one prefix, and the repository's root takes it, so they stay
+ *     copies of one page and two repositories stay apart. The prefix is the repository root's own
+ *     when an assigned root holds it; else an assigned worktree's (the owner placed it), else the
+ *     first worktree's path under the assigned root holding it; else, nothing holding any of
+ *     them, the prefix the worktrees already have (the repository's own when one of them has it),
+ *     never a bare path that would put another repository's file on the same page.
+ * A git root with no worktree here and no holder has no prefix.
  */
 function settlePrefixes(db: sqlite.DatabaseSync, projectId: string): void {
   const roots = allRoots(db).filter((r) => r.project_id === projectId).sort((a, b) => a.root.length - b.root.length);
@@ -578,31 +581,40 @@ function settlePrefixes(db: sqlite.DatabaseSync, projectId: string): void {
     r.prefix = prefix;
     set.run(prefix, r.root);
   };
-  // Shortest first: a holder's prefix is settled before the roots inside it.
+  const settled = new Set<RootRow>();
   for (const r of roots) {
     if (r.kind !== "assigned" && r.kind !== "git") continue;
     const holder = assignedHolder(roots.filter((h) => h !== r), r.root);
     if (holder) update(r, prefixUnder(holder, r.root));
-    // A git root held by none: its prefix came from a worktree of it under an assigned root, or it has none.
-    else if (r.kind === "assigned" || !roots.some((w) => w !== r && pathKey(mainRepoOf(w.root) ?? "") === pathKey(r.root) && (w.kind === "assigned" || assignedHolder(roots, w.root)))) update(r, "");
+    else if (r.kind === "assigned") update(r, "");
+    else continue;
+    settled.add(r);
   }
-  // Worktrees whose repository is not in the project: one prefix per repository, an assigned
-  // worktree's (the owner placed it), else the first one's.
-  const byMain = new Map<string, string>();
-  for (const r of roots) {
-    const main = r.kind === "assigned" ? mainRepoOf(r.root) : null;
-    if (main && !byMain.has(pathKey(main))) byMain.set(pathKey(main), r.prefix);
+  // The worktrees of each repository (assigned ones included), oldest first.
+  const trees = new Map<string, RootRow[]>();
+  for (const r of [...roots].sort((a, b) => a.created_at - b.created_at || (a.root < b.root ? -1 : 1))) {
+    const main = r.kind === "worktree" || r.kind === "assigned" ? mainRepoOf(r.root) : null;
+    if (main) trees.set(pathKey(main), [...(trees.get(pathKey(main)) ?? []), r]);
+  }
+  // The prefix each repository's worktrees share, fixed before any of them is updated.
+  const shared = new Map<string, string>();
+  for (const [main, own] of trees) {
+    const row = roots.find((m) => pathKey(m.root) === main);
+    let prefix: string | undefined = row && settled.has(row) ? row.prefix : own.find((w) => w.kind === "assigned")?.prefix;
+    for (const w of own) {
+      const holder = prefix === undefined ? assignedHolder(roots, w.root) : null;
+      if (holder) prefix = prefixUnder(holder, w.root);
+    }
+    shared.set(main, prefix ?? (row && own.some((w) => w.prefix === row.prefix) ? row.prefix : own[0].prefix));
   }
   for (const r of roots) {
-    if (r.kind !== "worktree") continue;
-    const main = mainRepoOf(r.root);
-    const mainRow = main ? roots.find((m) => pathKey(m.root) === pathKey(main)) : undefined;
-    const shared = main ? byMain.get(pathKey(main)) : undefined;
-    const holder = assignedHolder(roots, r.root);
-    if (mainRow) update(r, mainRow.prefix);
-    else if (shared !== undefined) update(r, shared);
-    else if (holder) update(r, prefixUnder(holder, r.root));
-    if (main && !mainRow && shared === undefined) byMain.set(pathKey(main), r.prefix);
+    if (r.kind === "git" && !settled.has(r)) update(r, shared.get(pathKey(r.root)) ?? "");
+    else if (r.kind === "worktree") {
+      const main = mainRepoOf(r.root);
+      const holder = assignedHolder(roots, r.root);
+      if (main) update(r, shared.get(pathKey(main)) ?? r.prefix);
+      else if (holder) update(r, prefixUnder(holder, r.root));
+    }
   }
 }
 
