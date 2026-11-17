@@ -2,6 +2,8 @@
 
 Bug reports, examples, docs fixes, component packs and code are all welcome. Issues labelled [`good first issue`](https://github.com/MandalorianBatman/austere-axi/labels/good%20first%20issue) are small and have a clear finish line; comment on one before you start so two people don't take it.
 
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). Accessibility barriers are bugs; [ACCESSIBILITY.md](ACCESSIBILITY.md) says what works today and how to report one.
+
 ## Reporting a bug
 
 Open an issue with:
