@@ -45,7 +45,6 @@ import type { DeviceOrigin, DeviceRow, Scope, ScopeKind, SeenMeta } from "./devi
 import { RequestRefused, RequestStore, describeAgent } from "./requests.ts";
 import type { AccessRequestRow, RequestStatus } from "./requests.ts";
 import dns from "node:dns";
-import net from "node:net";
 import { reviewerItem } from "./items.ts";
 import { hubPage, missingPage, notesPage } from "./hub-page.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
