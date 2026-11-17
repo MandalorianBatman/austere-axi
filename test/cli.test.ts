@@ -157,13 +157,27 @@ async function scratch(fn: (s: Scratch) => Promise<void>): Promise<void> {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-cli-gone-"));
   const port = await freePort();
   const sEnv = { ...env, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port), AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_PERSIST: "1" };
-  const run = (...args: string[]): Promise<{ code: number | null; out: string }> =>
+  const runIn = (cwd: string, ...args: string[]): Promise<{ code: number | null; out: string }> =>
     new Promise((resolve) => {
-      const child = spawn(process.execPath, ["src/cli/main.ts", ...args], { env: sEnv });
+      const child = spawn(process.execPath, [path.resolve("src/cli/main.ts"), ...args], { cwd, env: sEnv });
       let out = "";
       child.stdout.on("data", (c) => (out += c));
       child.stderr.on("data", (c) => (out += c));
       child.on("close", (code) => resolve({ code, out }));
+    });
+  const run = (...args: string[]) => runIn(process.cwd(), ...args);
+  /** The owner sends a note on page `f` (`end`: with Send & End). */
+  const send = (f: string, text: string, end = false): Promise<number | undefined> =>
+    new Promise((resolve, reject) => {
+      const r = http.request(
+        { host: "127.0.0.1", port, method: "POST", path: `/s/${sessionId(f)}/send`, headers: { "content-type": "application/json", host: `127.0.0.1:${port}`, ...ownerHeaders(state) } },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode));
+        },
+      );
+      r.on("error", reject);
+      r.end(JSON.stringify({ items: [{ kind: "message", text }], end }));
     });
   /** A project folder (it has a .git) with the fixture page at `<name>.html`; each is opened for review and has one note. */
   const project = async (...names: string[]): Promise<{ dir: string; files: string[] }> => {
@@ -173,25 +187,14 @@ async function scratch(fn: (s: Scratch) => Promise<void>): Promise<void> {
     for (const f of files) {
       fs.writeFileSync(f, PAGE);
       assert.equal((await run(f)).code, 0);
-      const sent = await new Promise<number | undefined>((resolve, reject) => {
-        const r = http.request(
-          { host: "127.0.0.1", port, method: "POST", path: `/s/${sessionId(f)}/send`, headers: { "content-type": "application/json", host: `127.0.0.1:${port}`, ...ownerHeaders(state) } },
-          (res) => {
-            res.resume();
-            res.on("end", () => resolve(res.statusCode));
-          },
-        );
-        r.on("error", reject);
-        r.end(JSON.stringify({ items: [{ kind: "message", text: `note on ${path.basename(f)}` }] }));
-      });
-      assert.equal(sent, 200);
+      assert.equal(await send(f, `note on ${path.basename(f)}`), 200);
     }
     dirs.push(dir);
     return { dir, files };
   };
   const dirs: string[] = [state];
   try {
-    await fn({ run, project });
+    await fn({ run, runIn, send, project });
   } finally {
     await run("stop");
     for (const d of dirs) fs.rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -200,6 +203,8 @@ async function scratch(fn: (s: Scratch) => Promise<void>): Promise<void> {
 
 interface Scratch {
   run: (...args: string[]) => Promise<{ code: number | null; out: string }>;
+  runIn: (cwd: string, ...args: string[]) => Promise<{ code: number | null; out: string }>;
+  send: (file: string, text: string, end?: boolean) => Promise<number | undefined>;
   project: (...names: string[]) => Promise<{ dir: string; files: string[] }>;
 }
 
@@ -259,3 +264,48 @@ test("archive takes a file or --missing, and --project only with --missing", () 
     assert.match(r.out, /code: USAGE/);
   }
 });
+
+// ── one loop (RLM-380): open names the project poll; final ends one page, not the loop ──
+
+test("open names the bare poll; a project poll keeps going after final on one page; --timeout-ms is checked; interrupted keeps --cursor", () =>
+  scratch(async ({ runIn, send }) => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-cli-loop-")));
+    try {
+      fs.mkdirSync(path.join(dir, ".git"));
+      for (const n of ["a", "b"]) fs.writeFileSync(path.join(dir, `${n}.html`), PAGE);
+      const opened = await runIn(dir, "a.html", "--no-open");
+      assert.equal(opened.code, 0, opened.out);
+      assert.match(opened.out, /^next: "Run `austere-axi poll`; /m, opened.out);
+      assert.ok(opened.out.includes("(`austere-axi poll a.html` for this page only)"), opened.out);
+      assert.doesNotMatch(opened.out, /leave it running/);
+      assert.equal((await runIn(dir, "b.html", "--no-open")).code, 0);
+
+      assert.equal(await send(path.join(dir, "a.html"), "ship it", true), 200);
+      assert.equal(await send(path.join(dir, "b.html"), "more on b"), 200);
+      const got = await runIn(dir, "poll", "--timeout-ms", "5000");
+      assert.match(got.out, /^status: feedback$/m, got.out);
+      assert.match(got.out, /final: true/);
+      assert.match(got.out, /message: more on b/);
+      assert.match(got.out, /final: true means that page is done .*Keep polling with `austere-axi poll --cursor \d+` while another page you opened is still in review/, "final ends that page, not the loop");
+      assert.doesNotMatch(got.out, /do not poll again|stop listening for that page/);
+      const cursor = (/^cursor: (\d+)$/m.exec(got.out) as RegExpExecArray)[1];
+      assert.ok(got.out.includes(`austere-axi poll --cursor ${cursor}`), got.out);
+
+      for (const bad of ["abc", "-1", "1.5"]) {
+        const r = await runIn(dir, "poll", "--timeout-ms", bad);
+        assert.equal(r.code, 2, bad);
+        assert.match(r.out, /--timeout-ms takes a whole number of milliseconds/);
+      }
+
+      // The server stops under a listening poll: the hint repeats the poll with the cursor it was given.
+      const listening = runIn(dir, "poll", "--cursor", cursor);
+      for (let i = 0; i < 100 && !/presence: listening/.test((await runIn(dir)).out); i++) await new Promise((r) => setTimeout(r, 50));
+      await runIn(dir, "stop");
+      const stopped = await listening;
+      assert.match(stopped.out, /^status: interrupted$/m, stopped.out);
+      assert.match(stopped.out, /The server stopped or restarted/);
+      assert.ok(stopped.out.includes(`\`austere-axi poll --cursor ${cursor}\``), stopped.out);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    }
+  }));

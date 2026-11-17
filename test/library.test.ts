@@ -1,6 +1,10 @@
 // Guards for the component library. These are the rules a maintainer can
 // break without noticing; see .agents/skills/add-component/SKILL.md.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { before, test } from "node:test";
 import { defineComponent } from "@openuidev/react-lang";
 import { z } from "zod";
@@ -19,6 +23,9 @@ import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/si
 // lines (~5765 → ~5905 tokens).
 const PROMPT_BUDGET_TOKENS = 5950;
 const DESCRIPTION_MAX_CHARS = 280;
+// Every agent reads `--help` once per session, before spec. 1100: one loop, owner-only rows
+// in `help all` (RLM-380; ~1418 → ~1083 tokens).
+const HELP_BUDGET_TOKENS = 1100;
 
 let lib: LoadedLibrary;
 before(async () => {
@@ -43,6 +50,18 @@ test("every component is in exactly one prompt group", () => {
 test(`component reference stays within ${PROMPT_BUDGET_TOKENS} tokens`, () => {
   const tokens = estimateTokens(lib.prompt());
   assert.ok(tokens <= PROMPT_BUDGET_TOKENS, `prompt is ~${tokens} tokens, over the ${PROMPT_BUDGET_TOKENS} budget`);
+});
+
+test(`--help stays within ${HELP_BUDGET_TOKENS} tokens`, () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-help-"));
+  try {
+    const r = spawnSync(process.execPath, ["src/cli/main.ts", "--help"], { encoding: "utf8", env: { ...process.env, AUSTERE_AXI_STATE_DIR: state } });
+    assert.equal(r.status, 0, r.stderr);
+    const tokens = estimateTokens(r.stdout);
+    assert.ok(tokens <= HELP_BUDGET_TOKENS, `--help is ~${tokens} tokens, over the ${HELP_BUDGET_TOKENS} budget`);
+  } finally {
+    fs.rmSync(state, { recursive: true, force: true });
+  }
 });
 
 /** Top-level parameters of a signature: [{ name, optional, type }]. */

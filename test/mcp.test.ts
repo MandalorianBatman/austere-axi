@@ -75,7 +75,8 @@ function api(method: string, route: string, body?: unknown, headers: Record<stri
 before(() => {
   fs.writeFileSync(GOOD, page('root = Stack([intro])\nintro = TextContent("hello")'));
   fs.writeFileSync(BAD, page('root = Stack([intro, missing])\nintro = TextContent("hello")'));
-  mcp = spawn(process.execPath, ["src/cli/main.ts", "mcp"], { env: ENV, stdio: ["pipe", "pipe", "inherit"] });
+  // The server runs in WORK, as a client starts it in the user's project: a poll with no file or project covers WORK's pages.
+  mcp = spawn(process.execPath, [path.resolve("src/cli/main.ts"), "mcp"], { cwd: WORK, env: ENV, stdio: ["pipe", "pipe", "inherit"] });
   readline.createInterface({ input: mcp.stdout }).on("line", (line) => {
     const msg = JSON.parse(line) as RpcMessage;
     if (!waiting.has(msg.id)) return unexpected.push(msg);
@@ -175,16 +176,18 @@ test("open, poll for feedback, reply through the poll", async () => {
   assert.match(replied.content[0].text, /^status: timeout/m);
 });
 
-test("poll without a file waits on a project: batches name their file, and bad combinations are refused", async () => {
+test("poll with no file waits on the project of the server's folder; batches name their file, and bad combinations are refused", async () => {
   const open = await call("open", { file: GOOD, no_open: true });
   const id = /\/s\/(\w+)/.exec(open.content[0].text)?.[1];
   assert.ok(id, open.content[0].text);
+  assert.match(open.content[0].text, /^next: "Run `austere-axi poll`;/m, "open names the bare poll, which is `poll {}` here");
 
-  const idle = await call("poll", { project: WORK, timeout_ms: 200 });
+  const idle = await call("poll", { timeout_ms: 200 });
   assert.equal(idle.isError, false, idle.content[0].text);
   assert.match(idle.content[0].text, /^status: timeout/m);
+  assert.match(idle.content[0].text, new RegExp(`^project: ${path.basename(WORK)}$`, "m"));
 
-  const pollP = call("poll", { project: WORK });
+  const pollP = call("poll", {});
   await new Promise((r) => setTimeout(r, 500));
   await api("POST", `/s/${id}/send`, { items: [{ kind: "message", text: "for the whole project" }] }, { host: `127.0.0.1:${PORT}` });
   const got = (await pollP).content[0].text;
@@ -192,12 +195,12 @@ test("poll without a file waits on a project: batches name their file, and bad c
   assert.ok(got.includes(format({ file: GOOD })), got);
   assert.match(got, /message: for the whole project/);
   const cursor = Number((/^cursor: (\d+)$/m.exec(got) as RegExpExecArray)[1]);
-  assert.match((await call("poll", { project: WORK, cursor, timeout_ms: 200 })).content[0].text, /^status: timeout/m);
+  assert.match((await call("poll", { project: WORK, cursor, timeout_ms: 200 })).content[0].text, /^status: timeout/m, "--project names the same project");
 
   for (const [args, message] of [
     [{ file: GOOD, project: WORK }, /not both/],
-    [{}, /pass a file, or a project/],
     [{ project: WORK, agent_reply: "done" }, /use the reply tool/],
+    [{ agent_reply: "done" }, /use the reply tool/],
   ] as const) {
     const r = await call("poll", args);
     assert.equal(r.isError, true);

@@ -507,6 +507,20 @@ export async function runServer({
     return { id: s.id, file: s.file, title: s.title, archived: Boolean(s.archivedAt), unread: store.unread(s).length };
   }
 
+  /** The page's project, with `ref` naming it for `--project`: its name, or its id when another project has that name. */
+  function projectOfPage(s: Session): { id: string; name: string; ref: string } | undefined {
+    const pid = store.projectIdOf(s);
+    const p = pid ? findProject(hub.db, pid, { folders: false }) : null;
+    if (!p) return undefined;
+    let ref = p.id;
+    try {
+      if (findProject(hub.db, p.name, { folders: false })?.id === p.id) ref = p.name;
+    } catch {
+      // another project has the name: the id
+    }
+    return { id: p.id, name: p.name, ref };
+  }
+
   /**
    * Write to an event stream, and drop the client once its socket stays backed up instead of buffering for it.
    * A backlog over SSE_MAX_BUFFER is forgiven for SSE_STALL_MS (one large event, and the small ones right after it,
@@ -985,18 +999,8 @@ export async function runServer({
       watch(s);
       joinProjectPoll(s);
       store.touch(s);
-      const pid = store.projectIdOf(s);
-      const p = pid ? findProject(hub.db, pid, { folders: false }) : null;
-      let project: OpenResponse["project"];
-      if (p) {
-        let ref = p.id;
-        try {
-          if (findProject(hub.db, p.name, { folders: false })?.id === p.id) ref = p.name;
-        } catch {
-          // another project has the name: the id
-        }
-        project = { name: p.name, ref, here: cwd !== undefined && findProject(hub.db, cwd)?.id === p.id };
-      }
+      const p = projectOfPage(s);
+      const project: OpenResponse["project"] = p && { name: p.name, ref: p.ref, here: cwd !== undefined && findProject(hub.db, cwd)?.id === p.id };
       return send(res, 200, {
         session: publicSession(s),
         links: links(s.id),
@@ -1572,7 +1576,11 @@ export async function runServer({
       const state = readCloud();
       const entry = state.token ? state.pages[s.file] : undefined;
       const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: peer.liveAuto(entry.id, entry.auto) } : undefined;
-      return send(res, 200, agentPrompt({ file: s.file, hosted }));
+      const p = projectOfPage(s);
+      // An agent already polls this project: a second project poll would replace it, so the prompt names the page poll, which takes only this page.
+      const shared = p ? projectPolls.get(p.id) : undefined;
+      const project = p && !(shared && !shared.done) ? { name: p.name, ref: p.ref } : undefined;
+      return send(res, 200, agentPrompt({ file: s.file, hosted, project }));
     }
     if (sub === "/export") {
       const html = readFileSafe(s.file);
