@@ -32,6 +32,7 @@ import type { InstalledPack } from "./packs.ts";
 import { isScope, readTrustList, trustFile, updateTrustList } from "./trust.ts";
 import { defaultRegistry, npmView, readRegistries, registriesFile, registryEntry, registryFor, writeRegistries } from "./registries.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
+import { ADAPTER_HARNESSES, AdapterError, COMMAND_PREFIX, adaptersFile, extraArgsFor, isAdapterHarness, setCommand, setExtraArgs } from "./adapters/index.ts";
 import type { PackRef } from "../shared/packs-meta.ts";
 
 /** A YAML-shaped result for print(), built up field by field. */
@@ -253,6 +254,16 @@ const COMMANDS: Record<string, CommandSpec> = {
     flags: { "token-env": "name of an environment variable holding a bearer token for the registry (the token itself is never stored)" },
     example: "registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN",
   },
+  adapter: {
+    usage: 'adapter set <omp|copilot> --extra-args "…" | adapter set command:<name> --run "<bin> <args…>"',
+    summary:
+      "what an attached run of a harness gets beyond its own configuration (the owner's permission grant; none by default), or a fixed command adapter; stored in the state dir, at a terminal only. An empty string clears it",
+    flags: {
+      "extra-args": "arguments appended to every run of the harness, split like a shell without running one",
+      run: "the command adapter's binary and arguments; the prompt goes on its stdin",
+    },
+    example: 'adapter set omp --extra-args "--approval-mode yolo"',
+  },
   export: {
     usage: "export <file> [--out path]",
     summary: "one self-contained HTML file that works offline; keep reviewing and patching the source page, not the copy",
@@ -319,7 +330,7 @@ const COMMANDS: Record<string, CommandSpec> = {
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "extra-args", "run"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -1067,6 +1078,51 @@ async function cmdRegistry(sub: string | undefined, args: string[], flags: Flags
   }
 }
 
+/**
+ * `adapter set`: the owner's extra arguments for a harness (its permission grant, A13) or a `command`
+ * adapter, in <state>/adapters.json. At a terminal only, like `trust add`; never from a project or a page.
+ */
+function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void {
+  if (sub !== "set") return usage(`unknown adapter command: ${sub ?? "(none)"}. One of: set`, "adapter");
+  const target = args[0] ?? "";
+  const harness = isAdapterHarness(target) ? target : undefined;
+  const command = target.startsWith(COMMAND_PREFIX) ? target.slice(COMMAND_PREFIX.length) : undefined;
+  if (args.length !== 1 || (harness === undefined && command === undefined)) {
+    return usage(`set needs one adapter: ${ADAPTER_HARNESSES.join(", ")} or ${COMMAND_PREFIX}<name>`, "adapter");
+  }
+  const [flag, other] = harness ? ["extra-args", "run"] : ["run", "extra-args"];
+  if (flags[other] !== undefined) return usage(`--${other} is not for ${target}; use --${flag}`, "adapter");
+  const value = flags[flag];
+  if (typeof value !== "string") return usage(`set ${target} needs --${flag} "…" (an empty string clears it)`, "adapter");
+  const terminal = { isTTY: process.stdin.isTTY };
+  try {
+    if (harness) {
+      const extra = extraArgsFor(setExtraArgs(harness, value, terminal), harness);
+      return print({
+        status: "set",
+        adapter: harness,
+        extra_args: extra.length ? extra.map(quote).join(" ") : "none",
+        file: adaptersFile(),
+        note: extra.length
+          ? `Every ${harness} run started for a page gets these arguments last.`
+          : `No grant: ${harness} runs get only what its own configuration allows.`,
+      });
+    }
+    if (command !== undefined) {
+      const spec = setCommand(command, value, terminal).commands[command];
+      return print({
+        status: spec ? "set" : "removed",
+        adapter: target,
+        run: spec ? [spec.bin, ...spec.args].map(quote).join(" ") : undefined,
+        file: adaptersFile(),
+      });
+    }
+  } catch (err) {
+    if (err instanceof AdapterError && err.code === "bad_input") return usage(err.message, "adapter");
+    return fail(messageOf(err));
+  }
+}
+
 // ── feedback (any later session) ──
 
 function shortDate(ms: number): string {
@@ -1625,6 +1681,8 @@ async function main(): Promise<unknown> {
       return cmdTrust(rest[0], rest.slice(1));
     case "registry":
       return cmdRegistry(rest[0], rest.slice(1), flags);
+    case "adapter":
+      return cmdAdapter(rest[0], rest.slice(1), flags);
     case "feedback":
       return cmdFeedback(rest[0], flags);
     case "hub":

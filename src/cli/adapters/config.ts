@@ -8,6 +8,7 @@ import path from "node:path";
 import { stateDir } from "../paths.ts";
 import { AdapterError } from "./types.ts";
 import type { AdapterHarness } from "./types.ts";
+import { COMMAND_PREFIX } from "./command.ts";
 import type { CommandSpec } from "./command.ts";
 
 const BIN = "austere-axi";
@@ -112,18 +113,23 @@ export function setExtraArgs(harness: string, argString: string, terminal: Termi
   return config;
 }
 
-/** Adds or replaces a `command` adapter. Refuses without a terminal and changes nothing. */
-export function setCommand(name: string, spec: CommandSpec, terminal: TerminalCheck): AdaptersConfig {
+/**
+ * `adapter set command:<name> --run "<bin> <args…>"`: split the string (no shell) and store the binary and
+ * its arguments. An empty string removes the command. Refuses without a terminal and changes nothing.
+ */
+export function setCommand(name: string, runString: string, terminal: TerminalCheck): AdaptersConfig {
   if (!isCommandName(name)) throw new AdapterError("bad_input", `command name ${JSON.stringify(name)}: use letters, digits, ".", "_" or "-"`);
-  if (!spec.bin) throw new AdapterError("bad_input", `command ${name} needs a binary`);
+  const [bin, ...args] = splitArgs(runString);
+  if (bin === "") throw new AdapterError("bad_input", `command ${name} needs a binary`);
   if (!terminal.isTTY) {
     throw new AdapterError(
       "no_tty",
-      `adapter set needs the user at a terminal and changes nothing here. Ask the user to add the command ${JSON.stringify(name)} themselves.`,
+      `adapter set needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} adapter set ${COMMAND_PREFIX}${name} --run "…"\` themselves.`,
     );
   }
   const config = readAdaptersConfig();
-  config.commands[name] = { bin: spec.bin, args: [...spec.args] };
+  if (bin === undefined) delete config.commands[name];
+  else config.commands[name] = { bin, args };
   writeAdaptersConfig(config);
   return config;
 }

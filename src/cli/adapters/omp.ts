@@ -2,10 +2,12 @@
 //   same  omp -p --mode json --wait-async --resume <id> --model <m> [--max-cost c] <extra>
 //   fork  omp -p --mode json --wait-async --fork <id>   --model <m> [--max-cost c] <extra>
 //   new   omp -p --mode json --wait-async               --model <m> [--max-cost c] <extra>
-// The prompt file goes on stdin. `--wait-async` lets a background job finish inside the run (A16);
+// The prompt file goes on stdin. `<extra>` is the owner's grant from <state>/adapters.json (A13).
+// `--wait-async` lets a background job finish inside the run (A16);
 // `--max-time` is not passed, the dispatcher's timeout is the limit (A15). The run's session id is the
 // `id` on the first JSON line: a resume of a session open elsewhere continues in a new one (A14).
 import path from "node:path";
+import { extraArgsFor, readAdaptersConfig } from "./config.ts";
 import { requireMode, requireSession } from "./types.ts";
 import type { Adapter, BuildInput, BuiltCommand, CallerSession, Env, ReadResultInput, RunResult } from "./types.ts";
 
@@ -31,8 +33,8 @@ export const omp: Adapter = {
     else if (input.mode === "fork") args.push("--fork", requireSession(omp, input));
     if (input.model) args.push("--model", input.model);
     if (input.limits?.maxCost != null) args.push("--max-cost", String(input.limits.maxCost));
-    args.push(...(input.extraArgs ?? []));
-    return { bin: omp.bin, args, env: {}, cwd: input.cwd, stdin: input.promptFile };
+    args.push(...extraArgsFor(readAdaptersConfig(), "omp"));
+    return { bin: omp.bin, args, env: {}, stdin: input.promptFile };
   },
 
   readResult(input: ReadResultInput): RunResult {

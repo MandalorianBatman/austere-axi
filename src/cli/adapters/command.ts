@@ -29,7 +29,7 @@ export function commandAdapter(name: string, spec: CommandSpec): Adapter {
     },
     build(input: BuildInput): BuiltCommand {
       requireMode(adapter, input.mode);
-      return { bin: spec.bin, args: [...spec.args], env: {}, cwd: input.cwd, stdin: input.promptFile };
+      return { bin: spec.bin, args: [...spec.args], env: {}, stdin: input.promptFile };
     },
     readResult(input: ReadResultInput): RunResult {
       return input.exitCode === 0 ? {} : { error: "exit" };

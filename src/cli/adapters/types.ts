@@ -1,15 +1,16 @@
 // Harness adapters (RLM-344): turn (mode, session, model, prompt) into a command for one harness, and read
 // the run's session id back from its output. The argv per harness is in docs/review-loop-v2.md, "Adapter
-// argv (RLM-344)". No adapter adds a permission-bypass flag on its own (A13); the owner's `extraArgs` from
-// <state>/adapters.json are the only grant.
+// argv (RLM-344)". No adapter adds a permission-bypass flag on its own (A13): the owner's extra arguments
+// in <state>/adapters.json are the only grant, and `build` appends them itself.
+//
+// The contract the dispatcher (RLM-345) builds on is the issue's: build({ mode, sessionId, model,
+// promptFile, cwd, limits }) → { bin, args, env, stdin? } and readResult({ stdout, exitCode }) →
+// { sessionId? }. Every other field below is optional and only adds information.
 
 /** How a run reaches the agent: resume its session, fork it, or start a new one. */
 export type RunMode = "same" | "fork" | "new";
 
-/** Harnesses whose caller session the CLI can detect. `dsh` is detection only (RLM-347 is parked). */
-export type HarnessId = "omp" | "copilot" | "dsh";
-
-/** Harnesses with an adapter that can build a run. */
+/** Harnesses with a built-in adapter. */
 export type AdapterHarness = "omp" | "copilot";
 
 /** Supported, not supported, or not usable here and why (a missing binary, a missing harness feature). */
@@ -40,12 +41,11 @@ export interface BuildInput {
   /** The session to resume or fork; ignored for `new`. */
   sessionId?: string;
   model?: string;
-  /** The 0600 prompt file. */
+  /** The 0600 prompt file; it goes on stdin, never in argv. */
   promptFile: string;
+  /** The run's working directory; the caller spawns the command there. */
   cwd: string;
   limits?: RunLimits;
-  /** The owner's extra arguments for this harness (adapters.json), appended last. */
-  extraArgs?: readonly string[];
 }
 
 export interface BuiltCommand {
@@ -53,10 +53,9 @@ export interface BuiltCommand {
   args: string[];
   /** Variables to add to the run's environment (the dispatcher adds AUSTERE_AXI_RUN_ID itself). */
   env: Record<string, string>;
-  cwd: string;
   /** Path of a file to feed on the process's stdin. */
   stdin?: string;
-  /** The session id the run will use when the adapter decides it up front (Copilot `new` mints one). */
+  /** The session id the run will use when the adapter decides it up front: Copilot `new` mints one. */
   sessionId?: string;
 }
 
@@ -68,20 +67,20 @@ export interface RunResult {
   sessionId?: string;
   /** The session this one continues (omp `continuationOf`) or forks (`parentSession`). */
   parentSessionId?: string;
+  /** Set when the run failed. A denied tool call still exits 0, so no error does not mean a reply was posted. */
   error?: RunError;
 }
 
 export interface ReadResultInput {
   stdout: string;
-  stderr?: string;
   exitCode: number | null;
-  /** The command that ran, for the session id the adapter chose up front. */
-  built?: BuiltCommand;
+  /** Copilot prints SessionInUseError as plain text, not JSON. */
+  stderr?: string;
 }
 
-/** The caller's harness session, found from the environment or the `--session <harness>:<id>` override. */
+/** The caller's harness session, found from the environment. */
 export interface CallerSession {
-  harness: HarnessId;
+  harness: AdapterHarness;
   sessionId: string;
   sessionFile?: string;
 }
@@ -91,13 +90,16 @@ export type Env = Readonly<Record<string, string | undefined>>;
 export interface Adapter {
   /** `omp`, `copilot`, or `command:<name>`. */
   id: string;
-  /** The binary `build` runs; `capabilitiesFor` checks it is on PATH. */
+  /** The binary `build` runs; `capabilitiesFor` (index.ts) checks it is on PATH. */
   bin: string;
   /** This harness's session when the CLI runs inside it; null when not. */
   detect(env: Env): CallerSession | null;
-  /** What the harness supports, before checking the binary (see `capabilitiesFor` in index.ts). */
+  /** What the harness supports, before checking the binary (see `capabilitiesFor`). */
   capabilities: Capabilities;
-  /** Throws AdapterError("unsupported") for a mode the harness lacks. */
+  /**
+   * Throws AdapterError: "unsupported" for a mode the harness lacks, "bad_input" for a missing session id,
+   * "bad_config" for a malformed adapters.json.
+   */
   build(input: BuildInput): BuiltCommand;
   readResult(input: ReadResultInput): RunResult;
 }

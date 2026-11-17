@@ -16,6 +16,8 @@ austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narro
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
 austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
+austere-axi adapter set <omp|copilot> --extra-args "…"   what an attached run of the harness gets beyond its own configuration; none by default (terminal only)
+austere-axi adapter set command:<name> --run "<bin> <args…>"   a fixed command adapter, prompt on stdin (terminal only)
 austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
 austere-axi hub [list|notes|open]   home page with every page by project and every note   [--project p] [--archived] [--all] [--unanswered]
 austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)

@@ -218,7 +218,7 @@ wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
 | New | `sessions list [<file>\|--project]` | RLM-343 | `main.ts` |
 | New | `attach status` (anywhere; warns when the adapter has no write grant, A13), `attach on\|off` (TTY only) | RLM-346 | `main.ts` |
 | New | `run list`, `run log <id>`, `run stop <file>` | RLM-345 | new `src/cli/dispatch.ts` |
-| New | `adapter set <harness> --extra-args "…"` (TTY only; the owner's permission grant, A13) | RLM-344 | new `src/cli/adapters/` |
+| New | `adapter set <harness> --extra-args "…"` (TTY only; the owner's permission grant, A13); `adapter set command:<name> --run "<bin> <args…>"` (TTY only; a `command` adapter). An empty string clears either. | RLM-344 | new `src/cli/adapters/` |
 | New | `history <file> [--statement n] [--since rev]` | RLM-349 | `recordRevision` in `hub.ts` |
 | New | `show <file> [statement…] [--rev n] [--text\|--source] [--deps]` | RLM-349, RLM-351 | `main.ts` |
 | New | `restore <file> --rev n [statement…]` | RLM-349 | through the `cmdPatch` path |
@@ -244,7 +244,7 @@ The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, 
 | RLM-339 | the `poll` route in `server.ts` (listener registry keyed by page, project fallback); `SessionStore.nextSeq` as the project cursor; `cmdPoll`, `cmdFeedback`; MCP `poll` |
 | RLM-340 | new `src/cli/service.ts` (the unit, the plist, install/uninstall/status); `main.ts` (`server` subcommands, `HELP`/`COMMANDS`); `client.ts` (a CLI never replaces a supervised server; it starts the installed one); `lock.ts` (the lock names the supervisor and is refreshed while held); `server.ts` (the idle exit waits for a run or an attach); `hub.ts` (`hasActiveWork`); `net.ts` (`parseLinkUrl`); `paths.ts` (the state dir is an absolute path); `docs/hub.md` "Always on", `docs/cli.md` |
 | RLM-343 | `cmdOpen`, `cmdPatch`, `cmdPoll`, `cmdFeedback`, `reply`; new caller detection module; `export.ts` and the `publish` payload must not carry session ids |
-| RLM-344 | new `src/cli/adapters/types.ts`, `omp.ts`, `copilot.ts`, `command.ts`; argv as in [Harness facts](#harness-facts-rlm-342) |
+| RLM-344 | new `src/cli/adapters/types.ts`, `omp.ts`, `copilot.ts`, `command.ts`, `config.ts` (`<state>/adapters.json`), `index.ts` (registry, PATH check); `cmdAdapter` in `main.ts`; argv as in [Harness facts](#harness-facts-rlm-342) |
 | RLM-345 | new `src/cli/dispatch.ts`; the `send` and `release` paths of `server.ts`; route `POST /s/:id/run/stop` |
 | RLM-346 | owner header in `src/chrome/chrome.ts`; new owner routes in `server.ts`; new `docs/attach.md` |
 | RLM-349 | `recordRevision` in `hub.ts`; `cmdPatch`; `onFileChange` in `server.ts` (`Session.revision` seeded from the stored `rev`); `cmdOpen` and `check` |

@@ -1,34 +1,30 @@
-// Adapter registry (RLM-344): the built-in harness adapters, `command` adapters from adapters.json, caller
-// detection from the environment (RLM-343) and whether a harness's binary is on PATH. A missing binary
-// makes the adapter's capabilities `unavailable` with the reason; it never throws.
+// Adapter registry (RLM-344): the built-in harness adapters, `command` adapters from adapters.json, and
+// whether an adapter's binary is on PATH. A missing binary makes the adapter's capabilities `unavailable`
+// with the reason; it never throws.
 import fs from "node:fs";
 import path from "node:path";
 import { commandAdapter, COMMAND_PREFIX } from "./command.ts";
+import { readAdaptersConfig } from "./config.ts";
 import { copilot } from "./copilot.ts";
 import { omp } from "./omp.ts";
-import { AdapterError } from "./types.ts";
 import type { AdaptersConfig } from "./config.ts";
-import type { Adapter, AdapterHarness, CallerSession, Capabilities, Capability, Env, HarnessId } from "./types.ts";
+import type { Adapter, AdapterHarness, Capabilities, Capability, Env } from "./types.ts";
 
 export const BUILTIN_ADAPTERS: Readonly<Record<AdapterHarness, Adapter>> = { omp, copilot };
-export const HARNESS_IDS: readonly HarnessId[] = ["omp", "copilot", "dsh"];
 
-/** A built-in adapter, or `command:<name>` from the config; null when unknown. */
+/** A built-in adapter, or `command:<name>` from <state>/adapters.json; null when unknown. */
 export function getAdapter(id: string, config?: AdaptersConfig): Adapter | null {
   if (id === "omp" || id === "copilot") return BUILTIN_ADAPTERS[id];
-  if (id.startsWith(COMMAND_PREFIX) && config) {
-    const name = id.slice(COMMAND_PREFIX.length);
-    const spec = Object.hasOwn(config.commands, name) ? config.commands[name] : undefined;
-    if (spec) return commandAdapter(name, spec);
-  }
-  return null;
+  if (!id.startsWith(COMMAND_PREFIX)) return null;
+  const commands = (config ?? readAdaptersConfig()).commands;
+  const name = id.slice(COMMAND_PREFIX.length);
+  return Object.hasOwn(commands, name) ? commandAdapter(name, commands[name]) : null;
 }
 
-/** Every adapter: the built-ins, then the config's `command` adapters. */
+/** Every adapter: the built-ins, then the `command` adapters of <state>/adapters.json. */
 export function listAdapters(config?: AdaptersConfig): Adapter[] {
-  const list: Adapter[] = [omp, copilot];
-  if (config) for (const [name, spec] of Object.entries(config.commands)) list.push(commandAdapter(name, spec));
-  return list;
+  const commands = Object.entries((config ?? readAdaptersConfig()).commands);
+  return [omp, copilot, ...commands.map(([name, spec]) => commandAdapter(name, spec))];
 }
 
 /** The adapter's capabilities here: each supported one is `unavailable` when its binary is not on PATH. */
@@ -40,10 +36,6 @@ export function capabilitiesFor(adapter: Adapter, env: Env = process.env, platfo
     if (caps[key] === true) caps[key] = missing;
   }
   return caps;
-}
-
-export function binaryAvailable(bin: string, env: Env = process.env, platform: NodeJS.Platform = process.platform): boolean {
-  return findBinary(bin, env, platform) !== null;
 }
 
 /**
@@ -89,29 +81,6 @@ function isExecutable(file: string, windows: boolean): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * The caller's harness session. `override` is the value of `--session <harness>:<id>` and wins; otherwise
- * the environment: omp (`PI_SESSION_ID`, `PI_SESSION_FILE`), Copilot CLI (`COPILOT_AGENT_SESSION_ID`),
- * dsh (`DSH_SESSION_ID`), in that order. Null when none is set.
- */
-export function detectCaller(env: Env, override?: string): CallerSession | null {
-  if (override !== undefined) return parseSessionOverride(override);
-  // dsh is detected only; it has no adapter (RLM-347 is parked).
-  const dsh: CallerSession | null = env.DSH_SESSION_ID ? { harness: "dsh", sessionId: env.DSH_SESSION_ID } : null;
-  return omp.detect(env) ?? copilot.detect(env) ?? dsh;
-}
-
-/** `<harness>:<id>` → the session; throws AdapterError("bad_input") on anything else. */
-export function parseSessionOverride(value: string): CallerSession {
-  const colon = value.indexOf(":");
-  const harness = colon < 0 ? "" : value.slice(0, colon);
-  const sessionId = colon < 0 ? "" : value.slice(colon + 1);
-  if (!(HARNESS_IDS as readonly string[]).includes(harness) || !sessionId || /[\s\x00-\x1f]/.test(sessionId)) {
-    throw new AdapterError("bad_input", `--session takes <harness>:<id>, harness one of ${HARNESS_IDS.join(", ")}; got ${JSON.stringify(value)}`);
-  }
-  return { harness: harness as HarnessId, sessionId };
 }
 
 export { commandAdapter, COMMAND_PREFIX } from "./command.ts";
