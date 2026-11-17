@@ -25,6 +25,7 @@ austere-axi export <file>        one self-contained HTML file, works offline (~1
 austere-axi hub [list|notes|open]   home page with every page by project and every note   [--project p] [--archived] [--all] [--unanswered]
 austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)
 austere-axi archive <file>       put a page away from the hub's lists and lock its composer; unarchive <file> brings it back
+austere-axi archive --missing    the same for every copy whose file is gone   [--project p]
 austere-axi share <file> --as "<name>"   invite link for a teammate on your tailnet   [--auto]
 austere-axi share list|revoke           see invites, cut one off
 austere-axi publish <file>       hosted copy of the page on austere.kasat.xyz   [--invite <name>]... [--expires <dur>] [--unlisted] [--auto] [--no-presence] [--new]
@@ -51,6 +52,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 - **Acknowledge with the cursor:** `poll` prints a `cursor`. Passing it back (`--cursor n` on the next `poll` or `reply`), or replying at all, acknowledges everything up to it. Without it, `poll` returns the same feedback again, so a crash or timed-out tool call loses nothing. `--after n` replays from any point.
 - **Send & End is a hint, not a state:** the reviewer's **Send & End** marks that batch. `poll` and `feedback` return `final: true` on it, and `next:` tells the agent to apply it and stop listening. The page still takes notes: a later one waits in the inbox for the next `poll`, days later and after a server restart too.
 - **Archive is the only lock:** `archive <file>` (or **Archive page** in the page's `⋯` menu) leaves the hub's lists and locks the composer: `/send` answers 409. `unarchive <file>` or **Unarchive page** restores both. A running server makes the change, so an open page updates at once; `open` leaves an archived page archived.
+- **Missing files:** a copy whose file is gone keeps its notes. `feedback` with no file marks its batch `missing: true`; `reply <file>` and `archive <file>` work on it without the file (a path the hub never saw still says `no such file`). `archive --missing [--project p]` puts away every copy opened for review whose file is gone, in one command, and prints how many it archived and how many notes on them were still unanswered; those notes stay (`feedback` lists them with `archived: true`).
 - **Removed in 0.12:** `end`, `close`, `reopen`, `open --reopen`, `poll --takeover` and `poll --owner` exit 2 with one line that names the replacement, or says the flag is gone when there is none (`--owner`). In 0.13 they are unknown.
 - An `Image` src that is a path relative to the page (png, jpg, gif, webp, svg, avif) loads under review for the owner and for invited reviewers, and `export` inlines it as a data URI. Both read only regular files in the page's own folder, never dotfiles or links that leave it; `export` skips an image over 10 MB. A file `export` cannot read stays as written, and the output names it in `notices`.
 - `feedback <file>` returns notes no agent has answered, from any day. Reading them acknowledges them; `reply` marks them answered.
@@ -149,3 +151,7 @@ austere-axi attach inherit <file>                        the page goes back to i
 | `AUSTERE_AXI_CLOUD_URL` | `https://austere.kasat.xyz` | the service `publish` talks to (self-hosting, tests) |
 | `AUSTERE_AXI_SYNC_RETRY_MS` | `1000` | first wait before the local server reconnects to a hosted page; it doubles up to 60 s |
 | `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
+
+A CLI run from a checkout of austere-axi (`node src/cli/main.ts`, or `dist/cli.mjs` in a git checkout) with `AUSTERE_AXI_STATE_DIR` unset uses `<checkout>/.dev/state` and a port of its own (4400–4899, from the checkout's path), so it keeps off the installed server and its hub.db. It prints one line on stderr saying so. Set `AUSTERE_AXI_STATE_DIR` to choose; `AUSTERE_AXI_PORT` then defaults to `4388` again.
+
+hub.db records its schema version. Commands that open it without the server (`hub list`, `hub notes`, `project …`, `archive`, `poll` and `feedback` without a file, and the hub index `check` and `patch` update) leave it alone while a server or command of another version holds the state dir: readers open it read-only, or refuse when its schema is older than theirs; commands that write refuse. The error names the holder's version, pid and port.

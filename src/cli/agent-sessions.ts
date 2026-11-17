@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import type * as sqlite from "node:sqlite";
 import { parseSessionOverride, processLiveness } from "./caller.ts";
 import type { Caller, CallerHarness, HarnessProcess, Liveness, ProcessTable } from "./caller.ts";
-import { Hub } from "./hub.ts";
+import { openHubDirect } from "./hub.ts";
 import { inTransaction } from "./projects.ts";
 
 /** A session's part in a page: `author` opened or patched it first, `editor` opened or patched it later, `listener` polled, replied or read its feedback. */
@@ -182,10 +182,13 @@ export function liveness(row: Pick<AgentSessionRow, "pid" | "pid_start">, table?
   return processLiveness(row.pid, row.pid_start, table);
 }
 
-/** Record a caller straight in hub.db, for a command that runs without the server. Never fails the command: false when it could not. */
+/**
+ * Record a caller straight in hub.db, for a command that runs without the server. Never fails the
+ * command: false when it could not, as when a server of another version holds the state dir.
+ */
 export async function registerWithHubDb(report: CallerReport, artifactIds: string[], action: SessionAction): Promise<boolean> {
   try {
-    const hub = await Hub.open();
+    const hub = await openHubDirect({ write: true });
     try {
       registerSession(hub.db, report, { artifactIds, action });
       return true;

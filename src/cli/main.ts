@@ -9,23 +9,23 @@ import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
 import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
-import { Hub, hubDbFile, registerWithHub, unanswered } from "./hub.ts";
+import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
 import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, copyLabel, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
 import { lockStateDir } from "./lock.ts";
-import { installService, installedServiceFor, serviceContext, serviceStatus, uninstallService } from "./service.ts";
+import { installService, installedServiceFor, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
-import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import type { ArchiveMissingResponse, FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
 import { format, print as printOutput } from "./output.ts";
 import { describeItem, locator } from "../shared/feedback.ts";
 import type { FeedbackItem } from "../shared/feedback.ts";
-import { VERSION, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
+import { VERSION, applyDevDefaults, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
 import { listComponents, searchComponents, showComponents } from "./components.ts";
 import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
@@ -135,7 +135,7 @@ COMMANDS
   ${BIN} check <file>            validate without a browser: syntax, components, props,
                                    references   [--fix: declare packs] [--render]
   ${BIN} reply <file>            reply without polling  --agent-reply "..."  [--cursor n]
-  ${BIN} archive <file>          put a page away: the hub's lists leave it out (unarchive: back)
+  ${BIN} archive <file>          put a page away: the hub's lists leave it out (unarchive: back)   [--missing [--project p]: every copy whose file is gone]
   ${BIN} feedback [file]         notes no agent has answered yet (no file: the whole project)   [--all] [--peek]
   ${BIN} sessions list [file]    agent sessions that opened, patched or listened to a page (no file: the project)
   ${BIN} run list [file]         runs of the attached agent on a page (no file: the project); run log <id>, run stop <file>
@@ -326,13 +326,14 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "export plan.html --out review.html",
   },
   hub: {
-    usage: "hub [list|notes|open] [words] [--project p] [--archived] [--all] [--unanswered]",
+    usage: "hub [list|notes|open] [words] [--project p] [--archived] [--all] [--unanswered] [--limit n]",
     summary: "the owner's home page, always on: every page by project (one entry per page, a copy per worktree), every note",
     flags: {
       project: "only pages or notes from this project: a name, an id, or a folder inside one of its roots (list, notes)",
       archived: "list archived pages instead (list)",
       all: "also list pages only checked, never opened for review, and archived ones (list)",
       unanswered: "only notes no agent answered (notes)",
+      limit: "show up to n pages or notes (default 40)",
     },
     example: "hub notes --unanswered",
   },
@@ -343,7 +344,13 @@ const COMMANDS: Record<string, CommandSpec> = {
     flags: { name: "the project to add the root to, made if there is none (add)" },
     example: "project add ~/work/site --name site",
   },
-  archive: { usage: "archive <file>", summary: "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and its composer is locked; its notes stay", flags: {}, example: "archive plan.html" },
+  archive: {
+    usage: "archive <file> | archive --missing [--project p]",
+    summary:
+      "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and its composer is locked; its notes stay. Works on a file that is gone. --missing does it for every copy opened for review whose file is gone (a deleted worktree), and says how many notes were still unanswered",
+    flags: { missing: "every copy whose file is gone, instead of one file", project: "with --missing: only this project: a name, an id, or a folder inside one of its roots" },
+    example: "archive plan.html   |   archive --missing --project shop",
+  },
   unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
   share: {
     usage: 'share <file> --as "<name>" [--auto] | share list [--links] | share revoke <name|id>',
@@ -385,7 +392,7 @@ const COMMANDS: Record<string, CommandSpec> = {
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "session", "extra-args", "command", "mode", "model", "harness"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "limit", "session", "extra-args", "command", "mode", "model", "harness"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -470,13 +477,14 @@ function commandHelp(cmd: string): void {
   process.stdout.write(lines.join("\n") + "\n");
 }
 
-function needFile(file: string | undefined, cmd: string): string | null {
+/** `file` as an absolute path. With `mustExist` false a file that is gone is fine: the command works on a page the hub already knows. */
+function needFile(file: string | undefined, cmd: string, mustExist = true): string | null {
   if (!file) {
     usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>`, cmd);
     return null;
   }
   const abs = canonicalFile(file);
-  if (!fs.existsSync(abs)) {
+  if (mustExist && !fs.existsSync(abs)) {
     fail(`no such file: ${abs}`);
     return null;
   }
@@ -562,7 +570,7 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   const r = await request<OpenResponse>("POST", "/api/open", { file: abs, session: caller ?? undefined });
   if (r.status !== 200) return fail(r.data?.error || `open failed (${r.status})`);
   const d = r.data;
-  const noOpen = flags["no-open"] || /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_NO_OPEN || "");
+  const noOpen = flags["no-open"] || browserDisabled();
   let browser: string;
   if (d.browsers > 0) browser = `already open (${d.browsers} tab${d.browsers > 1 ? "s" : ""}); it live-updates`;
   else if (noOpen) browser = "not opened (--no-open)";
@@ -642,7 +650,7 @@ async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string;
   const ref = typeof flags.project === "string" ? flags.project : process.cwd();
   let hub: Hub;
   try {
-    hub = await Hub.open();
+    hub = await openHubDirect({ write: false });
   } catch (err) {
     fail(`could not open hub.db: ${messageOf(err)}`);
     return null;
@@ -775,13 +783,15 @@ async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
 }
 
 async function cmdReply(file: string | undefined, flags: Flags): Promise<void> {
-  const abs = needFile(file, "reply");
+  const abs = needFile(file, "reply", false);
   if (!abs) return;
   const text = await replyText(flags);
   if (!text) return usage('reply needs text: --agent-reply "..." or --agent-reply-file <path|->', "reply");
   const caller = callerOf(flags);
   await ensureServer();
   const r = await request<{ ok?: boolean; warning?: string; error?: string }>("POST", "/api/reply", { file: abs, text, cursor: seqFlag(flags, "cursor"), session: caller ?? undefined }, { timeoutMs: 15_000 });
+  // The hub keeps a page whose file was deleted, so its notes can still be answered; a path it never saw is just a wrong path.
+  if (r.status === 404 && !fs.existsSync(abs)) return fail(`no such file: ${abs}`);
   if (r.status !== 200) return fail(r.data?.error || `reply failed (${r.status})`);
   print({ status: "replied", file: abs, warning: r.data?.warning, session: sessionLine(caller) });
 }
@@ -1377,7 +1387,7 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
         for (const s of pages) {
           const { entries } = store.feedback(s, opts);
           const root = roots.artifact(s.id)?.root;
-          if (entries.length) batches.push({ file: s.file, copy: root ? copyLabel(root) : path.basename(path.dirname(s.file)), archived: Boolean(s.archivedAt), entries });
+          if (entries.length) batches.push({ file: s.file, copy: root ? copyLabel(root) : path.basename(path.dirname(s.file)), archived: Boolean(s.archivedAt), missing: !fs.existsSync(s.file) || undefined, entries });
         }
       } finally {
         store.close();
@@ -1389,24 +1399,31 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
   const session = sessionLine(caller, registered);
   if (!batches.length) return print({ status: "none", project: project.name, note: "Every piece of feedback in this project has been answered.", session });
   const final = batches.every((b) => endsWithFinal(b.entries));
+  const gone = batches.some((b) => b.missing);
   print({
     status: "feedback",
     project: project.name,
-    batches: batches.map((b) => ({ file: b.file, copy: b.copy, archived: b.archived || undefined, final: endsWithFinal(b.entries) || undefined, items: feedbackItems(b.file, b.entries, opts.all) })),
+    batches: batches.map((b) => ({ file: b.file, copy: b.copy, archived: b.archived || undefined, missing: b.missing || undefined, final: endsWithFinal(b.entries) || undefined, items: feedbackItems(b.file, b.entries, opts.all) })),
     session,
     next:
       `For each page above: apply what still applies with \`${BIN} patch <file>\` (changed statements only), then \`${BIN} reply <file> --agent-reply "<what changed>"\`, which marks it addressed. ` +
+      (gone
+        ? `A batch with missing: true is a file that is gone: do not patch it; \`${BIN} reply <file> --agent-reply "<file is gone>"\` still answers its notes, and \`${BIN} archive --missing\` puts every gone copy away. `
+        : "") +
       (final ? `The reviewer pressed Send & End on every newest batch: continue in chat, do not poll afterwards.` : `To continue live with the reviewer: \`${BIN} poll${project.scope}\`.`),
   });
 }
 
 // ── hub ──
 
-/** Run `fn` on hub.db: a database that cannot be opened, or an error `fn` throws, fails the command. */
-async function withHub(fn: (hub: Hub) => void): Promise<void> {
+/**
+ * Run `fn` on hub.db without the server: a database that cannot be opened, or an error `fn` throws,
+ * fails the command. `write`: `fn` changes it, which a state dir another version holds refuses.
+ */
+async function withHub(write: boolean, fn: (hub: Hub) => void): Promise<void> {
   let hub: Hub;
   try {
-    hub = await Hub.open();
+    hub = await openHubDirect({ write });
   } catch (err) {
     return fail(`${hubDbFile()} cannot be opened: ${messageOf(err)}`);
   }
@@ -1432,6 +1449,29 @@ function feedbackText(c: HubCounts): string | undefined {
   return [waiting ? `${waiting} unanswered` : "", c.addressed ? `${c.addressed} answered` : ""].filter(Boolean).join(", ") || undefined;
 }
 
+const HUB_LIMIT = 40;
+
+/** `--limit n` of `hub list` and `hub notes`: a positive whole number, else the default; null (after a usage error) when the value is bad. */
+function limitFlag(flags: Flags): number | null {
+  if (flags.limit === undefined) return HUB_LIMIT;
+  const n = typeof flags.limit === "string" && /^\d+$/.test(flags.limit) ? Number(flags.limit) : 0;
+  if (n < 1) {
+    usage(`--limit takes a whole number of 1 or more, not ${JSON.stringify(flags.limit)}`, "hub");
+    return null;
+  }
+  return n;
+}
+
+/** The first `limit` of `all`, and the line that says how many were left out ("40 of 45 shown; --limit n for more"). */
+function limited<T>(all: T[], limit: number, what: string): { shown: T[]; shownNote?: string } {
+  return all.length > limit ? { shown: all.slice(0, limit), shownNote: `${limit} of ${all.length} ${what} shown; \`--limit n\` shows more` } : { shown: all };
+}
+
+/** AUSTERE_AXI_NO_OPEN=1: this machine has no screen, so never start a browser. */
+function browserDisabled(): boolean {
+  return /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_NO_OPEN || "");
+}
+
 async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
   const url = `http://127.0.0.1:${port()}/`;
   switch (sub) {
@@ -1442,9 +1482,12 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
       process.exitCode = 2;
       return;
     case undefined:
-    case "list":
-      return withHub((hub) => {
-        const pages: HubPage[] = hub.list({ q: args.join(" "), project: projectFlag(hub, flags), archived: !!flags.archived, all: !!flags.all, limit: 40 });
+    case "list": {
+      const limit = limitFlag(flags);
+      if (limit === null) return;
+      return withHub(false, (hub) => {
+        const found: HubPage[] = hub.list({ q: args.join(" "), project: projectFlag(hub, flags), archived: !!flags.archived, all: !!flags.all, limit: Infinity });
+        const { shown: pages, shownNote } = limited(found, limit, "pages");
         if (!pages.length) return print({ pages: "none", note: flags.all || flags.archived ? undefined : "pages only checked (never opened for review) and archived ones are left out: --all lists them" });
         print({
           pages: pages.map((p) => ({
@@ -1460,12 +1503,17 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
               feedback: p.copies.length > 1 ? feedbackText(c) : undefined,
             })),
           })),
+          shown: shownNote,
           next: `\`${BIN} feedback <file>\` for what a reviewer said that no agent has answered.`,
         });
       });
-    case "notes":
-      return withHub((hub) => {
-        const rows: HubNoteRow[] = hub.notes({ q: args.join(" "), project: projectFlag(hub, flags), status: flags.unanswered ? "unanswered" : "", limit: 40 });
+    }
+    case "notes": {
+      const limit = limitFlag(flags);
+      if (limit === null) return;
+      return withHub(false, (hub) => {
+        const found: HubNoteRow[] = hub.notes({ q: args.join(" "), project: projectFlag(hub, flags), status: flags.unanswered ? "unanswered" : "", limit: -1 });
+        const { shown: rows, shownNote } = limited(found, limit, "notes");
         if (!rows.length) return print({ notes: "none" });
         print({
           notes: rows.map((r) => ({
@@ -1479,13 +1527,16 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
             file: r.file,
             sent: shortDate(r.at),
           })),
+          shown: shownNote,
           next: `\`${BIN} feedback <file>\` for what a reviewer said that no agent has answered.`,
         });
       });
+    }
     case "open": {
       await ensureServer();
-      const opened = await openBrowser(url);
-      return print({ status: opened ? "opened" : "open the url", url, sign_in: opened ? undefined : signInHint() });
+      const noOpen = browserDisabled();
+      const opened = !noOpen && (await openBrowser(url));
+      return print({ status: opened ? "opened" : "open the url", url, note: noOpen ? "AUSTERE_AXI_NO_OPEN is set: no browser was started" : undefined, sign_in: opened ? undefined : signInHint() });
     }
     default:
       return usage(`unknown hub command: ${sub}. One of: list notes open`, "hub");
@@ -1503,32 +1554,32 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
   switch (sub) {
     case undefined:
     case "list":
-      return withHub((hub) => {
+      return withHub(false, (hub) => {
         const projects = listProjects(hub.db);
         if (!projects.length) return print({ projects: "none", note: "A page you check or open for review files itself under a project." });
         print({ projects: projects.map((p) => ({ name: p.name, id: p.id, pages: p.pages, roots: p.roots.map((r) => `${r.root} (${r.kind})`) })) });
       });
     case "add":
       if (!need(1, `a folder: ${BIN} project add <dir> [--name n]`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const r = addRoot(hub.db, args[0], typeof flags.name === "string" ? flags.name : undefined);
         print({ status: "added", project: r.project.name, id: r.project.id, root: r.root });
       });
     case "merge":
       if (!need(2, `two projects: ${BIN} project merge <a> <b>`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const p = mergeProjects(hub.db, args[0], args[1]);
         print({ status: "merged", project: p.name, id: p.id, roots: listProjects(hub.db).find((x) => x.id === p.id)?.roots.map((r) => r.root) });
       });
     case "rename":
       if (!need(2, `a project and a name: ${BIN} project rename <p> <name>`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const p = renameProject(hub.db, args[0], args.slice(1).join(" "));
         print({ status: "renamed", project: p.name, id: p.id });
       });
     case "forget-root":
       if (!need(1, `a folder: ${BIN} project forget-root <dir>`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const r = forgetRoot(hub.db, args[0]);
         print({ status: "forgotten", root: r.root, project: r.project });
       });
@@ -1537,13 +1588,71 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
   }
 }
 
+/** The project id `--project` names ("" when the flag is absent); null when it names none (withHub has told the user). */
+async function projectIdOfFlag(flags: Flags): Promise<string | null> {
+  let id: string | null = null;
+  await withHub(false, (hub) => {
+    id = projectFlag(hub, flags);
+  });
+  return process.exitCode ? null : id;
+}
+
+/** The most files `archive --missing` lists: with hundreds of dead worktrees the count is what matters. */
+const ARCHIVE_MISSING_LISTED = 20;
+
+/** `archive --missing [--project p]`: put away every copy opened for review whose file is gone. Their notes stay. */
+async function archiveMissing(flags: Flags): Promise<void> {
+  const project = await projectIdOfFlag(flags);
+  if (project === null) return;
+  let copies: ArchiveMissingResponse["copies"];
+  if (await serverIfRunning()) {
+    const r = await request<ArchiveMissingResponse>("POST", "/api/archive", { missing: true, project }, { timeoutMs: 30_000 });
+    // An older server does not know `missing`: it asks for a file.
+    if (r.status === 400 && /file is required/.test(String(r.data?.error))) return fail(`the running server is older than this CLI and does not know archive --missing: run \`${BIN} stop\`, then archive again`);
+    if (r.status !== 200) return fail(r.data?.error || `archive failed (${r.status})`);
+    copies = r.data.copies;
+  } else {
+    // No server: hold the state dir's lock so hub.db is not written while a server runs or starts on it.
+    const release = await lockStateDir(stateDir(), { wait: 5000 });
+    try {
+      copies = [];
+      await withHub(true, (hub) => {
+        const at = Date.now();
+        const found = hub.missingCopies(project);
+        const archived: typeof copies = [];
+        for (const c of found) {
+          if (hub.setArchived(c.id, at)) archived.push(c);
+        }
+        copies = archived;
+      });
+    } finally {
+      release();
+    }
+    if (process.exitCode) return;
+  }
+  if (!copies.length) return print({ status: "none", note: "No copy opened for review has a missing file." });
+  const waiting = copies.reduce((n, c) => n + c.unanswered, 0);
+  print({
+    status: "archived",
+    count: copies.length,
+    unanswered: waiting || undefined,
+    files: copies.slice(0, ARCHIVE_MISSING_LISTED).map((c) => c.file),
+    more: copies.length > ARCHIVE_MISSING_LISTED ? copies.length - ARCHIVE_MISSING_LISTED : undefined,
+    note: `Their notes are kept: \`${BIN} hub list --archived\` lists the copies${waiting ? `, and \`${BIN} feedback\` still shows the unanswered notes (archived: true)` : ""}.`,
+  });
+}
+
 /**
  * `archive` and `unarchive`: put a page away from the hub's lists and lock its composer, or bring it back.
  * Works on a file that is gone too. A running server holds the page in memory, so it makes the change.
+ * `archive --missing` does it for every copy whose file is gone.
  */
-async function cmdArchive(file: string | undefined, archive: boolean): Promise<void> {
+async function cmdArchive(file: string | undefined, archive: boolean, flags: Flags = {}): Promise<void> {
   const cmd = archive ? "archive" : "unarchive";
-  if (!file) return usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>`, cmd);
+  if (flags.missing && file) return usage("archive takes a file or --missing, not both", "archive");
+  if (flags.missing) return archiveMissing(flags);
+  if (typeof flags.project === "string") return usage("archive takes --project only with --missing", "archive");
+  if (!file) return usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>${archive ? ` or ${BIN} archive --missing` : ""}`, cmd);
   const abs = canonicalFile(file);
   const done = () => print({ status: archive ? "archived" : "unarchived", file: abs, note: archive ? `Notes are refused until \`${BIN} unarchive ${quote(file)}\`.` : undefined });
   if (await serverIfRunning()) {
@@ -1559,7 +1668,7 @@ async function cmdArchive(file: string | undefined, archive: boolean): Promise<v
   // No server: hold the state dir's lock so hub.db is not written while a server runs or starts on it.
   const release = await lockStateDir(stateDir(), { wait: 5000 });
   try {
-    await withHub((hub) => {
+    await withHub(true, (hub) => {
       if (!hub.setArchived(sessionId(abs), archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
       done();
     });
@@ -1576,7 +1685,7 @@ async function cmdSessions(sub: string | undefined, args: string[], flags: Flags
   if (args.length > 1) return usage(`sessions list takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`, "sessions");
   const file = args[0];
   if (file !== undefined && typeof flags.project === "string") return usage("sessions list takes a file or --project, not both", "sessions");
-  return withHub((hub) => {
+  return withHub(false, (hub) => {
     let scope: Printed;
     let rows: PageSession[];
     if (file !== undefined) {
@@ -1631,14 +1740,14 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       return print({ status: r.data.stopped ? "stopped" : "nothing to stop", file: abs, runs: r.data.stopped || undefined });
     }
     // No server, so nothing runs: a queued or waiting run ends here, before a server could start it.
-    return withHub((hub) => {
+    return withHub(true, (hub) => {
       const n = Number(hub.db.prepare("UPDATE runs SET status = 'stopped', reason = 'stopped', ended_at = ? WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").run(Date.now(), sessionId(abs)).changes);
       print({ status: n ? "stopped" : "nothing to stop", file: abs, runs: n || undefined });
     });
   }
   if (sub === "log") {
     if (args.length !== 1) return usage(`run log takes a run id: ${BIN} run log <id> (see ${BIN} run list)`, "run");
-    return withHub((hub) => {
+    return withHub(false, (hub) => {
       const row = getRun(hub.db, args[0]);
       if (!row) throw new Error(`no run ${args[0]} (see \`${BIN} run list\`)`);
       const text = readRunLog(row);
@@ -1649,7 +1758,7 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
   if (args.length > 1) return usage(`run list takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`, "run");
   const file = args[0];
   if (file !== undefined && typeof flags.project === "string") return usage("run list takes a file or --project, not both", "run");
-  return withHub((hub) => {
+  return withHub(false, (hub) => {
     let scope: Printed;
     let rows: ListedRun[];
     if (file !== undefined) {
@@ -1745,7 +1854,7 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
   }
 
   if (verb === "status") {
-    return withHub((hub) => {
+    return withHub(false, (hub) => {
       if (file !== undefined) return print(attachStatusOf(hub, canonicalFile(file), cfg));
       const p = projectScope(hub, flags);
       print(attachProjectStatus(p, readSetting(hub.db, "project", p.id), cfg));
@@ -1788,7 +1897,7 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
   if (await serverIfRunning()) {
     let projectId = "";
     if (abs === null) {
-      await withHub((hub) => {
+      await withHub(false, (hub) => {
         projectId = projectScope(hub, flags).id;
       });
     }
@@ -1796,7 +1905,7 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
     const r = await request("POST", "/api/attach", { ...(abs !== null ? { file: abs } : { project: projectId }), change: { state: verb, ...fields } }, { timeoutMs: 10_000 });
     if (r.status === 404 && /unknown route/.test(String(r.data?.error))) return fail(`the running server is older than this CLI and does not know attach: run \`${BIN} stop\`, then attach ${verb} again`);
     if (r.status !== 200) return fail(r.data?.error || `attach ${verb} failed (${r.status})`);
-    return withHub((hub) => {
+    return withHub(false, (hub) => {
       if (abs !== null) return print({ status, ...attachStatusOf(hub, abs, cfg) });
       const p = projectScope(hub, flags);
       print({ status: `project ${verb}`, ...attachProjectStatus(p, readSetting(hub.db, "project", p.id), cfg) });
@@ -1805,7 +1914,7 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
   // No server: hold the state dir's lock so hub.db is not written while a server starts on it.
   const release = await lockStateDir(stateDir(), { wait: 5000 });
   try {
-    await withHub((hub) => {
+    await withHub(true, (hub) => {
       if (fields.session !== undefined) fields.session = resolveSessionValue(hub.db, fields.session);
       const invites = new InviteStore(stateDir()).list();
       if (abs === null) {
@@ -2048,7 +2157,10 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
     }
     if (sub === "uninstall") return print(uninstallService(ctx));
     const h = await health(p ?? port());
-    return print(serviceStatus(ctx, h && !h.foreign && !h.legacy ? h : null, VERSION));
+    const running = h && !h.foreign && !h.legacy ? h : null;
+    // A server from before 0.12 does not say a unit runs it; the system does.
+    const unit = running ? serverUnit(running.pid) : null;
+    return print(serviceStatus(ctx, running && { ...running, supervised: running.supervised ?? unit?.supervisor, unit: unit?.unit }, VERSION));
   } catch (err) {
     return fail(messageOf(err));
   }
@@ -2091,6 +2203,8 @@ async function main(): Promise<unknown> {
       return usage(messageOf(err), name);
     }
   }
+  const dev = applyDevDefaults();
+  if (dev) process.stderr.write(`[${BIN}] ${dev}\n`);
   stateDir();
   switch (cmd) {
     case undefined:
@@ -2118,7 +2232,7 @@ async function main(): Promise<unknown> {
     case "project":
       return cmdProject(rest[0], rest.slice(1), flags);
     case "archive":
-      return cmdArchive(rest[0], true);
+      return cmdArchive(rest[0], true, flags);
     case "unarchive":
       return cmdArchive(rest[0], false);
     case "patch":

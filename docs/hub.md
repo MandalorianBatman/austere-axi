@@ -4,11 +4,13 @@ The server starts when needed and stops after 30 idle minutes. Every review is k
 
 ```sh
 austere-axi hub open    # http://127.0.0.1:4388/, signed in: pages by project, with search
-austere-axi hub list    # the same, for an agent: [words] [--project p] [--archived] [--all]
-austere-axi hub notes   # every note, same for an agent: [words] [--project p] [--unanswered]
+austere-axi hub list    # the same, for an agent: [words] [--project p] [--archived] [--all] [--limit n]
+austere-axi hub notes   # every note, same for an agent: [words] [--project p] [--unanswered] [--limit n]
 ```
 
-The home page has one section per project and one row per page. A row shows the page's path in the project, its last activity, and its unanswered and answered notes across copies; pages with unanswered notes come first, then by last activity. `/notes` lists every note, newest first, with its project and copy, and search, status and project filters.
+The home page has one section per project and one row per page. A row shows the page's path in the project, its last activity, and its unanswered and answered notes across copies; a quiet page shows nothing more, and a page an agent is polling for says **agent listening**. Pages with unanswered notes come first, then by last activity. The header counts the pages, projects and unanswered notes of the view shown. The views are **Open** (pages opened for review, not archived), **Everything** and **Archived**, each with its page count for the current search and project; when a view is empty, the page names the other views that are not. `/notes` lists every note, newest first, with its project and copy, and search, status and project filters.
+
+`hub list` and `hub notes` show 40 and say `40 of 45 pages shown` when there are more; `--limit n` shows more. `hub open` starts a browser unless `AUSTERE_AXI_NO_OPEN=1` is set (a machine with no screen); then it prints the url and how to sign in.
 
 ## Projects and copies
 
@@ -34,9 +36,13 @@ austere-axi project forget-root ~/old/clone  # its pages, and the project's othe
 
 ## What the lists leave out
 
-- Pages only `check`ed or `patch`ed, never opened for review. `hub list --all` (or **All, with checked-only** on the home page) shows them.
+- Pages only `check`ed or `patch`ed, never opened for review. `hub list --all` (or **Everything** on the home page) shows them.
 - Archived pages: `austere-axi archive <file>` puts a page away and locks its composer, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. A review closed in an older version (0.10.4 can still share this `hub.db`) is archived the next time `hub.db` is opened by this version, however late it was closed.
 - Nothing else: a page whose file is gone stays listed, marked `missing`, with its notes. A page's title opens a copy that is still there; the chips open each copy.
+
+## A copy whose file is gone
+
+A row or chip marked `missing` opens a page of its own (status 410) with the file's path, the notes the copy still holds, and an **Archive this copy** button. Archiving leaves the copy out of the lists and keeps its notes. In the CLI, `archive <file>` does the same for one copy, and `archive --missing [--project p]` for every copy opened for review whose file is gone (a deleted worktree); `reply <file>` still answers its notes, and `feedback` marks its batch `missing: true`.
 
 ## Notes
 
@@ -65,7 +71,9 @@ It refuses without a terminal, so an agent or a page cannot set it up, and while
 
 `--port n` sets the port the service listens on; CLI commands then find it with `AUSTERE_AXI_PORT=n`. `--link-url` sets `AUSTERE_AXI_LINK_URL` in the unit (see below). Run `server install` again to change either; it restarts the service.
 
-A server the service runs never idles out, and a CLI never replaces it. What counts as a service is what the system says, and it is checked: the server asks systemd (or launchd) whether the unit that owns it runs the austere server (a `server` command that names `austere-axi`, or the very script this server runs; another project's `cli.mjs server` is not it), and whether that unit runs this process. A unit whose command is `npx -y austere-axi server --persist` counts too, although the server sits below the unit's main process. No variable can claim a supervisor that is not there, so a server you start by hand is an ordinary one. After upgrading austere-axi, the old server keeps running, and every CLI command says it needs a restart and how: `systemctl --user restart austere-axi.service`, or `launchctl kickstart -k gui/<uid>/xyz.kasat.austere-axi`. A command that needs a server starts the service rather than one of its own, so the two never fight over the port. If the service does not start, the error names `systemctl --user status austere-axi.service` (or `launchctl print`) to see why, and `austere-axi server uninstall` to remove it. `austere-axi stop` stops the server; the next command that needs one starts the service again, which is what "always on" means. `austere-axi server uninstall` takes the service away for good. A server started any other way is still replaced by a newer CLI, which starts the new one with `--persist` if the old one had it. `AUSTERE_AXI_PERSIST=1` is the same as `--persist`.
+A server the service runs never idles out, and a CLI never replaces it. What counts as a service is what the system says, and it is checked: the server asks systemd (or launchd) whether the unit that owns it runs the austere server (a `server` command that names `austere-axi`, or the very script this server runs; another project's `cli.mjs server` is not it), and whether that unit runs this process. A unit whose command is `npx -y austere-axi server --persist` counts too, although the server sits below the unit's main process. No variable can claim a supervisor that is not there, so a server you start by hand is an ordinary one. A CLI asks the system the same question about an older server before it replaces it, so a server from before 0.12 (which does not report a supervisor) that a unit runs, your own unit included, is left alone too. After upgrading austere-axi, the old server keeps running, and every CLI command says it needs a restart and how: `systemctl --user restart <its unit>`, or `launchctl kickstart -k gui/<uid>/xyz.kasat.austere-axi`. A command that needs a server starts the service rather than one of its own. If the service does not start, the error names `systemctl --user status austere-axi.service` (or `launchctl print`) to see why, and `austere-axi server uninstall` to remove it. `austere-axi stop` stops the server; the next command that needs one starts the service again, which is what "always on" means. `austere-axi server uninstall` takes the service away for good. A server started any other way is still replaced by a newer CLI, which says so on stderr (`replaced server 0.11.0 (pid N) with 0.12.0 from <path>`) and starts the new one where the old one listened, with `--persist` if the old one had it, and with the old one's `AUSTERE_AXI_LINK_URL`, `AUSTERE_AXI_LINK_HOST` and `AUSTERE_AXI_ALLOWED_HOSTS` (a server from 0.12 on reports them; for an older one the caller's apply). `AUSTERE_AXI_PERSIST=1` is the same as `--persist`.
+
+While such a server holds the service's port, the service cannot start. `server status` and every CLI command say so: ``the service cannot start: pid N holds port P and was not started by the service. Run `austere-axi stop`.`` The unit `server install` writes stops trying after 5 failed starts in 2 minutes (`failed` in `systemctl --user status`) instead of restarting for ever; after `austere-axi stop`, the next CLI command resets it and starts it. Health checks do not count as use, so an ordinary server still idles out while something probes it.
 
 ### From a unit you wrote yourself
 

@@ -9,7 +9,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import type { IncomingHttpHeaders } from "node:http";
 import { DatabaseSync } from "node:sqlite";
-import { SessionStore } from "../src/cli/sessions.ts";
+import { SessionStore, sessionId } from "../src/cli/sessions.ts";
 import { Hub, openDatabase, unanswered } from "../src/cli/hub.ts";
 import { hubPage, notesPage } from "../src/cli/hub-page.ts";
 import { findProject } from "../src/cli/projects.ts";
@@ -145,7 +145,7 @@ test("hub: always on; check-only pages hidden until --all; hands feedback to a l
   assert.match(home, /austere-axi hub/);
   assert.match(home, />shop</);
   assert.match(home, /Checkout plan/);
-  assert.match(home, /in review/);
+  assert.doesNotMatch(home, /in review/, "a quiet page says nothing");
 
   // Opening from the hub goes to the review.
   const id = (/href="\/hub\/open\/([a-f0-9]{12})"/.exec(home) as RegExpExecArray)[1];
@@ -180,6 +180,13 @@ test("hub: always on; check-only pages hidden until --all; hands feedback to a l
   home = (await req("GET", "/")).data;
   assert.match(home, /1 answered/);
   assert.doesNotMatch(home, /unanswered/);
+
+  // While a poll waits on the page, its row says an agent is listening; once it ends, the row is quiet again.
+  const waiting = req("POST", "/api/poll", { file: FILE, timeoutMs: 1500 });
+  await new Promise((res) => setTimeout(res, 300));
+  assert.match((await req("GET", "/")).data, /agent listening/);
+  await waiting;
+  assert.doesNotMatch((await req("GET", "/")).data, /agent listening/);
 
   r = await cli("hub", "list");
   assert.match(r.out, /page: docs\/plan\.html/);
@@ -261,6 +268,82 @@ test("archive hides a page until unarchive; a deleted file is listed as missing"
   }
 });
 
+test("a missing copy opens a page with its notes and an Archive button; archiving takes it out of the lists", async () => {
+  const port = await freePort();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-gone-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-gone-work-")));
+  fs.mkdirSync(path.join(work, ".git"));
+  const file = path.join(work, "gone.html");
+  fs.copyFileSync(FILE, file);
+  const call = (method: string, route: string, body?: unknown, extra: Record<string, string> = {}) => req(method, route, body, port, state, extra);
+  try {
+    await cliWith(env, file);
+    const home = (await call("GET", "/")).data;
+    const id = (/href="\/hub\/open\/([a-f0-9]{12})"/.exec(home) as RegExpExecArray)[1];
+    await call("POST", `/s/${id}/send`, { items: [{ kind: "message", text: "<b>shorten</b> the intro" }] });
+    assert.equal((await call("GET", `/hub/open/${id}`)).status, 302, "a copy that is there opens the review");
+
+    fs.rmSync(file);
+    const gone = await call("GET", `/hub/open/${id}`);
+    assert.equal(gone.status, 410);
+    assert.match(String(gone.headers["content-type"]), /text\/html/);
+    assert.ok(gone.data.includes(file), "the full path is on the page");
+    assert.ok(gone.data.includes("&lt;b&gt;shorten&lt;/b&gt; the intro"), "its notes, escaped");
+    assert.ok(!gone.data.includes("<b>shorten</b>"));
+    assert.match(gone.data, /<form method="post" action="\/hub\/archive\/[a-f0-9]{12}"><button/);
+    // The home page and the Notes view both link to it.
+    assert.equal((await call("GET", "/notes")).data.includes(`/hub/open/${id}`), true);
+
+    // Only the owner's own page posts here: not another site, and a copy the hub does not know is a 404.
+    assert.equal((await call("POST", `/hub/archive/${id}`, {}, { origin: "https://evil.example" })).status, 403);
+    assert.equal((await call("POST", "/hub/archive/000000000000", {})).status, 404);
+    assert.match((await call("GET", "/")).data, /gone\.html/);
+
+    const done = await call("POST", `/hub/archive/${id}`, {});
+    assert.equal(done.status, 303);
+    assert.equal(done.headers.location, "/");
+    assert.doesNotMatch((await call("GET", "/")).data, /gone\.html/);
+    const again = await call("GET", `/hub/open/${id}`);
+    assert.equal(again.status, 410);
+    assert.doesNotMatch(again.data, /<form/, "an archived copy has nothing left to archive");
+    assert.match(again.data, /archived/i);
+  } finally {
+    await cliWith(env, "stop");
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("project feedback marks a batch whose file is gone with missing: true", async () => {
+  const port = await freePort();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-gone-fb-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-gone-fb-work-")));
+  fs.mkdirSync(path.join(work, ".git"));
+  const keep = path.join(work, "keep.html");
+  const gone = path.join(work, "gone.html");
+  for (const f of [keep, gone]) fs.copyFileSync(FILE, f);
+  const call = (route: string, body: unknown) => req("POST", route, body, port, state);
+  try {
+    for (const f of [keep, gone]) {
+      await cliWith(env, f);
+      const id = sessionId(f);
+      await call(`/s/${id}/send`, { items: [{ kind: "message", text: `note on ${path.basename(f)}` }] });
+    }
+    fs.rmSync(gone);
+    const r = JSON.parse((await call("/api/feedback", { project: path.basename(work), peek: true })).data) as { batches: { file: string; missing?: boolean }[] };
+    const byFile = Object.fromEntries(r.batches.map((b) => [path.basename(b.file), b.missing]));
+    assert.deepEqual(Object.keys(byFile).sort(), ["gone.html", "keep.html"]);
+    assert.equal(byFile["gone.html"], true);
+    assert.ok(!byFile["keep.html"], "a file that is there carries no marker");
+  } finally {
+    await cliWith(env, "stop");
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
 test("the server idles out unless it persists", async () => {
   const port = await freePort();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-mode-"));
@@ -331,7 +414,7 @@ test("notesPage escapes note text, target, title and filters", async () => {
   try {
     const rows = hub.notes();
     rows[0].target = '"><img src=x>';
-    const html = notesPage(rows, { version: "1", q: '"><b>', project: "/p/<i>", status: "all", stats: { pages: 2, projects: 2, unanswered: 2 } });
+    const html = notesPage(rows, { version: "1", q: '"><b>', project: "/p/<i>", status: "all" });
     assert.ok(!html.includes("<script>alert"), "note text escaped");
     assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
     assert.ok(!html.includes("<img src=x>"));
@@ -408,7 +491,7 @@ test("two worktrees holding docs/plan.html: one row, two chips, notes per copy, 
     assert.equal(hub.notes({ project: plan.project_id }).length, 3);
     assert.equal(hub.notes({ status: "unanswered" }).length, 3, "the Notes view counts held notes as unanswered too");
 
-    const html = hubPage(pages, { version: "1", q: "", project: "", projects: hub.projects(), stats: hub.stats() });
+    const html = hubPage(pages, { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() });
     assert.equal(html.match(/<section>/g)?.length, 1, "one section for the project");
     assert.equal(html.match(/<li>/g)?.length, 2, "one row per page");
     assert.equal(html.match(/class="chip[ "]/g)?.length, 2, "a chip per copy; none for a page with one copy");
@@ -419,7 +502,7 @@ test("two worktrees holding docs/plan.html: one row, two chips, notes per copy, 
     assert.doesNotMatch(html, /<h3>/, "no per-day headings");
     assert.ok(html.includes(`title="${main}\n${wt}"`), "roots in the tooltip");
 
-    const notesHtml = notesPage(notes, { version: "1", q: "", project: "", status: "all", stats: hub.stats() });
+    const notesHtml = notesPage(notes, { version: "1", q: "", project: "", status: "all" });
     assert.match(notesHtml, /shop · main/);
     assert.match(notesHtml, /shop · feat/);
   } finally {
@@ -443,7 +526,7 @@ test("a page's title opens a copy that is still there, the newest one when every
     store.db.prepare("UPDATE artifacts SET updated_at = ? WHERE id = ?").run(Date.now() + 60_000, sb.id);
     fs.rmSync(b);
     const hub = new Hub(store.db);
-    const titleLink = (): string | undefined => hubPage(hub.list(), { version: "1", q: "", project: "", projects: hub.projects(), stats: hub.stats() }).match(/<li><a href="\/hub\/open\/(\w+)"/)?.[1];
+    const titleLink = (): string | undefined => hubPage(hub.list(), { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() }).match(/<li><a href="\/hub\/open\/(\w+)"/)?.[1];
     assert.equal(hub.list()[0].copies[0].id, sb.id, "the gone copy is the newest");
     assert.equal(titleLink(), sa.id);
     fs.rmSync(a);
@@ -458,9 +541,94 @@ test("hubPage escapes project names, labels and paths", () => {
   const copy = (id: string, label: string) => ({ id, file: `/w/${label}/a.html`, root: `/w/${label}`, label, title: null, updated_at: 1, reviewed: 1, archived_at: null, missing: false, open: 0, received: 0, addressed: 0, held: 0 });
   const html = hubPage(
     [{ id: "p1", project_id: "x", project: "<img src=x>", rel_path: "<b>.html", title: '"><i>', updated_at: 1, open: 0, received: 0, addressed: 0, held: 0, copies: [copy("aaaaaaaaaaaa", "<u>"), copy("bbbbbbbbbbbb", "ok")] }],
-    { version: "1", q: "", project: "", projects: [{ id: "x", name: "<img src=x>", roots: ["/w/<s>"] }], stats: { pages: 1, projects: 1 } },
+    { version: "1", q: "", project: "", projects: [{ id: "x", name: "<img src=x>", roots: ["/w/<s>"] }], counts: { open: 1, everything: 1, archived: 0, checked: 0 } },
   );
   for (const raw of ["<img src=x>", "<b>.html", '"><i>', "<u>", "/w/<s>"]) assert.ok(!html.includes(raw), raw);
+});
+
+test("hub home: the header, the views and the empty state count the view shown", async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-views-")));
+  const { main } = shopWithWorktree(dir);
+  const file = (name: string): string => {
+    const f = path.join(main, "docs", `${name}.html`);
+    fs.writeFileSync(f, fs.readFileSync(FILE, "utf8").replace("Checkout plan", name));
+    return f;
+  };
+  const store = await SessionStore.open(fs.mkdtempSync(path.join(dir, "state-")));
+  try {
+    const hub = new Hub(store.db);
+    const render = (opts: { q?: string; project?: string; view?: "default" | "all" | "archived"; listening?: Set<string> } = {}): string => {
+      const { q = "", project = "", view = "default", listening } = opts;
+      const pages = hub.list({ q, project, archived: view === "archived", all: view === "all" });
+      return hubPage(pages, { version: "1", q, project, view, projects: hub.projects(), counts: hub.viewCounts({ q, project }), listening });
+    };
+
+    // Only checked pages: the header says 0 pages, and the body says where the pages are.
+    hub.register({ id: "aaaaaaaaaaaa", file: file("lint-run") });
+    let html = render();
+    assert.match(html, /<span class="stats">0 pages · 0 projects<\/span>/);
+    assert.match(html, /Nothing is open for review\. 1 page was checked but never opened: <a href="\/\?all=1">show them<\/a>/);
+    hub.register({ id: "bbbbbbbbbbbb", file: file("type-run") });
+    hub.register({ id: "cccccccccccc", file: file("test-run") });
+    assert.match(render(), /3 pages were checked but never opened/);
+    assert.match(render(), /<b>Open \(0\)<\/b> · <a href="\/\?all=1">Everything \(3\)<\/a> · <a href="\/\?archived=1">Archived \(0\)<\/a>/);
+    html = render({ view: "all" });
+    assert.match(html, /<span class="stats">3 pages · 1 project<\/span>/);
+    assert.match(html, /<em>checked<\/em>/);
+
+    // One page opened for review with an unanswered note, one archived.
+    const open = store.ensure(file("plan"));
+    store.addUserBatch(open, [{ kind: "message", text: "say more" }]);
+    const gone = store.ensure(file("old-plan"));
+    assert.ok(hub.setArchived(gone.id, Date.now()));
+    html = render();
+    assert.match(html, /<span class="stats">1 page · 1 project · 1 unanswered<\/span>/, "the header counts the rows below it");
+    assert.match(html, /<b>Open \(1\)<\/b> · <a href="\/\?all=1">Everything \(5\)<\/a> · <a href="\/\?archived=1">Archived \(1\)<\/a>/);
+    assert.doesNotMatch(html, /in review|with checked-only|1 projects|1 pages/);
+    assert.doesNotMatch(html, /listening/, "a quiet page says nothing");
+    html = render({ view: "all" });
+    assert.match(html, /<span class="stats">5 pages · 1 project · 1 unanswered<\/span>/);
+    assert.match(html, /<a href="\/">Open \(1\)<\/a> · <b>Everything \(5\)<\/b>/);
+    html = render({ view: "archived" });
+    assert.match(html, /<span class="stats">1 page · 1 project<\/span>/);
+    assert.match(html, /<em>archived<\/em>/);
+
+    // An agent listening shows on the row, and on the page's chip when there are several copies.
+    assert.match(render({ listening: new Set([open.id]) }), /<em class="live">agent listening<\/em>/);
+
+    // A search that only an other view matches names that view, with its count.
+    html = render({ q: "old-plan" });
+    assert.match(html, /Nothing matches in Open\. Also matches: <a href="\/\?q=old-plan&amp;all=1">Everything \(1\)<\/a> · <a href="\/\?q=old-plan&amp;archived=1">Archived \(1\)<\/a>\./);
+    assert.match(render({ q: "no-such-page" }), /Nothing matches in Open\.<\/p>/);
+    assert.match(render({ q: "no-such-page", view: "all" }), /Nothing matches\.<\/p>/);
+
+    // Nothing archived: the Archived view says so and points back.
+    assert.ok(hub.setArchived(gone.id, null));
+    html = render({ view: "archived" });
+    assert.match(html, /No archived pages\. See: <a href="\/">Open \(2\)<\/a>/);
+  } finally {
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("hub home: plural and singular labels; an empty hub; the notes header", () => {
+  const copy = (id: string) => ({ id, file: `/w/a.html`, root: `/w`, label: "main", title: null, updated_at: 1, reviewed: 1, archived_at: null, missing: false, open: 0, received: 0, addressed: 0, held: 0 });
+  const page = { id: "p1", project_id: "x", project: "shop", rel_path: "a.html", title: "A", updated_at: 1, open: 0, received: 0, addressed: 0, held: 0, copies: [copy("aaaaaaaaaaaa")] };
+  const counts = { open: 1, everything: 1, archived: 0, checked: 0 };
+  const home = (roots: string[]): string => hubPage([page], { version: "1", q: "", project: "", projects: [{ id: "x", name: "shop", roots }], counts });
+  assert.match(home(["/w/a"]), /<small[^>]*>\/w\/a<\/small>/);
+  assert.match(home(["/w/a", "/w/b"]), /\/w\/a · \+1 more folder</);
+  assert.match(home(["/w/a", "/w/b", "/w/c"]), /\/w\/a · \+2 more folders</);
+  assert.match(home(["/w/a"]), /1 page · 1 project</);
+
+  assert.match(hubPage([], { version: "1", q: "", project: "", counts: { open: 0, everything: 0, archived: 0, checked: 0 } }), /No pages yet\. Open one for review/);
+
+  const note = (status: string) => ({ id: status, artifact_id: "aaaaaaaaaaaa", at: 1, target: null, text: "t", status, author: "", remote: 0, title: "A", file: "/w/a.html", project: "shop", project_id: "x", root: "/w", label: "main" });
+  assert.match(notesPage([note("open")], { version: "1", q: "", project: "", status: "all" }), /1 note · 1 unanswered</);
+  assert.match(notesPage([note("addressed"), note("held")], { version: "1", q: "", project: "", status: "all" }), /2 notes · 1 unanswered</);
+  assert.match(notesPage([note("addressed")], { version: "1", q: "", project: "", status: "answered" }), /1 note</);
+  assert.doesNotMatch(notesPage([note("addressed")], { version: "1", q: "", project: "", status: "answered" }), /unanswered</);
 });
 
 test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two roots", async () => {
@@ -553,5 +721,54 @@ test("a 0.11.0 hub.db opens: a review closed under 0.11.0 is archived once", asy
     }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("hub list on a state dir a server of another version holds: hub.db is left as it is, and the output says why", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-otherversion-"));
+  const file = path.join(state, "hub.db");
+  const port = await freePort();
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
+  // This test process stands in for the holder: a live pid, a fresh lock, another version.
+  const holdAs = (version: string) => fs.writeFileSync(path.join(state, "server.lock"), JSON.stringify({ pid: process.pid, port, at: Date.now(), version }));
+  // A read-only reader of a WAL database may leave empty -wal/-shm files beside it, as the holder does; hub.db is what must not change.
+  const snapshot = () => fs.readFileSync(file).toString("base64");
+  try {
+    // A 0.10.4 database: this build could only read it after migrating it.
+    fs.copyFileSync(path.join(import.meta.dirname, "fixtures", "hub-0.10.4.db"), file);
+    holdAs("0.0.1");
+    const before = snapshot();
+    const list = await cliWith(env, "hub", "list");
+    assert.equal(list.code, 1, list.out);
+    assert.match(list.out, new RegExp(`in use by austere-axi v0\\.0\\.1 \\(pid ${process.pid}, port ${port}\\)`));
+    assert.match(list.out, /older than this build's .* after a migration/);
+    const add = await cliWith(env, "project", "add", WORK);
+    assert.equal(add.code, 1, add.out);
+    assert.match(add.out, /in use by austere-axi v0\.0\.1/);
+    assert.deepEqual(snapshot(), before, "neither command touched hub.db");
+
+    // At this build's schema it is read as it is: recorded, or a 0.12.0 database that predates the record.
+    fs.rmSync(path.join(state, "server.lock"));
+    (await Hub.open(file)).close();
+    for (const recorded of [true, false]) {
+      if (!recorded) {
+        const db = new DatabaseSync(file);
+        assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, 2, "migrate() records the schema version");
+        db.exec("PRAGMA user_version = 0");
+        db.close();
+      }
+      holdAs("0.0.1");
+      const current = snapshot();
+      const readable = await cliWith(env, "hub", "list", "--all");
+      assert.equal(readable.code, 0, readable.out);
+      assert.match(readable.out, /plan\.html/);
+      assert.deepEqual(snapshot(), current, "read-only");
+    }
+  } finally {
+    try {
+      fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    } catch (err) {
+      if (process.platform !== "win32") throw err;
+    }
   }
 });

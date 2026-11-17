@@ -10,8 +10,8 @@ import { health, serverAction } from "../src/cli/client.ts";
 import type { ServerHealth } from "../src/cli/client.ts";
 import { stateDirHolder } from "../src/cli/lock.ts";
 import { hasActiveWork, openDatabase } from "../src/cli/hub.ts";
-import { childEnv, detectSupervisor, installService, isAncestor, launchdPlist, npxWarning, restartCommand, runsTheServer, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitPort, unitStateDir } from "../src/cli/service.ts";
-import type { RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
+import { childEnv, detectSupervisor, installService, isAncestor, launchdPlist, npxWarning, parseSystemdShow, restartCommand, runsTheServer, serverUnit, serviceStatus, startInstalledService, systemdUnit, uninstallService, unitInCgroup, unitPort, unitStateDir } from "../src/cli/service.ts";
+import type { ProcessView, RunResult, ServiceContext, ServiceSpec } from "../src/cli/service.ts";
 import { freePort } from "./port.ts";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-service-"));
@@ -68,6 +68,8 @@ test("the systemd unit runs the installed CLI with --persist, supervised, restar
     `# Written by \`austere-axi server install\`; \`austere-axi server uninstall\` removes it.
 [Unit]
 Description=austere-axi review server
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 ExecStart=/usr/bin/node /usr/lib/node_modules/austere-axi/dist/cli.mjs server --persist --port 4388
@@ -237,13 +239,85 @@ test("status says a supervised server on an older version needs a restart", asyn
 
 test("a CLI never replaces a supervised server; it says how to restart the unit", () => {
   const h = (over: Partial<ServerHealth>): ServerHealth => ({ name: "austere-axi", version: "0.10.0", pid: 1, port: 4388, stateDir: STATE, listen: [], persist: true, ...over });
-  assert.equal(serverAction(h({}), "0.10.0"), "use");
-  assert.equal(serverAction(h({}), "0.11.0"), "replace");
-  assert.equal(serverAction(h({ legacy: true }), "0.10.0"), "replace");
-  assert.equal(serverAction(h({ supervised: "systemd" }), "0.11.0"), "restart-unit");
-  assert.equal(serverAction(h({ supervised: "launchd" }), "0.10.0"), "use");
+  const noUnit = (): null => null;
+  assert.deepEqual(serverAction(h({}), "0.10.0", noUnit), { action: "use" });
+  assert.deepEqual(serverAction(h({}), "0.11.0", noUnit), { action: "replace" });
+  assert.deepEqual(serverAction(h({ legacy: true }), "0.10.0", noUnit), { action: "replace" });
+  assert.deepEqual(serverAction(h({ supervised: "systemd" }), "0.11.0", noUnit), { action: "restart-unit", unit: { supervisor: "systemd", unit: "austere-axi.service" } });
+  assert.deepEqual(serverAction(h({ supervised: "launchd" }), "0.10.0", noUnit), { action: "use" });
   assert.equal(restartCommand("systemd"), "systemctl --user restart austere-axi.service");
   assert.equal(restartCommand("launchd", 501), "launchctl kickstart -k gui/501/xyz.kasat.austere-axi");
+  assert.equal(restartCommand("systemd", 501, "austere.service"), "systemctl --user restart austere.service");
+});
+
+// What `systemctl --user show <unit> --property=ExecStart --property=MainPID` printed on Linux for a
+// running hand-written unit (the old README's shape, a global install), paths renamed.
+const HAND_WRITTEN_CLI = "/home/ana/.npm-global/lib/node_modules/austere-axi/dist/cli.mjs";
+const HAND_WRITTEN_SHOW = `MainPID=4242
+ExecStart={ path=/usr/bin/node ; argv[]=/usr/bin/node ${HAND_WRITTEN_CLI} server --port 4388 ; ignore_errors=no ; start_time=[Tue 2026-11-17 05:13:25 UTC] ; stop_time=[n/a] ; pid=4242 ; code=(null) ; status=0/0 }
+`;
+const UNIT_CGROUP = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/austere-axi.service\n";
+
+/** A machine where pid 4242 is the main process of the unit `show` describes, and 4243 is its child. */
+function processView(over: Partial<ProcessView> = {}): ProcessView {
+  return {
+    platform: "linux",
+    uid: 1000,
+    run: (cmd, args) => (cmd === "systemctl" && args[1] === "show" ? { code: 0, stdout: HAND_WRITTEN_SHOW, stderr: "" } : { code: 1, stdout: "", stderr: "" }),
+    cgroup: () => UNIT_CGROUP,
+    script: () => HAND_WRITTEN_CLI,
+    isAncestor: (ancestor, pid) => ancestor === pid || (ancestor === 4242 && pid === 4243),
+    ...over,
+  };
+}
+
+test("the real systemctl show text of a hand-written unit names its command and main pid", () => {
+  const job = parseSystemdShow(HAND_WRITTEN_SHOW);
+  assert.equal(job.pid, 4242);
+  assert.ok(runsTheServer(job.command, HAND_WRITTEN_CLI), job.command);
+  assert.equal(unitInCgroup(UNIT_CGROUP), "austere-axi.service");
+});
+
+test("a server from before 0.12 that sits in a unit's cgroup is the unit's: restart it, never replace it", () => {
+  // 0.10.4 does not report `supervised`; the system says a unit runs it.
+  const old: ServerHealth = { name: "austere-axi", version: "0.10.4", pid: 4242, port: 4388, stateDir: STATE, listen: ["127.0.0.1"], persist: false };
+  assert.deepEqual(serverAction(old, "0.12.0", () => serverUnit(old.pid, processView())), { action: "restart-unit", unit: { supervisor: "systemd", unit: "austere-axi.service" } });
+  // Below the unit's main process (npx runs it so) counts too; the version does not matter.
+  assert.deepEqual(serverAction({ ...old, pid: 4243, legacy: true }, "0.12.0", () => serverUnit(4243, processView())), { action: "restart-unit", unit: { supervisor: "systemd", unit: "austere-axi.service" } });
+});
+
+test("a stray server in another service's cgroup is not that service's, and is replaced", () => {
+  // RLM-374: an agent's CLI started the server, so it sits in the agent daemon's unit.
+  const daemon = processView({
+    cgroup: () => "0::/user.slice/user-1000.slice/user@1000.service/app.slice/multica-host.service\n",
+    run: () => ({ code: 0, stdout: "ExecStart={ path=/usr/bin/node ; argv[]=/usr/bin/node /home/ana/multica/daemon/index.js ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=4000 ; code=(null) ; status=0/0 }\nMainPID=4000\n", stderr: "" }),
+    isAncestor: () => true,
+  });
+  assert.equal(serverUnit(4243, daemon), null);
+  // The unit runs the server, but some other process: not this one.
+  assert.equal(serverUnit(9999, processView()), null);
+  // In no service at all (a login shell's scope).
+  assert.equal(serverUnit(4243, processView({ cgroup: () => "0::/user.slice/user-1000.slice/session-3.scope\n" })), null);
+  const old: ServerHealth = { name: "austere-axi", version: "0.10.4", pid: 4243, port: 4388, stateDir: STATE, listen: [], persist: false };
+  assert.deepEqual(serverAction(old, "0.12.0", () => serverUnit(old.pid, daemon)), { action: "replace" });
+});
+
+test("status names the pid and the fix when a server the service did not start holds its port", () => {
+  const { ctx } = context({
+    run: (cmd, args): RunResult => {
+      if (args.includes("is-enabled")) return { code: 0, stdout: "enabled\n", stderr: "" };
+      if (args.includes("is-active")) return { code: 3, stdout: "failed\n", stderr: "" };
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
+  fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
+  fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, stateDir: STATE }));
+  const s = serviceStatus(ctx, { version: "0.12.0", pid: 3106419, port: 4388 }, "0.12.0");
+  assert.equal(s.active, "failed");
+  assert.equal(s.next, "the service cannot start: pid 3106419 holds port 4388 and was not started by the service. Run `austere-axi stop`.");
+  // The same server, run by the unit (what serverUnit found for one from before 0.12): no lock-out.
+  const ok = serviceStatus(ctx, { version: "0.10.4", pid: 4242, port: 4388, supervised: "systemd", unit: "austere-axi.service" }, "0.12.0");
+  assert.match(String(ok.next), /Restart it: systemctl --user restart austere-axi\.service/);
 });
 
 /** Start a real server on this state dir; `env` adds to its environment. */
@@ -412,7 +486,8 @@ test("a CLI starts the installed service instead of one of its own", () => {
   fs.mkdirSync(path.dirname(unitPath(ctx.home)), { recursive: true });
   fs.writeFileSync(unitPath(ctx.home), systemdUnit({ ...SPEC, stateDir: STATE }));
   assert.equal(startInstalledService(ctx, STATE, 4388), true);
-  assert.ok(calls.includes("systemctl --user start austere-axi.service"), calls.join("; "));
+  // A unit that hit its start limit while locked out starts again: reset first.
+  assert.deepEqual(calls, ["systemctl --user reset-failed austere-axi.service", "systemctl --user start austere-axi.service"]);
   // A unit for another state dir is another machine's business: leave it alone.
   const { ctx: other, calls: otherCalls } = context();
   fs.mkdirSync(path.dirname(unitPath(other.home)), { recursive: true });

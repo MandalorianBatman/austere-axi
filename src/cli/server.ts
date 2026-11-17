@@ -14,8 +14,8 @@ import { readArtifact, rewriteRuntime, escapeHtml } from "./artifact.ts";
 import { agentPrompt } from "./agent-prompt.ts";
 import { cloudUrl, readCloud } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
-import { allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
-import type { Tailnet } from "./net.ts";
+import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
+import type { AddressSettings, Tailnet } from "./net.ts";
 import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
 import { RENDER_CHECK_AUTHOR, SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
@@ -40,7 +40,7 @@ import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
 import type { Invite } from "./invites.ts";
 import { reviewerItem } from "./items.ts";
-import { hubPage, notesPage } from "./hub-page.ts";
+import { hubPage, missingPage, notesPage } from "./hub-page.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
 import { Peer } from "./peer.ts";
 import { parseClientFrame } from "../shared/sync.ts";
@@ -64,6 +64,8 @@ export interface HealthInfo {
   persist: boolean;
   /** The service manager that runs this server (`server install`); a CLI never replaces it. */
   supervised?: Supervisor;
+  /** The address variables it runs with, kept by a CLI that replaces it. Missing before 0.12. */
+  addresses?: AddressSettings;
 }
 
 /** Whether an agent listens on a session, works on its notes, or neither. */
@@ -144,7 +146,14 @@ export interface FeedbackResponse {
 /** /api/feedback for a project: the pages that have notes. */
 export interface ProjectFeedbackResponse {
   project: string;
-  batches: { file: string; copy: string; archived: boolean; entries: FeedbackEntry[] }[];
+  /** `missing`: the file is gone; its notes are still here. */
+  batches: { file: string; copy: string; archived: boolean; missing?: boolean; entries: FeedbackEntry[] }[];
+}
+
+/** /api/archive with `missing`: the copies put away, with the notes no agent had answered on each. */
+export interface ArchiveMissingResponse {
+  ok: boolean;
+  copies: { id: string; file: string; unanswered: number }[];
 }
 
 /** /api/share. */
@@ -1038,7 +1047,7 @@ export async function runServer({
           broadcastTranscript(s, fresh);
           broadcastPresence(s);
         }
-        if (entries.length) batches.push({ file: s.file, copy: copyOf(s), archived: Boolean(s.archivedAt), entries });
+        if (entries.length) batches.push({ file: s.file, copy: copyOf(s), archived: Boolean(s.archivedAt), missing: !fs.existsSync(s.file) || undefined, entries });
       }
       return send(res, 200, { project: project.name, batches } satisfies ProjectFeedbackResponse);
     }
@@ -1107,7 +1116,6 @@ export async function runServer({
       const key = req.headers["x-austere-key"];
       if (typeof key !== "string" || !safeEqual(key, ownerToken)) return send(res, 403, { error: "owner key required" });
     }
-    activity();
     if (route === "health") {
       const nonce = url.searchParams.get("nonce");
       return send(res, 200, {
@@ -1123,8 +1131,12 @@ export async function runServer({
         remote: remoteBase() || undefined,
         persist: idleMs === 0,
         supervised: supervisorName ?? undefined,
+        addresses: addressSettings(),
       } satisfies HealthInfo);
     }
+    // A health probe is not a user: a CLI that only checks, or a locked-out unit that probes
+    // every few seconds, must not keep an idle server up.
+    activity();
     if (route === "sessions") {
       return send(res, 200, {
         sessions: store.list().map((s) => ({
@@ -1192,6 +1204,13 @@ export async function runServer({
     }
     // A whole project: `poll` and `feedback` with no file.
     if ((route === "poll" || route === "feedback") && typeof body.project === "string" && body.project && !body.file) return projectRoute(route, body, res, caller);
+    // Put away every copy whose file is gone (`archive --missing`): the CLI names a project by id, or none for all.
+    if (route === "archive" && body.missing) {
+      const copies = hub.missingCopies(typeof body.project === "string" ? body.project : "");
+      const at = Date.now();
+      for (const c of copies) setArchived(c.file, at);
+      return send(res, 200, { ok: true, copies } satisfies ArchiveMissingResponse);
+    }
     // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
     const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
     if (!file) return send(res, 400, { error: "file is required" });
@@ -1534,7 +1553,14 @@ export async function runServer({
     const project = projectParam(url);
     const view = url.searchParams.has("all") ? "all" : url.searchParams.has("archived") ? "archived" : "default";
     const pages = hub.list({ q, project: project.id, archived: view === "archived", all: view === "all" });
-    return hubPage(pages, { version: VERSION, q, project: project.ref, projectName: project.name, view, projects: hub.projects(), stats: hub.stats() });
+    const listening = new Set<string>();
+    for (const p of pages) {
+      for (const c of p.copies) {
+        const s = store.get(c.id);
+        if (s && listener(s)) listening.add(c.id);
+      }
+    }
+    return hubPage(pages, { version: VERSION, q, project: project.ref, projectName: project.name, view, projects: hub.projects(), counts: hub.viewCounts({ q, project: project.id }), listening });
   }
 
   function hubNotes(url: URL): string {
@@ -1544,18 +1570,31 @@ export async function runServer({
     const status = st === "unanswered" || st === "answered" ? st : "all";
     const author = (url.searchParams.get("author") || "").slice(0, 80);
     const rows = hub.notes({ q, project: project.id, author, status: status === "all" ? "" : status });
-    return notesPage(rows, { version: VERSION, q, project: project.ref, projectName: project.name, status, author, authors: hub.authors(), stats: hub.stats() });
+    return notesPage(rows, { version: VERSION, q, project: project.ref, projectName: project.name, status, author, authors: hub.authors() });
   }
 
-  /** Open an indexed artifact for review (it may never have had a session) and go to it. */
+  /** Open an indexed artifact for review (it may never have had a session) and go to it. A copy whose file is gone gets its notes and an Archive button. */
   function hubOpen(res: http.ServerResponse, id: string): void {
     const a = /^[a-f0-9]{12}$/.test(id) ? hub.artifact(id) : null;
     if (!a) return send(res, 404, "not in the hub");
-    if (!fs.existsSync(a.file)) return send(res, 410, `${a.file} no longer exists`);
+    if (!fs.existsSync(a.file)) {
+      const project = (a.project_id ? findProject(hub.db, a.project_id, { folders: false })?.name : null) ?? a.project;
+      const page = missingPage(a, { version: VERSION, project, label: a.root ? copyLabel(a.root) : "", notes: hub.notes({ artifact: a.id, limit: 500 }) });
+      return send(res, 410, page, { "content-type": "text/html; charset=utf-8" });
+    }
     const existed = store.byFile(a.file);
     const s = store.ensure(a.file);
     if (!existed) store.touch(s);
     res.writeHead(302, { location: `/s/${s.id}` });
+    res.end();
+  }
+
+  /** The Archive button of a missing copy's page: put it away and go back to the home page. */
+  function hubArchive(res: http.ServerResponse, id: string): void {
+    const a = /^[a-f0-9]{12}$/.test(id) ? hub.artifact(id) : null;
+    if (!a) return send(res, 404, "not in the hub");
+    setArchived(a.file, Date.now());
+    res.writeHead(303, { location: "/" });
     res.end();
   }
 
@@ -1584,12 +1623,14 @@ export async function runServer({
     // The hub lists every page and every note: the owner's only.
     const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
     if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
-    // The hub only shows pages and opens reviews by link: nothing to post to it.
-    if (ownerOnly && req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
+    // The hub shows pages and opens reviews by link; the one thing it takes a POST for is the Archive button of a missing copy.
+    const archiveId = req.method === "POST" && ownerOnly && url.pathname.startsWith("/hub/archive/") ? url.pathname.slice("/hub/archive/".length) : null;
+    if (ownerOnly && archiveId === null && req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
     // Owner browsing the hub keeps the server up.
     if (ownerOnly) activity();
     if (url.pathname === "/") return send(res, 200, hubHome(url), { "content-type": "text/html; charset=utf-8" });
     if (url.pathname === "/notes") return send(res, 200, hubNotes(url), { "content-type": "text/html; charset=utf-8" });
+    if (archiveId !== null) return hubArchive(res, archiveId);
     if (url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length));
     if (url.pathname === "/favicon.ico") return send(res, 204, "");
 

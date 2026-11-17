@@ -6,7 +6,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type * as sqlite from "node:sqlite";
-import { stateDir } from "./paths.ts";
+import { stateDirHolder } from "./lock.ts";
+import { VERSION, stateDir } from "./paths.ts";
 import { backfillProjects, copyLabel, inTransaction, resolveProject } from "./projects.ts";
 import type { NoteItem } from "./sessions.ts";
 
@@ -99,11 +100,15 @@ export interface HubNoteRow {
   label: string;
 }
 
-/** Hub.stats(). */
-export interface HubStats {
-  pages: number;
-  projects: number;
-  unanswered: number;
+/** Hub.viewCounts(): how many pages each view of Hub.list() shows for one search and project. */
+export interface HubViewCounts {
+  /** The default view: reviewed, not archived. */
+  open: number;
+  /** Every page. */
+  everything: number;
+  archived: number;
+  /** Pages with a copy that was only checked (never opened for review) and is not archived. */
+  checked: number;
 }
 
 export function hubDbFile(): string {
@@ -127,14 +132,60 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
   return DatabaseSync;
 }
 
-/** Open hub.db with the schema in place. */
-export async function openDatabase(file = hubDbFile()): Promise<sqlite.DatabaseSync> {
+/**
+ * hub.db's schema version, kept in `PRAGMA user_version`. Raise it with every change to migrate():
+ * a build whose schema is newer than a database's must not read it without migrating it.
+ * 1 is the schema of 0.12.0, the first build that records it. 2 adds attach (RLM-343–346):
+ * `agent_sessions`, `page_sessions`, `attach_settings`, `runs`.
+ */
+export const SCHEMA_VERSION = 2;
+
+/** The schema version `db` is at. Before builds recorded it (0), a database 0.12.0 migrated already has version 1's last columns. */
+function schemaVersion(db: sqlite.DatabaseSync): number {
+  const recorded = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
+  if (recorded) return recorded;
+  const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  if (!has("artifacts", "archived_at") || !has("project_roots", "prefix")) return 0;
+  return has("runs", "requeued_from") && has("page_sessions", "role") ? 2 : 1;
+}
+
+/** Open hub.db with the schema in place; `readOnly`: as it is, refused when it is older than this build's schema. */
+export async function openDatabase(file = hubDbFile(), { readOnly = false }: { readOnly?: boolean } = {}): Promise<sqlite.DatabaseSync> {
   const Database = await loadSqlite();
+  if (readOnly) {
+    const db = new Database(file, { readOnly: true });
+    const version = schemaVersion(db);
+    if (version < SCHEMA_VERSION) {
+      db.close();
+      throw new Error(`its schema (version ${version}) is older than this build's (${SCHEMA_VERSION}) and can only be read after a migration`);
+    }
+    return db;
+  }
   // Every note is in here: create it as the owner's only (SQLite gives its WAL the same mode).
   if (file !== ":memory:") fs.closeSync(fs.openSync(file, "a", 0o600));
   const db = new Database(file);
   migrate(db);
   return db;
+}
+
+/**
+ * Open hub.db for a command that reads or writes it without the server. A server or command of
+ * another version that holds the state dir owns its schema: this build neither migrates nor writes
+ * it then. A reader opens it read-only (refused when its schema is older); a writer is refused.
+ * The error says why (callers name the file).
+ */
+export async function openHubDirect({ write }: { write: boolean }): Promise<Hub> {
+  const holder = await stateDirHolder(stateDir());
+  if (!holder || holder.version === VERSION) return Hub.open();
+  const who = `austere-axi ${holder.version ? `v${holder.version}` : "of an older version"} (pid ${holder.pid}${holder.port ? `, port ${holder.port}` : ""})`;
+  const leave = `this is v${VERSION}, so it leaves the file as it is`;
+  const fix = "Stop that one first, or run this command with that version";
+  if (write) throw new Error(`it is in use by ${who}; ${leave}. ${fix}`);
+  try {
+    return new Hub(await openDatabase(hubDbFile(), { readOnly: true }));
+  } catch (err) {
+    throw new Error(`it is in use by ${who}; ${leave}, and ${err instanceof Error ? err.message : String(err)}. ${fix}`);
+  }
 }
 
 // journal_mode cannot change inside a transaction: set before migrate() opens one.
@@ -330,6 +381,8 @@ function migrate(db: sqlite.DatabaseSync): void {
     db.exec(AGENT_SESSIONS);
     db.exec(ATTACH);
     backfillProjects(db);
+    // Recorded from now on; a newer build's database keeps its number: the steps above are all this build adds.
+    if (Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   });
 }
 
@@ -344,6 +397,14 @@ export function itemText(it: NoteItem): unknown {
   if (it.kind === "action") return it.message || "";
   if (it.kind === "render-error") return it.message || "";
   return it.text ?? it.note ?? "";
+}
+
+/** The `q` and `project` filter of Hub.list() and Hub.viewCounts(); its seven parameters come from `filterArgs`. */
+const FILTER = `(? = '' OR a.title LIKE ? ESCAPE '\\' OR a.file LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR g.rel_path LIKE ? ESCAPE '\\') AND (? = '' OR a.project_id = ?)`;
+
+function filterArgs(q: string, project: string): string[] {
+  const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+  return [q, like, like, like, like, project, project];
 }
 
 export class Hub {
@@ -395,6 +456,20 @@ export class Hub {
   }
 
   /**
+   * Copies opened for review whose file is gone and that are not archived, with the notes no agent has answered on each.
+   * `project` is a project id ("" for every project). Copies only checked, never opened, are left out: no list shows them by default.
+   */
+  missingCopies(project = ""): { id: string; file: string; unanswered: number }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT a.id, a.file, (SELECT COUNT(*) FROM items i WHERE i.artifact_id = a.id AND i.status IN ('open', 'received', 'held')) AS unanswered
+         FROM artifacts a WHERE a.archived_at IS NULL AND a.reviewed = 1 AND (? = '' OR a.project_id = ?) ORDER BY a.updated_at DESC`,
+      )
+      .all(project, project) as unknown as { id: string; file: string; unanswered: number }[];
+    return rows.filter((r) => !fs.existsSync(r.file));
+  }
+
+  /**
    * Pages grouped by project (the project with the newest activity first); inside a project, pages
    * with unanswered notes first, then by last activity. Each has its copies and their counts summed.
    * `q` filters on title, file, path inside the root and project name; `project` is a project id.
@@ -403,7 +478,6 @@ export class Hub {
    * A copy whose file is gone is listed, marked `missing`.
    */
   list({ q = "", project = "", archived = false, all = false, limit = 500 }: { q?: string; project?: string; archived?: boolean; all?: boolean; limit?: number } = {}): HubPage[] {
-    const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     const view = all ? "all" : archived ? "archived" : "default";
     const rows = this.db
       .prepare(
@@ -414,12 +488,11 @@ export class Hub {
            SUM(CASE WHEN i.status = 'held' THEN 1 ELSE 0 END) AS held
          FROM artifacts a LEFT JOIN projects p ON p.id = a.project_id LEFT JOIN pages g ON g.id = a.page_id
            LEFT JOIN items i ON i.artifact_id = a.id
-         WHERE (? = '' OR a.title LIKE ? ESCAPE '\\' OR a.file LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR g.rel_path LIKE ? ESCAPE '\\')
-           AND (? = '' OR a.project_id = ?)
+         WHERE ${FILTER}
            AND (? = 'all' OR (? = 'archived' AND a.archived_at IS NOT NULL) OR (? = 'default' AND a.archived_at IS NULL AND a.reviewed = 1))
          GROUP BY a.id ORDER BY a.updated_at DESC`,
       )
-      .all(q, like, like, like, like, project, project, view, view, view) as unknown as (ArtifactRow & { project_name: string; rel_path: string | null } & Record<keyof HubCounts, number | null>)[];
+      .all(...filterArgs(q, project), view, view, view) as unknown as (ArtifactRow & { project_name: string; rel_path: string | null } & Record<keyof HubCounts, number | null>)[];
     const labels = new Map<string, string>();
     const pages = new Map<string, HubPage>();
     for (const r of rows) {
@@ -474,9 +547,10 @@ export class Hub {
   /**
    * Notes (annotations and messages) across all pages, newest first.
    * `q` matches note text, target and page title. `status`: "unanswered" (held, open and received), "answered", or "" for all.
-   * `project`: a project id. `author`: a reviewer's name, "owner" for the owner's own notes, or "" for everyone. Discarded notes are left out.
+   * `project`: a project id. `artifact`: one copy's id. `author`: a reviewer's name, "owner" for the owner's own notes, or "" for everyone. Discarded notes are left out.
+   * `limit` is the most rows returned; -1 returns all.
    */
-  notes({ q = "", status = "", project = "", author = "", limit = 200 }: { q?: string; status?: string; project?: string; author?: string; limit?: number } = {}): HubNoteRow[] {
+  notes({ q = "", status = "", project = "", artifact = "", author = "", limit = 200 }: { q?: string; status?: string; project?: string; artifact?: string; author?: string; limit?: number } = {}): HubNoteRow[] {
     const anyAuthor = author === "" ? "all" : "one";
     const who = author === "owner" ? "" : author;
     const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
@@ -489,10 +563,11 @@ export class Hub {
            AND (? = 'all' OR i.author = ?)
            AND (? = '' OR i.text LIKE ? ESCAPE '\\' OR i.target LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')
            AND (? = '' OR a.project_id = ?)
+           AND (? = '' OR a.id = ?)
            AND (? = '' OR (? = 'unanswered' AND i.status != 'addressed') OR (? = 'answered' AND i.status = 'addressed'))
          ORDER BY i.at DESC, i.id LIMIT ?`,
       )
-      .all(anyAuthor, who, q, like, like, like, project, project, status, status, status, limit) as unknown as Omit<HubNoteRow, "label">[];
+      .all(anyAuthor, who, q, like, like, like, project, project, artifact, artifact, status, status, status, limit) as unknown as Omit<HubNoteRow, "label">[];
     const labels = new Map<string, string>();
     return rows.map((r) => {
       const root = r.root || "";
@@ -510,13 +585,20 @@ export class Hub {
       .map((r) => String(r.author));
   }
 
-  stats(): HubStats {
+  /** Pages in each view of `list` for this search and project (the counts the views are labelled with). */
+  viewCounts({ q = "", project = "" }: { q?: string; project?: string } = {}): HubViewCounts {
+    const page = "COALESCE(a.page_id, a.id)";
+    const live = "a.archived_at IS NULL";
     return this.db
       .prepare(
-        `SELECT (SELECT COUNT(DISTINCT COALESCE(page_id, id)) FROM artifacts) AS pages, (SELECT COUNT(DISTINCT COALESCE(project_id, project)) FROM artifacts) AS projects,
-                (SELECT COUNT(*) FROM items WHERE status IN ('open', 'received', 'held')) AS unanswered`,
+        `SELECT COUNT(DISTINCT CASE WHEN ${live} AND a.reviewed = 1 THEN ${page} END) AS open,
+                COUNT(DISTINCT ${page}) AS everything,
+                COUNT(DISTINCT CASE WHEN a.archived_at IS NOT NULL THEN ${page} END) AS archived,
+                COUNT(DISTINCT CASE WHEN ${live} AND a.reviewed = 0 THEN ${page} END) AS checked
+         FROM artifacts a LEFT JOIN projects p ON p.id = a.project_id LEFT JOIN pages g ON g.id = a.page_id
+         WHERE ${FILTER}`,
       )
-      .get() as unknown as HubStats;
+      .get(...filterArgs(q, project)) as unknown as HubViewCounts;
   }
 }
 
@@ -559,10 +641,10 @@ export async function activeWorkNow(file = hubDbFile()): Promise<boolean> {
   }
 }
 
-/** Register an artifact with the hub from a CLI command. Never fails the command. */
+/** Register an artifact with the hub from a CLI command. Never fails the command; skipped while another version holds the state dir. */
 export async function registerWithHub(file: string, title: string | null | undefined, id: string): Promise<void> {
   try {
-    const hub = await Hub.open();
+    const hub = await openHubDirect({ write: true });
     try {
       hub.register({ id, file, title });
     } finally {

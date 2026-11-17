@@ -4,7 +4,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import type { Task } from "../tasks.ts";
-import { ROOT, LAVISH_CLI, lavishEnv } from "./paths.ts";
+import { ROOT, LAVISH_CLI, STATE, lavishEnv } from "./paths.ts";
 
 export type Tool = "austere" | "lavish";
 
@@ -42,8 +42,9 @@ const sh = (cmd: string, args: string[], env?: Record<string, string>) => execFi
 
 export function captureGuidance(): Record<Tool, ToolGuidance> {
   const austereCli = path.join(ROOT, "dist", "cli.mjs");
-  const austereHelp = sh("node", [austereCli, "--help"]);
-  const austereSpec = sh("node", [austereCli, "spec"]);
+  const austereEnv = { AUSTERE_AXI_STATE_DIR: path.join(STATE, "austere") };
+  const austereHelp = sh("node", [austereCli, "--help"], austereEnv);
+  const austereSpec = sh("node", [austereCli, "spec"], austereEnv);
   const austereVersion = /austere-axi (\S+)/.exec(austereHelp)?.[1] ?? "?";
 
   const lav = (...args: string[]) => sh("node", [LAVISH_CLI, ...args], lavishEnv());
