@@ -668,8 +668,17 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     return { left, top, right, bottom };
   }
 
+  /** el, or the card that holds it when it sits in a folded card (hidden="until-found"). */
+  function shown(el: Element): Element {
+    for (let fold = el.closest("[hidden='until-found']"); fold?.parentElement; fold = el.closest("[hidden='until-found']")) {
+      el = fold.parentElement;
+    }
+    return el;
+  }
+
   /** el's box cut to the ancestors that clip it (scrollers, overflow: hidden); null when nothing shows. */
-  function visibleBox(el: Element): Box | null {
+  function visibleBox(target: Element): Box | null {
+    const el = shown(target);
     let { left, top, right, bottom } = renderedBox(el);
     // A straight diagram edge is a line, flat on one side; a side clipping took to zero shows nothing.
     const flatX = right === left;
@@ -707,6 +716,11 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   function reveal(id: string, map?: StatementMap, refsTo?: RefsTo): boolean {
     const els = elementsFor(id, map, refsTo);
     if (!els.length) return false;
+    // Unfold what hides it, as find-in-page does: drop hidden, then fire beforematch.
+    for (let fold = els[0].closest("[hidden='until-found']"); fold; fold = els[0].closest("[hidden='until-found']")) {
+      fold.removeAttribute("hidden");
+      fold.dispatchEvent(new Event("beforematch"));
+    }
     const rect = boxOf(els[0]);
     const y = rect.top + window.scrollY - Math.max(24, (window.innerHeight - rect.height) / 3);
     window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
@@ -798,7 +812,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     marked = ids.length ? ids : null;
     const list = drawMarks();
     if (scroll && list.length) {
-      const boxes = list.map(boxOf);
+      const boxes = list.map((el) => boxOf(shown(el)));
       if (!boxes.some((r) => r.bottom > 0 && r.top < window.innerHeight)) {
         const r = boxes[0];
         const y = r.top + window.scrollY - Math.max(24, (window.innerHeight - r.height) / 3);
