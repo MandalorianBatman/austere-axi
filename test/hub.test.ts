@@ -11,9 +11,10 @@ import type { IncomingHttpHeaders } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { SessionStore, sessionId } from "../src/cli/sessions.ts";
 import { Hub, SCHEMA_VERSION, openDatabase, unanswered } from "../src/cli/hub.ts";
-import { hubPage, notesPage } from "../src/cli/hub-page.ts";
+import { shellInbox, shellPages, shellProjects } from "../src/cli/hub-api.ts";
+import type { InboxResponse, PagesResponse, ShellPage } from "../src/shared/hub-api.ts";
 import { findProject, listProjects, mergeProjects } from "../src/cli/projects.ts";
-import { ownerHeaders } from "./owner.ts";
+import { claimLink, ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
 interface Health {
@@ -84,6 +85,13 @@ function req(method: string, route: string, body?: unknown, port = PORT, state =
   });
 }
 
+/** The shell's page list (GET /hub/api/pages, `view` open by default) as the owner of `state`. */
+async function hubPages(port = PORT, state = STATE, view = "open"): Promise<ShellPage[]> {
+  const r = await req("GET", `/hub/api/pages?view=${view}`, undefined, port, state);
+  assert.equal(r.status, 200, r.data);
+  return (JSON.parse(r.data) as PagesResponse).pages;
+}
+
 before(() => {
   fs.mkdirSync(path.join(PROJECT, ".git"), { recursive: true });
   fs.mkdirSync(path.dirname(FILE), { recursive: true });
@@ -141,14 +149,19 @@ test("hub: always on; check-only pages hidden until --all; hands feedback to a l
   // A fresh state dir, no `hub on`: / is the hub.
   r = await cli(FILE);
   assert.match(r.out, /status: registered/);
-  let home = (await req("GET", "/")).data;
-  assert.match(home, /austere-axi hub/);
-  assert.match(home, />shop</);
-  assert.match(home, /Checkout plan/);
-  assert.doesNotMatch(home, /in review/, "a quiet page says nothing");
+  const home = await req("GET", "/");
+  assert.equal(home.status, 200);
+  assert.match(home.data, /<title>austere-axi hub<\/title>/);
+  assert.match(home.data, /\/__austere\/chrome\/shell\.js/, "the shell, a client app over /hub/api");
+  let [page] = await hubPages();
+  assert.equal(page.project, "shop");
+  assert.equal(page.title, "Checkout plan");
+  assert.equal(page.rel_path, "docs/plan.html");
+  assert.equal(page.group, "quiet", "a quiet page asks for nothing");
+  assert.equal(page.copies[0].listening, false);
 
   // Opening from the hub goes to the review.
-  const id = (/href="\/hub\/open\/([a-f0-9]{12})"/.exec(home) as RegExpExecArray)[1];
+  const id = page.open_id;
   const open = await req("GET", `/hub/open/${id}`);
   assert.equal(open.status, 302);
   assert.equal(open.headers.location, `/s/${id}`);
@@ -160,15 +173,16 @@ test("hub: always on; check-only pages hidden until --all; hands feedback to a l
 
   // The reviewer sends feedback while no agent listens; a later session reads it.
   await req("POST", `/s/${id}/send`, { items: [{ kind: "annotation", target: "intro", component: "TextContent", note: "say more" }] });
-  home = (await req("GET", "/")).data;
-  assert.match(home, /1 unanswered/);
+  [page] = await hubPages();
+  assert.equal(page.unanswered, 1);
+  assert.equal(page.group, "waiting_on_agent");
+  assert.equal(page.taker, "nobody", "no agent listens and none is attached");
 
   r = await cli("feedback", FILE);
   assert.match(r.out, /status: feedback/);
   assert.match(r.out, /annotation: intro \(TextContent\)/);
   assert.match(r.out, /note: say more/);
-  home = (await req("GET", "/")).data;
-  assert.match(home, /1 unanswered/);
+  assert.equal((await hubPages())[0].unanswered, 1, "received is still unanswered");
   // Received, so the next poll does not repeat it.
   const poll = JSON.parse((await req("POST", "/api/poll", { file: FILE, timeoutMs: 200 })).data) as Poll;
   assert.notEqual(poll.status, "feedback");
@@ -177,16 +191,17 @@ test("hub: always on; check-only pages hidden until --all; hands feedback to a l
   assert.match(r.out, /replied/);
   r = await cli("feedback", FILE);
   assert.match(r.out, /status: none/);
-  home = (await req("GET", "/")).data;
-  assert.match(home, /1 answered/);
-  assert.doesNotMatch(home, /unanswered/);
+  [page] = await hubPages();
+  assert.equal(page.addressed, 1);
+  assert.equal(page.unanswered, 0);
+  assert.equal(page.group, "quiet");
 
-  // While a poll waits on the page, its row says an agent is listening; once it ends, the row is quiet again.
+  // While a poll waits on the page, its copy says an agent is listening; once it ends, the page is quiet again.
   const waiting = req("POST", "/api/poll", { file: FILE, timeoutMs: 1500 });
   await new Promise((res) => setTimeout(res, 300));
-  assert.match((await req("GET", "/")).data, /agent listening/);
+  assert.equal((await hubPages())[0].copies[0].listening, true);
   await waiting;
-  assert.doesNotMatch((await req("GET", "/")).data, /agent listening/);
+  assert.equal((await hubPages())[0].copies[0].listening, false);
 
   r = await cli("hub", "list");
   assert.match(r.out, /page: docs\/plan\.html/);
@@ -266,7 +281,7 @@ test("archive hides a page until unarchive; a deleted file is listed as missing"
   const keep = path.join(work, "keep.html");
   const gone = path.join(work, "gone.html");
   for (const f of [keep, gone]) fs.copyFileSync(FILE, f);
-  const home = async () => (await req("GET", "/", undefined, port, state)).data;
+  const listed = async (view = "open"): Promise<string[]> => (await hubPages(port, state, view)).map((p) => path.basename(p.rel_path));
   try {
     await cliWith(env, keep);
     await cliWith(env, gone);
@@ -279,14 +294,15 @@ test("archive hides a page until unarchive; a deleted file is listed as missing"
     assert.match(r.out, /keep\.html/);
     assert.match(r.out, /state: archived/);
     assert.doesNotMatch(r.out, /gone\.html/);
-    assert.doesNotMatch(await home(), /keep\.html/);
+    assert.deepEqual(await listed(), ["gone.html"]);
+    assert.deepEqual(await listed("archived"), ["keep.html"]);
 
     fs.rmSync(gone);
     r = await cliWith(env, "hub", "list");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /gone\.html/);
     assert.match(r.out, /state: missing/);
-    assert.match(await home(), /missing/);
+    assert.equal((await hubPages(port, state)).find((p) => p.rel_path.endsWith("gone.html"))?.copies[0].missing, true);
     // A gone file can still be archived.
     r = await cliWith(env, "archive", gone);
     assert.match(r.out, /status: archived/);
@@ -316,8 +332,8 @@ test("a missing copy opens a page with its notes and an Archive button; archivin
   const call = (method: string, route: string, body?: unknown, extra: Record<string, string> = {}) => req(method, route, body, port, state, extra);
   try {
     await cliWith(env, file);
-    const home = (await call("GET", "/")).data;
-    const id = (/href="\/hub\/open\/([a-f0-9]{12})"/.exec(home) as RegExpExecArray)[1];
+    const files = async (): Promise<string[]> => (await hubPages(port, state)).map((p) => path.basename(p.copies[0].file));
+    const id = (await hubPages(port, state))[0].open_id;
     await call("POST", `/s/${id}/send`, { items: [{ kind: "message", text: "<b>shorten</b> the intro" }] });
     assert.equal((await call("GET", `/hub/open/${id}`)).status, 302, "a copy that is there opens the review");
 
@@ -329,18 +345,19 @@ test("a missing copy opens a page with its notes and an Archive button; archivin
     assert.ok(gone.data.includes("&lt;b&gt;shorten&lt;/b&gt; the intro"), "its notes, escaped");
     assert.ok(!gone.data.includes("<b>shorten</b>"));
     assert.match(gone.data, /<form method="post" action="\/hub\/archive\/[a-f0-9]{12}"><button/);
-    // The home page and the Notes view both link to it.
-    assert.equal((await call("GET", "/notes")).data.includes(`/hub/open/${id}`), true);
+    // The Notes view links to it.
+    const notes = JSON.parse((await call("GET", "/hub/api/notes")).data) as { notes: { artifact_id: string; text: string }[] };
+    assert.deepEqual(notes.notes.map((n) => [n.artifact_id, n.text]), [[id, "<b>shorten</b> the intro"]], "JSON: the shell sets it as text");
 
     // Only the owner's own page posts here: not another site, and a copy the hub does not know is a 404.
     assert.equal((await call("POST", `/hub/archive/${id}`, {}, { origin: "https://evil.example" })).status, 403);
     assert.equal((await call("POST", "/hub/archive/000000000000", {})).status, 404);
-    assert.match((await call("GET", "/")).data, /gone\.html/);
+    assert.deepEqual(await files(), ["gone.html"], "listed until archived");
 
     const done = await call("POST", `/hub/archive/${id}`, {});
     assert.equal(done.status, 303);
     assert.equal(done.headers.location, "/");
-    assert.doesNotMatch((await call("GET", "/")).data, /gone\.html/);
+    assert.deepEqual(await files(), [], "archived: out of the list");
     const again = await call("GET", `/hub/open/${id}`);
     assert.equal(again.status, 410);
     assert.doesNotMatch(again.data, /<form/, "an archived copy has nothing left to archive");
@@ -446,24 +463,6 @@ test("Hub.notes: newest first, filters by text, target, title, status and projec
   }
 });
 
-test("notesPage escapes note text, target, title and filters", async () => {
-  const { hub, dir } = await notesHub();
-  try {
-    const rows = hub.notes();
-    rows[0].target = '"><img src=x>';
-    const html = notesPage(rows, { version: "1", q: '"><b>', project: "/p/<i>", status: "all" });
-    assert.ok(!html.includes("<script>alert"), "note text escaped");
-    assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
-    assert.ok(!html.includes("<img src=x>"));
-    assert.ok(!html.includes("<b>"), "query escaped");
-    assert.ok(html.includes("Plan &lt;A&gt;"));
-    assert.ok(html.includes('href="/hub/open/aaaaaaaaaaaa"'));
-  } finally {
-    hub.close();
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-  }
-});
-
 test("hub index: an item field that is not a string does not stop later notes from being indexed", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-sync-"));
   const store = await SessionStore.open(dir);
@@ -529,27 +528,21 @@ test("two worktrees holding docs/plan.html: one row, two chips, notes per copy, 
     assert.equal(hub.notes({ project: plan.project_id }).length, 3);
     assert.equal(hub.notes({ status: "unanswered" }).length, 3, "the Notes view counts held notes as unanswered too");
 
-    const html = hubPage(pages, { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() });
-    assert.equal(html.match(/<section>/g)?.length, 1, "one section for the project");
-    assert.equal(html.match(/<li>/g)?.length, 2, "one row per page");
-    assert.equal(html.match(/class="chip[ "]/g)?.length, 2, "a chip per copy; none for a page with one copy");
-    assert.ok(html.includes(`href="/hub/open/${sb.id}"`), "a chip opens its copy");
-    assert.match(html, />feat <span>2 unanswered<\/span>/);
-    assert.match(html, /<b class="open">3 unanswered<\/b>/);
-    assert.ok(html.indexOf("docs/plan.html") < html.indexOf("docs/other.html"), "unanswered first, then by last activity");
-    assert.doesNotMatch(html, /<h3>/, "no per-day headings");
-    assert.ok(html.includes(`title="${main}\n${wt}"`), "roots in the tooltip");
-
-    const notesHtml = notesPage(notes, { version: "1", q: "", project: "", status: "all" });
-    assert.match(notesHtml, /shop · main/);
-    assert.match(notesHtml, /shop · feat/);
+    const shell = shellPages(hub, {}, () => false);
+    assert.deepEqual(shell.map((p) => p.rel_path), ["docs/plan.html", "docs/other.html"], "unanswered first, then by last activity");
+    const row = shell[0];
+    assert.deepEqual(row.copies.map((c) => [c.label, c.unanswered, c.held]), [["feat", 2, 1], ["main", 1, 0]], "a chip per copy, unanswered first");
+    assert.equal(row.unanswered, 3);
+    assert.equal(row.group, "needs_you", "a note held for the owner needs the owner");
+    assert.equal(row.taker, "nobody");
+    assert.equal(shellProjects(hub, () => false)[0].roots.join("\n"), `${main}\n${wt}`, "roots, main first");
   } finally {
     store.close();
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
-test("a page in 30 worktrees: 3 chips (unanswered first, then newest), +27 more, long branch names shortened in the middle", async () => {
+test("a page in 30 worktrees: chips with unanswered notes first, then one an agent listens on, then the newest", async () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-many-")));
   const main = path.join(dir, "shop");
   fs.mkdirSync(path.join(main, ".git"), { recursive: true });
@@ -579,18 +572,14 @@ test("a page in 30 worktrees: 3 chips (unanswered first, then newest), +27 more,
     const pages = hub.list();
     assert.equal(pages.length, 1);
     assert.equal(pages[0].copies.length, 30);
-    const html = hubPage(pages, { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() });
-    const shown = html.slice(0, html.indexOf('<details class="more">'));
-    const order = [...shown.matchAll(/href="\/hub\/open\/([0-9a-f]{12})" title="agent/g)].map((m) => ids.indexOf(m[1]));
-    assert.equal(order.length, 3, "three chips before +n more");
+    const listening = new Set([ids[10]]);
+    const [page] = shellPages(hub, {}, (id) => listening.has(id));
+    const order = page.copies.map((c) => ids.indexOf(c.id));
+    assert.equal(order.length, 30, "every copy is still reachable");
     assert.deepEqual(order.slice(0, 2).sort(), [3, 5], "the copies with unanswered notes come first");
-    assert.equal(order[2], 29, "then the newest");
-    assert.match(html, /<summary>\+27 more<\/summary>/);
-    assert.equal(html.match(/class="chip[ "]/g)?.length, 30, "every copy is still reachable");
-    assert.match(html, /30 copies/);
-    assert.ok(html.includes(`title="${branch(29)} · ${files[29]}"`), "the full label and file in the tooltip");
-    assert.ok(!html.includes(`>${branch(29)}<`), "the long label is shortened");
-    assert.match(html, />agent\/agy-gemi…\/c07769ee1529</, "shortened in the middle: start and end kept");
+    assert.equal(order[2], 10, "then the one an agent listens on");
+    assert.equal(order[3], 29, "then the newest");
+    assert.equal(page.copies[3].label, branch(29), "the full label: the shell shortens it");
   } finally {
     store.close();
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -612,7 +601,7 @@ test("a page's title opens a copy that is still there, the newest one when every
     store.db.prepare("UPDATE artifacts SET updated_at = ? WHERE id = ?").run(Date.now() + 60_000, sb.id);
     fs.rmSync(b);
     const hub = new Hub(store.db);
-    const titleLink = (): string | undefined => hubPage(hub.list(), { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() }).match(/<li><a href="\/hub\/open\/(\w+)"/)?.[1];
+    const titleLink = (): string => shellPages(hub, {}, () => false)[0].open_id;
     assert.equal(hub.list()[0].copies[0].id, sb.id, "the gone copy is the newest");
     assert.equal(titleLink(), sa.id);
     fs.rmSync(a);
@@ -678,12 +667,10 @@ test("archiving one of two copies names it, the copy that stays open and the not
       const pages = hub.list();
       assert.deepEqual(pages.map((p) => p.copies.map((c) => c.label)), [["feat"]], "the row stays, with the copy that is still open");
       assert.equal(unanswered(pages[0]), 1, "the archived copy's notes leave the counts");
-      const html = hubPage(pages, { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() });
-      assert.ok(html.includes(`<li><a href="/hub/open/${sessionId(b)}"`), "the row opens the copy that stays");
-      assert.doesNotMatch(html, /in review/);
-      const all = hubPage(hub.list({ all: true }), { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() });
-      assert.match(all, />main <span>3 unanswered · archived<\/span>/, "the archived copy's chip says so");
-      assert.doesNotMatch(all, /in review/);
+      const [page] = shellPages(hub, {}, () => false);
+      assert.equal(page.open_id, sessionId(b), "the row opens the copy that stays");
+      const [all] = shellPages(hub, { view: "all" }, () => false);
+      assert.deepEqual(all.copies.map((c) => [c.label, c.unanswered, c.archived, c.checked]).sort(), [["feat", 1, false, false], ["fix", 0, false, true], ["main", 3, true, false]], "every copy, the archived one and the checked one marked");
     } finally {
       reopened.close();
     }
@@ -700,16 +687,7 @@ test("archiving one of two copies names it, the copy that stays open and the not
   }
 });
 
-test("hubPage escapes project names, labels and paths", () => {
-  const copy = (id: string, label: string) => ({ id, file: `/w/${label}/a.html`, root: `/w/${label}`, label, title: null, updated_at: 1, reviewed: 1, archived_at: null, missing: false, open: 0, received: 0, addressed: 0, held: 0 });
-  const html = hubPage(
-    [{ id: "p1", project_id: "x", project: "<img src=x>", rel_path: "<b>.html", title: '"><i>', updated_at: 1, open: 0, received: 0, addressed: 0, held: 0, copies: [copy("aaaaaaaaaaaa", "<u>"), copy("bbbbbbbbbbbb", "ok")] }],
-    { version: "1", q: "", project: "", projects: [{ id: "x", name: "<img src=x>", roots: ["/w/<s>"] }], counts: { open: 1, everything: 1, archived: 0, checked: 0 } },
-  );
-  for (const raw of ["<img src=x>", "<b>.html", '"><i>', "<u>", "/w/<s>"]) assert.ok(!html.includes(raw), raw);
-});
-
-test("hub home: the header, the views and the empty state count the view shown", async () => {
+test("shell pages: each view lists what it counts; a copy says checked, archived, missing or listening", async () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-views-")));
   const { main } = shopWithWorktree(dir);
   const file = (name: string): string => {
@@ -720,78 +698,249 @@ test("hub home: the header, the views and the empty state count the view shown",
   const store = await SessionStore.open(fs.mkdtempSync(path.join(dir, "state-")));
   try {
     const hub = new Hub(store.db);
-    const render = (opts: { q?: string; project?: string; view?: "default" | "all" | "archived"; listening?: Set<string> } = {}): string => {
-      const { q = "", project = "", view = "default", listening } = opts;
-      const pages = hub.list({ q, project, archived: view === "archived", all: view === "all" });
-      return hubPage(pages, { version: "1", q, project, view, projects: hub.projects(), counts: hub.viewCounts({ q, project }), listening });
-    };
-
-    // Only checked pages: the header says 0 pages, and the body says where the pages are.
-    hub.register({ id: "aaaaaaaaaaaa", file: file("lint-run") });
-    let html = render();
-    assert.match(html, /<span class="stats">0 pages · 0 projects<\/span>/);
-    assert.match(html, /Nothing is open for review\. 1 page was checked but never opened: <a href="\/\?all=1">show them<\/a>/);
-    hub.register({ id: "bbbbbbbbbbbb", file: file("type-run") });
-    hub.register({ id: "cccccccccccc", file: file("test-run") });
-    assert.match(render(), /3 pages were checked but never opened/);
-    assert.match(render(), /<b>Open \(0\)<\/b> · <a href="\/\?all=1">Everything \(3\)<\/a> · <a href="\/\?archived=1">Archived \(0\)<\/a>/);
-    html = render({ view: "all" });
-    assert.match(html, /<span class="stats">3 pages · 1 project<\/span>/);
-    assert.match(html, /<em>checked<\/em>/);
+    const titles = (view: "open" | "all" | "archived", listening = new Set<string>()): string[] =>
+      shellPages(hub, { view }, (id) => listening.has(id)).map((p) => `${path.basename(p.rel_path, ".html")}${p.copies.map((c) => [c.checked ? " checked" : "", c.archived ? " archived" : "", c.listening ? " listening" : ""].join("")).join("")}`);
+    // Only checked pages: none open, all three under Everything.
+    for (const [id, name] of [["aaaaaaaaaaaa", "lint-run"], ["bbbbbbbbbbbb", "type-run"], ["cccccccccccc", "test-run"]]) hub.register({ id, file: file(name) });
+    assert.deepEqual(titles("open"), []);
+    assert.deepEqual({ ...hub.viewCounts() }, { open: 0, everything: 3, archived: 0, checked: 3 });
+    assert.deepEqual(titles("all").sort(), ["lint-run checked", "test-run checked", "type-run checked"]);
 
     // One page opened for review with an unanswered note, one archived.
     const open = store.ensure(file("plan"));
     store.addUserBatch(open, [{ kind: "message", text: "say more" }]);
     const gone = store.ensure(file("old-plan"));
     assert.ok(hub.setArchived(gone.id, Date.now()));
-    html = render();
-    assert.match(html, /<span class="stats">1 page · 1 project · 1 unanswered<\/span>/, "the header counts the rows below it");
-    assert.match(html, /<b>Open \(1\)<\/b> · <a href="\/\?all=1">Everything \(5\)<\/a> · <a href="\/\?archived=1">Archived \(1\)<\/a>/);
-    assert.doesNotMatch(html, /in review|with checked-only|1 projects|1 pages/);
-    assert.doesNotMatch(html, /listening/, "a quiet page says nothing");
-    html = render({ view: "all" });
-    assert.match(html, /<span class="stats">5 pages · 1 project · 1 unanswered<\/span>/);
-    assert.match(html, /<a href="\/">Open \(1\)<\/a> · <b>Everything \(5\)<\/b>/);
-    html = render({ view: "archived" });
-    assert.match(html, /<span class="stats">1 page · 1 project<\/span>/);
-    assert.match(html, /<em>archived<\/em>/);
-
-    // An agent listening shows on the row, and on the page's chip when there are several copies.
-    assert.match(render({ listening: new Set([open.id]) }), /<em class="live">agent listening<\/em>/);
-
-    // A search that only an other view matches names that view, with its count.
-    html = render({ q: "old-plan" });
-    assert.match(html, /Nothing matches in Open\. Also matches: <a href="\/\?q=old-plan&amp;all=1">Everything \(1\)<\/a> · <a href="\/\?q=old-plan&amp;archived=1">Archived \(1\)<\/a>\./);
-    assert.match(render({ q: "no-such-page" }), /Nothing matches in Open\.<\/p>/);
-    assert.match(render({ q: "no-such-page", view: "all" }), /Nothing matches\.<\/p>/);
-
-    // Nothing archived: the Archived view says so and points back.
-    assert.ok(hub.setArchived(gone.id, null));
-    html = render({ view: "archived" });
-    assert.match(html, /No archived pages\. See: <a href="\/">Open \(2\)<\/a>/);
+    assert.deepEqual(titles("open"), ["plan"]);
+    assert.deepEqual(titles("archived"), ["old-plan archived"]);
+    assert.deepEqual({ ...hub.viewCounts() }, { open: 1, everything: 5, archived: 1, checked: 3 });
+    assert.deepEqual(titles("open", new Set([open.id])), ["plan listening"]);
+    assert.deepEqual(titles("archived", new Set([gone.id])), ["old-plan archived"], "an archived copy takes no notes: nobody listens to it");
+    fs.rmSync(open.file);
+    assert.equal(shellPages(hub, {}, () => false)[0].copies[0].missing, true);
   } finally {
     store.close();
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
 
-test("hub home: plural and singular labels; an empty hub; the notes header", () => {
-  const copy = (id: string) => ({ id, file: `/w/a.html`, root: `/w`, label: "main", title: null, updated_at: 1, reviewed: 1, archived_at: null, missing: false, open: 0, received: 0, addressed: 0, held: 0 });
-  const page = { id: "p1", project_id: "x", project: "shop", rel_path: "a.html", title: "A", updated_at: 1, open: 0, received: 0, addressed: 0, held: 0, copies: [copy("aaaaaaaaaaaa")] };
-  const counts = { open: 1, everything: 1, archived: 0, checked: 0 };
-  const home = (roots: string[]): string => hubPage([page], { version: "1", q: "", project: "", projects: [{ id: "x", name: "shop", roots }], counts });
-  assert.match(home(["/w/a"]), /<small[^>]*>\/w\/a<\/small>/);
-  assert.match(home(["/w/a", "/w/b"]), /\/w\/a · \+1 more folder</);
-  assert.match(home(["/w/a", "/w/b", "/w/c"]), /\/w\/a · \+2 more folders</);
-  assert.match(home(["/w/a"]), /1 page · 1 project</);
+/** A revision row as recordRevision writes it, at `at`. */
+function addRevision(db: DatabaseSync, artifactId: string, rev: number, at: number): void {
+  db.prepare("INSERT INTO revisions (artifact_id, rev, at, source, program, program_sha) VALUES (?, ?, ?, 'patch', '', '')").run(artifactId, rev, at);
+}
 
-  assert.match(hubPage([], { version: "1", q: "", project: "", counts: { open: 0, everything: 0, archived: 0, checked: 0 } }), /No pages yet\. Open one for review/);
+test("inbox: needs you (changed since you looked, held notes, a failed run), waiting on agent (who takes them), quiet; newest activity first", async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-inbox-")));
+  fs.mkdirSync(path.join(dir, "shop", ".git"), { recursive: true });
+  const store = await SessionStore.open(fs.mkdtempSync(path.join(dir, "state-")));
+  try {
+    const times = new Map<string, number>();
+    const page = (name: string, at: number) => {
+      const f = path.join(dir, "shop", `${name}.html`);
+      fs.writeFileSync(f, fs.readFileSync(FILE, "utf8").replace("Checkout plan", name));
+      const s = store.ensure(f);
+      times.set(s.id, at);
+      return s;
+    };
+    const t = 1_000_000_000;
+    // Changed overnight: the owner saw revision 1, the agent made 2 and 3, the last one newest of all.
+    const overnight = page("overnight", t);
+    for (const [rev, at] of [[1, t], [2, t + 10], [3, t + 9_000]]) addRevision(store.db, overnight.id, rev, at);
+    store.db.prepare("UPDATE artifacts SET last_viewed_rev = 1 WHERE id = ?").run(overnight.id);
+    // Never opened in a browser: three revisions, but nothing "since you looked".
+    const unseen = page("unseen", t + 50);
+    for (const rev of [1, 2, 3]) addRevision(store.db, unseen.id, rev, t + 50);
+    const held = page("held", t + 100);
+    store.addUserBatch(held, [{ kind: "message", text: "from Ana" }], { author: "Ana", hold: true });
+    const failed = page("failed", t + 200);
+    const ran = page("ran-again", t + 210);
+    const run = store.db.prepare("INSERT INTO runs (id, kind, artifact_id, status, reason, ended_at) VALUES (?, 'note', ?, ?, ?, ?)");
+    run.run("r1", failed.id, "failed", "timeout", t + 300);
+    run.run("r2", ran.id, "failed", "exit", t + 300);
+    run.run("r3", ran.id, "done", null, t + 400);
+    const nobody = page("nobody", t + 500);
+    const listened = page("listened", t + 600);
+    const attached = page("attached", t + 700);
+    for (const s of [nobody, listened, attached]) {
+      for (const [i, text] of ["one", "two", "three", "four"].entries()) store.addUserBatch(s, [{ kind: "message", text }], { at: t + 800 + i });
+    }
+    const pageId = store.db.prepare("SELECT page_id FROM artifacts WHERE id = ?").get(attached.id)?.page_id;
+    store.db.prepare("INSERT INTO attach_settings (scope, scope_id, state) VALUES ('page', ?, 'on')").run(String(pageId));
+    page("quiet", t + 1_000);
+    // Last activity as set above: a note sent just now must not reorder the pages.
+    for (const [id, at] of times) store.db.prepare("UPDATE artifacts SET updated_at = ? WHERE id = ?").run(at, id);
 
-  const note = (status: string) => ({ id: status, artifact_id: "aaaaaaaaaaaa", at: 1, target: null, text: "t", status, author: "", device_id: null, remote: 0, title: "A", file: "/w/a.html", project: "shop", project_id: "x", root: "/w", label: "main" });
-  assert.match(notesPage([note("open")], { version: "1", q: "", project: "", status: "all" }), /1 note · 1 unanswered</);
-  assert.match(notesPage([note("addressed"), note("held")], { version: "1", q: "", project: "", status: "all" }), /2 notes · 1 unanswered</);
-  assert.match(notesPage([note("addressed")], { version: "1", q: "", project: "", status: "answered" }), /1 note</);
-  assert.doesNotMatch(notesPage([note("addressed")], { version: "1", q: "", project: "", status: "answered" }), /unanswered</);
+    const hub = new Hub(store.db);
+    const inbox = shellInbox(hub, {}, (id) => id === listened.id);
+    const names = (list: InboxResponse["quiet"]): string[] => list.map((p) => path.basename(p.rel_path, ".html"));
+    assert.deepEqual(names(inbox.needs_you), ["overnight", "failed", "held"], "the page changed overnight first");
+    assert.deepEqual(names(inbox.waiting_on_agent), ["attached", "listened", "nobody"]);
+    assert.deepEqual(names(inbox.quiet), ["quiet", "ran-again", "unseen"]);
+    const [top] = inbox.needs_you;
+    assert.deepEqual([top.changed, top.copies[0].rev, top.copies[0].viewed_rev], [2, 3, 1]);
+    assert.equal(top.activity, t + 9_000, "a revision is activity");
+    assert.equal(inbox.needs_you[2].held, 1);
+    assert.deepEqual(inbox.needs_you[2].notes.map((n) => [n.text, n.author, n.status]), [["from Ana", "Ana", "held"]]);
+    assert.equal(inbox.held, 1);
+    assert.deepEqual(inbox.failed_runs.map((r) => [r.title, r.reason]), [["failed.html", "timeout"]], "a later run that did not fail clears it");
+    assert.deepEqual(inbox.waiting_on_agent.map((p) => [p.taker, p.attach, p.unanswered, p.run_active]), [["attach_on", "on", 4, false], ["listening", "off", 4, false], ["nobody", "off", 4, false]], "attach on, no run yet: the next note starts one");
+    run.run("r4", attached.id, "running", null, null);
+    assert.equal(shellInbox(hub, {}, () => false).waiting_on_agent.find((p) => p.taker === "attach_on")?.run_active, true, "a run is on them");
+    assert.deepEqual(inbox.waiting_on_agent[0].notes.map((n) => n.text), ["four", "three", "two"], "the newest 3 notes of a page");
+    assert.equal(inbox.quiet[0].taker, null);
+
+    // The owner looks at the page: it leaves "needs you".
+    store.db.prepare("UPDATE artifacts SET last_viewed_rev = 3 WHERE id = ?").run(overnight.id);
+    assert.deepEqual(names(shellInbox(hub, {}, () => false).needs_you), ["failed", "held"]);
+  } finally {
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("a hub.db of 500 pages answers pages and inbox in under 100 ms", async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-500-")));
+  const store = await SessionStore.open(dir);
+  try {
+    const db = store.db;
+    const now = Date.now();
+    db.exec("BEGIN");
+    for (let p = 0; p < 10; p++) {
+      db.prepare("INSERT INTO projects (id, name, created_at) VALUES (?, ?, ?)").run(`proj${p}`, `project ${p}`, now);
+      db.prepare("INSERT INTO project_roots (root, project_id, kind, created_at) VALUES (?, ?, 'git', ?)").run(path.join(dir, `p${p}`), `proj${p}`, now);
+    }
+    for (let i = 0; i < 500; i++) {
+      const id = i.toString(16).padStart(12, "0");
+      const project = `proj${i % 10}`;
+      const root = path.join(dir, `p${i % 10}`);
+      db.prepare("INSERT INTO pages (id, project_id, rel_path) VALUES (?, ?, ?)").run(`g${id}`, project, `docs/page-${i}.html`);
+      db.prepare("INSERT INTO artifacts (id, file, project, title, created_at, updated_at, reviewed, project_id, root, page_id, last_viewed_rev) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)").run(
+        id, path.join(root, "docs", `page-${i}.html`), root, `Page ${i}`, now, now - i * 1000, project, root, `g${id}`, i % 3 === 0 ? 1 : 0,
+      );
+      for (let rev = 1; rev <= 3; rev++) addRevision(db, id, rev, now - i * 1000 + rev);
+      for (let n = 0; n < 2; n++) {
+        db.prepare("INSERT INTO items (id, artifact_id, entry_id, at, kind, text, status, data) VALUES (?, ?, ?, ?, 'message', ?, ?, '{}')").run(`${id}-${n}`, id, `e${id}-${n}`, now - n, `note ${n}`, i % 4 === 0 ? "open" : "addressed");
+      }
+    }
+    db.exec("COMMIT");
+    const hub = new Hub(db);
+    const fastest = (fn: () => unknown): number => {
+      let best = Infinity;
+      for (let i = 0; i < 3; i++) {
+        const start = performance.now();
+        fn();
+        best = Math.min(best, performance.now() - start);
+      }
+      return best;
+    };
+    assert.equal(shellPages(hub, {}, () => false).length, 500);
+    const inbox = shellInbox(hub, {}, () => false);
+    assert.equal(inbox.needs_you.length + inbox.waiting_on_agent.length + inbox.quiet.length, 500);
+    const pagesMs = fastest(() => shellPages(hub, {}, () => false));
+    const inboxMs = fastest(() => shellInbox(hub, {}, () => false));
+    assert.ok(pagesMs < 100, `pages took ${pagesMs.toFixed(1)} ms`);
+    assert.ok(inboxMs < 100, `inbox took ${inboxMs.toFixed(1)} ms`);
+  } finally {
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("/hub/api: the owner's only (403 without the cookie, also from loopback, and with a reviewer's); no other site; shapes; archive and unarchive", async () => {
+  const port = await freePort();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-api-"));
+  // A share link needs an address to name: loopback, as for a test.
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port), AUSTERE_AXI_LINK_HOST: "127.0.0.1" };
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-api-work-")));
+  fs.mkdirSync(path.join(work, ".git"));
+  const file = path.join(work, "plan.html");
+  fs.copyFileSync(FILE, file);
+  const two = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-api-two-")));
+  const call = (method: string, route: string, extra: Record<string, string> = {}, body: unknown = undefined) => req(method, route, body, port, state, extra);
+  try {
+    assert.equal((await cliWith(env, file)).code, 0);
+    const [page] = await hubPages(port, state);
+    const id = page.open_id;
+    await call("POST", `/s/${id}/send`, {}, { items: [{ kind: "annotation", target: "intro", component: "TextContent", note: "say more" }] });
+    const reads = ["/hub/api/projects", "/hub/api/pages", "/hub/api/pages?view=all", "/hub/api/inbox", "/hub/api/search?q=hello", `/hub/api/page/${id}`, "/hub/api/notes", "/hub/api/runs"];
+    const writes = [`/hub/api/page/${id}/archive`, `/hub/api/page/${id}/unarchive`];
+
+    // Loopback is not the owner: no cookie, no data.
+    const nobody = { cookie: "", "x-austere-key": "" };
+    for (const route of reads) assert.equal((await call("GET", route, nobody)).status, 403, route);
+    for (const route of writes) assert.equal((await call("POST", route, nobody, {})).status, 403, route);
+    assert.equal((await call("GET", "/", nobody)).status, 403, "the shell itself");
+    // A reviewer's device is not the owner either.
+    const shared = JSON.parse((await call("POST", "/api/share", {}, { file, name: "Ana" })).data) as { link: string };
+    const ana = { cookie: await claimLink(port, shared.link), "x-austere-key": "" };
+    assert.equal((await call("GET", `/s/${id}`, ana)).status, 200, "the reviewer reaches the page");
+    for (const route of [...reads, "/"]) assert.equal((await call("GET", route, ana)).status, 403, route);
+    for (const route of writes) assert.equal((await call("POST", route, { ...ana, origin: `http://127.0.0.1:${port}` }, {})).status, 403, route);
+    // The owner's browser on another site's page: refused, GET included.
+    for (const route of reads) assert.equal((await call("GET", route, { origin: "https://evil.example" })).status, 403, route);
+    assert.equal((await call("POST", writes[0], { origin: "https://evil.example" }, {})).status, 403);
+    assert.equal((await call("GET", "/hub/api/pages", { host: "evil.example" })).status, 403, "Host allowlist");
+    assert.equal((await call("GET", "/hub/api/nothing")).status, 404);
+    assert.equal((await call("POST", "/hub/api/pages", {}, {})).status, 405);
+
+    // Shapes, as the owner.
+    const json = async <T>(route: string): Promise<T> => {
+      const r = await call("GET", route);
+      assert.equal(r.status, 200, `${route}: ${r.data}`);
+      return JSON.parse(r.data) as T;
+    };
+    const projects = await json<{ projects: { name: string; pages: number; unanswered: number; needs_you: number; roots: string[]; same_as: null }[] }>("/hub/api/projects");
+    assert.deepEqual(projects.projects.map((p) => [p.name, p.pages, p.unanswered, p.needs_you, p.roots, p.same_as]), [[path.basename(work), 1, 1, 0, [work], null]]);
+    const inbox = await json<InboxResponse>("/hub/api/inbox");
+    assert.deepEqual([inbox.needs_you.length, inbox.waiting_on_agent.length, inbox.quiet.length], [0, 1, 0]);
+    assert.deepEqual(inbox.waiting_on_agent[0].notes.map((n) => [n.target, n.text]), [["intro", "say more"]]);
+    const search = await json<{ pages: ShellPage[]; parts: { artifact_id: string; statement: string }[] }>("/hub/api/search?q=hello");
+    assert.deepEqual(search.parts.map((p) => [p.artifact_id, p.statement]), [[id, "intro"]], "a part found by its text");
+    assert.deepEqual((await json<{ pages: ShellPage[] }>("/hub/api/search?q=Checkout")).pages.map((p) => p.open_id), [id], "a page found by its title");
+    const summary = await json<{ id: string; title: string; rel_path: string; project: { name: string }; copies: { id: string }[]; unanswered: number; attach: string }>(`/hub/api/page/${id}`);
+    assert.deepEqual([summary.id, summary.title, summary.rel_path, summary.project.name, summary.copies.map((c) => c.id), summary.unanswered, summary.attach], [id, "Checkout plan", "plan.html", path.basename(work), [id], 1, "off"]);
+    assert.equal((await call("GET", "/hub/api/page/000000000000")).status, 404);
+    assert.deepEqual((await json<{ runs: unknown[] }>("/hub/api/runs")).runs, []);
+    assert.equal((await json<{ notes: unknown[] }>("/hub/api/notes?status=answered")).notes.length, 0);
+    const open = await call("GET", `/hub/open/${id}?part=intro&attach=1`);
+    assert.equal(open.headers.location, `/s/${id}#part=intro&attach=1`, "a search hit opens the page at its part");
+    assert.equal((await call("GET", `/hub/open/${id}?part=${encodeURIComponent("a b<")}`)).headers.location, `/s/${id}`, "a part that is no statement name is dropped");
+    const notes = await call("GET", "/notes?device=d0000000000&status=unanswered");
+    assert.equal(notes.status, 302);
+    assert.equal(notes.headers.location, "/?device=d0000000000&status=unanswered&view=notes", "the old Notes view's links keep their filters");
+
+    // Archive from the shell: out of the list; Unarchive brings it back.
+    const done = await call("POST", writes[0], { origin: `http://127.0.0.1:${port}` }, {});
+    assert.deepEqual(JSON.parse(done.data), { ok: true, ids: [id] });
+    assert.deepEqual(await hubPages(port, state), []);
+    assert.deepEqual((await hubPages(port, state, "archived")).map((p) => p.open_id), [id]);
+    assert.equal((await call("POST", `/s/${id}/send`, {}, { items: [{ kind: "message", text: "late" }] })).status, 409, "an archived page takes no notes");
+    assert.deepEqual(JSON.parse((await call("POST", writes[1], {}, {})).data), { ok: true, ids: [id] });
+    assert.deepEqual((await hubPages(port, state)).map((p) => p.open_id), [id]);
+    assert.equal((await call("POST", "/hub/api/page/000000000000/archive", {}, {})).status, 404);
+
+    // Undo reverses exactly what the action changed: a copy the owner archived before stays archived.
+    const { main, wt } = shopWithWorktree(two);
+    const [a, b] = [path.join(main, "docs", "plan.html"), path.join(wt, "docs", "plan.html")];
+    for (const f of [a, b]) {
+      fs.copyFileSync(FILE, f);
+      assert.equal((await cliWith(env, f)).code, 0);
+    }
+    const [ida, idb] = [sessionId(a), sessionId(b)];
+    assert.deepEqual(JSON.parse((await call("POST", `/hub/api/page/${ida}/archive`, {}, { ids: [ida] })).data), { ok: true, ids: [ida] }, "the copy on main, on purpose");
+    const row = (await hubPages(port, state)).find((p) => p.rel_path === "docs/plan.html");
+    assert.deepEqual(row?.copies.map((c) => c.id), [idb], "the row shows the copy that is open");
+    const archived = JSON.parse((await call("POST", `/hub/api/page/${idb}/archive`, {}, {})).data) as { ids: string[] };
+    assert.deepEqual(archived.ids, [idb], "Archive on the row: the open copy");
+    assert.deepEqual(JSON.parse((await call("POST", `/hub/api/page/${idb}/unarchive`, {}, { ids: archived.ids })).data), { ok: true, ids: [idb] }, "Undo");
+    assert.deepEqual((await hubPages(port, state, "archived")).find((p) => p.rel_path === "docs/plan.html")?.copies.map((c) => c.id), [ida], "main stays archived");
+    assert.deepEqual(JSON.parse((await call("POST", `/hub/api/page/${idb}/unarchive`, {}, { ids: [id, idb] })).data).ids, [idb], "ids of another page are ignored");
+  } finally {
+    await cliWith(env, "stop");
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    fs.rmSync(two, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
 });
 
 test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two roots", async () => {

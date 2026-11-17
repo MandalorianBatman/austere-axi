@@ -6,7 +6,7 @@
 //   spec.json        library JSON schema for `austere-axi check`
 //   prompt.md        component reference for `austere-axi spec`
 //   catalog.json     every component (signature, group, tier, examples) for `components`
-//   chrome/          review UI served by the local server
+//   chrome/          review UI and the hub shell, served by the local server
 //   cli.mjs          the CLI + server, dependencies bundled
 //   sync.mjs         hosted-page sync protocol ("austere-axi/sync"), zod bundled
 import * as esbuild from "esbuild";
@@ -130,7 +130,7 @@ async function buildChrome() {
   const outDir = path.join(DIST, "chrome");
   fs.mkdirSync(outDir, { recursive: true });
   await esbuild.build({
-    entryPoints: [path.join(ROOT, "src/chrome/chrome.ts"), path.join(ROOT, "src/chrome/chrome.css")],
+    entryPoints: ["chrome.ts", "chrome.css", "shell.ts", "shell.css"].map((f) => path.join(ROOT, "src/chrome", f)),
     bundle: true,
     minify: true,
     format: "iife",

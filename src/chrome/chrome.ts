@@ -10,6 +10,9 @@ import type { AckFrame, AddNoteArgs, ClientPresence, Mutation, NoteAnnotation, N
 import { Presence } from "./presence.ts";
 import { openSyncSocket } from "./sync-socket.ts";
 import type { SyncClose, SyncSocket } from "./sync-socket.ts";
+import { h } from "./dom.ts";
+import type { Child } from "./dom.ts";
+import { installNav } from "./nav.ts";
 import { LOADER_TAG, packedTag } from "../shared/standalone.ts";
 
 type Mode = "annotate" | "explore";
@@ -209,9 +212,6 @@ interface ItemOptions {
   queued?: boolean;
   held?: boolean;
 }
-
-type AttrValue = string | boolean | null | undefined | ((e: Event) => unknown);
-type Child = Node | string | number | null | undefined | false;
 
 const BOOT: Boot = (window as Window & { __AUSTERE__?: Boot }).__AUSTERE__ ?? JSON.parse(document.getElementById("austere-boot")?.textContent || "{}");
 const SID = BOOT.id;
@@ -416,20 +416,6 @@ const runMarks = new Map<string, RunMark>();
 
 // Elements of the markup below: the queries are of known elements (a cast at the boundary).
 const $ = <E extends Element = HTMLElement>(sel: string, root: ParentNode = document): E => root.querySelector(sel) as E;
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, AttrValue> = {}, ...children: (Child | Child[])[]): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k === "class") el.className = String(v);
-    else if (k.startsWith("on")) {
-      if (typeof v === "function") el.addEventListener(k.slice(2), v);
-    } else if (k === "text") el.textContent = String(v);
-    else if (k === "html") el.innerHTML = String(v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 
 document.body.innerHTML = `
 <div class="app">
@@ -727,6 +713,8 @@ window.addEventListener("message", (e) => {
       presence.redraw();
       // The old frame's note box is gone, whether or not its blur arrived.
       presence.setWriting("note", false);
+      // A search hit opened the page at one of its parts: outline it once the frame has rendered.
+      nav?.frameReady();
       break;
     case "annotate":
       addToQueue(d.item);
@@ -2855,6 +2843,8 @@ async function startHosted() {
 
 // ── boot ──
 
+// The owner's way between pages and the hub (RLM-358): never for a reviewer or a hosted page.
+const nav = OWNER && !HOSTED ? installNav({ id: SID, bar: $(".bar-title"), menu: menuPop, flash, highlight: (ids) => post({ type: "highlight", ids, scroll: true }), openAttach }) : null;
 setMode(state.mode);
 if (isNarrow() && state.sheetOpen) setSheet(true);
 renderPresence();

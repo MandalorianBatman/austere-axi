@@ -63,6 +63,8 @@ export interface HubCopy extends HubCounts {
   archived_at: number | null;
   /** The file is gone; its notes are kept. */
   missing: boolean;
+  /** The newest revision the owner had the page open on (artifacts.last_viewed_rev). */
+  viewed_rev: number;
 }
 
 /** Hub.list(): a page (one path in a project) with its copies, counts summed across them. */
@@ -642,6 +644,7 @@ export class Hub {
         reviewed: r.reviewed,
         archived_at: r.archived_at,
         missing: !fs.existsSync(r.file),
+        viewed_rev: r.last_viewed_rev || 0,
         open: r.open || 0,
         received: r.received || 0,
         addressed: r.addressed || 0,

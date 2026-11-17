@@ -7,7 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type * as sqlite from "node:sqlite";
 import { Hub, openDatabase } from "../src/cli/hub.ts";
-import { hubPage } from "../src/cli/hub-page.ts";
+import { shellProjects } from "../src/cli/hub-api.ts";
 import { addRoot, copyLabel, findProject, forgetRoot, listProjects, mergeProjects, pageIdOf, pathKey, renameProject, resolveProject, within } from "../src/cli/projects.ts";
 
 function tmp(): string {
@@ -754,7 +754,6 @@ test("a bare repository with worktrees: one project named from its origin, the r
     );
     assert.equal(projects[0].sameAs, undefined);
     assert.deepEqual(hub.projects()[0].roots[0], repoDir);
-    assert.match(hubPage(hub.list({ all: true }), { version: "1", q: "", project: "", view: "all", projects: hub.projects(), counts: hub.viewCounts() }), /<h2><a [^>]*>austere-axi<\/a> <small title="[^"]*">[^<]*\+austere-axi\.git · \+2 more folders<\/small>/);
   }));
 
 test("no origin: the folder's name without .git; a .bare folder takes its parent's", () =>
@@ -802,9 +801,8 @@ test("two clones of one repository: the newer project gets a merge hint, nothing
     assert.equal(older.sameAs, undefined, "the hint is on the newer project");
     assert.deepEqual(newer.sameAs, { id: older.id, name: "austere-axi", merge: `project merge austere-axi ${newer.id}` }, "a name with a space is given as its id");
     assert.equal(projects.find((p) => p.name === "austere-cloud")?.sameAs, undefined, "another repository: no hint");
-    const html = hubPage(hub.list({ all: true }), { version: "1", q: "", project: "", view: "all", projects: hub.projects(), counts: hub.viewCounts() });
-    assert.ok(html.includes(`<p class="same">Same repository as project austere-axi: <code>austere-axi project merge austere-axi ${newer.id}</code></p>`), "the hub shows the hint");
-    assert.equal(html.match(/class="same"/g)?.length, 1);
+    const hints = shellProjects(hub, () => false).filter((p) => p.same_as);
+    assert.deepEqual(hints.map((p) => [p.id, p.same_as]), [[newer.id, { id: older.id, name: "austere-axi", merge: `austere-axi project merge austere-axi ${newer.id}` }]], "the hub shows the hint, as a command to run");
 
     // The owner follows the hint: one project, the first clone is its main root, and the hint is gone.
     mergeProjects(db, "austere-axi", newer.id);

@@ -7,10 +7,14 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 ### Added
 
 - Activity triggers: `trigger add|list|remove` runs a command once a project has been quiet (`quiet:2h`), once per burst of activity, as a run (`run list --project p`, `run log`, `run stop --project p`). `add` and `remove` work only at a terminal; `triggers.json` is read only from the state dir. See [Triggers](docs/cli.md#triggers). (RLM-360)
+- The hub is an app with an inbox. **Needs you** first: pages the agent changed since you looked, reviewer notes waiting for you to release them, and pages whose last agent run failed. Then **Waiting on agent**, with who takes the notes (an agent listening, the attached agent, or nobody, with **Turn agent on**), then **Quiet**. A sidebar lists projects and their pages with a chip per worktree. The views are Inbox, Pages, Notes and Runs; the hub opens on the one you used last. Search finds pages and parts, and a part opens its page with that part outlined. Rows have **Archive**, with **Undo**. (RLM-355, RLM-357)
+- `/hub/api/` (`projects`, `pages`, `inbox`, `search`, `page/<copy id>`, `notes`, `runs`, `page/<copy id>/archive|unarchive`) serves the hub, with the attention fields computed on the server. It answers the owner's cookie only: 403 from loopback without it, to a reviewer's device, and to another site's page. (RLM-356)
+- The owner's review header has a breadcrumb back to the hub and a list of the page's copies in other worktrees. **Ctrl+K** (⌘K) opens a quick switcher over pages and parts, with recent pages first. **Next unanswered page** is in the `⋯` menu. Reviewers and hosted pages see none of it. (RLM-358)
 
 ### Changed
 
 - hub.db schema version 6 (additive; migrated on open): `trigger_state` and `runs.trigger_id`. (RLM-360)
+- `/notes` opens the hub's Notes view, with the same filters. (RLM-357)
 
 ## 0.13.0 (2026-11-17)
 
