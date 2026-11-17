@@ -493,6 +493,37 @@ test("one project poll receives notes from two pages, each batch naming its file
 
 const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+test("a newer project poll replaces the older one, which returns replaced and says to stop", () =>
+  withServer(async ({ port, state }) => {
+    const older = cliIn(WORK, port, state, "poll", "--timeout-ms", "20000");
+    await settle(1500);
+    const newer = cliIn(WORK, port, state, "poll", "--timeout-ms", "300");
+    const r = await older;
+    assert.match(r.out, /^status: replaced$/m, r.out);
+    assert.match(r.out, /Stop this one/);
+    await newer;
+  }));
+
+test("project poll batches come in the order their notes were sent, not by page id", () =>
+  withServer(async ({ port, state, id }) => {
+    const id2 = await open(port, FILE2);
+    // Send on the page whose id sorts last first, so id order and note order differ.
+    const [[firstId, firstFile], [secondId, secondFile]] = ([[id, FILE], [id2, FILE2]] as [string, string][]).sort((a, b) => b[0].localeCompare(a[0]));
+    await send(port, firstId, "sent first");
+    await send(port, secondId, "sent second");
+    const r = await cliIn(WORK, port, state, "poll", "--timeout-ms", "5000");
+    assert.match(r.out, /^status: feedback$/m, r.out);
+    assert.ok(r.out.indexOf(format({ file: firstFile })) < r.out.indexOf(format({ file: secondFile })), r.out);
+  }));
+
+test("--agent-reply on a project poll is a usage error that repeats the cursor given", () =>
+  withServer(async ({ port, state }) => {
+    const r = await cliIn(WORK, port, state, "poll", "--cursor", "7", "--agent-reply", "x");
+    assert.equal(r.code, 2, r.out);
+    assert.ok(r.out.includes("--cursor 7 --agent-reply") && r.out.includes("poll --cursor 7"), r.out);
+    assert.doesNotMatch(r.out, /<n>/);
+  }));
+
 test("a page poll takes its page; the project poll takes the pages without a listener of their own, also past its look again", () =>
   withServer(
     async ({ port, state, id }) => {

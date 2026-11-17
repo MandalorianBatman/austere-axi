@@ -14,7 +14,7 @@ The [project README](../README.md) says what austere-axi is and how to start. Th
 | [Team review](team-review.md) | `share`: teammates on your tailnet review a page under their own name |
 | [Hosted pages](hosted-pages.md) | `publish`: a hosted copy of a page with one invite link per reviewer |
 | [Attach an agent](attach.md) | Turning an agent on for a page, from the page or a terminal: modes, sessions, the write grant, runs, Stop and Retry |
-| [Hub](hub.md) | The home page over every review and note, and running the server all the time behind a reverse proxy |
+| [Hub](hub.md) | The home page over every review and note, and `server install`: the server always on, also behind a reverse proxy |
 | [GitHub Action](github-action.md) | Check and export review pages on every pull request |
 | [Security](security.md) | What the server binds to, the owner key, browser sign-in, the page sandbox, packs, telemetry |
 

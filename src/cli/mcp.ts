@@ -73,7 +73,7 @@ const PROTOCOLS = ["2025-11-25", "2025-06-18", "2024-11-05"];
 /** Many MCP clients give up on a tool call after about a minute, so poll returns `timeout` before that. */
 const POLL_TIMEOUT_MS = 50_000;
 
-const INSTRUCTIONS = `austere-axi turns plans, comparisons, decisions, code reviews and reports into review pages the user annotates in the browser. Call \`spec\` once per session for the workflow, the file skeleton and the component reference. Results are the CLI's output: where a \`next:\` hint names an \`austere-axi <command>\`, call the tool of that name instead. Pass absolute file paths. The reviewer judges how a page looks: do not open, screenshot or inspect it yourself unless the user asks. Revise a page only with the \`patch\` tool: send the changed statements (every statement that shows a changed value), never the whole file.`;
+const INSTRUCTIONS = `austere-axi turns plans, comparisons, decisions, code reviews and reports into review pages the user annotates in the browser. Call \`spec\` once per session for the workflow, the file skeleton and the component reference. Results are the CLI's output: where a \`next:\` hint names an \`austere-axi <command>\`, call the tool of that name instead. A command with no tool here (feedback, archive, unarchive) is not yours to run: poll returns unanswered feedback, and archive or unarchive only when the user asks, at a terminal. Pass absolute file paths. The reviewer judges how a page looks: do not open, screenshot or inspect it yourself unless the user asks. Revise a page only with the \`patch\` tool: send the changed statements (every statement that shows a changed value), never the whole file.`;
 
 const file: ArgSchema = { type: "string", description: "Path of the .html page. Use an absolute path; a relative one resolves against the server's working directory." };
 
@@ -115,10 +115,10 @@ const TOOLS: Record<string, Tool> = {
   },
   poll: {
     title: "Wait for feedback",
-    description: `Wait for the reviewer's feedback. One poll covers every page of the project of the server's working folder (project: another one); each batch names its file. file: that page only. On status timeout, call poll again: nothing is lost. replaced: a newer poll took over, maybe your own: stop this one. archived (file poll): the owner archived the page, so it takes no notes: stop, and unarchive only if the user asks. final: true on a batch means that page is done (the reviewer pressed Done or Send & finish): apply it and reply, keep polling while another page you opened is still in review. Feedback comes back until acknowledged: reply for each page (or agent_reply on a file poll), then poll with the cursor it returned.`,
+    description: `Wait for the reviewer's feedback. One poll covers every page of the checkout of the server's working folder (the root folder it is in; project: every checkout of a project); each batch names its file. file: that page only. On status timeout, call poll again: nothing is lost. replaced: a newer poll took over, maybe your own: stop this one. archived (file poll): the owner archived the page, so it takes no notes: stop, and unarchive only if the user asks. final: true on a batch means that page is done (the reviewer pressed Done or Send & finish): apply it and reply, keep polling while another page you opened is still in review. Feedback comes back until acknowledged: reply for each page (or agent_reply on a file poll), then poll with the cursor it returned.`,
     properties: {
-      file: { type: "string", description: "Path of the .html page to wait on. Leave out to wait on every page of the project. Use an absolute path." },
-      project: { type: "string", description: "Without file: the project to wait on, a name, an id, or a folder inside one of its roots (default: the server's working folder)." },
+      file: { type: "string", description: "Path of the .html page to wait on. Leave out to wait on every page of the server's checkout. Use an absolute path." },
+      project: { type: "string", description: "Without file: wait on every checkout of this project, a name, an id, or a folder inside one of its roots (default: only the checkout of the server's working folder)." },
       agent_reply: { type: "string", description: "File polls only. One line for the reviewer: what you changed. For a project poll use the reply tool on each page." },
       cursor: { type: "integer", minimum: 0, description: "The cursor the last poll returned: acknowledges that feedback, so it is not returned again. A reply acknowledges it too. On a project poll it acknowledges every page in the answer." },
       timeout_ms: { type: "integer", minimum: 0, description: `Return status timeout after this long (default ${POLL_TIMEOUT_MS}). 0 waits until feedback arrives; use it only if your client allows long tool calls.` },
@@ -338,6 +338,7 @@ export function runMcp(): Promise<void> {
       case "tools/list":
         return send({ id, result: { tools: listTools() } });
       case "tools/call": {
+        if (params.name === "end") return error(id, -32602, "end was removed in 0.12: a page always takes notes, so there is nothing to end; stop polling and continue in chat");
         if (typeof params.name !== "string" || !Object.hasOwn(TOOLS, params.name)) return error(id, -32602, `unknown tool: ${params.name}`);
         const args = params.arguments ?? {};
         if (!isRecord(args) || Array.isArray(args)) return error(id, -32602, "arguments must be an object");

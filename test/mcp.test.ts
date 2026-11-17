@@ -132,6 +132,13 @@ test("answers no notification, rejects batches, and does not offer the batch pro
   assert.equal(init.result.protocolVersion, "2025-11-25");
 });
 
+test("the removed end tool answers with what replaces it; another unknown tool is unknown", async () => {
+  const end = await rpc("tools/call", { name: "end", arguments: {} });
+  assert.equal(end.error.code, -32602);
+  assert.match(end.error.message, /^end was removed in 0\.12: .*stop polling and continue in chat$/);
+  assert.equal((await rpc("tools/call", { name: "frobnicate", arguments: {} })).error.message, "unknown tool: frobnicate");
+});
+
 test("check reports errors as a tool error and passes a valid page", async () => {
   const ok = await call("check", { file: GOOD });
   assert.equal(ok.isError, false);

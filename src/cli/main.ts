@@ -123,7 +123,7 @@ ${LOOKS_RULE.map((l) => `  ${l}`).join("\n")}
 COMMANDS
   ${BIN} check <file>            validate without a browser   [--fix: declare packs] [--render]
   ${BIN} feedback [file]         notes no agent has answered yet (no file: this checkout)
-  ${BIN} archive <file>          put a page away (unarchive: back)
+  ${BIN} archive <file>          hide a page; only if the user asks
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} attach status [file]    is an agent attached to the page (the user turns it on); run list, sessions list
@@ -175,7 +175,7 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "plan.html --no-open",
   },
   poll: {
-    usage: "poll [file] [--project p] [--cursor n] [--agent-reply text | --agent-reply-file path|-]",
+    usage: "poll [file] [--project p] [--cursor n] [--after n] [--timeout-ms n] [--agent-reply text | --agent-reply-file path|-]",
     summary:
       "wait until the reviewer presses Send; returns the feedback batch and a cursor. With no file it listens to every page of this checkout (the root folder you run it in; --project: every checkout of a project): each batch names its file and copy, --cursor acknowledges every page, a poll on one page wins for that page and a checkout's poll wins over the project's. Replies stay per page: use reply <file>",
     flags: {
@@ -333,7 +333,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   archive: {
     usage: "archive <file> [--every-copy] | archive --missing [--project p]",
     summary:
-      "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and it stops taking notes; its notes stay. Works on a file that is gone. A page in several worktrees has a copy in each: archive puts away this copy and names the copies that stay open (--every-copy: all of them), with the unanswered notes on each. --missing does it for every copy opened for review whose file is gone (a deleted worktree), and says how many notes were still unanswered",
+      "put a page away, only when the user asks: the hub's lists leave it out (`hub list --archived` shows it) and it stops taking notes; its notes stay. Works on a file that is gone. A page in several worktrees has a copy in each: archive puts away this copy and names the copies that stay open (--every-copy: all of them), with the unanswered notes on each. --missing does it for every copy opened for review whose file is gone (a deleted worktree), and says how many notes were still unanswered",
     flags: { "every-copy": "every copy of the page, not only this one", missing: "every copy whose file is gone, instead of one file", project: "with --missing: only this project: a name, an id, or a folder inside one of its roots" },
     example: "archive plan.html   |   archive plan.html --every-copy   |   archive --missing --project shop",
   },
@@ -370,7 +370,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
   server: {
-    usage: "server [install|uninstall|status|restart] [--persist] [--port n] [--verbose] [--link-url u] [--adopt] [--force]",
+    usage: "server [install|uninstall|status|restart] [--persist] [--port n] [--also-listen addr]... [--verbose] [--link-url u] [--adopt] [--force]",
     summary:
       "run the server in the foreground (behind a reverse proxy); `server install` (at a terminal only) makes it always on as a per-user systemd or launchd service that starts at login and restarts on failure: it shows what it will write and asks first, and puts back what was there when the service does not start. `server status` says whether it runs, `server restart` restarts it (after an upgrade too), `server uninstall` removes it",
     flags: {
@@ -447,7 +447,7 @@ function usage(message: string, cmd?: string | null): void {
  */
 const REMOVED_COMMANDS: Record<string, string> = {
   end: "a page always takes notes, so there is nothing to end; stop polling and continue in chat",
-  close: `use \`${BIN} archive <file>\`: it stops the page taking notes`,
+  close: `a page always takes notes, so there is nothing to close; stop polling. Archive a page (\`${BIN} archive <file>\`) only when the user asks`,
   reopen: `use \`${BIN} unarchive <file>\`; a page that is not archived needs nothing`,
 };
 const REMOVED_FLAGS: Record<string, string> = {
@@ -722,7 +722,8 @@ const noOpenPage = (project: { name: string; root: string | null; covers: string
 /** `poll` with no file: one poll for every page of this checkout, or of the whole project with `--project`. Each batch names its file and copy; `--cursor` acknowledges all of them. */
 async function cmdProjectPoll(flags: Flags): Promise<void> {
   if (flags["agent-reply"] !== undefined || flags["agent-reply-file"] !== undefined) {
-    return usage(`a reply belongs to one page: run \`${BIN} reply <file> --cursor <n> --agent-reply "..."\` for each page, then \`${BIN} poll --cursor <n>\``, "poll");
+    const n = typeof flags.cursor === "string" ? flags.cursor : "<n>";
+    return usage(`a reply belongs to one page: run \`${BIN} reply <file> --cursor ${n} --agent-reply "..."\` for each page, then \`${BIN} poll --cursor ${n}\``, "poll");
   }
   const timeoutMs = timeoutFlag(flags);
   if (timeoutMs === null) return;
@@ -1541,9 +1542,7 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
     case "on":
     case "off":
     case "status":
-      print({ error: `the hub has no on/off switch; open it with \`${BIN} hub open\`` });
-      process.exitCode = 2;
-      return;
+      return removed(`${BIN} hub ${sub}`, `the hub has no on/off switch; open it with \`${BIN} hub open\``);
     case undefined:
     case "list": {
       const limit = limitFlag(flags);

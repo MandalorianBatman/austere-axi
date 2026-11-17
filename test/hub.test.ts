@@ -248,11 +248,13 @@ test("CLI output has no `session` key, and a page that is not registered gets on
   }
 });
 
-test("hub on|off|status exit 2 with a one-line hint", async () => {
+test("hub on|off|status exit 2 as removed, with the replacement", async () => {
   for (const sub of ["on", "off", "status"]) {
     const r = await cli("hub", sub);
     assert.equal(r.code, 2, r.out);
-    assert.match(r.out, /^error: "?the hub has no on\/off switch; open it with `austere-axi hub open`"?\n$/);
+    assert.match(r.out, /^status: error$/m, r.out);
+    assert.match(r.out, /^code: REMOVED$/m, r.out);
+    assert.ok(r.out.includes(`austere-axi hub ${sub} was removed: the hub has no on/off switch; open it with \`austere-axi hub open\``), r.out);
   }
 });
 
@@ -854,6 +856,39 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
     }
   } finally {
     // Windows may still hold hub.db's WAL files for a moment: a failed cleanup must not hide the test's own error.
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    } catch (err) {
+      if (process.platform !== "win32") throw err;
+    }
+  }
+});
+
+test("a 0.10.4 page ended but not closed, with an unread note: listed, not archived, and the note reaches the next poll", async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-migrate-ended-")));
+  const { main, wt } = shopWithWorktree(dir);
+  for (const f of [path.join(main, "docs", "plan.html"), path.join(wt, "docs", "plan.html")]) fs.copyFileSync(FILE, f);
+  fs.copyFileSync(path.join(import.meta.dirname, "fixtures", "hub-0.10.4.db"), path.join(dir, "hub.db"));
+  try {
+    // In 0.10.4 terms: the feat copy's review was ended (Send & End) and never closed, and its note is unread.
+    const old = new DatabaseSync(path.join(dir, "hub.db"));
+    old.prepare("UPDATE artifacts SET file = replace(file, '/FIXTURE', ?), project = replace(project, '/FIXTURE', ?)").run(dir, dir);
+    const feat = old.prepare("SELECT id FROM artifacts WHERE file LIKE '%shop-feat%'").get() as { id: string };
+    old.prepare("UPDATE artifacts SET ended_at = 1, closed_at = NULL, acked_seq = 0 WHERE id = ?").run(feat.id);
+    old.close();
+
+    const store = await SessionStore.open(dir);
+    try {
+      const hub = new Hub(store.db);
+      assert.deepEqual(hub.list().map((p) => p.copies.map((c) => c.label).sort()), [["feat", "main"]], "ended is not archived: both copies are listed");
+      assert.ok(hub.notes({ status: "unanswered" }).some((n) => n.text === "on feat"));
+      const s = store.get(feat.id);
+      assert.ok(s, "the copy is a review page");
+      assert.deepEqual(store.after(s, s.ackedSeq).flatMap((e) => e.items.map((it) => it.text ?? it.note)), ["on feat"], "the next poll gets the unread note");
+    } finally {
+      store.close();
+    }
+  } finally {
     try {
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     } catch (err) {

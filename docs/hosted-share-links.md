@@ -244,7 +244,7 @@ import type { Mutation, Row } from "austere-axi/sync";
 - `MIN_CLI_VERSION` is service configuration. The owner socket sends the CLI version (`?cli=<version>`), and the reviewer chrome's version is the page's `cliVersion`. A missing or malformed `cli`, or one below `MIN_CLI_VERSION`, gets 426 `upgrade_required`.
 - Compatibility window: the service supports the last 3 published austere-axi versions and `MIN_CLI_VERSION`. austere-cloud CI runs its sync tests against each of them (installed from npm) on every change. `MIN_CLI_VERSION` moves only by a deliberate release.
 - hub.db is a cache (Q14): when the `SYNC_VERSION` it was filled under differs from the CLI's, the CLI drops the cached rows and pulls from 0.
-- The local pages without sessions (RLM-338: no `end`, `close` or `reopen`; `archive` locks the composer of a local page) change nothing on the wire. `src/shared/sync.ts` is untouched and `SYNC_VERSION` stays 1. A hosted page has no archive state, and its viewers' notes reach a local archived page held for the owner, as they reach a closed one today.
+- The local pages without sessions (RLM-338: no `end`, `close` or `reopen`; `archive` locks the composer of a local page) change nothing on the wire. `src/shared/sync.ts` is untouched and `SYNC_VERSION` stays 1. A hosted page has no archive state, and its viewers' notes reach a local archived page held for the owner.
 
 ### Objects and pages (HTTP)
 
