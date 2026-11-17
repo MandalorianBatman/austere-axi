@@ -299,30 +299,47 @@ function groupAlive(pid: number): boolean {
   }
 }
 
-/**
- * Whether a run's recorded process tree still runs though no server owns it: the leader with that
- * start time, or (it exited) the rest of its group, since a pid is not reused while its group
- * lives. False with no pid or start recorded (nothing to act on); null when the table cannot tell.
- */
-function leftoverAlive(pid: number | null, pidStart: string | null): boolean | null {
-  if (pid == null || !pidStart) return false;
-  const leader = systemProcessTable()?.info(pid);
-  if (leader === "unreadable") return null;
-  if (leader) return leader.start === pidStart;
-  return leader === null && groupAlive(pid);
+/** Whether a process with this pid exists (EPERM: it does, as another user's). */
+function pidExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
 
 /**
- * End what is left of a run no server owns (`run stop` without a server): SIGKILL to its tree,
- * then wait for it to go. True once nothing of it runs; false when that cannot be confirmed (the
- * table cannot tell, or the group outlived the kill), so the caller leaves the row `running` for a
- * server's restart recovery.
+ * Whether a run's recorded process tree still runs though no server owns it, failing safe: true
+ * (it is the run's: kill it), false (nothing of it runs), or null (something may, but whether it is
+ * the run's cannot be confirmed; the row stays `running`).
+ * POSIX: the leader with the recorded start time, or (it exited) the rest of its group, since a pid
+ * is not reused while its group lives; a pid that is another process now is not the run's. With no
+ * start recorded, or a table that cannot tell, only a group that is gone is an answer (false).
+ * Windows has no process table and no start time: a live pid is taken as the run's, and its tree
+ * goes with `taskkill /T /F`.
+ */
+function leftoverAlive(pid: number | null, pidStart: string | null): boolean | null {
+  if (pid == null) return false;
+  if (process.platform === "win32") return pidExists(pid);
+  const leader = pidStart ? systemProcessTable()?.info(pid) : undefined;
+  if (leader && leader !== "unreadable") return leader.start === pidStart;
+  if (leader === null) return groupAlive(pid);
+  return groupAlive(pid) ? null : false;
+}
+
+/**
+ * End what is left of a run no server owns (`run stop` without a server): its tree is killed
+ * (SIGKILL; `taskkill /T /F` on Windows), then waited for. True once nothing of it runs; false when
+ * that cannot be confirmed (leftoverAlive cannot tell, or the tree outlived the kill), so the caller
+ * leaves the row `running`.
  */
 export async function endLeftover(pid: number | null, pidStart: string | null): Promise<boolean> {
   const alive = leftoverAlive(pid, pidStart);
   if (alive !== true || pid == null) return alive !== null;
   killTree(pid, "SIGKILL");
-  for (const deadline = Date.now() + 2000; groupAlive(pid); ) {
+  const still = () => (process.platform === "win32" ? pidExists(pid) : groupAlive(pid));
+  for (const deadline = Date.now() + 2000; still(); ) {
     if (Date.now() >= deadline) return false;
     await sleep(50);
   }
@@ -415,24 +432,36 @@ export class Dispatcher {
 
   /**
    * After a restart: a run that was running or waiting is `interrupted`, and queued once more
-   * unless it was itself a requeue. Old logs and stray prompt files go. Then the timers start.
+   * unless it was itself a requeue. A crashed server's run that still runs is killed first; one
+   * whose process may still run but cannot be confirmed as the run's stays `running` (the page takes
+   * no other run meanwhile; `run stop` without a server, or the next start, looks again). Old logs
+   * and stray prompt files go. Then the timers start.
    */
   start(): void {
     const now = Date.now();
     const stale = this.db.prepare("SELECT * FROM runs WHERE status IN ('running', 'waiting_for_session')").all() as unknown as RunRow[];
+    const interrupted: string[] = [];
     for (const row of stale) {
-      // A server that crashed left its run running: that tree goes before a replacement can start on the page.
-      if (row.status === "running" && row.pid != null && leftoverAlive(row.pid, row.pid_start)) {
-        killTree(row.pid, "SIGKILL");
-        this.o.log("run-orphan-killed", row.id, `pid=${row.pid}`);
+      if (row.status === "running" && row.pid != null) {
+        const alive = leftoverAlive(row.pid, row.pid_start);
+        if (alive === null) {
+          this.o.log("run-orphan-unconfirmed", row.id, `pid=${row.pid}`);
+          continue;
+        }
+        // A server that crashed left its run running: that tree goes before a replacement can start on the page.
+        if (alive) {
+          killTree(row.pid, "SIGKILL");
+          this.o.log("run-orphan-killed", row.id, `pid=${row.pid}`);
+        }
       }
+      interrupted.push(row.id);
       this.db.prepare("UPDATE runs SET status = 'interrupted', ended_at = ? WHERE id = ?").run(now, row.id);
       if (row.requeued_from || !row.artifact_id) continue;
       this.db
         .prepare("INSERT INTO runs (id, kind, artifact_id, project_id, seq_from, seq_to, status, requeued_from) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)")
         .run(newRunId(), row.kind, row.artifact_id, row.project_id, row.seq_from, row.seq_to, row.id);
     }
-    if (stale.length) this.o.log("runs-interrupted", stale.map((r) => r.id).join(","));
+    if (interrupted.length) this.o.log("runs-interrupted", interrupted.join(","));
     this.sweep(true);
     const { recheckMs } = this.limits();
     this.intervals.push(
@@ -522,20 +551,30 @@ export class Dispatcher {
     for (const row of rows) this.end(row, "stopped", "listener", "An agent started polling the page: the notes go to it.");
   }
 
-  /** The owner stops the page's runs: a running one is killed with its process tree, queued and waiting ones end. Resolves when no child is left. */
+  /**
+   * The owner stops the page's runs: a running one is killed with its process tree, queued and
+   * waiting ones end. A `running` row no dispatcher owns (one a restart could not confirm ended) is
+   * killed as `run stop` without a server does, and stays `running` while that cannot be confirmed.
+   * Resolves when no child is left, with how many runs it stopped.
+   */
   async stop(artifactId: string): Promise<number> {
     const rows = this.db.prepare("SELECT * FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").all(artifactId) as unknown as RunRow[];
     const waits: Promise<void>[] = [];
+    let stopped = 0;
     for (const row of rows) {
       const r = this.running.get(row.id);
       if (r) {
         r.stopped = true;
         this.kill(r);
         waits.push(r.done);
+      } else if (row.status === "running" && !(await endLeftover(row.pid, row.pid_start))) {
+        this.o.log("run-orphan-unconfirmed", row.id, `pid=${row.pid}`);
+        continue;
       } else this.end(row, "stopped", "stopped", "Stopped by the owner.");
+      stopped++;
     }
     await Promise.all(waits);
-    return rows.length;
+    return stopped;
   }
 
   /**
@@ -782,9 +821,11 @@ export class Dispatcher {
       return fail("unavailable", `Could not open the run's files: ${(err as Error).message}`);
     }
     this.announced.delete(row.id);
+    // The row as it now stands: the run keeps this copy, so nothing after the spawn reads the database before the child is owned.
+    const started: RunRow = { ...row, status: "running", started_at: Date.now(), harness: target.harness, mode: target.mode, model, agent_session_id: from?.id ?? null, seq_from: seqFrom, seq_to: seqTo, log_file: logFile, reason: null };
     this.db
       .prepare("UPDATE runs SET status = 'running', started_at = ?, harness = ?, mode = ?, model = ?, agent_session_id = ?, seq_from = ?, seq_to = ?, log_file = ?, reason = NULL WHERE id = ?")
-      .run(Date.now(), target.harness, target.mode, model, from?.id ?? null, seqFrom, seqTo, logFile, row.id);
+      .run(started.started_at, started.harness, started.mode, started.model, started.agent_session_id, seqFrom, seqTo, logFile, row.id);
     // A .cmd shim on Windows runs through cmd.exe (spawnSpec); the prompt stays on stdin either way.
     const spec = spawnSpec(bin, built.args, process.platform, env);
     let child: ChildProcess;
@@ -804,11 +845,12 @@ export class Dispatcher {
     } finally {
       fs.closeSync(promptFd);
     }
-    // The run's process, for a restart after a crash (start) or an offline `run stop`; its group is the run's tree on POSIX.
-    const pidStart = child.pid ? startOf(child.pid) : null;
+    // From here the child is this dispatcher's before anything that can fail: in `running` (stop and
+    // close find it), with its timeout and its exit and error handlers; a later step that throws kills
+    // it, and it ends through the normal path (finish).
     const { promise: done, resolve } = Promise.withResolvers<void>();
     const r: Running = {
-      row: getRun(this.db, row.id) as RunRow,
+      row: started,
       s,
       child,
       adapter,
@@ -830,8 +872,6 @@ export class Dispatcher {
       resolve,
     };
     this.running.set(row.id, r);
-    this.o.log("run", row.id, "running", target.harness, buildMode, `seq=${seqFrom}..${seqTo}`);
-    this.emit(row.id);
     const write = (chunk: Buffer) => {
       if (r.logged >= LOG_CAP) return;
       const room = LOG_CAP - r.logged;
@@ -876,15 +916,16 @@ export class Dispatcher {
       child.once("close", settle);
       setTimeout(settle, 2000).unref();
     });
-    // Recorded once the run is this dispatcher's (stop and close find it): a write that fails ends the run, which must not go on unrecorded.
-    if (child.pid) {
-      try {
-        this.db.prepare("UPDATE runs SET pid = ?, pid_start = ? WHERE id = ?").run(child.pid, pidStart, row.id);
-      } catch (err) {
-        this.o.log("run-pid", row.id, (err as Error).message);
-        write(Buffer.from(`[austere-axi] could not record the run's process, so it is stopped: ${(err as Error).message}\n`));
-        this.kill(r);
-      }
+    try {
+      // The run's process, for a restart after a crash (start) or an offline `run stop`; its group is the run's tree on POSIX.
+      if (child.pid) this.db.prepare("UPDATE runs SET pid = ?, pid_start = ? WHERE id = ?").run(child.pid, startOf(child.pid), row.id);
+      this.o.log("run", row.id, "running", target.harness, buildMode, `seq=${seqFrom}..${seqTo}`);
+      this.emit(row.id);
+    } catch (err) {
+      // A run that cannot be recorded or announced must not go on unseen.
+      this.o.log("run-start", row.id, (err as Error).message);
+      write(Buffer.from(`[austere-axi] could not record the run's start, so it is stopped: ${(err as Error).message}\n`));
+      this.kill(r);
     }
   }
 

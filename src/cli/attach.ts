@@ -130,12 +130,13 @@ export type LiveAuto = (pageId: string, fallback: boolean) => boolean;
  * Why this copy takes notes no owner sent or released (Q3, A17), or null: it is published with
  * `--auto`, or shared with an `--auto` invite. Attach refuses to run on such a page, and
  * `attach on` refuses while this says something. The server passes `liveAuto` (the page row its
- * last pull cached: the flag may have changed on another machine since this one published);
- * without it, cloud.json's copy decides.
+ * last pull cached: --auto may have been turned on on another machine since this one published).
+ * Either source saying auto is enough: a cached row that says not auto never overrides
+ * cloud.json's auto, since it may predate this machine's own `publish --auto`.
  */
 export function autoConflict(file: string, artifactId: string, invites: readonly Invite[], liveAuto: LiveAuto = (_, fallback) => fallback): string | null {
   const entry = readCloud().pages[file];
-  if (entry && liveAuto(entry.id, entry.auto)) return `${file} is published with --auto: reviewers' notes reach the agent without the owner`;
+  if (entry && (entry.auto || liveAuto(entry.id, entry.auto))) return `${file} is published with --auto: reviewers' notes reach the agent without the owner`;
   const auto = invites.filter((i) => i.sessionId === artifactId && i.auto).map((i) => i.name);
   if (auto.length) return `${file} is shared with --auto (${auto.join(", ")}): those reviewers' notes reach the agent without the owner`;
   return null;

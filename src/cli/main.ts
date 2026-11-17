@@ -38,7 +38,7 @@ import { callerProcess, detectCaller, parseSessionOverride } from "./caller.ts";
 import { callerReport, listSessions, liveness, registerSession, registerWithHubDb, shortId } from "./agent-sessions.ts";
 import type { CallerReport, PageSession } from "./agent-sessions.ts";
 import { adapterFor, ADAPTERS, capabilitiesOf, findOnPath } from "./adapters/index.ts";
-import { adaptersFile, extraArgsFor, grantCommand, HARNESSES, hasWriteGrant, isCommandName, isHarness, readAdapters, shellJoin, shellWords, writeAdapters } from "./adapters/config.ts";
+import { adaptersFile, commandLine, extraArgsFor, grantCommand, HARNESSES, hasWriteGrant, isCommandName, isHarness, readAdapters, shellJoin, shellWords, writeAdapters } from "./adapters/config.ts";
 import type { AdaptersConfig } from "./adapters/config.ts";
 import type { Capability } from "./adapters/types.ts";
 import { LOOKS_RULE } from "./agent-prompt.ts";
@@ -1268,7 +1268,7 @@ function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void
       if (flag === "command" && words.length && !words[0]) return usage(`--command: the first word is the binary to run and cannot be empty ("" removes the adapter)`, "adapter");
       // These arguments decide what a run may do on this machine (A13), so only the user at a terminal sets them, as with trust add.
       if (!process.stdin.isTTY) {
-        return usage(`adapter set needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} adapter set ${name} --${flag} ${shellJoin([value])}\` themselves.`, "adapter");
+        return usage(`adapter set needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${commandLine(["adapter", "set", name, `--${flag}`, value])}\` themselves.`, "adapter");
       }
       if (isHarness(name)) {
         if (words.length) cfg.extraArgs[name] = words;
@@ -1790,7 +1790,7 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
           status: stopped.length ? "stopped" : kept.length ? "not stopped" : "nothing to stop",
           file: abs,
           runs: stopped.length || undefined,
-          warning: kept.length ? `could not confirm that run ${kept.join(", ")} ended (its process may still run); it stays running, and the next server kills what is left of it` : undefined,
+          warning: kept.length ? `could not confirm that run ${kept.join(", ")} ended: a process with its recorded pid may still be the run's, and nothing that cannot be confirmed as the run's is killed. It stays running (the page starts no other run); once that process is gone, run stop again ends it` : undefined,
         });
       });
     } finally {
@@ -1939,7 +1939,7 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
   // Attach decides what runs on this machine, unattended (Q4): only the user at a terminal, or the owner's review page, sets it.
   if (!process.stdin.isTTY) {
     const words = ["attach", verb, ...(file !== undefined ? [file] : []), ...(project !== undefined ? ["--project", project] : []), ...given.flatMap((k) => [`--${k}`, String(flags[k])])];
-    return usage(`attach ${verb} needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${shellJoin(words)}\` themselves, or to use the Agent pill on the page's review tab.`, "attach");
+    return usage(`attach ${verb} needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${commandLine(words)}\` themselves, or to use the Agent pill on the page's review tab.`, "attach");
   }
   if (fields.harness !== undefined && !adapterFor(fields.harness, cfg)) return fail(`no adapter named ${fields.harness}: set one with \`${BIN} adapter set ${fields.harness} --command "<bin> <args…>"\``);
   const abs = file === undefined ? null : canonicalFile(file);

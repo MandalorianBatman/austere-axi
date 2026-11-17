@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { ADAPTERS, adapterFor, capabilitiesOf, cmdQuoteArg, findOnPath, spawnSpec } from "../src/cli/adapters/index.ts";
-import { DEFAULT_EXTRA_ARGS, extraArgsFor, hasWriteGrant, readAdapters, shellJoin, shellWords } from "../src/cli/adapters/config.ts";
+import { DEFAULT_EXTRA_ARGS, commandLine, extraArgsFor, hasWriteGrant, readAdapters, shellJoin, shellWords } from "../src/cli/adapters/config.ts";
 import type { AdaptersConfig } from "../src/cli/adapters/config.ts";
 import { AdapterError } from "../src/cli/adapters/types.ts";
 import type { AttachMode, BuildInput, Limits, RunOutput } from "../src/cli/adapters/types.ts";
@@ -169,6 +169,15 @@ test("shellWords splits like a shell with no expansion; shellJoin round-trips", 
   }
 });
 
+test("commandLine quotes a hint for the platform's shell: single quotes on POSIX, double quotes on Windows", () => {
+  const words = ["attach", "on", "C:\\Users\\Jane Doe\\site\\plan.html", "--model", 'say "hi"', "C:\\dir with space\\", "plain"];
+  assert.equal(commandLine(["attach", "on", "/home/jane doe/plan.html", "--model", "it's"], "linux"), `attach on '/home/jane doe/plan.html' --model 'it'\\''s'`);
+  assert.equal(commandLine(words, "darwin"), shellJoin(words));
+  // cmd.exe and PowerShell do not group single quotes: a path with spaces stays one argument only in double quotes.
+  assert.equal(commandLine(words, "win32"), `attach on "C:\\Users\\Jane Doe\\site\\plan.html" --model "say ""hi""" "C:\\dir with space\\\\" plain`);
+  assert.equal(commandLine(["C:\\x\\y.html"], "win32"), "C:\\x\\y.html", "a path without spaces needs no quotes");
+});
+
 test("write grant: omp --approval-mode yolo, copilot --allow-all or --allow-tool; nothing by default (A13)", () => {
   assert.deepEqual(DEFAULT_EXTRA_ARGS, { omp: [], copilot: [] });
   const cfg = (extraArgs: AdaptersConfig["extraArgs"]): AdaptersConfig => ({ extraArgs, commands: {} });
@@ -261,7 +270,9 @@ test("adapter set is refused without a terminal (exit 2, the command to run), an
   const refused = cli(["adapter", "set", "omp", "--extra-args", "--approval-mode yolo"]);
   assert.equal(refused.code, 2, refused.out);
   assert.match(refused.out, /adapter set needs the user at a terminal and changes nothing here/);
-  assert.match(refused.out, /Ask the user to run `austere-axi adapter set omp --extra-args '--approval-mode yolo'` themselves/);
+  // The hint is quoted for this platform's shell; the output prints a value with quotes or backslashes JSON-style.
+  const hint = `Ask the user to run \`austere-axi ${commandLine(["adapter", "set", "omp", "--extra-args", "--approval-mode yolo"])}\` themselves`;
+  assert.ok(refused.out.includes(hint) || refused.out.includes(JSON.stringify(hint).slice(1, -1)), refused.out);
   assert.ok(!fs.existsSync(file), "nothing written");
 
   const set = cli(["adapter", "set", "omp", "--extra-args", "--approval-mode yolo"], { tty: true });

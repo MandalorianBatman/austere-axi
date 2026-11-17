@@ -10,7 +10,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { AttachRefused, changeSetting, readSetting, resolveSetting } from "../src/cli/attach.ts";
 import type { AttachSettingRow, AttachState } from "../src/cli/attach.ts";
-import { shellJoin } from "../src/cli/adapters/config.ts";
+import { commandLine } from "../src/cli/adapters/config.ts";
 import type { AdaptersConfig } from "../src/cli/adapters/config.ts";
 import { openDatabase } from "../src/cli/hub.ts";
 import { COOKIE } from "../src/cli/invites.ts";
@@ -141,7 +141,7 @@ test("attach on|off|inherit without a terminal exits 2, changes nothing and name
     assert.match(r.out, /code: USAGE/);
     assert.match(r.out, new RegExp(`attach ${args[0]} needs the user at a terminal and changes nothing here`));
     // The output quotes a value with backslashes (a Windows path) JSON-style, doubling them.
-    const hint = `Ask the user to run \`austere-axi ${shellJoin(["attach", ...args])}\` themselves`;
+    const hint = `Ask the user to run \`austere-axi ${commandLine(["attach", ...args])}\` themselves`;
     assert.ok(r.out.includes(hint) || r.out.includes(JSON.stringify(hint).slice(1, -1)), r.out);
   }
   assert.match(cli(["attach", "status", file]).out, /attach: off\n[\s\S]*page_setting: none/);

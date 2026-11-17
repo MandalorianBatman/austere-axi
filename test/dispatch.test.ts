@@ -405,6 +405,23 @@ test("the server reads the hosted page's live auto flag: --auto turned on elsewh
   }
 });
 
+test("a cached page row that says not auto never overrides cloud.json's --auto: a run is refused (Q3, A17)", { skip }, async () => {
+  const { file, id } = await page("uniform");
+  // This machine just published with --auto; the page row its last pull cached predates that.
+  fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t", pages: { [file]: { id: "pu", auto: true, unlisted: false, presence: true, invites: {} } } }));
+  exec("INSERT INTO cloud_rows (page_id, type, id, seq, body) VALUES ('pu', 'page', 'pu', 1, ?)", JSON.stringify({ type: "page", id: "pu", auto: false }));
+  try {
+    assert.match(String(autoConflict(file, id, [], () => false)), /published with --auto/, "a live false does not override cloud.json");
+    attach(id);
+    await say(id, "go");
+    const refused = await runIn(id, "failed", "done");
+    assert.equal(refused.reason, "auto_conflict");
+  } finally {
+    fs.rmSync(path.join(STATE, "cloud.json"));
+    exec("DELETE FROM cloud_rows WHERE page_id = 'pu'");
+  }
+});
+
 test("a note an --auto invite delivered keeps runs off after the invite is revoked, until the owner answers or discards it (A17)", { skip }, async () => {
   const { file, id } = await page("romeo");
   const shared = await owner("/api/share", { file, name: "Dee", auto: true });
@@ -725,6 +742,58 @@ test("run stop without a server kills a crashed server's leftover run before it 
     } finally {
       d.close();
     }
+  } finally {
+    if (leftover.exitCode === null && leftover.signalCode === null) leftover.kill("SIGKILL");
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a leftover whose identity cannot be confirmed (no start time recorded) is neither killed nor marked ended: restart and run stop leave it running", { skip }, async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-dispatch-unconfirmed-")));
+  const leftover = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore", detached: true });
+  const exited = once(leftover, "exit");
+  const file = path.join(dir, "victor.html");
+  fs.writeFileSync(file, "<!doctype html><title>victor</title>");
+  const statusOf = (id: string) => {
+    const d = new DatabaseSync(path.join(dir, "hub.db"));
+    try {
+      return (d.prepare("SELECT status FROM runs WHERE id = ?").get(id) as { status: string }).status;
+    } finally {
+      d.close();
+    }
+  };
+  const runStop = async () => {
+    const child = spawn(process.execPath, [CLI, "run", "stop", file], { env: { ...ENV, AUSTERE_AXI_STATE_DIR: dir, AUSTERE_AXI_PORT: String(await freePort()) } });
+    let out = "";
+    child.stdout.on("data", (c) => (out += c));
+    child.stderr.on("data", (c) => (out += c));
+    const [code] = (await once(child, "close")) as [number | null];
+    return { code, out };
+  };
+  try {
+    const store = await SessionStore.open(dir);
+    try {
+      const s = store.ensure(file);
+      store.db.prepare("INSERT INTO runs (id, kind, artifact_id, seq_from, seq_to, status, started_at, pid, pid_start) VALUES ('r-unsure', 'note', ?, 1, 1, 'running', 1, ?, NULL)").run(s.id, leftover.pid as number);
+      const dispatcher = new Dispatcher({ db: store.db, store, port: PORT, log: () => {}, listening: () => false, autoConflict: () => null, emit: () => {} });
+      dispatcher.start();
+      await dispatcher.close();
+      assert.deepEqual(store.db.prepare("SELECT id, status FROM runs ORDER BY rowid").all().map((x) => [x.id, x.status]), [["r-unsure", "running"]], "not interrupted, not queued again");
+    } finally {
+      store.close();
+    }
+    assert.equal(leftover.exitCode, null, "not killed");
+    let r = await runStop();
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /status: not stopped/);
+    assert.match(r.out, /could not confirm that run r-unsure ended/);
+    assert.equal(statusOf("r-unsure"), "running");
+    // Once its process group is gone, run stop ends the row.
+    leftover.kill("SIGKILL");
+    await exited;
+    r = await runStop();
+    assert.match(r.out, /status: stopped/);
+    assert.equal(statusOf("r-unsure"), "stopped");
   } finally {
     if (leftover.exitCode === null && leftover.signalCode === null) leftover.kill("SIGKILL");
     fs.rmSync(dir, { recursive: true, force: true });

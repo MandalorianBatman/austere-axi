@@ -171,3 +171,14 @@ export function shellWords(line: string): string[] {
 export function shellJoin(words: readonly string[]): string {
   return words.map((w) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`)).join(" ");
 }
+
+/**
+ * Words as a command line for the user to paste into this platform's shell (the hints that name a
+ * command to run). POSIX: `shellJoin`. Windows (cmd.exe, PowerShell): a word that needs it in double
+ * quotes, an embedded `"` doubled and backslashes before the closing quote doubled, as the program's
+ * argv parser reads them; neither shell groups single quotes.
+ */
+export function commandLine(words: readonly string[], platform: NodeJS.Platform = process.platform): string {
+  if (platform !== "win32") return shellJoin(words);
+  return words.map((w) => (/^[A-Za-z0-9_./:=@+,\\-]+$/.test(w) ? w : `"${w.replace(/"/g, '""').replace(/(\\+)$/, "$1$1")}"`)).join(" ");
+}

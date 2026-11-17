@@ -421,7 +421,7 @@ export async function runServer({
     port,
     log,
     listening: (s) => Boolean(listener(s)),
-    // The page row the last pull cached decides, not cloud.json: --auto may have been turned on elsewhere since.
+    // The page row the last pull cached counts too: --auto may have been turned on elsewhere since; either saying auto refuses.
     autoConflict: (s) => autoConflict(s.file, s.id, invites.list(), liveAuto),
     emit: (id, event) => broadcastOwners(id, "run", event),
   });
