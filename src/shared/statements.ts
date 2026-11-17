@@ -163,8 +163,9 @@ function mentionedIds(text: string, known: ReadonlyMap<string, unknown>, self: s
       let j = i + 1;
       while (j < body.length && /[\w$]/.test(body[j])) j++;
       const word = body.slice(i, j);
-      // An object key is a word before `:` directly inside braces (a ternary's `?` before it makes it a value).
-      const key = open[open.length - 1] === "{" && last !== "?" && next(j) === ":";
+      // An object key is a word before `:` directly inside braces, after `{`, a comma or the end of the entry before (commas may be left out);
+      // after an operator (`? `, `+`) it is a value.
+      const key = open[open.length - 1] === "{" && /[{,\w$"')\]}]/.test(last) && next(j) === ":";
       if (last !== "." && !key && word !== self && known.has(word)) out.add(word);
       i = j;
       last = "a";

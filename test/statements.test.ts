@@ -76,4 +76,8 @@ flag = TextContent("f")`);
   assert.deepEqual(closureOf(map, ["second"]), ["second"]);
   assert.deepEqual(closureOf(map, ["third"]), ["third"]);
   assert.deepEqual(closureOf(map, ["ternary"]), ["ternary", "other", "flag"], "a ternary's branches are values");
+  const sum = statementMap(`root = Chart({x: flag ? 1 + amount : 0})
+flag = TextContent("f")
+amount = TextContent("a")`);
+  assert.deepEqual(closureOf(sum, ["root"]), ["root", "flag", "amount"], "arithmetic in a branch");
 });

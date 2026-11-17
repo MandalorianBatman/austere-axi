@@ -1456,22 +1456,28 @@ const SOURCES: Record<string, string> = { patch: "patched", file: "edited", open
 /** The newest `/history` request: an answer to an earlier one may arrive after it and must not replace what it brought. */
 let histLoad = 0;
 
-async function loadHistory(): Promise<HistoryData | null> {
-  if (!OWNER || HOSTED) return null;
+let histLatest: Promise<HistoryData | null> = Promise.resolve(null);
+
+function loadHistory(): Promise<HistoryData | null> {
+  if (!OWNER || HOSTED) return Promise.resolve(null);
   const mine = ++histLoad;
-  let data: HistoryData;
-  try {
-    const r = await fetch(`${BASE}/history`);
-    if (!r.ok) return null;
-    data = (await r.json()) as HistoryData;
-  } catch {
-    return null;
-  }
-  // A newer request is on its way (or done): its answer is the one to keep.
-  if (mine !== histLoad) return hist;
-  hist = data;
-  sendHistoryCounts();
-  return hist;
+  const load = (async (): Promise<HistoryData | null> => {
+    let data: HistoryData;
+    try {
+      const r = await fetch(`${BASE}/history`);
+      if (!r.ok) return null;
+      data = (await r.json()) as HistoryData;
+    } catch {
+      return null;
+    }
+    // A newer request was started meanwhile: its answer is the one to keep and to hand to whoever asked.
+    if (mine !== histLoad) return histLatest;
+    hist = data;
+    sendHistoryCounts();
+    return hist;
+  })();
+  histLatest = load;
+  return load;
 }
 
 /** The frame's annotate popover offers History (n) on a statement with earlier versions. */
