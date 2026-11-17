@@ -8,6 +8,7 @@ import { effectiveAttach, resolveSetting } from "./attach.ts";
 import type { AttachSettingRow } from "./attach.ts";
 import { listRuns } from "./dispatch.ts";
 import { findStatements, headRev, wordsOf } from "./history.ts";
+import type { FindHit } from "./history.ts";
 import { unanswered } from "./hub.ts";
 import type { Hub, HubPage } from "./hub.ts";
 import { copyLabel, findProject } from "./projects.ts";
@@ -17,6 +18,7 @@ import type {
   InboxPage,
   InboxResponse,
   InboxRun,
+  NoteSummary,
   PagesView,
   ProjectSummary,
   RunItem,
@@ -138,19 +140,35 @@ const byActivity = (a: ShellPage, b: ShellPage): number => b.activity - a.activi
 
 /** The inbox: pages open for review by group, each with its newest unanswered notes; held notes and failed runs. */
 export function shellInbox(hub: Hub, { project = "" }: { project?: string }, listening: Listening): Omit<InboxResponse, "project"> {
-  const pages = shellPages(hub, { project }, listening);
+  // Every page open for review: a page that needs the owner must never fall off the end of a list.
+  const pages = shellPages(hub, { project, limit: Infinity }, listening);
   const pageOf = new Map<string, InboxPage>();
+  const labelOf = new Map<string, string>();
   const groups: Record<"needs_you" | "waiting_on_agent" | "quiet", InboxPage[]> = { needs_you: [], waiting_on_agent: [], quiet: [] };
   for (const p of pages) {
     const row: InboxPage = { ...p, notes: [] };
-    for (const c of p.copies) pageOf.set(c.id, row);
+    for (const c of p.copies) {
+      pageOf.set(c.id, row);
+      labelOf.set(c.id, c.label);
+    }
     groups[p.group].push(row);
   }
-  // Newest first: at most 3 a page, read only for pages that have some.
+  // The newest 3 unanswered notes of each copy listed (a page then keeps its newest 3): another page's many notes cannot crowd them out.
   if (pages.some((p) => p.unanswered)) {
-    for (const n of hub.notes({ status: "unanswered", project, limit: 2000 })) {
+    type NoteRow = Omit<NoteSummary, "label">;
+    const rows = hub.db
+      .prepare(
+        `SELECT id, artifact_id, at, kind, target, text, status, author FROM (
+           SELECT i.*, ROW_NUMBER() OVER (PARTITION BY i.artifact_id ORDER BY i.at DESC, i.id) AS n
+           FROM items i JOIN artifacts a ON a.id = i.artifact_id
+           WHERE i.kind IN ('annotation', 'message') AND i.status IN ('open', 'received', 'held')
+             AND a.archived_at IS NULL AND a.reviewed = 1 AND (? = '' OR a.project_id = ?))
+         WHERE n <= 3 ORDER BY at DESC, id`,
+      )
+      .all(project, project) as unknown as NoteRow[];
+    for (const n of rows) {
       const row = pageOf.get(n.artifact_id);
-      if (row && row.notes.length < 3) row.notes.push({ id: n.id, artifact_id: n.artifact_id, at: n.at, kind: n.kind, target: n.target, text: n.text, status: n.status, author: n.author, label: n.label });
+      if (row && row.notes.length < 3) row.notes.push({ ...n, label: labelOf.get(n.artifact_id) ?? "" });
     }
   }
   const failedRuns: InboxRun[] = [];
@@ -194,8 +212,16 @@ export function shellSearch(hub: Hub, q: string, listening: Listening): SearchRe
   // `find` ranks a statement by its page's title too: a page listed above needs no part that only shares its title.
   const listed = new Set(pages.map((p) => p.id));
   const words = wordsOf(query);
-  const parts = findStatements(hub.db, query, { limit: 12 })
-    .hits.filter((h) => !listed.has(h.page_id ?? h.artifact_id) || words.some((w) => h.snippet.toLowerCase().includes(w) || h.statement.toLowerCase().includes(w)))
+  const keep = (h: FindHit): boolean => !listed.has(h.page_id ?? h.artifact_id) || words.some((w) => h.snippet.toLowerCase().includes(w) || h.statement.toLowerCase().includes(w));
+  // Filter while reading: ask for more candidates until 12 are kept or there are no more.
+  let kept: FindHit[] = [];
+  for (let limit = 12; ; limit *= 4) {
+    const { hits } = findStatements(hub.db, query, { limit });
+    kept = hits.filter(keep);
+    if (kept.length >= 12 || hits.length < limit || limit >= 768) break;
+  }
+  const parts = kept
+    .slice(0, 12)
     .map((h) => ({
       artifact_id: h.artifact_id,
       page_id: h.page_id,
@@ -251,15 +277,18 @@ export function shellRuns(hub: Hub, { project = "" }: { project?: string }): Run
 }
 
 /**
- * The copies an archive or unarchive from the shell changes, of the page that holds `id`: the ones in `ids` (Undo
- * reverses exactly what the action changed), else for unarchive every archived copy. Null when the hub does not know `id`.
+ * The copies an archive or unarchive from the shell changes, of the page that holds `id`, and only those whose state
+ * changes: so Undo, which sends back exactly these `ids`, never touches a copy another tab or command had already put
+ * there. Without `ids`: archive takes `id` and every copy opened for review (as `archive --every-copy`), unarchive every
+ * archived copy. Null when the hub does not know `id`.
  */
-export function copiesToFlip(hub: Hub, id: string, ids: string[] | null): string[] | null {
+export function copiesToFlip(hub: Hub, id: string, archive: boolean, ids: string[] | null): string[] | null {
   const a = hub.artifact(id);
   if (!a) return null;
-  const rows = (
-    a.page_id ? hub.db.prepare("SELECT id, archived_at FROM artifacts WHERE page_id = ?").all(a.page_id) : [{ id: a.id, archived_at: a.archived_at }]
-  ) as unknown as { id: string; archived_at: number | null }[];
-  if (ids) return rows.filter((r) => ids.includes(r.id)).map((r) => r.id);
-  return rows.filter((r) => r.id === a.id || r.archived_at != null).map((r) => r.id);
+  type Row = { id: string; reviewed: number; archived_at: number | null };
+  const rows: Row[] = a.page_id
+    ? (hub.db.prepare("SELECT id, reviewed, archived_at FROM artifacts WHERE page_id = ?").all(a.page_id) as unknown as Row[])
+    : [{ id: a.id, reviewed: a.reviewed, archived_at: a.archived_at }];
+  const asked = ids ? rows.filter((r) => ids.includes(r.id)) : rows.filter((r) => !archive || r.id === a.id || r.reviewed);
+  return asked.filter((r) => (r.archived_at == null) === archive).map((r) => r.id);
 }

@@ -82,6 +82,7 @@ type FrameMessage = { austere: 1 } & (
   | { type: "scroll"; y?: number }
   | { type: "changes"; ids?: unknown }
   | { type: "toggle-mode" }
+  | { type: "quick-switch" }
   | { type: "focus"; id?: unknown }
   | { type: "writing"; on?: unknown }
   | { type: "open-url"; url: unknown }
@@ -90,7 +91,7 @@ type FrameMessage = { austere: 1 } & (
 
 /** Messages the chrome posts to the frame. */
 type ChromeMessage =
-  | { type: "init"; mode: Mode; state: unknown; scrollY: number }
+  | { type: "init"; mode: Mode; state: unknown; scrollY: number; quickSwitch: boolean }
   | { type: "reveal"; id: string | undefined }
   | { type: "mode"; mode: Mode }
   | { type: "highlight"; ids: string[]; scroll: boolean }
@@ -702,6 +703,8 @@ window.addEventListener("message", (e) => {
         mode: state.archived ? "explore" : state.mode,
         state: SS.get(`austere:form:${SID}`),
         scrollY: state.scrollY,
+        // The owner's quick switcher: the frame hands Ctrl/Cmd+K over instead of letting the browser take it.
+        quickSwitch: OWNER && !HOSTED,
       });
       break;
     case "ready":
@@ -759,6 +762,10 @@ window.addEventListener("message", (e) => {
       break;
     case "toggle-mode":
       setMode(state.mode === "annotate" ? "explore" : "annotate");
+      break;
+    case "quick-switch":
+      // Ctrl/Cmd+K pressed inside the frame (sent only when init said the owner has a switcher).
+      nav?.toggleSwitcher();
       break;
     case "history":
       // The popover's History (n) on a statement: the owner's only, and only a statement name is taken from the frame.

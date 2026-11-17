@@ -2235,13 +2235,10 @@ export async function runServer({
       if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
       const body = await readBody(req, 16 * 1024);
       const asked = Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === "string") : null;
-      if (flip[2] === "archive" && !asked) {
-        const done = archiveCopies(flip[1], true);
-        return done ? send(res, 200, { ok: true, ids: done.archived.map((c) => c.id) } satisfies ArchiveResult) : send(res, 404, { error: "not in the hub" });
-      }
-      const ids = copiesToFlip(hub, flip[1], asked);
+      const archive = flip[2] === "archive";
+      const ids = copiesToFlip(hub, flip[1], archive, asked);
       if (!ids) return send(res, 404, { error: "not in the hub" });
-      const at = flip[2] === "archive" ? Date.now() : null;
+      const at = archive ? Date.now() : null;
       for (const id of ids) setArchived(id, at);
       return send(res, 200, { ok: true, ids } satisfies ArchiveResult);
     }

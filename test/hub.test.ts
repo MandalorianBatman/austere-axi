@@ -934,7 +934,12 @@ test("/hub/api: the owner's only (403 without the cookie, also from loopback, an
     assert.deepEqual(archived.ids, [idb], "Archive on the row: the open copy");
     assert.deepEqual(JSON.parse((await call("POST", `/hub/api/page/${idb}/unarchive`, {}, { ids: archived.ids })).data), { ok: true, ids: [idb] }, "Undo");
     assert.deepEqual((await hubPages(port, state, "archived")).find((p) => p.rel_path === "docs/plan.html")?.copies.map((c) => c.id), [ida], "main stays archived");
-    assert.deepEqual(JSON.parse((await call("POST", `/hub/api/page/${idb}/unarchive`, {}, { ids: [id, idb] })).data).ids, [idb], "ids of another page are ignored");
+    // Another tab archives the row's copy (ids of another page are ignored), then the row's Archive arrives:
+    // it returns no copy it did not change, so its Undo cannot open one.
+    assert.deepEqual(JSON.parse((await call("POST", `/hub/api/page/${idb}/archive`, {}, { ids: [id, idb] })).data).ids, [idb], "ids of another page are ignored");
+    assert.deepEqual(JSON.parse((await call("POST", `/hub/api/page/${idb}/archive`, {}, {})).data).ids, [], "nothing left open to archive");
+    assert.deepEqual(JSON.parse((await call("POST", `/hub/api/page/${idb}/unarchive`, {}, { ids: [idb] })).data).ids, [idb]);
+    assert.deepEqual(JSON.parse((await call("POST", `/hub/api/page/${idb}/unarchive`, {}, { ids: [idb] })).data).ids, [], "already open: unchanged");
   } finally {
     await cliWith(env, "stop");
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });

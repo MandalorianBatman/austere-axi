@@ -250,8 +250,10 @@ test("review header: breadcrumb to the hub, copy switcher keeps the path, Ctrl+K
     const b = await call<{ rel_path: string }>("GET", `/hub/api/page/${ids.planFeat}`, undefined, asOwner());
     assert.equal(b.data.rel_path, a.data.rel_path);
 
-    // Ctrl+K: pages opened lately first (one entry a page, whichever copy); type to find another page, Enter opens it.
+    // Ctrl+K, pressed with the artifact frame focused (the frame hands it to the chrome): pages opened lately first
+    // (one entry a page, whichever copy); type to find another page, Enter opens it.
     await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
+    await page.frameLocator(".frame").locator("body").click({ position: { x: 5, y: 5 } });
     await page.keyboard.press("Control+k");
     await page.locator(".qs").waitFor();
     assert.deepEqual((await page.locator(".qs-item .qs-title").allInnerTexts()).map((s) => s.trim()), ["Quiet page"], "the page opened before; this page is left out");

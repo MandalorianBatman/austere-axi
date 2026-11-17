@@ -49,7 +49,7 @@ export type ChromeToFrame =
   | { type: "highlight"; ids: unknown; scroll: unknown }
   | { type: "presence"; marks: unknown }
   | { type: "history-counts"; counts: unknown }
-  | { type: "init"; mode: unknown; state?: Record<string, unknown> | null; scrollY: number }
+  | { type: "init"; mode: unknown; state?: Record<string, unknown> | null; scrollY: number; quickSwitch?: unknown }
   | { type: "mode"; mode: unknown };
 
 /** What the frame posts to the chrome, sent as { austere: 1, ...message }. */
@@ -417,6 +417,7 @@ function boot() {
   bridge.on("init", async (d) => {
     bridge.connected = true;
     ann.setMode(d.mode);
+    ann.setQuickSwitch(d.quickSwitch === true);
     // "ready" only once rendering has started: the chrome sends live updates after it.
     await render(d.state || undefined);
     if (d.scrollY > 0) {

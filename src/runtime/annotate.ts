@@ -39,7 +39,9 @@ export type AnnotatorMessage =
   | { type: "focus"; id: string }
   | { type: "writing"; on: boolean }
   | { type: "toggle-mode" }
-  | { type: "history"; id: string };
+  | { type: "history"; id: string }
+  // Ctrl/Cmd+K inside the frame, for the owner's quick switcher (only after init said the chrome has one).
+  | { type: "quick-switch" };
 
 /** Ids of the statements that reference `id` (shared/statements.ts referencesTo). */
 export type RefsTo = (map: StatementMap, id: string) => string[];
@@ -51,6 +53,8 @@ export interface AnnotatorOptions {
 
 export interface Annotator {
   setMode(next: unknown): void;
+  /** Whether Ctrl/Cmd+K in the frame goes to the chrome (the owner's quick switcher) instead of the browser. */
+  setQuickSwitch(on: boolean): void;
   /** How many revisions changed each statement (the owner's history); a statement with earlier versions gets a History button in its popover. */
   setHistory(counts: Record<string, number>): void;
   flash(ids: string[], tone?: string, map?: StatementMap, refsTo?: RefsTo): Element[];
@@ -296,6 +300,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   const popText = root.querySelector("textarea") as HTMLTextAreaElement;
   const popHistory = root.querySelector('[data-act="history"]') as HTMLButtonElement;
   let historyCounts: Record<string, number> = {};
+  let quickSwitch = false;
   /** History (n) for the statement the note is on: only where it has an earlier version to show. */
   function renderHistory() {
     const n = (draft && historyCounts[draft.targetId]) || 0;
@@ -601,6 +606,9 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     if ((e.metaKey || e.ctrlKey) && (e.key === "i" || e.key === "I")) {
       e.preventDefault();
       post({ type: "toggle-mode" });
+    } else if (quickSwitch && (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "k" || e.key === "K")) {
+      e.preventDefault();
+      post({ type: "quick-switch" });
     }
   });
   window.addEventListener("scroll", () => {
@@ -861,6 +869,9 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   }
 
   return {
+    setQuickSwitch(on: boolean) {
+      quickSwitch = on;
+    },
     setHistory(counts: Record<string, number>) {
       historyCounts = counts;
       if (draft) renderHistory();

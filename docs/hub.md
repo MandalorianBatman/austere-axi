@@ -25,7 +25,7 @@ The search box at the top looks for pages by title, path or project, and for **p
 
 ### From a review page
 
-The owner's review header has a breadcrumb, **project ›** title, back to the hub (filtered to that project), and, on a page with copies in several worktrees, a list that opens the same page in another copy. On a phone the breadcrumb is a **‹** and the list is left out for room: the hub's chips and the quick switcher open the other copies. **Ctrl+K** (**⌘K** on a Mac; anywhere on the page, the composer too), or **Go to page…** in the `⋯` menu, opens a quick switcher: pages you opened lately first, then type to find pages and parts. **Next unanswered page** in the `⋯` menu goes to the next page in the inbox with notes no agent answered, at the copy that has them. A reviewer's page, and a hosted page, has none of this.
+The owner's review header has a breadcrumb, **project ›** title, back to the hub (filtered to that project), and, on a page with copies in several worktrees, a list that opens the same page in another copy. On a phone the breadcrumb is a **‹** and the list is left out for room: the hub's chips and the quick switcher open the other copies. **Ctrl+K** (**⌘K** on a Mac; anywhere on the page, the composer and the page itself too), or **Go to page…** in the `⋯` menu, opens a quick switcher: pages you opened lately first, then type to find pages and parts. **Next unanswered page** in the `⋯` menu goes to the next page in the inbox with notes no agent answered, at the copy that has them. A reviewer's page, and a hosted page, has none of this.
 
 ### What the hub sends
 

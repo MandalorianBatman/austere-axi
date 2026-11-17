@@ -52,6 +52,8 @@ type FrameMessage = { austere: 1 } & (
   | { type: "writing"; on: boolean }
   // The owner's history (a statement's earlier versions): the playground keeps none, and never sends the counts that show the button.
   | { type: "history"; id: string }
+  // The owner's quick switcher (Ctrl/Cmd+K): the playground's init never asks for it, so the frame never sends it.
+  | { type: "quick-switch" }
 );
 
 /** Messages the page posts to the frame. */

@@ -174,11 +174,19 @@ const content = $("#content");
 const statusEl = $(".status");
 const searchInput = $<HTMLInputElement>(".search input");
 
+const narrow = window.matchMedia("(max-width: 860px)");
+/** On a narrow screen the closed drawer sits off screen: out of Tab order too, until it opens. */
+function syncSide(): void {
+  $(".side").inert = narrow.matches && !document.documentElement.classList.contains("side-open");
+}
 function setSide(open: boolean): void {
   document.documentElement.classList.toggle("side-open", open);
   $(".side-toggle").setAttribute("aria-expanded", String(open));
+  syncSide();
   if (open) $<HTMLElement>(".views a")?.focus();
 }
+narrow.addEventListener("change", syncSide);
+syncSide();
 $(".side-toggle").addEventListener("click", () => setSide(!document.documentElement.classList.contains("side-open")));
 $(".scrim").addEventListener("click", () => setSide(false));
 document.addEventListener("keydown", (e) => {
@@ -331,37 +339,44 @@ function pageRow(p: ShellPage, opts: RowOptions = {}): HTMLElement {
       chips(p.copies),
     ),
   );
-  const archive = h("button", {
+  const archive: HTMLButtonElement = h("button", {
     type: "button",
     class: "btn ghost",
     text: opts.archivedView ? "Unarchive" : "Archive",
     title: opts.archivedView ? "Bring this page back to the lists" : p.copies.length > 1 ? "Put every copy of this page away; its notes are kept" : "Put this page away; its notes are kept",
     "aria-label": `${opts.archivedView ? "Unarchive" : "Archive"} ${titleOf(p)}`,
-    onclick: () => void flip(p, li, opts.archivedView ? "unarchive" : "archive"),
+    onclick: () => void flip(p, archive, opts.archivedView ? "unarchive" : "archive"),
   });
   li.append(h("div", { class: "row-actions" }, archive));
   return li;
 }
 
-async function flip(p: ShellPage, li: HTMLElement, action: "archive" | "unarchive"): Promise<void> {
+async function flip(p: ShellPage, button: HTMLButtonElement, action: "archive" | "unarchive"): Promise<void> {
+  // One request at a time: a second click would archive again and take the first Undo's place.
+  if (button.disabled) return;
+  button.disabled = true;
   const done = await post(`/hub/api/page/${p.open_id}/${action}`);
-  if (!done) return say(`Could not ${action} ${titleOf(p)}. ${UNREACHABLE}`);
-  li.remove();
+  if (!done) {
+    button.disabled = false;
+    return say(`Could not ${action} ${titleOf(p)}. ${UNREACHABLE}`);
+  }
   const undo = action === "archive" ? "unarchive" : "archive";
-  say(
-    `${action === "archive" ? "Archived" : "Unarchived"} ${titleOf(p)}.`,
-    h("button", {
-      type: "button",
-      class: "btn tiny",
-      text: "Undo",
-      // Exactly the copies the action changed: a copy archived before stays archived.
-      onclick: async () => {
-        say((await post(`/hub/api/page/${p.open_id}/${undo}`, { ids: done.ids })) ? "" : `Could not undo. ${UNREACHABLE}`);
-        void refresh();
-        void loadSide();
-      },
-    }),
-  );
+  const undoButton = h("button", {
+    type: "button",
+    class: "btn tiny",
+    text: "Undo",
+    // Exactly the copies the action changed: a copy archived before stays archived.
+    onclick: async () => {
+      if (undoButton.disabled) return;
+      undoButton.disabled = true;
+      say((await post(`/hub/api/page/${p.open_id}/${undo}`, { ids: done.ids })) ? "" : `Could not undo. ${UNREACHABLE}`);
+      void refresh();
+      void loadSide();
+    },
+  });
+  say(`${action === "archive" ? "Archived" : "Unarchived"} ${titleOf(p)}.`, undoButton);
+  // Counts, groups and empty states change with the row: read the view again (the status line stays).
+  void refresh();
   void loadSide();
 }
 

@@ -60,7 +60,7 @@ interface Item {
 }
 
 /** Install the owner's navigation; returns what the chrome calls once the frame has rendered. */
-export function installNav(hooks: NavHooks): { frameReady(): void } {
+export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitcher(): void } {
   const fragment = new URLSearchParams(location.hash.slice(1));
   let part = fragment.get("part");
   if (fragment.has("part") || fragment.has("attach")) {
@@ -111,6 +111,8 @@ export function installNav(hooks: NavHooks): { frameReady(): void } {
   let gen = 0;
   let timer = 0;
   let returnFocus: Element | null = null;
+  /** A search for the current text is on its way: the list shows nothing older. */
+  let searching = false;
 
   function render(): void {
     list.replaceChildren(
@@ -123,7 +125,7 @@ export function installNav(hooks: NavHooks): { frameReady(): void } {
               h("span", { class: "qs-sub", text: it.sub }),
             ),
           )
-        : [h("li", { class: "qs-empty", text: input.value.trim() ? "Nothing matches." : "No other page opened lately. Type to search every page." })]),
+        : [h("li", { class: "qs-empty", text: searching ? "Searching…" : input.value.trim() ? "Nothing matches." : "No other page opened lately. Type to search every page." })]),
     );
     input.setAttribute("aria-activedescendant", items.length ? `qs-${active}` : "");
   }
@@ -148,6 +150,7 @@ export function installNav(hooks: NavHooks): { frameReady(): void } {
     if (!q) {
       items = recentItems();
       active = 0;
+      searching = false;
       return render();
     }
     let data: SearchResponse;
@@ -156,7 +159,10 @@ export function installNav(hooks: NavHooks): { frameReady(): void } {
       if (!r.ok) throw new Error(String(r.status));
       data = (await r.json()) as SearchResponse;
     } catch {
-      if (mine === gen) hooks.flash("Could not reach austere-axi to search.");
+      if (mine !== gen) return;
+      searching = false;
+      render();
+      hooks.flash("Could not reach austere-axi to search.");
       return;
     }
     if (mine !== gen) return;
@@ -169,6 +175,7 @@ export function installNav(hooks: NavHooks): { frameReady(): void } {
       ...data.parts.map((x) => ({ href: open(x.artifact_id, `?part=${encodeURIComponent(x.statement)}`), title: `${x.title || x.file.split(/[\\/]/).pop()} · ${x.statement}`, sub: x.snippet, kind: "part" as const })),
     ];
     active = 0;
+    searching = false;
     render();
   }
 
@@ -189,6 +196,11 @@ export function installNav(hooks: NavHooks): { frameReady(): void } {
 
   input.addEventListener("input", () => {
     clearTimeout(timer);
+    // The results shown are for the old text: drop them (and any answer still on its way) until this one is in.
+    gen++;
+    items = [];
+    searching = true;
+    render();
     timer = window.setTimeout(() => void lookUp(), 150);
   });
   input.addEventListener("keydown", (e) => {
@@ -211,11 +223,14 @@ export function installNav(hooks: NavHooks): { frameReady(): void } {
   dialog.addEventListener("click", (e) => {
     if (e.target === dialog) hide();
   });
+  function toggleSwitcher(): void {
+    if (dialog.hidden) show();
+    else hide();
+  }
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "k" || e.key === "K")) {
       e.preventDefault();
-      if (dialog.hidden) show();
-      else hide();
+      toggleSwitcher();
     }
   });
 
@@ -243,6 +258,7 @@ export function installNav(hooks: NavHooks): { frameReady(): void } {
   hooks.menu.prepend(goto, next);
 
   return {
+    toggleSwitcher,
     frameReady() {
       if (!part) return;
       hooks.highlight([part]);
