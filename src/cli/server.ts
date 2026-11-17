@@ -5,6 +5,7 @@
 //   /s/:id/events server-sent events for the chrome
 //   /__austere/*  runtime, bundled packs, chrome assets
 //   /__austere/installed-packs/<name@version>/pack.js  packs from `components add`
+import { spawn } from "node:child_process";
 import { resolveSibling } from "./assets.ts";
 import fs from "node:fs";
 import http from "node:http";
@@ -19,15 +20,21 @@ import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
 import { SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
-import { parseCallerReport, registerSession } from "./agent-sessions.ts";
+import { listSessions, liveness, parseCallerReport, registerSession, shortId } from "./agent-sessions.ts";
 import type { CallerReport, SessionAction } from "./agent-sessions.ts";
+import type { Liveness } from "./caller.ts";
 import { detectSupervisor } from "./service.ts";
 import type { Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub, activeWorkNow } from "./hub.ts";
-import { Dispatcher } from "./dispatch.ts";
-import type { RunEvent } from "./dispatch.ts";
-import { autoConflict, effectiveAttach } from "./attach.ts";
+import { Dispatcher, getRun, listRuns, logTail, summary } from "./dispatch.ts";
+import type { RunEvent, RunSummary } from "./dispatch.ts";
+import { AttachRefused, attachReport, authorOf, autoConflict, changeSetting, effectiveAttach, harnessInfos, isAttachMode, resolveSessionValue, scopeIds } from "./attach.ts";
+import type { AttachFields, AttachSettingRow, AttachState, EffectiveAttach, HarnessInfo } from "./attach.ts";
+import { adapterFor, findOnPath } from "./adapters/index.ts";
+import { readAdapters } from "./adapters/config.ts";
+import type { AdaptersConfig } from "./adapters/config.ts";
+import type { AttachMode } from "./adapters/types.ts";
 import { copyLabel, findProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
@@ -179,6 +186,60 @@ export interface LoginResponse {
 export interface RunStopResponse {
   ok: true;
   stopped: number;
+}
+
+/** GET /s/:id/runs (RLM-346): the page's runs, the newest first. */
+export interface RunsResponse {
+  runs: RunSummary[];
+}
+
+/** GET /s/:id/run/:runId/log: the last lines of a run's log. */
+export interface RunLogResponse {
+  run: RunSummary;
+  tail: string[];
+}
+
+/** GET /s/:id/attach (RLM-346): what the owner's attach popover shows. */
+export interface AttachInfo {
+  effective: EffectiveAttach;
+  /** The page's own row (shared by every copy, A19), and the project's. */
+  page: AttachSettingRow | null;
+  project: { id: string; name: string; setting: AttachSettingRow | null } | null;
+  /** Where a run would go now; `session` is the short id of the session it resumes or forks, null for a new one. */
+  target: { mode: AttachMode; harness: string; session: string | null };
+  /** The page's author session, which `author` resolves to (Q11). */
+  author: { id: string; harness: string; short: string } | null;
+  /** The agent sessions registered for this copy (RLM-343). */
+  sessions: { id: string; harness: string; short: string; roles: string[]; lastSeen: number; liveness: Liveness }[];
+  /** Every adapter by name; omp's model list when `omp models` answered in time. */
+  harnesses: Record<string, HarnessInfo & { models?: string[] }>;
+  run: RunSummary | null;
+  /** The size of the session file a same or fork run resends, when known. */
+  sessionFileSize: number | null;
+  warnings: string[];
+  auto: string | null;
+}
+
+/** How many lines of a run's log "View log" shows. */
+const LOG_TAIL_LINES = 200;
+
+/** The chat model selectors in `omp models --json` output (`{ models: [{ selector, kind }] }`), or null. */
+function modelSelectors(json: string): string[] | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== "object" || !("models" in data) || !Array.isArray(data.models)) return null;
+  const names: string[] = [];
+  for (const m of data.models as unknown[]) {
+    if (!m || typeof m !== "object" || !("selector" in m) || typeof m.selector !== "string" || m.selector.length > 200) continue;
+    if ("kind" in m && m.kind !== "chat") continue;
+    names.push(m.selector);
+    if (names.length >= 500) break;
+  }
+  return names.length ? names : null;
 }
 
 /** Who is asking for a page: the owner, or a team reviewer with a valid invite. */
@@ -533,11 +594,114 @@ export async function runServer({
   }
 
   /** An event for the owner's review pages of a copy only, never a reviewer's. */
-  function broadcastOwners(id: string, event: string, data: RunEvent): void {
+  function broadcastOwners(id: string, event: "run" | "attach", data: RunEvent | Record<string, never>): void {
     const set = clients.get(id);
     if (!set) return;
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const c of Array.from(set)) if (c.viewer.role === "owner") sseWrite(set, c, msg);
+  }
+
+  /** `omp models` for the popover's model list (ompModels). */
+  let modelCache: { at: number; models: string[] | null; pending: Promise<string[] | null> | null } = { at: 0, models: null, pending: null };
+
+  /** What the owner's attach popover shows for a copy (RLM-346). A malformed adapters.json is a warning here, not an error. */
+  async function attachInfo(s: Session): Promise<AttachInfo> {
+    let cfg: AdaptersConfig = { extraArgs: {}, commands: {} };
+    let configError: string | null = null;
+    try {
+      cfg = readAdapters();
+    } catch (err) {
+      configError = (err as Error).message;
+    }
+    const report = attachReport(store.db, s.id, s.file, invites.list(), cfg);
+    const harnesses: AttachInfo["harnesses"] = harnessInfos(cfg);
+    if (harnesses.omp?.found) {
+      const models = await ompModels();
+      if (models) harnesses.omp.models = models;
+    }
+    const author = authorOf(store.db, s.id);
+    const session = report.target.session;
+    let sessionFileSize: number | null = null;
+    if (session?.session_file && report.target.mode !== "new") {
+      try {
+        sessionFileSize = fs.statSync(session.session_file).size;
+      } catch {
+        // gone, or not readable here
+      }
+    }
+    const last = listRuns(store.db, { artifactId: s.id }, 1)[0];
+    return {
+      effective: report.effective,
+      page: report.page,
+      project: report.project,
+      target: { mode: report.target.mode, harness: report.target.harness, session: session ? shortId(session.session_id) : null },
+      author: author ? { id: author.id, harness: author.harness, short: shortId(author.session_id) } : null,
+      sessions: listSessions(store.db, { artifactId: s.id }).map((p) => ({
+        id: p.session.id,
+        harness: p.session.harness,
+        short: shortId(p.session.session_id),
+        roles: p.roles,
+        lastSeen: p.session.last_seen,
+        liveness: liveness(p.session),
+      })),
+      harnesses,
+      run: last ? summary(last) : null,
+      sessionFileSize,
+      warnings: configError ? [configError, ...report.warnings] : report.warnings,
+      auto: report.auto,
+    };
+  }
+
+  /**
+   * omp's model selectors from `omp models --json`, cached for ten minutes. A request waits at most
+   * a second: a slow answer fills the cache for the next one. Null when omp gave none.
+   */
+  function ompModels(): Promise<string[] | null> {
+    const cache = modelCache;
+    if (cache.pending) {
+      const waited = Promise.withResolvers<string[] | null>();
+      setTimeout(() => waited.resolve(cache.models), 1000).unref();
+      return Promise.race([cache.pending, waited.promise]);
+    }
+    if (cache.at && Date.now() - cache.at < 10 * 60_000) return Promise.resolve(cache.models);
+    const bin = findOnPath("omp");
+    if (!bin) return Promise.resolve(null);
+    const listed = Promise.withResolvers<string[] | null>();
+    const child = spawn(bin, ["models", "--json"], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, timeout: 15_000 });
+    let out = "";
+    child.stdout.on("data", (c: Buffer) => {
+      if (out.length < 4 * 1024 * 1024) out += c.toString("utf8");
+    });
+    child.on("error", () => listed.resolve(null));
+    child.on("close", () => listed.resolve(modelSelectors(out)));
+    cache.pending = listed.promise.then((models) => {
+      modelCache = { at: Date.now(), models, pending: null };
+      return models;
+    });
+    return ompModels();
+  }
+
+  /** The body of POST /s/:id/attach, or why it is malformed. */
+  function parseAttachChange(body: Record<string, unknown>): { state: AttachState; fields: AttachFields } | string {
+    const state = body.state;
+    if (state !== "on" && state !== "off" && state !== "inherit") return "state must be on, off or inherit";
+    const fields: AttachFields = {};
+    if (body.mode !== undefined && body.mode !== null) {
+      if (!isAttachMode(body.mode)) return "mode must be same, fork or new";
+      fields.mode = body.mode;
+    }
+    for (const key of ["session", "harness"] as const) {
+      const v = body[key];
+      if (v === undefined || v === null) continue;
+      if (typeof v !== "string" || !v || v.length > 200) return `${key} must be a non-empty string`;
+      fields[key] = v;
+    }
+    if (body.model !== undefined) {
+      const m = body.model;
+      if (m !== null && (typeof m !== "string" || m.length > 200 || /[\s\0-\x1f]/.test(m))) return "model must be a name without spaces, or empty";
+      fields.model = m || null;
+    }
+    return { state, fields };
   }
 
   function broadcastPresence(s: Session): void {
@@ -1557,10 +1721,54 @@ export async function runServer({
       setArchived(s.file, sub === "/archive" ? Date.now() : null);
       return send(res, 200, { ok: true });
     }
+    // The attach popover and the run panel (RLM-346): the owner's only, as reviewers are refused above.
+    // A GET from a foreign Origin is refused too: it lists the page's agent sessions.
+    if ((sub === "/attach" || sub === "/runs" || sub.startsWith("/run/")) && !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
     if (sub === "/run/stop" && req.method === "POST") {
-      // The owner's only: reviewers are refused above, and a foreign Origin before that.
       const stopped = await dispatcher.stop(s.id);
       return send(res, 200, { ok: true, stopped } satisfies RunStopResponse);
+    }
+    if (sub === "/run/retry" && req.method === "POST") {
+      // Retry is the owner's act: a failed run is never retried on its own.
+      const r = dispatcher.retry(s.id);
+      if ("error" in r) return send(res, 409, { error: r.error });
+      return send(res, 200, { ok: true, run: summary(r.run) });
+    }
+    const logRoute = /^\/run\/(r[a-f0-9]{12})\/log$/.exec(sub);
+    if (logRoute && req.method === "GET") {
+      const row = getRun(store.db, logRoute[1]);
+      if (!row || row.artifact_id !== s.id) return send(res, 404, { error: "no such run on this page" });
+      return send(res, 200, { run: summary(row), tail: logTail(row.log_file, LOG_TAIL_LINES) } satisfies RunLogResponse);
+    }
+    if (sub === "/runs" && req.method === "GET") {
+      const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit")) || 20));
+      return send(res, 200, { runs: listRuns(store.db, { artifactId: s.id }, limit).map(summary) } satisfies RunsResponse);
+    }
+    if (sub === "/attach" && req.method === "GET") return send(res, 200, await attachInfo(s));
+    if (sub === "/attach" && req.method === "POST") {
+      const body = await readBody(req, 4096);
+      const change = parseAttachChange(body);
+      if (typeof change === "string") return send(res, 400, { error: change });
+      let cfg: AdaptersConfig;
+      try {
+        cfg = readAdapters();
+        if (change.fields.harness !== undefined && !adapterFor(change.fields.harness, cfg)) return send(res, 400, { error: `no adapter named ${change.fields.harness}` });
+        if (change.fields.session !== undefined) change.fields.session = resolveSessionValue(store.db, change.fields.session);
+      } catch (err) {
+        return send(res, 400, { error: (err as Error).message });
+      }
+      try {
+        changeSetting(store.db, { page: { artifactId: s.id, file: s.file } }, change.state, change.fields, cfg, invites.list());
+      } catch (err) {
+        if (err instanceof AttachRefused) return send(res, 409, { error: err.message, code: err.code });
+        throw err;
+      }
+      // Every copy of the page shares its setting (A19): their owner tabs look again.
+      const { page } = scopeIds(store.db, s.id);
+      const copies = store.db.prepare("SELECT id FROM artifacts WHERE page_id = ? OR id = ?").all(page, s.id) as { id: string }[];
+      for (const c of copies) broadcastOwners(c.id, "attach", {});
+      log("attach", s.id, change.state);
+      return send(res, 200, await attachInfo(s));
     }
     if (sub === "/presence" && req.method === "POST") {
       // The owner's own status and focus for the hosted page's viewers; nothing happens when the file is not published.

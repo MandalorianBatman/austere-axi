@@ -419,6 +419,24 @@ export class Dispatcher {
     return rows.length;
   }
 
+  /**
+   * The owner retries the page's last run when it failed: its notes are queued once more, with no
+   * debounce. Retry is the owner's act only; a failed run is never retried on its own. Returns the
+   * new run, or why there is nothing to retry.
+   */
+  retry(artifactId: string): { run: RunRow } | { error: string } {
+    if (this.closed) return { error: "the server is stopping" };
+    if (effectiveAttach(this.db, artifactId).state !== "on") return { error: "attach is off for this page: turn it on first" };
+    const last = this.db.prepare("SELECT * FROM runs WHERE artifact_id = ? ORDER BY rowid DESC LIMIT 1").get(artifactId) as unknown as RunRow | undefined;
+    if (!last || last.status !== "failed") return { error: last ? `the last run is ${last.status}, not failed` : "this page has no run yet" };
+    const id = newRunId();
+    this.db.prepare("INSERT INTO runs (id, kind, artifact_id, project_id, seq_from, seq_to, status) VALUES (?, 'note', ?, ?, ?, ?, 'queued')").run(id, artifactId, last.project_id, last.seq_from, last.seq_to);
+    this.readyAt.delete(artifactId);
+    this.emit(id, { message: `Retrying run ${last.id}.` });
+    setImmediate(() => this.pump());
+    return { run: getRun(this.db, id) as RunRow };
+  }
+
   // ── scheduling ──
 
   /** End a run that is not running now, with its reason in its log and in the event. */

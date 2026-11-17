@@ -220,6 +220,22 @@ const TOOLS: Record<string, Tool> = {
     required: ["id"],
     run: (a) => [{ args: ["run", "log", "--", a.id] }],
   },
+  attach_status: {
+    title: "Attach setting of a page",
+    description:
+      "Whether an agent is attached to a page (a note the owner sends or releases starts the page's harness headless) and what would stop a run: the setting that applies (the page's, else its project's, else off) and where it comes from, the mode, the session a run resumes, the harness, the model, the last run, and warnings such as a harness without the write grant. Read-only: only the user turns attach on or off, at a terminal or from the review page. Pass a file for one page, or a project (a name, an id or a folder) for its default.",
+    readOnly: true,
+    properties: {
+      file: { type: "string", description: "Path of the .html page. Leave out to show a project's default. Use an absolute path." },
+      project: { type: "string", description: "The project to show when no file is given: a name, an id, or a folder inside one of its roots." },
+    },
+    reject: (a) => {
+      if (typeof a.file === "string" && typeof a.project === "string") return "pass a file or a project, not both";
+      if (typeof a.file !== "string" && typeof a.project !== "string") return "pass a file, or a project to show its default";
+      return null;
+    },
+    run: (a) => [{ args: typeof a.project === "string" ? ["attach", "status", "--project", a.project] : ["attach", "status", "--", a.file] }],
+  },
 };
 
 /** Run the CLI once; resolves with what it printed and its exit code. */

@@ -31,6 +31,14 @@ export const isHarness = (v: string): v is HarnessId => (HARNESSES as readonly s
  */
 export const DEFAULT_EXTRA_ARGS: Record<HarnessId, string[]> = { omp: [], copilot: [] };
 
+/** The owner's extra arguments that grant a harness's runs the right to write (A13): what `attach status` and the attach popover tell the user to set. */
+export const GRANT_ARGS: Record<HarnessId, string> = { omp: "--approval-mode yolo", copilot: "--allow-all" };
+
+/** The terminal command that grants `harness` the right to write. */
+export function grantCommand(harness: HarnessId): string {
+  return `austere-axi adapter set ${harness} --extra-args "${GRANT_ARGS[harness]}"`;
+}
+
 const FORMAT = 1;
 /** A command adapter's name: also how attach settings will name it. */
 const COMMAND_NAME = /^[a-z][a-z0-9-]{0,31}$/;

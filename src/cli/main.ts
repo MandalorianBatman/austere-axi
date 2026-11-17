@@ -12,6 +12,7 @@ import { ensureServer, health, loginUrl, openBrowser, probePort, request, server
 import { Hub, hubDbFile, registerWithHub, unanswered } from "./hub.ts";
 import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, copyLabel, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
+import type { ProjectRow } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
 import { lockStateDir } from "./lock.ts";
 import { installService, installedServiceFor, serviceContext, serviceStatus, uninstallService } from "./service.ts";
@@ -37,11 +38,12 @@ import { callerProcess, detectCaller, parseSessionOverride } from "./caller.ts";
 import { callerReport, listSessions, liveness, registerSession, registerWithHubDb, shortId } from "./agent-sessions.ts";
 import type { CallerReport, PageSession } from "./agent-sessions.ts";
 import { adapterFor, ADAPTERS, capabilitiesOf, findOnPath } from "./adapters/index.ts";
-import { adaptersFile, extraArgsFor, HARNESSES, hasWriteGrant, isCommandName, isHarness, readAdapters, shellJoin, shellWords, writeAdapters } from "./adapters/config.ts";
+import { adaptersFile, extraArgsFor, grantCommand, HARNESSES, hasWriteGrant, isCommandName, isHarness, readAdapters, shellJoin, shellWords, writeAdapters } from "./adapters/config.ts";
 import type { AdaptersConfig } from "./adapters/config.ts";
 import type { Capability } from "./adapters/types.ts";
 import { LOOKS_RULE } from "./agent-prompt.ts";
-import { effectiveAttach } from "./attach.ts";
+import { adapterWarnings, attachReport, changeSetting, effectiveAttach, isAttachMode, readSetting, resolveSessionValue, resolveSetting } from "./attach.ts";
+import type { AttachFields, AttachSettingRow, AttachState } from "./attach.ts";
 import { getRun, listRuns, readRunLog } from "./dispatch.ts";
 import type { ListedRun } from "./dispatch.ts";
 
@@ -137,6 +139,7 @@ COMMANDS
   ${BIN} feedback [file]         notes no agent has answered yet (no file: the whole project)   [--all] [--peek]
   ${BIN} sessions list [file]    agent sessions that opened, patched or listened to a page (no file: the project)
   ${BIN} run list [file]         runs of the attached agent on a page (no file: the project); run log <id>, run stop <file>
+  ${BIN} attach status [file]    whether an agent runs on the owner's notes for a page, and what would stop it (the user turns it on)
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} trust list              packs and scopes the user lets you add without --trust
@@ -240,6 +243,19 @@ const COMMANDS: Record<string, CommandSpec> = {
       "the agent sessions that opened, patched, polled, replied to or read the feedback of a page: harness, short id, role (author: opened or patched it first; editor: opened or patched it later; listener), last seen, and whether its harness process still runs (alive, exited, unknown). With no file: every page of the project (the folder you run it in, or --project)",
     flags: { project: "the project to list when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)" },
     example: "sessions list plan.html",
+  },
+  attach: {
+    usage: "attach status [file] [--project p] | attach on|off [file] [--project p] [--mode m] [--session s] [--harness h] [--model x] | attach inherit <file>",
+    summary:
+      "whether an agent is attached to a page: with attach on, a note the owner sends or releases starts the page's harness headless (see run). status works anywhere and changes nothing: the setting that applies (the page's, else its project's, else off) and where it comes from, the mode, the session a run resumes, the harness, the model, the last run, and warnings (no write grant: runs cannot patch the page). on, off and inherit (the page back to its project's default) are the user's: at a terminal only, or from the review page. With no file: the project of the current folder (or --project)",
+    flags: {
+      project: "the project to show or set when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)",
+      mode: "on/off: same (resume the session), fork (branch from it) or new (a fresh session, kept for the page's later runs)",
+      session: "on/off: author (the session that wrote the page; the default) or a session's short or full id from sessions list",
+      harness: "on/off: omp, copilot or a command adapter's name; runs a new session with it (default: the project's, else omp)",
+      model: 'on/off: the model runs use (default: the harness\'s own); "" clears it',
+    },
+    example: "attach status plan.html   |   attach on plan.html --mode fork",
   },
   run: {
     usage: "run list [file] [--project p] | run log <id> | run stop <file>",
@@ -364,12 +380,12 @@ const COMMANDS: Record<string, CommandSpec> = {
     },
     example: "server install --link-url https://austere.example.com",
   },
-  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch components sessions_list run_list run_log as tools", flags: {}, example: "mcp" },
+  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch components sessions_list run_list run_log attach_status as tools", flags: {}, example: "mcp" },
   help: { usage: "help [command]", summary: "the full workflow, or one command's help", flags: {}, example: "help poll" },
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "session", "extra-args", "command"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "session", "extra-args", "command", "mode", "model", "harness"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -1196,7 +1212,7 @@ function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void
     case "list":
       return print({
         ...adapterListing(cfg),
-        note: `No adapter grants write permission by default: without it a run cannot use \`${BIN} patch\` (omp and Copilot deny it and still exit 0). The user grants it at a terminal: \`${BIN} adapter set omp --extra-args "--approval-mode yolo"\`, \`${BIN} adapter set copilot --extra-args "--allow-all"\`.`,
+        note: `No adapter grants write permission by default: without it a run cannot use \`${BIN} patch\` (omp and Copilot deny it and still exit 0). The user grants it at a terminal: \`${grantCommand("omp")}\`, \`${grantCommand("copilot")}\`.`,
       });
     case "set": {
       const name = args[0];
@@ -1568,14 +1584,7 @@ async function cmdSessions(sub: string | undefined, args: string[], flags: Flags
       scope = { file: abs };
       rows = listSessions(hub.db, { artifactId: sessionId(abs) });
     } else {
-      const project = findProject(hub.db, typeof flags.project === "string" ? flags.project : process.cwd());
-      if (!project) {
-        throw new Error(
-          typeof flags.project === "string"
-            ? `no project ${flags.project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`
-            : `no project holds this folder (${process.cwd()}): name a page file, or a project with --project`,
-        );
-      }
+      const project = projectScope(hub, flags);
       scope = { project: project.name };
       rows = listSessions(hub.db, { projectId: project.id });
     }
@@ -1598,6 +1607,17 @@ async function cmdSessions(sub: string | undefined, args: string[], flags: Flags
       })),
     });
   });
+}
+
+/** The project a command without a file works on: `--project`, else the one holding the current folder. Throws when there is none. */
+function projectScope(hub: Hub, flags: Flags): ProjectRow {
+  const project = findProject(hub.db, typeof flags.project === "string" ? flags.project : process.cwd());
+  if (project) return project;
+  throw new Error(
+    typeof flags.project === "string"
+      ? `no project ${flags.project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`
+      : `no project holds this folder (${process.cwd()}): name a page file, or a project with --project`,
+  );
 }
 
 /** `run list [<file>|--project p] | run log <id> | run stop <file>`: the attached agent's runs (RLM-345). */
@@ -1637,14 +1657,7 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       scope = { file: abs };
       rows = listRuns(hub.db, { artifactId: sessionId(abs) });
     } else {
-      const project = findProject(hub.db, typeof flags.project === "string" ? flags.project : process.cwd());
-      if (!project) {
-        throw new Error(
-          typeof flags.project === "string"
-            ? `no project ${flags.project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`
-            : `no project holds this folder (${process.cwd()}): name a page file, or a project with --project`,
-        );
-      }
+      const project = projectScope(hub, flags);
       scope = { project: project.name };
       rows = listRuns(hub.db, { projectId: project.id });
     }
@@ -1663,6 +1676,125 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       })),
       next: `${BIN} run log <id> shows what a run printed.`,
     });
+  });
+}
+
+// ── attach (RLM-346) ──
+
+/** What `attach status` prints for one copy: the setting that applies, where it comes from, where a run would go, and what would stop it. */
+function attachStatusOf(hub: Hub, abs: string, cfg: AdaptersConfig): Printed {
+  const id = sessionId(abs);
+  const r = attachReport(hub.db, id, abs, new InviteStore(stateDir()).list(), cfg);
+  const e = r.effective;
+  const t = r.target;
+  const named = t.session ? `${t.session.harness} ${shortId(t.session.session_id)}` : null;
+  const session = e.session === "author" ? (named ? `author: ${named}` : "author: none registered, so a run starts a new session") : named ? named : `${e.session} is no longer registered, so a run starts a new session`;
+  const last = listRuns(hub.db, { artifactId: id }, 1)[0];
+  return {
+    file: abs,
+    attach: e.state,
+    from: e.source === "project" ? `project ${r.project?.name ?? ""}`.trim() : e.source === "page" ? "page" : "default (off)",
+    mode: t.mode === e.mode ? e.mode : `${e.mode} (runs as ${t.mode}: no session to ${e.mode === "same" ? "resume" : "fork"})`,
+    session: t.mode === "new" && e.mode === "new" ? "new (the first run's session is kept for the next)" : session,
+    harness: t.harness,
+    model: e.model ?? "the harness's default",
+    page_setting: r.page?.state ?? "none",
+    project_setting: r.project ? `${r.project.setting?.state ?? "none"} (${r.project.name})` : "none",
+    last_run: last ? `${last.status}${last.reason ? ` (${last.reason})` : ""}, ${last.id}${last.started_at === null ? "" : `, ${shortDate(last.started_at)}`}` : "none",
+    not_in_hub: hub.artifact(id) ? undefined : "this file was never opened or checked: it has no page row yet",
+    warnings: r.warnings.length ? r.warnings : undefined,
+    next:
+      e.state === "on"
+        ? `A note the owner sends or releases on the page starts a run. ${BIN} run list ${quote(abs)} shows them.`
+        : `Only the user turns attach on: at a terminal (\`${BIN} attach on ${quote(abs)}\`) or from the Agent pill on the review page.`,
+  };
+}
+
+/** What `attach status --project` prints: the project's default for its pages. */
+function attachProjectStatus(project: ProjectRow, row: AttachSettingRow | null, cfg: AdaptersConfig): Printed {
+  const e = resolveSetting(null, row);
+  const warnings = adapterWarnings(e, cfg);
+  return {
+    project: project.name,
+    attach: row ? row.state : "none (pages without their own setting are off)",
+    mode: e.mode,
+    session: e.session === "author" ? "author (each page's own author; none registered: a new session)" : e.session,
+    harness: e.harness,
+    model: e.model ?? "the harness's default",
+    warnings: warnings.length ? warnings : undefined,
+    next: `A page's own setting wins over this one: ${BIN} attach status <file>.`,
+  };
+}
+
+/** `attach status [<file>|--project p]` (anywhere, read-only) and `attach on|off [<file>|--project p]`, `attach inherit <file>` (the owner's, at a terminal only, Q4). */
+async function cmdAttach(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
+  const verb = sub ?? "status";
+  if (!["status", "on", "off", "inherit"].includes(verb)) return usage(`unknown attach command: ${verb}. One of: status, on, off, inherit`, "attach");
+  if (args.length > 1) return usage(`attach ${verb} takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`, "attach");
+  const file = args[0];
+  const project = typeof flags.project === "string" ? flags.project : undefined;
+  if (file !== undefined && project !== undefined) return usage(`attach ${verb} takes a file or --project, not both`, "attach");
+  const given = (["mode", "session", "harness", "model"] as const).filter((k) => flags[k] !== undefined);
+  if ((verb === "status" || verb === "inherit") && given.length) return usage(`attach ${verb} takes no --${given[0]}`, "attach");
+  if (verb === "inherit" && file === undefined) return usage(`attach inherit takes a file: ${BIN} attach inherit <file> (the page goes back to its project's default)`, "attach");
+  let cfg: AdaptersConfig;
+  try {
+    cfg = readAdapters();
+  } catch (err) {
+    return fail(messageOf(err));
+  }
+
+  if (verb === "status") {
+    return withHub((hub) => {
+      if (file !== undefined) return print(attachStatusOf(hub, canonicalFile(file), cfg));
+      const p = projectScope(hub, flags);
+      print(attachProjectStatus(p, readSetting(hub.db, "project", p.id), cfg));
+    });
+  }
+
+  const fields: AttachFields = {};
+  const value = (k: "mode" | "session" | "harness" | "model"): string | undefined => (typeof flags[k] === "string" ? flags[k] : undefined);
+  const mode = value("mode");
+  if (mode !== undefined) {
+    if (!isAttachMode(mode)) return usage(`--mode is same, fork or new; it got ${JSON.stringify(mode)}`, "attach");
+    fields.mode = mode;
+  }
+  const session = value("session");
+  if (session !== undefined) {
+    if (!session) return usage("--session is author, or a session's short or full id (see sessions list)", "attach");
+    fields.session = session;
+  }
+  const harness = value("harness");
+  if (harness !== undefined) {
+    if (!isHarness(harness) && !isCommandName(harness)) return usage(`--harness is ${HARNESSES.join(", ")} or a command adapter's name; it got ${JSON.stringify(harness)}`, "attach");
+    fields.harness = harness;
+  }
+  const model = value("model");
+  if (model !== undefined) {
+    if (/[\s\0-\x1f]/.test(model) || model.length > 200) return usage("--model is one model name, without spaces (\"\" clears it)", "attach");
+    fields.model = model || null;
+  }
+  // Attach decides what runs on this machine, unattended (Q4): only the user at a terminal, or the owner's review page, sets it.
+  if (!process.stdin.isTTY) {
+    const words = ["attach", verb, ...(file !== undefined ? [file] : []), ...(project !== undefined ? ["--project", project] : []), ...given.flatMap((k) => [`--${k}`, String(flags[k])])];
+    return usage(`attach ${verb} needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${shellJoin(words)}\` themselves, or to use the Agent pill on the page's review tab.`, "attach");
+  }
+  if (fields.harness !== undefined && !adapterFor(fields.harness, cfg)) return fail(`no adapter named ${fields.harness}: set one with \`${BIN} adapter set ${fields.harness} --command "<bin> <args…>"\``);
+  return withHub((hub) => {
+    if (fields.session !== undefined) fields.session = resolveSessionValue(hub.db, fields.session);
+    const invites = new InviteStore(stateDir()).list();
+    if (file === undefined) {
+      const p = projectScope(hub, flags);
+      const row = changeSetting(hub.db, { projectId: p.id }, verb as AttachState, fields, cfg, invites);
+      return print({ status: `project ${verb}`, ...attachProjectStatus(p, row, cfg) });
+    }
+    const abs = canonicalFile(file);
+    if (!fs.existsSync(abs)) throw new Error(`no such file: ${abs}`);
+    const id = sessionId(abs);
+    // The page row is keyed by the page (A19): a file the hub never saw gets its row first.
+    if (!hub.artifact(id)) hub.register({ id, file: abs, title: null });
+    changeSetting(hub.db, { page: { artifactId: id, file: abs } }, verb as AttachState, fields, cfg, invites);
+    print({ status: verb === "inherit" ? "inherit (the project's default)" : verb, ...attachStatusOf(hub, abs, cfg) });
   });
 }
 
@@ -1965,6 +2097,8 @@ async function main(): Promise<unknown> {
       return cmdArchive(rest[0], false);
     case "patch":
       return cmdPatch(rest[0], flags);
+    case "attach":
+      return cmdAttach(rest[0], rest.slice(1), flags);
     case "run":
       return cmdRun(rest[0], rest.slice(1), flags);
     case "sessions":

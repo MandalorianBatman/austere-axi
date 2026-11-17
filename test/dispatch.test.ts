@@ -199,7 +199,7 @@ intro = TextContent("hello")
   return { file, id: (JSON.parse(r.data) as { session: { id: string } }).session.id };
 }
 
-/** Attach on for the page, as RLM-346 will write it. */
+/** Attach on for the page: the page row `attach on` and the Agent pill write (keyed by `pages.id`, A19). */
 function attach(id: string, fields: { state?: string; mode?: string; session?: string; harness?: string } = {}): void {
   const [{ page_id }] = query<{ page_id: string }>("SELECT page_id FROM artifacts WHERE id = ?", id);
   exec(

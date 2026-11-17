@@ -121,6 +121,69 @@ interface ChangedEvent {
   thirdPartyPacks?: string[];
 }
 
+/** A run of the attached agent, as the server sums it up (RunSummary in src/cli/dispatch.ts). */
+interface RunSummary {
+  id: string;
+  status: "queued" | "waiting_for_session" | "running" | "done" | "failed" | "stopped" | "interrupted";
+  reason: string | null;
+  mode: string | null;
+  harness: string | null;
+  model: string | null;
+  started_at: number | null;
+  ended_at: number | null;
+}
+
+/** The owner's `run` event. */
+interface RunEvent {
+  run: RunSummary;
+  message?: string;
+  tail?: string[];
+}
+
+/** A run's start or end in the Conversation panel. */
+interface RunMark {
+  id: string;
+  at: number;
+  text: string;
+  tone: "start" | "done" | "failed" | "stopped";
+}
+
+type AttachModeId = "same" | "fork" | "new";
+type Capability = { ok: true } | { ok: false; reason: string };
+
+/** A row of attach_settings. */
+interface AttachRow {
+  state: "on" | "off" | "inherit";
+  mode: AttachModeId | null;
+  session: string | null;
+  harness: string | null;
+  model: string | null;
+}
+
+/** GET /s/:id/attach (AttachInfo in src/cli/server.ts). */
+interface AttachInfo {
+  effective: { state: "on" | "off"; source: "page" | "project" | "default"; mode: AttachModeId; session: string; harness: string; model: string | null };
+  page: AttachRow | null;
+  project: { name: string; setting: AttachRow | null } | null;
+  target: { mode: AttachModeId; harness: string; session: string | null };
+  author: { id: string; harness: string; short: string } | null;
+  sessions: { id: string; harness: string; short: string; roles: string[]; lastSeen: number; liveness: string }[];
+  harnesses: Record<string, { found: boolean; capabilities: Record<AttachModeId | "model", Capability>; writeGrant: boolean; grantCommand?: string; models?: string[] }>;
+  run: RunSummary | null;
+  sessionFileSize: number | null;
+  warnings: string[];
+  auto: string | null;
+}
+
+/** What the popover changes: the state, or one field of the page's own row. */
+interface AttachChange {
+  state?: AttachRow["state"];
+  mode?: AttachModeId;
+  session?: string;
+  harness?: string;
+  model?: string | null;
+}
+
 interface ItemOptions {
   queued?: boolean;
   held?: boolean;
@@ -319,6 +382,8 @@ const state: {
   editing: null,
   links: null,
 };
+/** The owner's Conversation entries for runs (RLM-346), by `<run id>:start|end`: from the `run` events and `/runs`, never stored. */
+const runMarks = new Map<string, RunMark>();
 
 // ── markup ──
 
@@ -352,6 +417,11 @@ document.body.innerHTML = `
     </div>
     <div class="bar-right">
       <span class="viewers" role="group" aria-label="On this page" hidden></span>
+      <div class="attach">
+        <button type="button" class="attach-pill" aria-haspopup="dialog" aria-expanded="false" title="Attach an agent to this page"><span class="attach-dot"></span><span class="attach-label">Agent: <span class="attach-detail">Off</span><span class="attach-short">Off</span></span></button>
+        <span class="run-state" hidden></span>
+        <div class="attach-pop" role="dialog" aria-label="Agent on this page" hidden></div>
+      </div>
       <span class="presence"></span>
       <div class="menu">
         <button type="button" class="icon-btn menu-btn" aria-label="More">⋯</button>
@@ -401,7 +471,7 @@ document.body.innerHTML = `
 // RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
 // from all of them (RLM-322).
 if (!OWNER) {
-  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end"];
+  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach"];
   if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
   for (const sel of ownerOnly) $(sel)?.remove();
 }
@@ -931,8 +1001,14 @@ function renderLog(scrollToEnd = false) {
       ),
     );
   }
-  for (const entry of entries) {
-    if (entry.role === "agent") {
+  // The owner's run marks (RLM-346) sit among the entries by time; with older entries not loaded yet, older marks wait too.
+  const since = state.more ? (entries[0]?.at ?? 0) : 0;
+  const marks = OWNER ? [...runMarks.values()].filter((m) => m.at >= since) : [];
+  const rows: (Entry | RunMark)[] = marks.length ? [...entries, ...marks].sort((a, b) => a.at - b.at) : entries;
+  for (const entry of rows) {
+    if ("tone" in entry) {
+      log.append(h("div", { class: `run-mark ${entry.tone}` }, h("span", { text: entry.text }), h("time", { text: fmtTime(entry.at) })));
+    } else if (entry.role === "agent") {
       log.append(
         h(
           "div",
@@ -989,7 +1065,7 @@ function renderLog(scrollToEnd = false) {
   if (state.archived) {
     log.append(h("div", { class: "archived-note", text: OWNER ? "This page is archived. Unarchive it from the ⋯ menu to add notes." : "The owner archived this page." }));
   }
-  const count = entries.length + state.queue.length;
+  const count = rows.length + state.queue.length;
   if (scrollToEnd || atBottom || count !== lastLogCount) log.scrollTop = log.scrollHeight;
   lastLogCount = count;
   renderComposer();
@@ -1179,7 +1255,8 @@ function renderPresence() {
   else if (state.presence === "working") [label, cls] = ["Agent working", "working"];
   else [label, cls] = ["Agent not listening", "idle"];
   if (cls === "idle" && state.unread) label += ` · ${state.unread} waiting`;
-  el.className = `presence ${cls}`;
+  // With an agent attached, "not listening" says nothing: the Agent pill tells what runs.
+  el.className = `presence ${cls}${cls === "idle" && attach.info?.effective.state === "on" ? " attached" : ""}`;
   el.textContent = label;
   el.title =
     cls === "idle"
@@ -1250,6 +1327,7 @@ function loadAgentPrompt(): Promise<string> {
 $(".menu-btn").addEventListener("click", (e) => {
   e.stopPropagation();
   menuPop.hidden = !menuPop.hidden;
+  if (attachPop) closeAttach();
   if (!menuPop.hidden && OWNER) void loadAgentPrompt();
 });
 document.addEventListener("click", () => (menuPop.hidden = true));
@@ -1331,6 +1409,399 @@ menuPop.addEventListener("click", async (e) => {
   }
   if (cmd === "unarchive") await fetch(`${BASE}/unarchive`, { method: "POST" }).catch(() => {});
 });
+
+// ── attach: the Agent pill (RLM-346; the owner's only, never on a reviewer's or a hosted page) ──
+
+const MODES: { id: AttachModeId; label: string; hint: string }[] = [
+  { id: "same", label: "Same session", hint: "Each run continues the session" },
+  { id: "fork", label: "Fork", hint: "Each run branches from the session" },
+  { id: "new", label: "New session", hint: "The first run starts a session; later runs continue it" },
+];
+/** `runs.reason` in words, for a run event without a message. */
+const RUN_REASONS: Record<string, string> = {
+  exit: "the harness exited with an error",
+  timeout: "it ran past its time limit",
+  no_reply: "it exited without replying (does the harness have the write grant?)",
+  session_in_use: "the session is open in another process",
+  cost_cap: "it reached its cost cap",
+  session_unknown: "cannot tell whether the session is still open; choose fork or new",
+  unsupported: "the harness cannot run this mode",
+  unavailable: "the harness is not available",
+  rate_limit: "too many runs on this page in the last hour",
+  auto_conflict: "the page takes notes without you (--auto)",
+  config: "a settings file is malformed",
+};
+
+const attachPill = OWNER ? $<HTMLButtonElement>(".attach-pill") : null;
+const attachPop = OWNER ? $(".attach-pop") : null;
+const runStateEl = OWNER ? $(".run-state") : null;
+const attach: { info: AttachInfo | null; run: RunSummary | null; message: string; log: string[] | null; busy: boolean; error: string } = {
+  info: null,
+  run: null,
+  message: "",
+  log: null,
+  busy: false,
+  error: "",
+};
+let elapsedTimer = 0;
+
+function clock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function bytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function ago(ms: number): string {
+  const min = Math.round((Date.now() - ms) / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  if (min < 48 * 60) return `${Math.round(min / 60)} h ago`;
+  return `${Math.round(min / 1440)} d ago`;
+}
+
+/** A run's start and end as Conversation entries. A run that never started shows only when it failed (it was refused). */
+function addRunMarks(run: RunSummary, message?: string) {
+  const what = [run.harness, run.mode, run.model].filter(Boolean).join(" · ");
+  if (run.started_at) runMarks.set(`${run.id}:start`, { id: run.id, at: run.started_at, text: `Agent run started${what ? ` · ${what}` : ""}`, tone: "start" });
+  if (!run.ended_at || (!run.started_at && run.status !== "failed")) return;
+  const took = run.started_at ? ` after ${clock(run.ended_at - run.started_at)}` : "";
+  const why = message || RUN_REASONS[run.reason ?? ""] || run.reason || "";
+  const end: Pick<RunMark, "text" | "tone"> =
+    run.status === "done"
+      ? { text: `Agent run finished${took}`, tone: "done" }
+      : run.status === "failed"
+        ? { text: `Agent run ${run.started_at ? "failed" : "did not start"}${why ? `: ${why}` : ""}`, tone: "failed" }
+        : run.status === "stopped"
+          ? { text: `Agent run stopped${took}`, tone: "stopped" }
+          : { text: "Agent run interrupted: the server restarted", tone: "stopped" };
+  runMarks.set(`${run.id}:end`, { id: run.id, at: run.ended_at, ...end });
+}
+
+async function loadAttach() {
+  try {
+    const r = await fetch(`${BASE}/attach`);
+    if (!r.ok) return;
+    attach.info = (await r.json()) as AttachInfo;
+    attach.run = attach.info.run;
+  } catch {
+    return; // the pill keeps what it showed
+  }
+  renderAttach();
+}
+
+/** The page's recent runs as Conversation entries, once per connection. */
+async function loadRunMarks() {
+  try {
+    const r = await fetch(`${BASE}/runs?limit=20`);
+    if (!r.ok) return;
+    for (const run of ((await r.json()) as { runs: RunSummary[] }).runs) addRunMarks(run);
+  } catch {
+    return;
+  }
+  renderLog();
+}
+
+function renderAttach() {
+  if (!attachPill) return;
+  const info = attach.info;
+  const on = info?.effective.state === "on";
+  const detail = on && info ? [info.target.harness, info.effective.mode, info.effective.model].filter(Boolean).join(" · ") : "Off";
+  $(".attach-detail").textContent = detail;
+  $(".attach-short").textContent = on ? "On" : "Off";
+  attachPill.classList.toggle("on", on);
+  attachPill.title = on ? `Agent attached: ${detail}. A note you send starts it.` : "Attach an agent to this page";
+  renderPresence();
+  renderRunState();
+  if (attachPop && !attachPop.hidden) renderAttachPop();
+}
+
+/** Stop, View log and Retry for the run's state. */
+function runButtons(run: RunSummary): HTMLElement[] {
+  if (run.status === "running" || run.status === "queued" || run.status === "waiting_for_session") {
+    return [h("button", { type: "button", class: "btn tiny ghost run-stop", text: "Stop", onclick: () => runAction("stop") })];
+  }
+  if (run.status === "failed") {
+    return [
+      h("button", { type: "button", class: "btn tiny ghost run-log", text: "View log", onclick: () => openLog() }),
+      h("button", { type: "button", class: "btn tiny run-retry", text: "Retry", onclick: () => runAction("retry") }),
+    ];
+  }
+  return [];
+}
+
+/** The run's state in words; the elapsed time of a running one ticks in `.run-elapsed`. */
+function runLabel(run: RunSummary): Child[] {
+  switch (run.status) {
+    case "queued":
+      return ["Run queued"];
+    case "waiting_for_session":
+      return ["Waiting for session"];
+    case "running":
+      return ["Running ", h("span", { class: "run-elapsed", text: clock(Date.now() - (run.started_at ?? Date.now())) })];
+    case "failed":
+      return ["Run failed"];
+    case "done":
+      return ["Last run done"];
+    case "stopped":
+      return ["Last run stopped"];
+    default:
+      return ["Last run interrupted"];
+  }
+}
+
+const ACTIVE = new Set<RunSummary["status"]>(["queued", "waiting_for_session", "running", "failed"]);
+
+function renderRunState() {
+  if (!runStateEl) return;
+  const run = attach.run;
+  runStateEl.textContent = "";
+  const show = !!run && ACTIVE.has(run.status);
+  runStateEl.hidden = !show;
+  runStateEl.className = `run-state${run ? ` ${run.status}` : ""}`;
+  attachPill?.setAttribute("data-run", show && run ? run.status : "");
+  if (run && show) {
+    runStateEl.title = run.status === "failed" ? attach.message || RUN_REASONS[run.reason ?? ""] || "" : run.status === "waiting_for_session" ? attach.message : "";
+    runStateEl.append(h("span", { class: "run-label" }, ...runLabel(run)), ...runButtons(run));
+  }
+  clearInterval(elapsedTimer);
+  if (run?.status === "running") {
+    elapsedTimer = window.setInterval(() => {
+      for (const el of document.querySelectorAll(".run-elapsed")) el.textContent = clock(Date.now() - (run.started_at ?? Date.now()));
+    }, 1000);
+  }
+  renderAttachRun();
+}
+
+async function runAction(kind: "stop" | "retry") {
+  const r = await fetch(`${BASE}/run/${kind}`, { method: "POST" }).catch(() => null);
+  if (!r) return flash("Could not reach austere-axi. Check that it is still running.");
+  if (!r.ok) {
+    const d = (await r.json().catch(() => ({}))) as { error?: string };
+    flash(d.error ? `${kind === "stop" ? "Stop" : "Retry"}: ${d.error}` : `${kind} failed (${r.status})`);
+  }
+}
+
+async function openLog() {
+  const run = attach.run;
+  if (!run || !attachPop) return;
+  openAttach();
+  try {
+    const r = await fetch(`${BASE}/run/${run.id}/log`);
+    attach.log = r.ok ? ((await r.json()) as { tail: string[] }).tail : [`Could not read the log (${r.status}).`];
+  } catch {
+    attach.log = ["Could not reach austere-axi."];
+  }
+  renderAttachRun();
+  attachPop.querySelector(".attach-log")?.scrollIntoView({ block: "nearest" });
+}
+
+function openAttach() {
+  if (!attachPop || !attachPill) return;
+  menuPop.hidden = true;
+  if (attachPop.hidden) {
+    attachPop.hidden = false;
+    attachPill.setAttribute("aria-expanded", "true");
+    renderAttachPop();
+    void loadAttach();
+  }
+}
+
+function closeAttach() {
+  if (!attachPop || attachPop.hidden) return;
+  attachPop.hidden = true;
+  attachPill?.setAttribute("aria-expanded", "false");
+  attach.log = null;
+  attach.error = "";
+}
+
+/** Write the page's own row; from "Use project default", the page takes the fields it showed. */
+async function saveAttach(change: AttachChange) {
+  const info = attach.info;
+  if (!info || attach.busy) return;
+  const own = info.page && info.page.state !== "inherit" ? info.page.state : null;
+  const e = info.effective;
+  const body: AttachChange = own ? { state: own, ...change } : { state: "inherit", mode: e.mode, session: e.session, harness: e.harness, model: e.model, ...change };
+  attach.busy = true;
+  attach.error = "";
+  renderAttachPop();
+  try {
+    const r = await fetch(`${BASE}/attach`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const d = (await r.json().catch(() => ({}))) as AttachInfo & { error?: string };
+    if (r.ok) {
+      attach.info = d;
+      attach.run = d.run;
+    } else attach.error = d.error || `Could not change it (${r.status}).`;
+  } catch {
+    attach.error = "Could not reach austere-axi. Check that it is still running.";
+  }
+  attach.busy = false;
+  renderAttach();
+}
+
+function field(legend: string, ...children: Child[]): HTMLFieldSetElement {
+  return h("fieldset", { class: "attach-field" }, h("legend", { text: legend }), ...children);
+}
+
+function renderAttachPop() {
+  if (!attachPop) return;
+  const info = attach.info;
+  attachPop.textContent = "";
+  attachPop.append(
+    h(
+      "div",
+      { class: "attach-head" },
+      h("strong", { text: "Agent on this page" }),
+      h("button", { type: "button", class: "icon-btn attach-close", "aria-label": "Close", text: "×", onclick: closeAttach }),
+    ),
+  );
+  if (!info) {
+    attachPop.append(h("p", { class: "attach-note", text: "Loading…" }));
+    return;
+  }
+  const e = info.effective;
+  const pageState = info.page?.state ?? "inherit";
+  const own = pageState !== "inherit";
+  const project = info.project?.setting;
+  const projectText = project && project.state !== "inherit" ? project.state : "off";
+  attachPop.append(
+    h("p", { class: "attach-note", text: "When on, a note you send or release starts the agent: it reads the notes, patches the page and replies." }),
+    h(
+      "div",
+      { class: "seg attach-state", role: "group", "aria-label": "Attach" },
+      ...(
+        [
+          ["on", "On"],
+          ["off", "Off"],
+          ["inherit", "Use project default"],
+        ] as const
+      ).map(([value, label]) =>
+        h("button", {
+          type: "button",
+          "data-state": value,
+          class: pageState === value ? "on" : null,
+          "aria-pressed": String(pageState === value),
+          disabled: attach.busy || (value === "on" && !!info.auto && pageState !== "on"),
+          text: label,
+          onclick: () => saveAttach({ state: value }),
+        }),
+      ),
+    ),
+    h("p", {
+      class: "attach-note",
+      text: own ? `Project default${info.project ? ` (${info.project.name})` : ""}: ${projectText}.` : `This page uses the project default: ${e.state}. Choose On or Off to give it its own setting.`,
+    }),
+  );
+  if (info.auto && e.state !== "on") attachPop.append(h("div", { class: "attach-warn", text: `${info.auto}. Attach and --auto exclude each other: publish or share it without --auto to turn attach on.` }));
+
+  const fieldsOff = !own || attach.busy;
+  const sessionHarness = e.session === "author" ? info.author?.harness : info.sessions.find((s) => s.id === e.session)?.harness;
+  const runHarness = sessionHarness ?? e.harness;
+  const caps = info.harnesses[runHarness]?.capabilities;
+  const blocked: string[] = [];
+  const modes = field("Mode");
+  for (const m of MODES) {
+    const cap = caps?.[m.id];
+    const reason = cap && !cap.ok ? cap.reason : null;
+    if (reason) blocked.push(`${m.label}: ${reason}`);
+    modes.append(
+      h(
+        "label",
+        { class: `attach-radio${reason ? " disabled" : ""}`, title: reason || m.hint },
+        h("input", { type: "radio", name: "attach-mode", value: m.id, checked: e.mode === m.id, disabled: fieldsOff || !!reason, onchange: () => saveAttach({ mode: m.id }) }),
+        h("span", { text: m.label }),
+      ),
+    );
+  }
+  if (blocked.length) modes.append(h("div", { class: "attach-reason", text: blocked.join(" · ") }));
+  if (e.mode !== "new") modes.append(h("div", { class: "attach-hint", text: `Resends the whole session each run${info.sessionFileSize ? ` · ${bytes(info.sessionFileSize)}` : ""}` }));
+
+  const sessions = field("Session");
+  const sessionRadio = (value: string, label: string, meta: string) =>
+    h(
+      "label",
+      { class: "attach-radio attach-session" },
+      h("input", { type: "radio", name: "attach-session", value, checked: e.session === value, disabled: fieldsOff, onchange: () => saveAttach({ session: value }) }),
+      h("span", { text: label }),
+      meta ? h("small", { text: meta }) : null,
+    );
+  sessions.append(sessionRadio("author", "Author", info.author ? `${info.author.harness} ${info.author.short}` : "none registered: a new session"));
+  for (const s of info.sessions) sessions.append(sessionRadio(s.id, `${s.harness} ${s.short}`, `${s.roles.join(", ")} · ${ago(s.lastSeen)} · ${s.liveness}`));
+  if (e.session !== "author" && !info.sessions.some((s) => s.id === e.session)) sessions.append(sessionRadio(e.session, `session ${e.session}`, "not registered for this page"));
+  if (!info.sessions.length) sessions.append(h("div", { class: "attach-hint", text: "No agent session has opened, patched or polled this page yet." }));
+
+  const harness = h("select", { class: "attach-select", "aria-label": "Harness", disabled: fieldsOff, onchange: (ev) => saveAttach({ harness: (ev.target as HTMLSelectElement).value }) });
+  for (const [name, hi] of Object.entries(info.harnesses)) harness.append(h("option", { value: name, selected: name === e.harness, text: hi.found ? name : `${name} (not found)` }));
+  const models = info.harnesses[runHarness]?.models;
+  const modelCap = info.harnesses[runHarness]?.capabilities.model;
+  const model = h("input", {
+    type: "text",
+    class: "attach-input",
+    "aria-label": "Model",
+    list: models?.length ? "attach-models" : null,
+    value: e.model ?? "",
+    placeholder: modelCap && !modelCap.ok ? modelCap.reason : "the harness's default",
+    spellcheck: "false",
+    autocomplete: "off",
+    disabled: fieldsOff || (!!modelCap && !modelCap.ok),
+    onchange: (ev) => saveAttach({ model: (ev.target as HTMLInputElement).value.trim() || null }),
+  });
+  const datalist = models?.length ? h("datalist", { id: "attach-models" }, ...models.map((m) => h("option", { value: m }))) : null;
+  attachPop.append(modes, sessions, field("Harness (for a new session)", harness), field("Model", model, datalist));
+
+  const grant = info.harnesses[info.target.harness]?.grantCommand;
+  if (grant) {
+    attachPop.append(
+      h(
+        "div",
+        { class: "attach-warn attach-grant" },
+        h("span", { text: `${info.target.harness} has no write grant: its runs cannot patch this page and end with “no reply”. Grant it once, at a terminal:` }),
+        h("span", { class: "attach-cmd" }, h("code", { text: grant }), h("button", { type: "button", class: "btn tiny", text: "Copy", onclick: () => copyText(grant, "Command") })),
+      ),
+    );
+  }
+  for (const w of info.warnings) if (!(grant && w.includes(grant)) && !(info.auto && w.startsWith(info.auto))) attachPop.append(h("div", { class: "attach-warn", text: w }));
+  attachPop.append(h("div", { class: "attach-run-slot" }));
+  if (attach.error) attachPop.append(h("div", { class: "attach-error", role: "alert", text: attach.error }));
+  renderAttachRun();
+}
+
+/** The popover's run section: its state, the buttons, and the log once asked for. */
+function renderAttachRun() {
+  const slot = attachPop?.querySelector(".attach-run-slot");
+  if (!slot) return;
+  slot.textContent = "";
+  const run = attach.run;
+  if (!run) return;
+  const why = run.status === "failed" ? attach.message || RUN_REASONS[run.reason ?? ""] || run.reason || "" : run.status === "waiting_for_session" ? attach.message : "";
+  slot.append(
+    h(
+      "div",
+      { class: `attach-run ${run.status}` },
+      h("div", { class: "attach-run-head" }, h("span", { class: "run-label" }, ...runLabel(run)), ...runButtons(run)),
+      why ? h("div", { class: "attach-hint", text: why }) : null,
+      attach.log ? h("pre", { class: "attach-log", text: attach.log.join("\n") || "(the log is empty)" }) : null,
+    ),
+  );
+}
+
+if (attachPill && attachPop) {
+  attachPill.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (attachPop.hidden) openAttach();
+    else closeAttach();
+  });
+  attachPop.addEventListener("click", (e) => e.stopPropagation());
+  runStateEl?.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", closeAttach);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeAttach();
+  });
+}
 
 // ── mobile sheet ──
 
@@ -1478,6 +1949,24 @@ function connect() {
       const parsed = parseServerFrame(e.data);
       const f = parsed.ok ? parsed.value : null;
       if (f && (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye")) presence.handle(f);
+    });
+    // The Agent pill (RLM-346): the setting and the runs, again on each (re)connect; then each run's changes as they happen.
+    source.addEventListener("snapshot", () => {
+      void loadAttach();
+      void loadRunMarks();
+    });
+    source.addEventListener("attach", () => void loadAttach());
+    source.addEventListener("run", (e) => {
+      const d = JSON.parse(e.data) as RunEvent;
+      const ended = !ACTIVE.has(d.run.status) || d.run.status === "failed";
+      if (attach.run?.id !== d.run.id) attach.log = null;
+      attach.run = d.run;
+      attach.message = d.message ?? "";
+      addRunMarks(d.run, d.message);
+      renderLog();
+      renderRunState();
+      // A run that ended may have registered a session (A18): the popover's list changes.
+      if (ended) void loadAttach();
     });
   }
   source.addEventListener("snapshot", (e) => {

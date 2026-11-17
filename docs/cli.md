@@ -12,6 +12,8 @@ austere-axi login [file]         single-use link that signs a browser in as you 
 austere-axi feedback [file]      feedback no agent has answered yet; no file: every page of the project   [--project p] [--all] [--peek]
 austere-axi sessions list [file]   agent sessions that opened, patched or listened to a page; no file: the project   [--project p]
 austere-axi run list [file]      runs of the attached agent; no file: the project   [--project p]; run log <id>; run stop <file>
+austere-axi attach status [file] whether an agent is attached to a page and what would stop it; no file: the project   [--project p]
+austere-axi attach on|off [file] attach an agent to a page or a project (the user, at a terminal)   [--mode m] [--session s] [--harness h] [--model x]; attach inherit <file>
 austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]
 austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
@@ -82,7 +84,7 @@ austere-axi adapter set <name> --command "<bin> <args…>"          a command ad
 
 ## Runs
 
-With attach on for a page (RLM-346 sets it), a note the owner sends from the review page, or a held note the owner releases, starts the page's harness headless: it reads the notes with `feedback`, changes the page with `patch` and answers with `reply`, through the normal CLI. A reviewer's note starts nothing until the owner releases it. While an agent polls the page (its own poll or its project's), the note goes to that poll and no run starts; a poll that arrives cancels a run that has not started.
+With attach on for a page (see [Attach](#attach)), a note the owner sends from the review page, or a held note the owner releases, starts the page's harness headless: it reads the notes with `feedback`, changes the page with `patch` and answers with `reply`, through the normal CLI. A reviewer's note starts nothing until the owner releases it. While an agent polls the page (its own poll or its project's), the note goes to that poll and no run starts; a poll that arrives cancels a run that has not started.
 
 ```
 austere-axi run list [file] [--project p]   status, reason, harness and mode, the notes (seq) and how long it took; no file: the project
@@ -110,6 +112,22 @@ austere-axi run stop <file>                 end the page's runs: the running one
 | `recheckMs` | `30000` | how often a waiting run looks again |
 | `maxCost` | | omp `--max-cost` (dollars) |
 | `maxAiCredits` | | Copilot `--max-ai-credits` |
+
+## Attach
+
+Attach decides whether a note the owner sends starts an agent on a page (see [Attach an agent](attach.md) for the whole story). A page has its own setting, or uses its project's default; with neither it is off.
+
+```
+austere-axi attach status [file] [--project p]          the setting that applies and where it comes from, the mode, the session a run resumes, harness, model, last run, warnings
+austere-axi attach on [file] [--mode m] [--session s] [--harness h] [--model x]   turn it on for the page (no file: the project of the current folder, or --project)
+austere-axi attach off [file]                            turn it off for the page (or the project)
+austere-axi attach inherit <file>                        the page goes back to its project's default
+```
+
+- **Anywhere, read-only:** `attach status` changes nothing and needs no server; an agent may run it (MCP `attach_status`). Its `warnings` name what would stop a run or make it useless: a harness without the write grant (with the `adapter set` command that grants it), a binary not on `PATH`, a mode the harness cannot run, a `same` session whose process is unknown, a page published or shared with `--auto`.
+- **The user's only:** `attach on`, `off` and `inherit` without a terminal exit 2, change nothing and print the command for the user to run. The review page's Agent pill does the same for the owner. No MCP tool changes it.
+- **Fields:** `--mode same|fork|new` (default `same`), `--session author|<id>` (default `author`: the session that wrote the page, followed to its newest continuation; or a short or full id from `sessions list`), `--harness omp|copilot|<command adapter>` (the harness of a new session; default the project's, else omp), `--model` (default the harness's own; `""` clears it). A field you leave out keeps its value.
+- **Refused:** `attach on` for a page published or shared with `--auto` (they exclude each other), and a mode the harness cannot run (Copilot fork). Nothing is written then.
 
 ## Environment
 
