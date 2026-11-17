@@ -616,7 +616,7 @@ export async function runServer({
   function presence(s: Session): Presence {
     if (listener(s)) return "listening";
     if (!s.workingSince) return "idle";
-    return staleWorkingMs && Date.now() - (s.agentAt ?? s.workingSince) >= staleWorkingMs ? "stale" : "working";
+    return staleWorkingMs && Date.now() - (s.agentAt ?? s.workingSince) >= staleWorkingMs - 10 ? "stale" : "working";
   }
 
   /** Presence as the review page gets it: `since`, while an agent has the notes, is when it took them; `now` lets the page read it against its own clock. */
@@ -630,10 +630,18 @@ export async function runServer({
     s.agentAt = Date.now();
     clearTimeout(staleTimers.get(s.id));
     if (!staleWorkingMs) return;
-    const timer = setTimeout(() => {
+    const schedule = () => {
+      const remaining = staleWorkingMs - (Date.now() - (s.agentAt ?? s.workingSince ?? 0));
+      if (remaining > 10) {
+        const timer = setTimeout(schedule, remaining);
+        timer.unref();
+        staleTimers.set(s.id, timer);
+        return;
+      }
       staleTimers.delete(s.id);
       broadcastPresence(s);
-    }, staleWorkingMs);
+    };
+    const timer = setTimeout(schedule, staleWorkingMs);
     timer.unref();
     staleTimers.set(s.id, timer);
   }
