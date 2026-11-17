@@ -44,6 +44,7 @@ import type { DeviceOrigin, DeviceRow, Scope, ScopeKind, SeenMeta } from "./devi
 import { RequestRefused, RequestStore, describeAgent } from "./requests.ts";
 import type { AccessRequestRow, RequestStatus } from "./requests.ts";
 import dns from "node:dns";
+import net from "node:net";
 import { reviewerItem } from "./items.ts";
 import { hubPage, missingPage, notesPage } from "./hub-page.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
@@ -244,10 +245,10 @@ export interface AccessRequestSummary {
   decidedAt: number | null;
 }
 
-/** Where browsers may ask for access: every page, or these projects. Off everywhere by default. */
+/** Where browsers may ask for access: every page or not, and the projects whose own setting differs (it wins). Off everywhere by default. */
 export interface RequestSwitchResponse {
   all: boolean;
-  projects: { id: string; name: string }[];
+  projects: { id: string; name: string; on: boolean }[];
 }
 
 /** /api/share/requests and GET /hub/api/people/requests: requests waiting for the owner (the oldest first), blocked ones, and the switch. */
@@ -716,7 +717,7 @@ export async function runServer({
 
   function requestSwitch(): RequestSwitchResponse {
     const on = requests.switches();
-    return { all: on.all, projects: on.projects.map((id) => ({ id, name: findProject(hub.db, id, { folders: false })?.name ?? id })) };
+    return { all: on.all, projects: on.projects.map((p) => ({ ...p, name: findProject(hub.db, p.id, { folders: false })?.name ?? p.id })) };
   }
 
   function requestsList(): AccessRequestsResponse {
@@ -744,7 +745,7 @@ export async function runServer({
   }
 
   /**
-   * Approve (`{ scope?, project?, auto? }`, scope relative to the page the request came from, as
+   * Approve (`{ scope?, project?, auto?, name? }`, scope relative to the page the request came from, as
    * for a share), deny, or block a waiting request.
    */
   function decideRequest(id: unknown, action: string, body: RequestBody): { status: number; error: string } | RequestDecisionResponse {
@@ -761,7 +762,7 @@ export async function runServer({
         const auto = Boolean(body.auto);
         const refused = auto ? autoAttachConflict(scope) : "";
         if (refused) return { status: 409, error: refused };
-        const device = requests.approve(row.id, scope, auto);
+        const device = requests.approve(row.id, scope, auto, body.name);
         if (s) {
           watch(s);
           rescanSharedPolls();
@@ -795,10 +796,10 @@ export async function runServer({
     return [`${COOKIE}_${got.device.id}=${got.secret}; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_COOKIE_MAX_AGE}${overHttps(req) ? "; Secure" : ""}`, requestCookie(req, null)];
   }
 
-  /** This browser's request, as the browser may know it: waiting, denied, blocked, or none (no request, or one it cannot use). */
+  /** This browser's request, as the browser may know it: waiting, denied, blocked, or none (no request, or one it cannot use: collected, lapsed). */
   function requestStateOf(req: http.IncomingMessage): "none" | "waiting" | "denied" | "blocked" {
     const mine = requests.bySecret(tokenFromCookie(req.headers.cookie, REQUEST_COOKIE));
-    return mine && mine.status !== "approved" ? mine.status : "none";
+    return mine?.status === "waiting" || mine?.status === "denied" || mine?.status === "blocked" ? mine.status : "none";
   }
 
   /**
@@ -814,20 +815,27 @@ export async function runServer({
     }
     const denied = state === "denied" ? `<p class="err">The owner declined your last request. You can ask again.</p>` : "";
     const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
-    const local = isLoopback(req.socket.remoteAddress) ? `<p class="muted">If this is your page, sign this browser in instead: run <code>austere-axi login</code> and open the link it prints.</p>` : "";
+    const local = isLoopback(clientAddr(req)) ? `<p class="muted">If this is your page, sign this browser in instead: run <code>austere-axi login</code> and open the link it prints.</p>` : "";
     return `${head}<h1>Ask the owner for access</h1>${denied}${err}<form method="post" action="/s/${s.id}/request"><label>Your name<input name="name" maxlength="40" autocomplete="name" required autofocus></label><button>Send</button></form><p class="muted">The owner sees your name, your address and your browser, and lets this browser in.</p>${local}`;
   }
 
   /** Headers for a page of the request flow: not framed, and a form POST keeps its Origin (see the join page). */
   const REQUEST_PAGE_HEADERS = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "same-origin", "x-frame-options": "DENY" };
 
-  /** The reverse-lookup name of a request's address, stored when it resolves (best effort, never waited for). */
+  /**
+   * The hostname of a request's address, stored once it resolves both ways: a reverse lookup alone
+   * is whatever the address's owner put in its PTR record. Best effort, never waited for.
+   */
   function lookUpHost(id: string, addr: string | null): void {
     if (!addr) return;
+    const ip = addr.replace(/^::ffff:/, "");
     dns.promises
-      .reverse(addr.replace(/^::ffff:/, ""))
-      .then((names) => {
-        if (names[0]) requests.setHost(id, names[0]);
+      .reverse(ip)
+      .then(async (names) => {
+        for (const name of names.slice(0, 3)) {
+          const back = await dns.promises.lookup(name, { all: true }).catch(() => []);
+          if (back.some((a) => a.address.replace(/^::ffff:/, "") === ip)) return requests.setHost(id, name);
+        }
       })
       // No name, a slow resolver, or a database closed by shutdown in the meantime: the request keeps no hostname.
       .catch(() => {});
@@ -892,10 +900,22 @@ export async function runServer({
     return true;
   }
 
-  /** Where a request came from, for a device's last-seen fields. */
+  /**
+   * The address a request came from: the socket's, or, when a reverse proxy on this machine
+   * forwarded it, the address that proxy saw (the last `X-Forwarded-For` entry). A remote peer's
+   * own header is never trusted.
+   */
+  function clientAddr(req: http.IncomingMessage): string | undefined {
+    const socket = req.socket.remoteAddress;
+    if (!isLoopback(socket)) return socket;
+    const forwarded = String(req.headers["x-forwarded-for"] || "").split(",").pop()?.trim() ?? "";
+    return net.isIP(forwarded) ? forwarded : socket;
+  }
+
+  /** Where a request came from, for a device's last-seen fields and an access request. */
   function seenMeta(req: http.IncomingMessage): SeenMeta {
     const ua = req.headers["user-agent"];
-    return { addr: req.socket.remoteAddress ?? null, host: hostOnly(req.headers.host) || null, userAgent: typeof ua === "string" ? ua : null };
+    return { addr: clientAddr(req) ?? null, host: hostOnly(req.headers.host) || null, userAgent: typeof ua === "string" ? ua : null };
   }
 
   /** Whether the browser reached this server over HTTPS: a proxy says so, or the link URL is https and this is its host. */
@@ -2169,7 +2189,7 @@ export async function runServer({
    * or project}, /revoke, and /single-use (an old-style link gets a fresh single-use token).
    * Requests (RLM-398), for People → Waiting and the hub header's count: GET /hub/api/people/requests;
    * POST /hub/api/people/requests/switch {on, project?}; POST /hub/api/people/requests/<id>/approve
-   * {scope?, project?, auto?}, /deny, /block. The owner's only.
+   * {scope?, project?, auto?, name?}, /deny, /block. The owner's only.
    */
   async function hubPeople(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     // It holds the links: never for another site, GET included.

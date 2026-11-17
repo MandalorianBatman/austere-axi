@@ -10,14 +10,14 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { DeviceStore, hashSecret } from "../src/cli/devices.ts";
 import { openDatabase } from "../src/cli/hub.ts";
-import { MAX_WAITING, REQUESTS_PER_ADDR_HOUR, RequestStore, describeAgent } from "../src/cli/requests.ts";
+import { MAX_WAITING, REQUESTS_PER_ADDR_HOUR, RequestStore, WAITING_TTL_MS, describeAgent } from "../src/cli/requests.ts";
 import type { AccessRequestsResponse, RequestDecisionResponse, RequestSwitchResponse, ShareListResponse } from "../src/cli/server.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
 const PAGE = "aaaaaaaaaaaa";
 
-test("the store: one approval per asking browser, collected once; deny, block; per-address and waiting limits", async () => {
+test("the store: one approval per asking browser, collected once; deny, block; per-address and waiting limits; the switch", async () => {
   const db = await openDatabase(":memory:");
   let now = 1_000_000;
   const store = new RequestStore(db, () => now);
@@ -27,8 +27,12 @@ test("the store: one approval per asking browser, collected once; deny, block; p
     store.setEnabled("p1", true);
     assert.deepEqual([store.enabled("p1"), store.enabled("p2"), store.enabled(null)], [true, false, false]);
     store.setEnabled(null, true);
-    assert.deepEqual([store.enabled("p2"), store.enabled(null)], [true, true]);
-    assert.deepEqual(store.switches(), { all: true, projects: ["p1"] });
+    assert.deepEqual(store.switches(), { all: true, projects: [] }, "every page's setting clears the projects' own");
+    store.setEnabled("p2", false);
+    assert.deepEqual([store.enabled("p1"), store.enabled("p2"), store.enabled(null)], [true, false, true], "a project's own setting wins");
+    assert.deepEqual(store.switches(), { all: true, projects: [{ id: "p2", on: false }] });
+    store.setEnabled("p2", true);
+    assert.deepEqual(store.switches(), { all: true, projects: [] }, "the same as every page's: no setting of its own");
 
     assert.throws(() => store.ask({ name: " ", page: PAGE, meta: {} }), (e: Error & { status?: number }) => e.status === 400 && /Type your name/.test(e.message));
     assert.throws(() => store.ask({ name: "Owner", page: PAGE, meta: {} }), /reserved/, "names are cleaned as invite names are");
@@ -49,6 +53,12 @@ test("the store: one approval per asking browser, collected once; deny, block; p
     assert.equal(devices.bySecret(ana.secret), null);
     assert.equal(store.collect(ana.secret), null, "collected once");
 
+    // One name, one person: a stranger who types Ana's name is not let in as a second Ana with her scope.
+    const eve = store.ask({ name: "ANA", page: PAGE, meta: { addr: "10.0.0.4" } });
+    assert.throws(() => store.approve(eve.row.id, { kind: "page", id: PAGE }, false), (e: Error & { status?: number }) => e.status === 409 && /already has access/.test(e.message));
+    assert.equal(store.get(eve.row.id)?.status, "waiting", "still waiting for the owner");
+    assert.equal(store.approve(eve.row.id, { kind: "page", id: PAGE }, false, "Ana (phone)").name, "Ana (phone)", "the owner may let it in under another name");
+
     // A revoked approval cannot be collected.
     const bo = store.ask({ name: "Bo", page: PAGE, meta: { addr: "10.0.0.3" } });
     const boDevice = store.approve(bo.row.id, { kind: "all", id: null }, false);
@@ -68,6 +78,14 @@ test("the store: one approval per asking browser, collected once; deny, block; p
     // Fifty waiting at most.
     for (let i = store.list("waiting").length; i < MAX_WAITING; i++) store.ask({ name: `W${i}`, page: PAGE, meta: { addr: `10.1.${i}.1` } });
     assert.throws(() => store.ask({ name: "Late", page: PAGE, meta: { addr: "10.2.0.1" } }), (e: Error & { status?: number }) => e.status === 429 && /waiting/.test(e.message));
+
+    // A request nobody decided lapses after a week: it leaves the queue, and its browser may ask again.
+    const [oldest] = store.list("waiting");
+    now += WAITING_TTL_MS;
+    assert.equal(store.list("waiting").length, 0);
+    assert.equal(store.get(oldest.id)?.status, "lapsed");
+    assert.throws(() => store.approve(oldest.id, { kind: "all", id: null }, false), /lapsed already/);
+    assert.doesNotThrow(() => store.ask({ name: "Late", page: PAGE, meta: { addr: "10.2.0.1" } }));
   } finally {
     db.close();
   }
@@ -106,7 +124,7 @@ const owner = ownerHeaders(STATE);
  * A request as a browser elsewhere on the tailnet sends it: from `from` (127.0.0.2 and up, which the
  * server does not count as loopback), with a same-origin Origin on POST unless `origin` says otherwise.
  */
-function browser(from: string, method: string, route: string, { cookie = "", form, origin = true, json }: { cookie?: string; form?: Record<string, string>; origin?: boolean; json?: unknown } = {}): Promise<Res> {
+function browser(from: string, method: string, route: string, { cookie = "", form, origin = true, json, headers = {} }: { cookie?: string; form?: Record<string, string>; origin?: boolean; json?: unknown; headers?: Record<string, string> } = {}): Promise<Res> {
   const { promise, resolve, reject } = Promise.withResolvers<Res>();
   const payload = form ? new URLSearchParams(form).toString() : json !== undefined ? JSON.stringify(json) : undefined;
   const r = http.request(
@@ -122,6 +140,7 @@ function browser(from: string, method: string, route: string, { cookie = "", for
         ...(method === "POST" && origin ? { origin: `http://127.0.0.1:${port}` } : {}),
         ...(form ? { "content-type": "application/x-www-form-urlencoded" } : json !== undefined ? { "content-type": "application/json" } : {}),
         "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        ...headers,
       },
     },
     (res) => {
@@ -356,6 +375,26 @@ test("the switch is per project or for every page; a page outside it answers as 
   }
 });
 
+test("behind a reverse proxy on this machine, a request carries the address the proxy saw; a remote peer's own header is ignored", async () => {
+  await switchTo(true);
+  try {
+    const proxied = await browser("127.0.0.1", "POST", `/s/${id}/request`, { form: { name: "Hal" }, headers: { "x-forwarded-for": "203.0.113.9, 100.64.0.7" } });
+    assert.equal(proxied.status, 303, proxied.data);
+    const forged = await browser("127.0.0.13", "POST", `/s/${id}/request`, { form: { name: "Ivy" }, headers: { "x-forwarded-for": "100.64.0.8" } });
+    assert.equal(forged.status, 303, forged.data);
+    assert.deepEqual(
+      (await waiting()).map((r) => [r.name, r.addr]),
+      [
+        ["Hal", "100.64.0.7"],
+        ["Ivy", "127.0.0.13"],
+      ],
+    );
+    for (const r of await waiting()) await api("POST", "/api/share/deny", { id: r.id });
+  } finally {
+    await switchTo(false);
+  }
+});
+
 test("a request whose body arrives after the owner turned requests off is refused, and nothing is stored", async () => {
   await switchTo(true);
   try {
@@ -388,6 +427,49 @@ test("a request whose body arrives after the owner turned requests off is refuse
     assert.deepEqual(await waiting(), []);
   } finally {
     await switchTo(false);
+  }
+});
+
+/** The CLI against this test's server. */
+function cli(...args: string[]): Promise<{ code: number | null; out: string }> {
+  const { promise, resolve } = Promise.withResolvers<{ code: number | null; out: string }>();
+  const p = spawn(process.execPath, ["src/cli/main.ts", ...args], {
+    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_PORT: String(port), AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" },
+  });
+  let out = "";
+  p.stdout.on("data", (c) => (out += c));
+  p.stderr.on("data", (c) => (out += c));
+  p.on("close", (code) => resolve({ code, out }));
+  return promise;
+}
+
+test("the CLI: share requests on|off, lists who waits, approves under another name, refuses a taken name", async () => {
+  const on = await cli("share", "requests", "on");
+  assert.equal(on.code, 0, on.out);
+  assert.match(on.out, /requests: on for every page/);
+  try {
+    await ask("127.0.0.11", "Gus");
+    await ask("127.0.0.12", "gus");
+    const list = await cli("share", "requests");
+    assert.equal(list.code, 0, list.out);
+    const ids = [...list.out.matchAll(/id: (r[0-9a-f]{10})/g)].map((m) => m[1]);
+    assert.equal(ids.length, 2, list.out);
+    assert.match(list.out, /from: "?127\.0\.0\.11/);
+    assert.match(list.out, /browser: Chrome on Linux/);
+    const first = await cli("share", "approve", ids[0]);
+    assert.equal(first.code, 0, first.out);
+    assert.match(first.out, /status: approved\nreviewer: Gus\n/);
+    const taken = await cli("share", "approve", ids[1]);
+    assert.notEqual(taken.code, 0);
+    assert.match(taken.out, /gus\\?" already has access with this scope/);
+    const renamed = await cli("share", "approve", ids[1], "--as", "Gus 2");
+    assert.equal(renamed.code, 0, renamed.out);
+    assert.match(renamed.out, /reviewer: Gus 2\n/);
+    await cli("share", "revoke", "Gus");
+    await cli("share", "revoke", "Gus 2");
+  } finally {
+    const off = await cli("share", "requests", "off");
+    assert.match(off.out, /requests: off/);
   }
 });
 

@@ -335,11 +335,11 @@ const COMMANDS: Record<string, CommandSpec> = {
   unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
   share: {
     usage:
-      'share <file> --as "<name>" [--project <p> | --all] [--auto] [--expires <dur>] | share list [--links] | share revoke <name|id> | share requests [on|off] [--project <p>] | share approve <id> [--project <p> | --all] [--auto] | share deny <id> | share block <id>',
+      'share <file> --as "<name>" [--project <p> | --all] [--auto] [--expires <dur>] | share list [--links] | share revoke <name|id> | share requests [on|off] [--project <p>] | share approve <id> [--project <p> | --all] [--auto] [--as "<name>"] | share deny <id> | share block <id>',
     summary:
       "named link for a teammate on your tailnet. The first browser that opens it becomes that person's device and the link stops working; a link nobody opens expires (default 7d). It reaches the page, or with --project the page's project, or with --all every page. Their notes wait for you unless --auto. list shows the links nobody has opened yet and the devices; revoke cuts one off at once. Requests (off by default): with `requests on` (every page) or `requests on --project <p>`, a browser without a link that opens a page's address can type a name and ask; `requests` lists who waits, approve lets that browser in (the page, or --project / --all), deny refuses it (it may ask again), block stops that browser asking",
     flags: {
-      as: "the reviewer's name",
+      as: "the reviewer's name; with approve: let them in under this name instead of the one they typed",
       project: "reach every page of this project (the page's own: a name, an id, or a folder inside one of its roots); with requests on|off: that project only",
       all: "reach every page on this machine",
       auto: "send this reviewer's notes straight to the agent",
@@ -2105,8 +2105,9 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
     const [rid] = more;
     if (!rid) return usage(`${sub} needs a request id: ${BIN} share ${sub} <id> (see ${BIN} share requests)`, "share");
     if (sub === "approve" && flags.project !== undefined && flags.all) return usage("--project and --all exclude each other: pick one scope", "share");
+    if (sub === "approve" && flags.as !== undefined && (typeof flags.as !== "string" || !flags.as.trim())) return usage(`--as needs a name: ${BIN} share approve ${rid} --as "<name>"`, "share");
     await ensureServer();
-    const body = sub === "approve" ? { id: rid, scope: flags.all ? "all" : flags.project !== undefined ? "project" : "page", project: typeof flags.project === "string" ? flags.project : undefined, auto: !!flags.auto } : { id: rid };
+    const body = sub === "approve" ? { id: rid, scope: flags.all ? "all" : flags.project !== undefined ? "project" : "page", project: typeof flags.project === "string" ? flags.project : undefined, auto: !!flags.auto, name: flags.as } : { id: rid };
     const r = await request<RequestDecisionResponse>("POST", `/api/share/${sub}`, body);
     if (r.status !== 200) return fail(r.data?.error || `${sub} failed (${r.status})`);
     const { request: q, device } = r.data;
@@ -2121,7 +2122,7 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
         next: `${BIN} share revoke ${device.id} cuts it off.`,
       });
     }
-    return print({ status: q.status, request: `${q.name} (${q.id})`, note: q.status === "blocked" ? "That browser can no longer ask." : "That browser may ask again." });
+    return print({ status: q.status, request: `${q.name} (${q.id})`, note: q.status === "blocked" ? "That browser can no longer ask." : "That browser may ask again.", next: `${BIN} share requests lists who else waits.` });
   }
   if (sub === "revoke") {
     const key = more.join(" ");
@@ -2173,17 +2174,22 @@ async function shareRequests(args: string[], flags: Flags): Promise<void> {
   if (mode !== undefined && mode !== "on" && mode !== "off") return usage(`share requests takes on or off: ${BIN} share requests [on|off] [--project <p>]`, "share");
   if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project)) return usage(`--project needs a project: ${BIN} share requests ${mode ?? "on"} --project <name>`, "share");
   await ensureServer();
-  const where = (s: RequestSwitchResponse): string => (s.all ? "on for every page" : s.projects.length ? `on for ${s.projects.map((p) => `project ${p.name}`).join(", ")}` : "off");
+  // A project's own setting wins over the one for every page.
+  const where = (s: RequestSwitchResponse): string => {
+    const differ = s.projects.filter((p) => p.on !== s.all).map((p) => `project ${p.name}`);
+    if (s.all) return differ.length ? `on for every page except ${differ.join(", ")}` : "on for every page";
+    return differ.length ? `on for ${differ.join(", ")} only` : "off";
+  };
   if (mode) {
     // A folder names the project whose root holds it; the server has no working directory to resolve it against.
     const project = typeof flags.project === "string" ? (fs.existsSync(flags.project) ? path.resolve(flags.project) : flags.project) : undefined;
     const r = await request<RequestSwitchResponse>("POST", "/api/share/requests", { on: mode === "on", project });
     if (r.status !== 200) return fail(r.data?.error || `share requests failed (${r.status})`);
     return print({
-      status: `requests ${mode}${project ? ` for project ${flags.project}` : " for every page"}`,
+      status: "saved",
       requests: where(r.data),
       note: mode === "on" ? "A browser without a link that opens a page's address can now type a name and ask; it gets in only once you approve it." : undefined,
-      next: mode === "on" ? `${BIN} share requests lists who waits.` : undefined,
+      next: `${BIN} share requests lists who waits.`,
     });
   }
   const r = await request<AccessRequestsResponse>("GET", "/api/share/requests");
@@ -2194,7 +2200,11 @@ async function shareRequests(args: string[], flags: Flags): Promise<void> {
     requests: where(r.data.switch),
     waiting: waiting.length ? waiting.map(requestRow) : "none",
     blocked: blocked.length ? blocked.length : undefined,
-    next: waiting.length ? `${BIN} share approve <id> [--project <p> | --all] [--auto], or deny / block <id>.` : r.data.switch.all || r.data.switch.projects.length ? undefined : `${BIN} share requests on [--project <p>] lets teammates ask.`,
+    next: waiting.length
+      ? `${BIN} share approve <id> [--project <p> | --all] [--auto] [--as "<name>"], or deny / block <id>.`
+      : r.data.switch.all || r.data.switch.projects.length
+        ? `nobody is waiting; run ${BIN} share requests again later.`
+        : `${BIN} share requests on [--project <p>] lets teammates ask.`,
   });
 }
 

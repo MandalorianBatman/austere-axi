@@ -347,6 +347,6 @@ export function importInvites(db: sqlite.DatabaseSync, dir: string): number {
 }
 
 /** Two reviewer names are the same person's when they match ignoring case, in any script. */
-function sameName(a: string, b: string): boolean {
+export function sameName(a: string, b: string): boolean {
   return a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
 }

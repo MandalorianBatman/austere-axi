@@ -6,13 +6,13 @@
 // Requests are off until the owner turns them on, for one project or for every page.
 import crypto from "node:crypto";
 import type * as sqlite from "node:sqlite";
-import { clip, hashSecret, newDeviceId, randomToken } from "./devices.ts";
+import { clip, hashSecret, isLive, newDeviceId, randomToken, sameName } from "./devices.ts";
 import type { DeviceRow, Scope, SeenMeta } from "./devices.ts";
 import { cleanName } from "./invites.ts";
 import { inTransaction } from "./projects.ts";
 
-/** Where a request stands: waiting for the owner, or what the owner decided. */
-export type RequestStatus = "waiting" | "approved" | "denied" | "blocked";
+/** Where a request stands: waiting for the owner, what the owner decided, or lapsed (nobody decided within WAITING_TTL_MS). */
+export type RequestStatus = "waiting" | "approved" | "denied" | "blocked" | "lapsed";
 
 /** A row of `access_requests`. */
 export interface AccessRequestRow {
@@ -67,6 +67,8 @@ export const REQUESTS_PER_ADDR_HOUR = 5;
 /** Requests waiting for the owner at most; more are refused until the owner decides some. */
 export const MAX_WAITING = 50;
 const HOUR_MS = 3_600_000;
+/** How long a request waits for the owner; then it lapses and the browser may ask again. */
+export const WAITING_TTL_MS = 7 * 86_400_000;
 
 /** A request the server refuses, with the HTTP status to answer with. */
 export class RequestRefused extends Error {
@@ -77,10 +79,10 @@ export class RequestRefused extends Error {
   }
 }
 
-/** Where requests are on: for every page, and for these projects (ids). */
+/** Where requests are on: for every page or not, and the projects that differ from that. */
 export interface RequestSwitch {
   all: boolean;
-  projects: string[];
+  projects: { id: string; on: boolean }[];
 }
 
 /** "Chrome on macOS": the browser and system a User-Agent names, for the owner to recognise a request by. */
@@ -117,28 +119,51 @@ export class RequestStore {
   /** The request a browser's pending cookie belongs to, whatever its status, or null. */
   bySecret(secret: unknown): AccessRequestRow | null {
     if (typeof secret !== "string" || !secret || secret.length > 200) return null;
+    this.lapse();
     return (this.db.prepare("SELECT * FROM access_requests WHERE secret_hash = ?").get(hashSecret(secret)) as unknown as AccessRequestRow | undefined) ?? null;
   }
 
-  /** The requests with this status, the oldest first. */
+  /** The requests with this status, the oldest first. Waiting ones past WAITING_TTL_MS lapse first. */
   list(status: RequestStatus): AccessRequestRow[] {
+    this.lapse();
     return this.db.prepare("SELECT * FROM access_requests WHERE status = ? ORDER BY created_at, rowid").all(status) as unknown as AccessRequestRow[];
   }
 
-  /** Whether a browser may ask for a page of project `projectId` (null: a page in no project). */
+  /** Whether a browser may ask for a page of project `projectId` (null: a page in no project): the project's own setting, else the one for every page. */
   enabled(projectId: string | null): boolean {
-    const row = this.db.prepare("SELECT 1 AS on_ FROM access_settings WHERE requests = 1 AND ((scope = 'all' AND scope_id = '') OR (scope = 'project' AND scope_id = ?))").get(projectId ?? "");
-    return row != null;
+    const own = projectId == null ? undefined : (this.db.prepare("SELECT requests FROM access_settings WHERE scope = 'project' AND scope_id = ?").get(projectId) as { requests: number } | undefined);
+    if (own) return own.requests === 1;
+    const all = this.db.prepare("SELECT requests FROM access_settings WHERE scope = 'all' AND scope_id = ''").get() as { requests: number } | undefined;
+    return all?.requests === 1;
   }
 
   switches(): RequestSwitch {
-    const rows = this.db.prepare("SELECT scope, scope_id FROM access_settings WHERE requests = 1 ORDER BY scope_id").all() as { scope: string; scope_id: string }[];
-    return { all: rows.some((r) => r.scope === "all"), projects: rows.filter((r) => r.scope === "project").map((r) => r.scope_id) };
+    const all = this.enabled(null);
+    const rows = this.db.prepare("SELECT scope_id, requests FROM access_settings WHERE scope = 'project' ORDER BY scope_id").all() as { scope_id: string; requests: number }[];
+    return { all, projects: rows.map((r) => ({ id: r.scope_id, on: r.requests === 1 })) };
   }
 
-  /** Turn requests on or off for one project (an id), or for every page (null). */
+  /**
+   * Turn requests on or off for every page (`projectId` null), which clears every project's own
+   * setting, or for one project (an id), kept only where it differs from every page's.
+   */
   setEnabled(projectId: string | null, on: boolean): void {
-    this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES (?, ?, ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests").run(projectId == null ? "all" : "project", projectId ?? "", on ? 1 : 0);
+    inTransaction(this.db, () => {
+      if (projectId == null) {
+        this.db.prepare("DELETE FROM access_settings WHERE scope = 'project'").run();
+        this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('all', '', ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests").run(on ? 1 : 0);
+      } else if (on === this.enabled(null)) {
+        this.db.prepare("DELETE FROM access_settings WHERE scope = 'project' AND scope_id = ?").run(projectId);
+      } else {
+        this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('project', ?, ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests").run(projectId, on ? 1 : 0);
+      }
+    });
+  }
+
+  /** Waiting requests nobody decided within WAITING_TTL_MS lapse: they leave the queue, and their browsers may ask again. */
+  private lapse(): void {
+    const now = this.now();
+    this.db.prepare("UPDATE access_requests SET status = 'lapsed', decided_at = ? WHERE status = 'waiting' AND created_at <= ?").run(now, now - WAITING_TTL_MS);
   }
 
   /**
@@ -157,6 +182,7 @@ export class RequestStore {
     const now = this.now();
     const addr = clip(meta.addr);
     return inTransaction(this.db, () => {
+      this.lapse();
       const recent = this.db.prepare("SELECT COUNT(*) AS n FROM access_requests WHERE addr IS ? AND created_at > ?").get(addr, now - HOUR_MS) as { n: number };
       if (Number(recent.n) >= REQUESTS_PER_ADDR_HOUR) throw new RequestRefused("Too many requests from this address. Try again in an hour.", 429);
       const waiting = this.db.prepare("SELECT COUNT(*) AS n FROM access_requests WHERE status = 'waiting'").get() as { n: number };
@@ -176,20 +202,32 @@ export class RequestStore {
   }
 
   /**
-   * Approve a waiting request: a device named as the request, with `scope` and `auto`. It has no
-   * secret yet: only the browser holding the request's pending secret can collect it (see collect).
+   * Approve a waiting request: a device named as the request (or `name`, when the owner renames it),
+   * with `scope` and `auto`. Refused, as a link is, when a live link or device of that name has
+   * that scope already, so a name stays one person's and `share revoke <name>` stays unambiguous.
+   * The device has no secret yet: only the browser holding the request's pending secret can collect it (see collect).
    */
-  approve(id: string, scope: Scope, auto: boolean): DeviceRow {
+  approve(id: string, scope: Scope, auto: boolean, name?: unknown): DeviceRow {
     const now = this.now();
     return inTransaction(this.db, () => {
       const row = this.waiting(id);
+      let clean = row.name;
+      if (name !== undefined && name !== null && name !== "") {
+        try {
+          clean = cleanName(name);
+        } catch (err) {
+          throw new RequestRefused((err as Error).message, 400);
+        }
+      }
+      const same = (this.db.prepare("SELECT * FROM devices WHERE scope_kind = ? AND scope_id IS ?").all(scope.kind, scope.id) as unknown as DeviceRow[]).filter((r) => sameName(r.name, clean) && isLive(r, now));
+      if (same.length) throw new RequestRefused(`"${clean}" already has access with this scope: approve under another name (--as), revoke that one first, or deny this request`, 409);
       const deviceId = newDeviceId();
       this.db
         .prepare(
           `INSERT INTO devices (id, name, origin, verified_login, scope_kind, scope_id, auto, created_at, claimed_at, last_addr, last_host, user_agent)
            VALUES (?, ?, 'request', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(deviceId, row.name, row.verified_login, scope.kind, scope.id, auto ? 1 : 0, now, now, row.addr, row.host, row.user_agent);
+        .run(deviceId, clean, row.verified_login, scope.kind, scope.id, auto ? 1 : 0, now, now, row.addr, row.host, row.user_agent);
       this.db.prepare("UPDATE access_requests SET status = 'approved', device_id = ?, decided_at = ? WHERE id = ?").run(deviceId, now, id);
       return this.db.prepare("SELECT * FROM devices WHERE id = ?").get(deviceId) as unknown as DeviceRow;
     });
@@ -218,6 +256,7 @@ export class RequestStore {
   }
 
   private waiting(id: string): AccessRequestRow {
+    this.lapse();
     const row = this.get(id);
     if (!row) throw new RequestRefused(`no request ${JSON.stringify(id)}`, 404);
     if (row.status !== "waiting") throw new RequestRefused(`this request was ${row.status} already`, 409);
