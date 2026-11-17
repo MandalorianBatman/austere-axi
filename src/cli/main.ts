@@ -44,7 +44,7 @@ import type { Capability } from "./adapters/types.ts";
 import { LOOKS_RULE } from "./agent-prompt.ts";
 import { adapterWarnings, attachReport, changeSetting, effectiveAttach, isAttachMode, readSetting, resolveSessionValue, resolveSetting } from "./attach.ts";
 import type { AttachFields, AttachSettingRow, AttachState } from "./attach.ts";
-import { getRun, listRuns, readRunLog } from "./dispatch.ts";
+import { endLeftover, getRun, listRuns, readRunLog } from "./dispatch.ts";
 import type { ListedRun } from "./dispatch.ts";
 
 /** A YAML-shaped result for print(), built up field by field. */
@@ -1265,6 +1265,8 @@ function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void
       } catch (err) {
         return usage(`--${flag}: ${messageOf(err)}`, "adapter");
       }
+      // `""` splits into one empty word: no binary to run, and adapters.json would refuse to load.
+      if (flag === "command" && words.length && !words[0]) return usage(`--command: the first word is the binary to run and cannot be empty ("" removes the adapter)`, "adapter");
       // These arguments decide what a run may do on this machine (A13), so only the user at a terminal sets them, as with trust add.
       if (!process.stdin.isTTY) {
         return usage(`adapter set needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} adapter set ${name} --${flag} ${shellJoin([value])}\` themselves.`, "adapter");
@@ -1759,8 +1761,8 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       if (r.status !== 200) return fail(r.data?.error || `run stop failed (${r.status})`);
       return print({ status: r.data.stopped ? "stopped" : "nothing to stop", file: abs, runs: r.data.stopped || undefined });
     }
-    // No server, so nothing runs: a queued or waiting run ends here, under the state dir's lock so
-    // no server starts meanwhile and launches it. A server that took the lock first stops it itself.
+    // No server owns a run now: a queued or waiting run ends here, under the state dir's lock so no
+    // server starts meanwhile and launches it. A server that took the lock first stops it itself.
     let release: () => void;
     try {
       release = await lockStateDir(stateDir(), { wait: 5000 });
@@ -1769,13 +1771,33 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       return cmdRun(sub, args, flags);
     }
     try {
-      return await withHub(true, (hub) => {
-        const n = Number(hub.db.prepare("UPDATE runs SET status = 'stopped', reason = 'stopped', ended_at = ? WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").run(Date.now(), sessionId(abs)).changes);
-        print({ status: n ? "stopped" : "nothing to stop", file: abs, runs: n || undefined });
+      let rows: { id: string; status: string; pid: number | null; pid_start: string | null }[] = [];
+      await withHub(false, (hub) => {
+        rows = hub.db.prepare("SELECT id, status, pid, pid_start FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").all(sessionId(abs)) as unknown as typeof rows;
+      });
+      if (process.exitCode) return;
+      // A `running` row is a crashed server's run: its harness may still write the page, so its tree
+      // goes first. One whose end cannot be confirmed stays `running`, for the next server's recovery.
+      const stopped: string[] = [];
+      const kept: string[] = [];
+      for (const row of rows) {
+        if (row.status !== "running" || (await endLeftover(row.pid, row.pid_start))) stopped.push(row.id);
+        else kept.push(row.id);
+      }
+      await withHub(true, (hub) => {
+        const end = hub.db.prepare("UPDATE runs SET status = 'stopped', reason = 'stopped', ended_at = ? WHERE id = ?");
+        for (const id of stopped) end.run(Date.now(), id);
+        print({
+          status: stopped.length ? "stopped" : kept.length ? "not stopped" : "nothing to stop",
+          file: abs,
+          runs: stopped.length || undefined,
+          warning: kept.length ? `could not confirm that run ${kept.join(", ")} ended (its process may still run); it stays running, and the next server kills what is left of it` : undefined,
+        });
       });
     } finally {
       release();
     }
+    return;
   }
   if (sub === "log") {
     if (args.length !== 1) return usage(`run log takes a run id: ${BIN} run log <id> (see ${BIN} run list)`, "run");
@@ -2081,30 +2103,48 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
     const abs = needFile(sub, "publish");
     if (!abs || !sub) return;
     // --auto gives reviewers' notes to the agent without the owner: never while an agent is attached (Q3).
-    if (flags.auto) {
+    const attachOn = async (): Promise<boolean | null> => {
       // Read only, and not at all when a server of another version owns the schema: no migration before publishing.
       let hub: Hub;
       try {
         hub = await openHubDirect({ write: false });
       } catch (err) {
-        return fail(`${hubDbFile()} cannot be opened: ${messageOf(err)}`);
+        fail(`${hubDbFile()} cannot be opened: ${messageOf(err)}`);
+        return null;
       }
-      let on: boolean;
       try {
-        on = effectiveAttach(hub.db, sessionId(abs)).state === "on";
+        return effectiveAttach(hub.db, sessionId(abs)).state === "on";
       } finally {
         hub.close();
       }
-      if (on) return fail(`attach is on for ${abs}: --auto would let reviewers' notes start the attached agent without you. Run \`${BIN} attach off ${quote(sub)}\` first, or publish without --auto.`);
+    };
+    // Without a server, the state dir's lock (which an offline `attach on` takes too) spans the check
+    // and the publish, so no `attach on` passes its own --auto check in between (it reads cloud.json,
+    // which the publish writes last).
+    const release = flags.auto && !(await serverIfRunning()) ? await lockStateDir(stateDir(), { wait: 5000 }) : null;
+    let r: cloud.Published;
+    try {
+      if (flags.auto) {
+        const on = await attachOn();
+        if (on === null) return;
+        if (on) return fail(`attach is on for ${abs}: --auto would let reviewers' notes start the attached agent without you. Run \`${BIN} attach off ${quote(sub)}\` first, or publish without --auto.`);
+      }
+      r = await cloud.publish(abs, {
+        auto: !!flags.auto,
+        fresh: !!flags.new,
+        unlisted: !!flags.unlisted,
+        presence: !flags["no-presence"],
+        invite: flags.invite,
+        expiresAt: typeof flags.expires === "string" ? cloud.expiryOf(flags.expires) : undefined,
+      });
+    } finally {
+      release?.();
     }
-    const r = await cloud.publish(abs, {
-      auto: !!flags.auto,
-      fresh: !!flags.new,
-      unlisted: !!flags.unlisted,
-      presence: !flags["no-presence"],
-      invite: flags.invite,
-      expiresAt: typeof flags.expires === "string" ? cloud.expiryOf(flags.expires) : undefined,
-    });
+    // A running server takes `attach on` itself, so no lock spans it: one that came in during the
+    // publish is reported. Runs refuse the page meanwhile (auto_conflict), so no note starts the agent.
+    if (r.auto && release === null && (await attachOn())) {
+      return fail(`${abs} is published with --auto, but attach was turned on for it meanwhile; runs refuse the page (auto_conflict) until \`${BIN} attach off ${quote(sub)}\`, or \`${BIN} publish ${quote(sub)}\` without --auto.`);
+    }
     // Unknown (the rows did not arrive) is not "nobody": warn only when the service showed no live invite.
     const nobody = !r.unlisted && !r.invites.length && r.otherInvites === 0;
     const again = `${BIN} publish ${quote(sub)}${r.auto ? " --auto" : ""}${r.unlisted ? " --unlisted" : ""}${r.presence ? "" : " --no-presence"}`;

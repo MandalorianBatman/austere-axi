@@ -299,6 +299,36 @@ function groupAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Whether a run's recorded process tree still runs though no server owns it: the leader with that
+ * start time, or (it exited) the rest of its group, since a pid is not reused while its group
+ * lives. False with no pid or start recorded (nothing to act on); null when the table cannot tell.
+ */
+function leftoverAlive(pid: number | null, pidStart: string | null): boolean | null {
+  if (pid == null || !pidStart) return false;
+  const leader = systemProcessTable()?.info(pid);
+  if (leader === "unreadable") return null;
+  if (leader) return leader.start === pidStart;
+  return leader === null && groupAlive(pid);
+}
+
+/**
+ * End what is left of a run no server owns (`run stop` without a server): SIGKILL to its tree,
+ * then wait for it to go. True once nothing of it runs; false when that cannot be confirmed (the
+ * table cannot tell, or the group outlived the kill), so the caller leaves the row `running` for a
+ * server's restart recovery.
+ */
+export async function endLeftover(pid: number | null, pidStart: string | null): Promise<boolean> {
+  const alive = leftoverAlive(pid, pidStart);
+  if (alive !== true || pid == null) return alive !== null;
+  killTree(pid, "SIGKILL");
+  for (const deadline = Date.now() + 2000; groupAlive(pid); ) {
+    if (Date.now() >= deadline) return false;
+    await sleep(50);
+  }
+  return true;
+}
+
 /** A run in progress. */
 interface Running {
   row: RunRow;
@@ -392,13 +422,9 @@ export class Dispatcher {
     const stale = this.db.prepare("SELECT * FROM runs WHERE status IN ('running', 'waiting_for_session')").all() as unknown as RunRow[];
     for (const row of stale) {
       // A server that crashed left its run running: that tree goes before a replacement can start on the page.
-      if (row.status === "running" && row.pid != null && row.pid_start) {
-        const leader = systemProcessTable()?.info(row.pid);
-        // The leader itself, or (it exited) the rest of its group: a pid is not reused while its group lives.
-        if ((leader && leader !== "unreadable" && leader.start === row.pid_start) || (leader === null && groupAlive(row.pid))) {
-          killTree(row.pid, "SIGKILL");
-          this.o.log("run-orphan-killed", row.id, `pid=${row.pid}`);
-        }
+      if (row.status === "running" && row.pid != null && leftoverAlive(row.pid, row.pid_start)) {
+        killTree(row.pid, "SIGKILL");
+        this.o.log("run-orphan-killed", row.id, `pid=${row.pid}`);
       }
       this.db.prepare("UPDATE runs SET status = 'interrupted', ended_at = ? WHERE id = ?").run(now, row.id);
       if (row.requeued_from || !row.artifact_id) continue;
@@ -778,9 +804,8 @@ export class Dispatcher {
     } finally {
       fs.closeSync(promptFd);
     }
-    // The run's process, for a restart after a crash (start); its group is the run's tree on POSIX.
+    // The run's process, for a restart after a crash (start) or an offline `run stop`; its group is the run's tree on POSIX.
     const pidStart = child.pid ? startOf(child.pid) : null;
-    if (child.pid) this.db.prepare("UPDATE runs SET pid = ?, pid_start = ? WHERE id = ?").run(child.pid, pidStart, row.id);
     const { promise: done, resolve } = Promise.withResolvers<void>();
     const r: Running = {
       row: getRun(this.db, row.id) as RunRow,
@@ -851,6 +876,16 @@ export class Dispatcher {
       child.once("close", settle);
       setTimeout(settle, 2000).unref();
     });
+    // Recorded once the run is this dispatcher's (stop and close find it): a write that fails ends the run, which must not go on unrecorded.
+    if (child.pid) {
+      try {
+        this.db.prepare("UPDATE runs SET pid = ?, pid_start = ? WHERE id = ?").run(child.pid, pidStart, row.id);
+      } catch (err) {
+        this.o.log("run-pid", row.id, (err as Error).message);
+        write(Buffer.from(`[austere-axi] could not record the run's process, so it is stopped: ${(err as Error).message}\n`));
+        this.kill(r);
+      }
+    }
   }
 
   /** SIGTERM to the run's process tree, SIGKILL after 5 s for what is left. */

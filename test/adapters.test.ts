@@ -283,7 +283,7 @@ test("adapter set is refused without a terminal (exit 2, the command to run), an
   cli(["adapter", "set", "ingest", "--command", ""], { tty: true });
   assert.deepEqual(readAdapters(), { extraArgs: {}, commands: {} });
 
-  for (const args of [["set"], ["set", "nosuch!", "--extra-args", "x"], ["set", "omp"], ["set", "omp", "--command", "x"], ["set", "omp", "--extra-args", "'open"], ["frob"]]) {
+  for (const args of [["set"], ["set", "nosuch!", "--extra-args", "x"], ["set", "omp"], ["set", "omp", "--command", "x"], ["set", "omp", "--extra-args", "'open"], ["set", "ingest", "--command", '""'], ["set", "ingest", "--command", "'' --flag"], ["frob"]]) {
     const r = cli(["adapter", ...args], { tty: true });
     assert.equal(r.code, 2, `${args.join(" ")}: ${r.out}`);
     assert.match(r.out, /code: USAGE/);

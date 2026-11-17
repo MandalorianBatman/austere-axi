@@ -683,6 +683,54 @@ test("after a restart a running or waiting run is interrupted and queued once mo
   }
 });
 
+test("run stop without a server kills a crashed server's leftover run before it marks the run stopped", { skip }, async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-dispatch-offline-stop-")));
+  const table = systemProcessTable();
+  assert.ok(table);
+  const leftover = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore", detached: true });
+  const exited = once(leftover, "exit");
+  try {
+    const start = await until("the leftover's start time", () => {
+      const p = table.info(leftover.pid as number);
+      return p && p !== "unreadable" ? p.start : undefined;
+    });
+    const file = path.join(dir, "quebec.html");
+    fs.writeFileSync(file, "<!doctype html><title>quebec</title>");
+    const store = await SessionStore.open(dir);
+    try {
+      const s = store.ensure(file);
+      const add = store.db.prepare("INSERT INTO runs (id, kind, artifact_id, seq_from, seq_to, status, started_at, pid, pid_start) VALUES (?, 'note', ?, 1, 1, ?, 1, ?, ?)");
+      add.run("r-left", s.id, "running", leftover.pid as number, start);
+      add.run("r-queued", s.id, "queued", null, null);
+    } finally {
+      store.close();
+    }
+    const env = { ...ENV, AUSTERE_AXI_STATE_DIR: dir, AUSTERE_AXI_PORT: String(await freePort()) };
+    // Not spawnSync: this process must keep reaping the leftover (its child) while the CLI waits for it to go.
+    const child = spawn(process.execPath, [CLI, "run", "stop", file], { env });
+    let out = "";
+    child.stdout.on("data", (c) => (out += c));
+    child.stderr.on("data", (c) => (out += c));
+    const [code] = (await once(child, "close")) as [number | null];
+    assert.equal(code, 0, out);
+    assert.match(out, /status: stopped/);
+    assert.match(out, /runs: 2/);
+    await exited;
+    const d = new DatabaseSync(path.join(dir, "hub.db"));
+    try {
+      assert.deepEqual(d.prepare("SELECT id, status FROM runs ORDER BY rowid").all().map((x) => [x.id, x.status]), [
+        ["r-left", "stopped"],
+        ["r-queued", "stopped"],
+      ]);
+    } finally {
+      d.close();
+    }
+  } finally {
+    if (leftover.exitCode === null && leftover.signalCode === null) leftover.kill("SIGKILL");
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a run whose files cannot be written fails with unavailable; the server stays up", { skip: skip || (process.getuid?.() === 0 && "root writes anywhere") }, async () => {
   const { id } = await page("sierra");
   attach(id);
