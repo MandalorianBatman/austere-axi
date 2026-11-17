@@ -613,7 +613,7 @@ test("a project poll keeps the hosted socket of every published page in the proj
   }
 });
 
-test("the agent prompt names the file and the poll command, the shared page when published, and never a secret", async () => {
+test("the agent prompt names the file and the project poll, the shared page when published, and never a secret", async () => {
   const held = file("prompt-held.html");
   const auto = file("prompt-auto.html");
   const plain = file("prompt local's.html");
@@ -633,8 +633,13 @@ test("the agent prompt names the file and the poll command, the shared page when
     };
 
     const h = await prompt(held);
-    assert.ok(h.includes(`austere-axi poll ${quote(held)}`), h);
-    assert.ok(h.includes(`austere-axi poll ${quote(held)} --cursor <n> --agent-reply`), h);
+    // One loop: the poll covers the page's project from any folder; the file is named, never polled on its own.
+    const poll = `austere-axi poll --project ${quote(path.basename(WORK))}`;
+    assert.ok(h.includes(`File: ${held}`), h);
+    assert.ok(h.includes(`Run \`${poll}\``), h);
+    assert.ok(h.includes(`\`${poll} --cursor <n>\``), h);
+    assert.ok(h.includes("austere-axi reply <file> --cursor <n> --agent-reply"), h);
+    assert.doesNotMatch(h, /austere-axi poll \/|foreground|leave it running/);
     assert.match(h, /final: true/);
     assert.match(h, /status: replaced/);
     assert.ok(h.includes(`Shared page: ${CLOUD}/p/${heldPage}`), h);
@@ -654,11 +659,22 @@ test("the agent prompt names the file and the poll command, the shared page when
     });
     assert.doesNotMatch(l, /only after I send them on/);
 
-    // Not published: the file and the command only, and a path with a quote stays one shell word.
+    // Not published: the file and the loop only.
     const p = await prompt(plain);
-    assert.ok(p.includes(`austere-axi poll ${quote(plain)}`), p);
-    assert.match(p, /austere-axi poll "/, "a path with a space or quote is double-quoted");
+    assert.ok(p.includes(`File: ${plain}`) && p.includes(`Run \`${poll}\``), p);
     assert.doesNotMatch(p, /Shared page|remote: true/);
+
+    // Another agent already polls the project: the prompt names the page poll, so the new agent does not replace that poll.
+    const polling = m.run("poll", "--project", WORK, "--timeout-ms", "4000");
+    const plainSid = await open(m, plain);
+    const busy: string = await until("the page poll while the project is polled", async (): Promise<string> => {
+      const res = await fetch(`http://127.0.0.1:${m.port}/s/${plainSid}/agent-prompt`, { headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` } });
+      const text = await res.text();
+      return text.includes(`Run \`austere-axi poll ${quote(plain)}\``) ? text : "";
+    });
+    assert.match(busy, /austere-axi poll "/, "a path with a space or quote is double-quoted");
+    assert.doesNotMatch(busy, /--project/);
+    await polling;
 
     // The owner token, the owner key and invite or login parameters never reach the text.
     const key = fs.readFileSync(path.join(m.state, "owner.key"), "utf8").trim();

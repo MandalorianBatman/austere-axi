@@ -690,7 +690,7 @@ test("without git, pages in two subfolders opened from the parent are one projec
     try {
       const opened = await cliIn(notes, port, state, "a/sprint.html");
       assert.match(opened.out, new RegExp(`^project: ${path.basename(notes)}$`, "m"), opened.out);
-      assert.match(opened.out, /^next: "Run `austere-axi poll` /m, "the next step works from this folder");
+      assert.match(opened.out, /^next: "Run `austere-axi poll`; /m, "the next step works from this folder");
       assert.doesNotMatch(opened.out, /--project/);
       await cliIn(notes, port, state, "b/plan.html");
       await send(port, await open(port, path.join(notes, "b", "plan.html")), "on b");
@@ -739,7 +739,7 @@ test("a project with no open page says so instead of waiting; opening another pr
       // The plan's project is WORK; a page of another project opened from WORK.
       const other = await cliIn(WORK, port, state, OTHER);
       assert.match(other.out, new RegExp(`^project: ${path.basename(OTHER_DIR)}$`, "m"), other.out);
-      assert.match(other.out, new RegExp(`^next: "Run \`austere-axi poll --project ${path.basename(OTHER_DIR)}\` `, "m"));
+      assert.match(other.out, new RegExp(`^next: "Run \`austere-axi poll --project ${path.basename(OTHER_DIR)}\`; `, "m"));
     } finally {
       rmDir(empty);
     }
