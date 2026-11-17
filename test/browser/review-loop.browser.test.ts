@@ -137,7 +137,8 @@ before(async () => {
   browser = launched.browser;
   port = await freePort();
   server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)], {
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" },
+    // A quiet agent turns stale after 2 s here, not 10 min, so the phone test can see it.
+    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1", AUSTERE_AXI_STALE_WORKING_MS: "2000" },
     stdio: "ignore",
   });
   for (let i = 0; i < 100; i++) {
@@ -479,6 +480,64 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
     }
     // Back to one open copy each time round.
     for (const file of [main, feat]) await api("/api/unarchive", { file });
+  }
+});
+
+test("on a phone the dock says what the agent does; with nobody listening the composer says what Send does and the owner can copy the agent prompt", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "presence-phone.html");
+  fs.writeFileSync(file, htmlPage("Presence", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  const { context, page, problems } = await openReview(file, VIEWPORTS[1]);
+  try {
+    const dock = page.locator(".dock .dock-presence");
+    await page.waitForSelector(".dock .dock-presence:has-text('Agent not listening')");
+    await page.locator(".dock").click();
+    const line = page.locator(".composer-presence");
+    await line.waitFor({ state: "visible" });
+    assert.equal(await line.locator("span").textContent(), "Saved. The agent gets them the next time it checks.");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${port}` });
+    await line.locator(".copy-prompt").click();
+    await page.waitForSelector(".banner:not([hidden])");
+    assert.ok((await page.evaluate(() => navigator.clipboard.readText())).includes(`File: ${file}`));
+
+    await page.fill(".composer textarea", "tighten the intro");
+    await page.click(".composer .send");
+    await page.waitForSelector(".dock .dock-presence:has-text('1 waiting')");
+    const res = await api("/api/poll", { file, timeoutMs: 5000 });
+    assert.equal(res.status, "feedback");
+    // The poll that took the notes is gone and never replies: working, then stale.
+    await page.waitForSelector(".dock .dock-presence:has-text('Agent working')");
+    assert.equal(await line.isVisible(), false, "an agent has the notes: no not-listening line");
+    await page.waitForSelector(".dock .dock-presence:has-text('Took your notes, no reply yet')", { timeout: 15_000 });
+    assert.equal(await dock.evaluate((el) => el.scrollWidth <= el.clientWidth), true, "the stale label fits the dock at 390 px");
+
+    await api("/api/reply", { file, text: "done", cursor: res.cursor });
+    await page.waitForSelector(".dock .dock-presence:has-text('Agent not listening')");
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});
+
+test("Copy agent prompt under the composer asks again after the prompt could not be fetched", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "prompt-retry.html");
+  fs.writeFileSync(file, htmlPage("Prompt retry", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  const { context, page } = await openReview(file, VIEWPORTS[0]);
+  try {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${port}` });
+    // Opening the menu fetches the prompt again; here the service does not answer.
+    await page.route("**/agent-prompt", (route) => route.abort());
+    await page.click(".menu-btn");
+    await page.locator(".composer-presence .copy-prompt").click();
+    await page.waitForSelector(".banner:has-text('Could not get the agent prompt')");
+    // The service is back: the same button must fetch again, not replay the failed answer.
+    await page.unroute("**/agent-prompt");
+    await page.locator(".composer-presence .copy-prompt").click();
+    await page.waitForSelector(".banner:has-text('Agent prompt copied.')");
+    assert.ok((await page.evaluate(() => navigator.clipboard.readText())).includes(`File: ${file}`));
+  } finally {
+    await context.close();
   }
 });
 

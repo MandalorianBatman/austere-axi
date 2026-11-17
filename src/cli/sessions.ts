@@ -79,6 +79,8 @@ export interface Session {
   revision: number;
   lastDeliveredAt: number | null;
   workingSince: number | null;
+  /** While an agent works on the page: its last sign of life (the handover, then each change to the file). Presence reads `stale` once it is older than STALE_WORKING_MS. */
+  agentAt: number | null;
   /** The newest batch a page poll (or, with `root`, a checkout's poll) handed over, its cursor and when: until acknowledged, the page is not a wider poll's. */
   pageHold: { seq: number; at: number; root?: true } | null;
 }
@@ -632,6 +634,7 @@ function hydrate(row: ArtifactRow): Session {
     revision: 0,
     lastDeliveredAt: null,
     workingSince: null,
+    agentAt: null,
     pageHold: null,
   };
 }

@@ -115,6 +115,9 @@ interface ArchivePlan {
 interface SnapshotEvent {
   transcript?: Entry[];
   presence: string;
+  /** While an agent has the notes: when it took them, by the server's clock (`now`). */
+  since?: number;
+  now: number;
   session: SessionInfo;
   more?: boolean;
   links: { remote?: string } | null;
@@ -126,6 +129,8 @@ interface SnapshotEvent {
 
 interface PresenceEvent extends SessionInfo {
   presence: string;
+  since?: number;
+  now: number;
 }
 
 interface ChangedEvent {
@@ -350,6 +355,8 @@ const state: {
   queue: QueueItem[];
   transcript: Entry[];
   presence: string;
+  /** When the agent took the notes it works on, by this browser's clock; null when no agent has them. */
+  since: number | null;
   archived: boolean;
   unread: number;
   more: boolean;
@@ -376,6 +383,7 @@ const state: {
   queue: LS.get<QueueItem[]>(`austere:queue:${SID}`, []),
   transcript: [],
   presence: "idle",
+  since: null,
   archived: false,
   unread: 0,
   more: false,
@@ -476,6 +484,7 @@ document.body.innerHTML = `
           </span>
         </div>
         <div class="composer-error" hidden></div>
+        <div class="composer-presence" hidden><span>Saved. The agent gets them the next time it checks.</span><button type="button" class="btn tiny copy-prompt">Copy agent prompt</button></div>
       </form>
     </aside>
   </div>
@@ -486,7 +495,7 @@ document.body.innerHTML = `
 // RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
 // from all of them (RLM-322).
 if (!OWNER) {
-  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', '[data-cmd="share"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach"];
+  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', ".copy-prompt", '[data-cmd="share"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach"];
   if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
   for (const sel of ownerOnly) $(sel)?.remove();
 }
@@ -1273,35 +1282,58 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+/** How long ago the agent took the notes: "4 min", "1 h 5 min"; "" under a minute. */
+function agentFor(): string {
+  const min = state.since == null ? 0 : Math.floor((Date.now() - state.since) / 60_000);
+  if (min < 1) return "";
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ""}`;
+}
+
 function renderPresence() {
   const el = $(".presence");
   let label: string;
   let cls: string;
+  const took = agentFor();
   if (state.archived) [label, cls] = ["Page archived", "ended"];
   else if (lockout) [label, cls] = [lockout, "ended"];
   else if (!state.connected) [label, cls] = ["Reconnecting…", "off"];
   else if (HOSTED) [label, cls] = ["Shared page", "hosted"];
   else if (state.presence === "listening") [label, cls] = ["Agent listening", "listening"];
-  else if (state.presence === "working") [label, cls] = ["Agent working", "working"];
+  else if (state.presence === "working") [label, cls] = [took ? `Agent working (${took})` : "Agent working", "working"];
+  else if (state.presence === "stale") [label, cls] = [took ? `Took your notes ${took} ago, no reply yet` : "Took your notes, no reply yet", "stale"];
   else [label, cls] = ["Agent not listening", "idle"];
   if (cls === "idle" && state.unread) label += ` · ${state.unread} waiting`;
   // With an agent attached, "not listening" says nothing: the Agent pill tells what runs.
-  el.className = `presence ${cls}${cls === "idle" && attach.info?.effective.state === "on" ? " attached" : ""}`;
+  const attached = cls === "idle" && attach.info?.effective.state === "on";
+  el.className = `presence ${cls}${attached ? " attached" : ""}`;
   el.textContent = label;
   el.title =
     cls === "idle"
       ? "Your notes are kept and reach the agent the next time it polls."
       : cls === "working"
         ? "The agent has your last batch."
-        : cls === "hosted"
-          ? "Notes go to the page owner. Replies show up here as they are posted."
-          : "";
+        : cls === "stale"
+          ? "The agent took your last notes. It has not replied or changed the page for a while."
+          : cls === "hosted"
+            ? "Notes go to the page owner. Replies show up here as they are posted."
+            : "";
+  // Nobody listens: what Send does now, and for the owner the way to start an agent.
+  const line = $(".composer-presence");
+  const show = cls === "idle" && !attached && (OWNER || VIEWER.auto === true);
+  if (show && line.hidden && OWNER) void loadAgentPrompt();
+  line.hidden = !show;
+  document.documentElement.classList.toggle("is-archived", state.archived);
   if (OWNER) {
     $('[data-cmd="archive"]').hidden = state.archived;
     $('[data-cmd="unarchive"]').hidden = !state.archived;
   }
   renderDock();
 }
+// "Agent working (2 min)" and "Took your notes 14 min ago" count up on their own.
+setInterval(() => {
+  if (state.presence === "working" || state.presence === "stale") renderPresence();
+}, 30_000);
+$(".copy-prompt")?.addEventListener("click", () => void copyAgentPrompt());
 
 function renderChanges() {
   const btn = $(".changes");
@@ -1348,7 +1380,10 @@ function loadAgentPrompt(): Promise<string> {
     (t) => {
       if (agentPrompt === p) agentPromptText = t;
     },
-    () => {},
+    () => {
+      // A failed fetch must not stay cached: the next click asks again.
+      if (agentPrompt === p) agentPrompt = null;
+    },
   );
   return p;
 }
@@ -2024,7 +2059,10 @@ function renderDock() {
   if (n) parts.push(`${n} queued`);
   const last = state.transcript[state.transcript.length - 1];
   if (last?.role === "agent" && last.at > (SS.get<number>(`austere:seen:${SID}`) || 0)) parts.push("new reply");
-  dock.innerHTML = `<span class="dock-grip"></span><span>${esc(parts.join(" · "))}</span><span class="dock-presence ${esc($(".presence").className.replace("presence", "").trim())}"></span>`;
+  // On a phone the header hides the presence: the dock carries its label (none when an attached agent's pill says it).
+  const p = $(".presence");
+  const label = p.classList.contains("attached") ? "" : `<span class="dock-presence ${esc(p.className.replace("presence", "").trim())}">${esc(p.textContent || "")}</span>`;
+  dock.innerHTML = `<span class="dock-grip"></span><span class="dock-text"><span>${esc(parts.join(" · "))}</span>${label}</span>`;
 }
 function pulseDock() {
   const dock = $(".dock");
@@ -2179,6 +2217,7 @@ function connect() {
     const d: SnapshotEvent = JSON.parse(e.data);
     state.transcript = (d.transcript || []).filter((e) => !e.discarded);
     state.presence = d.presence;
+    state.since = d.since == null ? null : d.since + (Date.now() - d.now);
     state.archived = !!d.session.archived;
     state.unread = d.session.unread || 0;
     state.more = !!d.more;
@@ -2221,6 +2260,7 @@ function connect() {
   source.addEventListener("presence", (e) => {
     const d: PresenceEvent = JSON.parse(e.data);
     state.presence = d.presence;
+    state.since = d.since == null ? null : d.since + (Date.now() - d.now);
     state.archived = !!d.archived;
     state.unread = d.unread || 0;
     setMode(state.mode);
