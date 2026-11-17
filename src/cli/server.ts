@@ -94,6 +94,8 @@ export interface OpenResponse {
   browsers: number;
   pending: number;
   held: number;
+  /** The page's project: `ref` names it for `--project` (its name, or its id when another project has that name); `here`: the folder the CLI ran in (`cwd`) is in it. */
+  project?: { name: string; ref: string; here: boolean };
 }
 
 /**
@@ -911,6 +913,8 @@ export async function runServer({
     // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
     const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
     if (!file) return send(res, 400, { error: "file is required" });
+    // The folder the CLI ran in: a page without a project may take it as its root.
+    const cwd = typeof body.cwd === "string" && path.isAbsolute(body.cwd) ? body.cwd : undefined;
 
     if (route === "share") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
@@ -922,7 +926,7 @@ export async function runServer({
       }
       let inv: Invite;
       try {
-        const s = store.ensure(file);
+        const s = store.ensure(file, cwd);
         inv = invites.add({ name: body.name, sessionId: s.id, file: s.file, auto: !!body.auto });
         watch(s);
         joinProjectPoll(s);
@@ -937,16 +941,29 @@ export async function runServer({
     if (route === "open") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
       await ensureTailnetListener();
-      const s = store.ensure(file);
+      const s = store.ensure(file, cwd);
       watch(s);
       joinProjectPoll(s);
       store.touch(s);
+      const pid = store.projectIdOf(s);
+      const p = pid ? findProject(hub.db, pid, { folders: false }) : null;
+      let project: OpenResponse["project"];
+      if (p) {
+        let ref = p.id;
+        try {
+          if (findProject(hub.db, p.name, { folders: false })?.id === p.id) ref = p.name;
+        } catch {
+          // another project has the name: the id
+        }
+        project = { name: p.name, ref, here: cwd !== undefined && findProject(hub.db, cwd)?.id === p.id };
+      }
       return send(res, 200, {
         session: publicSession(s),
         links: links(s.id),
         browsers: clientCount(s.id),
         pending: store.unread(s).length,
         held: store.heldEntries(s).length,
+        project,
       } satisfies OpenResponse);
     }
 

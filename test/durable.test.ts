@@ -611,6 +611,77 @@ test("project feedback with no server reads hub.db and labels each copy as the s
     }
   }));
 
+// ── folders without git: the project is the folder the CLI ran in ──
+
+/** A scratch folder with copies of the plan at `rels`; its real path. */
+function folderWith(prefix: string, ...rels: string[]): string {
+  const dir = fs.realpathSync(tmp(prefix));
+  for (const rel of rels) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.copyFileSync(FILE, path.join(dir, rel));
+  }
+  return dir;
+}
+
+const rmDir = (dir: string) => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+
+test("without git, pages in two subfolders opened from the parent are one project, and a bare poll there covers both", () =>
+  withServer(async ({ port, state }) => {
+    const notes = folderWith("austere-durable-notes-", "a/sprint.html", "b/plan.html");
+    try {
+      const opened = await cliIn(notes, port, state, "a/sprint.html");
+      assert.match(opened.out, new RegExp(`^project: ${path.basename(notes)}$`, "m"), opened.out);
+      assert.match(opened.out, /^next: "Run `austere-axi poll` /m, "the next step works from this folder");
+      assert.doesNotMatch(opened.out, /--project/);
+      await cliIn(notes, port, state, "b/plan.html");
+      await send(port, await open(port, path.join(notes, "b", "plan.html")), "on b");
+      const r = await cliIn(notes, port, state, "poll", "--timeout-ms", "5000");
+      assert.match(r.out, /^status: feedback$/m, r.out);
+      assert.match(r.out, /^pages: 2$/m);
+      assert.match(r.out, /message: on b/);
+    } finally {
+      rmDir(notes);
+    }
+  }));
+
+test("nested folders opened from each: feedback from the parent lists the child's note", () =>
+  withServer(async ({ port, state }) => {
+    const work = folderWith("austere-durable-nested-", "notes.html", "reviews/plan.html");
+    try {
+      await cliIn(path.join(work, "reviews"), port, state, "plan.html");
+      await cliIn(work, port, state, "notes.html");
+      await send(port, await open(port, path.join(work, "reviews", "plan.html")), "unanswered in reviews");
+      const r = await cliIn(work, port, state, "feedback", "--peek");
+      assert.match(r.out, /message: unanswered in reviews/, r.out);
+      assert.match(r.out, /^pages: 2$/m);
+    } finally {
+      rmDir(work);
+    }
+  }));
+
+test("a project with no open page says so instead of waiting; opening another project's page names it in next", () =>
+  withServer(async ({ port, state }) => {
+    const empty = folderWith("austere-durable-empty-", "draft.html");
+    try {
+      await cliIn(empty, port, state, "check", "draft.html"); // known to the hub, never opened for review
+      const started = Date.now();
+      const poll = await cliIn(empty, port, state, "poll", "--timeout-ms", "20000");
+      assert.ok(Date.now() - started < 15_000, "it does not wait");
+      assert.match(poll.out, /^pages: 0$/m, poll.out);
+      assert.match(poll.out, /no page of this project is open: `austere-axi <file>`/);
+      const feedback = await cliIn(empty, port, state, "feedback");
+      assert.match(feedback.out, /^pages: 0$/m, feedback.out);
+      assert.match(feedback.out, /no page of this project is open: `austere-axi <file>`/);
+
+      // The plan's project is WORK; a page of another project opened from WORK.
+      const other = await cliIn(WORK, port, state, OTHER);
+      assert.match(other.out, new RegExp(`^project: ${path.basename(OTHER_DIR)}$`, "m"), other.out);
+      assert.match(other.out, new RegExp(`^next: "Run \`austere-axi poll --project ${path.basename(OTHER_DIR)}\` `, "m"));
+    } finally {
+      rmDir(empty);
+    }
+  }));
+
 test("a second server on the same state dir refuses to start", () =>
   withServer(async ({ port, state }) => {
     const other = startServer(await freePort(), state);

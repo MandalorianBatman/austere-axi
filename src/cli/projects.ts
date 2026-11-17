@@ -4,11 +4,12 @@
 // binary is never run.
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type * as sqlite from "node:sqlite";
 import { canonicalFile } from "./paths.ts";
 
-/** How a root was found: assigned by the owner (`project add`), a folder with a `.git` directory or submodule `.git` file, a git worktree, or a page's own folder. */
+/** How a root was found: assigned by the owner (`project add`), a folder with a `.git` directory or submodule `.git` file, a git worktree, or a guessed folder (where the CLI ran, else a page's own folder). */
 export type RootKind = "assigned" | "git" | "worktree" | "folder";
 
 export interface ProjectRow {
@@ -162,32 +163,77 @@ function storeRoot(db: sqlite.DatabaseSync, root: string, kind: RootKind, projec
 
 const placeOf = (r: RootRow): Place => ({ projectId: r.project_id, root: r.root, kind: r.kind, prefix: r.prefix });
 
+/** Whether `dir` is a file system root or the home folder: a guessed root there holds only its own folder. */
+function broad(dir: string): boolean {
+  return path.dirname(dir) === dir || pathKey(dir) === pathKey(canonicalFile(os.homedir()));
+}
+
 /**
- * The project and root of a folder (canonical), storing a root found by `.git` or by the folder
- * itself, so the next lookup finds it stored. First match, walking up from `dir`:
- *  1. a stored root (the nearest is the longest). A `folder` root, a guess from a page's own
- *     folder, matches only that folder: a page in `~/a/b` does not join a project made for `~/a`;
+ * Whether the stored root `r` holds the folder `dir` at or below it. The one rule for opening a page
+ * and for finding a project by folder: every root holds everything below it, except a `folder` root
+ * at `/` or the home folder, which holds only that folder.
+ */
+const holds = (r: RootRow, dir: string): boolean => r.kind !== "folder" || pathKey(r.root) === pathKey(dir) || !broad(r.root);
+
+/** What holds a folder, walking up from it: the first stored root that holds it, else the first folder with a `.git`, else nothing. */
+function lookup(roots: RootRow[], dir: string): { row: RootRow } | { at: string; git: "dir" | "file" } | null {
+  const byKey = new Map(roots.map((r) => [pathKey(r.root), r]));
+  for (let d = dir; ; ) {
+    const row = byKey.get(pathKey(d));
+    if (row && holds(row, dir)) return { row };
+    const git = dotGit(d);
+    if (git) return { at: d, git };
+    const up = path.dirname(d);
+    if (up === d) return null;
+    d = up;
+  }
+}
+
+/**
+ * The project and root of a folder (canonical), storing a root found by `.git` or guessed, so the
+ * next lookup finds it stored. `cwd` is the folder the CLI ran in, if any. First match, walking up from `dir`:
+ *  1. a stored root that `holds` it (the nearest);
  *  2. a `.git` entry: a directory makes a `git` root; a file points at a git dir, and a `commondir`
  *     there leads to the main repository, whose project this `worktree` root joins (no
  *     `commondir`: a submodule, its own project). Inside an assigned root, the folder holding
  *     `.git` is a root of the assigned root's project, and its pages' paths start with its folder
  *     inside the assigned root, so two repositories there keep apart; a repository's worktrees,
  *     wherever they are, share its prefix and so its pages;
- *  3. `dir` itself, a `folder` root.
+ *  3. a guessed `folder` root: `cwd` when `dir` is inside it and it is not `/` or the home folder,
+ *     else `dir`. It takes in the guessed roots below it (`takeIn`).
  */
-export function resolveDir(db: sqlite.DatabaseSync, dir: string): Place {
+export function resolveDir(db: sqlite.DatabaseSync, dir: string, cwd?: string): Place {
   const roots = allRoots(db);
-  const byKey = new Map(roots.map((r) => [pathKey(r.root), r]));
-  for (let d = dir; ; ) {
-    const row = byKey.get(pathKey(d));
-    if (row && (row.kind !== "folder" || d === dir)) return placeOf(row);
-    const git = dotGit(d);
-    if (git) return gitPlace(db, d, git, roots);
-    const up = path.dirname(d);
-    if (up === d) break;
-    d = up;
+  const found = lookup(roots, dir);
+  if (found && "row" in found) return placeOf(found.row);
+  if (found) return gitPlace(db, found.at, found.git, roots);
+  const row = storeRoot(db, cwd && within(cwd, dir) && !broad(cwd) ? cwd : dir, "folder");
+  if (!broad(row.root)) takeIn(db, row);
+  return placeOf(row);
+}
+
+/**
+ * A new guessed root takes in the guessed roots below it that nothing nearer holds (a stored root
+ * or a `.git` in between) and whose project has no other root: their pages move to its project.
+ */
+function takeIn(db: sqlite.DatabaseSync, outer: RootRow): void {
+  // Shortest first: a guessed root in between is taken in before, or else keeps, the ones below it.
+  const below = allRoots(db)
+    .filter((r) => r.kind === "folder" && r.root !== outer.root && within(outer.root, r.root))
+    .sort((a, b) => a.root.length - b.root.length);
+  let taken = false;
+  for (const r of below) {
+    const roots = allRoots(db);
+    if (roots.some((o) => o.project_id === r.project_id && o.root !== r.root)) continue;
+    const stored = new Set(roots.map((o) => pathKey(o.root)));
+    let held = false;
+    for (let d = path.dirname(r.root); d !== outer.root && !held; d = path.dirname(d)) held = stored.has(pathKey(d)) || dotGit(d) !== null;
+    if (held) continue;
+    db.prepare("DELETE FROM project_roots WHERE root = ?").run(r.root);
+    rekey(db, r.root, r.project_id);
+    taken = true;
   }
-  return placeOf(storeRoot(db, dir, "folder"));
+  if (taken) prune(db);
 }
 
 /** The nearest assigned root holding `dir` (or only those of `projectId`): the owner said everything under it is one project. */
@@ -234,11 +280,12 @@ function ensurePage(db: sqlite.DatabaseSync, projectId: string, relPath: string)
   return id;
 }
 
-/** The project, root and page of a file (resolved through canonicalFile), storing what it finds. */
-export function resolveProject(db: sqlite.DatabaseSync, file: string): Located {
+/** The project, root and page of a file (resolved through canonicalFile), storing what it finds; `cwd`: the folder the CLI ran in. */
+export function resolveProject(db: sqlite.DatabaseSync, file: string, cwd?: string): Located {
   const abs = canonicalFile(file);
+  const base = cwd ? canonicalFile(cwd) : undefined;
   // One write transaction: two processes seeing a folder for the first time store one root.
-  return inTransaction(db, () => locatedIn(db, resolveDir(db, path.dirname(abs)), abs));
+  return inTransaction(db, () => locatedIn(db, resolveDir(db, path.dirname(abs), base), abs));
 }
 
 function locatedIn(db: sqlite.DatabaseSync, place: Place, file: string): Located {
@@ -279,8 +326,10 @@ export function backfillProjects(db: sqlite.DatabaseSync): void {
 }
 
 /**
- * A project by id, name, or any folder inside one of its roots. Throws when a name is ambiguous.
- * `folders: false` matches an id or name only (the server, which has no working directory to resolve against).
+ * A project by id, name, or any folder a root of it holds (by the rule `resolveDir` stores roots by;
+ * a repository not seen yet is in no project unless an assigned root holds it). Throws when a name
+ * is ambiguous. `folders: false` matches an id or name only (the server, which has no working
+ * directory to resolve against).
  */
 export function findProject(db: sqlite.DatabaseSync, ref: string, { folders = true }: { folders?: boolean } = {}): ProjectRow | null {
   const byId = db.prepare("SELECT * FROM projects WHERE id = ?").get(ref) as unknown as ProjectRow | undefined;
@@ -289,10 +338,19 @@ export function findProject(db: sqlite.DatabaseSync, ref: string, { folders = tr
   if (named.length > 1) throw new Error(`several projects are named ${ref}: ${named.map((p) => p.id).join(", ")}; use an id`);
   if (named.length) return named[0];
   if (!folders) return null;
-  const dir = canonicalFile(path.resolve(ref));
-  let best: RootRow | null = null;
-  for (const r of allRoots(db)) if (within(r.root, dir) && (!best || r.root.length > best.root.length)) best = r;
-  return best ? (db.prepare("SELECT * FROM projects WHERE id = ?").get(best.project_id) as unknown as ProjectRow) : null;
+  const roots = allRoots(db);
+  const found = lookup(roots, canonicalFile(path.resolve(ref)));
+  const id = !found ? null : "row" in found ? found.row.project_id : gitProjectOf(roots, found.at, found.git);
+  return id ? ((db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as unknown as ProjectRow | undefined) ?? null) : null;
+}
+
+/** The project a page under the `.git` at `dir` would join, as `gitPlace` decides, without storing anything; null: a new one. */
+function gitProjectOf(roots: RootRow[], dir: string, git: "dir" | "file"): string | null {
+  const assigned = assignedHolder(roots, dir);
+  if (assigned) return assigned.project_id;
+  const main = git === "file" ? mainRepoOf(dir) : null;
+  if (!main) return null;
+  return roots.find((r) => pathKey(r.root) === pathKey(main))?.project_id ?? assignedHolder(roots, main)?.project_id ?? null;
 }
 
 function needProject(db: sqlite.DatabaseSync, ref: string): ProjectRow {
@@ -375,7 +433,7 @@ function settlePrefixes(db: sqlite.DatabaseSync, projectId: string): void {
  * `project add <dir> [--name n]`: make `dir` an assigned root, of the project named `name` (made if
  * there is none) or else of its own project. Roots guessed from a page's folder inside `dir` are
  * absorbed, whatever their project, and their pages re-keyed under `dir`; any other root of another
- * project above or below `dir` is an error naming it (a guessed folder above holds only its own pages).
+ * project above or below `dir` is an error naming it (a guessed folder above keeps what is outside `dir`).
  */
 export function addRoot(db: sqlite.DatabaseSync, dir: string, name?: string): { project: ProjectRow; root: string } {
   const root = canonicalFile(dir);
