@@ -11,6 +11,7 @@ austere-axi reply <file>         post a reply without polling   [--cursor n]
 austere-axi login [file]         single-use link that signs a browser in as you (SSH, --no-open)
 austere-axi feedback [file]      feedback no agent has answered yet; no file: every page of the project   [--project p] [--all] [--peek]
 austere-axi sessions list [file]   agent sessions that opened, patched or listened to a page; no file: the project   [--project p]
+austere-axi run list [file]      runs of the attached agent; no file: the project   [--project p]; run log <id>; run stop <file>
 austere-axi check <file>         validate the program (no browser)    [--fix] [--render: headless Chrome, text report]
 austere-axi patch <file>         merge statements from stdin into the program (reports dropped unreferenced ones)
 austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
@@ -78,6 +79,37 @@ austere-axi adapter set <name> --command "<bin> <args…>"          a command ad
 - **Terminal only:** `adapter set` without a terminal exits 2, changes nothing and prints the command for the user to run. `--extra-args` and `--command` are split like a shell line (quotes, backslashes), with no variable or glob expansion.
 - **One file, in the state dir:** the settings live in `<state>/adapters.json` (mode 0600). A file of that name in a project, a page's folder or anywhere else is never read.
 - **A missing binary is not an error:** a harness whose binary is not on `PATH` lists every capability as `no: <bin> not found on PATH`.
+
+## Runs
+
+With attach on for a page (RLM-346 sets it), a note the owner sends from the review page, or a held note the owner releases, starts the page's harness headless: it reads the notes with `feedback`, changes the page with `patch` and answers with `reply`, through the normal CLI. A reviewer's note starts nothing until the owner releases it. While an agent polls the page (its own poll or its project's), the note goes to that poll and no run starts; a poll that arrives cancels a run that has not started.
+
+```
+austere-axi run list [file] [--project p]   status, reason, harness and mode, the notes (seq) and how long it took; no file: the project
+austere-axi run log <id>                    what the run printed (stdout and stderr), and why it ended
+austere-axi run stop <file>                 end the page's runs: the running one and everything it started is killed
+```
+
+- **When a run starts:** 5 s after the owner's last note on the page (`debounceMs`). One run per page at a time; notes that arrive while one runs make the next run, after it. At most 2 runs at once on the machine (`maxConcurrent`); the rest stay `queued`.
+- **Which session:** the page's setting names a mode (`same`, `fork`, `new`) and a session (`author`: the session that wrote the page, followed to its newest continuation). With no session registered for the page, the run is `new`; the first `new` run's session is kept, and later `new` runs on the page resume it. A `same` run waits (`waiting_for_session`) while that session's harness process still runs, and starts when it exits (checked every second, and again every `recheckMs`, and when a poll arrives). A session whose process is unknown (`sessions list` shows `unknown`) is not resumed: the run fails with `session_unknown`; choose fork or new.
+- **Statuses:** `queued`, `waiting_for_session`, `running`, `done`, `failed`, `stopped`, `interrupted`. A run is `done` only when it replied to every note it was started for; exit 0 without a reply is `failed` with `no_reply` (a harness without a write grant exits 0, see Adapters). Other reasons: `exit` (non-zero exit), `timeout`, `cost_cap` (omp exit 3), `session_in_use` (Copilot), `stopped`, `session_unknown`, `unsupported` (Copilot fork), `unavailable` (no such adapter, or its binary is not on `PATH`), `rate_limit`, `auto_conflict` (the page is published or shared with `--auto`), `config` (a malformed `attach.json` or `adapters.json`), and for a run that ended before it started: `listener`, `answered`, `attach_off`. A failed run leaves its notes unanswered, and is not retried; the owner's review page hears each change of a run, with the last 20 log lines when it failed.
+- **What a run gets:** a 0600 prompt file on stdin (the page's path, the three commands and the seq its reply acknowledges; no note text), deleted when the run ends; the working directory of the page's root (else its folder); the server's environment with `AUSTERE_AXI_RUN_ID`, `AUSTERE_AXI_STATE_DIR` and `AUSTERE_AXI_PORT` of this server. Never the owner key, in argv, environment, prompt or log.
+- **Logs:** `<state>/runs/<id>.log`, mode 0600, stdout and stderr, cut at 1 MB, removed after 30 days.
+- **Time limit:** after `maxMinutes` the run's whole process tree is killed (SIGTERM, then SIGKILL 5 s later; `taskkill /T /F` on Windows). `run stop` and the review page's stop do the same at once.
+- **Restart:** a server that stops kills its runs; the next one marks them `interrupted` and queues each once more.
+- **Attach and `--auto` exclude each other:** an unattended run reads only notes the owner sent or released. `publish --auto` and `share --auto` refuse while attach is on for the page, and a run refuses (`auto_conflict`) on a page published or shared with `--auto`.
+
+`<state>/attach.json` (written by the owner, read only from the state dir; every key optional):
+
+| Key | Default | |
+|---|---|---|
+| `maxMinutes` | `15` | wall clock per run |
+| `runsPerHour` | `12` | runs started per page in any hour; the next one fails with `rate_limit` |
+| `maxConcurrent` | `2` | runs at once on the machine |
+| `debounceMs` | `5000` | wait after the owner's last note |
+| `recheckMs` | `30000` | how often a waiting run looks again |
+| `maxCost` | | omp `--max-cost` (dollars) |
+| `maxAiCredits` | | Copilot `--max-ai-credits` |
 
 ## Environment
 

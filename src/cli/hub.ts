@@ -262,6 +262,42 @@ CREATE UNIQUE INDEX IF NOT EXISTS page_sessions_key ON page_sessions(artifact_id
 CREATE INDEX IF NOT EXISTS page_sessions_session ON page_sessions(agent_session_id);
 `;
 
+// Attach (attach.ts, dispatch.ts, RLM-345/346): the owner's attach setting per page (`pages.id`)
+// and per project, and the agent runs the dispatcher started. A run's log is a file beside
+// hub.db (`log_file`); `requeued_from` names the run a restart interrupted, so it is queued once.
+const ATTACH = `
+CREATE TABLE IF NOT EXISTS attach_settings (
+  scope TEXT NOT NULL,
+  scope_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  mode TEXT,
+  session TEXT,
+  harness TEXT,
+  model TEXT,
+  PRIMARY KEY (scope, scope_id)
+);
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  artifact_id TEXT,
+  project_id TEXT,
+  agent_session_id TEXT,
+  harness TEXT,
+  mode TEXT,
+  model TEXT,
+  seq_from INTEGER,
+  seq_to INTEGER,
+  started_at INTEGER,
+  ended_at INTEGER,
+  exit_code INTEGER,
+  status TEXT NOT NULL,
+  reason TEXT,
+  log_file TEXT,
+  requeued_from TEXT
+);
+CREATE INDEX IF NOT EXISTS runs_artifact ON runs(artifact_id, status);
+`;
+
 /** Bring hub.db to the current schema in one transaction; a second run changes nothing. */
 function migrate(db: sqlite.DatabaseSync): void {
   db.exec(PRAGMAS);
@@ -292,6 +328,7 @@ function migrate(db: sqlite.DatabaseSync): void {
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
     db.exec(AGENT_SESSIONS);
+    db.exec(ATTACH);
     backfillProjects(db);
   });
 }

@@ -54,11 +54,11 @@ In a session: `/plugin marketplace add MandalorianBatman/austere-axi`, then `/pl
 
 ### MCP
 
-`austere-axi mcp` is an MCP server on stdio. Tools: `spec`, `check`, `open`, `poll`, `reply`, `patch`, `components`, `sessions_list`. Each one runs the CLI command of the same name (`sessions_list` is `sessions list`), so the loop is the same as on the command line.
+`austere-axi mcp` is an MCP server on stdio. Tools: `spec`, `check`, `open`, `poll`, `reply`, `patch`, `components`, `sessions_list`, `run_list`, `run_log`. Each one runs the CLI command of the same name (`sessions_list` is `sessions list`, `run_list` is `run list`, `run_log` is `run log`), so the loop is the same as on the command line.
 
 - `poll` takes a `file`, or a `project` (a name, an id or a folder) with no file: one poll for every page of the project, each batch naming its file. `agent_reply` belongs to file polls; reply to each page of a project poll with `reply`. `poll` returns `status: timeout` after 50 s by default, because many clients cancel longer calls. The agent polls again; nothing is lost. `timeout_ms: 0` waits until feedback arrives.
 - `poll` and `reply` take the `cursor` a poll returned, like `--cursor`.
-- `open`, `poll`, `reply` and `patch` take `session` (`<harness>:<id>`), like `--session`, for a client whose harness does not name its session in the environment. `sessions_list` takes a `file`, or a `project` with no file, like `sessions list`.
+- `open`, `poll`, `reply` and `patch` take `session` (`<harness>:<id>`), like `--session`, for a client whose harness does not name its session in the environment. `sessions_list` and `run_list` take a `file`, or a `project` with no file, like `sessions list` and `run list`; `run_log` takes the run's `id`. There is no tool for `run stop`.
 - `components` takes `command` (`search`, `show`, `list` or `add`) and `args`; `show` also takes `pack`, like `--pack`. `add` takes only an npm package name, never a folder or `.tgz`, and has no `trust`: a third-party pack the user has not trusted is refused, and the agent asks the user to install it.
 - Pass absolute file paths. The server resolves relative paths against its own working directory, which depends on the client.
 - No screen? Set `AUSTERE_AXI_NO_OPEN=1` in the server's `env` so `open` prints the link instead. Other [environment variables](cli.md#environment) work the same way.

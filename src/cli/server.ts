@@ -25,6 +25,9 @@ import { detectSupervisor } from "./service.ts";
 import type { Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub, activeWorkNow } from "./hub.ts";
+import { Dispatcher } from "./dispatch.ts";
+import type { RunEvent } from "./dispatch.ts";
+import { autoConflict, effectiveAttach } from "./attach.ts";
 import { copyLabel, findProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { COOKIE, InviteStore, LoginCodes, OWNER_COOKIE, inviteId, ownerCookie, ownerKey, safeEqual, tokenFromCookie } from "./invites.ts";
@@ -170,6 +173,12 @@ export interface RevokeResponse {
 export interface LoginResponse {
   code: string;
   ttlMs: number;
+}
+
+/** /api/run/stop and /s/:id/run/stop: how many runs of the page ended (RLM-345). */
+export interface RunStopResponse {
+  ok: true;
+  stopped: number;
 }
 
 /** Who is asking for a page: the owner, or a team reviewer with a valid invite. */
@@ -321,13 +330,24 @@ export async function runServer({
     listening: (s) => Boolean(listener(s)),
     changed: (s, entries) => {
       broadcastTranscript(s, entries);
-      wake(s);
+      // A hosted note that arrived released (or was released on another machine) is the owner's (RLM-345).
+      wakeOrRun(s, entries.some((e) => e.role === "user" && e.seq != null && !e.held && !e.discarded && !e.doneAt));
       broadcastPresence(s);
     },
     viewing: (s) => Array.from(clients.get(s.id) || []).some((c) => c.viewer.role === "owner"),
     relay: (s, frame) => {
       for (const c of Array.from(clients.get(s.id) || [])) if (c.viewer.role === "owner") sseWrite(clients.get(s.id) as Set<SseClient>, c, viewerEvent(frame));
     },
+  });
+  // Attached agents (RLM-345): a note the owner sent or released starts a run when no poll holds the page.
+  const dispatcher = new Dispatcher({
+    db: store.db,
+    store,
+    port,
+    log,
+    listening: (s) => Boolean(listener(s)),
+    autoConflict: (s) => autoConflict(s.file, s.id, invites.list()),
+    emit: (id, event) => broadcastOwners(id, "run", event),
   });
   // Render errors already sent per session, for one revision; a repeat or a second tab adds nothing.
   const renderReported = new Map<string, { revision: number; keys: Set<string> }>();
@@ -512,6 +532,14 @@ export async function runServer({
     for (const c of Array.from(set)) sseWrite(set, c, msg);
   }
 
+  /** An event for the owner's review pages of a copy only, never a reviewer's. */
+  function broadcastOwners(id: string, event: string, data: RunEvent): void {
+    const set = clients.get(id);
+    if (!set) return;
+    const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const c of Array.from(set)) if (c.viewer.role === "owner") sseWrite(set, c, msg);
+  }
+
   function broadcastPresence(s: Session): void {
     broadcast(s.id, "presence", { presence: presence(s), archived: Boolean(s.archivedAt), unread: store.unread(s).length });
   }
@@ -679,6 +707,17 @@ export async function runServer({
     if (batches.length) deliverProject(shared, batches);
   }
 
+  /**
+   * New notes on `s`: a listening poll gets them, else, when the owner sent or released them
+   * (`ownersNote`), the attached agent's run is queued (RLM-345). Who listens is read before the
+   * wake, which ends the poll it answers.
+   */
+  function wakeOrRun(s: Session, ownersNote: boolean): void {
+    const held = Boolean(listener(s));
+    wake(s);
+    if (ownersNote && !held) dispatcher.noteSeq(s);
+  }
+
   /** The `cursor` or `after` of a poll or reply: a whole number, or null when absent. */
   function seqParam(v: unknown): number | null {
     if (v == null || v === "") return null;
@@ -811,7 +850,10 @@ export async function runServer({
         if (acked.length) broadcastTranscript(s, acked);
       }
     }
-    for (const s of mine) s.workingSince = null;
+    for (const s of mine) {
+      s.workingSince = null;
+      dispatcher.pollArrived(s);
+    }
     const existing = projectPolls.get(projectId);
     if (existing && !existing.done) finishProjectPoll(existing, { status: "replaced" });
     const poll: Poll = { res, startedAt: Date.now(), done: false, from: 0, project: projectId, after };
@@ -943,6 +985,10 @@ export async function runServer({
       let inv: Invite;
       try {
         const s = store.ensure(file);
+        // An --auto invite gives a reviewer's notes a seq without the owner: never while an agent is attached (Q3, A17).
+        if (body.auto && effectiveAttach(store.db, s.id).state === "on") {
+          return send(res, 409, { error: `attach is on for ${file}: an --auto invite would let a reviewer's notes start the attached agent without you. Run \`austere-axi attach off ${file}\` first, or share without --auto.` });
+        }
         inv = invites.add({ name: body.name, sessionId: s.id, file: s.file, auto: !!body.auto });
         watch(s);
         joinProjectPoll(s);
@@ -974,6 +1020,12 @@ export async function runServer({
     if (route === "archive" || route === "unarchive") {
       if (!setArchived(file, route === "archive" ? Date.now() : null)) return send(res, 404, { error: "not in the hub" });
       return send(res, 200, { ok: true });
+    }
+
+    if (route === "run/stop") {
+      const s = store.byFile(file);
+      const stopped = s ? await dispatcher.stop(s.id) : 0;
+      return send(res, 200, { ok: true, stopped } satisfies RunStopResponse);
     }
 
     // A published page's notes may be waiting on the service: catch up first (for a file never opened here too).
@@ -1014,6 +1066,7 @@ export async function runServer({
 
     if (route === "poll") {
       const after = seqParam(body.after);
+      dispatcher.pollArrived(s);
       const acked = acknowledge(s, body, !!body.agentReply);
       if (body.agentReply) {
         const entry = store.tx(() => {
@@ -1457,7 +1510,7 @@ export async function runServer({
       if (hold && store.heldEntries(s).filter((e) => e.author === who.name).length >= MAX_HELD_PER_REVIEWER) return send(res, 429, { error: "too many notes awaiting the owner; wait for them to be released" });
       const entry = store.addUserBatch(s, items, { end, author: who.name, hold });
       broadcastTranscript(s, [entry]);
-      wake(s);
+      wakeOrRun(s, !reviewer);
       broadcastPresence(s);
       return send(res, 200, { ok: true, entry });
     }
@@ -1496,13 +1549,18 @@ export async function runServer({
         return d;
       });
       if (done.length) broadcastTranscript(s, done);
-      if (sub === "/release") wake(s);
+      if (sub === "/release") wakeOrRun(s, done.length > 0);
       broadcastPresence(s);
       return send(res, 200, { ok: true, count: done.length });
     }
     if ((sub === "/archive" || sub === "/unarchive") && req.method === "POST") {
       setArchived(s.file, sub === "/archive" ? Date.now() : null);
       return send(res, 200, { ok: true });
+    }
+    if (sub === "/run/stop" && req.method === "POST") {
+      // The owner's only: reviewers are refused above, and a foreign Origin before that.
+      const stopped = await dispatcher.stop(s.id);
+      return send(res, 200, { ok: true, stopped } satisfies RunStopResponse);
     }
     if (sub === "/presence" && req.method === "POST") {
       // The owner's own status and focus for the hosted page's viewers; nothing happens when the file is not published.
@@ -1601,6 +1659,7 @@ export async function runServer({
     for (const poll of projectPolls.values()) finishProjectPoll(poll, { status: "interrupted", reason });
     for (const id of watchers.keys()) unwatch(id);
     peer.close();
+    dispatcher.close();
     for (const server of listeners.values()) server.close();
     // Everything is already on disk; let a replacement server take the state dir at once.
     releaseLock();
@@ -1631,6 +1690,7 @@ export async function runServer({
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   log("started", `v${VERSION}`, `pid=${process.pid}`);
+  dispatcher.start();
   peer.start();
   return { port, shutdown };
 }

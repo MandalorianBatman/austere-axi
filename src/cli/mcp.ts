@@ -40,6 +40,7 @@ type ToolArgs = {
   args?: string[];
   pack?: string;
   session?: string;
+  id: string;
 };
 
 interface Tool {
@@ -194,6 +195,30 @@ const TOOLS: Record<string, Tool> = {
       return null;
     },
     run: (a) => [{ args: typeof a.project === "string" ? ["sessions", "list", "--project", a.project] : ["sessions", "list", "--", a.file] }],
+  },
+  run_list: {
+    title: "Runs of the attached agent",
+    description:
+      "The runs the owner's attach setting started on a page (a note the owner sent or released starts the attached harness headless): status (queued, waiting_for_session, running, done, failed, stopped, interrupted), why it failed, harness and mode, the notes it was for. Pass a file for one page, or a project (a name, an id or a folder) for every page of it.",
+    readOnly: true,
+    properties: {
+      file: { type: "string", description: "Path of the .html page. Leave out to list a project. Use an absolute path." },
+      project: { type: "string", description: "The project to list when no file is given: a name, an id, or a folder inside one of its roots." },
+    },
+    reject: (a) => {
+      if (typeof a.file === "string" && typeof a.project === "string") return "pass a file or a project, not both";
+      if (typeof a.file !== "string" && typeof a.project !== "string") return "pass a file, or a project to list all of its pages";
+      return null;
+    },
+    run: (a) => [{ args: typeof a.project === "string" ? ["run", "list", "--project", a.project] : ["run", "list", "--", a.file] }],
+  },
+  run_log: {
+    title: "Log of one run",
+    description: "What one run of the attached agent printed (its stdout and stderr, up to 1 MB, kept 30 days), with its status and reason. The id comes from run_list.",
+    readOnly: true,
+    properties: { id: { type: "string", description: "The run's id, as run_list shows it." } },
+    required: ["id"],
+    run: (a) => [{ args: ["run", "log", "--", a.id] }],
   },
 };
 

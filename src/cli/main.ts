@@ -17,7 +17,7 @@ import { lockStateDir } from "./lock.ts";
 import { installService, installedServiceFor, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
-import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
@@ -40,6 +40,10 @@ import { adapterFor, ADAPTERS, capabilitiesOf, findOnPath } from "./adapters/ind
 import { adaptersFile, extraArgsFor, HARNESSES, hasWriteGrant, isCommandName, isHarness, readAdapters, shellJoin, shellWords, writeAdapters } from "./adapters/config.ts";
 import type { AdaptersConfig } from "./adapters/config.ts";
 import type { Capability } from "./adapters/types.ts";
+import { LOOKS_RULE } from "./agent-prompt.ts";
+import { effectiveAttach } from "./attach.ts";
+import { getRun, listRuns, readRunLog } from "./dispatch.ts";
+import type { ListedRun } from "./dispatch.ts";
 
 /** A YAML-shaped result for print(), built up field by field. */
 type Printed = Record<string, unknown>;
@@ -123,10 +127,7 @@ statements unreachable from root. It warns when an Architecture diagram will not
 page (it would scroll sideways).
 
 LOOKS
-  The reviewer judges how the page looks. Do not open, screenshot or inspect the page
-  yourself (browser tools, curl, headless runs) unless the user asks: check ok + open is
-  done. Render failures come back through poll. When the user asks you to verify the
-  page, run \`${BIN} check --render <file>\` (headless Chrome, text report, no image).
+${LOOKS_RULE.map((l) => `  ${l}`).join("\n")}
 
 COMMANDS
   ${BIN} check <file>            validate without a browser: syntax, components, props,
@@ -135,6 +136,7 @@ COMMANDS
   ${BIN} archive <file>          put a page away: the hub's lists leave it out (unarchive: back)
   ${BIN} feedback [file]         notes no agent has answered yet (no file: the whole project)   [--all] [--peek]
   ${BIN} sessions list [file]    agent sessions that opened, patched or listened to a page (no file: the project)
+  ${BIN} run list [file]         runs of the attached agent on a page (no file: the project); run log <id>, run stop <file>
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} trust list              packs and scopes the user lets you add without --trust
@@ -161,6 +163,8 @@ NOTES
   open, patch, poll, reply and feedback print \`session:\`, the agent session they ran in: from the
   harness's environment (omp PI_SESSION_ID, Copilot CLI COPILOT_AGENT_SESSION_ID, dsh DSH_SESSION_ID)
   or --session <harness>:<id>. Session ids stay on this machine; \`${BIN} sessions list\` shows them.
+  With attach on, a note the owner sends or releases starts the attached harness headless
+  (\`${BIN} run list\`); limits in <state dir>/attach.json. A run gets AUSTERE_AXI_RUN_ID.
 
 ENV
   AUSTERE_AXI_PORT (4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
@@ -236,6 +240,13 @@ const COMMANDS: Record<string, CommandSpec> = {
       "the agent sessions that opened, patched, polled, replied to or read the feedback of a page: harness, short id, role (author: opened or patched it first; editor: opened or patched it later; listener), last seen, and whether its harness process still runs (alive, exited, unknown). With no file: every page of the project (the folder you run it in, or --project)",
     flags: { project: "the project to list when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)" },
     example: "sessions list plan.html",
+  },
+  run: {
+    usage: "run list [file] [--project p] | run log <id> | run stop <file>",
+    summary:
+      "the runs of an attached agent: with attach on, a note the owner sends or releases starts the page's harness headless to read it, patch the page and reply. list: status (queued, waiting_for_session, running, done, failed, stopped, interrupted), why it failed, harness and mode, the notes it was for; with no file: every page of the project. log: what the run printed (kept 30 days). stop: end the page's runs, killing the running one and what it started",
+    flags: { project: "the project to list when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)" },
+    example: "run list plan.html   |   run log r1a2b3c4d5e6f   |   run stop plan.html",
   },
   check: {
     usage: "check <file> [--fix] [--render]",
@@ -353,7 +364,7 @@ const COMMANDS: Record<string, CommandSpec> = {
     },
     example: "server install --link-url https://austere.example.com",
   },
-  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch components sessions_list as tools", flags: {}, example: "mcp" },
+  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch components sessions_list run_list run_log as tools", flags: {}, example: "mcp" },
   help: { usage: "help [command]", summary: "the full workflow, or one command's help", flags: {}, example: "help poll" },
 };
 
@@ -1589,6 +1600,72 @@ async function cmdSessions(sub: string | undefined, args: string[], flags: Flags
   });
 }
 
+/** `run list [<file>|--project p] | run log <id> | run stop <file>`: the attached agent's runs (RLM-345). */
+async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
+  if (sub === "stop") {
+    if (args.length !== 1) return usage(`run stop takes one file: ${BIN} run stop <file>`, "run");
+    const abs = canonicalFile(args[0]);
+    if (await serverIfRunning()) {
+      const r = await request<RunStopResponse>("POST", "/api/run/stop", { file: abs }, { timeoutMs: 15_000 });
+      if (r.status !== 200) return fail(r.data?.error || `run stop failed (${r.status})`);
+      return print({ status: r.data.stopped ? "stopped" : "nothing to stop", file: abs, runs: r.data.stopped || undefined });
+    }
+    // No server, so nothing runs: a queued or waiting run ends here, before a server could start it.
+    return withHub((hub) => {
+      const n = Number(hub.db.prepare("UPDATE runs SET status = 'stopped', reason = 'stopped', ended_at = ? WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").run(Date.now(), sessionId(abs)).changes);
+      print({ status: n ? "stopped" : "nothing to stop", file: abs, runs: n || undefined });
+    });
+  }
+  if (sub === "log") {
+    if (args.length !== 1) return usage(`run log takes a run id: ${BIN} run log <id> (see ${BIN} run list)`, "run");
+    return withHub((hub) => {
+      const row = getRun(hub.db, args[0]);
+      if (!row) throw new Error(`no run ${args[0]} (see \`${BIN} run list\`)`);
+      const text = readRunLog(row);
+      print({ id: row.id, status: row.status, reason: row.reason ?? undefined, log: text === null ? "none" : text.trimEnd() || "empty" });
+    });
+  }
+  if (sub !== undefined && sub !== "list") return usage(`unknown run command: ${sub}. One of: list, log, stop`, "run");
+  if (args.length > 1) return usage(`run list takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`, "run");
+  const file = args[0];
+  if (file !== undefined && typeof flags.project === "string") return usage("run list takes a file or --project, not both", "run");
+  return withHub((hub) => {
+    let scope: Printed;
+    let rows: ListedRun[];
+    if (file !== undefined) {
+      const abs = canonicalFile(file);
+      scope = { file: abs };
+      rows = listRuns(hub.db, { artifactId: sessionId(abs) });
+    } else {
+      const project = findProject(hub.db, typeof flags.project === "string" ? flags.project : process.cwd());
+      if (!project) {
+        throw new Error(
+          typeof flags.project === "string"
+            ? `no project ${flags.project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`
+            : `no project holds this folder (${process.cwd()}): name a page file, or a project with --project`,
+        );
+      }
+      scope = { project: project.name };
+      rows = listRuns(hub.db, { projectId: project.id });
+    }
+    if (!rows.length) return print({ ...scope, runs: "none", note: "A run starts when attach is on for a page and the owner sends or releases a note while no agent polls it." });
+    print({
+      ...scope,
+      runs: rows.map((r) => ({
+        id: r.id,
+        file: file === undefined ? (r.file ?? undefined) : undefined,
+        status: r.status,
+        reason: r.reason ?? undefined,
+        harness: r.harness ? `${r.harness}${r.mode ? ` ${r.mode}` : ""}${r.model ? ` ${r.model}` : ""}` : undefined,
+        notes: r.seq_from === null ? undefined : r.seq_from === r.seq_to ? `seq ${r.seq_from}` : `seq ${r.seq_from}..${r.seq_to}`,
+        started: r.started_at === null ? undefined : shortDate(r.started_at),
+        took: r.started_at !== null && r.ended_at !== null ? `${Math.max(0, Math.round((r.ended_at - r.started_at) / 1000))}s` : undefined,
+      })),
+      next: `${BIN} run log <id> shows what a run printed.`,
+    });
+  });
+}
+
 // ── share (team review) ──
 
 function ago(ms: number): string {
@@ -1704,6 +1781,17 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
     }
     const abs = needFile(sub, "publish");
     if (!abs || !sub) return;
+    // --auto gives reviewers' notes to the agent without the owner: never while an agent is attached (Q3).
+    if (flags.auto) {
+      const hub = await Hub.open();
+      let on: boolean;
+      try {
+        on = effectiveAttach(hub.db, sessionId(abs)).state === "on";
+      } finally {
+        hub.close();
+      }
+      if (on) return fail(`attach is on for ${abs}: --auto would let reviewers' notes start the attached agent without you. Run \`${BIN} attach off ${quote(sub)}\` first, or publish without --auto.`);
+    }
     const r = await cloud.publish(abs, {
       auto: !!flags.auto,
       fresh: !!flags.new,
@@ -1877,6 +1965,8 @@ async function main(): Promise<unknown> {
       return cmdArchive(rest[0], false);
     case "patch":
       return cmdPatch(rest[0], flags);
+    case "run":
+      return cmdRun(rest[0], rest.slice(1), flags);
     case "sessions":
       return cmdSessions(rest[0], rest.slice(1), flags);
     case "spec":

@@ -353,16 +353,14 @@ test("a supervised server says so in server.lock and /api/health, never idles ou
 
 test("an unsupervised server waits out the idle exit while a run is active or an agent is attached", async () => {
   // The tables come with the dispatcher and the attach settings (RLM-345, RLM-346); the
-  // idle exit waits for them when they are there (RLM-340).
+  // idle exit waits for them (RLM-340).
   const { child, port } = await startServer({ AUSTERE_AXI_IDLE_TIMEOUT_MS: "200" });
   const db = await openDatabase(path.join(STATE, "hub.db"));
   try {
-    db.exec("CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, status TEXT NOT NULL)");
-    db.exec("CREATE TABLE IF NOT EXISTS attach_settings (scope TEXT NOT NULL, scope_id TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY (scope, scope_id))");
     assert.equal(hasActiveWork(db), false);
     // A run is active: the server stays up over several idle intervals, without a request
     // to keep it awake (a health check would reset the idle timer on its own).
-    db.exec("INSERT INTO runs (id, status) VALUES ('r1', 'running')");
+    db.exec("INSERT INTO runs (id, kind, status) VALUES ('r1', 'note', 'running')");
     assert.equal(hasActiveWork(db), true);
     await new Promise((r) => setTimeout(r, 1200));
     assert.equal(child.exitCode, null, "the server idle-exited while a run was active");
