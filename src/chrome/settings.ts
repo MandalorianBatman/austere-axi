@@ -57,7 +57,17 @@ function field(label: string, control: HTMLElement): HTMLLabelElement {
 }
 
 function select(name: string, options: [string, string][], value: string, label: string): HTMLSelectElement {
-  return h("select", { name, "aria-label": label }, options.map(([v, text]) => h("option", { value: v, text, selected: v === value })));
+  const el: HTMLSelectElement = h("select", { name, "aria-label": label }, options.map(([v, text]) => h("option", { value: v, text, selected: v === value })));
+  el.addEventListener("change", () => (el.dataset.touched = "1"));
+  return el;
+}
+
+/**
+ * The notes mode to send: the owner's choice when they changed the selector, else nothing, so the server
+ * applies the saved default itself (and holds the notes where an attached agent rules auto out).
+ */
+function chosenAuto(mode: HTMLSelectElement): boolean | undefined {
+  return mode.dataset.touched ? mode.value === "auto" : undefined;
 }
 
 /** Who a scope reaches, as a select: this page (when there is one), a project, or every page. */
@@ -115,7 +125,7 @@ export async function renderSettings(ui: SettingsUi): Promise<Child[]> {
         { class: "row-actions wrap" },
         scope,
         mode,
-        button("Approve", () => act<{ device?: AccessSummary }>(`/hub/api/people/requests/${q.id}/approve`, { ...scopeBody(scope.value), auto: mode.value === "auto" }, (d) => `${q.name} is in: ${d.device?.reaches ?? "approved"}. The browser that asked opens the page by itself.`), { class: "btn tiny primary" }),
+        button("Approve", () => act<{ device?: AccessSummary }>(`/hub/api/people/requests/${q.id}/approve`, { ...scopeBody(scope.value), auto: chosenAuto(mode) }, (d) => `${q.name} is in: ${d.device?.reaches ?? "approved"}. The browser that asked opens the page by itself.`), { class: "btn tiny primary" }),
         button("Deny", () => act(`/hub/api/people/requests/${q.id}/deny`, {}, () => `Denied ${q.name}. That browser may ask again.`)),
         button("Block", () => act(`/hub/api/people/requests/${q.id}/block`, {}, () => `Blocked ${q.name}'s browser: it can no longer ask.`)),
       ),
@@ -403,7 +413,9 @@ export async function renderSettings(ui: SettingsUi): Promise<Child[]> {
 }
 
 function copy(ui: SettingsUi, text: string, what: string): void {
-  void navigator.clipboard?.writeText(text).then(
+  // No Clipboard API over plain HTTP on a network address: show the text instead of doing nothing.
+  if (!navigator.clipboard) return ui.say(`Copy it by hand: ${text}`);
+  void navigator.clipboard.writeText(text).then(
     () => ui.say(`${what} is copied.`),
     () => ui.say(`Copy it by hand: ${text}`),
   );
@@ -440,7 +452,7 @@ function newLinkForm(ui: SettingsUi, pages: ShellPage[], projects: ProjectSummar
   );
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const r = await send<ShareResponse>("/hub/api/people/share", { page: page.value, name: name.value, ...scopeBody(scope.value), auto: mode.value === "auto" });
+    const r = await send<ShareResponse>("/hub/api/people/share", { page: page.value, name: name.value, ...scopeBody(scope.value), auto: chosenAuto(mode) });
     if (!r.ok) {
       error.textContent = r.error;
       error.hidden = false;

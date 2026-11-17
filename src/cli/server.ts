@@ -1354,6 +1354,16 @@ export async function runServer({
     }
   }
 
+  /** After pages change project (merge, forget-root): every open reviewer stream is checked against its device's scope again. */
+  function recheckScopes(): void {
+    const ids = new Set<string>();
+    for (const set of clients.values()) for (const c of set) if (c.viewer.role === "reviewer" && c.viewer.deviceId) ids.add(c.viewer.deviceId);
+    for (const id of ids) {
+      const row = devices.get(id);
+      cutOff(id, row && row.revoked_at == null ? row : null);
+    }
+  }
+
   // ── file watching ──
 
   function readFileSafe(file: string): string | null {
@@ -2393,6 +2403,8 @@ export async function runServer({
         const from = typeof body.from === "string" ? (hub.db.prepare("SELECT id, name FROM projects WHERE id = ?").get(body.from) as { id: string; name: string } | undefined) : undefined;
         if (!from) return send(res, 400, { error: "from must be another project's id" });
         mergeProjects(hub.db, p.id, from.id);
+        // Pages changed project: a reviewer scoped to the old project loses them now, not on the next request.
+        recheckScopes();
         log("project-merge", p.id, from.id);
         return done(`Merged ${from.name} into ${p.name}.`);
       }
@@ -2400,6 +2412,7 @@ export async function runServer({
       const root = typeof body.root === "string" ? body.root : "";
       if (!listProjects(hub.db).find((x) => x.id === p.id)?.roots.some((r) => r.root === root)) return send(res, 400, { error: `not a root of ${p.name}` });
       const r = forgetRoot(hub.db, root, { drop: body.drop === true });
+      recheckScopes();
       const at = Date.now();
       for (const file of r.archived) archivedInMemory(sessionId(file), at);
       log("project-forget-root", p.id, root, r.status);

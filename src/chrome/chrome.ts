@@ -1868,6 +1868,11 @@ async function sharePage() {
     error,
     h("div", { class: "confirm-actions" }, h("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: close }), create),
   );
+  // An untouched notes choice is the saved default: leave it to the server, which holds the notes where an attached agent rules auto out.
+  let modeTouched = false;
+  form.addEventListener("change", (e) => {
+    if ((e.target as HTMLInputElement).name === "mode") modeTouched = true;
+  });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const data = new FormData(form);
@@ -1876,7 +1881,7 @@ async function sharePage() {
       method: "POST",
       headers: { "content-type": "application/json" },
       // The project the dialog offered: the server refuses the share if the page has moved since.
-      body: JSON.stringify({ name: String(data.get("name") || ""), scope: String(data.get("scope") || "page"), project: offer.project?.id, auto: data.get("mode") === "auto" }),
+      body: JSON.stringify({ name: String(data.get("name") || ""), scope: String(data.get("scope") || "page"), project: offer.project?.id, auto: modeTouched ? data.get("mode") === "auto" : undefined }),
     }).catch(() => null);
     create.disabled = false;
     if (!done || !done.ok) {
