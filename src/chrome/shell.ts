@@ -361,12 +361,12 @@ async function flip(p: ShellPage, button: HTMLButtonElement, action: "archive" |
     return say(`Could not ${action} ${titleOf(p)}. ${UNREACHABLE}`);
   }
   const undo = action === "archive" ? "unarchive" : "archive";
-  const undoButton = h("button", {
+  const undoButton: HTMLButtonElement = h("button", {
     type: "button",
     class: "btn tiny",
     text: "Undo",
     // Exactly the copies the action changed: a copy archived before stays archived.
-    onclick: async () => {
+    onclick: async (): Promise<void> => {
       if (undoButton.disabled) return;
       undoButton.disabled = true;
       if (!(await post(`/hub/api/page/${p.open_id}/${undo}`, { ids: done.ids }))) {
