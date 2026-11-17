@@ -629,6 +629,84 @@ test("forget-root: worktrees of two repositories in one project stay two pages",
     assert.deepEqual(rows.map((p) => [p.rel_path, p.copies.map((c) => c.id)]).sort(), [["wa/docs/plan.html", ["aaaaaaaaaaaa"]], ["wb/docs/plan.html", ["bbbbbbbbbbbb"]]]);
   }));
 
+/** `hub.list` as [page path, copy ids] rows of the pages holding any of `ids`, sorted. */
+function pagesOf(hub: Hub, ids: string[]): string[][] {
+  return hub
+    .list({ all: true })
+    .filter((p) => p.copies.some((c) => ids.includes(c.id)))
+    .map((p) => [p.rel_path, p.copies.map((c) => c.id).sort().join(" ")])
+    .sort();
+}
+
+for (const order of ["repository first, then project merge", "worktree first"]) {
+  test(`a repository and its worktree stay one page, a loose file another (${order})`, async () =>
+    withDb(async (db, dir) => {
+      const hub = new Hub(db);
+      const shop = repo(path.join(dir, "repos", "shop"));
+      const work = path.join(dir, "work");
+      const feat = worktree(shop, path.join(work, "shop-feat"), "ref: refs/heads/feat");
+      fs.mkdirSync(work, { recursive: true });
+      const files = { repo: write(path.join(shop, "docs", "plan.html")), feat: write(path.join(feat, "docs", "plan.html")), loose: write(path.join(work, "docs", "plan.html")) };
+      const ids = { repo: "111111111111", feat: "222222222222", loose: "333333333333" };
+      if (order === "worktree first") {
+        addRoot(db, work, "work");
+        for (const k of ["feat", "repo", "loose"] as const) hub.register({ id: ids[k], file: files[k] });
+      } else {
+        hub.register({ id: ids.repo, file: files.repo });
+        addRoot(db, work, "work");
+        hub.register({ id: ids.feat, file: files.feat });
+        hub.register({ id: ids.loose, file: files.loose });
+        mergeProjects(db, "work", "shop");
+      }
+      assert.deepEqual(pagesOf(hub, Object.values(ids)), [
+        ["docs/plan.html", ids.loose],
+        ["shop-feat/docs/plan.html", `${ids.repo} ${ids.feat}`],
+      ]);
+      assert.deepEqual(listProjects(db).map((p) => p.name), ["work"]);
+    }));
+}
+
+test("forget-root: a repository no assigned root holds keeps the prefix its worktrees share, so each repository stays one page", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const work = path.join(dir, "work");
+    fs.mkdirSync(work, { recursive: true });
+    addRoot(db, work, "P");
+    const ra = repo(path.join(dir, "repos", "a"));
+    const rb = repo(path.join(dir, "repos", "b"));
+    // Each repository is first seen through its worktree, so its own root joins P with the worktree's prefix.
+    const ids = { wa: "aaaaaaaaaaaa", wb: "bbbbbbbbbbbb", ra: "111111111111", rb: "222222222222" };
+    hub.register({ id: ids.wa, file: write(path.join(worktree(ra, path.join(work, "wa"), "ref: refs/heads/a"), "docs", "plan.html")) });
+    hub.register({ id: ids.wb, file: write(path.join(worktree(rb, path.join(work, "wb"), "ref: refs/heads/b"), "docs", "plan.html")) });
+    hub.register({ id: ids.ra, file: write(path.join(ra, "docs", "plan.html")) });
+    hub.register({ id: ids.rb, file: write(path.join(rb, "docs", "plan.html")) });
+    const expected = [
+      ["wa/docs/plan.html", `${ids.wa} ${ids.ra}`],
+      ["wb/docs/plan.html", `${ids.wb} ${ids.rb}`],
+    ].map(([p, c]) => [p, c.split(" ").sort().join(" ")]);
+    assert.deepEqual(pagesOf(hub, Object.values(ids)), expected);
+    forgetRoot(db, work);
+    assert.deepEqual(pagesOf(hub, Object.values(ids)), expected, "nothing holds the roots any more; the pages stay apart");
+  }));
+
+test("forget-root: a worktree under a surviving assigned root takes that root's prefix, and so does its repository", async () =>
+  withDb(async (db, dir) => {
+    const hub = new Hub(db);
+    const a = path.join(dir, "a");
+    const b = path.join(a, "b");
+    fs.mkdirSync(b, { recursive: true });
+    addRoot(db, a, "P");
+    addRoot(db, b, "P");
+    const main = repo(path.join(dir, "repos", "shop"));
+    const ids = { wt: "aaaaaaaaaaaa", repo: "111111111111" };
+    hub.register({ id: ids.wt, file: write(path.join(worktree(main, path.join(b, "wt"), "ref: refs/heads/wt"), "docs", "plan.html")) });
+    hub.register({ id: ids.repo, file: write(path.join(main, "docs", "plan.html")) });
+    assert.deepEqual(pagesOf(hub, Object.values(ids)), [["b/wt/docs/plan.html", `${ids.repo} ${ids.wt}`]]);
+    forgetRoot(db, a);
+    assert.deepEqual(pagesOf(hub, Object.values(ids)), [["wt/docs/plan.html", `${ids.repo} ${ids.wt}`]]);
+    assert.deepEqual((db.prepare("SELECT prefix FROM project_roots WHERE root IN (?, ?)").all(main, path.join(b, "wt")) as { prefix: string }[]).map((r) => r.prefix), ["wt", "wt"]);
+  }));
+
 test("a path through a symlink resolves to the same project and page", () =>
   withDb((db, dir) => {
     const r = repo(path.join(dir, "real"));
