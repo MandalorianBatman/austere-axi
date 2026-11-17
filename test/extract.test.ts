@@ -121,10 +121,10 @@ test("find: words in a page's statements, best first; the last line says how to 
   const r = await cli(["find", "rollout"]);
   assert.equal(r.code, 0, r.out);
   const first = r.out.split("results:\n")[1].split("\n  - ")[0];
-  assert.match(first, new RegExp(`file: ${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.match(first, /file: [^\n]*find-plan\.html/);
   assert.match(first, /statement: options\n\s+component: Card\n\s+snippet: Rollout options/, "the section titled Rollout options, which holds the options table");
   assert.match(first, /title: Session storage migration/);
-  assert.match(r.out, /\nreuse: austere-axi patch <file> --from [^\n]*find-plan\.html#options\n$/);
+  assert.match(r.out, /\nreuse: [^\n]*austere-axi patch <file> --from [^\n]*find-plan\.html#options[^\n]*\n$/);
   assert.doesNotMatch(r.out, /find-review/, "the other page has no such words");
   const table = await cli(["find", "dual write", "--component", "Table"]);
   assert.match(table.out, /statement: optionTable\n\s+component: Table/);

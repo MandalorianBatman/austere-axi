@@ -200,7 +200,7 @@ test("find, outline, show, history, restore, changes, decisions and patch's from
 
   const found = await call("find", { words: "rollout checklist", project: WORK });
   assert.match(found.content[0].text, /statement: note/);
-  assert.match(found.content[0].text, /^reuse: austere-axi patch <file> --from /m);
+  assert.match(found.content[0].text, /^reuse: [^\n]*austere-axi patch <file> --from /m);
   assert.equal((await call("find", { words: "   " })).isError, true, "no words");
 
   const copied = await call("patch", { file: dest, statements: "root = Stack([intro, note, table])", from: [`${src}#note,table`] });

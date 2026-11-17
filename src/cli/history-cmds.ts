@@ -173,6 +173,6 @@ export function findOutput(db: sqlite.DatabaseSync, words: string, { projectId, 
       state: [h.archived ? "archived" : "", h.missing ? "missing" : ""].filter(Boolean).join(", ") || undefined,
     })),
     search,
-    reuse: `${BIN} patch <file> --from ${quote(hits[0].file)}#${hits[0].statement}`,
+    reuse: `${BIN} patch <file> --from ${quote(`${hits[0].file}#${hits[0].statement}`)}`,
   };
 }

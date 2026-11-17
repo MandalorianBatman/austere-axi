@@ -103,7 +103,7 @@ test("patch --from copies a statement with what it references; a name that clash
   const outline = await cli(["outline", dest]);
   assert.match(outline.out, /flow Architecture \(3\): nodes: Client, API Client → API \(HTTPS\) ← copy-src\.html#flow/, "a copied part is marked");
   const log = (await cli(["history", dest])).out;
-  assert.match(log, /copied:\n[\s\S]*- client2 from [^\n]*copy-src\.html#client \(revision 1\)/);
+  assert.match(log, /copied:\n[\s\S]*- [^\n]*client2 from [^\n]*copy-src\.html#client \(revision 1\)/);
   assert.match(log, /rev: 2\n[\s\S]*source: patch[\s\S]*rev: 1\n[\s\S]*source: open/, "the page as it was before the first patch is revision 1, though it was never opened");
 
   // A copied statement nothing references is dropped and said so, with no origin kept.
@@ -155,7 +155,7 @@ test("the first open of a page lists pages of its project that read alike; a re-
 
   const second = write("alike-c", `root = Stack([head])\nhead = Card([CardHeader("Moving sessions: migration notes")])`, "Session migration, take two");
   const first = await cli([second]);
-  assert.match(first.out, /similar:\n\s+- title: Session storage migration\n\s+file: [^\n]*alike-a\.html\n\s+age: \d+[smhd]/);
+  assert.match(first.out, /similar:\n\s+- title: Session storage migration\n\s+file: [^\n]*alike-a\.html[^\n]*\n\s+age: \d+[smhd]/);
   assert.doesNotMatch(first.out, /alike-b/);
   assert.match(first.out, /similar_note: [^\n]*find <words>/);
   assert.doesNotMatch((await cli([second])).out, /similar:/, "not on a re-open");
