@@ -99,11 +99,15 @@ export interface HubNoteRow {
   label: string;
 }
 
-/** Hub.stats(). */
-export interface HubStats {
-  pages: number;
-  projects: number;
-  unanswered: number;
+/** Hub.viewCounts(): how many pages each view of Hub.list() shows for one search and project. */
+export interface HubViewCounts {
+  /** The default view: reviewed, not archived. */
+  open: number;
+  /** Every page. */
+  everything: number;
+  archived: number;
+  /** Pages with a copy that was only checked (never opened for review) and is not archived. */
+  checked: number;
 }
 
 export function hubDbFile(): string {
@@ -279,6 +283,14 @@ export function itemText(it: NoteItem): unknown {
   return it.text ?? it.note ?? "";
 }
 
+/** The `q` and `project` filter of Hub.list() and Hub.viewCounts(); its seven parameters come from `filterArgs`. */
+const FILTER = `(? = '' OR a.title LIKE ? ESCAPE '\\' OR a.file LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR g.rel_path LIKE ? ESCAPE '\\') AND (? = '' OR a.project_id = ?)`;
+
+function filterArgs(q: string, project: string): string[] {
+  const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+  return [q, like, like, like, like, project, project];
+}
+
 export class Hub {
   db: sqlite.DatabaseSync;
   q: { upsertArtifact: sqlite.StatementSync; artifact: sqlite.StatementSync };
@@ -336,7 +348,6 @@ export class Hub {
    * A copy whose file is gone is listed, marked `missing`.
    */
   list({ q = "", project = "", archived = false, all = false, limit = 500 }: { q?: string; project?: string; archived?: boolean; all?: boolean; limit?: number } = {}): HubPage[] {
-    const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
     const view = all ? "all" : archived ? "archived" : "default";
     const rows = this.db
       .prepare(
@@ -347,12 +358,11 @@ export class Hub {
            SUM(CASE WHEN i.status = 'held' THEN 1 ELSE 0 END) AS held
          FROM artifacts a LEFT JOIN projects p ON p.id = a.project_id LEFT JOIN pages g ON g.id = a.page_id
            LEFT JOIN items i ON i.artifact_id = a.id
-         WHERE (? = '' OR a.title LIKE ? ESCAPE '\\' OR a.file LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR g.rel_path LIKE ? ESCAPE '\\')
-           AND (? = '' OR a.project_id = ?)
+         WHERE ${FILTER}
            AND (? = 'all' OR (? = 'archived' AND a.archived_at IS NOT NULL) OR (? = 'default' AND a.archived_at IS NULL AND a.reviewed = 1))
          GROUP BY a.id ORDER BY a.updated_at DESC`,
       )
-      .all(q, like, like, like, like, project, project, view, view, view) as unknown as (ArtifactRow & { project_name: string; rel_path: string | null } & Record<keyof HubCounts, number | null>)[];
+      .all(...filterArgs(q, project), view, view, view) as unknown as (ArtifactRow & { project_name: string; rel_path: string | null } & Record<keyof HubCounts, number | null>)[];
     const labels = new Map<string, string>();
     const pages = new Map<string, HubPage>();
     for (const r of rows) {
@@ -408,6 +418,7 @@ export class Hub {
    * Notes (annotations and messages) across all pages, newest first.
    * `q` matches note text, target and page title. `status`: "unanswered" (held, open and received), "answered", or "" for all.
    * `project`: a project id. `author`: a reviewer's name, "owner" for the owner's own notes, or "" for everyone. Discarded notes are left out.
+   * `limit` is the most rows returned; -1 returns all.
    */
   notes({ q = "", status = "", project = "", author = "", limit = 200 }: { q?: string; status?: string; project?: string; author?: string; limit?: number } = {}): HubNoteRow[] {
     const anyAuthor = author === "" ? "all" : "one";
@@ -443,13 +454,20 @@ export class Hub {
       .map((r) => String(r.author));
   }
 
-  stats(): HubStats {
+  /** Pages in each view of `list` for this search and project (the counts the views are labelled with). */
+  viewCounts({ q = "", project = "" }: { q?: string; project?: string } = {}): HubViewCounts {
+    const page = "COALESCE(a.page_id, a.id)";
+    const live = "a.archived_at IS NULL";
     return this.db
       .prepare(
-        `SELECT (SELECT COUNT(DISTINCT COALESCE(page_id, id)) FROM artifacts) AS pages, (SELECT COUNT(DISTINCT COALESCE(project_id, project)) FROM artifacts) AS projects,
-                (SELECT COUNT(*) FROM items WHERE status IN ('open', 'received', 'held')) AS unanswered`,
+        `SELECT COUNT(DISTINCT CASE WHEN ${live} AND a.reviewed = 1 THEN ${page} END) AS open,
+                COUNT(DISTINCT ${page}) AS everything,
+                COUNT(DISTINCT CASE WHEN a.archived_at IS NOT NULL THEN ${page} END) AS archived,
+                COUNT(DISTINCT CASE WHEN ${live} AND a.reviewed = 0 THEN ${page} END) AS checked
+         FROM artifacts a LEFT JOIN projects p ON p.id = a.project_id LEFT JOIN pages g ON g.id = a.page_id
+         WHERE ${FILTER}`,
       )
-      .get() as unknown as HubStats;
+      .get(...filterArgs(q, project)) as unknown as HubViewCounts;
   }
 }
 

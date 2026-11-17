@@ -129,7 +129,7 @@ test("the hub records the author and held status, and filters on the author", as
     assert.deepEqual(hub.notes({ author: "owner" }).map((n) => n.id), ["i1"]);
     assert.deepEqual(hub.authors(), ["Ana", "Bo"]);
     assert.equal(hub.list()[0].held, 1);
-    assert.equal(hub.stats().unanswered, 3, "held notes count as unanswered");
+    assert.equal(hub.notes({ status: "unanswered" }).length, 3, "held notes count as unanswered");
 
     store.release(s, [held.id]);
     assert.equal(hub.notes({ author: "Ana" })[0].status, "open", "sent on, now open");
