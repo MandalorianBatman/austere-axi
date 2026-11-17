@@ -1236,7 +1236,14 @@ export async function runServer({
     const project = projectParam(url);
     const view = url.searchParams.has("all") ? "all" : url.searchParams.has("archived") ? "archived" : "default";
     const pages = hub.list({ q, project: project.id, archived: view === "archived", all: view === "all" });
-    return hubPage(pages, { version: VERSION, q, project: project.ref, projectName: project.name, view, projects: hub.projects(), stats: hub.stats() });
+    const listening = new Set<string>();
+    for (const p of pages) {
+      for (const c of p.copies) {
+        const s = store.get(c.id);
+        if (s && listener(s)) listening.add(c.id);
+      }
+    }
+    return hubPage(pages, { version: VERSION, q, project: project.ref, projectName: project.name, view, projects: hub.projects(), counts: hub.viewCounts({ q, project: project.id }), listening });
   }
 
   function hubNotes(url: URL): string {
@@ -1246,7 +1253,7 @@ export async function runServer({
     const status = st === "unanswered" || st === "answered" ? st : "all";
     const author = (url.searchParams.get("author") || "").slice(0, 80);
     const rows = hub.notes({ q, project: project.id, author, status: status === "all" ? "" : status });
-    return notesPage(rows, { version: VERSION, q, project: project.ref, projectName: project.name, status, author, authors: hub.authors(), stats: hub.stats() });
+    return notesPage(rows, { version: VERSION, q, project: project.ref, projectName: project.name, status, author, authors: hub.authors() });
   }
 
   /** Open an indexed artifact for review (it may never have had a session) and go to it. */

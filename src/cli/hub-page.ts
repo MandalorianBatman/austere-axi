@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { escapeHtml } from "./artifact.ts";
 import { unanswered } from "./hub.ts";
-import type { HubCopy, HubNoteRow, HubPage, HubProject } from "./hub.ts";
+import type { HubCopy, HubNoteRow, HubPage, HubProject, HubViewCounts } from "./hub.ts";
 
 function day(ms: number): string {
   const d = new Date(ms);
@@ -17,6 +17,11 @@ function day(ms: number): string {
 
 function time(ms: number): string {
   return new Date(ms).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** `1 page`, `2 pages`. */
+function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 function tilde(p: string): string {
@@ -39,26 +44,28 @@ function shortPath(p: string, max = 48): string {
   return t.length <= max ? t : `${t.slice(0, 16)}…${t.slice(t.length - (max - 17))}`;
 }
 
-function state(c: HubCopy): string {
-  const flags = [c.missing ? `<em class="gone">missing</em>` : "", c.archived_at ? `<em>archived</em>` : ""].filter(Boolean);
-  flags.unshift(c.reviewed ? `<em class="live">in review</em>` : `<em>checked</em>`);
-  return flags.join(" · ");
+const LISTENING = `<em class="live">agent listening</em>`;
+
+/** What is worth saying about one copy beyond its notes: gone, archived, only checked, an agent listening. A quiet copy says nothing. */
+function state(c: HubCopy, listening: boolean): string {
+  return [c.missing ? `<em class="gone">missing</em>` : "", c.archived_at ? `<em>archived</em>` : "", c.reviewed ? "" : `<em>checked</em>`, listening ? LISTENING : ""].filter(Boolean).join(" · ");
 }
 
-function chip(c: HubCopy): string {
+function chip(c: HubCopy, listening: Set<string>): string {
   const waiting = unanswered(c);
   const cls = ["chip", waiting ? "waiting" : "", c.missing ? "gone" : ""].filter(Boolean).join(" ");
-  const extra = [waiting ? `${waiting} unanswered` : "", c.missing ? "missing" : "", c.archived_at ? "archived" : ""].filter(Boolean);
+  const extra = [waiting ? `${waiting} unanswered` : "", listening.has(c.id) ? "agent listening" : "", c.missing ? "missing" : "", c.archived_at ? "archived" : ""].filter(Boolean);
   return `<a class="${cls}" href="/hub/open/${escapeHtml(c.id)}" title="${escapeHtml(c.file)}">${escapeHtml(c.label)}${extra.length ? ` <span>${extra.join(" · ")}</span>` : ""}</a>`;
 }
 
-function row(p: HubPage): string {
+function row(p: HubPage, listening: Set<string>): string {
   const only = p.copies.length === 1 ? p.copies[0] : null;
   const gone = p.copies.every((c) => c.missing);
   // The title opens a copy that is still there (the newest such); the newest copy when all are gone.
   const main = p.copies.find((c) => !c.missing) ?? p.copies[0];
-  const meta = [escapeHtml(p.rel_path), escapeHtml(`${day(p.updated_at)} ${time(p.updated_at)}`), only ? state(only) : gone ? `<em class="gone">missing</em>` : "", counts(p)].filter(Boolean).join(" · ");
-  const chips = only ? "" : `<div class="chips">${p.copies.map(chip).join("")}</div>`;
+  const many = p.copies.some((c) => listening.has(c.id)) ? LISTENING : "";
+  const meta = [escapeHtml(p.rel_path), escapeHtml(`${day(p.updated_at)} ${time(p.updated_at)}`), only ? state(only, listening.has(only.id)) : gone ? `<em class="gone">missing</em>` : many, counts(p)].filter(Boolean).join(" · ");
+  const chips = only ? "" : `<div class="chips">${p.copies.map((c) => chip(c, listening)).join("")}</div>`;
   return `<li><a href="/hub/open/${escapeHtml(main.id)}" title="${escapeHtml(main.file)}">
   <strong>${escapeHtml(p.title || path.posix.basename(p.rel_path))}</strong>
   <span class="meta">${meta}</span>
@@ -97,14 +104,23 @@ b.by{color:#e8e8ec}
 @media(min-width:600px){form.f{grid-template-columns:minmax(0,1fr) 150px auto}form.f.p{grid-template-columns:minmax(0,1fr) 150px 150px auto}}
 `;
 
-/** Which copies the home page lists: the default (in review, not archived), archived ones, or all. */
+/** Which copies the home page lists: the default (opened for review, not archived), archived ones, or all. */
 export type HubView = "default" | "archived" | "all";
+
+const VIEWS = [
+  ["default", "Open", "open"],
+  ["all", "Everything", "everything"],
+  ["archived", "Archived", "archived"],
+] as const;
 
 /**
  * The home page: one section per project, one row per page inside it, a chip per copy when a page
  * has several. The order is Hub.list()'s: projects by newest activity; pages with unanswered notes
  * first, then by last activity.
+ * The header, the views and the empty state count the view shown, not the whole index.
  * @param pages Hub.list() pages
+ * @param counts Hub.viewCounts() for the same search and project
+ * @param listening ids of the copies an agent is polling for
  */
 export function hubPage(
   pages: HubPage[],
@@ -115,8 +131,9 @@ export function hubPage(
     projectName = project,
     view = "default",
     projects = [],
-    stats,
-  }: { version: string; q: string; project: string; projectName?: string; view?: HubView; projects?: HubProject[]; stats: { pages: number; projects: number; unanswered?: number } },
+    counts,
+    listening = new Set(),
+  }: { version: string; q: string; project: string; projectName?: string; view?: HubView; projects?: HubProject[]; counts: HubViewCounts; listening?: Set<string> },
 ): string {
   const byProject = new Map<string, HubPage[]>();
   for (const p of pages) {
@@ -130,32 +147,36 @@ export function hubPage(
       const roots = info.get(id)?.roots || [];
       const name = list[0].project;
       const waiting = list.reduce((n, p) => n + unanswered(p), 0);
-      const where = roots.length ? `${shortPath(roots[0])}${roots.length > 1 ? ` +${roots.length - 1}` : ""}` : "";
+      const where = roots.length ? `${shortPath(roots[0])}${roots.length > 1 ? ` · +${roots.length - 1} more ${roots.length === 2 ? "folder" : "folders"}` : ""}` : "";
       return `<section><h2><a href="${homeLink({ project: id, [view]: view === "default" ? "" : "1" })}">${escapeHtml(name)}</a>${
         where ? ` <small title="${escapeHtml(roots.join("\n"))}">${escapeHtml(where)}</small>` : ""
-      }${waiting ? ` <b class="open">${waiting} unanswered</b>` : ""}</h2><ul>${list.map(row).join("")}</ul></section>`;
+      }${waiting ? ` <b class="open">${waiting} unanswered</b>` : ""}</h2><ul>${list.map((p) => row(p, listening)).join("")}</ul></section>`;
     })
     .join("");
-  const views = (
-    [
-      ["default", "In review"],
-      ["all", "All, with checked-only"],
-      ["archived", "Archived"],
-    ] as const
-  )
-    .map(([v, label]) => (v === view ? `<b>${label}</b>` : `<a href="${homeLink({ project, q, [v]: v === "default" ? "" : "1" })}">${label}</a>`))
-    .join(" · ");
+  const viewLink = (v: HubView, text: string): string => `<a href="${homeLink({ project, q, [v]: v === "default" ? "" : "1" })}">${text}</a>`;
+  const views = VIEWS.map(([v, label, n]) => (v === view ? `<b>${label} (${counts[n]})</b>` : viewLink(v, `${label} (${counts[n]})`))).join(" · ");
   const filter = `<p class="filter">${views}${project ? ` · Project ${escapeHtml(tilde(projectName))} · <a href="${homeLink({ q, [view]: view === "default" ? "" : "1" })}">all projects</a>` : ""}</p>`;
-  const empty =
-    q || project ? "Nothing matches." : view === "archived" ? "No archived pages." : "No pages yet. Open one for review with austere-axi and it shows up here.";
+  const otherViews = VIEWS.filter(([v, , n]) => v !== view && counts[n] > 0).map(([v, label, n]) => viewLink(v, `${label} (${counts[n]})`));
+  let empty: string;
+  if (counts.everything === 0 && !q && !project) empty = "No pages yet. Open one for review with austere-axi and it shows up here.";
+  else if (q || project) empty = `Nothing matches${view === "all" ? "" : ` in ${VIEWS.find(([v]) => v === view)?.[1]}`}.${otherViews.length ? ` Also matches: ${otherViews.join(" · ")}.` : ""}`;
+  else if (view === "archived") empty = `No archived pages.${otherViews.length ? ` See: ${otherViews.join(" · ")}.` : ""}`;
+  else {
+    const parts = ["Nothing is open for review."];
+    if (counts.checked) parts.push(`${plural(counts.checked, "page was", "pages were")} checked but never opened: ${viewLink("all", "show them")}.`);
+    if (counts.archived) parts.push(`${counts.archived} archived: ${viewLink("archived", "show")}.`);
+    empty = parts.join(" ");
+  }
+  const projectCount = byProject.size;
+  const waitingAll = pages.reduce((n, p) => n + unanswered(p), 0);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>austere-axi hub</title><meta name="color-scheme" content="dark">
 <style>
 ${STYLE}
 </style></head>
 <body><main>
-<header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><nav class="nav"><a href="/">Pages</a><a href="/notes">Notes</a></nav><span class="stats">${stats.pages} pages · ${stats.projects} projects${
-    stats.unanswered ? ` · ${stats.unanswered} unanswered` : ""
+<header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><nav class="nav"><a href="/">Pages</a><a href="/notes">Notes</a></nav><span class="stats">${plural(pages.length, "page")} · ${plural(projectCount, "project")}${
+    waitingAll ? ` · ${waitingAll} unanswered` : ""
   }</span></header>
 <form method="get" action="/">${project ? `<input type="hidden" name="project" value="${escapeHtml(project)}">` : ""}${
     view === "default" ? "" : `<input type="hidden" name="${view}" value="1">`
@@ -180,8 +201,7 @@ export function notesPage(
     status,
     author = "",
     authors = [],
-    stats,
-  }: { version: string; q: string; project: string; projectName?: string; status: string; author?: string; authors?: string[]; stats: { pages: number; projects: number; unanswered: number } },
+  }: { version: string; q: string; project: string; projectName?: string; status: string; author?: string; authors?: string[] },
 ): string {
   const items = rows
     .map((n) => {
@@ -207,8 +227,8 @@ export function notesPage(
 <style>
 ${STYLE}</style></head>
 <body><main>
-<header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><nav class="nav"><a href="/">Pages</a><a href="/notes">Notes</a></nav><span class="stats">${rows.length} notes${
-    stats.unanswered ? ` · ${stats.unanswered} unanswered` : ""
+<header><h1>austere-axi hub<small>${escapeHtml(version)}</small></h1><nav class="nav"><a href="/">Pages</a><a href="/notes">Notes</a></nav><span class="stats">${plural(rows.length, "note")}${
+    rows.some((n) => n.status !== "addressed") ? ` · ${rows.filter((n) => n.status !== "addressed").length} unanswered` : ""
   }</span></header>
 <form class="f${authors.length ? " p" : ""}" method="get" action="/notes">${project ? `<input type="hidden" name="project" value="${escapeHtml(project)}">` : ""}<input type="search" name="q" value="${escapeHtml(q)}" placeholder="Search notes, targets, page titles" aria-label="Search notes"><select name="status" aria-label="Status">${opt("all", "All")}${opt("unanswered", "Unanswered")}${opt("answered", "Answered")}</select>${people}<button type="submit">Filter</button></form>
 ${filter}${items ? `<ul>${items}</ul>` : `<p class="empty">${empty}</p>`}
