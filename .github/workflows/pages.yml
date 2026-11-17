@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Wait until npm latest is the release tag
+        id: npm
         if: github.event_name == 'workflow_run'
         shell: bash
         env:
@@ -41,15 +42,23 @@ jobs:
             echo "::error::Publish ran for '$TAG', which is not a version tag"
             exit 1
           fi
+          # One deadline for the whole wait: a stalled request cannot stretch it past 10 minutes.
+          deadline=$((SECONDS + 600))
           got=""
-          for i in $(seq 1 40); do
-            got="$(curl -fsS -H 'Cache-Control: no-cache' https://registry.npmjs.org/austere-axi/latest | jq -r .version || true)"
+          while :; do
+            left=$((deadline - SECONDS))
+            wait=$(( left < 15 ? left : 15 )); (( wait > 0 )) || wait=1
+            got="$(curl -fsS --max-time "$wait" -H 'Cache-Control: no-cache' https://registry.npmjs.org/austere-axi/latest | jq -r .version || true)"
             if [ "$got" = "$want" ]; then
               echo "npm latest is $got"
+              # The site renders this version, not a second registry answer a cache may serve stale.
+              echo "version=$got" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "npm latest is ${got:-unknown}, waiting for $want ($i/40)"
-            sleep 15
+            left=$((deadline - SECONDS))
+            if [ "$left" -le 0 ]; then break; fi
+            echo "npm latest is ${got:-unknown}, waiting for $want (${left}s left)"
+            sleep "$(( left < 15 ? left : 15 ))"
           done
           echo "::error::npm latest is still ${got:-unknown} after 10 minutes, not $want (tag $TAG); run Pages again by hand once npm shows it"
           exit 1
@@ -64,6 +73,9 @@ jobs:
       - run: npm run build
       # `npm run site` checks every example, screenshots it, and fails on a render error.
       - shell: bash
+        env:
+          # Set only after Publish: the version the wait step saw on npm.
+          AUSTERE_AXI_SITE_VERSION: ${{ steps.npm.outputs.version }}
         run: |
           export CHROME_PATH="$(command -v google-chrome)"
           npm run site

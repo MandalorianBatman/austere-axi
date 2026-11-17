@@ -7,7 +7,7 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 ### Fixed
 
 - `publish rm <id>` takes a page id that starts with `--` (page ids are base64url) instead of reading it as a flag. Any other unknown flag after `publish rm` now says to put `--` before an id that starts with `--`. (RLM-403)
-- The site redeploy after Publish waits, up to 10 minutes, until npm's `latest` is the release tag, so the footer no longer shows the previous version; it fails if npm never shows it. (RLM-403)
+- The site redeploy after Publish waits, up to 10 minutes, until npm's `latest` is the release tag, and renders that version, so the footer no longer shows the previous version; it fails if npm never shows it. (RLM-403)
 
 ## 0.12.0 (2026-11-17)
 
