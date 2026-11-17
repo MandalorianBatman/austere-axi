@@ -48,6 +48,8 @@ import { LOOKS_RULE } from "./agent-prompt.ts";
 import { adapterWarnings, attachReport, changeSetting, effectiveAttach, isAttachMode, readSetting, resolveSessionValue, resolveSetting } from "./attach.ts";
 import type { AttachFields, AttachSettingRow, AttachState } from "./attach.ts";
 import { endLeftover, getRun, listRuns, readRunLog } from "./dispatch.ts";
+import { newTriggerId, parseDuration, quietMs, readTriggers, triggerStatus, triggersFile, writeTriggers } from "./triggers.ts";
+import type { Trigger } from "./triggers.ts";
 import type { ListedRun } from "./dispatch.ts";
 
 /** A YAML-shaped result for print(), built up field by field. */
@@ -246,11 +248,22 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "attach status plan.html   |   attach on plan.html --mode fork",
   },
   run: {
-    usage: "run list [file] [--project p] | run log <id> | run stop <file>",
+    usage: "run list [file] [--project p] | run log <id> | run stop <file> | run stop --project p",
     summary:
       "the runs of an attached agent: with attach on, a note the owner sends or releases starts the page's harness headless to read it, patch the page and reply. list: status (queued, waiting_for_session, running, done, failed, stopped, interrupted), why it failed, harness and mode, the notes it was for; with no file: every page of the project. log: what the run printed (kept 30 days). stop: end the page's runs, killing the running one and what it started",
     flags: { project: "the project to list when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)" },
     example: "run list plan.html   |   run log r1a2b3c4d5e6f   |   run stop plan.html",
+  },
+  trigger: {
+    usage: 'trigger list | trigger add --project <p> --on quiet:<duration> [--max-time <duration>] -- <bin> [args…] | trigger remove <id>',
+    summary:
+      "run a command once a project has been quiet: no revision and no note for the duration (`quiet:2h`), then the command runs once, in the project's first folder, with AUSTERE_AXI_PROJECT and AUSTERE_AXI_CHANGES_CURSOR (the cursor `changes --since` takes) set. Nothing new since its last run, no run. It is a run (`run list --project p`, `run log`, `run stop --project p`) with the limits of attach.json. `add` and `remove` change what runs on this machine, so only the user at a terminal does: they name the command, and nothing in a project or a page ever does",
+    flags: {
+      project: "the project to watch: a name, an id, or a folder inside one of its roots (add)",
+      on: "when to run: quiet:<duration>, like quiet:2h or quiet:90s (add)",
+      "max-time": "the longest the command may run, like 30m (add; default: maxMinutes in attach.json)",
+    },
+    example: "trigger add --project shop --on quiet:2h -- austere-wiki ingest --project shop",
   },
   check: {
     usage: "check <file> [--fix] [--render]",
@@ -449,7 +462,7 @@ const COMMANDS: Record<string, CommandSpec> = {
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "limit", "session", "extra-args", "command", "mode", "model", "harness", "statement", "since", "rev", "component", "from"]);
+const VALUE_FLAGS = new Set(["on", "max-time", "agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "limit", "session", "extra-args", "command", "mode", "model", "harness", "statement", "since", "rev", "component", "from"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -2134,8 +2147,16 @@ function projectScope(hub: Hub, flags: Flags): ProjectRow {
 
 /** `run list [<file>|--project p] | run log <id> | run stop <file>`: the attached agent's runs (RLM-345). */
 async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
+  if (sub === "stop" && typeof flags.project === "string") {
+    // A project's trigger runs (RLM-360): they need the server that runs them.
+    if (args.length) return usage("run stop takes a file or --project, not both", "run");
+    if (!(await serverIfRunning())) return print({ status: "nothing to stop", note: "No server is running, so no trigger run is. A run a crashed server left is ended by the next server start." });
+    const r = await request<RunStopResponse>("POST", "/api/run/stop", { project: flags.project }, { timeoutMs: 15_000 });
+    if (r.status !== 200) return fail(r.data?.error || `run stop failed (${r.status})`);
+    return print({ status: r.data.stopped ? "stopped" : "nothing to stop", project: flags.project, runs: r.data.stopped || undefined });
+  }
   if (sub === "stop") {
-    if (args.length !== 1) return usage(`run stop takes one file: ${BIN} run stop <file>`, "run");
+    if (args.length !== 1) return usage(`run stop takes one file: ${BIN} run stop <file> (or --project p for its trigger runs)`, "run");
     const abs = canonicalFile(args[0]);
     if (await serverIfRunning()) {
       const r = await request<RunStopResponse>("POST", "/api/run/stop", { file: abs }, { timeoutMs: 15_000 });
@@ -2214,12 +2235,89 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
         status: r.status,
         reason: r.reason ?? undefined,
         harness: r.harness ? `${r.harness}${r.mode ? ` ${r.mode}` : ""}${r.model ? ` ${r.model}` : ""}` : undefined,
-        notes: r.seq_from === null ? undefined : r.seq_from === r.seq_to ? `seq ${r.seq_from}` : `seq ${r.seq_from}..${r.seq_to}`,
+        trigger: r.trigger_id ?? undefined,
+        notes: r.kind === "trigger" ? (r.seq_from === null ? undefined : `changes after ${r.seq_from}, up to ${r.seq_to}`) : r.seq_from === null ? undefined : r.seq_from === r.seq_to ? `seq ${r.seq_from}` : `seq ${r.seq_from}..${r.seq_to}`,
         started: r.started_at === null ? undefined : shortDate(r.started_at),
         took: r.started_at !== null && r.ended_at !== null ? `${Math.max(0, Math.round((r.ended_at - r.started_at) / 1000))}s` : undefined,
       })),
       next: `${BIN} run log <id> shows what a run printed.`,
     });
+  });
+}
+
+// ── triggers (RLM-360) ──
+
+/** `trigger list | add | remove`: commands that run when a project goes quiet. `add` and `remove` are the user's, at a terminal. */
+async function cmdTrigger(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
+  if (sub === undefined || sub === "list") {
+    if (args.length) return usage("trigger list takes no arguments", "trigger");
+    let list;
+    try {
+      list = readTriggers();
+    } catch (err) {
+      return fail(messageOf(err));
+    }
+    if (!list.length) return print({ file: triggersFile(), triggers: "none", note: `${BIN} trigger add --project <p> --on quiet:2h -- <command> makes one (at a terminal).` });
+    return withHub(false, (hub) =>
+      print({
+        file: triggersFile(),
+        triggers: triggerStatus(hub.db, list).map((s) => ({
+          id: s.trigger.id,
+          project: s.project ?? `${s.trigger.project} (no such project yet)`,
+          on: s.trigger.on,
+          run: commandLine(s.trigger.run),
+          max_time: s.trigger.maxTime,
+          last_run: s.lastRun ? `${s.lastRun.status}, ${s.lastRun.id}${s.lastRun.at === null ? "" : `, ${shortDate(s.lastRun.at)}`}` : "none",
+          cursor: s.lastCursor,
+        })),
+        next: `${BIN} run list --project <p> shows the runs; ${BIN} trigger remove <id> removes one.`,
+      }),
+    );
+  }
+  if (sub !== "add" && sub !== "remove") return usage(`unknown trigger command: ${sub}. One of: list add remove`, "trigger");
+  let list;
+  try {
+    list = readTriggers();
+  } catch (err) {
+    return fail(messageOf(err));
+  }
+  if (sub === "remove") {
+    if (args.length !== 1) return usage(`trigger remove takes one id: ${BIN} trigger remove <id> (see ${BIN} trigger list)`, "trigger");
+    if (!list.some((t) => t.id === args[0])) return fail(`no trigger ${args[0]} (${BIN} trigger list shows them)`);
+    // What runs on this machine is the user's to change, as with trust add.
+    if (!process.stdin.isTTY) return usage(`trigger remove needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} trigger remove ${args[0]}\` themselves.`, "trigger");
+    writeTriggers(list.filter((t) => t.id !== args[0]));
+    return print({ status: "removed", id: args[0], file: triggersFile() });
+  }
+  const project = flags.project;
+  const on = flags.on;
+  const maxTime = flags["max-time"];
+  if (typeof project !== "string" || typeof on !== "string" || !args.length) return usage(`add needs a project, when and a command: ${BIN} trigger add --project <p> --on quiet:2h -- <bin> [args…]`, "trigger");
+  if (quietMs(on) === null) return usage(`--on ${JSON.stringify(on)}: use quiet:<duration>, like quiet:2h, quiet:30m or quiet:90s`, "trigger");
+  if (maxTime !== undefined && (typeof maxTime !== "string" || parseDuration(maxTime) === null)) return usage(`--max-time ${JSON.stringify(maxTime)}: use a duration like 30m or 2h`, "trigger");
+  if (!args[0]) return usage("the command's first word is the binary to run and cannot be empty", "trigger");
+  // The command runs on this machine whenever the project goes quiet, so only the user at a terminal names it (Q9).
+  if (!process.stdin.isTTY) {
+    return usage(`trigger add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${commandLine(["trigger", "add", "--project", project, "--on", on, ...(typeof maxTime === "string" ? ["--max-time", maxTime] : []), "--", ...args])}\` themselves.`, "trigger");
+  }
+  let found: string | null = null;
+  await withHub(false, (hub) => {
+    found = findProject(hub.db, project)?.name ?? null;
+  });
+  if (process.exitCode) return;
+  if (!found) return fail(`no project ${project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`);
+  const run = [...args];
+  if (!(await confirm(`When project ${found} has been quiet for ${on.slice(6)}, run \`${commandLine(run)}\` on this machine?`))) return print({ status: "not changed" });
+  const entry: Trigger = { id: newTriggerId(), project, on, run, ...(typeof maxTime === "string" ? { maxTime } : {}) };
+  writeTriggers([...list, entry]);
+  return print({
+    status: "added",
+    id: entry.id,
+    project: found,
+    on,
+    run: commandLine(run),
+    file: triggersFile(),
+    next: "A running server picks it up within a minute. A trigger starts from now: activity from before it was added does not run it.",
   });
 }
 
@@ -2821,6 +2919,8 @@ async function main(): Promise<unknown> {
       return cmdAttach(rest[0], rest.slice(1), flags);
     case "run":
       return cmdRun(rest[0], rest.slice(1), flags);
+    case "trigger":
+      return cmdTrigger(rest[0], rest.slice(1), flags);
     case "sessions":
       return cmdSessions(rest[0], rest.slice(1), flags);
     case "spec":

@@ -73,6 +73,8 @@ export interface RunRow {
   pid_start: string | null;
   /** The file the run spawned (`omp.exe`, or `cmd.exe` for a `.cmd` shim): on Windows, with no start time, it tells a run's process from a later one with the same pid. */
   bin: string | null;
+  /** A trigger run (RLM-360): the trigger in triggers.json that started it. */
+  trigger_id: string | null;
 }
 
 /** What the owner's review page hears about a run (SSE `run`). */
@@ -222,9 +224,9 @@ export function logTail(file: string | null, n = 20): string[] {
 
 // ── processes ──
 
-const LOG_CAP = 1024 * 1024;
+export const LOG_CAP = 1024 * 1024;
 const OUTPUT_KEEP = 64 * 1024;
-const KILL_GRACE_MS = 5000;
+export const KILL_GRACE_MS = 5000;
 // A stopping server waits this long for its runs' trees after SIGTERM, then SIGKILLs them: short,
 // since a replacement server waits only 3 s for the state dir's lock.
 const SHUTDOWN_GRACE_MS = 1000;
@@ -273,7 +275,7 @@ export function withCliShim(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = 
 }
 
 /** Kill a run's whole process tree: its process group (POSIX, the run is spawned detached), `taskkill /T` on Windows. */
-function killTree(pid: number, signal: NodeJS.Signals): void {
+export function killTree(pid: number, signal: NodeJS.Signals): void {
   if (process.platform === "win32") {
     spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on("error", () => {});
     return;
@@ -286,12 +288,12 @@ function killTree(pid: number, signal: NodeJS.Signals): void {
 }
 
 /** The start time of `pid` in this OS's process table; null when there is no such process, no table, or it cannot tell. */
-function startOf(pid: number): string | null {
+export function startOf(pid: number): string | null {
   const p = systemProcessTable()?.info(pid);
   return p && p !== "unreadable" ? p.start : null;
 }
 
-function groupAlive(pid: number): boolean {
+export function groupAlive(pid: number): boolean {
   if (process.platform === "win32") return false;
   try {
     process.kill(-pid, 0);
@@ -1073,6 +1075,6 @@ function sessionRow(db: sqlite.DatabaseSync, id: string): AgentSessionRow | null
   return (db.prepare("SELECT * FROM agent_sessions WHERE id = ?").get(id) as unknown as AgentSessionRow | undefined) ?? null;
 }
 
-function newRunId(): string {
+export function newRunId(): string {
   return `r${crypto.randomBytes(6).toString("hex")}`;
 }

@@ -166,9 +166,10 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
  * `agent_sessions`, `page_sessions`, `attach_settings`, `runs`. 3 adds team-review devices
  * (RLM-397): `devices`, and `device_id` on `notes` and `items`. 4 adds access requests
  * (RLM-398): `access_requests` and `access_settings`. 5 adds history (RLM-349–354):
- * `revisions`, `statements`, `statements_fts` and `statement_origins`.
+ * `revisions`, `statements`, `statements_fts` and `statement_origins`. 6 adds activity
+ * triggers (RLM-360): `trigger_state` and `runs.trigger_id`.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** The schema version `db` is at. Before builds recorded it (0), a database 0.12.0 migrated already has version 1's last columns. */
 function schemaVersion(db: sqlite.DatabaseSync): number {
@@ -179,7 +180,8 @@ function schemaVersion(db: sqlite.DatabaseSync): number {
   if (!has("runs", "requeued_from") || !has("page_sessions", "role")) return 1;
   if (!has("notes", "device_id") || !has("items", "device_id")) return 2;
   if (!has("access_requests", "secret_hash")) return 3;
-  return has("revisions", "program_sha") ? 5 : 4;
+  if (!has("revisions", "program_sha")) return 4;
+  return has("runs", "trigger_id") ? 6 : 5;
 }
 
 /**
@@ -466,6 +468,9 @@ function migrate(db: sqlite.DatabaseSync, fts = true): void {
     if (!has("runs", "pid")) db.exec("ALTER TABLE runs ADD COLUMN pid INTEGER");
     if (!has("runs", "pid_start")) db.exec("ALTER TABLE runs ADD COLUMN pid_start TEXT");
     if (!has("runs", "bin")) db.exec("ALTER TABLE runs ADD COLUMN bin TEXT");
+    // Activity triggers (RLM-360): a trigger run has no page (`artifact_id` NULL) and names its trigger; what a trigger last saw is kept here, not in triggers.json.
+    if (!has("runs", "trigger_id")) db.exec("ALTER TABLE runs ADD COLUMN trigger_id TEXT");
+    db.exec("CREATE TABLE IF NOT EXISTS trigger_state (trigger_id TEXT PRIMARY KEY, last_cursor INTEGER NOT NULL DEFAULT 0, last_run_at INTEGER)");
     // Team review devices (RLM-397): who may review, and which device wrote each note.
     db.exec(DEVICES_SCHEMA);
     if (!has("notes", "device_id")) db.exec("ALTER TABLE notes ADD COLUMN device_id TEXT");

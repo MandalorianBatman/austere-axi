@@ -831,7 +831,9 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
       assert.deepEqual(columns("page_sessions"), ["artifact_id", "agent_session_id", "role", "at"]);
       // RLM-345: the attach settings and the runs, with the columns the design note names (plus `requeued_from`, `pid`, `pid_start` and `bin`, A20).
       assert.deepEqual(columns("attach_settings"), ["scope", "scope_id", "state", "mode", "session", "harness", "model"]);
-      assert.deepEqual(columns("runs"), ["id", "kind", "artifact_id", "project_id", "agent_session_id", "harness", "mode", "model", "seq_from", "seq_to", "started_at", "ended_at", "exit_code", "status", "reason", "log_file", "requeued_from", "pid", "pid_start", "bin"]);
+      assert.deepEqual(columns("runs"), ["id", "kind", "artifact_id", "project_id", "agent_session_id", "harness", "mode", "model", "seq_from", "seq_to", "started_at", "ended_at", "exit_code", "status", "reason", "log_file", "requeued_from", "pid", "pid_start", "bin", "trigger_id"]);
+      // RLM-360: what a trigger last saw.
+      assert.deepEqual(columns("trigger_state"), ["trigger_id", "last_cursor", "last_run_at"]);
       // RLM-398: access requests and where they are on (off everywhere: no rows).
       assert.deepEqual(columns("access_requests"), ["id", "name", "page", "secret_hash", "status", "addr", "host", "user_agent", "verified_login", "ts_device", "device_id", "created_at", "decided_at"]);
       assert.deepEqual(columns("access_settings"), ["scope", "scope_id", "requests"]);
