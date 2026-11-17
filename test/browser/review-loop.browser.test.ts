@@ -325,6 +325,48 @@ test("a page using an installed pack renders it, warns about third-party code, a
   }
 });
 
+test("a diagram copied from another page with patch --from renders, and each of its nodes is annotatable", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const run = (...args: string[]) => {
+    const r = spawnSync(process.execPath, [path.join(ROOT, "src/cli/main.ts"), ...args], {
+      env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, OPENUI_TELEMETRY_DISABLED: "1" },
+      input: "",
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return r.stdout;
+  };
+  const source = path.join(WORK, "copy-source.html");
+  fs.copyFileSync(path.join(ROOT, "examples", "session-migration.html"), source);
+  const file = path.join(WORK, "copy-target.html");
+  fs.writeFileSync(file, htmlPage("Copy target", 'root = Stack([intro])\nintro = TextContent("a page of its own")', CDN_RUNTIME_URL));
+  const patched = spawnSync(process.execPath, [path.join(ROOT, "src/cli/main.ts"), "patch", file, "--from", `${source}#flowDiagram`], {
+    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, OPENUI_TELEMETRY_DISABLED: "1" },
+    input: 'root = Stack([intro, flowDiagram])',
+    encoding: "utf8",
+  });
+  assert.equal(patched.status, 0, patched.stdout + patched.stderr);
+  assert.match(run("check", file), /status: ok/);
+  const { context, page, frame, problems } = await openReview(file, VIEWPORTS[0]);
+  try {
+    const nodes = ["client", "edge", "api", "pg", "redis"];
+    for (const id of nodes) {
+      await frame.locator(`[data-oui-id="${id}"]`).first().waitFor({ timeout: 10_000 });
+      await frame.locator(`[data-oui-id="${id}"]`).first().click();
+      await frame.locator(".austere-pop").waitFor({ state: "visible", timeout: 3000 });
+      await frame.locator(".austere-pop textarea").fill(`check node ${id}`);
+      await frame.locator(".austere-pop textarea").press("Enter");
+      await frame.locator(".austere-pop").waitFor({ state: "hidden", timeout: 3000 });
+    }
+    await page.locator(".composer .send").click();
+    const res = await api("/api/poll", { file, timeoutMs: 5000 });
+    for (const id of nodes) assert.equal(res.items.find((i) => i.note === `check node ${id}`)?.target, id, `node ${id} reached poll addressed to itself`);
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});
+
 test("with no agent listening the reviewer can still send; Send & finish and Done mark the batch final; only archiving locks the composer", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "archive-lock.html");

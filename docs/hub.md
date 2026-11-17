@@ -56,6 +56,10 @@ austere-axi project forget-root ~/gone/repo --drop  # a root whose folder is gon
 
 A row or chip marked `missing` opens a page of its own (status 410) with the file's path, the notes the copy still holds, and an **Archive this copy** button. Archiving leaves the copy out of the lists and keeps its notes. In the CLI, `archive <file>` does the same for one copy, and `archive --missing [--project p]` for every copy opened for review whose file is gone (a deleted worktree); `reply <file>` still answers its notes, and `feedback` marks its batch `missing: true`.
 
+## History and text index
+
+hub.db also holds each page's revisions (the whole program every time) and its statements as plain text, with a full-text index. They are filled by `patch`, `open`, `check` and the server watching a page, and read by `history`, `show`, `outline`, `find`, `changes` and `decisions` ([CLI](cli.md#history-and-reuse)). `austere-axi hub reindex` rebuilds the index from the files that still exist. A hub.db from 0.10.4 or 0.12 gets the tables on first open, and a page's first revision on its first open.
+
 ## Notes
 
 - Session files from before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`. A `hub.db` from an older version gets its projects on first open.

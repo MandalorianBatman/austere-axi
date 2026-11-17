@@ -620,6 +620,135 @@ code {
   }
 }
 
+/* ── history (RLM-352) ── */
+.since {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #141a26;
+  color: #c4d3f5;
+  border-bottom: 1px solid rgba(143, 176, 255, 0.2);
+  font-size: 12.5px;
+}
+.since[hidden] {
+  display: none;
+}
+.since [aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.since-x {
+  width: 24px;
+  height: 24px;
+}
+.hist {
+  position: fixed;
+  right: 12px;
+  top: calc(var(--bar-h) + 8px);
+  z-index: 30;
+  width: 420px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - var(--bar-h) - 24px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+}
+.hist[hidden] {
+  display: none;
+}
+.hist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 8px 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.hist-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hist-body {
+  overflow: auto;
+  padding: 6px 8px 10px;
+}
+.hist-since,
+.hist-empty {
+  padding: 8px 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.hist-row {
+  padding: 2px 0;
+}
+.hist-row + .hist-row {
+  border-top: 1px solid var(--line);
+}
+.hist-pick {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.hist-pick:hover,
+.hist-pick[aria-pressed="true"] {
+  background: var(--surface-2);
+}
+.hist-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+.hist-names {
+  overflow-wrap: anywhere;
+}
+.hist-cause {
+  display: block;
+  color: var(--faint);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.hist-row > .hist-meta,
+.hist-row > .hist-text,
+.hist-row > .hist-cause,
+.hist-row > .restore {
+  margin: 4px 6px;
+}
+.hist-text {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 860px) {
+  .hist {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+  }
+}
+
 /* ── main ── */
 .main {
   flex: 1;

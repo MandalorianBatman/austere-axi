@@ -106,7 +106,7 @@ test("initializes and lists the review tools", async () => {
   const list = await rpc("tools/list", {});
   assert.deepEqual(
     list.result.tools.map((t) => t.name),
-    ["spec", "check", "open", "poll", "reply", "patch", "components", "sessions_list", "run_list", "run_log", "attach_status"],
+    ["spec", "check", "open", "poll", "reply", "patch", "find", "outline", "show", "history", "restore", "changes", "decisions", "components", "sessions_list", "run_list", "run_log", "attach_status"],
   );
   for (const t of list.result.tools) assert.equal(t.inputSchema.type, "object");
   const components = list.result.tools.find((t) => t.name === "components")!;
@@ -181,6 +181,51 @@ test("open, poll for feedback, reply through the poll", async () => {
 
   const replied = await call("poll", { file: GOOD, agent_reply: "Made it louder.", timeout_ms: 200 });
   assert.match(replied.content[0].text, /^status: timeout/m);
+});
+
+test("find, outline, show, history, restore, changes, decisions and patch's from map to the CLI commands", async () => {
+  const src = path.join(WORK, "from-src.html");
+  const dest = path.join(WORK, "from-dest.html");
+  fs.writeFileSync(src, page('root = Stack([note, table])\nnote = TextContent("rollout checklist")\ntable = Table([Col("Step", ["freeze", "ship"])])'));
+  fs.writeFileSync(dest, page('root = Stack([intro])\nintro = TextContent("hello")'));
+  assert.equal((await call("open", { file: src, no_open: true })).isError, false);
+  assert.equal((await call("open", { file: dest, no_open: true })).isError, false);
+
+  const outline = await call("outline", { file: src });
+  assert.match(outline.content[0].text, /root Stack \(2\)\n\s+note TextContent: rollout checklist/);
+  const text = await call("show", { file: src, names: ["table"], plain_text: true });
+  assert.match(text.content[0].text, /\| Step \|\n\s+\| --- \|\n\s+\| freeze \|\n\s+\| ship \|/);
+  assert.match((await call("show", { file: src, names: ["note"] })).content[0].text, /note = TextContent/);
+  assert.equal((await call("show", { file: src, names: ["nope"] })).isError, true);
+
+  const found = await call("find", { words: "rollout checklist", project: WORK });
+  assert.match(found.content[0].text, /statement: note/);
+  assert.match(found.content[0].text, /^reuse: austere-axi patch <file> --from /m);
+  assert.equal((await call("find", { words: "   " })).isError, true, "no words");
+
+  const copied = await call("patch", { file: dest, statements: "root = Stack([intro, note, table])", from: [`${src}#note,table`] });
+  assert.equal(copied.isError, false, copied.content[0].text);
+  assert.match(copied.content[0].text, /copied: \[note, table\]/);
+  assert.match(fs.readFileSync(dest, "utf8"), /note = TextContent\("rollout checklist"\)/);
+  const rev = await call("patch", { file: dest, statements: "root = Stack([intro])", rev: 1 });
+  assert.equal(rev.isError, true, "rev is for from");
+  assert.match(rev.content[0].text, /rev is for from/);
+
+  const history = await call("history", { file: dest });
+  assert.match(history.content[0].text, /rev: 2\n[\s\S]*source: patch[\s\S]*copied:/);
+  assert.match((await call("history", { file: dest, statement: "note", since: 0 })).content[0].text, /rev: 2/);
+  const changes = await call("changes", { file: dest });
+  assert.match(changes.content[0].text, /rev: 2/);
+  assert.match(changes.content[0].text, /^cursor: \d+$/m);
+  assert.match((await call("changes", { project: WORK, since: 9999, limit: 5 })).content[0].text, /changes: none/);
+  assert.match((await call("decisions", { file: dest })).content[0].text, /decisions: none/);
+  assert.equal((await call("decisions", { file: dest, project: WORK })).isError, true, "a file or a project, not both");
+
+  const restored = await call("restore", { file: dest, rev: 1 });
+  assert.equal(restored.isError, false, restored.content[0].text);
+  assert.match(restored.content[0].text, /^status: restored/m);
+  assert.doesNotMatch(fs.readFileSync(dest, "utf8"), /rollout checklist/);
+  assert.equal((await call("restore", { file: dest })).isError, true, "rev is required");
 });
 
 test("poll with no file waits on the project of the server's folder; batches name their file, and bad combinations are refused", async () => {

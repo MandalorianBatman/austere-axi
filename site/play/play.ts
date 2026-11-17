@@ -50,6 +50,8 @@ type FrameMessage = { austere: 1 } & (
   // Presence (hosted review): the playground has no other viewers, so it ignores these.
   | { type: "focus"; id: string }
   | { type: "writing"; on: boolean }
+  // The owner's history (a statement's earlier versions): the playground keeps none, and never sends the counts that show the button.
+  | { type: "history"; id: string }
 );
 
 /** Messages the page posts to the frame. */
@@ -228,6 +230,7 @@ window.addEventListener("message", (event) => {
       break;
     case "focus":
     case "writing":
+    case "history":
       break;
   }
 });

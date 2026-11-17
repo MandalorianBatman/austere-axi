@@ -48,6 +48,7 @@ export type ChromeToFrame =
   | { type: "reveal"; id: string }
   | { type: "highlight"; ids: unknown; scroll: unknown }
   | { type: "presence"; marks: unknown }
+  | { type: "history-counts"; counts: unknown }
   | { type: "init"; mode: unknown; state?: Record<string, unknown> | null; scrollY: number }
   | { type: "mode"; mode: unknown };
 
@@ -384,6 +385,12 @@ function boot() {
   // Registered here, not in App: the chrome may send it as soon as the frame is ready.
   bridge.on("highlight", ({ ids, scroll }) => {
     ann.highlight(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [], !!scroll);
+  });
+  // The owner's history: how many revisions changed each statement.
+  bridge.on("history-counts", ({ counts }) => {
+    const out: Record<string, number> = {};
+    if (counts && typeof counts === "object") for (const [id, n] of Object.entries(counts).slice(0, 2000)) if (typeof n === "number" && Number.isInteger(n) && n > 0) out[id] = n;
+    ann.setHistory(out);
   });
   // Other viewers' last clicks. Only well-formed marks are drawn; the colour goes into CSS.
   bridge.on("presence", ({ marks }) => {

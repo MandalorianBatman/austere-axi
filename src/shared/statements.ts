@@ -130,3 +130,64 @@ function normalize(text: string): string {
 function escapeRe(s: string): string {
   return s.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
 }
+
+/** Names of the statements `text` refers to: every identifier outside a string that is a key of `known`. */
+function mentionedIds(text: string, known: ReadonlyMap<string, unknown>, self: string): string[] {
+  const body = stripStrings(text.slice(text.indexOf("=") + 1));
+  const out = new Set<string>();
+  // No lookbehind: this module runs in the browser bundles, and older Safari cannot parse one.
+  for (const m of body.matchAll(/[\w$]+/g)) if (/^[A-Za-z_$]/.test(m[0]) && m[0] !== self && known.has(m[0])) out.add(m[0]);
+  return [...out];
+}
+
+/** `ids` and every statement they refer to, directly or not, in source order. */
+export function closureOf(map: StatementMap, ids: Iterable<string>): string[] {
+  const keep = new Set<string>();
+  const todo = [...ids];
+  while (todo.length) {
+    const id = todo.pop() as string;
+    const s = map.get(id);
+    if (!s || keep.has(id)) continue;
+    keep.add(id);
+    todo.push(...mentionedIds(s.text, map, id));
+  }
+  return [...map.keys()].filter((id) => keep.has(id));
+}
+
+/**
+ * Rewrite `text` (statements) with each statement name in `renames` replaced, in definitions and
+ * in references alike. Strings and comments are left as they are.
+ */
+export function renameStatements(text: string, renames: ReadonlyMap<string, string>): string {
+  if (!renames.size) return text;
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== c) j += text[j] === "\\" ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j + 1;
+    } else if (c === "#" || (c === "/" && text[i + 1] === "/")) {
+      const j = text.indexOf("\n", i);
+      const end = j < 0 ? text.length : j;
+      out += text.slice(i, end);
+      i = end;
+    } else if (/[A-Za-z_$]/.test(c)) {
+      let j = i + 1;
+      while (j < text.length && /[\w$]/.test(text[j])) j++;
+      const word = text.slice(i, j);
+      // A member (`.name`) and an object key (`{name:` or `, name:`) are not references to a statement.
+      const before = out.trimEnd().slice(-1);
+      const after = /^\s*(.)/.exec(text.slice(j))?.[1];
+      const key = after === ":" && (before === "{" || before === ",");
+      out += before === "." || key ? word : (renames.get(word) ?? word);
+      i = j;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}

@@ -38,7 +38,8 @@ export type AnnotatorMessage =
   | { type: "annotate"; item: AnnotationItem }
   | { type: "focus"; id: string }
   | { type: "writing"; on: boolean }
-  | { type: "toggle-mode" };
+  | { type: "toggle-mode" }
+  | { type: "history"; id: string };
 
 /** Ids of the statements that reference `id` (shared/statements.ts referencesTo). */
 export type RefsTo = (map: StatementMap, id: string) => string[];
@@ -50,6 +51,8 @@ export interface AnnotatorOptions {
 
 export interface Annotator {
   setMode(next: unknown): void;
+  /** How many revisions changed each statement (the owner's history); a statement with earlier versions gets a History button in its popover. */
+  setHistory(counts: Record<string, number>): void;
   flash(ids: string[], tone?: string, map?: StatementMap, refsTo?: RefsTo): Element[];
   reveal(id: string, map?: StatementMap, refsTo?: RefsTo): boolean;
   highlight(ids: string[], scroll?: boolean): number;
@@ -275,6 +278,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       <div class="austere-pop-foot">
         <span class="austere-pop-hint">Enter to queue · Shift+Enter newline · Esc</span>
         <span class="austere-pop-actions">
+          <button type="button" data-act="history" hidden></button>
           <button type="button" data-act="cancel">Cancel</button>
           <button type="button" data-act="queue" class="primary">Queue</button>
         </span>
@@ -290,6 +294,14 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   const popPath = root.querySelector(".austere-pop-path") as HTMLDivElement;
   const popQuote = root.querySelector(".austere-pop-quote") as HTMLQuoteElement;
   const popText = root.querySelector("textarea") as HTMLTextAreaElement;
+  const popHistory = root.querySelector('[data-act="history"]') as HTMLButtonElement;
+  let historyCounts: Record<string, number> = {};
+  /** History (n) for the statement the note is on: only where it has an earlier version to show. */
+  function renderHistory() {
+    const n = (draft && historyCounts[draft.targetId]) || 0;
+    popHistory.hidden = n < 2;
+    popHistory.textContent = `History (${n})`;
+  }
   popText.addEventListener("focus", () => post({ type: "writing", on: true }));
   popText.addEventListener("blur", () => post({ type: "writing", on: false }));
 
@@ -431,6 +443,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       b.addEventListener("click", () => {
         current.targetId = p.id;
         current.component = p.component;
+        renderHistory();
         // The box follows the chosen statement; only the innermost one keeps the piece (and its detail),
         // labelled as when the note opened, since that is what the note sends.
         // A re-render may have replaced the statements: start from the live innermost one.
@@ -487,6 +500,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       detail,
     };
     renderPath();
+    renderHistory();
     const quote = selection || excerpt || detail?.part || "";
     popQuote.textContent = clip(quote, 220);
     popQuote.hidden = !quote;
@@ -559,6 +573,10 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     const act = e.target instanceof Element ? e.target.closest("[data-act]")?.getAttribute("data-act") : undefined;
     if (act === "cancel") close();
     if (act === "queue") queue();
+    if (act === "history" && draft) {
+      post({ type: "history", id: draft.targetId });
+      close();
+    }
   });
   popText.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -829,6 +847,10 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   }
 
   return {
+    setHistory(counts: Record<string, number>) {
+      historyCounts = counts;
+      if (draft) renderHistory();
+    },
     setMode(next: unknown) {
       mode = next === "annotate" ? "annotate" : "explore";
       document.documentElement.classList.toggle("austere-annotating", mode === "annotate");

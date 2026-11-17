@@ -11,7 +11,7 @@ import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import path from "node:path";
-import { readArtifact, rewriteRuntime, escapeHtml } from "./artifact.ts";
+import { readArtifact, replaceProgram, rewriteRuntime, escapeHtml } from "./artifact.ts";
 import { agentPrompt } from "./agent-prompt.ts";
 import { cloudUrl, readCloud } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
@@ -28,7 +28,10 @@ import { detectUnit } from "./service.ts";
 import type { ServerUnit, Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub, activeWorkNow } from "./hub.ts";
+import { statementMap } from "../shared/statements.ts";
 import type { ArchivePlan } from "./hub.ts";
+import { agentLabel, headRev, recordRevision, restoredProgram, revisionAt, revisionLog, setViewedRev, similarPages, statementVersions, viewedRev } from "./history.ts";
+import type { RevisionRow } from "./history.ts";
 import { Dispatcher, getRun, listRuns, logTail, summary } from "./dispatch.ts";
 import type { RunEvent, RunSummary } from "./dispatch.ts";
 import { AttachRefused, attachReport, authorOf, autoConflict, changeSetting, effectiveAttach, harnessInfos, isAttachMode, resolveSessionValue, scopeIds } from "./attach.ts";
@@ -118,6 +121,8 @@ export interface OpenResponse {
   held: number;
   /** The page's project: `ref` names it for `--project` (its name, or its id when another project has that name); `here`: the folder the CLI ran in (`cwd`) is in the page's checkout (root), so a bare poll there covers it. */
   project?: { name: string; ref: string; here: boolean };
+  /** A first open: up to 3 pages of the project that read like this one, newest first. */
+  similar?: { title: string | null; file: string; updatedAt: number }[];
 }
 
 /**
@@ -1340,6 +1345,11 @@ export async function runServer({
     const w: Watcher = { html, program: art?.program ?? null, shell: art?.shell ?? null, timer: undefined };
     watchers.set(s.id, w);
     if (art?.title) s.title = art.title;
+    // An edit made while no server watched this file becomes a revision now.
+    if (html != null) {
+      const rev = recordHistory(s, html, "open");
+      if (rev) s.revision = Math.max(s.revision, rev.rev);
+    }
     fs.watchFile(s.file, { interval: 300 }, () => {
       clearTimeout(w.timer);
       w.timer = setTimeout(() => onFileChange(s, w), 120);
@@ -1352,6 +1362,27 @@ export async function runServer({
     watchers.delete(id);
   }
 
+  /** Pages of the same project with a title or card heading like this page's (`open` lists them; it never blocks). */
+  function similarTo(s: Session): OpenResponse["similar"] {
+    try {
+      const headings = [s.title, ...(store.db.prepare("SELECT text FROM statements WHERE artifact_id = ? AND component = 'CardHeader'").all(s.id) as unknown as { text: string }[]).map((h) => h.text.split("\n")[0])];
+      const found = similarPages(store.db, { artifactId: s.id, projectId: store.projectIdOf(s), headings });
+      return found.length ? found.map((f) => ({ title: f.title, file: f.file, updatedAt: f.updated_at })) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Record the file's program as the page's next revision, if it differs from the head. Never fails the page: history is a convenience. */
+  function recordHistory(s: Session, html: string, source: "open" | "file" | "restore"): RevisionRow | null {
+    try {
+      return recordRevision(store.db, s.id, html, { source });
+    } catch (err) {
+      log("history", s.id, "not recorded:", String((err as Error).message || err));
+      return null;
+    }
+  }
+
   function onFileChange(s: Session, w: Watcher): void {
     const html = readFileSafe(s.file);
     if (html == null || html === w.html) return;
@@ -1360,7 +1391,9 @@ export async function runServer({
     w.html = html;
     w.program = art.program;
     w.shell = art.shell;
-    s.revision += 1;
+    // A program change is a revision of its own (a patch from the CLI recorded it already: then there is nothing new to record).
+    const recorded = recordHistory(s, html, "file");
+    s.revision = Math.max(s.revision + 1, recorded?.rev ?? 0);
     if (art.title) s.title = art.title;
     log("change", s.id, `rev=${s.revision}`, shellChanged ? "shell" : "program");
     // Receipts: work started on delivered-but-unanswered feedback.
@@ -1813,6 +1846,8 @@ export async function runServer({
     if (route === "open") {
       if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
       await ensureTailnetListener();
+      // The first open of a page the hub has not had under review: say which pages of the project read alike.
+      const firstOpen = !store.get(sessionId(file));
       const s = store.ensure(file, cwd);
       watch(s);
       rescanSharedPolls();
@@ -1828,6 +1863,7 @@ export async function runServer({
         pending: store.unread(s).length,
         held: store.heldEntries(s).length,
         project,
+        similar: firstOpen ? similarTo(s) : undefined,
       } satisfies OpenResponse);
     }
 
@@ -2519,6 +2555,59 @@ export async function runServer({
     if (sub === "/unarchive" && req.method === "POST") {
       if (!setArchived(s.id, null)) return send(res, 404, { error: "not in the hub" });
       return send(res, 200, { ok: true });
+    }
+    // History (RLM-352): the owner's only, as reviewers are refused above. GET lists a page's revisions, or with `statement` one
+    // statement's earlier texts; both name the owner's notes, so a foreign Origin is refused.
+    if (sub === "/history" && req.method === "GET") {
+      if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+      const statement = url.searchParams.get("statement");
+      const html = readFileSafe(s.file);
+      if (statement) return send(res, 200, { statement, versions: statementVersions(store.db, s.id, statement.slice(0, 200), html) });
+      const revisions = revisionLog(store.db, s.id, { limit: 100 }).map((r) => ({
+        rev: r.rev,
+        at: r.at,
+        source: r.source,
+        changed: r.changed,
+        removed: r.removed,
+        created: r.created,
+        cause: r.cause.map((n) => ({ author: n.author, target: n.target, text: n.text.slice(0, 300) })),
+        by: agentLabel(store.db, r.agent_session_id),
+      }));
+      return send(res, 200, { head: headRev(store.db, s.id), viewed: viewedRev(store.db, s.id), revisions });
+    }
+    if (sub === "/viewed" && req.method === "POST") {
+      if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+      const rev = Number((await readBody(req, 1024)).rev);
+      if (!Number.isInteger(rev) || rev < 0) return send(res, 400, { error: "rev must be a whole number" });
+      setViewedRev(store.db, s.id, Math.min(rev, headRev(store.db, s.id)));
+      return send(res, 200, { ok: true, viewed: viewedRev(store.db, s.id) });
+    }
+    if (sub === "/restore" && req.method === "POST") {
+      if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+      if (s.archivedAt) return send(res, 409, { error: "this page is archived; unarchive it to change it" });
+      const body = await readBody(req, 16 * 1024);
+      const rev = Number(body.rev);
+      const names: string[] = Array.isArray(body.statements) ? body.statements.map(String).slice(0, 50) : [];
+      const old = Number.isInteger(rev) ? revisionAt(store.db, s.id, rev) : null;
+      if (!old) return send(res, 404, { error: `this page has no revision ${body.rev}` });
+      const missing = names.filter((n) => !statementMap(old.program).has(n));
+      if (missing.length) return send(res, 404, { error: `revision ${rev} has no statement ${missing.join(", ")}` });
+      const html = readFileSafe(s.file);
+      const current = html == null ? null : readArtifact(html).program;
+      if (html == null || current == null) return send(res, 409, { error: "the page's file cannot be read" });
+      // The same patch path as `austere-axi restore`; the file watcher then tells every open page.
+      let merged: string | null;
+      try {
+        merged = restoredProgram(current, old.program, names);
+      } catch (err) {
+        return send(res, 409, { error: String((err as Error).message || err) });
+      }
+      if (merged === null) return send(res, 200, { ok: true, unchanged: true });
+      const next = replaceProgram(html, merged);
+      // Recorded before the write, as the CLI does: the watcher then finds nothing left to record as its own.
+      const done = recordHistory(s, next, "restore");
+      fs.writeFileSync(s.file, next);
+      return send(res, 200, { ok: true, rev: done?.rev ?? headRev(store.db, s.id) });
     }
     // The menu's Share (RLM-397): a named link for this page, its project, or every page. The owner's only, as reviewers are refused above.
     if (sub === "/share" && req.method === "POST") {

@@ -82,6 +82,7 @@ type FrameMessage = { austere: 1 } & (
   | { type: "focus"; id?: unknown }
   | { type: "writing"; on?: unknown }
   | { type: "open-url"; url: unknown }
+  | { type: "history"; id?: unknown }
 );
 
 /** Messages the chrome posts to the frame. */
@@ -91,6 +92,7 @@ type ChromeMessage =
   | { type: "mode"; mode: Mode }
   | { type: "highlight"; ids: string[]; scroll: boolean }
   | { type: "presence"; marks: { statement: string; name: string; colour: string }[] }
+  | { type: "history-counts"; counts: Record<string, number> }
   | { type: "source"; program: string };
 
 interface SessionInfo {
@@ -372,6 +374,8 @@ const state: {
   parserErrors: RenderIssue[];
   runtimeErrors: RenderIssue[];
   changes: string[];
+  /** The owner's: statements changed by the revisions since they last looked (RLM-352). */
+  sinceChanges: string[];
   highlight: boolean;
   sheetOpen: boolean;
   sending: boolean;
@@ -397,6 +401,7 @@ const state: {
   parserErrors: [],
   runtimeErrors: [],
   changes: [],
+  sinceChanges: [],
   highlight: false,
   sheetOpen: SS.get(`austere:sheet:${SID}`) === true,
   sending: false,
@@ -453,6 +458,7 @@ document.body.innerHTML = `
           <button type="button" data-cmd="share" title="A named link for one teammate's device">Share…</button>
           <button type="button" data-cmd="copy-agent-prompt" title="A prompt that tells your agent to poll this page for feedback">Copy agent prompt</button>
           ${HOSTED ? '<div class="menu-note" data-share-note hidden>Only the owner can share this page. To invite someone, they run<code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.</div>' : ""}
+          <button type="button" data-cmd="history" title="Every version of this page, and what changed since you last looked">History…</button>
           <button type="button" data-cmd="reload">Reload page</button>
           ${HOSTED ? '<button type="button" data-cmd="export">Download standalone HTML</button>' : `<a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>`}
           <button type="button" data-cmd="archive">Archive page</button>
@@ -463,6 +469,12 @@ document.body.innerHTML = `
   </header>
   <div class="banner" hidden></div>
   <div class="notice" hidden></div>
+  <div class="since" role="status" hidden>
+    <span class="since-text"></span>
+    <button type="button" class="btn tiny" data-since="show" aria-pressed="false">Outline them</button>
+    <button type="button" class="btn tiny ghost" data-since="history">History</button>
+    <button type="button" class="icon-btn since-x" data-since="dismiss" aria-label="Dismiss">×</button>
+  </div>
   <div class="main">
     <section class="stage">
       <iframe class="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-forms"></iframe>
@@ -488,6 +500,10 @@ document.body.innerHTML = `
       </form>
     </aside>
   </div>
+  <div class="hist" role="dialog" aria-label="History" hidden>
+    <div class="hist-head"><span class="hist-title"></span><button type="button" class="icon-btn hist-close" aria-label="Close">×</button></div>
+    <div class="hist-body"></div>
+  </div>
   <button type="button" class="dock"></button>
 </div>`;
 
@@ -495,7 +511,7 @@ document.body.innerHTML = `
 // RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
 // from all of them (RLM-322).
 if (!OWNER) {
-  const ownerOnly = ['[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', ".copy-prompt", '[data-cmd="share"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach"];
+  const ownerOnly = ['[data-cmd="history"]', ".since", ".hist", '[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', ".copy-prompt", '[data-cmd="share"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach"];
   if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
   for (const sel of ownerOnly) $(sel)?.remove();
 }
@@ -707,6 +723,7 @@ window.addEventListener("message", (e) => {
       if (typeof d.title === "string" && d.title.trim()) showTitle(d.title.trim());
       // A reloaded frame starts unmarked; it handles "highlight" from the start.
       if (state.highlight) postHighlight(false);
+      sendHistoryCounts();
       presence.redraw();
       // The old frame's note box is gone, whether or not its blur arrived.
       presence.setWriting("note", false);
@@ -754,6 +771,10 @@ window.addEventListener("message", (e) => {
       break;
     case "toggle-mode":
       setMode(state.mode === "annotate" ? "explore" : "annotate");
+      break;
+    case "history":
+      // The popover's History (n) on a statement: the owner's only, and only a statement name is taken from the frame.
+      if (OWNER && !HOSTED && typeof d.id === "string") void showStatementHistory(d.id.slice(0, 200));
       break;
     case "open-url":
       openExternal(d.url);
@@ -1363,29 +1384,237 @@ setInterval(() => {
 }, 30_000);
 $(".copy-prompt")?.addEventListener("click", () => void copyAgentPrompt());
 
+/** What the control outlines: the last turn's changes and, for the owner, everything since they last looked. */
+function shownChanges(): string[] {
+  return [...new Set([...state.changes, ...state.sinceChanges])].slice(0, 100);
+}
 function renderChanges() {
   const btn = $(".changes");
   btn.setAttribute("aria-pressed", String(state.highlight));
+  $(".since [data-since=show]")?.setAttribute("aria-pressed", String(state.highlight));
+  const shown = shownChanges();
   // While on, the button stays so it can be switched off, even after a turn that changed nothing.
-  if (!state.changes.length && !state.highlight) {
+  if (!shown.length && !state.highlight) {
     btn.hidden = true;
     return;
   }
   btn.hidden = false;
-  btn.textContent = `${state.changes.length} changed`;
-  btn.title = state.changes.length
-    ? `${state.highlight ? "Hide" : "Highlight"} what the last turn changed: ${state.changes.join(", ")}`
+  btn.textContent = `${shown.length} changed`;
+  btn.title = shown.length
+    ? `${state.highlight ? "Hide" : "Highlight"} what changed${state.sinceChanges.length ? " since you last looked and in the last turn" : " in the last turn"}: ${shown.join(", ")}`
     : "The last turn changed nothing on the page. Click to stop highlighting.";
 }
-// On: the last turn's changes stay marked, and each new turn's replace them, until switched off.
+// On: the changes stay marked, and each new turn's join them, until switched off.
 function postHighlight(scroll: boolean) {
-  post({ type: "highlight", ids: state.highlight ? state.changes : [], scroll });
+  post({ type: "highlight", ids: state.highlight ? shownChanges() : [], scroll });
 }
 $(".changes").addEventListener("click", () => {
   state.highlight = !state.highlight;
   renderChanges();
   postHighlight(state.highlight);
 });
+
+
+// ── history (RLM-352): what changed since the owner last looked, every version, a part's earlier texts, restore ──
+
+/** A revision in `/history`'s answer (revisionLog in src/cli/history.ts). */
+interface HistoryRevision {
+  rev: number;
+  at: number;
+  source: string;
+  changed: string[];
+  removed: string[];
+  created?: number;
+  cause: { author: string; target: string | null; text: string }[];
+  by?: string;
+}
+interface HistoryData {
+  head: number;
+  viewed: number;
+  revisions: HistoryRevision[];
+}
+/** One earlier text of a statement, in `/history?statement=`'s answer. */
+interface StatementVersion {
+  rev: number;
+  at: number;
+  source: string;
+  text: string | null;
+  cause: { author: string; target: string | null; text: string }[];
+}
+
+let hist: HistoryData | null = null;
+
+const isoTime = (at: number): string => {
+  const d = new Date(at);
+  const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? t : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${t}`;
+};
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+const noteLine = (n: { author: string; target: string | null; text: string }): string => `${n.author}${n.target ? ` on ${n.target}` : ""}: ${n.text}`;
+const SOURCES: Record<string, string> = { patch: "patched", file: "edited", open: "found on open", restore: "restored" };
+
+async function loadHistory(): Promise<HistoryData | null> {
+  if (!OWNER || HOSTED) return null;
+  try {
+    const r = await fetch(`${BASE}/history`);
+    if (!r.ok) return null;
+    hist = (await r.json()) as HistoryData;
+  } catch {
+    return null;
+  }
+  sendHistoryCounts();
+  return hist;
+}
+
+/** The frame's annotate popover offers History (n) on a statement with earlier versions. */
+function sendHistoryCounts() {
+  if (!hist) return;
+  const counts: Record<string, number> = {};
+  for (const r of hist.revisions) for (const name of new Set([...r.changed, ...r.removed])) counts[name] = (counts[name] || 0) + 1;
+  post({ type: "history-counts", counts });
+}
+
+/** "2 revisions since you last looked": every revision after `baseline`, and the statements they changed. */
+function applySince(baseline: number) {
+  const bar = $(".since");
+  if (!hist || !bar) return;
+  const newer = hist.revisions.filter((r) => r.rev > baseline);
+  state.sinceChanges = [...new Set(newer.flatMap((r) => r.changed))].slice(0, 100);
+  bar.hidden = !newer.length;
+  $(".since-text", bar).textContent = `${plural(newer.length, "revision")} since you last looked`;
+  renderChanges();
+  if (state.highlight) postHighlight(false);
+}
+
+const inView = (): boolean => document.visibilityState === "visible";
+
+/** The owner has the page in view: the server remembers the newest revision they could have seen. */
+async function markViewed() {
+  if (!hist || !inView() || hist.viewed >= hist.head) return;
+  const head = hist.head;
+  const r = await fetch(`${BASE}/viewed`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rev: head }) }).catch(() => null);
+  if (r?.ok && hist) hist.viewed = Math.max(hist.viewed, head);
+}
+
+/** The page was opened, or its tab came back: compare with what the owner saw last. */
+async function enterPage() {
+  const h = await loadHistory();
+  if (!h) return;
+  // The first look at a page has nothing to compare with: every revision so far is what the owner sees now.
+  applySince(h.viewed || h.head);
+  void markViewed();
+}
+
+/** The page changed under an open tab: keep the history current; a tab in view has seen this change. */
+async function refreshHistory() {
+  if (await loadHistory()) void markViewed();
+}
+
+const histPop = (): HTMLElement => $(".hist");
+let histPreview = false;
+
+function closeHistory() {
+  histPop().hidden = true;
+  // The outline of a revision was a preview: back to what the control shows.
+  if (histPreview) postHighlight(false);
+  histPreview = false;
+}
+
+function openHistoryPanel(title: string): HTMLElement {
+  const pop = histPop();
+  pop.hidden = false;
+  $(".hist-title", pop).textContent = title;
+  const body = $(".hist-body", pop);
+  body.textContent = "";
+  return body;
+}
+
+/** Every revision, newest first: pick one to outline what it changed on the page. */
+async function showHistory() {
+  const data = await loadHistory();
+  const body = openHistoryPanel("History");
+  if (!data) return void body.append(h2("hist-empty", "History could not be loaded. Check that austere-axi is still running."));
+  if (!data.revisions.length) return void body.append(h2("hist-empty", "No revision is recorded yet."));
+  // The same count the bar above the page shows.
+  const newer = data.revisions.filter((r) => r.rev > data.viewed).length;
+  if (newer && state.sinceChanges.length) body.append(h2("hist-since", `${plural(newer, "revision")} since you last looked`));
+  for (const r of data.revisions) {
+    const names = r.created ? [`${plural(r.created, "statement")} at the start`] : [...r.changed, ...r.removed.map((n) => `${n} (deleted)`)];
+    const btn = h("button", { type: "button", class: "hist-pick", "aria-pressed": "false" });
+    btn.append(
+      h("span", { class: "hist-meta", text: `${r.rev === data.head ? "Now · " : ""}Revision ${r.rev} · ${isoTime(r.at)} · ${SOURCES[r.source] || r.source}${r.by ? ` by ${r.by}` : ""}` }),
+      h("span", { class: "hist-names", text: names.length > 6 ? `${names.slice(0, 6).join(", ")} +${names.length - 6}` : names.join(", ") }),
+    );
+    if (r.cause.length) btn.append(h("span", { class: "hist-cause", text: `${noteLine(r.cause[0]).slice(0, 140)}${r.cause.length > 1 ? ` (+${r.cause.length - 1} more)` : ""}` }));
+    btn.addEventListener("click", () => {
+      for (const other of body.querySelectorAll(".hist-pick")) other.setAttribute("aria-pressed", String(other === btn));
+      histPreview = true;
+      post({ type: "highlight", ids: r.changed.slice(0, 100), scroll: true });
+    });
+    body.append(h2("hist-row", ""));
+    body.lastElementChild?.append(btn);
+  }
+}
+
+/** One statement's earlier texts, each with the note that changed it and, for the owner, Restore. */
+async function showStatementHistory(name: string) {
+  const body = openHistoryPanel(`History · ${name}`);
+  const r = await fetch(`${BASE}/history?statement=${encodeURIComponent(name)}`).catch(() => null);
+  if (!r?.ok) return void body.append(h2("hist-empty", "History could not be loaded. Check that austere-axi is still running."));
+  const versions = ((await r.json()) as { versions: StatementVersion[] }).versions;
+  if (!versions.length) return void body.append(h2("hist-empty", "No earlier version is recorded."));
+  versions.forEach((v, i) => {
+    const row = h2("hist-row", "");
+    const meta = h("span", { class: "hist-meta", text: `${i === 0 ? "Now · " : ""}Revision ${v.rev} · ${isoTime(v.at)} · ${SOURCES[v.source] || v.source}` });
+    const text = h("pre", { class: "hist-text", text: v.text === null ? "(deleted)" : v.text.slice(0, 1500) || "(no text)" });
+    row.append(meta, text);
+    if (v.cause.length) row.append(h("span", { class: "hist-cause", text: `${v.cause.slice(0, 2).map(noteLine).join(" · ").slice(0, 200)}${v.cause.length > 2 ? ` (+${v.cause.length - 2} more)` : ""}` }));
+    if (i > 0 && v.text !== null) {
+      row.append(
+        h("button", {
+          type: "button",
+          class: "btn tiny restore",
+          text: "Restore this version",
+          onclick: () => void restoreStatement(name, v.rev),
+        }),
+      );
+    }
+    body.append(row);
+  });
+}
+
+async function restoreStatement(name: string, rev: number) {
+  const r = await fetch(`${BASE}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rev, statements: [name] }) }).catch(() => null);
+  if (!r) return showBanner(UNREACHABLE);
+  if (!r.ok) return showBanner(`Could not restore ${name}: ${await failure(r)}`);
+  const done = (await r.json().catch(() => ({}))) as { unchanged?: boolean };
+  closeHistory();
+  flash(done.unchanged ? `${name} already reads as it did in revision ${rev}.` : `${name} is back as it was in revision ${rev}.`);
+  void refreshHistory();
+}
+
+/** A div with a class and text, for the history lists. */
+function h2(cls: string, text: string): HTMLDivElement {
+  return h("div", { class: cls, text });
+}
+
+if (OWNER && !HOSTED) {
+  $(".hist-close").addEventListener("click", closeHistory);
+  $(".since").addEventListener("click", (e) => {
+    const act = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-since]")?.dataset.since : undefined;
+    if (act === "dismiss") $(".since").hidden = true;
+    if (act === "history") void showHistory();
+    if (act === "show") {
+      state.highlight = !state.highlight;
+      renderChanges();
+      postHighlight(state.highlight);
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (inView()) void enterPage();
+  });
+  void enterPage();
+}
 
 // ── menu ──
 
@@ -1489,6 +1718,7 @@ menuPop.addEventListener("click", async (e) => {
   // Hosted, the URL without its fragment: the invite token is already out of the address bar.
   if (cmd === "copy-link") await copyText(HOSTED ? location.origin + location.pathname : state.links?.remote || location.href, HOSTED ? "Page link" : "Review link");
   if (cmd === "copy-agent-prompt") await copyAgentPrompt();
+  if (cmd === "history") void showHistory();
   if (cmd === "reload") loadFrame();
   if (cmd === "export" && HOSTED) {
     // The menu stays open on "Preparing download…" until the file is saved or the banner says why not.
@@ -2303,6 +2533,7 @@ function connect() {
     state.renderReport = null;
     state.parserErrors = [];
     state.runtimeErrors = [];
+    void refreshHistory();
     showPackNotice(d.thirdPartyPacks);
     state.thirdParty = !!d.thirdPartyPacks?.length;
     if (d.shellChanged || !state.frameReady) {

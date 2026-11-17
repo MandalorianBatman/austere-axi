@@ -41,6 +41,17 @@ type ToolArgs = {
   pack?: string;
   session?: string;
   id: string;
+  words?: string;
+  names?: string[];
+  component?: string;
+  limit?: number;
+  all?: boolean;
+  rev?: number;
+  since?: number;
+  statement?: string;
+  plain_text?: boolean;
+  deps?: boolean;
+  from?: string[];
 };
 
 interface Tool {
@@ -153,9 +164,103 @@ const TOOLS: Record<string, Tool> = {
   patch: {
     title: "Merge statements into a page",
     description: "Merge OpenUI Lang statements into the page's program: a statement with an existing name replaces it, a new name adds it, `name = null` deletes it. Returns the check result.",
-    properties: { file, statements: { type: "string", description: "One or more `name = ...` statements." }, session },
+    properties: {
+      file,
+      statements: { type: "string", description: "One or more `name = ...` statements." },
+      from: { type: "array", items: { type: "string" }, description: "Optional: copy parts from other pages first, each `<file>#<statement>[,<statement>…]` (find prints these). Their statements and everything they reference come along; statements may reference them, and a part nothing references is dropped." },
+      rev: { type: "integer", minimum: 1, description: "With from: copy from this revision of that page (history lists them)." },
+      session,
+    },
     required: ["file", "statements"],
-    run: (a) => [{ args: ["patch", ...withSession(a), "--", a.file], stdin: a.statements }],
+    reject: (a) => (a.rev !== undefined && !a.from?.length ? "rev is for from: the revision of the page copied from" : null),
+    run: (a) => [{ args: ["patch", ...(a.from ?? []).flatMap((f) => ["--from", f]), ...(a.rev !== undefined ? ["--rev", String(a.rev)] : []), ...withSession(a), "--", a.file], stdin: a.statements }],
+  },
+  find: {
+    title: "Find pages that already cover this",
+    description: "Search the text of every page's statements before writing a page: title, file, copy, statement, component, snippet, age. If a page already covers the request, update it with patch, or copy its parts with patch's from argument. Default: the project of the server's working folder, 8 results; archived pages and files that are gone are left out.",
+    readOnly: true,
+    properties: {
+      words: { type: "string", description: "What to look for, a few words." },
+      project: { type: "string", description: "A project to search: a name, an id, or a folder inside one of its roots (default: the server's working folder's)." },
+      component: { type: "string", description: "Only statements of this component, e.g. Table or Architecture." },
+      limit: { type: "integer", minimum: 1, description: "Up to this many results (default 8)." },
+      all: { type: "boolean", description: "Also archived pages and copies whose file is gone." },
+    },
+    required: ["words"],
+    run: (a) => [{ args: ["find", ...(a.project ? ["--project", a.project] : []), ...(a.component ? ["--component", a.component] : []), ...(a.limit !== undefined ? ["--limit", String(a.limit)] : []), ...(a.all ? ["--all"] : []), "--", ...String(a.words).split(/\s+/).filter(Boolean)] }],
+  },
+  outline: {
+    title: "A page as a tree",
+    description: "The page's statements as a tree from root: name, component, first words and child count, about 40 tokens a row. Far cheaper than reading the file; then use show for parts.",
+    readOnly: true,
+    properties: { file },
+    required: ["file"],
+    run: (a) => [{ args: ["outline", "--", a.file] }],
+  },
+  show: {
+    title: "Read parts of a page",
+    description: "The source (default) or plain text (text: a table as Markdown, a diagram as its edges) of named statements; none named: all of them. deps adds everything they reference; rev reads an earlier version.",
+    readOnly: true,
+    properties: {
+      file,
+      names: { type: "array", items: { type: "string" }, description: "Statement names." },
+      plain_text: { type: "boolean", description: "Plain text instead of source." },
+      deps: { type: "boolean", description: "Also every statement they reference." },
+      rev: { type: "integer", minimum: 1, description: "An earlier revision (history lists them)." },
+    },
+    required: ["file"],
+    run: (a) => [{ args: ["show", ...(a.plain_text ? ["--text"] : []), ...(a.deps ? ["--deps"] : []), ...(a.rev !== undefined ? ["--rev", String(a.rev)] : []), "--", a.file, ...(a.names ?? [])] }],
+  },
+  history: {
+    title: "Versions of a page",
+    description: "Every version of a page, newest first: when, what made it, the statements it changed and the note behind it.",
+    readOnly: true,
+    properties: {
+      file,
+      statement: { type: "string", description: "Only revisions that changed this statement." },
+      since: { type: "integer", minimum: 0, description: "Only revisions after this one." },
+    },
+    required: ["file"],
+    run: (a) => [{ args: ["history", ...(a.statement ? ["--statement", a.statement] : []), ...(a.since !== undefined ? ["--since", String(a.since)] : []), "--", a.file] }],
+  },
+  restore: {
+    title: "Put a page back as it was",
+    description: "Write the page, or the named statements, back as they were at a revision. It is a patch and a new revision, so nothing is lost.",
+    properties: {
+      file,
+      rev: { type: "integer", minimum: 1, description: "The revision to go back to (history lists them)." },
+      names: { type: "array", items: { type: "string" }, description: "Only these statements; none: the whole page." },
+      session,
+    },
+    required: ["file"],
+    reject: (a) => (a.rev === undefined ? "rev is required" : null),
+    run: (a) => [{ args: ["restore", "--rev", String(a.rev), ...withSession(a), "--", a.file, ...(a.names ?? [])] }],
+  },
+  changes: {
+    title: "What changed on pages",
+    description: "Revisions after a cursor: for each, the statements before and after as text, the notes that caused it and the agent's reply. Returns cursor for the next call. Default: the project of the server's working folder.",
+    readOnly: true,
+    properties: {
+      file: { type: "string", description: "Path of the .html page. Leave out for a project. Use an absolute path." },
+      project: { type: "string", description: "A project: a name, an id, or a folder inside one of its roots." },
+      since: { type: "integer", minimum: 0, description: "Revisions after this cursor (default 0)." },
+      limit: { type: "integer", minimum: 1, description: "Up to this many revisions (default 20)." },
+    },
+    reject: (a) => (typeof a.file === "string" && typeof a.project === "string" ? "pass a file or a project, not both" : null),
+    run: (a) => [{ args: ["changes", ...(a.project ? ["--project", a.project] : []), ...(a.since !== undefined ? ["--since", String(a.since)] : []), ...(a.limit !== undefined ? ["--limit", String(a.limit)] : []), ...(typeof a.file === "string" ? ["--", a.file] : [])] }],
+  },
+  decisions: {
+    title: "The reviewer's decisions",
+    description: "Forms submitted and buttons pressed (with their values) and batches sent with Send & finish, with page, statement, time and author. Returns cursor for the next call. Default: the project of the server's working folder.",
+    readOnly: true,
+    properties: {
+      file: { type: "string", description: "Path of the .html page. Leave out for a project. Use an absolute path." },
+      project: { type: "string", description: "A project: a name, an id, or a folder inside one of its roots." },
+      since: { type: "integer", minimum: 0, description: "Decisions after this cursor (default 0)." },
+      limit: { type: "integer", minimum: 1, description: "Up to this many decisions (default 50)." },
+    },
+    reject: (a) => (typeof a.file === "string" && typeof a.project === "string" ? "pass a file or a project, not both" : null),
+    run: (a) => [{ args: ["decisions", ...(a.project ? ["--project", a.project] : []), ...(a.since !== undefined ? ["--since", String(a.since)] : []), ...(a.limit !== undefined ? ["--limit", String(a.limit)] : []), ...(typeof a.file === "string" ? ["--", a.file] : [])] }],
   },
   components: {
     title: "Find and install components",

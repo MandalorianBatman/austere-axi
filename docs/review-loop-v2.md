@@ -1,6 +1,6 @@
 # Review loop v2: design
 
-Status: Approved 2026-11-16. Built: stage 1 (shipped in 0.11.0), stages 2 and 3 (shipped in 0.12.0). Stages 4–6 are not built. A Status column marks each change below. Epic RLM-329, design issue RLM-331. L1–L15 were settled with sid.kasat on 2026-11-16. Q1–Q11 (P1–P11 in the epic) were accepted on the same day on the owner's instruction to proceed with assumptions while away. Line numbers and names below are from 0.10.4 (`e2749d6`). The build issues RLM-332 to RLM-367 follow this note; where an issue and this note differ, this note wins.
+Status: Approved 2026-11-16. Built: stage 1 (shipped in 0.11.0), stages 2 and 3 (shipped in 0.12.0) and stage 4 (history, content index and reuse, RLM-348; ships after 0.12.0). Stages 5–6 are not built. A Status column marks each change below. Epic RLM-329, design issue RLM-331. L1–L15 were settled with sid.kasat on 2026-11-16. Q1–Q11 (P1–P11 in the epic) were accepted on the same day on the owner's instruction to proceed with assumptions while away. Line numbers and names below are from 0.10.4 (`e2749d6`). The build issues RLM-332 to RLM-367 follow this note; where an issue and this note differ, this note wins.
 
 ## Problem
 
@@ -161,17 +161,17 @@ Files beside hub.db, written only at a terminal and never read from a project or
 ### History and the content index (RLM-349, RLM-350, RLM-354)
 
 ```sql
-revisions         (id INTEGER PRIMARY KEY,          -- global, monotonic: the `changes` cursor
+revisions         (id INTEGER PRIMARY KEY AUTOINCREMENT, -- global, monotonic: the `changes` cursor
                    artifact_id TEXT NOT NULL,
                    rev INTEGER NOT NULL,            -- per copy, from 1
                    at INTEGER NOT NULL,
-                   source TEXT NOT NULL,            -- patch | file | open
+                   source TEXT NOT NULL,            -- patch | file | open | restore
                    program TEXT NOT NULL,           -- the full program (Q6)
                    program_sha TEXT NOT NULL,
                    run_id TEXT, agent_session_id TEXT,
                    seq_from INTEGER, seq_to INTEGER, -- the notes that caused it
                    UNIQUE (artifact_id, rev))
-statements        (artifact_id TEXT NOT NULL, name TEXT NOT NULL, component TEXT,
+statements        (artifact_id TEXT NOT NULL, name TEXT NOT NULL, component TEXT NOT NULL,
                    text TEXT NOT NULL,              -- statementText() projection
                    source TEXT NOT NULL,            -- the OpenUI Lang of the statement
                    rev INTEGER NOT NULL,
@@ -181,7 +181,7 @@ statement_origins (artifact_id TEXT NOT NULL, name TEXT NOT NULL,
                    src_artifact_id TEXT NOT NULL, src_name TEXT NOT NULL, src_rev INTEGER NOT NULL)
 ```
 
-`statements` and `statements_fts` are rewritten inside the `recordRevision` transaction.
+`statements` and `statements_fts` (its rowid is the `statements` row's) are rewritten inside the `recordRevision` transaction (`src/cli/history.ts`, which also holds the readers: `history`, `changes`, `decisions`, `find`). `artifacts.last_viewed_rev` is the newest revision the owner had the page open on (RLM-352). `component` is not NULL: it is empty for a statement that is not a component call. All of it is made in `migrate()`, schema version 5.
 
 ### wiki.db (RLM-361, package `austere-wiki`)
 
@@ -387,7 +387,7 @@ One PR per stage (A3). A stage starts when the stages it depends on have merged.
 | 1 | RLM-332 projects and page identity | RLM-333 → RLM-334, RLM-335 → RLM-336 | RLM-331 | Built, in 0.11.0 |
 | 2 | RLM-337 pages without sessions | RLM-338 → RLM-339, RLM-340 | RLM-332 | Built, in 0.12.0 |
 | 3 | RLM-341 attach | RLM-342 (spike, may run from stage 1) → RLM-343, RLM-344 → RLM-345 → RLM-346. RLM-347 stays parked. | RLM-337 | Built, in 0.12.0 (RLM-347 parked) |
-| 4 | RLM-348 history and reuse | RLM-349 → RLM-350 → RLM-351, RLM-352 → RLM-353, RLM-354 | RLM-332 (RLM-334); may run beside stage 3 | Not built |
+| 4 | RLM-348 history and reuse | RLM-349 → RLM-350 → RLM-351, RLM-352 → RLM-353, RLM-354 | RLM-332 (RLM-334); may run beside stage 3 | Built |
 | 5 | RLM-355 dashboard shell | RLM-356 → RLM-357 → RLM-358 | RLM-336, RLM-346, RLM-349, RLM-350 | Not built |
 | 6 | RLM-359 wiki | core PR: RLM-360. `austere-wiki` repo: RLM-361 → RLM-362 → RLM-363 → RLM-364 → RLM-365 → RLM-366. RLM-367 stays parked. | RLM-345, RLM-351, RLM-352 | Not built |
 
