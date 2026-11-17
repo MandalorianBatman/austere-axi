@@ -24,12 +24,11 @@ body:
     attributes:
       label: CLI output
       description: What the CLI printed. For a review-page problem, name the browser and attach a screenshot.
-      render: text
   - type: input
     id: version
     attributes:
       label: austere-axi version
-      description: Output of `npx -y austere-axi --version`.
+      description: What `austere-axi --version` prints (or `npx -y austere-axi --version`).
     validations:
       required: true
   - type: input
