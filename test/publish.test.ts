@@ -270,6 +270,7 @@ beforeEach(() => {
   stub.ackError = null;
   stub.ackErrorOn = null;
   stub.refuse = null;
+  stub.nextPageId = null;
   stub.closeBeforePull = false;
   stub.splitPull = false;
   stub.regrantBeforePull = null;
@@ -367,7 +368,7 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   assert.ok(id.startsWith("--"), id);
   r = await cli(["publish", "rm", "--not-a-page-id"]);
   assert.equal(r.code, 2, r.out);
-  assert.match(r.out, /starts with - goes after --: austere-axi publish rm -- <id>/);
+  assert.match(r.out, /starts with -- goes after --: austere-axi publish rm -- <id>/);
   stub.requests.length = 0;
   r = await cli(["publish", "rm", id]);
   assert.equal(r.code, 0, r.out);

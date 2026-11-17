@@ -2509,8 +2509,8 @@ async function main(): Promise<unknown> {
   const unknown = Object.keys(flags).filter((k) => !allowed.includes(k));
   if (unknown.length) {
     const valid = allowed.length ? `valid: ${allowed.map((k) => `--${k}`).join(" ")}` : "it takes no flags";
-    // A page id that starts with "-" and is not a full id still reads as a flag: name the way out.
-    const idHint = name === "publish" && pos[1] === "rm" ? `. A page id that starts with - goes after --: ${BIN} publish rm -- <id>` : "";
+    // A page id that starts with "--" and is not a full id still reads as a flag: name the way out.
+    const idHint = name === "publish" && pos[1] === "rm" ? `. A page id that starts with -- goes after --: ${BIN} publish rm -- <id>` : "";
     return usage(`unknown flag${unknown.length > 1 ? "s" : ""} for ${name ?? BIN}: ${unknown.map((k) => `--${k}`).join(" ")}; ${valid}${idHint}`, name);
   }
   // A caller's `<harness>:<id>`; attach's --session is its own selector (author, a short or full id).
