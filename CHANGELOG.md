@@ -2,7 +2,18 @@
 
 Versions before 0.11.0 are listed only in the [GitHub releases](https://github.com/MandalorianBatman/austere-axi/releases).
 
-## Unreleased
+## 0.13.0 (2026-11-17)
+
+### Added
+
+- Review page: cards fold. A column Card that starts with a titled `CardHeader` has a chevron beside the title; it hides the rest of the card and keeps the title. Cards start open; row Cards do not fold. A note in the history that points inside a folded card opens it, and a change inside it outlines the card. A click on a folded card's title still adds a note to the card. Agents write nothing new: no prop, no prompt text. (RLM-404)
+- History and reuse: hub.db keeps every revision of every page and its statements as plain text with a full-text index. New commands `find`, `outline`, `show`, `history`, `restore`, `changes` and `decisions`; `patch --from <src>#<a>[,<b>…] [--rev n]` copies statements from another page; `hub reindex` rebuilds the index. The first `open` of a page lists `similar:` pages. MCP tools of the same names. See [History and reuse](docs/cli.md#history-and-reuse). (RLM-348)
+- Review page: a bar when the page changed while the tab was hidden, **History…** in the `⋯` menu, and **History (n)** in a part's annotate popover. (RLM-348)
+- Community standards: code of conduct, issue and PR templates, and [ACCESSIBILITY.md](ACCESSIBILITY.md). (RLM-402)
+
+### Changed
+
+- hub.db schema version 5 (additive; migrated on open). (RLM-348)
 
 ### Fixed
 
