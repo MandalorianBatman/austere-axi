@@ -139,6 +139,77 @@ export function copyLabel(root: string): string {
   return path.basename(root) || root;
 }
 
+/** The `config` file of the repository at `root`: in its git dir, or the common dir a worktree's git dir names; a bare repository (`HEAD` and `config` in the folder itself) holds its own. */
+function repoConfigOf(root: string): string | null {
+  const bare = fs.existsSync(path.join(root, "HEAD")) && fs.existsSync(path.join(root, "config"));
+  const gitDir = gitDirFor(root) ?? (bare ? root : null);
+  if (!gitDir) return null;
+  const common = (readText(path.join(gitDir, "commondir")) || "").trim();
+  return path.join(common ? path.resolve(gitDir, common) : gitDir, "config");
+}
+
+/** The `url` under `[remote "origin"]` in the `config` file `file`; null without one. */
+function originIn(file: string): string | null {
+  let inOrigin = false;
+  for (const line of (readText(file) || "").split(/\r?\n/)) {
+    const section = /^\s*\[\s*([^\]]*?)\s*\]/.exec(line);
+    if (section) inOrigin = /^remote\s+"origin"$/i.test(section[1]);
+    else if (inOrigin) {
+      const match = /^\s*url\s*=\s*(.*?)\s*$/i.exec(line);
+      if (!match) continue;
+      let val = match[1].trim();
+      if (val.startsWith('"')) {
+        const end = val.indexOf('"', 1);
+        if (end !== -1) return val.slice(1, end);
+      }
+      val = val.replace(/\s*[#;].*$/, "").trim();
+      if (val) return val;
+    }
+  }
+  return null;
+}
+
+/** The repository `url` names, as compared with another clone's: no scheme, user, trailing `/` or `.git`, `host:path` as `host/path`, lower case. */
+function repoKey(url: string): string {
+  return url
+    .trim()
+    .replace(/^[a-z][\w+.-]*:\/\//i, "")
+    .replace(/^[^@/]+@/, "")
+    .replace(/^([^/:]{2,}):(?!\/)/, "$1/")
+    .replace(/[\\/]+$/, "")
+    .replace(/\.git$/i, "")
+    .toLowerCase();
+}
+
+/**
+ * The name a new project of `root` takes: the repository's, from the `url` of its origin remote
+ * (`…/austere-axi.git` → `austere-axi`); with no origin, the folder's name without `.git`, or its
+ * parent's for a dot folder (`.bare`, `.git`). File reads only.
+ */
+export function projectNameOf(root: string): string {
+  const config = repoConfigOf(root);
+  const url = config ? originIn(config) : null;
+  const fromUrl = url?.replace(/[\\/]+$/, "").replace(/\.git$/i, "").split(/[\\/:]/).pop();
+  if (fromUrl) return fromUrl;
+  const base = path.basename(root).replace(/\.git$/i, "");
+  return base && !base.startsWith(".") ? base : path.basename(path.dirname(root)) || root;
+}
+
+/** The name a new project of `root` takes (`projectNameOf`); when another project has it, `name (parent folder of root)`, then a number: names stay apart in the hub and on the command line. */
+function newProjectName(db: sqlite.DatabaseSync, root: string): string {
+  const name = projectNameOf(root);
+  const taken = (n: string): boolean => db.prepare("SELECT 1 FROM projects WHERE name = ?").get(n) !== undefined;
+  if (!taken(name)) return name;
+  const parent = path.basename(path.dirname(root));
+  const suffixed = parent ? `${name} (${parent})` : name;
+  let n = suffixed;
+  for (let i = 2; taken(n); i++) n = `${suffixed} ${i}`;
+  return n;
+}
+
+/** How a root ranks as its project's main root, lowest first: an assigned root, then a repository, a guessed folder, a worktree. */
+const MAIN_RANK: Record<RootKind, number> = { assigned: 0, git: 1, folder: 2, worktree: 3 };
+
 function allRoots(db: sqlite.DatabaseSync): RootRow[] {
   return db.prepare("SELECT * FROM project_roots").all() as unknown as RootRow[];
 }
@@ -154,7 +225,7 @@ function createProject(db: sqlite.DatabaseSync, name: string): string {
  * stored already; re-read so a root another process stored first wins. The stored row.
  */
 function storeRoot(db: sqlite.DatabaseSync, root: string, kind: RootKind, projectId?: string, prefix = ""): RootRow {
-  const id = projectId ?? createProject(db, path.basename(root) || root);
+  const id = projectId ?? createProject(db, newProjectName(db, root));
   db.prepare("INSERT INTO project_roots (root, project_id, kind, prefix, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(root) DO NOTHING").run(root, id, kind, prefix, Date.now());
   const stored = db.prepare("SELECT * FROM project_roots WHERE root = ?").get(root) as unknown as RootRow;
   if (projectId === undefined && stored.project_id !== id) db.prepare("DELETE FROM projects WHERE id = ?").run(id);
@@ -369,22 +440,66 @@ function needProject(db: sqlite.DatabaseSync, ref: string): ProjectRow {
   return p;
 }
 
-export interface ProjectListing extends ProjectRow {
-  roots: { root: string; kind: RootKind }[];
-  pages: number;
+/** Another project whose roots are clones of the same repository (one origin): the older one, to merge into. */
+export interface SameRepository {
+  id: string;
+  name: string;
+  /** `project merge <older> <this>`, with names where they are one word and unambiguous, else ids. */
+  merge: string;
 }
 
-/** Every project with its roots and how many pages it has. */
+export interface ProjectListing extends ProjectRow {
+  /** Main root first, then the others by `MAIN_RANK` and in the order stored. */
+  roots: { root: string; kind: RootKind }[];
+  pages: number;
+  /** Set on the newer of two projects with the same origin: a hint only, the owner merges them or not. */
+  sameAs?: SameRepository;
+}
+
+/** Every project with its roots (main root first: by `MAIN_RANK`, then the first stored), how many pages it has, and an older project of the same repository, if any. */
 export function listProjects(db: sqlite.DatabaseSync): ProjectListing[] {
-  const roots = allRoots(db);
+  // Store order (rowid breaks a tie within one millisecond); the sort is stable.
+  const roots = (db.prepare("SELECT * FROM project_roots ORDER BY created_at, rowid").all() as unknown as RootRow[]).sort((a, b) => MAIN_RANK[a.kind] - MAIN_RANK[b.kind]);
   const counts = new Map(
     (db.prepare("SELECT project_id, COUNT(DISTINCT page_id) AS n FROM artifacts GROUP BY project_id").all() as unknown as { project_id: string; n: number }[]).map((r) => [r.project_id, r.n]),
   );
-  return (db.prepare("SELECT * FROM projects ORDER BY name COLLATE NOCASE, created_at").all() as unknown as ProjectRow[]).map((p) => ({
-    ...p,
-    roots: roots.filter((r) => r.project_id === p.id).map((r) => ({ root: r.root, kind: r.kind })).sort((a, b) => a.root.localeCompare(b.root)),
-    pages: counts.get(p.id) || 0,
-  }));
+  const projects = db.prepare("SELECT * FROM projects ORDER BY name COLLATE NOCASE, created_at").all() as unknown as ProjectRow[];
+  // The repositories of each project's roots, by origin; one read per config file (a repository's worktrees share it).
+  const originByConfig = new Map<string, string | null>();
+  const reposOf = new Map<string, Set<string>>();
+  for (const r of roots) {
+    const config = repoConfigOf(r.root);
+    if (!config) continue;
+    if (!originByConfig.has(config)) originByConfig.set(config, originIn(config));
+    const url = originByConfig.get(config);
+    if (!url) continue;
+    let set = reposOf.get(r.project_id);
+    if (!set) reposOf.set(r.project_id, (set = new Set()));
+    set.add(repoKey(url));
+  }
+  const nameCount = new Map<string, number>();
+  for (const p of projects) nameCount.set(p.name, (nameCount.get(p.name) || 0) + 1);
+  const ref = (p: ProjectRow): string =>
+    (/^[\w.@+-]+$/.test(p.name) && !p.name.startsWith("-") && nameCount.get(p.name) === 1 && !projects.some((o) => o.id === p.name) ? p.name : p.id);
+  const oldestFirst = db.prepare("SELECT * FROM projects ORDER BY created_at, rowid").all() as unknown as ProjectRow[];
+  const sameAs = (p: ProjectRow): SameRepository | undefined => {
+    const mine = reposOf.get(p.id);
+    if (!mine) return undefined;
+    for (const o of oldestFirst) {
+      if (o.id === p.id) return undefined;
+      if ([...(reposOf.get(o.id) || [])].some((k) => mine.has(k))) return { id: o.id, name: o.name, merge: `project merge ${ref(o)} ${ref(p)}` };
+    }
+    return undefined;
+  };
+  return projects.map((p) => {
+    const same = sameAs(p);
+    return {
+      ...p,
+      roots: roots.filter((r) => r.project_id === p.id).map((r) => ({ root: r.root, kind: r.kind })),
+      pages: counts.get(p.id) || 0,
+      ...(same ? { sameAs: same } : {}),
+    };
+  });
 }
 
 /** Re-resolve every artifact whose file is inside `root` or that belongs to `projectId`. */
@@ -456,7 +571,7 @@ export function addRoot(db: sqlite.DatabaseSync, dir: string, name?: string): { 
       const named = db.prepare("SELECT * FROM projects WHERE name = ? ORDER BY created_at").all(name) as unknown as ProjectRow[];
       if (named.length > 1) throw new Error(`several projects are named ${name}: ${named.map((p) => p.id).join(", ")}`);
       projectId = named.length ? named[0].id : createProject(db, name);
-    } else projectId = existing ? existing.project_id : createProject(db, path.basename(root) || root);
+    } else projectId = existing ? existing.project_id : createProject(db, newProjectName(db, root));
     const absorbed: string[] = [];
     for (const r of roots) {
       if (pathKey(r.root) === pathKey(root)) continue;

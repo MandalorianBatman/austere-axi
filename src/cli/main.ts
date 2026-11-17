@@ -1601,7 +1601,15 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
       return withHub(false, (hub) => {
         const projects = listProjects(hub.db);
         if (!projects.length) return print({ projects: "none", note: "A page you check or open for review files itself under a project." });
-        print({ projects: projects.map((p) => ({ name: p.name, id: p.id, pages: p.pages, roots: p.roots.map((r) => `${r.root} (${r.kind})`) })) });
+        print({
+          projects: projects.map((p) => ({
+            name: p.name,
+            id: p.id,
+            pages: p.pages,
+            roots: p.roots.map((r) => `${r.root} (${r.kind})`),
+            ...(p.sameAs ? { hint: `same repository as project ${p.sameAs.name}: \`${BIN} ${p.sameAs.merge}\`` } : {}),
+          })),
+        });
       });
     case "add":
       if (!need(1, `a folder: ${BIN} project add <dir> [--name n]`)) return;
