@@ -289,7 +289,7 @@ export async function runServer({
   verbose?: boolean;
   alsoListen?: string[];
   persist?: boolean;
-  /** The unit that runs this server; read from the system when it is not given. */
+  /** The unit that runs this server; null: none does. Read from the system when it is not given. */
   unit?: ServerUnit | null;
 }): Promise<{ port: number; shutdown: (reason: string) => void }> {
   const log = (...a: unknown[]): void => {

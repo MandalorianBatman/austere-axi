@@ -100,6 +100,12 @@ const portOf = (s: string | undefined): number | null => {
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : null;
 };
 
+/** The port a command line names, as the CLI reads it: `--port n` or `--port=n`. */
+function portArg(argv: string[]): number | null {
+  const i = argv.indexOf("--port");
+  return portOf(i >= 0 ? argv[i + 1] : argv.find((a) => a.startsWith("--port="))?.slice("--port=".length));
+}
+
 /** What a systemd unit runs with, and what of it a drop-in keeps. */
 export function systemdSettings(text: string): UnitSettings {
   const env = new Map<string, string>();
@@ -129,10 +135,9 @@ export function systemdSettings(text: string): UnitSettings {
     if (KEPT_KEYS[a.section]?.[a.key] === true) kept.push({ section: a.section as KeptLine["section"], line: a.raw });
     else other.push(a.raw);
   }
-  const portFlag = argv.indexOf("--port");
   return {
     cli: scriptOf(argv),
-    port: portOf(portFlag >= 0 ? argv[portFlag + 1] : undefined) ?? portOf(env.get("AUSTERE_AXI_PORT")),
+    port: portArg(argv) ?? portOf(env.get("AUSTERE_AXI_PORT")),
     stateDir: env.get("AUSTERE_AXI_STATE_DIR") || null,
     linkUrl: env.get("AUSTERE_AXI_LINK_URL") || null,
     kept,
@@ -154,10 +159,9 @@ export function launchdSettings(text: string): UnitSettings {
     if (MANAGED_ENV[name] === true) env.set(name, value);
     else kept.push({ section: "Service", line: `${name}=${value}` });
   }
-  const portFlag = argv.indexOf("--port");
   return {
     cli: scriptOf(argv),
-    port: portOf(portFlag >= 0 ? argv[portFlag + 1] : undefined) ?? portOf(env.get("AUSTERE_AXI_PORT")),
+    port: portArg(argv) ?? portOf(env.get("AUSTERE_AXI_PORT")),
     stateDir: env.get("AUSTERE_AXI_STATE_DIR") || null,
     linkUrl: env.get("AUSTERE_AXI_LINK_URL") || null,
     kept,

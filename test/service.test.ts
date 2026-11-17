@@ -732,6 +732,8 @@ test("a hand-written unit is read for what the new unit keeps: Environment=, Exe
   assert.equal(mixed.stateDir, "/srv/austere");
   assert.equal(mixed.cli, "/opt/my axi/cli.mjs");
   assert.equal(mixed.port, null);
+  // `--port=n`, as the CLI reads it, is the unit's port too.
+  assert.equal(systemdSettings("[Service]\nExecStart=/usr/bin/npx -y austere-axi server --persist --port=5000\n").port, 5000);
   // The unit `server install` writes has nothing of its own to keep.
   assert.deepEqual(systemdSettings(systemdUnit({ ...SPEC, stateDir: STATE })).kept, []);
   assert.deepEqual(launchdSettings(launchdPlist({ ...SPEC, port: 5000, env: [["HTTPS_PROXY", "http://proxy:3128"]] }, "/tmp/log")), {
@@ -895,6 +897,13 @@ test("install and uninstall refuse a unit of another state dir or another CLI un
   assert.match(fs.readFileSync(file, "utf8"), new RegExp(`ExecStart=/usr/bin/node ${checkout} server`));
   fs.writeFileSync(file, owners);
   assert.equal(uninstallService(ctx, { force: true }).status, "uninstalled");
+  // A unit npx's cache runs is not another CLI's: the npx warning says to install for good and run install again.
+  const { ctx: moved, asked } = context();
+  fs.mkdirSync(path.dirname(unitPath(moved.home)), { recursive: true });
+  const npx = "/home/ana/.npm/_npx/1a2b3c/node_modules/austere-axi/dist/cli.mjs";
+  fs.writeFileSync(unitPath(moved.home), systemdUnit({ ...SPEC, cli: npx, stateDir: STATE }));
+  assert.equal((await installService({}, moved)).status, "installed");
+  assert.match(asked[0], new RegExp(`ExecStart: /usr/bin/node ${CLI} server --persist --port 4388 \\(was ${npx}\\)`));
 });
 
 test("installed means the unit's own process answers, not a server another unit runs", async () => {

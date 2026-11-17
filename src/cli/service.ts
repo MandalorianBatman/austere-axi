@@ -461,12 +461,14 @@ function unitSettingsStateDir(s: UnitSettings, home: string): string {
 /**
  * Why a unit belongs to another hub or another CLI than this one, or null. A service pointed at
  * another state dir serves another hub; a CLI from a checkout would run the owner's service from it.
+ * A unit that runs from npx's cache is not another CLI's: npxWarning tells the owner to install for
+ * good and run `server install` again.
  */
 function otherOwner(s: UnitSettings, file: string, ctx: ServiceContext, checkCli: boolean): string | null {
   const dir = unitSettingsStateDir(s, ctx.home);
   const mine = path.resolve(ctx.stateDir);
   if (dir !== mine) return `${file} serves the state dir ${dir}, and this CLI uses ${mine}`;
-  if (checkCli && s.cli && path.resolve(s.cli) !== path.resolve(ctx.cli)) return `${file} runs ${s.cli}, and this CLI is ${ctx.cli}`;
+  if (checkCli && s.cli && !npxWarning(s.cli) && path.resolve(s.cli) !== path.resolve(ctx.cli)) return `${file} runs ${s.cli}, and this CLI is ${ctx.cli}`;
   return null;
 }
 
@@ -601,7 +603,7 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
   if (foreign.length && !o.adopt) {
     const r = foreign[0];
     const what = r.file === target.file ? `there is already a unit at ${r.file} that \`${BIN} server install\` did not write` : `the server here (pid ${holder?.pid}) runs under ${r.name} (${r.file}), which \`${BIN} server install\` did not write`;
-    const keeps = systemd ? "its Environment=, ExecStartPre= and After= lines, in a drop-in" : "its environment variables";
+    const keeps = systemd ? "its Environment=, EnvironmentFile=, ExecStartPre=, ExecStartPost=, After=, Wants= and Requires= lines, in a drop-in" : "its environment variables";
     throw new Error(`${what}. \`${installCommand({ ...o, adopt: true })}\` takes its place: it shows what it keeps of it (${keeps}) and asks, then backs it up beside it, stops and disables it, and installs its own.`);
   }
   if (!o.force) {
@@ -640,7 +642,7 @@ export async function installService(o: InstallOptions, ctx: ServiceContext): Pr
   const was = <T>(now: T, then: T | null | undefined): string => (then != null && then !== now ? ` (was ${then})` : "");
   const plan = [
     `${BIN} server install will ${replaced.some((r) => r.file === target.file) ? "replace" : "write"} ${target.file}:`,
-    `  ${systemd ? "ExecStart" : "ProgramArguments"}: ${serverArgs(spec).join(" ")}`,
+    `  ${systemd ? "ExecStart" : "ProgramArguments"}: ${serverArgs(spec).join(" ")}${before?.cli && before.cli !== spec.cli ? ` (was ${before.cli})` : ""}`,
     `  port: ${port}${was(port, before?.port)}`,
     `  state dir: ${stateDir}${was(stateDir, before && unitSettingsStateDir(before, ctx.home))}`,
     `  link url: ${linkUrl ?? "none"}${was(linkUrl ?? "none", before?.linkUrl)}`,
@@ -914,7 +916,7 @@ export function unitStateDir(file: string): string {
 export function unitPort(file: string): number | null {
   const text = fs.readFileSync(file, "utf8");
   // systemd: ExecStart=... --port 5000
-  const systemd = /--port\s+(\d+)/.exec(text);
+  const systemd = /--port[=\s]+(\d+)/.exec(text);
   // launchd: <string>--port</string><string>5000</string>
   const plist = /<string>--port<\/string>\s*<string>(\d+)<\/string>/.exec(text);
   const port = Number(systemd?.[1] ?? plist?.[1] ?? NaN);

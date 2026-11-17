@@ -303,7 +303,7 @@ const COMMANDS: Record<string, CommandSpec> = {
       verbose: "log requests",
       "also-listen": "extra address to listen on (repeatable)",
       "link-url": "install: the address reviewers reach the server at, e.g. https://austere.example.com (AUSTERE_AXI_LINK_URL in the unit; default: the installed unit's)",
-      adopt: "install: take the place of a unit you wrote yourself: keep its Environment=, ExecStartPre= and After= lines in a drop-in, back it up, stop and disable it",
+      adopt: "install: take the place of a unit you wrote yourself: keep its Environment=, EnvironmentFile=, ExecStartPre=, ExecStartPost=, After=, Wants= and Requires= lines in a drop-in, back it up, stop and disable it",
       force: "install, uninstall: go ahead although the installed unit runs another CLI or another state dir",
     },
     example: "server install --link-url https://austere.example.com",
