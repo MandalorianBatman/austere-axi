@@ -426,7 +426,9 @@ test("adapter command prints what a new run would run, with the owner's extra ar
 
     assert.equal(cli(["adapter", "command", "nope"], { env }).code, 1);
     assert.equal(cli(["adapter", "command"], { env }).code, 2);
-    assert.equal(cli(["adapter", "command", "omp"], { env: { ...env, PATH: path.dirname(process.execPath) } }).code, 1, "a harness that is not on PATH");
+    const empty = path.join(dir, "empty");
+    fs.mkdirSync(empty);
+    assert.equal(cli(["adapter", "command", "omp"], { env: { ...env, PATH: empty } }).code, 1, "a harness that is not on PATH");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

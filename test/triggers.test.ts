@@ -212,6 +212,45 @@ test("a run a restart interrupted gives its cursor back, so the activity it was 
   assert.equal(lines().at(-1)?.split("|")[1], String(head - 1));
 });
 
+test("a restart gives back a note-only run's note, so a note that started a run starts it again", async () => {
+  const t: Trigger = { ...TRIGGER, id: "t0a0b0c01" };
+  writeTriggers([t]);
+  scheduler.tick(); // starts from now
+  minutes(1);
+  db.prepare("INSERT INTO notes (id, artifact_id, state, items, at) VALUES ('n-restart-1', ?, 'queued', '[]', ?)").run(id, clock);
+  minutes(11);
+  const before = lines().length;
+  scheduler.tick();
+  await settled("the note's run", () => lines().length === before + 1 && runs().at(-1)?.status === "done");
+  const [row] = runs().slice(-1);
+  assert.equal(row.seq_from, row.seq_to, "no revision: the note alone started it");
+  db.prepare("UPDATE runs SET status = 'interrupted', ended_at = ? WHERE id = ?").run(clock, row.id);
+  scheduler.start();
+  minutes(11);
+  scheduler.tick();
+  await settled("the note's run again", () => lines().length === before + 2);
+});
+
+test("a command that is austere-axi itself is found on a machine with none installed", async () => {
+  const empty = path.join(ROOT, "empty-path");
+  fs.mkdirSync(empty);
+  const bare = new TriggerScheduler({ db, port: 1, log: () => {}, pollMs: 0, now: () => clock, env: { ...process.env, PATH: empty } });
+  try {
+    writeTriggers([{ ...TRIGGER, id: "t0a0b0c02", run: ["austere-axi", "--help"] }]);
+    bare.tick(); // starts from now
+    minutes(1);
+    patch("shim");
+    minutes(11);
+    bare.tick();
+    await settled("the shim's run", () => runs().some((r) => r.trigger_id === "t0a0b0c02" && r.status !== "running"));
+    const r = runs().find((x) => x.trigger_id === "t0a0b0c02");
+    assert.notEqual(r?.reason, "unavailable", "the shim is on the run's PATH before the command is looked up");
+    assert.equal(r?.status, "done");
+  } finally {
+    await bare.close();
+  }
+});
+
 function cli(args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [path.resolve("src/cli/main.ts"), ...args], { env: { ...process.env, ...env } });

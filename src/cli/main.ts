@@ -48,7 +48,7 @@ import { LOOKS_RULE } from "./agent-prompt.ts";
 import { adapterWarnings, attachReport, changeSetting, effectiveAttach, isAttachMode, readSetting, resolveSessionValue, resolveSetting } from "./attach.ts";
 import type { AttachFields, AttachSettingRow, AttachState } from "./attach.ts";
 import { endLeftover, getRun, listRuns, readAttachLimits, readRunLog } from "./dispatch.ts";
-import { newTriggerId, parseDuration, quietMs, readTriggers, triggerStatus, triggersFile, writeTriggers } from "./triggers.ts";
+import { headCursor, newTriggerId, parseDuration, quietMs, readTriggers, triggerStatus, triggersFile, writeTriggers } from "./triggers.ts";
 import type { Trigger } from "./triggers.ts";
 import type { ListedRun } from "./dispatch.ts";
 
@@ -2180,7 +2180,13 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
     // A project's trigger runs (RLM-360): they need the server that runs them.
     if (args.length) return usage("run stop takes a file or --project, not both", "run");
     if (!(await serverIfRunning())) return print({ status: "nothing to stop", note: "No server is running, so no trigger run is. A run a crashed server left is ended by the next server start." });
-    const r = await request<RunStopResponse>("POST", "/api/run/stop", { project: flags.project }, { timeoutMs: 15_000 });
+    // Resolved here: the server's folder is not this one.
+    let projectId = "";
+    await withHub(false, (hub) => {
+      projectId = projectScope(hub, flags).id;
+    });
+    if (process.exitCode) return;
+    const r = await request<RunStopResponse>("POST", "/api/run/stop", { project: projectId }, { timeoutMs: 15_000 });
     if (r.status !== 200) return fail(r.data?.error || `run stop failed (${r.status})`);
     return print({ status: r.data.stopped ? "stopped" : "nothing to stop", project: flags.project, runs: r.data.stopped || undefined });
   }
@@ -2337,8 +2343,20 @@ async function cmdTrigger(sub: string | undefined, args: string[], flags: Flags)
   if (!found) return fail(`no project ${project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`);
   const run = [...args];
   if (!(await confirm(`When project ${found} has been quiet for ${on.slice(6)}, run \`${commandLine(run)}\` on this machine?`))) return print({ status: "not changed" });
-  const entry: Trigger = { id: newTriggerId(), project, on, run, ...(typeof maxTime === "string" ? { maxTime } : {}) };
-  writeTriggers([...list, entry]);
+  // The server runs in its own folder: it gets the project's name, not a `.` or a relative path.
+  const entry: Trigger = { id: newTriggerId(), project: found, on, run, ...(typeof maxTime === "string" ? { maxTime } : {}) };
+  // From this moment: activity before the server's next look still runs it.
+  await withHub(true, (hub) => {
+    const proj = findProject(hub.db, found as string);
+    if (proj) hub.db.prepare("INSERT INTO trigger_state (trigger_id, last_cursor, last_run_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").run(entry.id, headCursor(hub.db, proj.id), Date.now());
+  });
+  if (process.exitCode) return;
+  // Another terminal may have changed the list while the question was open.
+  try {
+    writeTriggers([...readTriggers(), entry]);
+  } catch (err) {
+    return fail(messageOf(err));
+  }
   return print({
     status: "added",
     id: entry.id,

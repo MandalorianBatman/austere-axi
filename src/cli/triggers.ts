@@ -211,7 +211,10 @@ export class TriggerScheduler {
     const rows = this.db.prepare("SELECT * FROM runs WHERE kind = 'trigger' AND status = 'interrupted' AND trigger_id IS NOT NULL ORDER BY rowid").all() as unknown as RunRow[];
     for (const row of rows) {
       const later = this.db.prepare("SELECT 1 FROM runs WHERE trigger_id = ? AND rowid > (SELECT rowid FROM runs WHERE id = ?) LIMIT 1").get(row.trigger_id, row.id);
-      if (!later && row.seq_from != null) this.db.prepare("UPDATE trigger_state SET last_cursor = ? WHERE trigger_id = ?").run(row.seq_from, row.trigger_id);
+      if (later || row.seq_from == null) continue;
+      // Notes count after the trigger's last run, and a launch moves that to its own start: give back the one before it (none: every note) so a note-only run starts again too.
+      const prev = this.db.prepare("SELECT MAX(started_at) AS at FROM runs WHERE trigger_id = ? AND id != ? AND rowid < (SELECT rowid FROM runs WHERE id = ?)").get(row.trigger_id, row.id, row.id) as unknown as { at: number | null };
+      this.db.prepare("UPDATE trigger_state SET last_cursor = ?, last_run_at = ? WHERE trigger_id = ?").run(row.seq_from, prev.at, row.trigger_id);
     }
     const every = this.o.pollMs ?? 15_000;
     if (every > 0) {
@@ -292,8 +295,6 @@ export class TriggerScheduler {
     const env = runEnv(id, this.o.port, this.o.env ?? process.env);
     env.AUSTERE_AXI_PROJECT = projectName;
     env.AUSTERE_AXI_CHANGES_CURSOR = String(cursor);
-    const bin = findOnPath(t.run[0], env, process.platform, root);
-    if (!bin) return this.refuse(id, t, projectId, head, now, "unavailable", `${t.run[0]} not found (PATH, or relative to ${root}).`);
     let logFile: string;
     let logFd: number;
     let childEnv: NodeJS.ProcessEnv;
@@ -303,6 +304,12 @@ export class TriggerScheduler {
       childEnv = withCliShim(env);
     } catch (err) {
       return this.refuse(id, t, projectId, head, now, "unavailable", `Could not write the run's files: ${(err as Error).message}`);
+    }
+    // Looked up in the run's own PATH, so a command that is `austere-axi` finds the shim on a machine without a global install.
+    const bin = findOnPath(t.run[0], childEnv, process.platform, root);
+    if (!bin) {
+      fs.closeSync(logFd);
+      return this.refuse(id, t, projectId, head, now, "unavailable", `${t.run[0]} not found (PATH, or relative to ${root}).`);
     }
     const spec = spawnSpec(bin, t.run.slice(1), process.platform, childEnv);
     const row: RunRow = {
