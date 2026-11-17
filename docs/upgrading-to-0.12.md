@@ -9,13 +9,13 @@ The full list of changes is in the [changelog](../CHANGELOG.md).
 | Before | In 0.12 |
 |---|---|
 | `end <file>` | Nothing. Stop polling and continue in chat. |
-| `close <file>` | `archive <file>`: the page leaves the hub's lists and stops taking notes. |
+| `close <file>` | Nothing to close: stop polling. To put a page away, `archive <file>` (only when the user asks): the page leaves the hub's lists and stops taking notes. |
 | `reopen <file>`, `open --reopen` | `unarchive <file>`. A page that is not archived needs nothing. |
 | `poll --takeover` | Nothing. The newest poll replaces the older one by itself. |
 | `poll --owner` | Nothing. No flag replaces it. |
 | `hub on`, `hub off`, `hub status` (gone since 0.11.0) | Nothing. The hub has no on/off switch: `hub open` opens it, and `server install` keeps the server running (see [Always on](hub.md#always-on)). |
 
-In 0.12 each removed command or flag exits 2 with `code: REMOVED` and one line that names its replacement. `hub on|off|status` exit 2 and point at `hub open`. In 0.13 they are unknown commands and flags. A script that ran them and expected exit 0 now fails: take the line out, or use the replacement.
+In 0.12 each removed command or flag, `hub on|off|status` included, exits 2 with `status: error`, `code: REMOVED` and one line that names its replacement. In 0.13 they are unknown commands and flags. A script that ran them and expected exit 0 now fails: take the line out, or use the replacement.
 
 `poll` with no file is new: it listens to every page of the checkout it runs in (the repository, worktree or folder that holds the current directory) and answers with `batches`, one per page. `--project <p>` widens it to every checkout of the project. `poll <file>` still listens to one page. See [Review rules](cli.md#review-rules).
 
@@ -36,7 +36,7 @@ In 0.12 each removed command or flag exits 2 with `code: REMOVED` and one line t
 
 ## MCP server
 
-- The `end` tool is gone.
+- The `end` tool is gone. A call to it answers `end was removed in 0.12: … stop polling and continue in chat`.
 - `open`: the `reopen` argument is gone.
 - `poll`: the `takeover` argument is gone. `file` is optional: without it, `poll` covers every page of the checkout of the MCP server's working folder. `project` widens it to every checkout of a project.
 - New tools, all read-only: `sessions_list`, `run_list`, `run_log` and `attach_status` (see [Attach](attach.md)). Turning attach on or off and granting permissions stay at a terminal.

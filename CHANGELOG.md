@@ -8,9 +8,9 @@ Breaking: the review session is gone. Read [Upgrading to 0.12](docs/upgrading-to
 
 ### Removed
 
-- `end`, `close`, `reopen`, `open --reopen`, `poll --takeover` and `poll --owner`. Each exits 2 with `code: REMOVED` and names its replacement: nothing for `end`, `archive` for `close`, `unarchive` for `reopen`, nothing for `--takeover` and `--owner`. (RLM-338)
+- `end`, `close`, `reopen`, `open --reopen`, `poll --takeover`, `poll --owner`, and `hub on|off|status`. Each exits 2 with `status: error`, `code: REMOVED` and names its replacement: nothing for `end` and `close` (archive a page only when the user asks), `unarchive` for `reopen`, nothing for `--takeover` and `--owner`, `hub open` for `hub on|off|status`. (RLM-338, RLM-395)
 - Poll statuses `ended`, `closed`, `listener_active` and `browser_disconnected`. The reviewer's last batch now carries `final: true`; a newer poll answers the older one with `replaced`. (RLM-338)
-- MCP: the `end` tool, `open`'s `reopen` argument and `poll`'s `takeover` argument. (RLM-338)
+- MCP: the `end` tool (a call answers that it was removed and to stop polling), `open`'s `reopen` argument and `poll`'s `takeover` argument. (RLM-338, RLM-395)
 
 ### Changed
 
@@ -51,6 +51,7 @@ Breaking: the review session is gone. Read [Upgrading to 0.12](docs/upgrading-to
 - A note is no longer delivered twice to a page poll and the checkout or project poll, and `--cursor` acknowledges only notes a poll handed over: a note `--after` skipped stays unread. `reply` without a cursor still acknowledges after a server restart. (RLM-379, RLM-377)
 - A repository and its worktrees share one page prefix, whatever the order of `project merge` and `forget-root`. (RLM-368)
 - A folder whose `.git` file points into a real repository joins it only when git's back-pointer agrees. (RLM-394)
+- A page from 0.10.4 that was ended but not closed stays listed, and its unread note reaches the next poll. (RLM-395)
 
 ## 0.11.0 (2026-11-16)
 
