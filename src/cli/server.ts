@@ -2383,7 +2383,7 @@ export async function runServer({
       void recheckTailnet().finally(() => {
         checking = false;
       });
-    }, tailnetCheckMs).unref();
+    }, Math.min(tailnetCheckMs, MAX_TIMER_MS)).unref();
   }
 
   function shutdown(reason: string): void {

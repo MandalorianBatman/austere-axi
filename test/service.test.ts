@@ -1324,7 +1324,12 @@ async function retire(pid: number | null, keep?: number): Promise<void> {
   // A real process exits on its own schedule: poll until it has.
   for (let i = 0; i < 50 && alive(); i++) await new Promise((res) => setTimeout(res, 100));
   if (!alive()) return;
-  process.kill(pid);
+  try {
+    process.kill(pid);
+  } catch (err) {
+    // It exited between the check and the kill.
+    if ((err as NodeJS.ErrnoException).code !== "ESRCH") throw err;
+  }
   for (let i = 0; i < 50 && alive(); i++) await new Promise((res) => setTimeout(res, 100));
 }
 
@@ -1378,6 +1383,20 @@ test("server restart replaces a server from before the health proof, and says wh
     for (let i = 0; i < 50 && (await health(port)); i++) await new Promise((res) => setTimeout(res, 100));
     await retire(pid, process.pid);
   }
+});
+
+test("status says unknown when launchctl cannot run, and a state dir in another case is the same on macOS", () => {
+  const { ctx } = statusMachine({ platform: "darwin", print: "\tstate = running\n" });
+  ctx.run = () => ({ code: null, stdout: "", stderr: "spawnSync launchctl ENOENT" });
+  const s = serviceStatus(ctx, null, "0.12.0");
+  assert.equal(s.service, "unknown: launchctl could not run here");
+  assert.equal(s.starts, "unknown");
+  // macOS ignores case by default: the unit's .../State is this CLI's .../STATE too.
+  const mac = context({ platform: "darwin" }).ctx;
+  fs.mkdirSync(path.join(mac.home, "Library", "LaunchAgents"), { recursive: true });
+  fs.writeFileSync(path.join(mac.home, "Library", "LaunchAgents", "xyz.kasat.austere-axi.plist"), launchdPlist({ ...SPEC, port: 5003, stateDir: path.join(mac.home, "State") }, "/tmp/log"));
+  assert.equal(serverPort(mac, path.join(mac.home, "STATE")), 5003);
+  assert.equal(serverPort(mac, path.join(mac.home, "Other")), 4388);
 });
 
 test("status says unknown, not stopped or disabled, when systemd's user manager does not answer", () => {

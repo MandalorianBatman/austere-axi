@@ -11,7 +11,7 @@ import { commandLine } from "./adapters/config.ts";
 import { parseLinkUrl } from "./net.ts";
 import { lockedPort, stateDirHolder } from "./lock.ts";
 import type { LockHolder } from "./lock.ts";
-import { CLI_ENTRY, REAL_PORT, stateDir } from "./paths.ts";
+import { CLI_ENTRY, REAL_PORT, canonicalFile, stateDir } from "./paths.ts";
 import { launchdSettings, systemdSettings } from "./unit-file.ts";
 import type { KeptLine, UnitSettings } from "./unit-file.ts";
 
@@ -1078,12 +1078,21 @@ function installedSettings(target: { supervisor: Supervisor; file: string }, hom
   return { ...settings, dir: unitSettingsStateDir(settings, home) };
 }
 
+/**
+ * Whether two paths name the same state dir: the same real path (a link, `..`), or on macOS and
+ * Windows, whose file systems ignore case by default, the same path in another case.
+ */
+function sameDir(a: string, b: string, platform: NodeJS.Platform): boolean {
+  const [x, y] = [canonicalFile(a), canonicalFile(b)];
+  return x === y || ((platform === "darwin" || platform === "win32") && x.toLowerCase() === y.toLowerCase());
+}
+
 /** The installed service, when it is the one for this state dir and port (a unit that names no port is taken for any). */
 export function installedServiceFor(ctx: Pick<ServiceContext, "platform" | "home" | "env">, dir: string, port: number): { supervisor: Supervisor; file: string } | null {
   const target = unitFile(ctx);
   if (!target || !fs.existsSync(target.file)) return null;
   const s = installedSettings(target, ctx.home);
-  if (s.dir !== path.resolve(dir)) return null; // another state dir's service
+  if (!sameDir(s.dir, dir, ctx.platform)) return null; // another state dir's service
   if (s.port != null && s.port !== port) return null; // it serves another port
   return target;
 }
@@ -1101,7 +1110,7 @@ export function serverPort(ctx: Pick<ServiceContext, "platform" | "home" | "env"
   const target = unitFile(ctx);
   if (!target || !fs.existsSync(target.file)) return REAL_PORT;
   const s = installedSettings(target, ctx.home);
-  return s.dir === path.resolve(dir) ? (s.port ?? REAL_PORT) : REAL_PORT;
+  return sameDir(s.dir, dir, ctx.platform) ? (s.port ?? REAL_PORT) : REAL_PORT;
 }
 
 /**
@@ -1141,7 +1150,7 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
   }
   const dir = path.resolve(ctx.stateDir);
   const settings = installedSettings(target, ctx.home);
-  if (settings.dir !== dir) {
+  if (!sameDir(settings.dir, dir, ctx.platform)) {
     return { service: "not installed for this state dir", ...unit, server: answering, note: `that unit serves ${settings.dir}, and this CLI uses ${dir}; its state is not this state dir's.` };
   }
   const systemd = target.supervisor === "systemd";
@@ -1157,7 +1166,9 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
     lingers = linger(ctx);
   } else {
     const r = ctx.run("launchctl", ["print", launchdTarget(ctx.uid)]);
-    state = launchdState(r.code === 0 ? r.stdout : null);
+    // launchctl that could not run says nothing about the agent: not "stopped".
+    state = r.code == null ? "unknown: launchctl could not run here" : launchdState(r.code === 0 ? r.stdout : null);
+    if (r.code == null) enabled = null;
   }
   const node = settings.node;
   const warnings = [
