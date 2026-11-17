@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security problem
+    url: https://github.com/MandalorianBatman/austere-axi/security/advisories/new
+    about: Report it privately, not in a public issue.
+  - name: A new pack
+    url: https://github.com/MandalorianBatman/austere-axi/blob/main/docs/writing-a-pack.md
+    about: Build and publish it in your own repo, then open an issue so we can link it.

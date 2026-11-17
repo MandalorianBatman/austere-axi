@@ -1,0 +1,20 @@
+name: Feature request
+description: Something austere-axi should do, or a component it should have.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and what got in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: For a new component, say whether it belongs in core or in a pack ([Writing a pack](https://github.com/MandalorianBatman/austere-axi/blob/main/docs/writing-a-pack.md)).
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead

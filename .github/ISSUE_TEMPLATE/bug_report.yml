@@ -1,0 +1,41 @@
+name: Bug report
+description: The CLI, the review page or a component does something wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problems: do not open a public issue. Use [private vulnerability reporting](https://github.com/MandalorianBatman/austere-axi/security/advisories/new).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: page
+    attributes:
+      label: The page
+      description: The `.html` file, or the smallest OpenUI Lang program that still fails.
+      render: html
+  - type: textarea
+    id: output
+    attributes:
+      label: CLI output
+      description: What the CLI printed. For a review-page problem, name the browser and attach a screenshot.
+  - type: input
+    id: version
+    attributes:
+      label: austere-axi version
+      description: What `austere-axi --version` prints (or `npx -y austere-axi --version`).
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS and Node
+      description: Your OS, and the output of `node --version` (22.18 or later is required).
+      placeholder: "Ubuntu 24.04, v24.4.0"
+    validations:
+      required: true
