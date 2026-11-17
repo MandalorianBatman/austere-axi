@@ -36,9 +36,14 @@ austere-axi project add ~/work/plans --name plans   # assign a root (a folder wi
 austere-axi project merge shop shop-clone    # the second project's roots move to the first
 austere-axi project rename shop storefront     # refused if another project is named storefront
 austere-axi project forget-root ~/old/clone  # its pages, and the project's other roots, are filed again
+austere-axi project forget-root ~/gone/repo --drop  # a root whose folder is gone: its pages are archived
 ```
 
-`project add` takes in the folders it guessed below the new root, and refuses a folder inside another project's root, or around one, naming that project; `project merge` is the way to join them. `--project` (on `poll`, `feedback`, `hub list` and `hub notes`) and the home page's project link take a name, an id, or any folder a root holds.
+`project add` takes in the folders it guessed below the new root, and refuses a folder inside another project's root, or around one, naming that project; `project merge` is the way to join them. When the new root would take roots or pages from other projects, `add` lists each one (name, id, pages, roots) and changes nothing until you run it again with `--yes`. It refuses `/`, the temp folder, and the home folder or any folder holding it. A name is never empty and never looks like an id (12 hex characters). When two projects share a name, an error asking for an id lists each one's id and main root.
+
+`forget-root` says where the root's pages went (`went:` each project, its root and page count). A folder with a `.git` is a root again at once, of a new project: `status: found again`, and the note gives the `project merge` that joins it back. A root whose folder is gone and holds pages needs `--drop`: its copies are archived (their notes are kept, `hub list --archived` shows them) and stay in their project, instead of being filed under folders that do not exist.
+
+`--project` (on `poll`, `feedback`, `hub list` and `hub notes`) and the home page's project link take a name, an id, or any folder a root holds.
 
 ## What the lists leave out
 

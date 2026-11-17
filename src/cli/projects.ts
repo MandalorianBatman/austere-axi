@@ -9,7 +9,7 @@ import path from "node:path";
 import type * as sqlite from "node:sqlite";
 import { canonicalFile } from "./paths.ts";
 
-/** How a root was found: assigned by the owner (`project add`), a folder with a `.git` directory or submodule `.git` file, a git worktree, or a guessed folder (where the CLI ran, else a page's own folder). */
+/** How a root was found: assigned by the owner (`project add`), a folder with a `.git` directory or submodule `.git` file (or a 0.10.4 project path that is gone), a git worktree, or a guessed folder (where the CLI ran, else a page's own folder). */
 export type RootKind = "assigned" | "git" | "worktree" | "folder";
 
 export interface ProjectRow {
@@ -365,8 +365,19 @@ function locatedIn(db: sqlite.DatabaseSync, place: Place, file: string): Located
   return { ...place, file, relPath, pageId: ensurePage(db, place.projectId, relPath) };
 }
 
-/** Set an artifact's project, root and page from its file. */
+/**
+ * Set an artifact's project, root and page from its file. A copy whose folder is gone is re-placed only
+ * while its own root is stored and holds it (that root's prefix may have changed); otherwise it keeps its
+ * place: a guess would make a root of a folder that does not exist, and a root above it, or of another
+ * project, never owned it. `project merge` carries such copies by page path.
+ */
 function placeArtifact(db: sqlite.DatabaseSync, id: string, file: string): void {
+  const dir = path.dirname(canonicalFile(file));
+  if (!fs.existsSync(dir)) {
+    const own = (db.prepare("SELECT root FROM artifacts WHERE id = ?").get(id) as { root: string | null } | undefined)?.root;
+    const found = lookup(allRoots(db), dir);
+    if (!own || !found || !("row" in found) || pathKey(found.row.root) !== pathKey(own)) return;
+  }
   const loc = resolveProject(db, file);
   db.prepare("UPDATE artifacts SET project_id = ?, root = ?, page_id = ? WHERE id = ?").run(loc.projectId, loc.root, loc.pageId, id);
 }
@@ -380,7 +391,9 @@ function prune(db: sqlite.DatabaseSync): void {
 
 /**
  * Migration from 0.10.4: give every artifact without a project one, by its old project path
- * (the nearest folder with a `.git`, else the file's folder), in one transaction.
+ * (the nearest folder with a `.git`, else the file's folder), in one transaction. A project path
+ * that is gone, and that no stored root or `.git` holds, is stored as a `git` root: the old CLI
+ * found it, and as a guessed `folder` a guessed folder above would take it in on the next re-key.
  */
 export function backfillProjects(db: sqlite.DatabaseSync): void {
   const rows = db.prepare("SELECT id, file, project FROM artifacts WHERE project_id IS NULL").all() as unknown as { id: string; file: string; project: string }[];
@@ -390,7 +403,11 @@ export function backfillProjects(db: sqlite.DatabaseSync): void {
     for (const r of rows) {
       const file = canonicalFile(r.file);
       let place = places.get(r.project);
-      if (!place) places.set(r.project, (place = resolveDir(db, canonicalFile(r.project))));
+      if (!place) {
+        const project = canonicalFile(r.project);
+        place = fs.existsSync(project) || lookup(allRoots(db), project) ? resolveDir(db, project) : placeOf(storeRoot(db, project, "git"));
+        places.set(r.project, place);
+      }
       const loc = within(place.root, file) && file !== place.root ? locatedIn(db, place, file) : resolveProject(db, file);
       db.prepare("UPDATE artifacts SET project_id = ?, root = ?, page_id = ? WHERE id = ?").run(loc.projectId, loc.root, loc.pageId, r.id);
     }
@@ -407,7 +424,7 @@ export function findProject(db: sqlite.DatabaseSync, ref: string, { folders = tr
   const byId = db.prepare("SELECT * FROM projects WHERE id = ?").get(ref) as unknown as ProjectRow | undefined;
   if (byId) return byId;
   const named = db.prepare("SELECT * FROM projects WHERE name = ? ORDER BY created_at").all(ref) as unknown as ProjectRow[];
-  if (named.length > 1) throw new Error(`several projects are named ${ref}: ${named.map((p) => p.id).join(", ")}; use an id`);
+  if (named.length > 1) throw new Error(`several projects are named ${ref}: ${namedList(db, named)}; use an id`);
   if (named.length) return named[0];
   if (!folders) return null;
   const roots = allRoots(db);
@@ -438,6 +455,25 @@ function needProject(db: sqlite.DatabaseSync, ref: string): ProjectRow {
   const p = findProject(db, ref);
   if (!p) throw new Error(`no project ${ref} (a project name, id, or a folder inside one of its roots)`);
   return p;
+}
+
+/** Projects of one name, each as its id and main root (the rule `listProjects` heads a project with: `MAIN_RANK`, then the first stored), for an error that asks for an id. */
+function namedList(db: sqlite.DatabaseSync, named: ProjectRow[]): string {
+  const main = db.prepare("SELECT root, kind FROM project_roots WHERE project_id = ? ORDER BY created_at, rowid");
+  return named
+    .map((p) => {
+      const roots = (main.all(p.id) as unknown as { root: string; kind: RootKind }[]).sort((a, b) => MAIN_RANK[a.kind] - MAIN_RANK[b.kind]);
+      return `${p.id} (${roots[0]?.root ?? "no root"})`;
+    })
+    .join(", ");
+}
+
+/** A project name the owner gives: trimmed, not empty, and not shaped like an id (12 hex), which a lookup reads as an id first. */
+function checkName(name: string): string {
+  const n = name.trim();
+  if (!n) throw new Error("a project name cannot be empty");
+  if (/^[0-9a-f]{12}$/.test(n)) throw new Error(`${n} is shaped like a project id, and a lookup reads it as one: pick another name`);
+  return n;
 }
 
 /** Another project whose roots are clones of the same repository (one origin): the older one, to merge into. */
@@ -554,48 +590,114 @@ function settlePrefixes(db: sqlite.DatabaseSync, projectId: string): void {
   }
 }
 
-/**
- * `project add <dir> [--name n]`: make `dir` an assigned root, of the project named `name` (made if
- * there is none) or else of its own project. Roots guessed from a page's folder inside `dir` are
- * absorbed, whatever their project, and their pages re-keyed under `dir`; any other root of another
- * project above or below `dir` is an error naming it (a guessed folder above keeps what is outside `dir`).
- */
-export function addRoot(db: sqlite.DatabaseSync, dir: string, name?: string): { project: ProjectRow; root: string } {
-  const root = canonicalFile(dir);
-  if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`not a folder: ${root}`);
-  return inTransaction(db, () => {
-    const roots = allRoots(db);
-    const existing = roots.find((r) => pathKey(r.root) === pathKey(root));
-    let projectId: string;
-    if (name) {
-      const named = db.prepare("SELECT * FROM projects WHERE name = ? ORDER BY created_at").all(name) as unknown as ProjectRow[];
-      if (named.length > 1) throw new Error(`several projects are named ${name}: ${named.map((p) => p.id).join(", ")}`);
-      projectId = named.length ? named[0].id : createProject(db, name);
-    } else projectId = existing ? existing.project_id : createProject(db, newProjectName(db, root));
-    const absorbed: string[] = [];
-    for (const r of roots) {
-      if (pathKey(r.root) === pathKey(root)) continue;
-      if (r.kind === "folder") {
-        if (within(root, r.root)) absorbed.push(r.root);
-        continue;
-      }
-      if (r.project_id === projectId) continue;
-      const projectName = (db.prepare("SELECT name FROM projects WHERE id = ?").get(r.project_id) as { name: string } | undefined)?.name || r.project_id;
-      if (within(r.root, root)) throw new Error(`${root} is inside ${r.root}, a root of project ${projectName}`);
-      if (within(root, r.root)) throw new Error(`${r.root}, a root of project ${projectName}, is inside ${root}; \`project merge\` joins the two projects`);
-    }
-    for (const r of absorbed) db.prepare("DELETE FROM project_roots WHERE root = ?").run(r);
-    db.prepare(
-      "INSERT INTO project_roots (root, project_id, kind, created_at) VALUES (?, ?, 'assigned', ?) ON CONFLICT(root) DO UPDATE SET project_id = excluded.project_id, kind = 'assigned'",
-    ).run(existing ? existing.root : root, projectId, Date.now());
-    settlePrefixes(db, projectId);
-    rekey(db, root, projectId);
-    prune(db);
-    return { project: db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as unknown as ProjectRow, root: existing ? existing.root : root };
-  });
+/** A project `project add` takes roots or pages from: its name, id, how many of its pages and which of its roots move. */
+export interface Absorbed {
+  project: string;
+  id: string;
+  pages: number;
+  roots: string[];
 }
 
-/** `project merge <a> <b>`: b's roots and pages move to a, and b is gone. */
+export interface Added {
+  /** False: the root would take roots or pages from other projects (`absorbed`) and `yes` was not given, so nothing changed. */
+  added: boolean;
+  project: ProjectRow;
+  root: string;
+  absorbed: Absorbed[];
+}
+
+/** Thrown inside `addRoot`'s transaction to roll it back: it would absorb other projects and `yes` was not given. */
+class Unconfirmed extends Error {
+  readonly result: Added;
+  constructor(result: Added) {
+    super("project add: not confirmed");
+    this.result = result;
+  }
+}
+
+/**
+ * `project add <dir> [--name n] [--yes]`: make `dir` an assigned root, of the project named `name`
+ * (made if there is none) or else of its own project. Roots guessed from a page's folder inside `dir`
+ * are absorbed, whatever their project, and their pages re-keyed under `dir`; any other root of another
+ * project above or below `dir` is an error naming it (a guessed folder above keeps what is outside `dir`).
+ * When that takes roots or pages from other projects, nothing changes without `yes`: the result lists them.
+ * A file system root, the temp folder, the home folder and any folder holding it are refused.
+ */
+export function addRoot(db: sqlite.DatabaseSync, dir: string, name?: string, { yes = false }: { yes?: boolean } = {}): Added {
+  const root = canonicalFile(dir);
+  if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`not a folder: ${root}`);
+  if (broad(root) || within(root, canonicalFile(os.homedir()))) {
+    throw new Error(`${root} cannot be a root: it is a file system root, the temp folder, or holds the home folder, so every project below it would join this one; add the folder that holds the pages`);
+  }
+  const wanted = name === undefined ? undefined : checkName(name);
+  try {
+    return inTransaction(db, () => {
+      const roots = allRoots(db);
+      const before = db.prepare("SELECT id, project_id, page_id FROM artifacts").all() as unknown as { id: string; project_id: string | null; page_id: string | null }[];
+      const names = new Map((db.prepare("SELECT id, name FROM projects").all() as unknown as { id: string; name: string }[]).map((p) => [p.id, p.name]));
+      const existing = roots.find((r) => pathKey(r.root) === pathKey(root));
+      let projectId: string;
+      if (wanted !== undefined) {
+        const named = db.prepare("SELECT * FROM projects WHERE name = ? ORDER BY created_at").all(wanted) as unknown as ProjectRow[];
+        if (named.length > 1) throw new Error(`several projects are named ${wanted}: ${namedList(db, named)}; rename one first`);
+        projectId = named.length ? named[0].id : createProject(db, wanted);
+      } else projectId = existing ? existing.project_id : createProject(db, newProjectName(db, root));
+      const taken: string[] = [];
+      for (const r of roots) {
+        if (pathKey(r.root) === pathKey(root)) continue;
+        if (r.kind === "folder") {
+          if (within(root, r.root)) taken.push(r.root);
+          continue;
+        }
+        if (r.project_id === projectId) continue;
+        const projectName = names.get(r.project_id) || r.project_id;
+        if (within(r.root, root)) throw new Error(`${root} is inside ${r.root}, a root of project ${projectName}`);
+        if (within(root, r.root)) throw new Error(`${r.root}, a root of project ${projectName}, is inside ${root}; \`project merge\` joins the two projects`);
+      }
+      for (const r of taken) db.prepare("DELETE FROM project_roots WHERE root = ?").run(r);
+      db.prepare(
+        "INSERT INTO project_roots (root, project_id, kind, created_at) VALUES (?, ?, 'assigned', ?) ON CONFLICT(root) DO UPDATE SET project_id = excluded.project_id, kind = 'assigned'",
+      ).run(existing ? existing.root : root, projectId, Date.now());
+      settlePrefixes(db, projectId);
+      rekey(db, root, projectId);
+      prune(db);
+      const result: Added = {
+        added: true,
+        project: db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as unknown as ProjectRow,
+        root: existing ? existing.root : root,
+        absorbed: absorbedInto(db, projectId, names, roots, before),
+      };
+      if (result.absorbed.length && !yes) throw new Unconfirmed({ ...result, added: false });
+      return result;
+    });
+  } catch (err) {
+    if (err instanceof Unconfirmed) return err.result;
+    throw err;
+  }
+}
+
+/** The other projects whose roots or pages (by the artifacts `before`) are now in `projectId`, or whose roots are gone. */
+function absorbedInto(
+  db: sqlite.DatabaseSync,
+  projectId: string,
+  names: Map<string, string>,
+  rootsBefore: RootRow[],
+  before: { id: string; project_id: string | null; page_id: string | null }[],
+): Absorbed[] {
+  const rootsNow = new Map(allRoots(db).map((r) => [r.root, r.project_id]));
+  const nowIn = new Set((db.prepare("SELECT id FROM artifacts WHERE project_id = ?").all(projectId) as unknown as { id: string }[]).map((a) => a.id));
+  const from = new Map<string, { pages: Set<string>; roots: string[] }>();
+  const entry = (id: string): { pages: Set<string>; roots: string[] } => {
+    let e = from.get(id);
+    if (!e) from.set(id, (e = { pages: new Set(), roots: [] }));
+    return e;
+  };
+  for (const a of before) if (a.project_id && a.project_id !== projectId && nowIn.has(a.id)) entry(a.project_id).pages.add(a.page_id ?? a.id);
+  for (const r of rootsBefore) if (r.project_id !== projectId && rootsNow.get(r.root) !== r.project_id) entry(r.project_id).roots.push(r.root);
+  return [...from].map(([id, e]) => ({ project: names.get(id) ?? id, id, pages: e.pages.size, roots: e.roots.sort() }));
+}
+
+/** `project merge <a> <b>`: b's roots and pages move to a, and b is gone. A copy whose folder is gone, which nothing re-keys, moves to a's page of the same path. */
 export function mergeProjects(db: sqlite.DatabaseSync, a: string, b: string): ProjectRow {
   return inTransaction(db, () => {
     const into = needProject(db, a);
@@ -605,34 +707,102 @@ export function mergeProjects(db: sqlite.DatabaseSync, a: string, b: string): Pr
     settlePrefixes(db, into.id);
     rekey(db, null, into.id);
     for (const r of db.prepare("SELECT id, file FROM artifacts WHERE project_id = ?").all(from.id) as unknown as { id: string; file: string }[]) placeArtifact(db, r.id, r.file);
+    const kept = db.prepare("SELECT a.id, p.rel_path FROM artifacts a JOIN pages p ON p.id = a.page_id WHERE a.project_id = ?").all(from.id) as unknown as { id: string; rel_path: string }[];
+    for (const r of kept) db.prepare("UPDATE artifacts SET project_id = ?, page_id = ? WHERE id = ?").run(into.id, ensurePage(db, into.id, r.rel_path), r.id);
     db.prepare("DELETE FROM projects WHERE id = ?").run(from.id);
     prune(db);
     return into;
   });
 }
 
-/** `project rename <p> <name>`: refused when another project has that name, as names must stay unambiguous to find a project by. */
+/** `project rename <p> <name>`: refused when another project has that name, as names must stay unambiguous to find a project by, and for an empty name or one shaped like an id. */
 export function renameProject(db: sqlite.DatabaseSync, ref: string, name: string): ProjectRow {
+  const wanted = checkName(name);
   return inTransaction(db, () => {
     const p = needProject(db, ref);
-    const taken = db.prepare("SELECT id FROM projects WHERE name = ? AND id != ?").get(name, p.id) as { id: string } | undefined;
-    if (taken) throw new Error(`a project is already named ${name} (${taken.id}); \`project merge\` joins two projects`);
-    db.prepare("UPDATE projects SET name = ? WHERE id = ?").run(name, p.id);
-    return { ...p, name };
+    const taken = db.prepare("SELECT id FROM projects WHERE name = ? AND id != ?").get(wanted, p.id) as { id: string } | undefined;
+    if (taken) throw new Error(`a project is already named ${wanted} (${taken.id}); \`project merge\` joins two projects`);
+    db.prepare("UPDATE projects SET name = ? WHERE id = ?").run(wanted, p.id);
+    return { ...p, name: wanted };
   });
 }
 
-/** `project forget-root <dir>`: drop a root; the project's other roots get their prefixes again, and its pages, and those under the root, are resolved again (a `.git` or their folder). */
-export function forgetRoot(db: sqlite.DatabaseSync, dir: string): { root: string; project: string } {
+/** Where the pages of a forgotten root are now: a project, the root holding them, how many pages. */
+export interface Went {
+  project: string;
+  id: string;
+  root: string;
+  pages: number;
+}
+
+export interface Forgotten {
+  /** forgotten; found again: the re-key made it a root again at once (a `.git` there, or pages right in it guessed again); dropped: `--drop` on a root whose folder is gone. */
+  status: "forgotten" | "found again" | "dropped";
+  root: string;
+  project: string;
+  id: string;
+  /** The root's project and kind, when it is a root again. */
+  again: { project: string; id: string; kind: RootKind } | null;
+  went: Went[];
+  /** Files of the copies `--drop` archived. */
+  archived: string[];
+}
+
+/**
+ * `project forget-root <dir> [--drop]`: drop a root; the project's other roots get their prefixes again,
+ * and its pages, and those under the root, are resolved again (a `.git` or their folder). A root whose
+ * folder is gone and holds pages needs `drop`: its copies are archived (their notes are kept) and stay
+ * in their project and page, left out of the re-key, instead of being filed under folders that do not
+ * exist. `drop` on a root that is there is refused.
+ */
+export function forgetRoot(db: sqlite.DatabaseSync, dir: string, { drop = false }: { drop?: boolean } = {}): Forgotten {
   const want = canonicalFile(dir);
   return inTransaction(db, () => {
     const row = allRoots(db).find((r) => pathKey(r.root) === pathKey(want));
     if (!row) throw new Error(`not a project root: ${want} (\`project list\` shows them)`);
-    const name = (db.prepare("SELECT name FROM projects WHERE id = ?").get(row.project_id) as { name: string } | undefined)?.name || row.project_id;
+    const nameOf = (id: string): string => (db.prepare("SELECT name FROM projects WHERE id = ?").get(id) as { name: string } | undefined)?.name || id;
+    const name = nameOf(row.project_id);
+    const under = db.prepare("SELECT id FROM artifacts WHERE root = ?").all(row.root) as unknown as { id: string }[];
+    const gone = !fs.existsSync(row.root);
+    if (gone && under.length && !drop) {
+      throw new Error(`${row.root} is gone: its ${under.length} page copies would be filed under folders that do not exist. --drop forgets it and archives them (their notes are kept)`);
+    }
+    if (drop && !gone) throw new Error(`${row.root} is still there: --drop is only for a root whose folder is gone (without it, its pages are filed again)`);
+    const archived: string[] = [];
+    if (drop) {
+      const at = Date.now();
+      const archive = db.prepare("UPDATE artifacts SET archived_at = ? WHERE id = ? AND archived_at IS NULL RETURNING file");
+      for (const a of under) {
+        const done = archive.get(at, a.id) as { file: string } | undefined;
+        if (done) archived.push(done.file);
+      }
+    }
     db.prepare("DELETE FROM project_roots WHERE root = ?").run(row.root);
     settlePrefixes(db, row.project_id);
+    // Dropped copies stay where they are: their root is gone, so `placeArtifact` leaves them.
     rekey(db, row.root, row.project_id);
     prune(db);
-    return { root: row.root, project: name };
+    const back = allRoots(db).find((r) => pathKey(r.root) === pathKey(row.root));
+    const went = new Map<string, { project: string; id: string; root: string; pages: Set<string> }>();
+    if (!drop) {
+      const where = db.prepare("SELECT project_id, root, page_id FROM artifacts WHERE id = ?");
+      for (const a of under) {
+        const now = where.get(a.id) as { project_id: string; root: string; page_id: string } | undefined;
+        if (!now) continue;
+        const key = `${now.project_id}\0${now.root}`;
+        let w = went.get(key);
+        if (!w) went.set(key, (w = { project: nameOf(now.project_id), id: now.project_id, root: now.root, pages: new Set() }));
+        w.pages.add(now.page_id);
+      }
+    }
+    return {
+      status: drop ? "dropped" : back ? "found again" : "forgotten",
+      root: row.root,
+      project: name,
+      id: row.project_id,
+      again: back ? { project: nameOf(back.project_id), id: back.project_id, kind: back.kind } : null,
+      went: [...went.values()].map((w) => ({ ...w, pages: w.pages.size })),
+      archived,
+    };
   });
 }

@@ -222,7 +222,7 @@ wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
 | Changed | `hub list --project <name\|id\|dir> [--archived] [--all]` | RLM-333, RLM-335 | `cmdHub`, `Hub.list` |
 | Changed | `open`, `patch`, `poll`, `reply`, `feedback` print `session:` and accept `--session <harness>:<id>` | RLM-343 | `cmdOpen`, `cmdPatch`, `cmdPoll`, `cmdFeedback` |
 | Changed | first `open` prints `similar:` | RLM-353 | `cmdOpen` |
-| New | `project list\|add\|merge\|rename\|forget-root` | RLM-333 | new `src/cli/projects.ts` |
+| New | `project list\|add [--yes]\|merge\|rename\|forget-root [--drop]` | RLM-333, RLM-389 | new `src/cli/projects.ts` |
 | New | `archive <file>`, `unarchive <file>` | RLM-335 | `main.ts`, `Hub` |
 | New | `sessions list [<file>\|--project]` | RLM-343 | `main.ts` |
 | New | `attach status` (anywhere; warns when the adapter has no write grant, A13), `attach on\|off` (TTY only) | RLM-346 | `main.ts` |
@@ -273,7 +273,7 @@ The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, 
 `migrate()` runs on the first open of hub.db by a 0.11 CLI or server. It runs in one transaction and a second run changes nothing.
 
 1. Create the new tables and add the new `artifacts` columns.
-2. Projects (RLM-333): for each distinct `artifacts.project`, run `resolveProject` with file reads only, create the project and its roots, and set `artifacts.project_id`. A repo and its worktree become one project with two roots.
+2. Projects (RLM-333): for each distinct `artifacts.project`, run `resolveProject` with file reads only, create the project and its roots, and set `artifacts.project_id`. A repo and its worktree become one project with two roots. A project path that is gone is stored as a `git` root (RLM-389): as a guessed folder, a guessed folder above would take it in on the next re-key.
 3. Pages (RLM-334): set `artifacts.root` and `artifacts.page_id`; create the `pages` rows.
 4. Archive (RLM-335, RLM-338): a set `closed_at` is copied to `archived_at`. `ended_at` and `ended_by` need nothing; an ended page is a normal page.
 5. History (RLM-349): no backfill. The first `open` or `check` of each copy creates revision 1 from the file on disk.
