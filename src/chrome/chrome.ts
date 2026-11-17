@@ -1685,7 +1685,8 @@ function renderAttachPop() {
           "data-state": value,
           class: pageState === value ? "on" : null,
           "aria-pressed": String(pageState === value),
-          disabled: attach.busy || (value === "on" && !!info.auto && pageState !== "on"),
+          // An auto page may not end up on (Q3, A17): neither by On nor by going back to a project default that is on.
+          disabled: attach.busy || (!!info.auto && pageState !== value && (value === "on" || (value === "inherit" && projectText === "on"))),
           text: label,
           onclick: () => saveAttach({ state: value }),
         }),

@@ -30,7 +30,7 @@ import { Hub, activeWorkNow } from "./hub.ts";
 import { Dispatcher, getRun, listRuns, logTail, summary } from "./dispatch.ts";
 import type { RunEvent, RunSummary } from "./dispatch.ts";
 import { AttachRefused, attachReport, authorOf, autoConflict, changeSetting, effectiveAttach, harnessInfos, isAttachMode, resolveSessionValue, scopeIds } from "./attach.ts";
-import type { AttachFields, AttachSettingRow, AttachState, EffectiveAttach, HarnessInfo, LiveAuto } from "./attach.ts";
+import type { AttachFields, AttachSettingRow, AttachState, AttachWhere, EffectiveAttach, HarnessInfo, LiveAuto } from "./attach.ts";
 import { adapterFor, findOnPath, spawnSpec } from "./adapters/index.ts";
 import { readAdapters } from "./adapters/config.ts";
 import type { AdaptersConfig } from "./adapters/config.ts";
@@ -668,14 +668,20 @@ export async function runServer({
     const bin = findOnPath("omp");
     if (!bin) return Promise.resolve(null);
     const listed = Promise.withResolvers<string[] | null>();
-    const spec = spawnSpec(bin, ["models", "--json"]);
-    const child = spawn(spec.file, spec.args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, windowsVerbatimArguments: spec.windowsVerbatimArguments, timeout: 15_000 });
-    let out = "";
-    child.stdout.on("data", (c: Buffer) => {
-      if (out.length < 4 * 1024 * 1024) out += c.toString("utf8");
-    });
-    child.on("error", () => listed.resolve(null));
-    child.on("close", () => listed.resolve(modelSelectors(out)));
+    // A .cmd shim on Windows goes through cmd.exe; spawn can still throw at once (EINVAL, EACCES): no models then.
+    try {
+      const spec = spawnSpec(bin, ["models", "--json"]);
+      const child = spawn(spec.file, spec.args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, windowsVerbatimArguments: spec.windowsVerbatimArguments, timeout: 15_000 });
+      let out = "";
+      child.stdout.on("data", (c: Buffer) => {
+        if (out.length < 4 * 1024 * 1024) out += c.toString("utf8");
+      });
+      child.on("error", () => listed.resolve(null));
+      child.on("close", () => listed.resolve(modelSelectors(out)));
+    } catch (err) {
+      log("omp-models", (err as Error).message);
+      listed.resolve(null);
+    }
     cache.pending = listed.promise.then((models) => {
       modelCache = { at: Date.now(), models, pending: null };
       return models;
@@ -704,6 +710,38 @@ export async function runServer({
       fields.model = m || null;
     }
     return { state, fields };
+  }
+
+  /**
+   * The owner's attach change, from the review page's popover or the CLI: the row written, and the
+   * owner tabs of every copy it decides for told to look again. An HTTP error, or null when done.
+   */
+  function changeAttach(where: AttachWhere, body: RequestBody): { status: number; error: string; code?: string } | null {
+    const change = parseAttachChange(body);
+    if (typeof change === "string") return { status: 400, error: change };
+    let cfg: AdaptersConfig;
+    try {
+      cfg = readAdapters();
+      if (change.fields.harness !== undefined && !adapterFor(change.fields.harness, cfg)) return { status: 400, error: `no adapter named ${change.fields.harness}` };
+      if (change.fields.session !== undefined) change.fields.session = resolveSessionValue(store.db, change.fields.session);
+    } catch (err) {
+      return { status: 400, error: (err as Error).message };
+    }
+    try {
+      changeSetting(store.db, where, change.state, change.fields, cfg, invites.list(), liveAuto);
+    } catch (err) {
+      if (err instanceof AttachRefused) return { status: 409, error: err.message, code: err.code };
+      throw err;
+    }
+    // A page row decides for every copy of the page (A19), a project row for every copy in the project.
+    const copies = (
+      "page" in where
+        ? store.db.prepare("SELECT id FROM artifacts WHERE page_id = ? OR id = ?").all(scopeIds(store.db, where.page.artifactId).page, where.page.artifactId)
+        : store.db.prepare("SELECT id FROM artifacts WHERE project_id = ?").all(where.projectId)
+    ) as { id: string }[];
+    for (const c of copies) broadcastOwners(c.id, "attach", {});
+    log("attach", "page" in where ? where.page.artifactId : `project:${where.projectId}`, change.state);
+    return null;
   }
 
   function broadcastPresence(s: Session): void {
@@ -1133,6 +1171,24 @@ export async function runServer({
       dropReviewers(new Set(gone.map((i) => i.token)));
       log("share-revoke", gone.map((i) => `${i.name}(${inviteId(i)})`).join(","));
       return send(res, 200, { revoked: gone.map((i) => ({ id: inviteId(i), name: i.name, file: i.file })) } satisfies RevokeResponse);
+    }
+    // `attach on|off|inherit` at a terminal while this server runs: written here, so open owner tabs hear it.
+    if (route === "attach") {
+      let where: AttachWhere;
+      if (typeof body.project === "string" && body.project && !body.file) {
+        if (!store.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(body.project)) return send(res, 404, { error: `no such project: ${body.project}` });
+        where = { projectId: body.project };
+      } else {
+        const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
+        if (!file) return send(res, 400, { error: "file or project is required" });
+        if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
+        const s = store.ensure(file);
+        where = { page: { artifactId: s.id, file: s.file } };
+      }
+      const change = body.change && typeof body.change === "object" ? (body.change as RequestBody) : {};
+      const failed = changeAttach(where, change);
+      if (failed) return send(res, failed.status, { error: failed.error, code: failed.code });
+      return send(res, 200, { ok: true });
     }
     // A whole project: `poll` and `feedback` with no file.
     if ((route === "poll" || route === "feedback") && typeof body.project === "string" && body.project && !body.file) return projectRoute(route, body, res, caller);
@@ -1748,28 +1804,8 @@ export async function runServer({
     }
     if (sub === "/attach" && req.method === "GET") return send(res, 200, await attachInfo(s));
     if (sub === "/attach" && req.method === "POST") {
-      const body = await readBody(req, 4096);
-      const change = parseAttachChange(body);
-      if (typeof change === "string") return send(res, 400, { error: change });
-      let cfg: AdaptersConfig;
-      try {
-        cfg = readAdapters();
-        if (change.fields.harness !== undefined && !adapterFor(change.fields.harness, cfg)) return send(res, 400, { error: `no adapter named ${change.fields.harness}` });
-        if (change.fields.session !== undefined) change.fields.session = resolveSessionValue(store.db, change.fields.session);
-      } catch (err) {
-        return send(res, 400, { error: (err as Error).message });
-      }
-      try {
-        changeSetting(store.db, { page: { artifactId: s.id, file: s.file } }, change.state, change.fields, cfg, invites.list(), liveAuto);
-      } catch (err) {
-        if (err instanceof AttachRefused) return send(res, 409, { error: err.message, code: err.code });
-        throw err;
-      }
-      // Every copy of the page shares its setting (A19): their owner tabs look again.
-      const { page } = scopeIds(store.db, s.id);
-      const copies = store.db.prepare("SELECT id FROM artifacts WHERE page_id = ? OR id = ?").all(page, s.id) as { id: string }[];
-      for (const c of copies) broadcastOwners(c.id, "attach", {});
-      log("attach", s.id, change.state);
+      const failed = changeAttach({ page: { artifactId: s.id, file: s.file } }, await readBody(req, 4096));
+      if (failed) return send(res, failed.status, { error: failed.error, code: failed.code });
       return send(res, 200, await attachInfo(s));
     }
     if (sub === "/presence" && req.method === "POST") {

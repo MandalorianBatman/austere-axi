@@ -317,18 +317,30 @@ export type AttachWhere = { page: { artifactId: string; file: string } } | { pro
 
 /**
  * The owner's change (Q4: `attach on|off|inherit` at a terminal, or the review page's popover).
- * Turning a page on refuses while the page is auto (Q3, A17) and when its harness, or the session
- * it resumes, cannot run the mode; nothing is written then. Returns the row as stored.
+ * Refused, with nothing written, when a copy the change leaves on is auto (Q3, A17): whether its
+ * page turned on, went back to a project default that is on, or its project's default turned on.
+ * Also when the harness, or the session it resumes, cannot run the mode. Returns the row as stored.
  */
 export function changeSetting(db: sqlite.DatabaseSync, where: AttachWhere, state: AttachState, fields: AttachFields, cfg: AdaptersConfig, invites: readonly Invite[], liveAuto?: LiveAuto): AttachSettingRow {
   return inTransaction(db, () => {
     const page = "page" in where ? where.page : null;
     const ids = page ? scopeIds(db, page.artifactId) : { page: null, project: (where as { projectId: string }).projectId };
-    if (state === "on" && page) {
-      const conflict = autoConflict(page.file, page.artifactId, invites, liveAuto);
-      if (conflict) throw new AttachRefused("auto_conflict", `${conflict}. Attach and --auto exclude each other (Q3), so attach stays off: publish or share the page without --auto first.`);
-    }
     const row = ids.page !== null ? writeSetting(db, "page", ids.page, state, fields) : writeSetting(db, "project", ids.project as string, state, fields);
+    if (state !== "off") {
+      // The copies this row decides for: every copy of the page (A19), or every copy in the project.
+      const copies = (
+        ids.page !== null ? db.prepare("SELECT id, file FROM artifacts WHERE page_id = ? OR id = ?").all(ids.page, page?.artifactId ?? null) : db.prepare("SELECT id, file FROM artifacts WHERE project_id = ?").all(ids.project)
+      ) as { id: string; file: string }[];
+      if (page && !copies.some((c) => c.id === page.artifactId)) copies.push({ id: page.artifactId, file: page.file });
+      for (const c of copies) {
+        if (effectiveAttach(db, c.id).state !== "on") continue;
+        const conflict = autoConflict(c.file, c.id, invites, liveAuto);
+        if (!conflict) continue;
+        // Throwing rolls the row back.
+        const kept = page && state === "on" ? "attach stays off" : "the setting stays as it was";
+        throw new AttachRefused("auto_conflict", `${conflict}. Attach and --auto exclude each other (Q3), so ${kept}: publish or share the page without --auto first${page ? "" : ", or turn attach off for that page"}.`);
+      }
+    }
     if (state === "on") {
       const project = ids.page !== null && ids.project ? readSetting(db, "project", ids.project) : null;
       const problem = settingProblem(db, page?.artifactId ?? null, resolveSetting(ids.page !== null ? row : null, ids.page !== null ? project : row), cfg);

@@ -31,6 +31,17 @@ function cli(args: string[], opts: { tty?: boolean } = {}): { code: number | nul
   return { code: r.status, out: r.stdout + r.stderr };
 }
 
+/** cli at a terminal, without blocking this process: a test's own SSE client keeps reading meanwhile. */
+function cliAsync(args: string[]): Promise<{ code: number | null; out: string }> {
+  const { promise, resolve } = Promise.withResolvers<{ code: number | null; out: string }>();
+  const child = spawn(process.execPath, ["--import", AT_TERMINAL, MAIN, ...args], { env: ENV, cwd: PROJECT });
+  let out = "";
+  child.stdout.on("data", (c) => (out += c));
+  child.stderr.on("data", (c) => (out += c));
+  child.on("close", (code) => resolve({ code, out }));
+  return promise;
+}
+
 function page(name: string): string {
   const file = path.join(PROJECT, `${name}.html`);
   fs.writeFileSync(file, `<!doctype html><html><head><title>${name}</title></head><body><script type="text/openui">\nroot = Stack([intro])\nintro = TextContent("hello")\n</script></body></html>`);
@@ -155,8 +166,26 @@ test("at a terminal: on, off and inherit write the page's row; an auto page and 
     assert.match(r.out, /published with --auto/);
     assert.match(r.out, /exclude each other/);
     assert.match(cli(["attach", "status", file]).out, /attach: off/);
+
+    // Nor through its project's default: `attach on --project` while the page inherits it…
+    assert.equal(cli(["attach", "inherit", file], { tty: true }).code, 0);
+    r = cli(["attach", "on", "--project", PROJECT], { tty: true });
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /published with --auto[\s\S]*the setting stays as it was/);
+    assert.match(cli(["attach", "status", file]).out, /attach: off/);
+    // …nor `attach inherit` onto a project default that is on.
+    assert.equal(cli(["attach", "off", file], { tty: true }).code, 0);
+    fs.renameSync(path.join(STATE, "cloud.json"), path.join(STATE, "cloud.json.off"));
+    assert.equal(cli(["attach", "on", "--project", PROJECT], { tty: true }).code, 0);
+    fs.renameSync(path.join(STATE, "cloud.json.off"), path.join(STATE, "cloud.json"));
+    r = cli(["attach", "inherit", file], { tty: true });
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /published with --auto/);
+    assert.match(cli(["attach", "status", file]).out, /attach: off\nfrom: page/);
   } finally {
-    fs.rmSync(path.join(STATE, "cloud.json"));
+    fs.rmSync(path.join(STATE, "cloud.json"), { force: true });
+    fs.rmSync(path.join(STATE, "cloud.json.off"), { force: true });
+    cli(["attach", "off", "--project", PROJECT], { tty: true });
   }
 });
 
@@ -233,4 +262,23 @@ test("the owner's attach routes: reviewers and a foreign Origin get 403; the own
   assert.equal(r.status, 409, r.data);
   assert.match(r.data, /shared with --auto \(Bo\)/);
   assert.match(cli(["attach", "status", file]).out, /attach: off/);
+
+  // At a terminal while the server runs: the CLI's change goes through it (the server holds the
+  // state dir's lock, so a direct write would time out), and the owner's open tab hears it.
+  await req("POST", "/api/share/revoke", owner, { key: "Bo" });
+  const heard = Promise.withResolvers<void>();
+  const events = http.get({ host: "127.0.0.1", port: PORT, path: `/s/${id}/events`, headers: { host: `127.0.0.1:${PORT}`, cookie: owner.cookie } }, (res) => {
+    let buf = "";
+    res.on("data", (c) => {
+      buf += c;
+      if (/^event: attach$/m.test(buf)) heard.resolve();
+    });
+  });
+  events.on("error", () => {});
+  await new Promise((r) => setTimeout(r, 200)); // the tab is connected before the change
+  const set = await cliAsync(["attach", "on", file, "--mode", "fork"]);
+  assert.equal(set.code, 0, set.out);
+  assert.match(set.out, /status: on\n[\s\S]*attach: on\nfrom: page\nmode: "?fork/);
+  await heard.promise;
+  events.destroy();
 });

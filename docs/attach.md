@@ -78,7 +78,7 @@ Limits are in `<state>/attach.json`, which only you edit: at most 15 minutes per
 
 ## Attach and `--auto`
 
-A run reads only notes you sent or released. A page published with `publish --auto`, or shared with `share --auto`, lets reviewers' notes through without you, so the two exclude each other: attach does not turn on for such a page (from the page or the terminal), and `publish --auto` and `share --auto` refuse while attach is on.
+A run reads only notes you sent or released. A page published with `publish --auto`, or shared with `share --auto`, lets reviewers' notes through without you, so the two exclude each other: attach does not turn on for such a page (from the page or the terminal, whether by its own setting, by going back to a project default that is on, or by turning the project's default on), and `publish --auto` and `share --auto` refuse while attach is on.
 
 ## Security notes
 

@@ -126,9 +126,9 @@ austere-axi attach inherit <file>                        the page goes back to i
 ```
 
 - **Anywhere, read-only:** `attach status` changes nothing and needs no server; an agent may run it (MCP `attach_status`). Its `warnings` name what would stop a run or make it useless: a harness without the write grant (with the `adapter set` command that grants it), a binary not on `PATH`, a mode the harness cannot run, a `same` session whose process is unknown, a page published or shared with `--auto`.
-- **The user's only:** `attach on`, `off` and `inherit` without a terminal exit 2, change nothing and print the command for the user to run. The review page's Agent pill does the same for the owner. No MCP tool changes it.
+- **The user's only:** `attach on`, `off` and `inherit` without a terminal exit 2, change nothing and print the command for the user to run. The review page's Agent pill does the same for the owner. No MCP tool changes it. With a server running, the change goes through it, so the owner's open review tabs show it at once.
 - **Fields:** `--mode same|fork|new` (default `same`), `--session author|<id>` (default `author`: the session that wrote the page, followed to its newest continuation; or a short or full id from `sessions list`), `--harness omp|copilot|<command adapter>` (the harness of a new session; default the project's, else omp), `--model` (default the harness's own; `""` clears it). A field you leave out keeps its value.
-- **Refused:** `attach on` for a page published or shared with `--auto` (they exclude each other), and a mode the harness cannot run (Copilot fork). Nothing is written then.
+- **Refused:** any change that would leave a page published or shared with `--auto` on (they exclude each other): `attach on` for it, `attach inherit` onto a project default that is on, or `attach on --project` while it uses the project's default. Also a mode the harness cannot run (Copilot fork). Nothing is written then.
 
 ## Environment
 

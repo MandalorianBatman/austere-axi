@@ -1780,22 +1780,48 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
     return usage(`attach ${verb} needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${shellJoin(words)}\` themselves, or to use the Agent pill on the page's review tab.`, "attach");
   }
   if (fields.harness !== undefined && !adapterFor(fields.harness, cfg)) return fail(`no adapter named ${fields.harness}: set one with \`${BIN} adapter set ${fields.harness} --command "<bin> <args…>"\``);
-  return withHub((hub) => {
-    if (fields.session !== undefined) fields.session = resolveSessionValue(hub.db, fields.session);
-    const invites = new InviteStore(stateDir()).list();
-    if (file === undefined) {
-      const p = projectScope(hub, flags);
-      const row = changeSetting(hub.db, { projectId: p.id }, verb as AttachState, fields, cfg, invites);
-      return print({ status: `project ${verb}`, ...attachProjectStatus(p, row, cfg) });
+  const abs = file === undefined ? null : canonicalFile(file);
+  if (abs !== null && !fs.existsSync(abs)) return fail(`no such file: ${abs}`);
+  const status = verb === "inherit" ? "inherit (the project's default)" : verb;
+
+  // A running server writes it, so the owner's open review tabs hear the change (as archive does).
+  if (await serverIfRunning()) {
+    let projectId = "";
+    if (abs === null) {
+      await withHub((hub) => {
+        projectId = projectScope(hub, flags).id;
+      });
     }
-    const abs = canonicalFile(file);
-    if (!fs.existsSync(abs)) throw new Error(`no such file: ${abs}`);
-    const id = sessionId(abs);
-    // The page row is keyed by the page (A19): a file the hub never saw gets its row first.
-    if (!hub.artifact(id)) hub.register({ id, file: abs, title: null });
-    changeSetting(hub.db, { page: { artifactId: id, file: abs } }, verb as AttachState, fields, cfg, invites);
-    print({ status: verb === "inherit" ? "inherit (the project's default)" : verb, ...attachStatusOf(hub, abs, cfg) });
-  });
+    if (abs === null && !projectId) return; // withHub has failed the command
+    const r = await request("POST", "/api/attach", { ...(abs !== null ? { file: abs } : { project: projectId }), change: { state: verb, ...fields } }, { timeoutMs: 10_000 });
+    if (r.status === 404 && /unknown route/.test(String(r.data?.error))) return fail(`the running server is older than this CLI and does not know attach: run \`${BIN} stop\`, then attach ${verb} again`);
+    if (r.status !== 200) return fail(r.data?.error || `attach ${verb} failed (${r.status})`);
+    return withHub((hub) => {
+      if (abs !== null) return print({ status, ...attachStatusOf(hub, abs, cfg) });
+      const p = projectScope(hub, flags);
+      print({ status: `project ${verb}`, ...attachProjectStatus(p, readSetting(hub.db, "project", p.id), cfg) });
+    });
+  }
+  // No server: hold the state dir's lock so hub.db is not written while a server starts on it.
+  const release = await lockStateDir(stateDir(), { wait: 5000 });
+  try {
+    await withHub((hub) => {
+      if (fields.session !== undefined) fields.session = resolveSessionValue(hub.db, fields.session);
+      const invites = new InviteStore(stateDir()).list();
+      if (abs === null) {
+        const p = projectScope(hub, flags);
+        const row = changeSetting(hub.db, { projectId: p.id }, verb as AttachState, fields, cfg, invites);
+        return print({ status: `project ${verb}`, ...attachProjectStatus(p, row, cfg) });
+      }
+      const id = sessionId(abs);
+      // The page row is keyed by the page (A19): a file the hub never saw gets its row first.
+      if (!hub.artifact(id)) hub.register({ id, file: abs, title: null });
+      changeSetting(hub.db, { page: { artifactId: id, file: abs } }, verb as AttachState, fields, cfg, invites);
+      print({ status, ...attachStatusOf(hub, abs, cfg) });
+    });
+  } finally {
+    release();
+  }
 }
 
 // ── share (team review) ──
