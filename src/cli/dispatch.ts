@@ -1024,9 +1024,15 @@ export class Dispatcher {
     } catch {
       // the log is best effort
     }
-    this.db.prepare("UPDATE runs SET status = ?, reason = ?, exit_code = ?, ended_at = ?, agent_session_id = COALESCE(?, agent_session_id) WHERE id = ?").run(status, reason, code, Date.now(), agentSessionId, row.id);
-    this.o.log("run", row.id, status, reason ?? "", `exit=${code}`);
-    this.emit(row.id, status === "done" ? {} : { message, tail: logTail(row.log_file) });
+    // An exit handler must not throw (it would take the server down): a verdict that cannot be
+    // written leaves the row `running`, for the next start's recovery to interrupt and requeue.
+    try {
+      this.db.prepare("UPDATE runs SET status = ?, reason = ?, exit_code = ?, ended_at = ?, agent_session_id = COALESCE(?, agent_session_id) WHERE id = ?").run(status, reason, code, Date.now(), agentSessionId, row.id);
+      this.o.log("run", row.id, status, reason ?? "", `exit=${code}`);
+      this.emit(row.id, status === "done" ? {} : { message, tail: logTail(row.log_file) });
+    } catch (err) {
+      this.o.log("run-finish", row.id, (err as Error).message);
+    }
     r.resolve();
     this.pump();
   }
