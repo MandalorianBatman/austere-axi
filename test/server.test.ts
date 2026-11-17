@@ -328,6 +328,32 @@ test("a server from before the proof is replaced, without sending it the key", a
   }
 });
 
+test("a replaced server's link url and allowed hosts carry over to the new one, and the CLI says it replaced it", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-replace-"));
+  const key = ownerHeaders(state)["x-austere-key"];
+  let port = 0;
+  // An older server that proves the key, run with a proxy's link url; the caller's environment has none.
+  const fake = await fakeServer(async (url: string) => {
+    const nonce = new URL(url, "http://x").searchParams.get("nonce");
+    const proof = crypto.createHmac("sha256", key).update(`${port}:${nonce}`).digest("base64url");
+    return { name: "austere-axi", version: "0.0.1", pid: 777, port, stateDir: state, proof, listen: ["127.0.0.1"], persist: false, addresses: { linkUrl: "https://austere.example.com", allowedHosts: "proxy.example.com" } };
+  });
+  port = fake.port;
+  const env = { AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port), AUSTERE_AXI_NO_OPEN: "1", AUSTERE_AXI_LINK_URL: "", AUSTERE_AXI_ALLOWED_HOSTS: "" };
+  try {
+    const r = await cli(env, FILE);
+    assert.match(r.out, /status: open/, r.out);
+    assert.match(r.out, new RegExp(`replaced server 0\\.0\\.1 \\(pid 777\\) with ${VERSION.replace(/\./g, "\\.")} from \\S+`), r.out);
+    const h = (await (await fetch(`http://127.0.0.1:${port}/api/health`)).json()) as { version: string; addresses?: Record<string, string> };
+    assert.equal(h.version, VERSION, "the new server answers");
+    assert.deepEqual(h.addresses, { linkUrl: "https://austere.example.com", allowedHosts: "proxy.example.com" });
+  } finally {
+    await cli(env, "stop");
+    await fake.close();
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
 test("stop stops a server from before the proof, without the key", async () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-legacy-stop-"));
   const fake = await fakeServer({ name: "austere-axi", version: "0.0.1", stateDir: state, listen: ["127.0.0.1"], hub: false, hubWanted: false });

@@ -56,8 +56,13 @@ function systemdJob(): Job | null {
   const unit = systemdUnitName();
   if (!unit) return null;
   const r = spawnSync("systemctl", ["--user", "show", unit, "--property=ExecStart", "--property=MainPID"], { encoding: "utf8", timeout: 5000 });
-  const prop = (key: string): string | undefined => new RegExp(`^${key}=(.*)$`, "m").exec(r.stdout || "")?.[1];
-  return { supervisor: "systemd", command: prop("ExecStart") ?? "", pid: positivePid(prop("MainPID")) };
+  return { supervisor: "systemd", ...parseSystemdShow(r.stdout || "") };
+}
+
+/** A unit's command line and main pid, out of `systemctl show --property=ExecStart --property=MainPID`. */
+export function parseSystemdShow(text: string): { command: string; pid: number | null } {
+  const prop = (key: string): string | undefined => new RegExp(`^${key}=(.*)$`, "m").exec(text)?.[1];
+  return { command: prop("ExecStart") ?? "", pid: positivePid(prop("MainPID")) };
 }
 
 /** The launchd job named `label`, as launchd describes it (one `launchctl print`). */
@@ -108,15 +113,84 @@ export function parentPid(pid: number): number | null {
 
 /** The systemd unit that owns this process, from its cgroup. */
 export function systemdUnitName(): string | null {
-  let cgroup: string;
   try {
-    cgroup = fs.readFileSync("/proc/self/cgroup", "utf8");
+    return unitInCgroup(fs.readFileSync("/proc/self/cgroup", "utf8"));
   } catch {
     return null;
   }
+}
+
+/** The service a `/proc/<pid>/cgroup` text puts its process in, or null. */
+export function unitInCgroup(cgroup: string): string | null {
   const units = [...cgroup.matchAll(/\/([^/\s]+\.service)(?=\/|\s|$)/g)].map((m) => m[1]);
   // The session's own unit (user@1000.service) is not a service that runs a server.
   return units.filter((u) => !/^user@/.test(u)).pop() ?? null;
+}
+
+/** A unit that runs a server: its service manager and its name (a systemd unit, a launchd label). */
+export interface ServerUnit {
+  supervisor: Supervisor;
+  unit: string;
+}
+
+/** What serverUnit reads about other processes; tests pass their own. */
+export interface ProcessView {
+  platform: NodeJS.Platform;
+  uid: number | null;
+  run: Runner;
+  /** `/proc/<pid>/cgroup`, or null where there is none. */
+  cgroup: (pid: number) => string | null;
+  /** The script a process runs (its argv[1]), or null when it cannot be read. */
+  script: (pid: number) => string | null;
+  isAncestor: (ancestor: number, pid: number) => boolean;
+}
+
+const readProc = (pid: number, file: string): string | null => {
+  try {
+    return fs.readFileSync(`/proc/${pid}/${file}`, "utf8");
+  } catch {
+    return null;
+  }
+};
+
+/** This machine, as serverUnit sees it. */
+export function thisMachine(): ProcessView {
+  return {
+    platform: process.platform,
+    uid: process.getuid?.() ?? null,
+    run: runCommand,
+    cgroup: (pid) => readProc(pid, "cgroup"),
+    script: (pid) => readProc(pid, "cmdline")?.split("\0")[1] || null,
+    isAncestor,
+  };
+}
+
+/**
+ * The unit that runs the server with process id `pid`, or null when none does. It asks the
+ * system, not the server: a server from before 0.12 does not report `supervised`, and a CLI
+ * that replaced it would lock its unit out (RLM-311, RLM-375). On Linux the pid's cgroup names
+ * the unit; the unit counts when it runs the austere server (runsTheServer, with the script
+ * that pid runs) and its main process is that pid or an ancestor of it. On macOS it is the
+ * agent `server install` writes, when its pid is that pid or an ancestor.
+ */
+export function serverUnit(pid: number, view: ProcessView = thisMachine()): ServerUnit | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  if (view.platform === "linux") {
+    const cgroup = view.cgroup(pid);
+    const unit = cgroup ? unitInCgroup(cgroup) : null;
+    if (!unit) return null;
+    const r = view.run("systemctl", ["--user", "show", unit, "--property=ExecStart", "--property=MainPID"]);
+    if (r.code !== 0) return null;
+    const job = parseSystemdShow(r.stdout);
+    if (job.pid == null || !runsTheServer(job.command, view.script(pid) ?? CLI_ENTRY) || !view.isAncestor(job.pid, pid)) return null;
+    return { supervisor: "systemd", unit };
+  }
+  if (view.platform === "darwin") {
+    const r = view.run("launchctl", ["print", launchdTarget(view.uid)]);
+    const main = r.code === 0 ? positivePid(/\bpid = (\d+)/.exec(r.stdout)?.[1]) : null;
+    return main != null && view.isAncestor(main, pid) ? { supervisor: "launchd", unit: LAUNCHD_LABEL } : null;
+  }
+  return null;
 }
 
 /** The environment a CLI hands to the server it starts, without the service manager's job markers. */
@@ -125,9 +199,17 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
   return rest;
 }
 
-/** The command that restarts the server under `s`. */
-export function restartCommand(s: Supervisor, uid: number | null = process.getuid?.() ?? null): string {
-  return s === "systemd" ? `systemctl --user restart ${SYSTEMD_UNIT}` : `launchctl kickstart -k gui/${uid ?? "$(id -u)"}/${LAUNCHD_LABEL}`;
+/** The command that restarts the server under `s`; `unit` names a unit `server install` did not write. */
+export function restartCommand(s: Supervisor, uid: number | null = process.getuid?.() ?? null, unit?: string): string {
+  return s === "systemd" ? `systemctl --user restart ${unit ?? SYSTEMD_UNIT}` : `launchctl kickstart -k gui/${uid ?? "$(id -u)"}/${unit ?? LAUNCHD_LABEL}`;
+}
+
+/**
+ * What the owner reads when a server the service did not start holds its port: the unit
+ * cannot start (it fails, or loops until its start limit) until that server stops.
+ */
+export function lockedOutNote(pid: number, port: number): string {
+  return `the service cannot start: pid ${pid} holds port ${port} and was not started by the service. Run \`${BIN} stop\`.`;
 }
 
 /** The command that shows the state of the server's unit under `s`, and why it failed. */
@@ -165,12 +247,18 @@ function systemdQuote(s: string): string {
   return /[\s"'\\;]/.test(v) ? `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : v;
 }
 
-/** The systemd user unit. */
+/**
+ * The systemd user unit. The start limit ends a lock-out (another server holds the port or the
+ * state dir) in `failed` instead of a restart every few seconds for ever: 5 failed starts, 5 s
+ * apart, fit in the 2 minutes.
+ */
 export function systemdUnit(spec: ServiceSpec): string {
   return [
     `# Written by \`${BIN} server install\`; \`${BIN} server uninstall\` removes it.`,
     "[Unit]",
     "Description=austere-axi review server",
+    "StartLimitIntervalSec=120",
+    "StartLimitBurst=5",
     "",
     "[Service]",
     // `$` is a variable in ExecStart, not in Environment=.
@@ -480,7 +568,10 @@ export interface RunningServer {
   version: string;
   pid: number;
   port: number;
+  /** The supervisor that runs it: what the server says, or what serverUnit found. */
   supervised?: Supervisor;
+  /** The unit's name, when serverUnit found it. */
+  unit?: string;
 }
 
 /** This machine, as the service commands see it. */
@@ -550,6 +641,8 @@ export function unitPort(file: string): number | null {
 export function startInstalledService(ctx: ServiceContext, dir: string, port: number): boolean {
   const target = installedServiceFor(ctx, dir, port);
   if (!target) return false;
+  // A unit that hit its start limit (it was locked out) refuses to start until it is reset.
+  if (target.supervisor === "systemd") ctx.run("systemctl", ["--user", "reset-failed", SYSTEMD_UNIT]);
   const r = target.supervisor === "systemd" ? ctx.run("systemctl", ["--user", "start", SYSTEMD_UNIT]) : ctx.run("launchctl", ["kickstart", "-k", launchdTarget(ctx.uid)]);
   if (r.code !== 0) throw new Error(`the installed service did not start: ${commandOutput(r)} (see why: ${statusCommand(target.supervisor, ctx.uid)}; remove it: ${BIN} server uninstall)`);
   return true;
@@ -578,8 +671,11 @@ export function serviceStatus(ctx: ServiceContext, server: RunningServer | null,
     Object.assign(out, { platform: ctx.platform, installed: "unknown: no supported service manager here" });
   }
   out.server = server ? { version: server.version, pid: server.pid, port: server.port, supervised: server.supervised ?? "no" } : "not running";
-  if (server?.supervised && server.version !== version) {
-    out.next = `The server runs v${server.version} and this CLI is v${version}. Restart it: ${restartCommand(server.supervised, ctx.uid)}`;
+  if (server && !server.supervised && installedServiceFor(ctx, ctx.stateDir, server.port)) {
+    // The installed service's port is taken by a server it did not start: it fails until that one stops.
+    out.next = lockedOutNote(server.pid, server.port);
+  } else if (server?.supervised && server.version !== version) {
+    out.next = `The server runs v${server.version} and this CLI is v${version}. Restart it: ${restartCommand(server.supervised, ctx.uid, server.unit)}`;
   } else if (target && !out.installed) {
     out.next = `${BIN} server install sets it up (at a terminal).`;
   } else if (target && out.installed && !server) {

@@ -66,6 +66,33 @@ export function allowedHosts(extra: (string | null | undefined)[] = []): Set<str
 }
 
 /**
+ * The variables that set the addresses a server answers to and prints. /api/health reports
+ * them, so a CLI that replaces the server starts the new one with the same ones, not with
+ * whatever its own caller's environment says (RLM-311).
+ */
+export const ADDRESS_ENV = { linkUrl: "AUSTERE_AXI_LINK_URL", linkHost: "AUSTERE_AXI_LINK_HOST", allowedHosts: "AUSTERE_AXI_ALLOWED_HOSTS" } as const;
+
+/** The ADDRESS_ENV values a server runs with; a key is missing when its variable is unset. */
+export type AddressSettings = { -readonly [K in keyof typeof ADDRESS_ENV]?: string };
+
+export function addressSettings(env: NodeJS.ProcessEnv = process.env): AddressSettings {
+  const out: AddressSettings = {};
+  for (const [key, name] of Object.entries(ADDRESS_ENV) as [keyof AddressSettings, string][]) if (env[name]) out[key] = env[name];
+  return out;
+}
+
+/** `env` with the ADDRESS_ENV variables set to `settings`: each one the settings lack is removed. */
+export function withAddressSettings(env: NodeJS.ProcessEnv, settings: AddressSettings): NodeJS.ProcessEnv {
+  const out = { ...env };
+  for (const [key, name] of Object.entries(ADDRESS_ENV) as [keyof AddressSettings, string][]) {
+    const value = settings[key];
+    if (value) out[name] = value;
+    else delete out[name];
+  }
+  return out;
+}
+
+/**
  * AUSTERE_AXI_LINK_URL: the address a reviewer reaches this server at when something in front of it
  * (a reverse proxy with TLS, say) changes the scheme, host or port, e.g. `https://austere.example.com`.
  * Returns it without a trailing slash, or null when unset. Throws on a value that is not a plain http(s) origin

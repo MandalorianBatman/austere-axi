@@ -13,8 +13,8 @@ import { readArtifact, rewriteRuntime, escapeHtml } from "./artifact.ts";
 import { agentPrompt } from "./agent-prompt.ts";
 import { cloudUrl, readCloud } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
-import { allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
-import type { Tailnet } from "./net.ts";
+import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, linkUrl } from "./net.ts";
+import type { AddressSettings, Tailnet } from "./net.ts";
 import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir } from "./paths.ts";
 import { SessionStore, newId, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
@@ -52,6 +52,8 @@ export interface HealthInfo {
   persist: boolean;
   /** The service manager that runs this server (`server install`); a CLI never replaces it. */
   supervised?: Supervisor;
+  /** The address variables it runs with, kept by a CLI that replaces it. Missing before 0.12. */
+  addresses?: AddressSettings;
 }
 
 /** Whether an agent listens on a session, works on its notes, or neither. */
@@ -848,7 +850,6 @@ export async function runServer({
       const key = req.headers["x-austere-key"];
       if (typeof key !== "string" || !safeEqual(key, ownerToken)) return send(res, 403, { error: "owner key required" });
     }
-    activity();
     if (route === "health") {
       const nonce = url.searchParams.get("nonce");
       return send(res, 200, {
@@ -864,8 +865,12 @@ export async function runServer({
         remote: remoteBase() || undefined,
         persist: idleMs === 0,
         supervised: supervisorName ?? undefined,
+        addresses: addressSettings(),
       } satisfies HealthInfo);
     }
+    // A health probe is not a user: a CLI that only checks, or a locked-out unit that probes
+    // every few seconds, must not keep an idle server up.
+    activity();
     if (route === "sessions") {
       return send(res, 200, {
         sessions: store.list().map((s) => ({
