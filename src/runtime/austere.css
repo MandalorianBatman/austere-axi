@@ -96,6 +96,75 @@ html.austere body > noscript {
   }
 }
 
+/* ── Card ── */
+/* A Card that opens with a titled CardHeader folds to that header (overrides/Card.tsx).
+   Open, the body is display: contents, so the stock flex layout is unchanged. */
+.austere-page .austere-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--openui-space-s, 8px);
+  min-width: 0;
+}
+.austere-page .austere-card-head .openui-header {
+  flex: 1;
+  min-width: 0;
+}
+.austere-page .austere-card-fold {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: -2px -6px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--austere-muted);
+  cursor: pointer;
+}
+.austere-page .austere-card-fold:hover {
+  color: var(--openui-text-neutral-primary, #ededf0);
+  background: rgba(255, 255, 255, 0.06);
+}
+.austere-page .austere-card-fold:focus-visible {
+  outline: 2px solid var(--austere-accent);
+  outline-offset: 1px;
+}
+.austere-page .austere-card-fold svg {
+  transition: transform 0.15s ease;
+}
+.austere-page .austere-card-fold[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+.austere-page .austere-card-body {
+  display: contents;
+}
+/* Folded: out of the flex flow (no gap under the header) and skipped by layout, while
+   still in the DOM for find-in-page. */
+.austere-page .austere-card-body[hidden] {
+  display: block;
+  position: absolute;
+  content-visibility: hidden;
+}
+.austere-page .openui-card:has(> .austere-card-body[hidden]) > .austere-card-head .openui-header {
+  margin-bottom: 0;
+}
+/* Without content-visibility (Safari < 18, Firefox < 125) a folded body must not render. */
+@supports not (content-visibility: hidden) {
+  .austere-page .austere-card-body[hidden] {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .austere-page .austere-card-fold {
+    width: 32px;
+    height: 32px;
+    margin: -6px -8px -4px 0;
+  }
+}
+
 /* Stock table cells never wrap (chat tables are short); review tables carry
    sentences, so let them wrap and keep a sane minimum column width. */
 .austere-page .openui-table-cell {
