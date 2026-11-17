@@ -14,7 +14,7 @@ The home page has one section per project and one row per page. A row shows the 
 
 ## Projects and copies
 
-A project is a name and a list of root folders. A page is a path inside a root, so the same file in two worktrees of one repository is one page with two copies. The row shows a chip per copy, labelled with the branch that worktree has checked out (or the folder's name), marked when it has unanswered notes; a chip opens that copy. Notes stay with their copy: each branch's file can differ.
+A project is a name and a list of root folders. A page is a path inside a root, so the same file in two worktrees of one repository is one page with two copies. The row shows a chip per copy, labelled with the branch that worktree has checked out (or the folder's name), marked when it has unanswered notes; a chip opens that copy. A row shows 3 chips: copies with unanswered notes first, then one with an agent listening, then the newest; the rest are behind **+n more**. A long branch name is shortened in the middle; the chip's tooltip has the full name and the file. Notes stay with their copy: each branch's file can differ.
 
 The hub finds a page's project without git; it never runs it. Walking up from the page's folder it takes the first of:
 
@@ -31,7 +31,8 @@ Two clones of one repository (one origin) that git does not tie together, such a
 What it finds is stored, so it does not look again. Change it with `project`:
 
 ```sh
-austere-axi project list                     # projects, their roots and page counts
+austere-axi project list                     # projects, their main root, root counts by kind, page counts
+austere-axi project list --roots             # every root folder, with its kind
 austere-axi project add ~/work/plans --name plans   # assign a root (a folder with no .git, holding pages in subfolders)
 austere-axi project merge shop shop-clone    # the second project's roots move to the first
 austere-axi project rename shop storefront     # refused if another project is named storefront

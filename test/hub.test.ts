@@ -512,6 +512,54 @@ test("two worktrees holding docs/plan.html: one row, two chips, notes per copy, 
   }
 });
 
+test("a page in 30 worktrees: 3 chips (unanswered first, then newest), +27 more, long branch names shortened in the middle", async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-many-")));
+  const main = path.join(dir, "shop");
+  fs.mkdirSync(path.join(main, ".git"), { recursive: true });
+  fs.writeFileSync(path.join(main, ".git", "HEAD"), "ref: refs/heads/main\n");
+  const branch = (i: number): string => `agent/agy-gemini-3-8-flash-high/c07769ee15${String(i).padStart(2, "0")}`;
+  const files: string[] = [];
+  for (let i = 0; i < 30; i++) {
+    const wt = path.join(dir, `wt-${i}`);
+    const gitdir = path.join(main, ".git", "worktrees", `wt-${i}`);
+    fs.mkdirSync(gitdir, { recursive: true });
+    fs.writeFileSync(path.join(gitdir, "commondir"), "../..\n");
+    fs.writeFileSync(path.join(gitdir, "gitdir"), path.join(wt, ".git") + "\n");
+    fs.writeFileSync(path.join(gitdir, "HEAD"), `ref: refs/heads/${branch(i)}\n`);
+    fs.mkdirSync(path.join(wt, "docs"), { recursive: true });
+    fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${gitdir}\n`);
+    const f = path.join(wt, "docs", "plan.html");
+    fs.copyFileSync(FILE, f);
+    files.push(f);
+  }
+  const store = await SessionStore.open(fs.mkdtempSync(path.join(dir, "state-")));
+  try {
+    const ids = files.map((f) => store.ensure(f).id);
+    // Copy i was active at minute i: 29 is the newest. Copies 3 and 5 are old but have unanswered notes.
+    ids.forEach((id, i) => store.db.prepare("UPDATE artifacts SET updated_at = ? WHERE id = ?").run(1_000_000 + i * 60_000, id));
+    for (const i of [3, 5]) store.addUserBatch(store.get(ids[i])!, [{ kind: "message", text: `on ${i}` }], { at: 1_000_000 + i * 60_000 });
+    const hub = new Hub(store.db);
+    const pages = hub.list();
+    assert.equal(pages.length, 1);
+    assert.equal(pages[0].copies.length, 30);
+    const html = hubPage(pages, { version: "1", q: "", project: "", projects: hub.projects(), counts: hub.viewCounts() });
+    const shown = html.slice(0, html.indexOf('<details class="more">'));
+    const order = [...shown.matchAll(/href="\/hub\/open\/([0-9a-f]{12})" title="agent/g)].map((m) => ids.indexOf(m[1]));
+    assert.equal(order.length, 3, "three chips before +n more");
+    assert.deepEqual(order.slice(0, 2).sort(), [3, 5], "the copies with unanswered notes come first");
+    assert.equal(order[2], 29, "then the newest");
+    assert.match(html, /<summary>\+27 more<\/summary>/);
+    assert.equal(html.match(/class="chip[ "]/g)?.length, 30, "every copy is still reachable");
+    assert.match(html, /30 copies/);
+    assert.ok(html.includes(`title="${branch(29)} · ${files[29]}"`), "the full label and file in the tooltip");
+    assert.ok(!html.includes(`>${branch(29)}<`), "the long label is shortened");
+    assert.match(html, />agent\/agy-gemi…\/c07769ee1529</, "shortened in the middle: start and end kept");
+  } finally {
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
 test("a page's title opens a copy that is still there, the newest one when every copy is gone", async () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-gone-copy-")));
   const { main, wt } = shopWithWorktree(dir);

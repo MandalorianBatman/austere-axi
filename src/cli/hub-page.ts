@@ -51,11 +51,31 @@ function state(c: HubCopy, listening: boolean): string {
   return [c.missing ? `<em class="gone">missing</em>` : "", c.archived_at ? `<em>archived</em>` : "", c.reviewed ? "" : `<em>checked</em>`, listening ? LISTENING : ""].filter(Boolean).join(" · ");
 }
 
+/** A label shortened in the middle, so `agent/some-agent/c07769ee1506` keeps its start and its end. */
+function shortLabel(label: string, max = 28): string {
+  if (label.length <= max) return label;
+  const tail = Math.floor((max - 1) / 2);
+  return `${label.slice(0, max - 1 - tail)}…${label.slice(label.length - tail)}`;
+}
+
 function chip(c: HubCopy, listening: Set<string>): string {
   const waiting = unanswered(c);
   const cls = ["chip", waiting ? "waiting" : "", c.missing ? "gone" : ""].filter(Boolean).join(" ");
   const extra = [waiting ? `${waiting} unanswered` : "", listening.has(c.id) ? "agent listening" : "", c.missing ? "missing" : "", c.archived_at ? "archived" : ""].filter(Boolean);
-  return `<a class="${cls}" href="/hub/open/${escapeHtml(c.id)}" title="${escapeHtml(c.file)}">${escapeHtml(c.label)}${extra.length ? ` <span>${extra.join(" · ")}</span>` : ""}</a>`;
+  return `<a class="${cls}" href="/hub/open/${escapeHtml(c.id)}" title="${escapeHtml(`${c.label} · ${c.file}`)}">${escapeHtml(shortLabel(c.label))}${extra.length ? ` <span>${extra.join(" · ")}</span>` : ""}</a>`;
+}
+
+/** How many chips a row shows before "+n more". */
+const CHIPS = 3;
+
+/** The chips of a page's copies: the most relevant first (unanswered notes, an agent listening, then newest), the rest behind "+n more". */
+function chips(copies: HubCopy[], listening: Set<string>): string {
+  const rank = (c: HubCopy): number => (unanswered(c) ? 2 : 0) + (listening.has(c.id) ? 1 : 0);
+  const sorted = [...copies].sort((a, b) => rank(b) - rank(a) || b.updated_at - a.updated_at);
+  const shown = sorted.slice(0, CHIPS).map((c) => chip(c, listening)).join("");
+  const rest = sorted.slice(CHIPS);
+  const more = rest.length ? `<details class="more"><summary>+${rest.length} more</summary><div class="chips">${rest.map((c) => chip(c, listening)).join("")}</div></details>` : "";
+  return `<div class="chips">${shown}${more}</div>`;
 }
 
 function row(p: HubPage, listening: Set<string>): string {
@@ -64,12 +84,11 @@ function row(p: HubPage, listening: Set<string>): string {
   // The title opens a copy that is still there (the newest such); the newest copy when all are gone.
   const main = p.copies.find((c) => !c.missing) ?? p.copies[0];
   const many = p.copies.some((c) => listening.has(c.id)) ? LISTENING : "";
-  const meta = [escapeHtml(p.rel_path), escapeHtml(`${day(p.updated_at)} ${time(p.updated_at)}`), only ? state(only, listening.has(only.id)) : gone ? `<em class="gone">missing</em>` : many, counts(p)].filter(Boolean).join(" · ");
-  const chips = only ? "" : `<div class="chips">${p.copies.map((c) => chip(c, listening)).join("")}</div>`;
+  const meta = [escapeHtml(p.rel_path), escapeHtml(`${day(p.updated_at)} ${time(p.updated_at)}`), only ? state(only, listening.has(only.id)) : gone ? `<em class="gone">missing</em>` : many, counts(p), only ? "" : plural(p.copies.length, "copy", "copies")].filter(Boolean).join(" · ");
   return `<li><a href="/hub/open/${escapeHtml(main.id)}" title="${escapeHtml(main.file)}">
   <strong>${escapeHtml(p.title || path.posix.basename(p.rel_path))}</strong>
   <span class="meta">${meta}</span>
-</a>${chips}</li>`;
+</a>${only ? "" : chips(p.copies, listening)}</li>`;
 }
 
 /** A link to the home page with these query parameters (empty ones dropped). */
@@ -84,7 +103,7 @@ header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content
 h1{font-size:18px;font-weight:600;margin:0}h1 small{color:#77777f;font-weight:400;font-size:13px;margin-left:6px}
 .stats{color:#8a8a94;font-size:12.5px}
 form{margin:18px 0 8px}input{width:100%;box-sizing:border-box;background:#141417;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit}
-input:focus{outline:none;border-color:#5b6b99}
+input:focus,select:focus{border-color:#5b6b99}input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid #a9c1ff;outline-offset:2px}
 section{margin-top:28px}h2{font-size:15px;font-weight:600;margin:0 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
 h2 a{color:#e8e8ec;text-decoration:none}h2 small{color:#8a8a94;font-weight:400;font-size:12px;overflow-wrap:anywhere}
 p.same{color:#8a8a94;font-size:12.5px;margin:0 0 4px;overflow-wrap:anywhere}p.same code{color:#e8e8ec}
@@ -94,8 +113,10 @@ li strong{color:#a9c1ff;font-weight:600;overflow-wrap:anywhere}li>a:hover strong
 .meta{color:#8a8a94;font-size:12px;overflow-wrap:anywhere}em{font-style:normal}em.live{color:#8fd19e}em.gone{color:#e38b8b}
 b{font-weight:600}b.open{color:#f2c46d;font-size:12px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 10px}
-.chip{display:inline-flex;align-items:center;gap:6px;min-height:26px;box-sizing:border-box;padding:3px 10px;border:1px solid #2a2a30;border-radius:999px;color:#c9c9d1;font-size:12px;text-decoration:none;overflow-wrap:anywhere}
-.chip:hover{border-color:#5b6b99}.chip span{color:#8a8a94}.chip.waiting{border-color:#6b5420}.chip.waiting span{color:#f2c46d}.chip.gone{color:#8a8a94}
+.chip{display:inline-flex;flex-wrap:wrap;align-items:center;column-gap:6px;min-height:26px;max-width:100%;box-sizing:border-box;padding:3px 10px;border:1px solid #2a2a30;border-radius:999px;color:#c9c9d1;font-size:12px;text-decoration:none;overflow-wrap:anywhere}
+.chip:hover{border-color:#5b6b99}.chip span{color:#8a8a94;white-space:nowrap}.chip.waiting{border-color:#6b5420}.chip.waiting span{color:#f2c46d}.chip.gone{color:#8a8a94}
+details.more>summary{display:inline-flex;align-items:center;min-height:26px;box-sizing:border-box;padding:3px 10px;border:1px dashed #2a2a30;border-radius:999px;color:#a9c1ff;font-size:12px;cursor:pointer;list-style:none}details.more>summary::-webkit-details-marker{display:none}
+details.more[open]{flex-basis:100%}details.more[open]>summary{display:none}details.more>.chips{margin:0}
 .filter{color:#8a8a94;font-size:12.5px}.filter a{color:#a9c1ff}.empty{color:#8a8a94;margin-top:28px}
 .nav{display:flex;gap:14px;font-size:13px}.nav a{color:#a9c1ff;text-decoration:none}
 form.f{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}button{background:#1c1c20;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit}select{background:#141417;border:1px solid #2a2a30;border-radius:8px;color:#e8e8ec;padding:9px 12px;font:inherit;width:100%;box-sizing:border-box}
