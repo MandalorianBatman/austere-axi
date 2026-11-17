@@ -22,7 +22,7 @@ npm run build
 npm test
 ```
 
-`npm run test:browser`, `npm run gallery` and `npm run shot` need Chrome, or `CHROME_PATH` pointing at a Chrome or Chromium binary. `npm run test:browser` also needs Firefox for one engine-specific check: `npx playwright-core install firefox`, or `FIREFOX_PATH`. Run the CLI you just built with `node dist/cli.mjs <command>`, for example `node dist/cli.mjs examples/session-migration.html`.
+`npm run test:browser`, `npm run gallery` and `npm run shot` need Chrome, or `CHROME_PATH` pointing at a Chrome or Chromium binary. `npm run test:browser` also needs Firefox for one engine-specific check: `npx playwright-core install firefox`, or `FIREFOX_PATH`. Run the CLI you just built with `node dist/cli.mjs <command>`, for example `node dist/cli.mjs examples/session-migration.html`. From a checkout it keeps its state in `.dev/state` and serves on a port of its own, not your installed `~/.austere-axi` and 4388; set `AUSTERE_AXI_STATE_DIR` to a scratch dir to choose one ([docs/cli.md](docs/cli.md#environment)).
 
 ## Making a change
 

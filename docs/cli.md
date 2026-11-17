@@ -70,3 +70,7 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 | `AUSTERE_AXI_CLOUD_URL` | `https://austere.kasat.xyz` | the service `publish` talks to (self-hosting, tests) |
 | `AUSTERE_AXI_SYNC_RETRY_MS` | `1000` | first wait before the local server reconnects to a hosted page; it doubles up to 60 s |
 | `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
+
+A CLI run from a checkout of austere-axi (`node src/cli/main.ts`, or `dist/cli.mjs` in a git checkout) with `AUSTERE_AXI_STATE_DIR` unset uses `<checkout>/.dev/state` and a port of its own (4400–4899, from the checkout's path), so it keeps off the installed server and its hub.db. It prints one line on stderr saying so. Set `AUSTERE_AXI_STATE_DIR` to choose; `AUSTERE_AXI_PORT` then defaults to `4388` again.
+
+hub.db records its schema version. Commands that open it without the server (`hub list`, `hub notes`, `project …`, `archive`, `poll` and `feedback` without a file, and the hub index `check` and `patch` update) leave it alone while a server or command of another version holds the state dir: readers open it read-only, or refuse when its schema is older than theirs; commands that write refuse. The error names the holder's version, pid and port.

@@ -9,7 +9,7 @@ import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements } from "../shared/statements.ts";
 import { ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
-import { Hub, hubDbFile, registerWithHub, unanswered } from "./hub.ts";
+import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
 import type { HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { addRoot, copyLabel, findProject, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import { InviteStore, inviteId } from "./invites.ts";
@@ -24,7 +24,7 @@ import { renderCheck } from "./render-check.ts";
 import { format, print as printOutput } from "./output.ts";
 import { describeItem, locator } from "../shared/feedback.ts";
 import type { FeedbackItem } from "../shared/feedback.ts";
-import { VERSION, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
+import { VERSION, applyDevDefaults, assetPath, canonicalFile, port, quote, stateDir } from "./paths.ts";
 import { listComponents, searchComponents, showComponents } from "./components.ts";
 import type { InstallError } from "./install.ts";
 import { installedPacks, isThirdParty, neededPacks, pagePacks, setPacksMeta } from "./packs.ts";
@@ -260,13 +260,14 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "export plan.html --out review.html",
   },
   hub: {
-    usage: "hub [list|notes|open] [words] [--project p] [--archived] [--all] [--unanswered]",
+    usage: "hub [list|notes|open] [words] [--project p] [--archived] [--all] [--unanswered] [--limit n]",
     summary: "the owner's home page, always on: every page by project (one entry per page, a copy per worktree), every note",
     flags: {
       project: "only pages or notes from this project: a name, an id, or a folder inside one of its roots (list, notes)",
       archived: "list archived pages instead (list)",
       all: "also list pages only checked, never opened for review, and archived ones (list)",
       unanswered: "only notes no agent answered (notes)",
+      limit: "show up to n pages or notes (default 40)",
     },
     example: "hub notes --unanswered",
   },
@@ -319,7 +320,7 @@ const COMMANDS: Record<string, CommandSpec> = {
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "limit"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -481,7 +482,7 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   const r = await request<OpenResponse>("POST", "/api/open", { file: abs });
   if (r.status !== 200) return fail(r.data?.error || `open failed (${r.status})`);
   const d = r.data;
-  const noOpen = flags["no-open"] || /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_NO_OPEN || "");
+  const noOpen = flags["no-open"] || browserDisabled();
   let browser: string;
   if (d.browsers > 0) browser = `already open (${d.browsers} tab${d.browsers > 1 ? "s" : ""}); it live-updates`;
   else if (noOpen) browser = "not opened (--no-open)";
@@ -560,7 +561,7 @@ async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string;
   const ref = typeof flags.project === "string" ? flags.project : process.cwd();
   let hub: Hub;
   try {
-    hub = await Hub.open();
+    hub = await openHubDirect({ write: false });
   } catch (err) {
     fail(`could not open hub.db: ${messageOf(err)}`);
     return null;
@@ -1192,11 +1193,14 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
 
 // ── hub ──
 
-/** Run `fn` on hub.db: a database that cannot be opened, or an error `fn` throws, fails the command. */
-async function withHub(fn: (hub: Hub) => void): Promise<void> {
+/**
+ * Run `fn` on hub.db without the server: a database that cannot be opened, or an error `fn` throws,
+ * fails the command. `write`: `fn` changes it, which a state dir another version holds refuses.
+ */
+async function withHub(write: boolean, fn: (hub: Hub) => void): Promise<void> {
   let hub: Hub;
   try {
-    hub = await Hub.open();
+    hub = await openHubDirect({ write });
   } catch (err) {
     return fail(`${hubDbFile()} cannot be opened: ${messageOf(err)}`);
   }
@@ -1222,6 +1226,29 @@ function feedbackText(c: HubCounts): string | undefined {
   return [waiting ? `${waiting} unanswered` : "", c.addressed ? `${c.addressed} answered` : ""].filter(Boolean).join(", ") || undefined;
 }
 
+const HUB_LIMIT = 40;
+
+/** `--limit n` of `hub list` and `hub notes`: a positive whole number, else the default; null (after a usage error) when the value is bad. */
+function limitFlag(flags: Flags): number | null {
+  if (flags.limit === undefined) return HUB_LIMIT;
+  const n = typeof flags.limit === "string" && /^\d+$/.test(flags.limit) ? Number(flags.limit) : 0;
+  if (n < 1) {
+    usage(`--limit takes a whole number of 1 or more, not ${JSON.stringify(flags.limit)}`, "hub");
+    return null;
+  }
+  return n;
+}
+
+/** The first `limit` of `all`, and the line that says how many were left out ("40 of 45 shown; --limit n for more"). */
+function limited<T>(all: T[], limit: number, what: string): { shown: T[]; shownNote?: string } {
+  return all.length > limit ? { shown: all.slice(0, limit), shownNote: `${limit} of ${all.length} ${what} shown; \`--limit n\` shows more` } : { shown: all };
+}
+
+/** AUSTERE_AXI_NO_OPEN=1: this machine has no screen, so never start a browser. */
+function browserDisabled(): boolean {
+  return /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_NO_OPEN || "");
+}
+
 async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
   const url = `http://127.0.0.1:${port()}/`;
   switch (sub) {
@@ -1232,9 +1259,12 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
       process.exitCode = 2;
       return;
     case undefined:
-    case "list":
-      return withHub((hub) => {
-        const pages: HubPage[] = hub.list({ q: args.join(" "), project: projectFlag(hub, flags), archived: !!flags.archived, all: !!flags.all, limit: 40 });
+    case "list": {
+      const limit = limitFlag(flags);
+      if (limit === null) return;
+      return withHub(false, (hub) => {
+        const found: HubPage[] = hub.list({ q: args.join(" "), project: projectFlag(hub, flags), archived: !!flags.archived, all: !!flags.all, limit: Infinity });
+        const { shown: pages, shownNote } = limited(found, limit, "pages");
         if (!pages.length) return print({ pages: "none", note: flags.all || flags.archived ? undefined : "pages only checked (never opened for review) and archived ones are left out: --all lists them" });
         print({
           pages: pages.map((p) => ({
@@ -1250,12 +1280,17 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
               feedback: p.copies.length > 1 ? feedbackText(c) : undefined,
             })),
           })),
+          shown: shownNote,
           next: `\`${BIN} feedback <file>\` for what a reviewer said that no agent has answered.`,
         });
       });
-    case "notes":
-      return withHub((hub) => {
-        const rows: HubNoteRow[] = hub.notes({ q: args.join(" "), project: projectFlag(hub, flags), status: flags.unanswered ? "unanswered" : "", limit: 40 });
+    }
+    case "notes": {
+      const limit = limitFlag(flags);
+      if (limit === null) return;
+      return withHub(false, (hub) => {
+        const found: HubNoteRow[] = hub.notes({ q: args.join(" "), project: projectFlag(hub, flags), status: flags.unanswered ? "unanswered" : "", limit: -1 });
+        const { shown: rows, shownNote } = limited(found, limit, "notes");
         if (!rows.length) return print({ notes: "none" });
         print({
           notes: rows.map((r) => ({
@@ -1269,13 +1304,16 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
             file: r.file,
             sent: shortDate(r.at),
           })),
+          shown: shownNote,
           next: `\`${BIN} feedback <file>\` for what a reviewer said that no agent has answered.`,
         });
       });
+    }
     case "open": {
       await ensureServer();
-      const opened = await openBrowser(url);
-      return print({ status: opened ? "opened" : "open the url", url, sign_in: opened ? undefined : signInHint() });
+      const noOpen = browserDisabled();
+      const opened = !noOpen && (await openBrowser(url));
+      return print({ status: opened ? "opened" : "open the url", url, note: noOpen ? "AUSTERE_AXI_NO_OPEN is set: no browser was started" : undefined, sign_in: opened ? undefined : signInHint() });
     }
     default:
       return usage(`unknown hub command: ${sub}. One of: list notes open`, "hub");
@@ -1293,32 +1331,32 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
   switch (sub) {
     case undefined:
     case "list":
-      return withHub((hub) => {
+      return withHub(false, (hub) => {
         const projects = listProjects(hub.db);
         if (!projects.length) return print({ projects: "none", note: "A page you check or open for review files itself under a project." });
         print({ projects: projects.map((p) => ({ name: p.name, id: p.id, pages: p.pages, roots: p.roots.map((r) => `${r.root} (${r.kind})`) })) });
       });
     case "add":
       if (!need(1, `a folder: ${BIN} project add <dir> [--name n]`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const r = addRoot(hub.db, args[0], typeof flags.name === "string" ? flags.name : undefined);
         print({ status: "added", project: r.project.name, id: r.project.id, root: r.root });
       });
     case "merge":
       if (!need(2, `two projects: ${BIN} project merge <a> <b>`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const p = mergeProjects(hub.db, args[0], args[1]);
         print({ status: "merged", project: p.name, id: p.id, roots: listProjects(hub.db).find((x) => x.id === p.id)?.roots.map((r) => r.root) });
       });
     case "rename":
       if (!need(2, `a project and a name: ${BIN} project rename <p> <name>`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const p = renameProject(hub.db, args[0], args.slice(1).join(" "));
         print({ status: "renamed", project: p.name, id: p.id });
       });
     case "forget-root":
       if (!need(1, `a folder: ${BIN} project forget-root <dir>`)) return;
-      return withHub((hub) => {
+      return withHub(true, (hub) => {
         const r = forgetRoot(hub.db, args[0]);
         print({ status: "forgotten", root: r.root, project: r.project });
       });
@@ -1349,7 +1387,7 @@ async function cmdArchive(file: string | undefined, archive: boolean): Promise<v
   // No server: hold the state dir's lock so hub.db is not written while a server runs or starts on it.
   const release = await lockStateDir(stateDir(), { wait: 5000 });
   try {
-    await withHub((hub) => {
+    await withHub(true, (hub) => {
       if (!hub.setArchived(sessionId(abs), archive ? Date.now() : null)) return fail(`not in the hub: ${abs}`);
       done();
     });
@@ -1610,6 +1648,8 @@ async function main(): Promise<unknown> {
     const valid = allowed.length ? `valid: ${allowed.map((k) => `--${k}`).join(" ")}` : "it takes no flags";
     return usage(`unknown flag${unknown.length > 1 ? "s" : ""} for ${name ?? BIN}: ${unknown.map((k) => `--${k}`).join(" ")}; ${valid}`, name);
   }
+  const dev = applyDevDefaults();
+  if (dev) process.stderr.write(`[${BIN}] ${dev}\n`);
   stateDir();
   switch (cmd) {
     case undefined:
