@@ -17,6 +17,7 @@ austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narro
 austere-axi components ...       list | search | show | add | remove | new | build
 austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
 austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
+austere-axi adapter list|set     how a run starts an agent: harness binaries, capabilities, the owner's extra arguments (see Adapters)
 austere-axi export <file>        one self-contained HTML file, works offline (~1.1 MB)
 austere-axi hub [list|notes|open]   home page with every page by project and every note   [--project p] [--archived] [--all] [--unanswered]
 austere-axi project list|add|merge|rename|forget-root   projects: a name and its root folders (see Hub)
@@ -60,6 +61,23 @@ Output is compact YAML for agents. Each `poll` item has its statement and that s
 - **Liveness:** when a command registers, it walks its parent processes to the harness's own (`/proc` on Linux, `ps` on macOS) and records that pid and its start time. `sessions list` shows `alive` while that process runs, `exited` once it is gone, `unknown` when none was found (always on Windows).
 - **`sessions list [file]`:** harness, short id, role, last seen and liveness of each session of a page; with no file, of every page of the project of the current folder, or `--project`. It reads hub.db and needs no server.
 - **Session ids stay on this machine:** they are in `hub.db` only, never in `publish`, `export`, hosted sync or a printed link.
+
+## Adapters
+
+An adapter turns a run (a note the owner sent to an attached page) into one command for a harness. `adapter list` works anywhere and changes nothing; `adapter set` works only at a terminal.
+
+```
+austere-axi adapter list                                   each harness: bin, found (its path on PATH, or false), same/fork/new, model, max_cost, extra_args, write_grant
+austere-axi adapter set omp --extra-args "--approval-mode yolo"   arguments added last to every omp run ("" clears them)
+austere-axi adapter set copilot --extra-args "--allow-all"        the same for Copilot CLI
+austere-axi adapter set <name> --command "<bin> <args…>"          a command adapter: a fixed binary and arguments, new session only ("" removes it)
+```
+
+- **Harnesses:** `omp` and `copilot` (Copilot CLI). The prompt always goes on stdin from a 0600 file, never in argv. omp runs `omp -p --mode json --wait-async` with `--resume <id>` (same), `--fork <id>` (fork) or neither (new), `--model` when one is chosen and `--max-cost` when a limit is set. Copilot runs `copilot --resume=<id>` (same) or `--session-id <a UUID austere-axi mints>` (new), always `--model` (default `auto`), `--no-ask-user --output-format json`, and `--max-ai-credits` when a limit is set. Copilot has no fork: `adapter list` says so and a fork run is refused. No wall-clock flag is passed; the run's own timeout is the limit.
+- **No write permission by default:** no adapter adds `--approval-mode yolo`, `--allow-all` or a similar flag on its own. Without one, omp and Copilot deny `austere-axi patch` and other writing commands in a run, and still exit 0. The owner grants it once, at a terminal: `adapter set omp --extra-args "--approval-mode yolo"`, or `adapter set copilot --extra-args "--allow-all"` (or `--allow-tool 'shell(austere-axi:*)'`). `write_grant` in `adapter list` shows whether a harness has one; a command adapter always counts as granted, since its arguments are the owner's own.
+- **Terminal only:** `adapter set` without a terminal exits 2, changes nothing and prints the command for the user to run. `--extra-args` and `--command` are split like a shell line (quotes, backslashes), with no variable or glob expansion.
+- **One file, in the state dir:** the settings live in `<state>/adapters.json` (mode 0600). A file of that name in a project, a page's folder or anywhere else is never read.
+- **A missing binary is not an error:** a harness whose binary is not on `PATH` lists every capability as `no: <bin> not found on PATH`.
 
 ## Environment
 

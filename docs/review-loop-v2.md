@@ -232,7 +232,7 @@ wiki_runs     (id, wiki_id, started_at, ended_at, cursor_from, cursor_to,
 | New | `trigger add\|list\|remove` (`add` TTY only) | RLM-360 | `main.ts`, `server.ts` |
 | New | `server install\|uninstall\|status` | RLM-340 | `service.ts`, `main.ts` |
 
-The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, else `fail` with the command for the user to run).
+The TTY rule is the one `cmdTrust` uses for `trust add` (`process.stdin.isTTY`, else an error with the command for the user to run). `adapter set` refuses as a usage error, exit 2 (the call cannot work from where it was made), not exit 1.
 
 ## What each change touches
 
@@ -350,7 +350,7 @@ Observed on Sid's machine on 2026-11-16, in scratch folders under `/dev/shm/spik
 
 ### Adapter argv (RLM-344)
 
-`<extra>` is the owner's `--extra-args` from `adapters.json` (A13), for example `--approval-mode yolo` or `--allow-all`. Nothing grants permissions by default. `[--max-cost c]` and `[--max-ai-credits n]` come from `attach.json` (A15). Every adapter reads the 0600 prompt file on stdin; no prompt text is in argv.
+`<extra>` is the owner's `--extra-args` from `adapters.json` (A13), for example `--approval-mode yolo` or `--allow-all`. Nothing grants permissions by default. `[--max-cost c]` and `[--max-ai-credits n]` come from `attach.json` (A15). omp gets `--model <m>` only when a model is chosen (otherwise its own configured default); Copilot always gets one. Every adapter reads the 0600 prompt file on stdin; no prompt text is in argv. A `command` adapter (`adapters.json` `commands`, set with `adapter set <name> --command "…"`) runs its fixed argv, `new` only.
 
 | Harness | Mode | argv | Session id of the run |
 |---|---|---|---|

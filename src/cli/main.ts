@@ -36,6 +36,10 @@ import type { PackRef } from "../shared/packs-meta.ts";
 import { callerProcess, detectCaller, parseSessionOverride } from "./caller.ts";
 import { callerReport, listSessions, liveness, registerSession, registerWithHubDb, shortId } from "./agent-sessions.ts";
 import type { CallerReport, PageSession } from "./agent-sessions.ts";
+import { adapterFor, ADAPTERS, capabilitiesOf, findOnPath } from "./adapters/index.ts";
+import { adaptersFile, extraArgsFor, HARNESSES, hasWriteGrant, isCommandName, isHarness, readAdapters, shellJoin, shellWords, writeAdapters } from "./adapters/config.ts";
+import type { AdaptersConfig } from "./adapters/config.ts";
+import type { Capability } from "./adapters/types.ts";
 
 /** A YAML-shaped result for print(), built up field by field. */
 type Printed = Record<string, unknown>;
@@ -135,6 +139,7 @@ COMMANDS
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} trust list              packs and scopes the user lets you add without --trust
   ${BIN} registry list           private registries the user mapped npm scopes to
+  ${BIN} adapter list            harnesses a run can use, and what each may do (owner sets them at a terminal)
   ${BIN} server install          the server as a service of your user account: always on (owner only)
   ${BIN} publish <file>          hosted share link (austere.kasat.xyz), only when the user asks
   ${BIN} <command> --help        one command's flags and an example
@@ -277,6 +282,16 @@ const COMMANDS: Record<string, CommandSpec> = {
     flags: { "token-env": "name of an environment variable holding a bearer token for the registry (the token itself is never stored)" },
     example: "registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN",
   },
+  adapter: {
+    usage: 'adapter [list | set <omp|copilot> --extra-args "…" | set <name> --command "<bin> <args…>"]',
+    summary:
+      "how runs start an agent: each harness's binary, what it can do (same/fork/new session, model, cost cap) and the owner's extra arguments. No adapter grants write permission by default; the owner does with set, at a terminal only (omp: --approval-mode yolo, copilot: --allow-all). An empty value clears",
+    flags: {
+      "extra-args": "set: arguments added last to every run of this harness, split like a shell line with no expansion",
+      command: "set: a command adapter's fixed binary and arguments, the prompt on stdin (new session only)",
+    },
+    example: 'adapter set omp --extra-args "--approval-mode yolo"',
+  },
   export: {
     usage: "export <file> [--out path]",
     summary: "one self-contained HTML file that works offline; keep reviewing and patching the source page, not the copy",
@@ -343,7 +358,7 @@ const COMMANDS: Record<string, CommandSpec> = {
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "session"]);
+const VALUE_FLAGS = new Set(["agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "session", "extra-args", "command"]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -1119,6 +1134,100 @@ async function cmdRegistry(sub: string | undefined, args: string[], flags: Flags
   }
 }
 
+// ── adapter (how runs start an agent; RLM-344) ──
+
+/** A capability as one word for `adapter list`: yes, or no with its reason. */
+function capabilityText(c: Capability): string {
+  return c.ok ? "yes" : `no: ${c.reason}`;
+}
+
+function adapterListing(cfg: AdaptersConfig): Printed {
+  const harnesses = HARNESSES.map((h) => {
+    const a = ADAPTERS[h];
+    const caps = capabilitiesOf(a);
+    const extra = extraArgsFor(h, cfg);
+    return {
+      harness: h,
+      bin: a.bin,
+      found: findOnPath(a.bin) ?? false,
+      same: capabilityText(caps.same),
+      fork: capabilityText(caps.fork),
+      new: capabilityText(caps.new),
+      model: capabilityText(caps.model),
+      max_cost: capabilityText(caps.maxCost),
+      extra_args: extra.length ? shellJoin(extra) : "none",
+      write_grant: hasWriteGrant(h, cfg),
+    };
+  });
+  const commands = Object.keys(cfg.commands).map((name) => {
+    const a = adapterFor(name, cfg);
+    const spec = cfg.commands[name];
+    return {
+      name,
+      command: shellJoin([spec.bin, ...spec.args]),
+      found: findOnPath(spec.bin) ?? false,
+      new: a ? capabilityText(capabilitiesOf(a).new) : "no",
+      write_grant: true,
+    };
+  });
+  return { file: adaptersFile(), harnesses, commands: commands.length ? commands : undefined };
+}
+
+function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void {
+  let cfg: AdaptersConfig;
+  try {
+    cfg = readAdapters();
+  } catch (err) {
+    return fail(messageOf(err));
+  }
+  switch (sub) {
+    case undefined:
+    case "list":
+      return print({
+        ...adapterListing(cfg),
+        note: `No adapter grants write permission by default: without it a run cannot use \`${BIN} patch\` (omp and Copilot deny it and still exit 0). The user grants it at a terminal: \`${BIN} adapter set omp --extra-args "--approval-mode yolo"\`, \`${BIN} adapter set copilot --extra-args "--allow-all"\`.`,
+      });
+    case "set": {
+      const name = args[0];
+      const extra = flags["extra-args"];
+      const command = flags.command;
+      if (!name) return usage(`set needs a harness or a command name: ${BIN} adapter set <omp|copilot> --extra-args "…"`, "adapter");
+      let flag: "extra-args" | "command";
+      let value: string;
+      if (isHarness(name)) {
+        if (typeof extra !== "string" || command !== undefined) return usage(`set ${name} takes --extra-args "…" ("" clears it)`, "adapter");
+        flag = "extra-args";
+        value = extra;
+      } else if (isCommandName(name)) {
+        if (typeof command !== "string" || extra !== undefined) return usage(`set ${name} takes --command "<bin> <args…>" ("" removes it)`, "adapter");
+        flag = "command";
+        value = command;
+      } else {
+        return usage(`no harness named ${name}: one of ${HARNESSES.join(" ")}, or a command adapter name (lowercase letters, digits, -)`, "adapter");
+      }
+      let words: string[];
+      try {
+        words = shellWords(value);
+      } catch (err) {
+        return usage(`--${flag}: ${messageOf(err)}`, "adapter");
+      }
+      // These arguments decide what a run may do on this machine (A13), so only the user at a terminal sets them, as with trust add.
+      if (!process.stdin.isTTY) {
+        return usage(`adapter set needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} adapter set ${name} --${flag} ${shellJoin([value])}\` themselves.`, "adapter");
+      }
+      if (isHarness(name)) {
+        if (words.length) cfg.extraArgs[name] = words;
+        else delete cfg.extraArgs[name];
+      } else if (words.length) cfg.commands[name] = { bin: words[0], args: words.slice(1) };
+      else delete cfg.commands[name];
+      writeAdapters(cfg);
+      return print({ status: words.length ? "set" : "cleared", ...adapterListing(cfg) });
+    }
+    default:
+      return usage(`unknown adapter command: ${sub}. One of: list set`, "adapter");
+  }
+}
+
 // ── feedback (any later session) ──
 
 function shortDate(ms: number): string {
@@ -1754,6 +1863,8 @@ async function main(): Promise<unknown> {
       return cmdTrust(rest[0], rest.slice(1));
     case "registry":
       return cmdRegistry(rest[0], rest.slice(1), flags);
+    case "adapter":
+      return cmdAdapter(rest[0], rest.slice(1), flags);
     case "feedback":
       return cmdFeedback(rest[0], flags);
     case "hub":
