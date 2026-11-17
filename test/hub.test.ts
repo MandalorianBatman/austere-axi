@@ -9,7 +9,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import type { IncomingHttpHeaders } from "node:http";
 import { DatabaseSync } from "node:sqlite";
-import { SessionStore } from "../src/cli/sessions.ts";
+import { SessionStore, sessionId } from "../src/cli/sessions.ts";
 import { Hub, openDatabase, unanswered } from "../src/cli/hub.ts";
 import { hubPage, notesPage } from "../src/cli/hub-page.ts";
 import { findProject } from "../src/cli/projects.ts";
@@ -261,6 +261,82 @@ test("archive hides a page until unarchive; a deleted file is listed as missing"
     r = await cliWith(env, "archive", path.join(work, "never.html"));
     assert.equal(r.code, 1);
     assert.match(r.out, /not in the hub/);
+  } finally {
+    await cliWith(env, "stop");
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("a missing copy opens a page with its notes and an Archive button; archiving takes it out of the lists", async () => {
+  const port = await freePort();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-gone-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-gone-work-")));
+  fs.mkdirSync(path.join(work, ".git"));
+  const file = path.join(work, "gone.html");
+  fs.copyFileSync(FILE, file);
+  const call = (method: string, route: string, body?: unknown, extra: Record<string, string> = {}) => req(method, route, body, port, state, extra);
+  try {
+    await cliWith(env, file);
+    const home = (await call("GET", "/")).data;
+    const id = (/href="\/hub\/open\/([a-f0-9]{12})"/.exec(home) as RegExpExecArray)[1];
+    await call("POST", `/s/${id}/send`, { items: [{ kind: "message", text: "<b>shorten</b> the intro" }] });
+    assert.equal((await call("GET", `/hub/open/${id}`)).status, 302, "a copy that is there opens the review");
+
+    fs.rmSync(file);
+    const gone = await call("GET", `/hub/open/${id}`);
+    assert.equal(gone.status, 410);
+    assert.match(String(gone.headers["content-type"]), /text\/html/);
+    assert.ok(gone.data.includes(file), "the full path is on the page");
+    assert.ok(gone.data.includes("&lt;b&gt;shorten&lt;/b&gt; the intro"), "its notes, escaped");
+    assert.ok(!gone.data.includes("<b>shorten</b>"));
+    assert.match(gone.data, /<form method="post" action="\/hub\/archive\/[a-f0-9]{12}"><button/);
+    // The home page and the Notes view both link to it.
+    assert.equal((await call("GET", "/notes")).data.includes(`/hub/open/${id}`), true);
+
+    // Only the owner's own page posts here: not another site, and a copy the hub does not know is a 404.
+    assert.equal((await call("POST", `/hub/archive/${id}`, {}, { origin: "https://evil.example" })).status, 403);
+    assert.equal((await call("POST", "/hub/archive/000000000000", {})).status, 404);
+    assert.match((await call("GET", "/")).data, /gone\.html/);
+
+    const done = await call("POST", `/hub/archive/${id}`, {});
+    assert.equal(done.status, 303);
+    assert.equal(done.headers.location, "/");
+    assert.doesNotMatch((await call("GET", "/")).data, /gone\.html/);
+    const again = await call("GET", `/hub/open/${id}`);
+    assert.equal(again.status, 410);
+    assert.doesNotMatch(again.data, /<form/, "an archived copy has nothing left to archive");
+    assert.match(again.data, /archived/i);
+  } finally {
+    await cliWith(env, "stop");
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    fs.rmSync(work, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("project feedback marks a batch whose file is gone with missing: true", async () => {
+  const port = await freePort();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-gone-fb-"));
+  const env = { ...ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
+  const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-gone-fb-work-")));
+  fs.mkdirSync(path.join(work, ".git"));
+  const keep = path.join(work, "keep.html");
+  const gone = path.join(work, "gone.html");
+  for (const f of [keep, gone]) fs.copyFileSync(FILE, f);
+  const call = (route: string, body: unknown) => req("POST", route, body, port, state);
+  try {
+    for (const f of [keep, gone]) {
+      await cliWith(env, f);
+      const id = sessionId(f);
+      await call(`/s/${id}/send`, { items: [{ kind: "message", text: `note on ${path.basename(f)}` }] });
+    }
+    fs.rmSync(gone);
+    const r = JSON.parse((await call("/api/feedback", { project: path.basename(work), peek: true })).data) as { batches: { file: string; missing?: boolean }[] };
+    const byFile = Object.fromEntries(r.batches.map((b) => [path.basename(b.file), b.missing]));
+    assert.deepEqual(Object.keys(byFile).sort(), ["gone.html", "keep.html"]);
+    assert.equal(byFile["gone.html"], true);
+    assert.ok(!byFile["keep.html"], "a file that is there carries no marker");
   } finally {
     await cliWith(env, "stop");
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });

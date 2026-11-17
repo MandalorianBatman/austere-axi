@@ -387,6 +387,20 @@ export class Hub {
   }
 
   /**
+   * Copies opened for review whose file is gone and that are not archived, with the notes no agent has answered on each.
+   * `project` is a project id ("" for every project). Copies only checked, never opened, are left out: no list shows them by default.
+   */
+  missingCopies(project = ""): { id: string; file: string; unanswered: number }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT a.id, a.file, (SELECT COUNT(*) FROM items i WHERE i.artifact_id = a.id AND i.status IN ('open', 'received', 'held')) AS unanswered
+         FROM artifacts a WHERE a.archived_at IS NULL AND a.reviewed = 1 AND (? = '' OR a.project_id = ?) ORDER BY a.updated_at DESC`,
+      )
+      .all(project, project) as unknown as { id: string; file: string; unanswered: number }[];
+    return rows.filter((r) => !fs.existsSync(r.file));
+  }
+
+  /**
    * Pages grouped by project (the project with the newest activity first); inside a project, pages
    * with unanswered notes first, then by last activity. Each has its copies and their counts summed.
    * `q` filters on title, file, path inside the root and project name; `project` is a project id.
@@ -464,10 +478,10 @@ export class Hub {
   /**
    * Notes (annotations and messages) across all pages, newest first.
    * `q` matches note text, target and page title. `status`: "unanswered" (held, open and received), "answered", or "" for all.
-   * `project`: a project id. `author`: a reviewer's name, "owner" for the owner's own notes, or "" for everyone. Discarded notes are left out.
+   * `project`: a project id. `artifact`: one copy's id. `author`: a reviewer's name, "owner" for the owner's own notes, or "" for everyone. Discarded notes are left out.
    * `limit` is the most rows returned; -1 returns all.
    */
-  notes({ q = "", status = "", project = "", author = "", limit = 200 }: { q?: string; status?: string; project?: string; author?: string; limit?: number } = {}): HubNoteRow[] {
+  notes({ q = "", status = "", project = "", artifact = "", author = "", limit = 200 }: { q?: string; status?: string; project?: string; artifact?: string; author?: string; limit?: number } = {}): HubNoteRow[] {
     const anyAuthor = author === "" ? "all" : "one";
     const who = author === "owner" ? "" : author;
     const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
@@ -480,10 +494,11 @@ export class Hub {
            AND (? = 'all' OR i.author = ?)
            AND (? = '' OR i.text LIKE ? ESCAPE '\\' OR i.target LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')
            AND (? = '' OR a.project_id = ?)
+           AND (? = '' OR a.id = ?)
            AND (? = '' OR (? = 'unanswered' AND i.status != 'addressed') OR (? = 'answered' AND i.status = 'addressed'))
          ORDER BY i.at DESC, i.id LIMIT ?`,
       )
-      .all(anyAuthor, who, q, like, like, like, project, project, status, status, status, limit) as unknown as Omit<HubNoteRow, "label">[];
+      .all(anyAuthor, who, q, like, like, like, project, project, artifact, artifact, status, status, status, limit) as unknown as Omit<HubNoteRow, "label">[];
     const labels = new Map<string, string>();
     return rows.map((r) => {
       const root = r.root || "";

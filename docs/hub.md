@@ -40,6 +40,10 @@ austere-axi project forget-root ~/old/clone  # its pages, and the project's othe
 - Archived pages: `austere-axi archive <file>` puts a page away and locks its composer, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. A review closed in an older version (0.10.4 can still share this `hub.db`) is archived the next time `hub.db` is opened by this version, however late it was closed.
 - Nothing else: a page whose file is gone stays listed, marked `missing`, with its notes. A page's title opens a copy that is still there; the chips open each copy.
 
+## A copy whose file is gone
+
+A row or chip marked `missing` opens a page of its own (status 410) with the file's path, the notes the copy still holds, and an **Archive this copy** button. Archiving leaves the copy out of the lists and keeps its notes. In the CLI, `archive <file>` does the same for one copy, and `archive --missing [--project p]` for every copy opened for review whose file is gone (a deleted worktree); `reply <file>` still answers its notes, and `feedback` marks its batch `missing: true`.
+
 ## Notes
 
 - Session files from before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`. A `hub.db` from an older version gets its projects on first open.

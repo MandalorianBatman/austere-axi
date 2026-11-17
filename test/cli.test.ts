@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { Hub } from "../src/cli/hub.ts";
-import { SessionStore } from "../src/cli/sessions.ts";
+import { SessionStore, sessionId } from "../src/cli/sessions.ts";
+import { ownerHeaders } from "./owner.ts";
+import { freePort } from "./port.ts";
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-cli-"));
 const env = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_OPEN: "1", AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_PORT: "4997" };
@@ -142,5 +145,117 @@ test("hub open honours AUSTERE_AXI_NO_OPEN: no browser is started and the sign-i
     assert.equal(fs.existsSync(mark), true, "the opener ran");
   } finally {
     cli("stop");
+  }
+});
+
+// ── missing files (RLM-388): a copy whose file is gone can still be answered and put away ──
+
+const PAGE = fs.readFileSync("test/fixtures/action/ok.html", "utf8");
+
+/** A server of its own (own state dir, own port) and a project folder; both are removed when `fn` ends. */
+async function scratch(fn: (s: Scratch) => Promise<void>): Promise<void> {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-cli-gone-"));
+  const port = await freePort();
+  const sEnv = { ...env, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port), AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_PERSIST: "1" };
+  const run = (...args: string[]): Promise<{ code: number | null; out: string }> =>
+    new Promise((resolve) => {
+      const child = spawn(process.execPath, ["src/cli/main.ts", ...args], { env: sEnv });
+      let out = "";
+      child.stdout.on("data", (c) => (out += c));
+      child.stderr.on("data", (c) => (out += c));
+      child.on("close", (code) => resolve({ code, out }));
+    });
+  /** A project folder (it has a .git) with the fixture page at `<name>.html`; each is opened for review and has one note. */
+  const project = async (...names: string[]): Promise<{ dir: string; files: string[] }> => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-cli-gone-work-")));
+    fs.mkdirSync(path.join(dir, ".git"));
+    const files = names.map((n) => path.join(dir, `${n}.html`));
+    for (const f of files) {
+      fs.writeFileSync(f, PAGE);
+      assert.equal((await run(f)).code, 0);
+      const sent = await new Promise<number | undefined>((resolve, reject) => {
+        const r = http.request(
+          { host: "127.0.0.1", port, method: "POST", path: `/s/${sessionId(f)}/send`, headers: { "content-type": "application/json", host: `127.0.0.1:${port}`, ...ownerHeaders(state) } },
+          (res) => {
+            res.resume();
+            res.on("end", () => resolve(res.statusCode));
+          },
+        );
+        r.on("error", reject);
+        r.end(JSON.stringify({ items: [{ kind: "message", text: `note on ${path.basename(f)}` }] }));
+      });
+      assert.equal(sent, 200);
+    }
+    dirs.push(dir);
+    return { dir, files };
+  };
+  const dirs: string[] = [state];
+  try {
+    await fn({ run, project });
+  } finally {
+    await run("stop");
+    for (const d of dirs) fs.rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+}
+
+interface Scratch {
+  run: (...args: string[]) => Promise<{ code: number | null; out: string }>;
+  project: (...names: string[]) => Promise<{ dir: string; files: string[] }>;
+}
+
+test("reply works on a page whose file is gone; a path the hub never saw is still 'no such file'", () =>
+  scratch(async ({ run, project }) => {
+    const { dir, files } = await project("a");
+    fs.rmSync(files[0]);
+    let r = await run("feedback", "--project", dir);
+    assert.match(r.out, /missing: true/);
+    assert.match(r.out, /note on a\.html/);
+    assert.match(r.out, /archive --missing/, "the hint says how to put every gone copy away");
+    r = await run("reply", files[0], "--agent-reply", "File deleted; nothing to change");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /status: replied/);
+    r = await run("feedback", "--project", dir);
+    assert.match(r.out, /status: none/, "the reply answered the note");
+    r = await run("reply", path.join(dir, "never.html"), "--agent-reply", "x");
+    assert.equal(r.code, 1);
+    assert.match(r.out, /no such file/);
+  }));
+
+test("archive --missing puts away every gone copy, only in --project when given, and leaves a file that is there", () =>
+  scratch(async ({ run, project }) => {
+    const one = await project("here", "gone1");
+    const two = await project("gone2");
+    fs.rmSync(one.files[1]);
+    fs.rmSync(two.files[0]);
+    let r = await run("archive", "--missing", "--project", one.dir);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /status: archived/);
+    assert.match(r.out, /count: 1/);
+    assert.match(r.out, /unanswered: 1/, "the note on the copy is still unanswered; the output says so");
+    assert.match(r.out, /gone1\.html/);
+    assert.doesNotMatch(r.out, /gone2\.html/);
+
+    // The server is stopped: the same command reads and writes hub.db itself.
+    await run("stop");
+    r = await run("archive", "--missing");
+    assert.match(r.out, /count: 1/);
+    assert.match(r.out, /gone2\.html/);
+    assert.doesNotMatch(r.out, /here\.html/);
+    r = await run("archive", "--missing");
+    assert.match(r.out, /status: none/, "nothing left to put away");
+
+    r = await run("hub", "list", "--archived");
+    assert.match(r.out, /gone1\.html/);
+    assert.match(r.out, /gone2\.html/);
+    r = await run("hub", "list");
+    assert.match(r.out, /here\.html/);
+    assert.doesNotMatch(r.out, /gone[12]\.html/);
+  }));
+
+test("archive takes a file or --missing, and --project only with --missing", () => {
+  for (const args of [["archive", "x.html", "--missing"], ["archive", "x.html", "--project", "p"], ["archive"], ["unarchive", "--missing"]]) {
+    const r = cli(...args);
+    assert.equal(r.code, 2, args.join(" "));
+    assert.match(r.out, /code: USAGE/);
   }
 });

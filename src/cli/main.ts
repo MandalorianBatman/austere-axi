@@ -17,7 +17,7 @@ import { lockStateDir } from "./lock.ts";
 import { installService, installedServiceFor, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
-import type { FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import type { ArchiveMissingResponse, FeedbackResponse, InviteSummary, OpenResponse, PollResponse, ProjectFeedbackResponse, RevokeResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
@@ -125,7 +125,7 @@ COMMANDS
   ${BIN} check <file>            validate without a browser: syntax, components, props,
                                    references   [--fix: declare packs] [--render]
   ${BIN} reply <file>            reply without polling  --agent-reply "..."  [--cursor n]
-  ${BIN} archive <file>          put a page away: the hub's lists leave it out (unarchive: back)
+  ${BIN} archive <file>          put a page away: the hub's lists leave it out (unarchive: back)   [--missing [--project p]: every copy whose file is gone]
   ${BIN} feedback [file]         notes no agent has answered yet (no file: the whole project)   [--all] [--peek]
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
@@ -278,7 +278,13 @@ const COMMANDS: Record<string, CommandSpec> = {
     flags: { name: "the project to add the root to, made if there is none (add)" },
     example: "project add ~/work/site --name site",
   },
-  archive: { usage: "archive <file>", summary: "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and its composer is locked; its notes stay", flags: {}, example: "archive plan.html" },
+  archive: {
+    usage: "archive <file> | archive --missing [--project p]",
+    summary:
+      "put a page away: the hub's lists leave it out (`hub list --archived` shows it) and its composer is locked; its notes stay. Works on a file that is gone. --missing does it for every copy opened for review whose file is gone (a deleted worktree), and says how many notes were still unanswered",
+    flags: { missing: "every copy whose file is gone, instead of one file", project: "with --missing: only this project: a name, an id, or a folder inside one of its roots" },
+    example: "archive plan.html   |   archive --missing --project shop",
+  },
   unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
   share: {
     usage: 'share <file> --as "<name>" [--auto] | share list [--links] | share revoke <name|id>',
@@ -405,13 +411,14 @@ function commandHelp(cmd: string): void {
   process.stdout.write(lines.join("\n") + "\n");
 }
 
-function needFile(file: string | undefined, cmd: string): string | null {
+/** `file` as an absolute path. With `mustExist` false a file that is gone is fine: the command works on a page the hub already knows. */
+function needFile(file: string | undefined, cmd: string, mustExist = true): string | null {
   if (!file) {
     usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>`, cmd);
     return null;
   }
   const abs = canonicalFile(file);
-  if (!fs.existsSync(abs)) {
+  if (mustExist && !fs.existsSync(abs)) {
     fail(`no such file: ${abs}`);
     return null;
   }
@@ -687,12 +694,14 @@ async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
 }
 
 async function cmdReply(file: string | undefined, flags: Flags): Promise<void> {
-  const abs = needFile(file, "reply");
+  const abs = needFile(file, "reply", false);
   if (!abs) return;
   const text = await replyText(flags);
   if (!text) return usage('reply needs text: --agent-reply "..." or --agent-reply-file <path|->', "reply");
   await ensureServer();
   const r = await request<{ ok?: boolean; warning?: string; error?: string }>("POST", "/api/reply", { file: abs, text, cursor: seqFlag(flags, "cursor") }, { timeoutMs: 15_000 });
+  // The hub keeps a page whose file was deleted, so its notes can still be answered; a path it never saw is just a wrong path.
+  if (r.status === 404 && !fs.existsSync(abs)) return fail(`no such file: ${abs}`);
   if (r.status !== 200) return fail(r.data?.error || `reply failed (${r.status})`);
   print({ status: "replied", file: abs, warning: r.data?.warning });
 }
@@ -1170,7 +1179,7 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
         for (const s of store.inProject(project.id)) {
           const { entries } = store.feedback(s, opts);
           const root = roots.artifact(s.id)?.root;
-          if (entries.length) batches.push({ file: s.file, copy: root ? copyLabel(root) : path.basename(path.dirname(s.file)), archived: Boolean(s.archivedAt), entries });
+          if (entries.length) batches.push({ file: s.file, copy: root ? copyLabel(root) : path.basename(path.dirname(s.file)), archived: Boolean(s.archivedAt), missing: !fs.existsSync(s.file) || undefined, entries });
         }
       } finally {
         store.close();
@@ -1181,12 +1190,16 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
   }
   if (!batches.length) return print({ status: "none", project: project.name, note: "Every piece of feedback in this project has been answered." });
   const final = batches.every((b) => endsWithFinal(b.entries));
+  const gone = batches.some((b) => b.missing);
   print({
     status: "feedback",
     project: project.name,
-    batches: batches.map((b) => ({ file: b.file, copy: b.copy, archived: b.archived || undefined, final: endsWithFinal(b.entries) || undefined, items: feedbackItems(b.file, b.entries, opts.all) })),
+    batches: batches.map((b) => ({ file: b.file, copy: b.copy, archived: b.archived || undefined, missing: b.missing || undefined, final: endsWithFinal(b.entries) || undefined, items: feedbackItems(b.file, b.entries, opts.all) })),
     next:
       `For each page above: apply what still applies with \`${BIN} patch <file>\` (changed statements only), then \`${BIN} reply <file> --agent-reply "<what changed>"\`, which marks it addressed. ` +
+      (gone
+        ? `A batch with missing: true is a file that is gone: do not patch it; \`${BIN} reply <file> --agent-reply "<file is gone>"\` still answers its notes, and \`${BIN} archive --missing\` puts every gone copy away. `
+        : "") +
       (final ? `The reviewer pressed Send & End on every newest batch: continue in chat, do not poll afterwards.` : `To continue live with the reviewer: \`${BIN} poll${project.scope}\`.`),
   });
 }
@@ -1365,13 +1378,71 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
   }
 }
 
+/** The project id `--project` names ("" when the flag is absent); null when it names none (withHub has told the user). */
+async function projectIdOfFlag(flags: Flags): Promise<string | null> {
+  let id: string | null = null;
+  await withHub(false, (hub) => {
+    id = projectFlag(hub, flags);
+  });
+  return process.exitCode ? null : id;
+}
+
+/** The most files `archive --missing` lists: with hundreds of dead worktrees the count is what matters. */
+const ARCHIVE_MISSING_LISTED = 20;
+
+/** `archive --missing [--project p]`: put away every copy opened for review whose file is gone. Their notes stay. */
+async function archiveMissing(flags: Flags): Promise<void> {
+  const project = await projectIdOfFlag(flags);
+  if (project === null) return;
+  let copies: ArchiveMissingResponse["copies"];
+  if (await serverIfRunning()) {
+    const r = await request<ArchiveMissingResponse>("POST", "/api/archive", { missing: true, project }, { timeoutMs: 30_000 });
+    // An older server does not know `missing`: it asks for a file.
+    if (r.status === 400 && /file is required/.test(String(r.data?.error))) return fail(`the running server is older than this CLI and does not know archive --missing: run \`${BIN} stop\`, then archive again`);
+    if (r.status !== 200) return fail(r.data?.error || `archive failed (${r.status})`);
+    copies = r.data.copies;
+  } else {
+    // No server: hold the state dir's lock so hub.db is not written while a server runs or starts on it.
+    const release = await lockStateDir(stateDir(), { wait: 5000 });
+    try {
+      copies = [];
+      await withHub(true, (hub) => {
+        const at = Date.now();
+        const found = hub.missingCopies(project);
+        const archived: typeof copies = [];
+        for (const c of found) {
+          if (hub.setArchived(c.id, at)) archived.push(c);
+        }
+        copies = archived;
+      });
+    } finally {
+      release();
+    }
+    if (process.exitCode) return;
+  }
+  if (!copies.length) return print({ status: "none", note: "No copy opened for review has a missing file." });
+  const waiting = copies.reduce((n, c) => n + c.unanswered, 0);
+  print({
+    status: "archived",
+    count: copies.length,
+    unanswered: waiting || undefined,
+    files: copies.slice(0, ARCHIVE_MISSING_LISTED).map((c) => c.file),
+    more: copies.length > ARCHIVE_MISSING_LISTED ? copies.length - ARCHIVE_MISSING_LISTED : undefined,
+    note: `Their notes are kept: \`${BIN} hub list --archived\` lists the copies${waiting ? `, and \`${BIN} feedback\` still shows the unanswered notes (archived: true)` : ""}.`,
+  });
+}
+
 /**
  * `archive` and `unarchive`: put a page away from the hub's lists and lock its composer, or bring it back.
  * Works on a file that is gone too. A running server holds the page in memory, so it makes the change.
+ * `archive --missing` does it for every copy whose file is gone.
  */
-async function cmdArchive(file: string | undefined, archive: boolean): Promise<void> {
+async function cmdArchive(file: string | undefined, archive: boolean, flags: Flags = {}): Promise<void> {
   const cmd = archive ? "archive" : "unarchive";
-  if (!file) return usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>`, cmd);
+  if (flags.missing && file) return usage("archive takes a file or --missing, not both", "archive");
+  if (flags.missing) return archiveMissing(flags);
+  if (typeof flags.project === "string") return usage("archive takes --project only with --missing", "archive");
+  if (!file) return usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>${archive ? ` or ${BIN} archive --missing` : ""}`, cmd);
   const abs = canonicalFile(file);
   const done = () => print({ status: archive ? "archived" : "unarchived", file: abs, note: archive ? `Notes are refused until \`${BIN} unarchive ${quote(file)}\`.` : undefined });
   if (await serverIfRunning()) {
@@ -1675,7 +1746,7 @@ async function main(): Promise<unknown> {
     case "project":
       return cmdProject(rest[0], rest.slice(1), flags);
     case "archive":
-      return cmdArchive(rest[0], true);
+      return cmdArchive(rest[0], true, flags);
     case "unarchive":
       return cmdArchive(rest[0], false);
     case "patch":
