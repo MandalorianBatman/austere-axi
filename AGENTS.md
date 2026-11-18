@@ -35,10 +35,13 @@ npm run social       # re-render docs/social-preview.png, 1200x630 (after build;
 - austere-cloud builds against `austere-axi/sync` (`src/shared/sync.ts`, typed by `types/sync.d.ts`). Change it additively and bump `SYNC_VERSION`, by the rules in `docs/hosted-share-links.md` ("Versioning and compatibility"). Keep it free of Node APIs; the chrome and the Worker run it too.
 - The component reference has a token budget (`test/library.test.ts`). Raise it only deliberately.
 - The served artifact must equal the file on disk, except for the runtime `<script>` tag.
-- The server binds to loopback, plus the Tailscale IP when Tailscale is up, and never to `0.0.0.0`.
+- The server binds to loopback, plus the Tailscale IP when Tailscale is up, plus one local-network address when the owner switches it on (`server lan`, Settings), and never to `0.0.0.0`.
   - `/api/*` answers loopback callers only, and only with the owner key (`x-austere-key`), except `/api/health`.
   - Loopback is not the owner; the owner key (header) or the cookie derived from it is. Never put the key on a command line, in printed output, or in a cookie; browsers sign in with a single-use login code.
   - Browser POST routes reject a foreign `Origin`.
+  - Which listener accepted a connection decides what it may do (`via` in `src/cli/server.ts`), never what the request says. `tailscale whois` is asked only for connections accepted on the tailnet listener, with the socket's own remote address; never from a header (`Tailscale-User-*`, `X-Forwarded-For`). `tailscale` missing or failing, or a tagged device, means unknown, not an error.
+  - An address or hostname is a label for the owner, never a credential.
+  - The local-network listener serves reviewers only: owner sign-in, the owner's key link, the owner cookie, the hub and `/api/*` answer 403 there, and no link that carries the owner key points at it.
   - Artifact files are served from the artifact's own directory only, with no dotfiles.
   - The frame's subresources send no cookie (opaque origin), so the frame's URL carries a per-viewer token, `/s/:id/a/<token>/<file>` (`assetToken` in `src/cli/server.ts`). It opens only what that route already serves; keep `allow-same-origin` out of the sandbox. `export` reads sibling images through the same `resolveSibling` rules (`src/cli/assets.ts`).
 - Any run of the CLI from a checkout sets `AUSTERE_AXI_STATE_DIR` to a scratch dir: tests, scripts, and commands you run by hand or from an agent. Tests that start the server also use an ephemeral port. Without the variable a checkout falls back to `.dev/state` and a port of its own (`src/cli/paths.ts`), never `~/.austere-axi` and 4388, but name the dir anyway. `test/dev-state.test.ts` fails when a test or script runs the CLI without it.

@@ -174,6 +174,22 @@ export class RequestStore {
     this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('notes', '', ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests").run(auto ? 1 : 0);
   }
 
+  /**
+   * The local-network address the owner switched on in Settings → Network (RLM-399), or null (off, the
+   * default). Kept in access_settings as the row (scope 'lan', scope_id the address): no schema change.
+   */
+  lanAddress(): string | null {
+    const row = this.db.prepare("SELECT scope_id FROM access_settings WHERE scope = 'lan' AND requests = 1").get() as { scope_id: string } | undefined;
+    return row?.scope_id || null;
+  }
+
+  setLanAddress(address: string | null): void {
+    inTransaction(this.db, () => {
+      this.db.prepare("DELETE FROM access_settings WHERE scope = 'lan'").run();
+      if (address) this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('lan', ?, 1)").run(address);
+    });
+  }
+
   /** Waiting requests nobody decided within WAITING_TTL_MS lapse: they leave the queue, and their browsers may ask again. */
   private lapse(): void {
     const now = this.now();
@@ -181,11 +197,12 @@ export class RequestStore {
   }
 
   /**
-   * Store a request from the browser asking on `page`, with what the server saw. Throws
-   * RequestRefused for a bad name (400) or past the limits (429). Returns the row and the pending
-   * secret for the browser's cookie.
+   * Store a request from the browser asking on `page`, with what the server saw: `tailscale` when
+   * the request came over the tailnet listener and Tailscale named the person (their login and
+   * device are kept with it). Throws RequestRefused for a bad name (400) or past the limits (429).
+   * Returns the row and the pending secret for the browser's cookie.
    */
-  ask({ name, page, meta }: { name: unknown; page: string; meta: SeenMeta }): { row: AccessRequestRow; secret: string } {
+  ask({ name, page, meta, tailscale = null }: { name: unknown; page: string; meta: SeenMeta; tailscale?: { login: string; device: string } | null }): { row: AccessRequestRow; secret: string } {
     let clean: string;
     try {
       clean = cleanName(name);
@@ -204,8 +221,8 @@ export class RequestStore {
       const secret = randomToken();
       const id = "r" + crypto.randomBytes(5).toString("hex");
       this.db
-        .prepare("INSERT INTO access_requests (id, name, page, secret_hash, status, addr, user_agent, created_at) VALUES (?, ?, ?, ?, 'waiting', ?, ?, ?)")
-        .run(id, clean, page, hashSecret(secret), addr, clip(meta.userAgent), now);
+        .prepare("INSERT INTO access_requests (id, name, page, secret_hash, status, addr, user_agent, verified_login, ts_device, created_at) VALUES (?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?)")
+        .run(id, clean, page, hashSecret(secret), addr, clip(meta.userAgent), tailscale?.login ?? null, clip(tailscale?.device) ?? null, now);
       return { row: this.get(id) as AccessRequestRow, secret };
     });
   }

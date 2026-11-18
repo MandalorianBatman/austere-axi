@@ -54,9 +54,9 @@ Q1–Q11: each row is Accepted 2026-11-16 (owner away, proceed-with-assumptions 
 | Q13 | RLM-397 P2 | A link nobody has claimed expires (default 7 days). | RLM-397 | Locked (Sid, 2026-11-17). Built in RLM-397 |
 | Q14 | RLM-397 P3 | A link's scope is chosen when it is made: one page, a project, or every page. | RLM-397 | Locked (Sid, 2026-11-17). Built in RLM-397 |
 | Q15 | RLM-398 P4 | Access requests are off until the owner turns them on in Settings, per project or for every page. | RLM-398 | Locked (Sid, 2026-11-17). Built in RLM-398; the switch is in Settings → People (RLM-396) |
-| Q16 | RLM-399 P5 | On Tailscale, the reviewer's name comes from Tailscale and is shown as verified. Option: let chosen logins in without approval. | RLM-399 | Locked (Sid, 2026-11-17). Not built; Settings → Network keeps its place |
-| Q17 | RLM-399 P6 | Listening on the local network is off by default and is switched on in Settings, with the warning that traffic on it is not encrypted. | RLM-399 | Locked (Sid, 2026-11-17). Not built; Settings → Network keeps the switch's place, off |
-| Q18 | RLM-399 P7 | The owner never signs in over plain HTTP on the local network: that listener serves reviewers only. | RLM-399 | Locked (Sid, 2026-11-17). Not built (no local-network listener yet) |
+| Q16 | RLM-399 P5 | On Tailscale, the reviewer's name comes from Tailscale and is shown as verified. Option: let chosen logins in without approval. | RLM-399 | Locked (Sid, 2026-11-17). Built in RLM-399: `tailscale whois` on the tailnet listener only; the option is `share tailscale <login>` and Settings → Network → Names from Tailscale |
+| Q17 | RLM-399 P6 | Listening on the local network is off by default and is switched on in Settings, with the warning that traffic on it is not encrypted. | RLM-399 | Locked (Sid, 2026-11-17). Built in RLM-399: Settings → Network → Local network, and `server lan` |
+| Q18 | RLM-399 P7 | The owner never signs in over plain HTTP on the local network: that listener serves reviewers only. | RLM-399 | Locked (Sid, 2026-11-17). Built in RLM-399 |
 
 Sid can reverse any Q row when he is back. A reversal is a change to this note first, then to the issue. (Q12–Q18 were set by Sid himself.)
 

@@ -639,7 +639,9 @@ section.sub > h2 {
 }
 .row-actions select,
 .new-link select,
-.new-link input {
+.new-link input,
+.login-form select,
+.login-form input {
   min-height: 30px;
   padding: 3px 8px;
   border: 1px solid var(--line-2);
@@ -652,13 +654,15 @@ section.sub > h2 {
 .row-actions a {
   font-size: 12.5px;
 }
-.new-link {
+.new-link,
+.login-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
   align-items: end;
 }
-.new-link > .btn {
+.new-link > .btn,
+.login-form > .btn {
   justify-self: start;
 }
 .field {
@@ -713,9 +717,10 @@ dl.facts dd {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-dd.slot {
-  padding-left: 10px;
-  border-left: 2px dashed var(--line-2);
+dd.setting {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
 ul.plain {
   list-style: none;
@@ -802,7 +807,8 @@ p.missing {
   .filters {
     grid-template-columns: minmax(0, 1fr);
   }
-  .new-link {
+  .new-link,
+  .login-form {
     grid-template-columns: minmax(0, 1fr);
   }
   .row-actions.wrap {

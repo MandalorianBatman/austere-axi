@@ -1,6 +1,6 @@
 # Security
 
-The server binds to loopback, plus the Tailscale IP when Tailscale is up. Never to all interfaces.
+The server binds to loopback, plus the Tailscale IP when Tailscale is up, plus one local-network address when you switch it on (`server lan`, Settings → Network; off by default). Never to all interfaces.
 
 **Loopback is not the owner.** Other OS users on the machine can reach loopback too. The owner key (`owner.key`) is what proves ownership.
 
@@ -17,7 +17,16 @@ The server binds to loopback, plus the Tailscale IP when Tailscale is up. Never 
 - Browser routes that change state refuse a foreign `Origin`.
 - Share links are random, claimed by one browser only, and expire unopened. Claiming swaps the link for a fresh device secret in an `HttpOnly` cookie; `hub.db` keeps only its hash. Tokens and secrets are kept out of the log. A device reaches only the page, project or every page its link named, and only to read and add notes. See [Team review](team-review.md).
 - Requests for access are off until the owner turns them on, for a project or every page. An unknown browser then sees a name form, never the page's title or content. An approval binds the browser that asked (a pending secret in an `HttpOnly` cookie, hashed in `hub.db`), not its address or name. Limits: 5 requests per address an hour, 50 waiting.
+- **Who a reviewer is.** An address or hostname never lets anyone in; they are shown as evidence only. Over the Tailscale listener only, the server asks `tailscale whois` about the connection's own remote address (never a `Tailscale-User-*` or `X-Forwarded-For` header) and gets a login backed by the device's key. A tagged device, or a `tailscale` that is missing or fails, is unknown. A login you let in (`share tailscale`) opens what it reaches over Tailscale only; a device cookie seen over Tailscale belongs to that login from then on. See [Team review](team-review.md#who-is-this-reviewer).
+- **The local-network listener serves reviewers only.** Its traffic is plain HTTP that others on the network can read. There, owner sign-in, the owner's key link, the owner cookie (which it also clears), the hub and `/api/*` answer 403, and no link with the owner key ever points at it.
 - The server serves files only from the page's own directory, with no dotfiles.
+
+**Who can see a page on my network.**
+
+- **This computer:** you, and reviewers' devices. Other OS users reach loopback, but without `owner.key` they are not you.
+- **Tailscale:** you, the devices you let in, and the logins you let in. Anyone else gets 403 or, where requests are on, a request form with no page content.
+- **Local network:** nobody until you switch it on; then the devices you let in, over unencrypted HTTP. Never you.
+- **HTTPS** behind your proxy (`AUSTERE_AXI_LINK_URL`): you and the devices you let in; Tailscale names nobody there.
 
 **Page sandbox.** The page runs in a sandboxed iframe with no same-origin access; packs run there too. Page files are also served with `Content-Security-Policy: sandbox`, so a page opened in a popup or its own tab stays sandboxed. In review, the review page opens new-window links only if they are external `http(s):` or `mailto:` links. A popup the frame opens any other way stays sandboxed.
 

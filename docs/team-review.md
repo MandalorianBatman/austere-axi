@@ -15,7 +15,7 @@ austere-axi share revoke Ana                               # a name or an id; ta
 
 In the review page, **⋯ → Share…** does the same: a name, what it reaches, hold or auto, then the link with a **Copy link** button.
 
-Send the link to that one person. It needs Tailscale (or `AUSTERE_AXI_HOST`, or `AUSTERE_AXI_LINK_URL`); without one, `share` stops with an error.
+Send the link to that one person. It needs Tailscale (or the local network switched on, or `AUSTERE_AXI_HOST`, or `AUSTERE_AXI_LINK_URL`); without one, `share` stops with an error.
 
 ## A link, then a device
 
@@ -44,13 +44,50 @@ austere-axi share block r0123456789             # refused; that browser cannot a
 ```
 
 - **What the teammate sees.** A browser with no reviewer cookie that opens a page where requests are on gets "Ask the owner for access", a name field and **Send**. The page's title, file and content stay hidden. After Send it shows "Waiting for the owner" and checks every 2 seconds; once you approve, it opens the page by itself. Where requests are off, it gets the same 403 as before.
-- **What you see.** The name typed, the page it asked from, the address, its hostname, the browser and system, and when. The hostname is kept only when the reverse lookup and the forward lookup of that name agree. Behind a reverse proxy on this machine, the address is the one the proxy saw (the last `X-Forwarded-For` entry); a header from a remote peer is ignored. Over Tailscale the login and device will be added (RLM-399).
+- **What you see.** The name typed, the page it asked from, the address, its hostname, the browser and system, and when. The hostname is kept only when the reverse lookup and the forward lookup of that name agree. Behind a reverse proxy on this machine, the address is the one the proxy saw (the last `X-Forwarded-For` entry); a header from a remote peer is ignored. Over Tailscale, the request also carries the person's Tailscale login and device, and their Tailscale name replaces a typed one (see [Who is this reviewer](#who-is-this-reviewer)).
 - **Bound to the browser that asked.** Send sets a random 192-bit pending secret in an `HttpOnly`, `SameSite=Lax` cookie (`austere_rq`); `hub.db` keeps its SHA-256. Approval makes a device with no secret yet. Only the browser holding the pending secret can collect it, once, and gets a fresh device secret (`austere_rv_<id>`) in exchange. Another browser that typed the same name gets nothing. The address and hostname are evidence for you, never the key.
 - **Block** binds to the same cookie: that browser profile cannot ask again while it keeps the cookie (30 days). A private window or cleared cookies can ask again, within the address limit; deny or block it again, or turn requests off.
 - **Limits.** 5 requests per address an hour, 50 waiting at most, names cleaned as link names are (1 to 40 characters, one line, not `owner`, `you`, `agent`, `me` or `render check`). One waiting request per browser. A request nobody decides within 7 days lapses and leaves the queue; its browser may ask again.
 - The request form is a same-origin POST, checked again after its body arrives: a request that finishes after you turn requests off is refused.
 - An approved device is like a claimed one: `share list`, rename, scope, revoke. Its `origin` is `request`.
 - **One name, one person.** As for a link, approval is refused while a live link or device with that name (any case) already has that scope: approve under another name (`--as "Ana (phone)"`), revoke the other one first, or deny.
+
+## Who is this reviewer
+
+An address or a hostname does not say who someone is: on a local network anyone can take an address, and a hostname is whatever the device announces. The server shows them to you and keeps them with the device, and never lets anyone in by them.
+
+For each request, the server decides in this order:
+
+1. **The owner:** the owner cookie, with no reviewer cookie. Never on the local network (below).
+2. **A person Tailscale names**, whose login you let in. For a connection that came in on this server's Tailscale address, the server runs `tailscale whois --json` with the connection's own remote address (cached a minute per address). Tailscale answers with the login, the name and the device, backed by the device's key. It never reads a header for this (`Tailscale-User-*`, `X-Forwarded-For`): behind a reverse proxy, or on loopback, nobody is named. A tagged device (a server, a CI runner) belongs to no person and is unknown. When `tailscale` is missing or fails, the reviewer is unknown; nothing breaks.
+3. **A device you approved:** its cookie, from a link or a request. Over Tailscale, a device is that login's from the first time Tailscale names someone behind its cookie (or the request or link it came from): the same cookie from another login is refused.
+4. **Unknown:** the request form where requests are on, else 403.
+
+```sh
+austere-axi share tailscale ana@example.com plan.html          # Ana, on any of her Tailscale devices: that page
+austere-axi share tailscale ana@example.com --project shop     # or a project, or --all; --as "<name>", --auto
+austere-axi share revoke ana@example.com                       # by its name (default: the login) or id
+```
+
+`share tailscale` lets a login in without a link or a request. Any device signed in to Tailscale as that login opens what it reaches, over this server's Tailscale address only; on loopback, the local network or HTTPS it is unknown. It is listed with the devices (`origin` `tailscale`), and rename, scope and revoke work as for a device. Settings → Network → **Names from Tailscale** does the same.
+
+`share list`, `share requests` and Settings show the verified login for a device or a request, or its address, hostname and browser. Each note records the device that sent it, and the device keeps the login, address, hostname and browser it was last seen with.
+
+## The local network
+
+The server answers on this computer and on Tailscale. `server lan <address>`, or the switch in Settings → Network, also makes it listen on one of this computer's local-network addresses (never every address); `server lan off` stops, and `server lan` lists the addresses. Off by default. The setting is kept in `hub.db`, so a restarted server listens there again while the computer has that address.
+
+> Traffic on this network is not encrypted. Others on the same network could read pages, notes and reviewers' access. Use it on a network you trust, or use Tailscale or HTTPS.
+
+That listener serves reviewers only. Owner sign-in (`?login=`), the owner's key link (`?key=`), the owner cookie, the hub, Settings and `/api/*` all answer 403 there: "The owner does not sign in over the local network". An owner cookie sent there is cleared. No link that carries the owner key ever points at it; teammates' links do when nothing else reaches the server. Reviewers there are known by their device's cookie: Tailscale names nobody on it.
+
+## Who can see a page on my network
+
+- **This computer:** you (owner cookie, or the CLI with the key), and reviewers' devices. Other OS users reach loopback but are not the owner.
+- **Tailscale:** you (your phone link), devices you let in, and logins you let in with `share tailscale`. Nobody else: an unknown browser gets 403, or the request form where requests are on.
+- **Local network:** nothing, until you switch it on. Then devices you let in, over plain HTTP. Never you.
+- **HTTPS** (`AUSTERE_AXI_LINK_URL` behind your reverse proxy): as Tailscale, but nobody is named by Tailscale.
+- **A hosted page** (`publish`): only the people you invite there; see [Hosted pages](hosted-pages.md).
 
 ## Links from before (0.12 and older)
 
@@ -73,7 +110,7 @@ Anyone who opens a link before the person you sent it to becomes that device. Se
 
 | Route | Does |
 |---|---|
-| `GET /hub/api/people` | `{ links, devices }`: live links nobody has claimed (with `link`, to copy again) and live devices, each with `id`, `name`, `origin` (`link` or `request`), `scope`, `scopeId`, `reaches`, `auto`, `createdAt`, `reusable`, `expiresAt`, `claimedAt`, `lastSeenAt`, `lastAddr`, `lastHost`, `userAgent` |
+| `GET /hub/api/people` | `{ links, devices }`: live links nobody has claimed (with `link`, to copy again) and live devices, each with `id`, `name`, `origin` (`link`, `request` or `tailscale`), `scope`, `scopeId`, `reaches`, `auto`, `createdAt`, `reusable`, `expiresAt`, `claimedAt`, `lastSeenAt`, `lastAddr`, `lastHost`, `userAgent`, `verifiedLogin` (the Tailscale login, or null) |
 | `POST /hub/api/people/<id>/rename` `{ name }` | rename a link or device |
 | `POST /hub/api/people/<id>/scope` `{ scope: "page", page }` \| `{ scope: "project", project }` \| `{ scope: "all" }` | change what it reaches; its open pages outside the new scope are cut off |
 | `POST /hub/api/people/<id>/revoke` | revoke it |
@@ -83,3 +120,5 @@ Anyone who opens a link before the person you sent it to becomes that device. Se
 | `POST /hub/api/people/requests/switch` `{ on, project? }` | without `project`: on or off for every page, clearing each project's own setting; with `project` (id or name): that project's own setting. Returns the `switch` |
 | `POST /hub/api/people/requests/<id>/approve` `[{ scope: "page" \| "project" \| "all", auto, name }]` | let that browser in; scope as for a share, relative to the page it asked from (default the page); `name` replaces the one it typed. 409 when that name already has that scope. Returns `{ request, device }` |
 | `POST /hub/api/people/requests/<id>/deny`, `/block` | refuse it; a blocked browser cannot ask again |
+| `POST /hub/api/people/tailscale` `{ login, name?, scope: "project" \| "all", project?, auto? }` | let a Tailscale login in without a link (`share tailscale`); `project` by id. Returns the device |
+| `POST /hub/api/settings/network` `{ lan: "<address>" \| null }` | the local-network switch (`server lan`): listen on one of this computer's local-network addresses, or stop |

@@ -142,13 +142,15 @@ test("settings: every section loads; a request is approved; a link is made; the 
   try {
     for (const id of ["people", "network", "review", "projects", "about"]) assert.ok(await part(page, id).isVisible(), id);
     assert.equal((await page.locator('.views a[data-view="settings"] .count').innerText()).trim(), "1", "one person waits");
-    // Network: this computer, the address to share, always on, and the two places RLM-399 fills.
+    // Network: this computer, the address to share, always on, Tailscale names and the local-network switch.
     const net = part(page, "network");
     assert.match(await net.locator('[data-kind="this_computer"]').innerText(), new RegExp(`http://127\\.0\\.0\\.1:${port}`));
     assert.match(await net.locator(".share-addr").innerText(), new RegExp(`http://127\\.0\\.0\\.1:${port}[\\s\\S]*AUSTERE_AXI_LINK_HOST`));
     assert.match(await net.locator("[data-always]").innerText(), /stops after 30 minutes without use[\s\S]*server install/);
-    assert.equal(await net.locator('[data-slot="tailscale-identity"]').count(), 1);
-    assert.ok(await net.locator('[data-slot="local-network"] input').isDisabled(), "the local-network switch waits for RLM-399");
+    assert.equal(await net.locator('[data-slot="tailscale-identity"] form').count(), 1, "a Tailscale login can be let in");
+    const lan = net.locator('[data-slot="local-network"]');
+    assert.equal(await lan.locator("input[type=checkbox]").isChecked(), false, "the local network is off by default");
+    assert.match(await lan.innerText(), /Traffic on this network is not encrypted\. Others on the same network could read pages, notes and reviewers' access\./);
     assert.match(await part(page, "about").innerText(), new RegExp(`State folder\\s+${STATE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     await shot(page, "settings-1280");
 

@@ -3,6 +3,8 @@
 // Never 0.0.0.0: the server can read local files, so only trusted networks.
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
 
 const CANDIDATES = [
   "tailscale",
@@ -19,6 +21,12 @@ export interface Tailnet {
 }
 
 let cache: { at: number; value: Tailnet | null } = { at: 0, value: null };
+/** The `tailscale` CLI that answered the last status check: whois asks the same one, never another on the list. */
+let tailscaleBin: string | null = null;
+
+function tailscaleOff(): boolean {
+  return /^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_NO_TAILSCALE || "");
+}
 
 function run(bin: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
@@ -27,13 +35,15 @@ function run(bin: string, args: string[]): Promise<string | null> {
 }
 
 export async function detectTailscale({ fresh = false }: { fresh?: boolean } = {}): Promise<Tailnet | null> {
-  if (/^(1|true|yes)$/i.test(process.env.AUSTERE_AXI_NO_TAILSCALE || "")) return null;
+  if (tailscaleOff()) return null;
   if (!fresh && Date.now() - cache.at < 30_000) return cache.value;
   let value: Tailnet | null = null;
+  let found: string | null = null;
   for (const bin of CANDIDATES) {
     if (bin.startsWith("/") && !fs.existsSync(bin)) continue;
     const out = await run(bin, ["status", "--json"]);
     if (!out) continue;
+    found = bin;
     try {
       const j = JSON.parse(out) as TailscaleStatus;
       if (j.BackendState && j.BackendState !== "Running") break;
@@ -48,6 +58,7 @@ export async function detectTailscale({ fresh = false }: { fresh?: boolean } = {
     break;
   }
   cache = { at: Date.now(), value };
+  tailscaleBin = value ? found : null;
   return value;
 }
 
@@ -55,6 +66,98 @@ export async function detectTailscale({ fresh = false }: { fresh?: boolean } = {
 interface TailscaleStatus {
   BackendState?: string;
   Self?: { TailscaleIPs?: string[]; DNSName?: string };
+}
+
+/** A person Tailscale vouches for: the login, display name and device behind a tailnet address. */
+export interface TailscalePerson {
+  login: string;
+  name: string;
+  /** The device's name on the tailnet ("" when Tailscale gives none). */
+  device: string;
+}
+
+/** The parts of `tailscale whois --json <ip>` read here. */
+interface TailscaleWhois {
+  Node?: { Name?: string; ComputedName?: string; Tags?: string[] | null; Hostinfo?: { Hostname?: string } };
+  UserProfile?: { LoginName?: string; DisplayName?: string };
+}
+
+/**
+ * The person `tailscale whois --json` names, or null: no answer, not JSON, or a tagged device
+ * (a server or a CI runner: tagged devices belong to no person, and Tailscale calls their
+ * user "tagged-devices").
+ */
+export function parseWhois(out: string | null): TailscalePerson | null {
+  if (!out) return null;
+  let j: TailscaleWhois;
+  try {
+    j = JSON.parse(out) as TailscaleWhois;
+  } catch {
+    return null;
+  }
+  if (!j || typeof j !== "object" || j.Node?.Tags?.length) return null;
+  const login = String(j.UserProfile?.LoginName || "").trim().slice(0, 200);
+  if (!login || login === "tagged-devices") return null;
+  const name = String(j.UserProfile?.DisplayName || "").trim().slice(0, 200) || login;
+  const device = String(j.Node?.ComputedName || j.Node?.Hostinfo?.Hostname || String(j.Node?.Name || "").split(".")[0] || "").trim().slice(0, 200);
+  return { login, name, device };
+}
+
+/** How long one address's whois answer is kept, a failure included. */
+export const WHOIS_TTL_MS = 60_000;
+const whoisCache = new Map<string, { at: number; value: Promise<TailscalePerson | null> }>();
+
+/**
+ * Who Tailscale says is behind tailnet address `addr`: ask only with the address of a socket
+ * accepted on the tailnet listener, never one a header names. Null when Tailscale is off for this
+ * server, not running, missing, failing, or the device is tagged: the caller is then unknown,
+ * which is not an error. Each address is asked at most once a minute.
+ */
+export function whoIs(addr: string | undefined): Promise<TailscalePerson | null> {
+  const ip = String(addr || "").replace(/^::ffff:/, "");
+  const bin = tailscaleBin;
+  if (tailscaleOff() || !bin || !net.isIP(ip)) return Promise.resolve(null);
+  const now = Date.now();
+  const hit = whoisCache.get(ip);
+  if (hit && now - hit.at < WHOIS_TTL_MS) return hit.value;
+  const value = run(bin, ["whois", "--json", ip]).then(parseWhois);
+  whoisCache.delete(ip);
+  whoisCache.set(ip, { at: now, value });
+  // A tailnet has a bounded number of peers; keep the newest answers only.
+  if (whoisCache.size > 512) whoisCache.delete(whoisCache.keys().next().value as string);
+  return value;
+}
+
+/** An address in Tailscale's ranges: 100.64.0.0/10 or fd7a:115c:a1e0::/48. */
+export function isTailscaleAddress(addr: string): boolean {
+  const ip = addr.replace(/^::ffff:/, "").toLowerCase();
+  const v4 = /^100\.(\d+)\.\d+\.\d+$/.exec(ip);
+  if (v4) return Number(v4[1]) >= 64 && Number(v4[1]) <= 127;
+  return /^fd7a:115c:a1e0:/.test(ip);
+}
+
+/** An address of this machine on a local network, for Settings → Network → Local network. */
+export interface LanAddress {
+  address: string;
+  /** The network interface it is on, e.g. `en0`, `wlan0`. */
+  iface: string;
+}
+
+/**
+ * The addresses this machine has on local networks: not loopback, not Tailscale's, not
+ * link-local IPv6 (which needs a zone to be reached). The local-network listener binds to one of these only.
+ */
+export function lanAddresses(interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): LanAddress[] {
+  const out: LanAddress[] = [];
+  for (const [iface, list] of Object.entries(interfaces)) {
+    if (/^tailscale/i.test(iface)) continue;
+    for (const a of list ?? []) {
+      if (a.internal || isTailscaleAddress(a.address)) continue;
+      if (a.family === "IPv6" && /^fe80:/i.test(a.address)) continue;
+      out.push({ address: a.address, iface });
+    }
+  }
+  return out;
 }
 
 /** Hosts the server answers to (DNS-rebinding defense). */
