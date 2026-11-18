@@ -2,7 +2,14 @@
 
 Versions before 0.11.0 are listed only in the [GitHub releases](https://github.com/MandalorianBatman/austere-axi/releases).
 
-## Unreleased
+## 0.14.0 (2026-11-18)
+
+Nothing to do to upgrade: hub.db migrates on open (schema 6, additive), and no command or flag is removed. Two behaviours change for existing setups:
+
+- **Hub URLs:** `/` is now the hub app (Inbox, Pages, Notes, Runs, Settings), and `/notes` opens its Notes view with the same filters. Bookmarks keep working; a script that read the old server-rendered HTML of `/` should read `/hub/api/` instead.
+- **Reviewers over Tailscale:** a device first opened over Tailscale is bound to that login. The same device cookie from another Tailscale login is refused; give that person their own link, or `share tailscale <login>`.
+
+The new local-network listener (`server lan`) is off by default and never takes the owner's sign-in; the owner signs in on this computer or over Tailscale as before.
 
 ### Added
 
