@@ -1,6 +1,6 @@
 # Review loop v2: design
 
-Status: Approved 2026-11-16. Built: stage 1 (shipped in 0.11.0), stages 2 and 3 (shipped in 0.12.0), stage 4 (history, content index and reuse, RLM-348; shipped in 0.13.0) and stage 5 (dashboard shell and navigation, RLM-355; ships after 0.13.0). Stage 6 is not built. A Status column marks each change below. Epic RLM-329, design issue RLM-331. L1–L15 were settled with sid.kasat on 2026-11-16. Q1–Q11 (P1–P11 in the epic) were accepted on the same day on the owner's instruction to proceed with assumptions while away. Line numbers and names below are from 0.10.4 (`e2749d6`). The build issues RLM-332 to RLM-367 follow this note; where an issue and this note differ, this note wins.
+Status: Approved 2026-11-16. Built: stage 1 (shipped in 0.11.0), stages 2 and 3 (shipped in 0.12.0), stage 4 (history, content index and reuse, RLM-348; shipped in 0.13.0), stage 5 (dashboard shell and navigation, RLM-355, with Settings and reviewer identity, RLM-396 and RLM-399; shipped in 0.14.0) and stage 6 (the core triggers, RLM-360, shipped in 0.14.0; the wiki in the private `austere-wiki` repo, not published). RLM-347 and RLM-367 stay parked. A Status column marks each change below. Epic RLM-329, design issue RLM-331. L1–L15 were settled with sid.kasat on 2026-11-16. Q1–Q11 (P1–P11 in the epic) were accepted on the same day on the owner's instruction to proceed with assumptions while away. Line numbers and names below are from 0.10.4 (`e2749d6`). The build issues RLM-332 to RLM-367 follow this note; where an issue and this note differ, this note wins.
 
 ## Problem
 
@@ -402,8 +402,8 @@ One PR per stage (A3). A stage starts when the stages it depends on have merged.
 | 2 | RLM-337 pages without sessions | RLM-338 → RLM-339, RLM-340 | RLM-332 | Built, in 0.12.0 |
 | 3 | RLM-341 attach | RLM-342 (spike, may run from stage 1) → RLM-343, RLM-344 → RLM-345 → RLM-346. RLM-347 stays parked. | RLM-337 | Built, in 0.12.0 (RLM-347 parked) |
 | 4 | RLM-348 history and reuse | RLM-349 → RLM-350 → RLM-351, RLM-352 → RLM-353, RLM-354 | RLM-332 (RLM-334); may run beside stage 3 | Built, in 0.13.0 |
-| 5 | RLM-355 dashboard shell | RLM-356 → RLM-357 → RLM-358; RLM-396 Settings (after RLM-397, RLM-398; RLM-399 follows it) | RLM-336, RLM-346, RLM-349, RLM-350 | Built |
-| 6 | RLM-359 wiki | core PR: RLM-360. `austere-wiki` repo: RLM-361 → RLM-362 → RLM-363 → RLM-364 → RLM-365 → RLM-366. RLM-367 stays parked. | RLM-345, RLM-351, RLM-352 | Core: PR #108 merged (RLM-360). `austere-wiki` repo (RLM-361–366): built, in review |
+| 5 | RLM-355 dashboard shell | RLM-356 → RLM-357 → RLM-358; RLM-396 Settings (after RLM-397, RLM-398; RLM-399 follows it) | RLM-336, RLM-346, RLM-349, RLM-350 | Built, in 0.14.0 |
+| 6 | RLM-359 wiki | core PR: RLM-360. `austere-wiki` repo: RLM-361 → RLM-362 → RLM-363 → RLM-364 → RLM-365 → RLM-366. RLM-367 stays parked. | RLM-345, RLM-351, RLM-352 | Core (RLM-360) built, in 0.14.0. `austere-wiki` (RLM-361–366): built, private, not published (RLM-367 parked) |
 
 Every PR runs `npm run build && npm test && npm run typecheck`; a chrome or hub UI change also runs `npm run test:browser` and screenshots at 1280 and 390 px. Each PR updates the guide in `docs/` and `HELP`/`COMMANDS` for every user-facing change it makes.
 
