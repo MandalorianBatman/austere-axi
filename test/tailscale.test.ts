@@ -326,3 +326,19 @@ describe("the local-network listener", { skip: !LAN && "this computer has no loc
     }
   });
 });
+
+test("AUSTERE_AXI_HOST=::1: open answers, with the IPv6 host bracketed in the owner's remote link", async () => {
+  const work = tmp("austere-v6-work-");
+  const file = path.join(work, "plan.html");
+  fs.writeFileSync(file, PAGE_HTML);
+  const srv = await startServer({ AUSTERE_AXI_HOST: "::1" });
+  try {
+    const opened = await api<{ links: { local: string; remote?: string } }>(srv, "POST", "/api/open", { file });
+    assert.equal(opened.status, 200, JSON.stringify(opened.data));
+    assert.match(opened.data.links.local, /^http:\/\/127\.0\.0\.1:/);
+    assert.match(opened.data.links.remote ?? "", new RegExp(`^http://\\[::1\\]:${srv.port}/s/`));
+  } finally {
+    await stopServer(srv);
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+});

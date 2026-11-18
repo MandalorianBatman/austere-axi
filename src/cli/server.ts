@@ -617,7 +617,7 @@ export async function runServer({
   function remoteBase(): string | null {
     if (linkBase) return linkBase.base;
     const host = remoteHost();
-    return host ? `http://${host}:${port}` : null;
+    return host ? hostUrl(host) : null;
   }
 
   /** Where a teammate reaches this server: as the owner's phone does, else the local-network address Settings switched on. Null: only loopback listens. */
