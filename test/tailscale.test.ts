@@ -327,18 +327,30 @@ describe("the local-network listener", { skip: !LAN && "this computer has no loc
   });
 });
 
-test("AUSTERE_AXI_HOST=::1: open answers, with the IPv6 host bracketed in the owner's remote link", async () => {
-  const work = tmp("austere-v6-work-");
-  const file = path.join(work, "plan.html");
-  fs.writeFileSync(file, PAGE_HTML);
-  const srv = await startServer({ AUSTERE_AXI_HOST: "::1" });
-  try {
-    const opened = await api<{ links: { local: string; remote?: string } }>(srv, "POST", "/api/open", { file });
-    assert.equal(opened.status, 200, JSON.stringify(opened.data));
-    assert.match(opened.data.links.local, /^http:\/\/127\.0\.0\.1:/);
-    assert.match(opened.data.links.remote ?? "", new RegExp(`^http://\\[::1\\]:${srv.port}/s/`));
-  } finally {
-    await stopServer(srv);
-    fs.rmSync(work, { recursive: true, force: true });
-  }
-});
+// IPv6 loopback: the server binds `::1` only where the machine has it.
+const v6 = Promise.withResolvers<boolean>();
+const probe = net.createServer().once("error", () => v6.resolve(false));
+probe.listen(0, "::1", () => probe.close(() => v6.resolve(true)));
+const V6 = await v6.promise;
+
+for (const [env, why] of [
+  [{ AUSTERE_AXI_HOST: "::1" }, "AUSTERE_AXI_HOST=::1"],
+  [{ AUSTERE_AXI_HOST: "::1", AUSTERE_AXI_LINK_HOST: "[::1]" }, "AUSTERE_AXI_LINK_HOST=[::1], already bracketed"],
+] as const) {
+  test(`${why}: open answers, with the IPv6 host bracketed once in the owner's remote link`, { skip: !V6 && "no IPv6 loopback here" }, async () => {
+    const work = tmp("austere-v6-work-");
+    const file = path.join(work, "plan.html");
+    fs.writeFileSync(file, PAGE_HTML);
+    // Overrides inherited from the shell would take precedence over the host under test.
+    const srv = await startServer({ AUSTERE_AXI_LINK_URL: "", AUSTERE_AXI_LINK_HOST: "", ...env });
+    try {
+      const opened = await api<{ links: { local: string; remote?: string } }>(srv, "POST", "/api/open", { file });
+      assert.equal(opened.status, 200, JSON.stringify(opened.data));
+      assert.match(opened.data.links.local, /^http:\/\/127\.0\.0\.1:/);
+      assert.match(opened.data.links.remote ?? "", new RegExp(`^http://\\[::1\\]:${srv.port}/s/`));
+    } finally {
+      await stopServer(srv);
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  });
+}

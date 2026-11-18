@@ -587,9 +587,10 @@ export async function runServer({
     return host === "127.0.0.1" ? "loopback" : "added";
   }
 
-  /** `http://host:port` for a listener's address. */
+  /** `http://host:port` for a listener's address or a host override; an IPv6 address gets exactly one pair of brackets. */
   function hostUrl(host: string): string {
-    return `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
+    const bare = host.replace(/^\[(.*)\]$/, "$1");
+    return `http://${bare.includes(":") ? `[${bare}]` : bare}:${port}`;
   }
 
   // ── helpers ──
