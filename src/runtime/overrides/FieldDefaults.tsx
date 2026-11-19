@@ -37,9 +37,10 @@ const SHOWN_DEFAULT: Record<string, (props: FieldProps) => unknown> = {
 
 /**
  * The stock renderer, plus: once the page has streamed in, a field with nothing stored yet
- * stores the default it shows, as OptionCards does. While the reviewer has not changed it, a
- * live update that changes the default stores the new one. A field bound to a $variable keeps
- * its binding. Any other component's renderer comes back as it was.
+ * stores the default it shows, as OptionCards does. A stored value is never replaced: it may
+ * be the reviewer's answer, and the field shows what is stored, so what is sent is what the
+ * reviewer sees. A field bound to a $variable keeps its binding. Any other component's
+ * renderer comes back as it was.
  */
 export function storingShownDefault<P>(name: string, Stock: ComponentRenderer<P>): ComponentRenderer<P> {
   const shown = SHOWN_DEFAULT[name];
@@ -50,15 +51,11 @@ export function storingShownDefault<P>(name: string, Stock: ComponentRenderer<P>
     const getFieldValue = useGetFieldValue();
     const setFieldValue = useSetFieldValue();
     const isStreaming = useIsStreaming();
-    const stored = React.useRef<string | undefined>(undefined); // the default this field last stored, as JSON
     const field = typeof props.name === "string" ? props.name : undefined;
     const value = field && props.value === undefined ? shown(props) : undefined;
     const key = JSON.stringify(value);
     React.useEffect(() => {
-      if (isStreaming || !field || value === undefined || key === stored.current) return;
-      const current = getFieldValue(formName, field);
-      if (current !== undefined && JSON.stringify(current) !== stored.current) return; // the reviewer's answer
-      stored.current = key;
+      if (isStreaming || !field || value === undefined || getFieldValue(formName, field) !== undefined) return;
       // false: not a reviewer edit, so nothing is saved for a reload (the page shows the default again).
       setFieldValue(formName, name, field, value, false);
       // key stands for value, which is a new array or object on every render
