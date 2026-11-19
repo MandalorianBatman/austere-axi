@@ -42,6 +42,7 @@ interface PollItem {
   target?: string;
   detail?: { part?: string };
   statement?: string;
+  form?: unknown;
 }
 
 /** The fields these tests read from the server's JSON replies. */
@@ -361,6 +362,34 @@ test("a diagram copied from another page with patch --from renders, and each of 
     await page.locator(".composer .send").click();
     const res = await api("/api/poll", { file, timeoutMs: 5000 });
     for (const id of nodes) assert.equal(res.items.find((i) => i.note === `check node ${id}`)?.target, id, `node ${id} reached poll addressed to itself`);
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});
+
+test("one press of a Form's button sends every answer, pre-selected ones the reviewer left as they were included", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "form-answers.html");
+  const program = [
+    "root = Stack([ask])",
+    'ask = Form("answers", buttons, [db, plan, checks, size])',
+    'db = FormControl("Database?", RadioGroup("db", [RadioItem("Postgres", "", "pg"), RadioItem("MySQL", "", "my")], "pg"))',
+    'plan = FormControl("Plan?", OptionCards("plan", "single", [OptionCard("a", "Plan A"), OptionCard("b", "Plan B")], {}, "a"))',
+    'checks = FormControl("Checks?", CheckBoxGroup("checks", [CheckBoxItem("Lint", "", "lint", true), CheckBoxItem("Fuzz", "", "fuzz")]))',
+    'size = FormControl("Batch size", Slider("size", "discrete", 1, 10, 1, [3]))',
+    'buttons = Buttons([Button("Send answers", @ToAssistant("Answers"), "primary")])',
+  ].join("\n");
+  fs.writeFileSync(file, htmlPage("Form answers", program, CDN_RUNTIME_URL));
+  const { context, page, frame, problems } = await openReview(file, VIEWPORTS[0]);
+  try {
+    // The reviewer changes one answer and keeps the other three as the agent pre-selected them.
+    await frame.getByText("Plan B", { exact: true }).click();
+    await frame.getByText("Send answers", { exact: true }).click();
+    await page.locator(".composer .send").click();
+    const res = await api("/api/poll", { file, timeoutMs: 5000 });
+    const action = res.items.find((i) => i.kind === "action");
+    assert.deepEqual(action?.form, { answers: { db: "pg", plan: "b", checks: { lint: true, fuzz: false }, size: [3] } });
     assert.deepEqual(problems, [], "browser errors");
   } finally {
     await context.close();

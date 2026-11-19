@@ -2,6 +2,12 @@
 
 Versions before 0.11.0 are listed only in the [GitHub releases](https://github.com/MandalorianBatman/austere-axi/releases).
 
+## 0.14.1 (2026-11-19)
+
+### Fixed
+
+- A Form's button sends every answer. A `RadioGroup` or `Slider` with a default, or a `CheckBoxGroup` or `SwitchGroup` with a `defaultChecked` item, showed its default but stored nothing until the reviewer changed it, so an answer left as pre-selected never reached the agent. Each field now stores the default it shows, as `OptionCards` and `Chips` already did. (RLM-412)
+
 ## 0.14.0 (2026-11-18)
 
 To upgrade: install 0.14.0. A server that `server install` (or your own unit) runs keeps serving the old version until you run `austere-axi server restart`; the CLI says so. If you ran `server install` through `npx`, the unit still points at npx's cached copy: run `austere-axi server install` again with the installed 0.14.0 CLI, then restart. hub.db migrates on open (schema 6, additive), and no command or flag is removed. Two behaviours change for existing setups:

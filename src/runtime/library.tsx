@@ -6,6 +6,7 @@ import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
 import customComponents from "austere:components";
 import type { AustereComponent } from "../../types/pack.d.ts";
 import { EXTENDED, REMOVED, STOCK_GROUPS, STOCK_RENDERERS, STOCK_UNTAGGED } from "./stock.ts";
+import { storingShownDefault } from "./overrides/FieldDefaults.tsx";
 
 export interface BuildLibraryOptions {
   /** Called for each pack component left out (its name is taken) or with a slot dropped. */
@@ -123,16 +124,14 @@ export function buildLibrary(extra: AustereComponent[] = [], { onSkip }: BuildLi
     }
   }
   const untagged = new Set([...STOCK_UNTAGGED, ...components.filter((c) => !c.tagged).map((c) => c.name)]);
-  const overrides = Object.values(curated.components)
-    .filter((c) => !untagged.has(c.name))
-    .map((c) =>
-      defineComponent({
-        name: c.name,
-        props: c.props,
-        description: c.description,
-        component: tagged(STOCK_RENDERERS[c.name] || c.component, c.name),
-      }),
-    );
+  // Tagged components get their statement name in the DOM; form fields stay untagged but may store their shown default.
+  const overrides = Object.values(curated.components).flatMap((c) => {
+    const stock = STOCK_RENDERERS[c.name] || c.component;
+    const renderer = storingShownDefault(c.name, stock);
+    if (untagged.has(c.name) && renderer === stock) return [];
+    const component = untagged.has(c.name) ? renderer : tagged(renderer, c.name);
+    return [defineComponent({ name: c.name, props: c.props, description: c.description, component })];
+  });
   const final = curated.extend({ components: { override: overrides } });
   return createLibrary({
     id: "austere",
