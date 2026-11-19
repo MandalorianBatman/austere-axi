@@ -1,6 +1,6 @@
 # Team review
 
-Teammates on your tailnet can review your pages and leave notes under their own name. The server still runs on your machine. No accounts, no hosted service.
+Teammates on your tailnet can review your pages and leave notes under their own name. The server still runs on your machine. No accounts, no hosted service: "no account" holds for local review only. Hosted review (`publish`) needs a sign-in; see [Hosted pages](hosted-pages.md#accounts).
 
 Access belongs to a **device you know by name**. A link is only the way in: the first browser that opens it becomes that person's device, and the link stops working.
 
@@ -87,7 +87,7 @@ That listener serves reviewers only. Owner sign-in (`?login=`), the owner's key 
 - **Tailscale:** you (your phone link), devices you let in, and logins you let in with `share tailscale`. Nobody else: an unknown browser gets 403, or the request form where requests are on.
 - **Local network:** nothing, until you switch it on. Then devices you let in, over plain HTTP. Never you.
 - **HTTPS** (`AUSTERE_AXI_LINK_URL` behind your reverse proxy): as Tailscale, but nobody is named by Tailscale.
-- **A hosted page** (`publish`): only the people you invite there; see [Hosted pages](hosted-pages.md).
+- **A hosted page** (`publish`): only the people you invite there or grant it to by email, who sign in; see [Hosted pages](hosted-pages.md).
 
 ## Links from before (0.12 and older)
 

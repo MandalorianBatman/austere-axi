@@ -22,7 +22,25 @@ austere-axi publish rm plan.html                 # or the page id; every link st
 - **The ⋯ menu on a hosted page:** "Download standalone HTML" saves the published page with its runtime and packs inlined, the same file `export` writes. On an `--unlisted` page, "Copy page link" copies the open link for every viewer, invited or not. On an invite-only page each link is one reviewer's alone, so the menu says how the owner invites someone instead.
 - **Presence:** everyone on the page sees who is there: your own chip first, ringed, with the name you post under, then a chip per other viewer (viewing, away or writing) and the part each one last clicked in Annotate mode, outlined with their name. You are on the page too while your local review page is open: hosted viewers show as chips there, and your clicks show as an outline for them. Nothing about it is stored. `--no-presence` on a publish turns it off for that page.
 - **Expiry:** 30 days after the last publish.
-- **Owner token:** created on the first `publish`, stored in `~/.austere-axi/cloud.json` (mode 0600). It only controls your pages. Copying the file to another machine makes that machine a peer: it gets the same notes, and a note you send on one machine arrives sent on the other. `cloud.json` maps pages by absolute path, so the file must sit at the same path on both machines.
+- **Owner token:** without an account, created on the first `publish` and stored in `~/.austere-axi/cloud.json` (mode 0600). It only controls your pages. Copying the file to another machine makes that machine a peer: it gets the same notes, and a note you send on one machine arrives sent on the other. `cloud.json` maps pages by absolute path, so the file must sit at the same path on both machines. With an account (below) you need none of that.
+
+## Accounts
+
+Local review needs no account. Hosted review does: the owner signs in once per machine, reviewers sign in in the browser.
+
+```sh
+austere-axi cloud login      # prints a code and opens the browser; approve it there (email code, Google, GitHub or passkey)
+austere-axi cloud whoami     # the account this machine is signed in as
+austere-axi clone            # your hosted pages, from every machine you published them on
+austere-axi clone <id> plan.html   # one of them as a local file, attached: notes sync here, publish updates the same link
+austere-axi cloud logout     # this machine forgets the account
+```
+
+- **You are the owner of all your pages.** Once logged in, `publish`, `publish list|invites|revoke|rm` and the local server's sync use the account. Sign in on the service's page in the browser with the same account and you are the owner on every one of your hosted pages: no `publish login`, no invite. Your notes there carry the name Owner.
+- **Pages from before** are not lost: the first `cloud login` on a machine hands its owner token to the account, so what it published anonymously is the account's. The token keeps working.
+- **Reviewers with an account:** on the service's dashboard (its home page, signed in), grant a page to an email, as you would add a reviewer to a pull request. That person signs in with that email and comments under their account name. Removing the grant cuts them off at once. Nobody can take the name Owner. A signed-in account without a grant gets the same 403 as a visitor without an invite.
+- **Invite links** (`--invite`) and the open link (`--unlisted`) keep working for people without an account, until a later release decides otherwise.
+- **The tokens:** `cloud.json` (mode 0600) keeps the account's access token and refresh token. The CLI refreshes the access token before it expires and stores the new refresh token each time; if the service ends the session, the CLI says so and `cloud login` starts again. The CLI holds no secret of its own: it signs in with the service's public WorkOS client id.
 
 ## Who can see a published page
 

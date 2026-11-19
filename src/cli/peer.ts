@@ -20,7 +20,7 @@
 // and the local page's status and focus go on to the page object. Nothing of it is stored.
 import crypto from "node:crypto";
 import WebSocket from "ws";
-import { cloudUrl, onRefusal, ownerSocket, readCloud } from "./cloud.ts";
+import { cloudUrl, credential, hasOwner, onRefusal, ownerSocket, readCloud } from "./cloud.ts";
 import type { CloudError } from "./cloud.ts";
 import { reviewerItem } from "./items.ts";
 import { msEnv } from "./paths.ts";
@@ -55,6 +55,8 @@ interface Link {
   /** The session's file (canonical path). */
   file: string;
   ws: WebSocket | null;
+  /** The credential is being read (an account's access token may need a refresh) before the socket opens. */
+  connecting: boolean;
   /** The socket's pull is done: rows arrive as they change. */
   live: boolean;
   /** A pull is owed: at start and for `feedback`. */
@@ -124,7 +126,7 @@ export class Peer {
   /** Server start: one pull for every published page, and the queue left from last time. */
   start(): void {
     const state = readCloud();
-    if (!state.token) return;
+    if (!hasOwner(state)) return;
     for (const [file, e] of Object.entries(state.pages)) this.kick(this.link(e.id, file), { pull: true });
     for (const q of this.queued()) this.kick(this.link(q.page_id, q.file));
   }
@@ -257,7 +259,7 @@ export class Peer {
   /** The link for a published file (cloud.json is read again: `publish` may have run since). */
   private linkFor(file: string): Link | null {
     const state = readCloud();
-    const e = state.token ? state.pages[file] : undefined;
+    const e = hasOwner(state) ? state.pages[file] : undefined;
     return e ? this.link(e.id, file) : null;
   }
 
@@ -268,6 +270,7 @@ export class Peer {
         page,
         file,
         ws: null,
+        connecting: false,
         live: false,
         pullWanted: false,
         pulls: [],
@@ -297,19 +300,38 @@ export class Peer {
   /** Connect now if the link is wanted; a pending retry is cut short. */
   private kick(link: Link, { pull = false }: { pull?: boolean } = {}): void {
     if (pull) link.pullWanted = true;
-    if (link.ws || !this.wanted(link)) return;
+    if (link.ws || link.connecting || !this.wanted(link)) return;
     clearTimeout(link.retry ?? undefined);
     link.retry = null;
     this.connect(link);
   }
 
+  /** Reads the credential (refreshing an account's access token when due), then opens the socket. */
   private connect(link: Link): void {
     const state = readCloud();
-    if (!state.token) return this.stop(link, "cloud.json holds no owner token");
+    if (!hasOwner(state)) return this.stop(link, "cloud.json holds no owner credential");
+    if (link.connecting) return;
     const base = state.url || cloudUrl();
+    link.connecting = true;
+    credential(state).then(
+      (cred) => {
+        link.connecting = false;
+        if (!link.ws && !link.stopped && !this.closed) this.open(link, base, cred);
+      },
+      (err: CloudError) => {
+        link.connecting = false;
+        link.lastError = err.message;
+        // A session that ended needs `cloud login`; anything else (WorkOS unreachable) is retried.
+        if (err.code === "invalid_grant") this.stop(link, err.message);
+        else this.down(link);
+      },
+    );
+  }
+
+  private open(link: Link, base: string, cred: string): void {
     let ws: WebSocket;
     try {
-      ws = ownerSocket(base, state.token, link.page);
+      ws = ownerSocket(base, cred, link.page);
     } catch (err) {
       return this.stop(link, (err as Error).message);
     }
@@ -377,7 +399,7 @@ export class Peer {
     link.delay = Math.min(link.delay * 2, MAX_RETRY_MS);
     link.retry = setTimeout(() => {
       link.retry = null;
-      if (this.wanted(link) && !link.ws) this.connect(link);
+      if (this.wanted(link) && !link.ws && !link.connecting) this.connect(link);
     }, ms);
     link.retry.unref();
   }
