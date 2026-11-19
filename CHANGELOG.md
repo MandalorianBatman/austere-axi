@@ -2,6 +2,14 @@
 
 Versions before 0.11.0 are listed only in the [GitHub releases](https://github.com/MandalorianBatman/austere-axi/releases).
 
+## Unreleased
+
+### Added
+
+- Accounts on the hosted service (WorkOS AuthKit). `cloud login` signs this machine in with a code you approve in the browser (email code, Google, GitHub or passkey); `cloud whoami` and `cloud logout`. Signed in, you are the owner of all your hosted pages: `publish` and the local server's sync use the account, and the same account in the browser is the owner on every page without `publish login`. The first login hands this machine's owner token to the account, so pages published before stay yours. The CLI keeps the tokens in `cloud.json` (0600) and stores the new refresh token at every refresh. Needs austere-cloud with accounts on. (RLM-414)
+- `clone` lists your hosted pages from every machine; `clone <id> [<file>]` writes one to a new local file and attaches it, so its notes sync here and `publish` updates the same link. (RLM-414)
+- A hosted page that refuses a viewer (no invite, or one no longer valid) offers **Sign in** when the service has accounts: a reviewer the owner granted the page to by email gets in under their account name. (RLM-414)
+
 ## 0.14.1 (2026-11-19)
 
 ### Fixed

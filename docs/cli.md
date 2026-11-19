@@ -43,6 +43,8 @@ austere-axi publish <file>       hosted copy of the page on austere.blundertech.
 austere-axi publish invites|revoke <file> [name]   see a page's invites, cut one off
 austere-axi publish login <file>   single-use link that signs your browser in to your hosted page
 austere-axi publish list|rm <file|id>   your hosted pages; delete one now
+austere-axi cloud login|logout|whoami   your account on the hosted service: owner of all your hosted pages (see Hosted pages)
+austere-axi clone [<id> [<file>]]   your hosted pages from any machine; one as a local, attached file
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out
 austere-axi server install|uninstall|status|restart   always-on server as a per-user systemd or launchd service (see Hub)   [--port n] [--link-url u] [--adopt] [--force]

@@ -66,6 +66,8 @@ const svc = {
   /** The single-use code `publish login` printed, until used; then the owner cookie's session. */
   loginCode: null as string | null,
   ownerSession: null as string | null,
+  /** The shell's `hosted.signIn`, as austere-cloud sets it when accounts are on; null: accounts off. */
+  signIn: null as string | null,
 };
 let stub: http.Server | undefined;
 let origin: string;
@@ -108,7 +110,8 @@ function refuse(socket: Duplex, status: number, code: string) {
 
 function shell() {
   // As austere-cloud: the shell names no page; the title comes with the asset-token answer.
-  const boot = { id: ID, title: "Shared page", name: "Shared page", artifactUrl: `${BASE}/a/`, version: "0.8.1", viewer: { role: "reviewer", name: "" }, hosted: { base: BASE, report: `${BASE}/report`, publishedAt: 1_000 } };
+  const hosted = { base: BASE, report: `${BASE}/report`, publishedAt: 1_000, ...(svc.signIn ? { signIn: svc.signIn } : {}) };
+  const boot = { id: ID, title: "Shared page", name: "Shared page", artifactUrl: `${BASE}/a/`, version: "0.8.1", viewer: { role: "reviewer", name: "" }, hosted };
   return `<!doctype html>
 <html lang="en" data-theme="dark"><head><meta charset="utf-8"><title>Shared page · austere</title>
 <link rel="stylesheet" href="/rt/chrome/chrome.css">
@@ -275,7 +278,7 @@ after(async () => {
 
 beforeEach(() => {
   for (const s of svc.sockets) s.ws.terminate();
-  Object.assign(svc, { requests: [], inviteHeaders: [], rows: [], seq: 0, pulls: [], mutations: [], holdAcks: false, upgrades: 0, reports: [], unlisted: false, rateLimit: 0, retryAfter: 1, mutationTimes: [], loginCode: null, ownerSession: null });
+  Object.assign(svc, { requests: [], inviteHeaders: [], rows: [], seq: 0, pulls: [], mutations: [], holdAcks: false, upgrades: 0, reports: [], unlisted: false, rateLimit: 0, retryAfter: 1, mutationTimes: [], loginCode: null, ownerSession: null, signIn: null });
   svc.invites = new Map([[ANA, "Ana"]]);
   put(pageRow(1_000));
 });
@@ -816,6 +819,31 @@ test("hosted chrome: invite-only without an invite, then unlisted with the name 
     assert.ok(await page.locator(".composer .send").isDisabled());
     await page.waitForTimeout(1500); // past the first reconnect backoff, as above
     assert.equal(svc.upgrades, upgrades);
+    assert.deepEqual(errors, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: a refused viewer gets Sign in when the service has accounts, and none without", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await ctx.newPage();
+    const errors = watchErrors(page);
+    await page.goto(`${origin}${BASE}`);
+    await page.waitForSelector(".presence.ended");
+    assert.equal(await page.locator(".banner a", { hasText: "Sign in" }).count(), 0, "no sign-in without accounts");
+
+    svc.signIn = `/auth/login?return_to=${encodeURIComponent(BASE)}`;
+    await page.reload();
+    await page.waitForSelector(".presence.ended");
+    assert.match(await page.locator(".presence").innerText(), /Invite required/);
+    const link = page.locator(".banner a", { hasText: "Sign in" });
+    assert.equal(await link.getAttribute("href"), svc.signIn);
+    assert.match(await page.locator(".banner").innerText(), /sign in with the account the owner shared it with/);
+    await link.click();
+    await page.waitForURL(/\/auth\/login\?return_to=/);
     assert.deepEqual(errors, []);
   } finally {
     await ctx.close();
