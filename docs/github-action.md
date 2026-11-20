@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: MandalorianBatman/austere-axi/action@v0.14.1
+      - uses: MandalorianBatman/austere-axi/action@v0.15.0
         with:
           pages: reviews/*.html
 ```

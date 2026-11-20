@@ -2,7 +2,7 @@
 
 Versions before 0.11.0 are listed only in the [GitHub releases](https://github.com/MandalorianBatman/austere-axi/releases).
 
-## Unreleased
+## 0.15.0 (2026-11-20)
 
 ### Added
 
