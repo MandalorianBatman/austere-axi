@@ -88,12 +88,25 @@ function events(id: string) {
   return { seen, last: () => seen[seen.length - 1]?.presence, close: () => r.destroy() };
 }
 
-async function until(what: string, ok: () => boolean | Promise<boolean>) {
-  for (let i = 0; i < 100; i++) {
+// A deadline, not an iteration count: a cold start on a loaded CI runner (Windows) can take well over 4 s.
+const STARTUP_MS = 30_000;
+
+async function until(what: string, ok: () => boolean | Promise<boolean>, timeoutMs = STARTUP_MS) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     if (await ok()) return;
+    if (Date.now() >= deadline) break;
     await new Promise((r) => setTimeout(r, 30));
   }
-  assert.fail(`timed out waiting for ${what}`);
+  assert.fail(`timed out waiting for ${what} after ${timeoutMs} ms`);
+}
+
+async function kill(proc: ChildProcess | undefined) {
+  if (proc && proc.exitCode === null && proc.signalCode === null) {
+    const exited = new Promise((r) => proc.once("exit", r));
+    proc.kill("SIGKILL");
+    await exited;
+  }
 }
 
 const presence = async (id: string, at?: Target) => (await request("GET", "/api/sessions", undefined, at)).sessions.find((s) => s.id === id)?.presence;
@@ -117,21 +130,23 @@ await runServer({ port: Number(process.env.TEST_PORT), unit: null });
     env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, TEST_PORT: String(port), AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" },
     stdio: ["ignore", "ignore", "inherit", "ipc"],
   });
-  await until("the server", async () => {
-    try {
-      return Boolean(await request("GET", "/api/health"));
-    } catch {
-      return false;
-    }
-  });
+  try {
+    await until("the server", async () => {
+      try {
+        return Boolean(await request("GET", "/api/health"));
+      } catch {
+        return false;
+      }
+    });
+  } catch (e) {
+    // A failed hook must not leave the child running: it would hold the test process open.
+    await kill(child);
+    throw e;
+  }
 });
 
 after(async () => {
-  if (child && child.exitCode === null && child.signalCode === null) {
-    const exited = new Promise((r) => child.once("exit", r));
-    child.kill("SIGKILL");
-    await exited;
-  }
+  await kill(child);
   for (const d of [STATE, WORK]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
@@ -203,9 +218,7 @@ test("a threshold past setTimeout's 32-bit limit is armed in steps: no overflow 
     assert.doesNotMatch(stderr, /TimeoutOverflowWarning/);
     assert.equal(await presence(id, at), "working");
   } finally {
-    const exited = new Promise((r) => server.once("exit", r));
-    server.kill("SIGKILL");
-    await exited;
+    await kill(server);
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
