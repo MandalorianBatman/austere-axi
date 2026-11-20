@@ -680,6 +680,55 @@ test("Explore hides the conversation and gives the page the full width; Annotate
   }
 });
 
+test("the queue numbers its notes and brings a new one into view; the Agent panel takes what it covers out of the tab order; the mode buttons say which is on", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const file = path.join(WORK, "queue-panel.html");
+  fs.writeFileSync(file, htmlPage("Queue panel", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  const { context, page, frame, problems } = await openReview(file, { width: 1280, height: 640 });
+  const pressed = () => page.locator(".seg [data-mode]").evaluateAll((els) => els.map((el) => `${(el as HTMLElement).dataset.mode}:${el.getAttribute("aria-pressed")}`));
+  const list = page.locator(".queue-list");
+  const numbers = () => list.locator(".q-num").allInnerTexts();
+  try {
+    assert.deepEqual(await pressed(), ["annotate:true", "explore:false"]);
+    for (let i = 1; i <= 6; i++) {
+      await frame.locator('[data-oui-id="intro"]').click();
+      await frame.fill(".austere-pop textarea", `note ${i}\n${"line\n".repeat(3)}`);
+      await frame.click('.austere-pop [data-act="queue"]');
+      await page.waitForFunction((n) => document.querySelectorAll(".queue-list .q-item").length === n, i);
+    }
+    assert.equal(await page.locator(".queue-title").textContent(), "Ready to send · 6");
+    assert.deepEqual(await numbers(), ["1", "2", "3", "4", "5", "6"]);
+    assert.deepEqual(await list.locator(".q-edit").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label"))), [1, 2, 3, 4, 5, 6].map((n) => `Edit note ${n}`));
+    // The list scrolls by itself: the note just added is the one in view.
+    const scroll = () => list.evaluate((el) => ({ over: el.scrollHeight - el.clientHeight, gap: el.scrollHeight - el.scrollTop - el.clientHeight, top: el.scrollTop }));
+    const full = await scroll();
+    assert.ok(full.over > 0, "six notes are more than the list shows at once");
+    assert.ok(full.gap < 2, `the newest note is in view (${full.gap}px below the fold)`);
+    // Removing a note renumbers the rest and keeps the list where it was.
+    await list.locator('[aria-label="Remove note 5"]').click();
+    await page.waitForFunction(() => document.querySelectorAll(".queue-list .q-item").length === 5);
+    assert.deepEqual(await numbers(), ["1", "2", "3", "4", "5"]);
+    assert.ok((await scroll()).top > 0, "the list did not jump back to its first note");
+
+    // The Agent panel lies over the queue and the composer: they take no focus until Notes is back.
+    const inert = () => page.locator(".panel > .log, .panel > .queue, .panel > .composer").evaluateAll((els) => els.map((el) => (el as HTMLElement).inert));
+    await page.click('.panel-tab[data-tab="agent"]');
+    await page.locator(".attach-pop").waitFor({ state: "visible" });
+    assert.equal(await page.locator('.panel-tab[data-tab="agent"]').getAttribute("aria-current"), "true");
+    assert.deepEqual(await inert(), [true, true, true]);
+    await page.click('.panel-tab[data-tab="notes"]');
+    await page.locator(".attach-pop").waitFor({ state: "hidden" });
+    assert.equal(await page.locator('.panel-tab[data-tab="notes"]').getAttribute("aria-current"), "true");
+    assert.deepEqual(await inert(), [false, false, false]);
+
+    await page.keyboard.press("ControlOrMeta+i");
+    assert.deepEqual(await pressed(), ["annotate:false", "explore:true"]);
+    assert.deepEqual(problems, [], "browser errors");
+  } finally {
+    await context.close();
+  }
+});
+
 test("an Image shows the whole picture at its own aspect ratio: card-wide, screen-high at most, no band below, side by side, as a thumbnail", async (t) => {
   if (skipReason) return t.skip(skipReason);
   // Inline pictures: the test is about layout, not about how the frame fetches files.

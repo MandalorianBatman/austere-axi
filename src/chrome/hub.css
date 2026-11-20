@@ -305,7 +305,8 @@ em.gone {
   margin: 2px 0 4px 28px;
 }
 .mini-chips a.mini-chip {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 0 7px;
   border: 1px solid var(--line-2);
   border-radius: var(--pill);
@@ -745,7 +746,9 @@ code.target {
   min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chip-note {
   color: var(--muted);
@@ -835,11 +838,13 @@ details.more > .chips {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+/* The columns' least widths, their gaps and the row's padding add up to no more than the width below
+   which a row stacks (the @container rule at the end of the tables): a row is never cut. */
 .pages-table {
-  --cols: minmax(240px, 2.4fr) minmax(170px, 1.5fr) minmax(150px, 1.2fr) 110px 36px;
+  --cols: minmax(200px, 2.4fr) minmax(160px, 1.5fr) minmax(150px, 1.2fr) 110px 36px;
 }
 .pages-table.archived {
-  --cols: minmax(240px, 2.4fr) minmax(170px, 1.5fr) minmax(150px, 1.2fr) 110px 96px;
+  --cols: minmax(180px, 2.4fr) minmax(140px, 1.5fr) minmax(130px, 1.2fr) 110px 96px;
 }
 .pages-table .thead,
 .trow {
@@ -945,7 +950,7 @@ details.more > .chips {
 }
 
 .runs-table {
-  --cols: 150px minmax(200px, 2fr) minmax(150px, 1.3fr) 110px 72px;
+  --cols: 150px minmax(190px, 2fr) minmax(150px, 1.3fr) 110px 72px;
 }
 .runs-table .thead,
 .run {
@@ -1031,9 +1036,9 @@ details.more > .chips {
   font-variant-numeric: tabular-nums;
 }
 
-/* A table narrower than its columns: each row stacks. */
+/* A table narrower than its columns (see --cols): each row stacks. */
 @container (max-width: 760px) {
-  .thead {
+  .table .thead {
     display: none;
   }
   .trow,

@@ -280,7 +280,7 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       <blockquote class="austere-pop-quote"></blockquote>
       <textarea rows="3" placeholder="What should change here?"></textarea>
       <div class="austere-pop-foot">
-        <span class="austere-pop-hint">Enter adds it · Shift+Enter new line · Esc cancels</span>
+        <span class="austere-pop-hint">Enter adds it · Shift+Enter new line · Esc closes an empty note</span>
         <span class="austere-pop-actions">
           <button type="button" data-act="history" hidden></button>
           <button type="button" data-act="cancel">Cancel</button>

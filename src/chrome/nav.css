@@ -22,7 +22,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.crumb-back {
+/* Two classes: the icons' own `.icon { display: block }` (chrome.css) comes later in the bundle. */
+.crumb .crumb-back {
   display: none;
   flex: none;
 }
@@ -157,6 +158,10 @@
   color: var(--text);
   font: 15px var(--font-sans);
 }
+/* Over the shared `:focus-visible` ring (chrome.css), which comes later in the bundle. */
+.qs-input:focus-visible {
+  outline: 0;
+}
 .qs-input::placeholder {
   color: var(--faint);
 }
@@ -224,9 +229,13 @@
 .qs-dot.needs {
   background: var(--amber);
 }
-.qs-dot.working,
-.qs-dot.waiting {
+.qs-dot.working {
   background: var(--green);
+}
+/* A ring, as the hub's Inbox draws notes nobody is taking: not the agent's green. */
+.qs-dot.waiting {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--muted);
 }
 .qs-lead {
   flex: none;
@@ -353,7 +362,7 @@
     border-radius: var(--radius-md);
     color: var(--text-2);
   }
-  .crumb-back {
+  .crumb .crumb-back {
     display: block;
   }
   .crumb-name {

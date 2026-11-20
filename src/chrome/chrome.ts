@@ -1136,7 +1136,7 @@ function renderLog(scrollToEnd = false) {
       ),
     );
   }
-  renderQueue();
+  renderQueue(scrollToEnd);
   if (state.archived) {
     log.append(
       h("div", {
@@ -1152,10 +1152,12 @@ function renderLog(scrollToEnd = false) {
 }
 
 /** "Ready to send": the queued notes, numbered in the order they go out, each with Edit and Remove. */
-function renderQueue() {
+function renderQueue(scrollToEnd = false) {
   const box = $(".queue");
   const list = $(".queue-list", box);
   const n = state.queue.length;
+  // The list scrolls by itself: a redraw (Edit, Remove) keeps its place, a new note is brought into view.
+  const top = list.scrollTop;
   list.textContent = "";
   box.hidden = !n;
   $(".queue-title", box).textContent = `Ready to send · ${n}`;
@@ -1190,6 +1192,7 @@ function renderQueue() {
       ),
     );
   });
+  list.scrollTop = scrollToEnd ? list.scrollHeight : top;
 }
 
 // ── composer / sending ──
@@ -1699,7 +1702,7 @@ function h2(cls: string, text: string): HTMLDivElement {
 
 if (OWNER && !HOSTED) {
   $(".hist-close").addEventListener("click", closeHistory);
-  $(".hist-btn").addEventListener("click", () => void showHistory());
+  $(".hist-btn").addEventListener("click", () => (histPop().hidden ? void showHistory() : closeHistory()));
   $(".since").addEventListener("click", (e) => {
     const act = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-since]")?.dataset.since : undefined;
     if (act === "dismiss") $(".since").hidden = true;
@@ -2240,13 +2243,18 @@ function renderTabs() {
     else t.removeAttribute("aria-current");
   }
   document.querySelector(".hist-btn")?.setAttribute("aria-expanded", String(histOpen));
+  // On a wide screen the Agent and History panels lie over the notes, the queue and the composer:
+  // what is covered takes no focus. On a narrow one they are popovers, and the sheet under them stays in use.
+  const covered = current !== "notes" && !isNarrow();
+  for (const el of document.querySelectorAll<HTMLElement>(".panel > .log, .panel > .queue, .panel > .composer")) el.inert = covered;
 }
 
 $(".panel-tabs").addEventListener("click", (e) => {
   const tab = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-tab]")?.dataset.tab : undefined;
   if (!tab) return;
-  // The document's click closes the Agent panel: a tab click is not an outside click.
+  // The document's click closes the Agent panel and the ⋯ menu: a tab click is not an outside click for the first.
   e.stopPropagation();
+  menuPop.hidden = true;
   const histEl = document.querySelector<HTMLElement>(".hist");
   if (tab !== "history" && histEl && !histEl.hidden) closeHistory();
   if (tab !== "agent") closeAttach();
@@ -2254,6 +2262,7 @@ $(".panel-tabs").addEventListener("click", (e) => {
   if (tab === "history") void showHistory();
   renderTabs();
 });
+window.matchMedia("(max-width: 860px)").addEventListener("change", renderTabs);
 
 /** Write the page's own row; from "Use project default", the page takes the fields it showed. */
 async function saveAttach(change: AttachChange) {
@@ -2442,7 +2451,9 @@ if (attachPill && attachPop) {
 
 // ── mobile sheet ──
 
-const isNarrow = () => window.matchMedia("(max-width: 860px)").matches;
+function isNarrow(): boolean {
+  return window.matchMedia("(max-width: 860px)").matches;
+}
 function setSheet(open: boolean) {
   state.sheetOpen = open;
   SS.set(`austere:sheet:${SID}`, open);

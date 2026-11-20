@@ -20,7 +20,7 @@ The home page has a sidebar and five views. The sidebar lists the projects, each
 - **Runs:** the newest 100 agent runs, with their state, page, harness and reason.
 - **Settings:** this server, without a terminal. See [Settings](#settings).
 
-The search box at the top looks for pages by title, path or project, and for **parts**: statements whose text matches (the same index as `find`). A part opens its page with that part outlined. Every view and filter is in the address (`/?view=pages&project=shop`), so the back button and bookmarks work.
+The search box at the top of the sidebar (on a phone, the search button in the top bar) looks for pages by title, path or project, and for **parts**: statements whose text matches (the same index as `find`). A part opens its page with that part outlined. Every view and filter is in the address (`/?view=pages&project=shop`), so the back button and bookmarks work.
 
 `hub list` and `hub notes` show 40 and say `40 of 45 pages shown` when there are more; `--limit n` shows more. `hub open` starts a browser unless `AUSTERE_AXI_NO_OPEN=1` is set (a machine with no screen); then it prints the url and how to sign in.
 

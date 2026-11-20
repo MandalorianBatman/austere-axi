@@ -76,7 +76,8 @@ const GROUPS: [Item["kind"], string][] = [
 
 function pageState(p: ShellPage): Item["state"] {
   if (p.group === "needs_you") return { cls: "needs", label: "Needs you" };
-  if (p.group === "waiting_on_agent") return p.run_active ? { cls: "working", label: "Agent working" } : { cls: "waiting", label: "Waiting on an agent" };
+  // As the hub's Inbox: green only while an agent has the notes or is there to take them.
+  if (p.group === "waiting_on_agent") return p.run_active ? { cls: "working", label: "Agent working" } : p.taker === "listening" ? { cls: "working", label: "Agent listening" } : { cls: "waiting", label: "Waiting on an agent" };
   return { cls: "quiet", label: "Quiet" };
 }
 
@@ -157,6 +158,7 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
   const input = h("input", { type: "search", class: "qs-input", placeholder: "Search pages and parts", "aria-label": "Search pages and parts", role: "combobox", "aria-expanded": "true", "aria-controls": "qs-list", autocomplete: "off" });
   const list = h("ul", { class: "qs-list", id: "qs-list", role: "listbox", "aria-label": "Pages and parts" });
   const kbd = (text: string): HTMLElement => h("kbd", { class: "qs-kbd", text });
+  const hubLink = h("a", { class: "qs-hub", href: "/", text: "Open the hub" });
   const dialog = h(
     "div",
     { class: "qs", role: "dialog", "aria-modal": "true", "aria-label": "Go to page", hidden: true },
@@ -171,7 +173,7 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
         h("span", { class: "qs-keys" }, kbd("↑"), kbd("↓"), " to move"),
         h("span", { class: "qs-keys" }, kbd("Enter"), " to open"),
         h("span", { class: "qs-keys" }, kbd("Esc"), " to close"),
-        h("a", { class: "qs-hub", href: "/", text: "Open the hub" }),
+        hubLink,
       ),
     ),
   );
@@ -303,13 +305,17 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
       e.preventDefault();
       const it = items[active];
       if (it) location.href = it.href;
-    } else if (e.key === "Escape") {
+    }
+  });
+  dialog.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
       hide();
     } else if (e.key === "Tab") {
-      // A modal: focus stays in the box.
+      // A modal: focus stays in the box, between the search field and the hub link.
       e.preventDefault();
+      (document.activeElement === input ? hubLink : input).focus();
     }
   });
   dialog.addEventListener("click", (e) => {

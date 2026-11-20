@@ -5,13 +5,13 @@ We want everyone who reviews an agent's work to be able to use austere-axi: the 
 ## Supported environments
 
 - **Browsers:** current Chrome and Firefox. The browser test suite runs the review loop in headless Chrome, with one check in Firefox.
-- **Screens:** desktop, and narrow screens down to 390 px wide, where the conversation panel becomes a bottom sheet.
+- **Screens:** desktop, and narrow screens down to 390 px wide, where the side panel becomes a bottom sheet.
 - **CLI:** plain-text output, readable by a screen reader in any terminal.
 
 ## What works
 
-- The review page's controls are native buttons, inputs, selects and `<dialog>` elements, with labels on icon-only buttons (`More`, `Close`) and on the mode switch, presence and attach controls. Toggle controls like Changes (`aria-pressed`) and Agent attach (`aria-expanded`) expose their state.
-- Keyboard: `Ctrl+I` (`⌘I` on macOS) switches between Annotate and Explore. In the note box and the composer, `Enter` sends or queues and `Shift+Enter` starts a new line. `Escape` closes the note box when it is empty, the attach popover, and the conversation sheet.
+- The review page's controls are native buttons, inputs, selects and `<dialog>` elements, with labels on icon-only buttons (`More`, `Close`) and on the mode switch, presence and attach controls. Toggle controls like the Annotate and Explore buttons and Changes (`aria-pressed`) and Agent attach (`aria-expanded`) expose their state.
+- Keyboard: `Ctrl+I` (`⌘I` on macOS) switches between Annotate and Explore. In the note box and the composer, `Enter` sends or queues and `Shift+Enter` starts a new line. `Escape` closes the note box when it is empty, the Agent panel, and the notes sheet. While the Agent or History panel lies over the notes, the notes, the queue and the composer take no focus.
 - Text selected with the keyboard (`Shift` + arrow keys) can be annotated, the same as text selected with a mouse.
 - The hub has labelled search and filter fields and a visible focus outline.
 

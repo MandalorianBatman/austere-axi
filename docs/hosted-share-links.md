@@ -104,12 +104,12 @@ Chrome hosted mode (an austere-axi change):
 Headers on `/p/:id`:
 
 ```
-Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
 X-Robots-Tag: noindex, nofollow
 Referrer-Policy: no-referrer
 ```
 
-`connect-src 'self'` also admits the same-origin `wss:` socket.
+`connect-src 'self'` also admits the same-origin `wss:` socket. `font-src data:` is needed because `chrome.css` carries Inter and JetBrains Mono as `data:font/woff2` URLs; without it the browser reports each font and the page falls back to system fonts.
 
 `GET /p/:id/a/<assetToken>/` serves the artifact with `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'`. `font-src data:` is needed because the runtime injects Inter as a `data:font/woff2` URL. The frame cannot make network requests. Notes leave it only by `postMessage` to the chrome, which is how it already works locally (`src/runtime/index.tsx`). The path was `/p/:id/a/` before Q16.
 

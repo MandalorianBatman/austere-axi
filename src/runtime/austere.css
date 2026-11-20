@@ -843,13 +843,16 @@ html.austere-annotating .austere-page :where(a, button, input, select, textarea,
 }
 .austere-pop-quote {
   margin: 0;
-  padding: 6px 10px;
+  /* Three lines. The space under them is a border, not padding: text past the third line would show in padding. */
+  box-sizing: border-box;
+  max-height: calc(3 * 1.45em + 12px);
+  padding: 6px 10px 0;
+  border-bottom: 6px solid #101013;
   border-radius: 7px;
   background: #101013;
   color: #a6a6b0;
   font-size: 12.5px;
   line-height: 1.45;
-  max-height: 4.4em;
   overflow: hidden;
 }
 .austere-pop-quote:empty {

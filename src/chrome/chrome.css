@@ -58,8 +58,9 @@ code {
   border-bottom: 1px solid var(--line);
   background: var(--bg-2);
 }
+/* Takes what the right side leaves: a long title is cut short, never the agent pill or the presence. */
 .bar-start {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1229,7 +1230,6 @@ textarea.edit {
   color: var(--text);
   font: inherit;
   resize: vertical;
-  outline: none;
 }
 .receipt {
   display: flex;
@@ -2044,14 +2044,34 @@ textarea.edit {
   .composer-row .send {
     flex: 1.2;
   }
+  /* The actions take the card's first line only: the note below them has the card's width. */
   .q-item {
-    padding-right: 2px;
+    position: relative;
     border-radius: var(--radius-lg);
+  }
+  .q-num {
+    margin-top: 7px;
+  }
+  .q-actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    margin: 0;
   }
   .q-actions .icon-btn {
     width: var(--touch);
     height: var(--touch);
     border-radius: var(--radius-md);
+  }
+  .q-item > .item > .anchor:first-child {
+    min-height: 34px;
+    max-width: calc(100% - 2 * var(--touch) + 8px);
+  }
+  .q-item > .item > :first-child:not(.anchor) {
+    margin-right: calc(2 * var(--touch) - 8px);
+  }
+  .btn.tiny {
+    min-height: 32px;
   }
   .attach-radio {
     min-height: var(--touch);

@@ -23,8 +23,9 @@ const ID = "pg_test";
 const BASE = `/p/${ID}`;
 const ANA = "ana-invite-token-0123456789";
 const BO = "bo-invite-token-0123456789";
+// As austere-cloud sends it (src/serve.ts), and as docs/hosted-share-links.md states it.
 const SHELL_CSP =
-  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const FRAME_CSP =
   "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'";
 

@@ -200,6 +200,9 @@
     flex-basis: 100%;
     justify-content: flex-end;
   }
+  .trow .row-actions {
+    flex-basis: auto;
+  }
   .previews li + li {
     display: none;
   }
@@ -215,6 +218,7 @@
     height: var(--touch);
   }
   .chip,
+  .t-copies .chip,
   details.more > summary {
     min-height: 36px;
   }
