@@ -18,6 +18,7 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 ### Fixed
 
 - Switching between Annotate and Explore no longer switches the Agent panel's disabled choices back on. The Annotate and Explore buttons tell a screen reader which one is on (`aria-pressed`).
+- `stop` returns when the server process has exited, not when it answers the shutdown request. Before, the server still held `hub.db` for 100 ms or more after `stop` returned, so a command or script that wrote `hub.db` at once could fail with `database is locked` (seen on Windows). If the server does not exit within 10 s, `stop` says `status: stopping`.
 
 ## 0.14.1 (2026-11-19)
 

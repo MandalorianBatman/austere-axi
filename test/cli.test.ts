@@ -4,6 +4,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { Hub } from "../src/cli/hub.ts";
 import { SessionStore, sessionId } from "../src/cli/sessions.ts";
@@ -338,3 +339,28 @@ test("open names the bare poll; a project poll keeps going after final on one pa
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     }
   }));
+
+test("stop returns once the server process is gone, so hub.db takes a write at once", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-cli-stop-"));
+  const e = { ...env, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(await freePort()) };
+  const page = path.join(state, "page.html");
+  fs.writeFileSync(page, PAGE);
+  try {
+    assert.equal(cliWith(e, page).code, 0);
+    const pid = Number(JSON.parse(fs.readFileSync(path.join(state, "server.lock"), "utf8")).pid);
+    const r = cliWith(e, "stop");
+    assert.match(r.out, /^status: stopped$/m, r.out);
+    // The server closes hub.db only after it answers /api/shutdown: stop waits for its exit.
+    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, `server pid ${pid} still runs after stop returned`);
+    // No busy timeout: a connection the server still held would fail this write with "database is locked".
+    const db = new DatabaseSync(path.join(state, "hub.db"));
+    try {
+      db.exec("CREATE TABLE stop_probe (x)");
+    } finally {
+      db.close();
+    }
+  } finally {
+    cliWith(e, "stop");
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
