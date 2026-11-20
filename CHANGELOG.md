@@ -4,6 +4,12 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Added
+
+- Accounts on the hosted service (WorkOS AuthKit). `cloud login` signs this machine in with a code you approve in the browser (email code, Google, GitHub or passkey); `cloud whoami` and `cloud logout`. Signed in, you are the owner of all your hosted pages: `publish` and the local server's sync use the account, and the same account in the browser is the owner on every page without `publish login`. The first login hands this machine's owner token to the account, so pages published before stay yours. The CLI keeps the tokens in `cloud.json` (0600) and stores the new refresh token at every refresh. Needs austere-cloud with accounts on. (RLM-414)
+- `clone` lists your hosted pages from every machine; `clone <id> [<file>]` writes one to a new local file and attaches it, so its notes sync here and `publish` updates the same link. (RLM-414)
+- A hosted page that refuses a viewer (no invite, or one no longer valid) offers **Sign in** when the service has accounts: a reviewer the owner granted the page to by email gets in under their account name. (RLM-414)
+
 ### Changed
 
 - The hub and the review page have a new look: Inter and JetBrains Mono (bundled, nothing is fetched), shared colour tokens with higher-contrast secondary text, line icons, and grouped list cards. The hub's Inbox shows each page's state as a coloured icon with one main action; Pages, Notes, Runs and Settings follow the same layout; on a phone the hub's views are a bottom tab bar. The review page has a 52px top bar, an Annotate/Explore bar above the page, and a side panel with Notes, Agent and History tabs; the queue lists numbered notes with Edit and Remove. The Go to page switcher groups pages and parts and shows each page's state. The comment popover's button reads **Add to queue**. No command, flag, route or stored data changes.

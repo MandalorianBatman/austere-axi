@@ -27,7 +27,7 @@ interface Boot {
   file: string;
   version?: string;
   artifactUrl?: string;
-  hosted?: { base?: string; report?: string; publishedAt?: number } | null;
+  hosted?: { base?: string; report?: string; publishedAt?: number; signIn?: string } | null;
   viewer?: { role: string; name: string; auto?: boolean };
 }
 
@@ -2724,9 +2724,13 @@ function lock(label: string, message: string, actions: HTMLElement[] = []) {
 /** Locks on an answer that means this reviewer cannot get in (403) or the page is gone (404, 410). */
 function refused(status: number): boolean {
   if (status === 403) {
-    if (ownerView) lock("Signed out", "Your owner sign-in has expired. Run `austere-axi publish login <file>` for a new link.");
-    else if (invite) lock("Invite no longer valid", "This invite is no longer valid. Ask the page owner for a new link.");
-    else lock("Invite required", "This page is invite-only. Open it from the link the page owner sent you.");
+    // The service's account sign-in (same origin, a plain navigation); it brings the viewer back to this page.
+    const signIn = typeof HOSTED?.signIn === "string" && HOSTED.signIn.startsWith("/") && !HOSTED.signIn.startsWith("//") ? HOSTED.signIn : null;
+    const actions = signIn ? [h("a", { class: "btn tiny", href: signIn, text: "Sign in" })] : [];
+    const orSignIn = signIn ? " Or sign in with the account the owner shared it with." : "";
+    if (ownerView) lock("Signed out", `Your owner sign-in has expired. ${signIn ? "Sign in again, or run" : "Run"} \`austere-axi publish login <file>\` for a new link.`, actions);
+    else if (invite) lock("Invite no longer valid", `This invite is no longer valid. Ask the page owner for a new link.${orSignIn}`, actions);
+    else lock("Invite required", `This page is invite-only. Open it from the link the page owner sent you.${orSignIn}`, actions);
   } else if (status === 404 || status === 410) lock("Page removed", "This page is no longer available.");
   else return false;
   return true;

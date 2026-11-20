@@ -8,7 +8,7 @@ import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements, statementMap } from "../shared/statements.ts";
-import { commandPort, ensureServer, health, loginUrl, openBrowser, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
+import { commandPort, ensureServer, health, loginUrl, openBrowser, openUrl, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
 import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
 import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { planCopy, parseSource, recordOrigins, originsOf } from "./copy.ts";
@@ -444,6 +444,20 @@ const COMMANDS: Record<string, CommandSpec> = {
     },
     example: 'publish plan.html --invite "Ana" --invite "Ben"',
   },
+  cloud: {
+    usage: "cloud login | cloud logout | cloud whoami",
+    summary:
+      "your account on the hosted service (WorkOS sign-in: email code, Google, GitHub, passkey). `cloud login` prints a code and opens the browser to approve it, once per machine; you are then the owner of all your hosted pages, from every machine you log in on and in the browser with the same account, and pages this machine published before become the account's. `cloud whoami` prints the account, `cloud logout` forgets it here. Only for hosted pages: the local server needs no account",
+    flags: {},
+    example: "cloud login",
+  },
+  clone: {
+    usage: "clone [<id> [<file>]]",
+    summary:
+      "your hosted pages, from any machine: without an id it lists them; with one it writes that page to a new local file (default <id>.html here) and attaches it, so `publish <file>` updates the same link and the local server syncs its notes",
+    flags: {},
+    example: "clone   |   clone Zm9vYmFyYmF6cXV4cXV1dXV1 plan.html",
+  },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
   server: {
     usage: "server [install|uninstall|status|restart] [--persist] [--port n] [--also-listen addr]... [--verbose] [--link-url u] [--adopt] [--force] | server lan [<address>|off]",
@@ -476,8 +490,9 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
       pos.push(...argv.slice(i + 1));
       break;
     }
-    // Page ids are base64url, so one may start with "--": after `publish rm` it is the id, not a flag (RLM-403).
-    if (pos.length === 2 && pos[0] === "publish" && pos[1] === "rm" && cloud.PAGE_ID_RE.test(a)) pos.push(a);
+    // Page ids are base64url, so one may start with "--": after `publish rm` and `clone` it is the id, not a flag (RLM-403).
+    const idSlot = (pos.length === 2 && pos[0] === "publish" && pos[1] === "rm") || (pos.length === 1 && pos[0] === "clone");
+    if (idSlot && cloud.PAGE_ID_RE.test(a)) pos.push(a);
     else if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const key = eq > 0 ? a.slice(2, eq) : a.slice(2);
@@ -2840,6 +2855,76 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
   }
 }
 
+// ── cloud account and clone (RLM-414) ──
+
+/** `cloud login|logout|whoami`: the hosted service's account on this machine. */
+async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> {
+  if (sub !== "login" && sub !== "logout" && sub !== "whoami") return usage(`cloud needs login, logout or whoami${sub ? `, not ${sub}` : ""}`, "cloud");
+  if (rest.length) return usage(`cloud ${sub} takes no arguments; it got ${rest.map((a) => `"${a}"`).join(" ")}`, "cloud");
+  try {
+    if (sub === "logout") {
+      const was = await cloud.logout();
+      return print({
+        status: was ? "signed out" : "not signed in",
+        account: was ?? undefined,
+        note: was ? "This machine forgot the account. Your hosted pages stay; `cloud login` brings them back." : undefined,
+      });
+    }
+    if (sub === "whoami") {
+      const me = await cloud.whoami();
+      if (!me) return print({ status: "not signed in", next: `${BIN} cloud login` });
+      return print({ status: "signed in", email: me.email, name: me.name || undefined, pages: me.pages, service: cloud.cloudUrl() });
+    }
+    const r = await cloud.login(async (p) => {
+      const opened = !browserDisabled() && openUrl(p.verificationUriComplete);
+      process.stderr.write(
+        `[${BIN}] ${opened ? "Opened your browser" : `Open ${p.verificationUri}`} to sign in, and check that it shows the code ${p.userCode}. It works for ${Math.round(p.expiresIn / 60)} minutes.\n`,
+      );
+    });
+    print({
+      status: "signed in",
+      email: r.email,
+      name: r.name || undefined,
+      claimed: r.claimed === null ? undefined : `${r.claimed} page${r.claimed === 1 ? "" : "s"} this machine published before are now the account's`,
+      warning: r.claimError ? `This machine's earlier pages stay with its owner token: ${r.claimError}` : undefined,
+      note: "You are the owner of all your hosted pages now, here and in the browser with the same account. Grant a page to someone by email on the service's dashboard.",
+      next: `${BIN} cloud whoami; ${BIN} clone lists your pages`,
+    });
+  } catch (caught) {
+    const err = caught as { message: string; status?: number; code?: string };
+    fail(err.message, { http: err.status, code: err.code });
+  }
+}
+
+/** `clone [<id> [<file>]]`: list the owner's hosted pages, or bring one down as a local, attached file. */
+async function cmdClone(args: string[]): Promise<void> {
+  const [id, file, ...more] = args;
+  if (more.length) return usage(`clone takes an id and a file; it got ${args.map((a) => `"${a}"`).join(" ")}`, "clone");
+  try {
+    if (!id) {
+      const pages = await cloud.listPages();
+      if (!pages.length) return print({ pages: "none", next: `${BIN} cloud login, then ${BIN} publish <file>` });
+      return print({
+        pages: pages.map((p) => ({ id: p.id, title: p.title, file: p.file, url: p.url, expires: shortDate(p.expiresAt), notes: p.notes })),
+        next: `${BIN} clone <id> [<file>] brings a page without a file here down to this machine.`,
+      });
+    }
+    const abs = canonicalFile(file ?? `${id}.html`);
+    const r = await cloud.clonePage(id, abs);
+    print({
+      status: "cloned",
+      file: r.file,
+      id: r.id,
+      title: r.title,
+      note: "The file is attached to the hosted page: its notes reach poll and feedback here, and publish updates the same link.",
+      next: `${BIN} ${quote(r.file)} opens it for review; ${BIN} publish ${quote(r.file)} updates the hosted page.`,
+    });
+  } catch (caught) {
+    const err = caught as { message: string; status?: number; code?: string };
+    fail(err.message, { http: err.status, code: err.code });
+  }
+}
+
 async function cmdStop(): Promise<void> {
   // A server from before the health proof is stopped too (without the key).
   const h = await serverIfRunning({ legacy: true });
@@ -3054,6 +3139,10 @@ async function main(): Promise<unknown> {
       return cmdShare(rest, flags);
     case "publish":
       return cmdPublish(rest, flags);
+    case "cloud":
+      return cmdCloud(rest[0], rest.slice(1));
+    case "clone":
+      return cmdClone(rest);
     case "stop":
       return cmdStop();
     case "server":

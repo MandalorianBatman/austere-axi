@@ -97,9 +97,9 @@ With austere-axi the agent writes a short outline that names what goes on the pa
 
 ## Private by default
 
-- It runs on your own computer. There is no account and no sign-up.
+- It runs on your own computer. Local review needs no account and no sign-up.
 - Your pages and notes stay on your computer unless you choose to publish a page.
-- A published page is invite-only unless you ask for an open link, and it expires 30 days after you last published it.
+- A published page is invite-only unless you ask for an open link, and it expires 30 days after you last published it. Hosted review needs a sign-in: reviewers sign in with the email you granted the page to (or open their invite link), and `austere-axi cloud login` makes you the owner of all your hosted pages.
 - It is free and open source (MIT license).
 
 The details are in the [security guide](docs/security.md).

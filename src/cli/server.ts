@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { readArtifact, replaceProgram, rewriteRuntime, escapeHtml } from "./artifact.ts";
 import { agentPrompt } from "./agent-prompt.ts";
-import { cloudUrl, readCloud } from "./cloud.ts";
+import { cloudUrl, hasOwner, readCloud } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, lanAddresses, linkUrl, whoIs } from "./net.ts";
 import type { AddressSettings, Tailnet, TailscalePerson } from "./net.ts";
@@ -3102,7 +3102,7 @@ export async function runServer({
     if (sub === "/agent-prompt" && req.method === "GET") {
       // The owner's only (reviewers are refused above). cloud.json is read again: `publish` may have run since the page opened.
       const state = readCloud();
-      const entry = state.token ? state.pages[s.file] : undefined;
+      const entry = hasOwner(state) ? state.pages[s.file] : undefined;
       const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: peer.liveAuto(entry.id, entry.auto) } : undefined;
       const p = projectOfPage(s);
       // An agent already polls this project (a second project poll would replace it) or this page's checkout (it would keep

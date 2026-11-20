@@ -305,6 +305,11 @@ export async function openBrowser(url: string): Promise<boolean> {
   } catch {
     return false;
   }
+  return openUrl(target);
+}
+
+/** Open any `target` URL in the default browser; false when no browser could be started. */
+export function openUrl(target: string): boolean {
   const platform = process.platform;
   let cmd: string;
   let args: string[];
