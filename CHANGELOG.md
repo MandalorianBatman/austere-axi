@@ -2,6 +2,12 @@
 
 Versions before 0.11.0 are listed only in the [GitHub releases](https://github.com/MandalorianBatman/austere-axi/releases).
 
+## Unreleased
+
+### Changed
+
+- **Cloud features are off by default.** `publish`, `clone`, `cloud login|whoami` and the local server's sync of hosted pages need the new switch: `cloud on|off|status`, or the hub's **Settings → Cloud**. Off, nothing reaches the hosted service: those commands fail with `cloud features are off` before any request, and the server opens no socket and queues nothing for hosted pages. The switch is kept in `<state dir>/settings.json`. **Upgrading with published pages:** they stop syncing until you run `austere-axi cloud on`. `cloud logout` works either way. (RLM-421)
+
 ## 0.15.0 (2026-11-20)
 
 ### Added

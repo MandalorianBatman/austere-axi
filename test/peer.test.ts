@@ -17,7 +17,7 @@ import type { WebSocket } from "ws";
 import { freePort } from "./port.ts";
 import { format } from "../src/cli/output.ts";
 import { quote } from "../src/cli/paths.ts";
-import { ownerHeaders } from "./owner.ts";
+import { cloudOn, ownerHeaders } from "./owner.ts";
 import { SUBPROTOCOL, SYNC_VERSION, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
 import type { AckFrame, ClientPresence, MutationArgs, NoteItem, NoteRow, PageRow, PresenceStatus, ReplyRow, Row, ServerPresence, ViewerHello } from "../src/shared/sync.ts";
 
@@ -222,6 +222,7 @@ interface Machine {
 async function machine(pages: Record<string, { id: string; auto: boolean }>): Promise<Machine> {
   const state = tmp("austere-peer-state-");
   fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: CLOUD, token: TOKEN, pages }), { mode: 0o600 });
+  cloudOn(state);
   const port = await freePort();
   const env = { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
   const run = (...args: string[]) =>

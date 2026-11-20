@@ -140,7 +140,7 @@ test("settings: every section loads; a request is approved; a link is made; the 
   if (skipReason) return t.skip(skipReason);
   const { page, context, problems } = await ownerTab();
   try {
-    for (const id of ["people", "network", "review", "projects", "about"]) assert.ok(await part(page, id).isVisible(), id);
+    for (const id of ["people", "network", "review", "cloud", "projects", "about"]) assert.ok(await part(page, id).isVisible(), id);
     assert.equal((await page.locator('.views a[data-view="settings"] .count').innerText()).trim(), "1", "one person waits");
     // Network: this computer, the address to share, always on, Tailscale names and the local-network switch.
     const net = part(page, "network");
@@ -176,6 +176,17 @@ test("settings: every section loads; a request is approved; a link is made; the 
     assert.equal(made.data.auto, true, "the default applies");
     const held = await call<{ auto: boolean }>("POST", "/api/share", { file: path.join(SHOP, "docs", "plan.html"), name: "Ed", auto: false });
     assert.equal(held.data.auto, false, "a share that says keeps its own");
+
+    // Cloud: off by default; the switch turns it on and off, and settings.json follows.
+    const cloudSwitch = part(page, "cloud").locator('[data-slot="cloud"] input[type=checkbox]');
+    assert.equal(await cloudSwitch.isChecked(), false, "cloud features are off by default");
+    assert.match(await part(page, "cloud").innerText(), /Off: only local features work/);
+    await cloudSwitch.check();
+    await page.locator(".status", { hasText: "Cloud features are on" }).waitFor();
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(STATE, "settings.json"), "utf8")), { cloud: true });
+    await part(page, "cloud").locator('[data-slot="cloud"] input[type=checkbox]').uncheck();
+    await page.locator(".status", { hasText: "Cloud features are off" }).waitFor();
+    assert.equal((await call<{ on: boolean }>("GET", "/api/settings/cloud")).data.on, false);
     assert.deepEqual(problems, []);
   } finally {
     await context.close();
@@ -205,10 +216,10 @@ test("settings: revoke a device, rename a project; a reviewer gets 403; another 
   const cookie = await claimLink(port, shared.data.link);
   const reviewer = { cookie, origin: `http://127.0.0.1:${port}` };
   for (const route of ["/?view=settings", "/hub/api/settings", "/hub/api/people", "/hub/api/people/requests"]) assert.equal((await call("GET", route, undefined, reviewer)).status, 403, route);
-  for (const route of ["/hub/api/settings/review", "/hub/api/people/share", "/hub/api/projects/archive-missing"]) assert.equal((await call("POST", route, { auto: true }, reviewer)).status, 403, route);
+  for (const route of ["/hub/api/settings/review", "/hub/api/settings/cloud", "/hub/api/people/share", "/hub/api/projects/archive-missing"]) assert.equal((await call("POST", route, { auto: true, on: true }, reviewer)).status, 403, route);
   // The owner's cookie from another site's page: refused.
   const foreign = { cookie: ownerHeaders(STATE).cookie, origin: "https://evil.example" };
-  for (const route of ["/hub/api/settings/review", "/hub/api/people/share", "/hub/api/projects/archive-missing"]) assert.equal((await call("POST", route, { auto: true }, foreign)).status, 403, route);
+  for (const route of ["/hub/api/settings/review", "/hub/api/settings/cloud", "/hub/api/people/share", "/hub/api/projects/archive-missing"]) assert.equal((await call("POST", route, { auto: true, on: true }, foreign)).status, 403, route);
   assert.equal((await call("GET", "/hub/api/settings", undefined, foreign)).status, 403);
 });
 

@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { readArtifact, replaceProgram, rewriteRuntime, escapeHtml } from "./artifact.ts";
 import { agentPrompt } from "./agent-prompt.ts";
-import { cloudUrl, hasOwner, readCloud } from "./cloud.ts";
+import { cloudEnabled, cloudUrl, hasOwner, readCloud, setCloudEnabled } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, lanAddresses, linkUrl, whoIs } from "./net.ts";
 import type { AddressSettings, Tailnet, TailscalePerson } from "./net.ts";
@@ -53,7 +53,7 @@ import dns from "node:dns";
 import { reviewerItem } from "./items.ts";
 import { missingPage } from "./hub-page.ts";
 import { copiesToFlip, copySummary, shellInbox, shellPages, shellProjects, shellRuns, shellSearch } from "./hub-api.ts";
-import type { ArchiveResult, CopySummary, InboxResponse, LocalNetwork, NotesResponse, PagesResponse, PagesView, ProjectActionResult, ProjectsResponse, HubRunsResponse, SearchResponse, SettingsResponse } from "../shared/hub-api.ts";
+import type { ArchiveResult, CloudSettings, CopySummary, InboxResponse, LocalNetwork, NotesResponse, PagesResponse, PagesView, ProjectActionResult, ProjectsResponse, HubRunsResponse, SearchResponse, SettingsResponse } from "../shared/hub-api.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
 import { Peer } from "./peer.ts";
 import { parseClientFrame } from "../shared/sync.ts";
@@ -1953,6 +1953,8 @@ export async function runServer({
     if (route === "share/requests" && req.method === "GET") return send(res, 200, requestsList() satisfies AccessRequestsResponse);
     // `share default [hold|auto]`: the owner's default for a new reviewer's notes, as Settings → Review defaults sets it.
     if (route === "share/default" && req.method === "GET") return send(res, 200, { auto: requests.defaultAuto() });
+    // `cloud status`: the cloud switch of Settings → Cloud.
+    if (route === "settings/cloud" && req.method === "GET") return send(res, 200, cloudView() satisfies CloudSettings);
     // `server lan`: the local-network switch of Settings → Network (RLM-399).
     if (route === "settings/lan" && req.method === "GET") return send(res, 200, settingsView().network.lan satisfies LocalNetwork);
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
@@ -1974,6 +1976,11 @@ export async function runServer({
       const done = revokeAccess(body.key);
       if (!done.revoked.length) return send(res, 404, { error: "no link or device matches that name or id" });
       return send(res, 200, done satisfies RevokeResponse);
+    }
+    if (route === "settings/cloud") {
+      if (typeof body.on !== "boolean") return send(res, 400, { error: "on must be true or false" });
+      setCloud(body.on);
+      return send(res, 200, cloudView() satisfies CloudSettings);
     }
     if (route === "settings/lan") {
       const lan = body.lan;
@@ -2478,6 +2485,20 @@ export async function runServer({
     return { url: `http://${host}:${port}`, from };
   }
 
+  /** Settings → Cloud, from cloud.json and settings.json alone: nothing here asks the service. */
+  function cloudView(): CloudSettings {
+    const state = readCloud();
+    return { on: cloudEnabled(), service: state.url || cloudUrl(), account: state.account?.user.email ?? null, published: Object.keys(state.pages).length };
+  }
+
+  /** Turn cloud features on (sync picks up every published page) or off (every socket to the service closes). */
+  function setCloud(on: boolean): void {
+    setCloudEnabled(on);
+    if (on) peer.start();
+    else peer.pause();
+    log("settings-cloud", on ? "on" : "off");
+  }
+
   function settingsView(): SettingsResponse {
     const addresses = Array.from(listeners.keys()).map((host) => ({
       kind: host === "127.0.0.1" ? ("this_computer" as const) : host === tailnetBound ? ("tailscale" as const) : host === lanHost ? ("local_network" as const) : ("added" as const),
@@ -2509,6 +2530,7 @@ export async function runServer({
         },
       },
       review: { auto: requests.defaultAuto(), viewing },
+      cloud: cloudView(),
       missing: hub.missingCopies().length,
       gone_folders: listProjects(hub.db).flatMap((p) => p.roots.filter((r) => !fs.existsSync(r.root)).map((r) => r.root)),
       about: { version: VERSION, state_dir: stateDir(), newer_cli: newestCli },
@@ -2536,6 +2558,12 @@ export async function runServer({
       requests.setDefaultAuto(body.auto);
       log("settings-review", body.auto ? "auto" : "hold");
       return done(body.auto ? "New reviewers' notes go straight to the agent." : "New reviewers' notes wait for you.");
+    }
+    // Cloud features (RLM-421): `{ on }`. `cloud on|off` at a terminal does the same.
+    if (route === "settings/cloud") {
+      if (typeof body.on !== "boolean") return send(res, 400, { error: "on must be true or false" });
+      setCloud(body.on);
+      return done(body.on ? "Cloud features are on: publish, clone and hosted-page sync work." : "Cloud features are off: only local features work, and nothing reaches the service.");
     }
     // The local network (P6): `{ lan: "<address>" }` listens there, `{ lan: null }` stops. `server lan` at a terminal does the same.
     if (route === "settings/network") {
@@ -3101,8 +3129,9 @@ export async function runServer({
     }
     if (sub === "/agent-prompt" && req.method === "GET") {
       // The owner's only (reviewers are refused above). cloud.json is read again: `publish` may have run since the page opened.
+      // With cloud features off the page counts as not published: nothing of it reaches the service.
       const state = readCloud();
-      const entry = hasOwner(state) ? state.pages[s.file] : undefined;
+      const entry = cloudEnabled() && hasOwner(state) ? state.pages[s.file] : undefined;
       const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: peer.liveAuto(entry.id, entry.auto) } : undefined;
       const p = projectOfPage(s);
       // An agent already polls this project (a second project poll would replace it) or this page's checkout (it would keep

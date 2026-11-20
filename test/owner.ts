@@ -1,8 +1,15 @@
 // The owner's credentials for a test server: the key header that /api/* needs, and the cookie a
 // browser gets from a login code or the owner's remote link (derived from the key, not the key).
-// Loopback alone is not the owner.
+// Loopback alone is not the owner. And the owner's cloud switch, off by default.
+import fs from "node:fs";
 import http from "node:http";
+import path from "node:path";
 import { COOKIE, OWNER_COOKIE, ownerCookie, ownerKey } from "../src/cli/invites.ts";
+
+/** Turn cloud features on in a state dir, as `cloud on` does (RLM-421: they are off by default). */
+export function cloudOn(stateDir: string): void {
+  fs.writeFileSync(path.join(stateDir, "settings.json"), JSON.stringify({ cloud: true }));
+}
 
 export function ownerHeaders(stateDir: string): { "x-austere-key": string; cookie: string } {
   const key = ownerKey(stateDir);

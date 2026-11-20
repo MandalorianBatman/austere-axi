@@ -17,13 +17,14 @@ import type { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { freePort } from "./port.ts";
-import { ownerHeaders } from "./owner.ts";
+import { cloudOn, ownerHeaders } from "./owner.ts";
 import { SUBPROTOCOL, SYNC_VERSION, grantId, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
 import type { AclRow, MutationArgs, PageRow, ServerFrame, SyncError } from "../src/shared/sync.ts";
 import { format } from "../src/cli/output.ts";
 
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const STATE = tmp("austere-publish-state-");
+cloudOn(STATE);
 const WORK = tmp("austere-publish-work-");
 process.env.AUSTERE_AXI_STATE_DIR = STATE;
 const { bundlePage } = await import("../src/cli/cloud.ts");
@@ -436,6 +437,7 @@ test("a socket lost after the publish ack still records the page, without an exp
 test("a token for another service URL is not sent there", async () => {
   const state = tmp("austere-publish-other-");
   fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: "https://elsewhere.test", token: "t".repeat(43), pages: {} }));
+  cloudOn(state);
   try {
     const r = await cli(["publish", "list"], { AUSTERE_AXI_STATE_DIR: state });
     assert.equal(r.code, 1);
@@ -803,6 +805,7 @@ test("bundling: installed packs are objects named by SHA-256 and tagged /pk/; mi
 
 test("poll and feedback make no request to the service when nothing is published", async () => {
   const state = tmp("austere-publish-quiet-");
+  cloudOn(state);
   const port = await freePort();
   const file = path.join(WORK, "quiet.html");
   fs.writeFileSync(file, page('root = TextContent("x")'));
@@ -830,6 +833,50 @@ test("poll and feedback make no request to the service when nothing is published
     assert.equal(r.code, 0, r.out);
     assert.equal(fs.existsSync(path.join(state, "cloud.json")), false);
     assert.deepEqual(stub.requests, []);
+  } finally {
+    await run("stop");
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("cloud off (the default): publish and clone refuse before any request, and a published page does not sync until cloud on", async () => {
+  const state = tmp("austere-publish-off-");
+  const port = await freePort();
+  const file = path.join(WORK, "off.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  const run = (...args: string[]) => cli(args, { AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) });
+  try {
+    for (const args of [["publish", file], ["clone"], ["cloud", "whoami"]]) {
+      const r = await run(...args);
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.out, /cloud features are off/);
+    }
+    assert.deepEqual(stub.requests, []);
+    assert.equal(fs.existsSync(path.join(state, "cloud.json")), false, "nothing is written either");
+
+    let r = await run("cloud", "on");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /cloud: on/);
+    r = await run("publish", file);
+    assert.equal(r.code, 0, r.out);
+    r = await run("cloud", "off");
+    assert.match(r.out, /cloud: off/);
+    assert.match(r.out, /^published: 1$/m);
+
+    // Off: the server holds no socket to the published page, even for feedback, which pulls when on.
+    stub.requests.length = 0;
+    r = await run(file, "--no-open");
+    assert.equal(r.code, 0, r.out);
+    r = await run("feedback", file, "--all");
+    assert.equal(r.code, 0, r.out);
+    assert.match((await run("cloud", "status")).out, /cloud: off/);
+    assert.deepEqual(stub.requests, []);
+
+    // On again: the same feedback pulls the hosted page.
+    await run("cloud", "on");
+    r = await run("feedback", file, "--all");
+    assert.equal(r.code, 0, r.out);
+    assert.ok((stub.requests as string[]).some((q) => q.startsWith("ws pull")), stub.requests.join("\n"));
   } finally {
     await run("stop");
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });

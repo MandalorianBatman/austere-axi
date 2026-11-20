@@ -50,7 +50,7 @@ Repeat until it is right. When you are done, press **Done** (or **Send & finish*
 
 ## What else it does
 
-- **Bring in a teammate.** Ask your agent to publish the page and invite someone by name. Each person gets their own link, and their notes appear under their name. You see their notes first and decide which ones go to the agent. [More on sharing](docs/hosted-pages.md). On your own network, the hub's **Settings** makes a named link, lets people ask for access, and shows who has it ([Team review](docs/team-review.md), [Settings](docs/hub.md#settings)).
+- **Bring in a teammate.** Ask your agent to publish the page and invite someone by name (turn cloud features on first: `austere-axi cloud on`, or **Settings → Cloud**). Each person gets their own link, and their notes appear under their name. You see their notes first and decide which ones go to the agent. [More on sharing](docs/hosted-pages.md). On your own network, the hub's **Settings** makes a named link, lets people ask for access, and shows who has it ([Team review](docs/team-review.md), [Settings](docs/hub.md#settings)).
 - **Review from your phone.** The review page has a phone layout. This needs [Tailscale](https://tailscale.com) on your computer and phone. [How it works](docs/how-it-works.md#the-review-loop).
 - **Send someone a copy.** "Download standalone HTML" in the page's ⋯ menu saves the page as one file that opens in any browser, offline.
 - **Nothing gets lost.** Every note is saved the moment you send it. If the agent is busy or your computer restarts, the notes are waiting when the agent comes back.
@@ -98,7 +98,7 @@ With austere-axi the agent writes a short outline that names what goes on the pa
 ## Private by default
 
 - It runs on your own computer. Local review needs no account and no sign-up.
-- Your pages and notes stay on your computer unless you choose to publish a page.
+- Your pages and notes stay on your computer unless you choose to publish a page. Cloud features are off by default; until you turn them on (`austere-axi cloud on`, or the hub's **Settings → Cloud**), nothing is sent to the hosted service.
 - A published page is invite-only unless you ask for an open link, and it expires 30 days after you last published it. Hosted review needs a sign-in: reviewers sign in with the email you granted the page to (or open their invite link), and `austere-axi cloud login` makes you the owner of all your hosted pages.
 - It is free and open source (MIT license).
 

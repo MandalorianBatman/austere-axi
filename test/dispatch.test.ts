@@ -18,7 +18,7 @@ import { Dispatcher, readAttachLimits, unreleasedNotes, windowsLeftover } from "
 import { RENDER_CHECK_AUTHOR, SessionStore } from "../src/cli/sessions.ts";
 import type { QueuedEntry } from "../src/cli/sessions.ts";
 import { ownerKey } from "../src/cli/invites.ts";
-import { claimLink, ownerHeaders } from "./owner.ts";
+import { claimLink, cloudOn, ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 import { VERSION } from "../src/cli/paths.ts";
 
@@ -54,6 +54,7 @@ interface Recorded {
 
 const PORT = await freePort();
 const STATE = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-dispatch-state-")));
+cloudOn(STATE);
 const WORK = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-dispatch-work-")));
 const BIN = path.join(WORK, "bin");
 const CTL = path.join(WORK, "ctl");

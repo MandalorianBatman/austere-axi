@@ -15,6 +15,7 @@ import { WebSocketServer } from "ws";
 import { VERSION } from "../src/cli/paths.ts";
 import { SUBPROTOCOL, SYNC_VERSION, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
 import type { PageRow } from "../src/shared/sync.ts";
+import { cloudOn } from "./owner.ts";
 
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const ROOT = tmp("austere-account-");
@@ -185,6 +186,7 @@ after(() => {
 
 beforeEach(() => {
   STATE = fs.mkdtempSync(path.join(ROOT, "state-"));
+  cloudOn(STATE);
   stub.requests.length = 0;
   stub.polls.length = 0;
   stub.wsAuth.length = 0;
@@ -305,6 +307,7 @@ test("clone lists the account's pages and writes one down as a local, attached f
   // Another machine with the same account: a fresh state dir.
   const first = STATE;
   STATE = fs.mkdtempSync(path.join(ROOT, "state-"));
+  cloudOn(STATE);
   fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(first, "cloud.json"), "utf8")), pages: {} }), { mode: 0o600 });
   const list = await cli(["clone"]);
   assert.match(list.out, new RegExp(`id: ${id}`));

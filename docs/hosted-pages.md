@@ -1,6 +1,18 @@
 # Hosted pages
 
-`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. Nothing is sent until you run it; after that, the local server keeps your published pages in sync (below).
+`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. Nothing is sent until you run it; after that, the local server keeps your published pages in sync (below). Cloud features are off by default: turn them on first (below).
+
+## Cloud switch
+
+```sh
+austere-axi cloud on       # publish, clone, cloud login|whoami and hosted-page sync work
+austere-axi cloud off      # the default: only local features work
+austere-axi cloud status
+```
+
+The hub's **Settings → Cloud** is the same switch. It is kept in `<state dir>/settings.json` (`{ "cloud": true }`); without that file, or with anything else in it, cloud features are off. Off, every request and socket to the service is refused before it is made: `publish`, `publish list|invites|revoke|login|rm`, `clone` and `cloud login|whoami` fail with `cloud features are off`, and the local server opens no socket, queues no reply, Send or Discard for a hosted page, and treats published files as local ones. `cloud logout` works either way, since it only edits `cloud.json`. Pages you published stay up on the service until they expire; to take them down first, run `publish rm` while cloud is on. Turning cloud on again pulls every published page and sends nothing that was done while it was off.
+
+## Publish
 
 ```sh
 austere-axi publish plan.html --invite Ana --invite Ben   # prints https://austere.blundertech.com/p/<id>#i=<token> for each
