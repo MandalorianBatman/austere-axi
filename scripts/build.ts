@@ -17,6 +17,7 @@ import {
   ROOT,
   bundledPackSources,
   bundledPacksPlugin,
+  chromeFontsPlugin,
   estimateTokens,
   fontPlugin,
   loadLibrary,
@@ -138,7 +139,7 @@ async function buildChrome() {
     tsconfigRaw: IIFE_TSCONFIG,
     outdir: outDir,
     // The hosted page socket reads frames with the sync module, which bundles zod.
-    plugins: [zodLocalesPlugin],
+    plugins: [chromeFontsPlugin, zodLocalesPlugin],
     logLevel: "warning",
   });
   console.log("chrome   dist/chrome/");

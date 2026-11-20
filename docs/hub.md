@@ -20,13 +20,13 @@ The home page has a sidebar and five views. The sidebar lists the projects, each
 - **Runs:** the newest 100 agent runs, with their state, page, harness and reason.
 - **Settings:** this server, without a terminal. See [Settings](#settings).
 
-The search box at the top looks for pages by title, path or project, and for **parts**: statements whose text matches (the same index as `find`). A part opens its page with that part outlined. Every view and filter is in the address (`/?view=pages&project=shop`), so the back button and bookmarks work.
+The search box at the top of the sidebar (on a phone, the search button in the top bar) looks for pages by title, path or project, and for **parts**: statements whose text matches (the same index as `find`). A part opens its page with that part outlined. Every view and filter is in the address (`/?view=pages&project=shop`), so the back button and bookmarks work.
 
 `hub list` and `hub notes` show 40 and say `40 of 45 pages shown` when there are more; `--limit n` shows more. `hub open` starts a browser unless `AUSTERE_AXI_NO_OPEN=1` is set (a machine with no screen); then it prints the url and how to sign in.
 
 ### From a review page
 
-The owner's review header has a breadcrumb, **project ›** title, back to the hub (filtered to that project), and, on a page with copies in several worktrees, a list that opens the same page in another copy. On a phone the breadcrumb is a **‹** and the list is left out for room: the hub's chips and the quick switcher open the other copies. **Ctrl+K** (**⌘K** on a Mac; anywhere on the page, the composer and the page itself too), or **Go to page…** in the `⋯` menu, opens a quick switcher: pages you opened lately first, then type to find pages and parts. **Next unanswered page** in the `⋯` menu goes to the next page in the inbox with notes no agent answered, at the copy that has them. A reviewer's page, and a hosted page, has none of this.
+The owner's review header has a breadcrumb, **project /** title, back to the hub (filtered to that project), and, on a page with copies in several worktrees, a list that opens the same page in another copy. On a phone the breadcrumb is a back arrow and the list is left out for room: the hub's chips and the quick switcher open the other copies. **Ctrl+K** (**⌘K** on a Mac; anywhere on the page, the composer and the page itself too), or **Go to page…** in the `⋯` menu, opens a quick switcher: pages you opened lately first, then type to find pages and parts. **Next page with unanswered notes** in the `⋯` menu goes to the next page in the inbox with notes no agent answered, at the copy that has them. A reviewer's page, and a hosted page, has none of this.
 
 ### Settings
 

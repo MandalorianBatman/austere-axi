@@ -1,0 +1,63 @@
+/* Shared design tokens for the review page (chrome.css) and the hub shell (shell.css).
+   Fonts are inlined at build time (scripts/lib/plugins.ts, chromeFontsPlugin): nothing is fetched from the network. */
+@import "austere:fonts.css";
+
+:root {
+  /* grounds, darkest first */
+  --bg: #0b0b0d;
+  --bg-page: #0a0a0a; /* behind the artifact frame */
+  --bg-2: #101013; /* sidebar, side panel, list cards */
+  --bg-3: #0d0d10; /* sub-bars, text inputs */
+  --surface: #17171b; /* note previews, popovers, raised rows */
+  --surface-2: #1f1f25; /* active nav item, filled buttons */
+  --surface-3: #24242a; /* tags, inline code chips */
+
+  /* lines */
+  --line: #24242a; /* dividers, card borders */
+  --line-2: #2a2a31; /* ghost buttons, inputs */
+  --line-3: #32323a; /* filled buttons, popover edge, kbd */
+
+  /* text, brightest first: every one passes 4.5:1 on --bg through --surface-2 */
+  --text: #ececef;
+  --text-2: #c9c9d1; /* ghost button text, secondary emphasis */
+  --text-3: #b4b4be; /* inactive nav and tabs */
+  --muted: #a6a6b0; /* supporting copy */
+  --faint: #878791; /* meta, timestamps, paths */
+
+  /* accent and states */
+  --accent: #8fb0ff;
+  --accent-hover: #b3c9ff;
+  --accent-ink: #0d1220;
+  --accent-soft: rgba(143, 176, 255, 0.14);
+  --accent-wash: rgba(143, 176, 255, 0.07);
+  --accent-line: rgba(143, 176, 255, 0.5);
+  --green: #74d3a0;
+  --green-ink: #0b1f15;
+  --green-soft: rgba(116, 211, 160, 0.12);
+  --amber: #f2c46d;
+  --amber-soft: rgba(242, 196, 109, 0.12);
+  --amber-pill: rgba(242, 196, 109, 0.16);
+  --red: #f08a8a;
+  --red-soft: rgba(240, 138, 138, 0.12);
+
+  /* type */
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --fs: 13px; /* body */
+  --fs-sm: 12px; /* meta */
+  --fs-xs: 11.5px; /* mono paths, hints */
+  --fs-title: 22px; /* view heading */
+
+  /* shape */
+  --radius-xs: 5px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --pill: 999px;
+  --shadow-pop: 0 18px 44px rgba(0, 0, 0, 0.6);
+  --control-h: 32px; /* row actions, icon buttons */
+  --touch: 44px; /* minimum touch target on phones */
+
+  color-scheme: dark;
+}

@@ -60,7 +60,7 @@ Both give the run full permissions on your machine, like any harness you run wit
 
 ## Runs
 
-When a run starts and ends, the Conversation panel shows it. Beside the pill:
+When a run starts and ends, the side panel's **Notes** tab shows it. Beside the pill:
 
 - **Waiting for session** — `same`, and the session is still open; the run starts when it exits.
 - **Running** with the time so far, and **Stop**, which kills the run and everything it started.

@@ -237,6 +237,37 @@ test("search finds a part and opens its page there; the hub remembers its last v
   }
 });
 
+test("the Pages table keeps its columns or stacks its rows: at no width is a row cut", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab();
+  assert.equal((await call("POST", `/hub/api/page/${ids.quiet}/archive`, {}, asOwner())).status, 200);
+  try {
+    for (const query of ["view=pages", "view=pages&archived=1"]) {
+      // The widths where the table is near its columns' least widths: below the sidebar's breakpoint, and beside the sidebar.
+      for (const width of [800, 830, 860, 1080, 1110, 1140, 1170]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(`http://127.0.0.1:${port}/?${query}`);
+        await page.locator(".table .trow").first().waitFor();
+        const m = await page.locator(".table").evaluate((table) => {
+          const row = table.querySelector(".trow") as HTMLElement;
+          const edge = row.getBoundingClientRect().right - parseFloat(getComputedStyle(row).paddingRight);
+          return {
+            stacked: getComputedStyle(row).display === "flex",
+            head: getComputedStyle(table.querySelector(".thead") as HTMLElement).display,
+            over: Math.max(...[...row.children].map((c) => Math.round(c.getBoundingClientRect().right - edge))),
+          };
+        });
+        assert.ok(m.over <= 0, `${query} at ${width}px: a cell ends ${m.over}px past its row`);
+        assert.equal(m.head, m.stacked ? "none" : "grid", `${query} at ${width}px: the column names show with the columns only`);
+      }
+    }
+    assert.deepEqual(problems, []);
+  } finally {
+    await call("POST", `/hub/api/page/${ids.quiet}/unarchive`, {}, asOwner());
+    await context.close();
+  }
+});
+
 test("review header: breadcrumb to the hub, copy switcher keeps the path, Ctrl+K opens another page, next unanswered", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const { page, context, problems } = await ownerTab();
@@ -247,6 +278,7 @@ test("review header: breadcrumb to the hub, copy switcher keeps the path, Ctrl+K
     await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
     const crumb = page.locator(".crumbs a");
     await page.locator(".crumbs a", { hasText: "shop" }).waitFor();
+    assert.equal(await page.locator(".crumb .crumb-back").isVisible(), false, "the back arrow is the phone's breadcrumb");
     // The copy switcher lists both worktrees; the other one has the same rel_path.
     const select = page.locator(".copy-switch");
     assert.deepEqual((await select.locator("option").allInnerTexts()).sort(), ["feat", "main"]);
@@ -264,6 +296,11 @@ test("review header: breadcrumb to the hub, copy switcher keeps the path, Ctrl+K
     await page.keyboard.press("Control+k");
     await page.locator(".qs").waitFor();
     assert.deepEqual((await page.locator(".qs-item .qs-title").allInnerTexts()).map((s) => s.trim()), ["Quiet page"], "the page opened before; this page is left out");
+    // A modal: Tab stays in it, and reaches its one link.
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.className), "qs-hub");
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.className), "qs-input");
     await page.locator(".qs-input").fill("Waiting");
     await page.locator(".qs-item", { hasText: "Waiting page" }).first().waitFor();
     await shot(page, "quick-switcher-1280");
@@ -328,6 +365,7 @@ test("phone width: the sidebar is a drawer; the review header keeps the breadcru
     await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
     await page.locator(".crumbs a", { hasText: "shop" }).waitFor();
     assert.ok(await page.locator(".crumbs").isVisible());
+    assert.ok(await page.locator(".crumb .crumb-back").isVisible(), "a back arrow stands for the project's name");
     await shot(page, "review-header-390");
     assert.deepEqual(problems, []);
   } finally {
