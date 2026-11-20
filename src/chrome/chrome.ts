@@ -13,6 +13,8 @@ import type { SyncClose, SyncSocket } from "./sync-socket.ts";
 import { h } from "./dom.ts";
 import type { Child } from "./dom.ts";
 import { installNav } from "./nav.ts";
+import { icon, svgIcon } from "./icons.ts";
+import type { Shape } from "./icons.ts";
 import { LOADER_TAG, packedTag } from "../shared/standalone.ts";
 
 type Mode = "annotate" | "explore";
@@ -421,24 +423,21 @@ const $ = <E extends Element = HTMLElement>(sel: string, root: ParentNode = docu
 document.body.innerHTML = `
 <div class="app">
   <header class="bar">
-    <div class="bar-title"><span class="title"></span><span class="file"></span></div>
-    <div class="bar-mid">
-      <div class="seg" role="group" aria-label="Mode">
-        <button type="button" data-mode="annotate" title="Click anything to comment on it (⌘/Ctrl+I)">Annotate</button>
-        <button type="button" data-mode="explore" title="Use the page normally (⌘/Ctrl+I)">Explore</button>
-      </div>
-      <button type="button" class="changes" aria-pressed="false" hidden></button>
+    <div class="bar-start">
+      <div class="bar-title"><h1 class="title"></h1><span class="file"></span></div>
     </div>
     <div class="bar-right">
+      <button type="button" class="changes" aria-pressed="false" hidden></button>
       <span class="viewers" role="group" aria-label="On this page" hidden></span>
       <div class="attach">
         <button type="button" class="attach-pill" aria-haspopup="dialog" aria-expanded="false" title="Attach an agent to this page"><span class="attach-dot"></span><span class="attach-label">Agent: <span class="attach-detail">Off</span><span class="attach-short">Off</span></span></button>
         <span class="run-state" hidden></span>
-        <div class="attach-pop" role="dialog" aria-label="Agent on this page" hidden></div>
       </div>
       <span class="presence"></span>
+      <button type="button" class="btn share-btn" title="A named link for one teammate's device">Share</button>
+      <button type="button" class="icon-btn goto-btn" aria-label="Go to page (Ctrl K)" title="Go to page (Ctrl K)" hidden></button>
       <div class="menu">
-        <button type="button" class="icon-btn menu-btn" aria-label="More">⋯</button>
+        <button type="button" class="icon-btn menu-btn" aria-label="More"></button>
         <div class="menu-pop" hidden>
           <button type="button" data-cmd="copy-path">Copy file path</button>
           <button type="button" data-cmd="copy-link"${HOSTED ? " hidden" : ""}>${HOSTED ? "Copy page link" : "Copy review link"}</button>
@@ -457,51 +456,91 @@ document.body.innerHTML = `
   <div class="banner" hidden></div>
   <div class="notice" hidden></div>
   <div class="since" role="status" hidden>
+    <span class="since-dot" aria-hidden="true"></span>
     <span class="since-text"></span>
     <button type="button" class="btn tiny" data-since="show" aria-pressed="false">Outline them</button>
     <button type="button" class="btn tiny ghost" data-since="history">History</button>
-    <button type="button" class="icon-btn since-x" data-since="dismiss" aria-label="Dismiss">×</button>
+    <button type="button" class="icon-btn since-x" data-since="dismiss" aria-label="Dismiss"></button>
   </div>
   <div class="main">
     <section class="stage">
+      <div class="subbar">
+        <div class="seg" role="group" aria-label="Mode">
+          <button type="button" data-mode="annotate" aria-pressed="false" title="Click anything to comment on it (⌘/Ctrl+I)"><span class="seg-label">Annotate</span></button>
+          <button type="button" data-mode="explore" aria-pressed="false" title="Use the page normally: tabs, forms, links (⌘/Ctrl+I)"><span class="seg-label">Explore</span></button>
+        </div>
+        <span class="subbar-hint"></span>
+        <div class="subbar-end">
+          <span class="rev" hidden></span>
+          <button type="button" class="btn ghost hist-btn" aria-expanded="false" title="Every version of this page, and what changed since you last looked">History</button>
+        </div>
+        <button type="button" class="dock"></button>
+      </div>
       <iframe class="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-forms"></iframe>
     </section>
     <div class="scrim"></div>
-    <aside class="panel" aria-label="Conversation">
+    <aside class="panel" aria-label="Review panel">
       <div class="panel-head">
-        <span>Conversation</span>
-        <button type="button" class="icon-btn sheet-close" aria-label="Close">⌄</button>
+        <div class="panel-tabs" role="group" aria-label="Review panel views">
+          <button type="button" class="panel-tab" data-tab="notes" aria-current="true">Notes <span class="tab-count"></span></button>
+          <button type="button" class="panel-tab" data-tab="agent">Agent <span class="tab-dot" role="img" aria-label="Agent not listening"></span></button>
+          <button type="button" class="panel-tab" data-tab="history">History</button>
+        </div>
+        <button type="button" class="icon-btn sheet-close" aria-label="Close the notes"></button>
       </div>
       <div class="log"></div>
-      <form class="composer">
-        <textarea rows="2" placeholder="Message the agent…"></textarea>
+      <section class="queue" aria-label="Ready to send" hidden>
+        <div class="queue-head"><span class="queue-title"></span><span class="queue-sub">Sent together, in this order</span></div>
+        <ol class="queue-list"></ol>
+      </section>
+      <form class="composer" aria-label="Send notes">
+        <textarea rows="2" aria-label="A note about the whole page" placeholder="Add a note about the whole page"></textarea>
         <div class="composer-row">
-          <span class="composer-hint">Enter sends · Shift+Enter newline</span>
-          <span class="composer-actions">
-            <button type="button" class="btn ghost send-end">Done</button>
-            <button type="submit" class="btn primary send">Send</button>
-          </span>
+          <button type="button" class="btn ghost send-end">Done</button>
+          <button type="submit" class="btn primary send">Send</button>
         </div>
+        <span class="composer-hint">Enter sends · Shift+Enter newline</span>
         <div class="composer-error" hidden></div>
+        <div class="composer-listen" hidden><span class="composer-dot" aria-hidden="true"></span><span>An agent is listening and takes your notes as soon as you send</span></div>
         <div class="composer-presence" hidden><span>Saved. The agent gets them the next time it checks.</span><button type="button" class="btn tiny copy-prompt">Copy agent prompt</button></div>
       </form>
     </aside>
+    <div class="hist" role="dialog" aria-label="History" hidden>
+      <div class="hist-head"><span class="hist-title"></span><button type="button" class="icon-btn hist-close" aria-label="Close"></button></div>
+      <div class="hist-body"></div>
+    </div>
+    <div class="attach-pop" role="dialog" aria-label="Agent on this page" hidden></div>
   </div>
-  <div class="hist" role="dialog" aria-label="History" hidden>
-    <div class="hist-head"><span class="hist-title"></span><button type="button" class="icon-btn hist-close" aria-label="Close">×</button></div>
-    <div class="hist-body"></div>
-  </div>
-  <button type="button" class="dock"></button>
 </div>`;
 
 // Hosted viewers keep the download and, on an unlisted page, the page link; the rest is the local owner's.
 // RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
 // from all of them (RLM-322).
 if (!OWNER) {
-  const ownerOnly = ['[data-cmd="history"]', ".since", ".hist", '[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', ".copy-prompt", '[data-cmd="share"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach"];
+  const ownerOnly = ['[data-cmd="history"]', ".since", ".hist", '[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', ".copy-prompt", '[data-cmd="share"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach", ".attach-pop", ".share-btn", ".goto-btn", ".rev", ".hist-btn", '[data-tab="agent"]', '[data-tab="history"]'];
   if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
   for (const sel of ownerOnly) $(sel)?.remove();
 }
+
+// The markup's icons (icons.ts): decorative beside a text label, named by the button's aria-label when alone.
+const DOTS: Shape[] = [5, 12, 19].map((cx): Shape => ["circle", { cx, cy: 12, r: 1.6, fill: "currentColor", stroke: "none" }]);
+const LINK: Shape[] = [
+  ["path", { d: "M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" }],
+  ["path", { d: "M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" }],
+];
+const LOGO: Shape[] = [
+  ["rect", { x: 1.5, y: 1.5, width: 21, height: 21, rx: 5, class: "logo-box" }],
+  ["path", { d: "M6.75 17.25 12 6l5.25 11.25M8.6 13.5h6.8", class: "logo-a" }],
+];
+for (const b of document.querySelectorAll<HTMLButtonElement>(".seg [data-mode]")) b.prepend(icon(b.dataset.mode === "explore" ? "explore" : "annotate", { size: 14, width: 1.9 }));
+$(".menu-btn").append(svgIcon(DOTS, { size: 16 }));
+$(".sheet-close").append(icon("chevronDown", { size: 20, width: 2 }));
+$(".attach-pill")?.append(icon("chevronDown", { size: 12, width: 2, cls: "attach-caret" }));
+$(".share-btn")?.prepend(svgIcon(LINK, { size: 14, width: 1.9 }));
+$(".hist-btn")?.prepend(icon("clock", { size: 13, width: 1.9 }));
+$(".since-x")?.append(icon("close", { size: 14, width: 2 }));
+$(".hist-close")?.append(icon("close", { size: 16, width: 1.8 }));
+if (OWNER && !HOSTED) $(".bar-start").prepend(h("a", { class: "bar-home", href: "/", "aria-label": "Back to the hub", title: "Back to the hub" }, svgIcon(LOGO, { size: 24 })));
 
 function renderViewer() {
   if (OWNER) return;
@@ -1033,14 +1072,14 @@ function renderLog(scrollToEnd = false) {
   // Hosted: notes waiting for their ack follow the conversation.
   const pending = mine().map((o): Entry => ({ id: `out:${o.m.clientId}:${o.m.n}`, role: "user", author: viewerName, items: o.m.args.items, at: o.at, pending: true }));
   const entries = pending.length ? [...state.transcript, ...pending] : state.transcript;
-  if (!entries.length && !state.queue.length) {
+  if (!entries.length) {
     log.append(
       h(
         "div",
         { class: "empty" },
-        h("p", { html: "<strong>Point at anything to comment on it.</strong>" }),
+        h("strong", { text: "Nothing sent yet" }),
         h("p", {
-          text: `In Annotate mode, click a section, table cell, diagram node or diff line, or select text. Notes queue here; Send delivers them to the ${HOSTED ? "page owner" : "agent"}.`,
+          text: `Click a card, a table cell, a box in a diagram or a line of a diff, or select some text, and say what should change. Notes wait below until you send them together, ${HOSTED ? "and the page owner gets them." : "and the agent changes only the parts you pointed at."}`,
         }),
       ),
     );
@@ -1064,7 +1103,9 @@ function renderLog(scrollToEnd = false) {
     } else {
       // A Done is an empty final batch: it has no bubble, only the line below.
       if (entry.items?.length || !entry.end) {
-        const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${whoLabel(entry)} · ${fmtTime(entry.at)}` }));
+        const n = entry.items?.length ?? 0;
+        const who = n ? `${whoLabel(entry)} sent ${n} note${n === 1 ? "" : "s"}` : whoLabel(entry);
+        const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${who} · ${fmtTime(entry.at)}` }));
         for (const it of entry.items || []) bubble.append(itemBody(it, { held: !!entry.held }));
         const r = receipt(entry);
         if (r) bubble.append(r);
@@ -1095,31 +1136,7 @@ function renderLog(scrollToEnd = false) {
       ),
     );
   }
-  if (state.queue.length) {
-    const q = h("div", { class: "queued" }, h("div", { class: "queued-head", text: `Queued · ${state.queue.length}` }));
-    for (const item of state.queue) {
-      const el = itemBody(item, { queued: true });
-      el.classList.add("q");
-      el.append(
-        h(
-          "div",
-          { class: "q-actions" },
-          h("button", {
-            type: "button",
-            class: "btn tiny ghost",
-            text: "Edit",
-            onclick: () => {
-              state.editing = item.qid;
-              renderLog();
-            },
-          }),
-          h("button", { type: "button", class: "btn tiny ghost", text: "Remove", onclick: () => removeFromQueue(item.qid) }),
-        ),
-      );
-      q.append(el);
-    }
-    log.append(q);
-  }
+  renderQueue();
   if (state.archived) {
     log.append(
       h("div", {
@@ -1132,6 +1149,47 @@ function renderLog(scrollToEnd = false) {
   if (scrollToEnd || atBottom || count !== lastLogCount) log.scrollTop = log.scrollHeight;
   lastLogCount = count;
   renderComposer();
+}
+
+/** "Ready to send": the queued notes, numbered in the order they go out, each with Edit and Remove. */
+function renderQueue() {
+  const box = $(".queue");
+  const list = $(".queue-list", box);
+  const n = state.queue.length;
+  list.textContent = "";
+  box.hidden = !n;
+  $(".queue-title", box).textContent = `Ready to send · ${n}`;
+  state.queue.forEach((item, i) => {
+    const el = itemBody(item, { queued: true });
+    el.classList.add("q");
+    list.append(
+      h(
+        "li",
+        { class: "q-item" },
+        h("span", { class: "q-num", "aria-hidden": "true", text: String(i + 1) }),
+        el,
+        h(
+          "div",
+          { class: "q-actions" },
+          h(
+            "button",
+            {
+              type: "button",
+              class: "icon-btn q-edit",
+              "aria-label": `Edit note ${i + 1}`,
+              title: "Edit",
+              onclick: () => {
+                state.editing = item.qid;
+                renderLog();
+              },
+            },
+            icon("pencil", { size: 14, width: 1.8 }),
+          ),
+          h("button", { type: "button", class: "icon-btn q-remove", "aria-label": `Remove note ${i + 1}`, title: "Remove", onclick: () => removeFromQueue(item.qid) }, icon("close", { size: 14, width: 1.8 })),
+        ),
+      ),
+    );
+  });
 }
 
 // ── composer / sending ──
@@ -1156,8 +1214,9 @@ function renderComposer() {
         ? "Tell the agent you have no more notes"
         : "Send these notes and tell the agent it can stop listening. You can still add notes later.";
   }
-  $(".send").textContent = state.sending ? "Sending…" : n ? `Send ${n}` : "Send";
-  textarea.placeholder = archived ? "Page archived" : n ? "Add a message (optional)…" : "Message the agent…";
+  $(".send").replaceChildren(state.sending ? "Sending…" : n ? `Send ${n} note${n === 1 ? "" : "s"}` : "Send", ...(state.sending ? [] : [icon("arrowRight", { size: 14, width: 2.1 })]));
+  textarea.placeholder = archived ? "Page archived" : "Add a note about the whole page";
+  $(".tab-count").textContent = n ? String(n) : "";
 }
 
 function composerError(text: string) {
@@ -1311,14 +1370,17 @@ function setMode(mode: string | undefined) {
   if (wasExploring && state.mode === "annotate") log.scrollTop = log.scrollHeight;
   // An archived page takes no notes: the frame is in Explore, and the switch says so.
   const shown: Mode = state.archived ? "explore" : state.mode;
-  for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) {
+  $(".subbar-hint").textContent = state.archived ? "The page is archived: it takes no notes" : shown === "explore" ? "Use the page normally: tabs, forms, links" : "Click any part of the page to comment on it";
+  // The mode buttons only: the attach panel's On / Off / default is a .seg too.
+  for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button[data-mode]")) {
     b.classList.toggle("on", b.dataset.mode === shown);
+    b.setAttribute("aria-pressed", String(b.dataset.mode === shown));
     b.disabled = state.archived && b.dataset.mode === "annotate";
     if (b.dataset.mode === "annotate") b.title = state.archived ? "The page is archived: it takes no notes" : "Click anything to comment on it (⌘/Ctrl+I)";
   }
   post({ type: "mode", mode: shown });
 }
-for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button")) b.addEventListener("click", () => setMode(b.dataset.mode));
+for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button[data-mode]")) b.addEventListener("click", () => setMode(b.dataset.mode));
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && (e.key === "i" || e.key === "I")) {
     e.preventDefault();
@@ -1351,6 +1413,13 @@ function renderPresence() {
   const attached = cls === "idle" && attach.info?.effective.state === "on";
   el.className = `presence ${cls}${attached ? " attached" : ""}`;
   el.textContent = label;
+  const dot = document.querySelector(".tab-dot");
+  if (dot) {
+    dot.setAttribute("class", `tab-dot ${cls}`);
+    dot.setAttribute("aria-label", label);
+  }
+  // Only someone whose notes go straight to an agent is told it takes them; a held reviewer's wait for the owner.
+  $(".composer-listen").hidden = cls !== "listening" || !(OWNER || VIEWER.auto === true);
   el.title =
     cls === "idle"
       ? "Your notes are kept and reach the agent the next time it polls."
@@ -1394,7 +1463,7 @@ function renderChanges() {
     return;
   }
   btn.hidden = false;
-  btn.textContent = `${shown.length} changed`;
+  btn.replaceChildren(icon("check", { size: 13, width: 2.2 }), `${shown.length} changed`);
   btn.title = shown.length
     ? `${state.highlight ? "Hide" : "Highlight"} what changed${state.sinceChanges.length ? " since you last looked and in the last turn" : " in the last turn"}: ${shown.join(", ")}`
     : "The last turn changed nothing on the page. Click to stop highlighting.";
@@ -1468,6 +1537,7 @@ function loadHistory(): Promise<HistoryData | null> {
     // A newer request was started meanwhile: its answer is the one to keep and to hand to whoever asked.
     if (mine !== histLoad) return histLatest;
     hist = data;
+    renderRevision();
     sendHistoryCounts();
     return hist;
   })();
@@ -1493,6 +1563,14 @@ function applySince(baseline: number) {
   $(".since-text", bar).textContent = `${plural(newer.length, "revision")} since you last looked`;
   renderChanges();
   if (state.highlight) postHighlight(false);
+}
+
+/** "Revision 3" in the bar above the page: the newest revision the history knows. */
+function renderRevision() {
+  const el = document.querySelector<HTMLElement>(".rev");
+  if (!el) return;
+  el.hidden = !hist?.head;
+  el.textContent = hist?.head ? `Revision ${hist.head}` : "";
 }
 
 const inView = (): boolean => document.visibilityState === "visible";
@@ -1531,12 +1609,14 @@ function closeHistory() {
   // The outline of a revision was a preview: back to what the control shows.
   if (histPreview) postHighlight(false);
   histPreview = false;
+  renderTabs();
 }
 
 function openHistoryPanel(title: string): HTMLElement {
   histGen++;
   const pop = histPop();
   pop.hidden = false;
+  renderTabs();
   $(".hist-title", pop).textContent = title;
   const body = $(".hist-body", pop);
   body.textContent = "";
@@ -1619,6 +1699,7 @@ function h2(cls: string, text: string): HTMLDivElement {
 
 if (OWNER && !HOSTED) {
   $(".hist-close").addEventListener("click", closeHistory);
+  $(".hist-btn").addEventListener("click", () => void showHistory());
   $(".since").addEventListener("click", (e) => {
     const act = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-since]")?.dataset.since : undefined;
     if (act === "dismiss") $(".since").hidden = true;
@@ -1749,6 +1830,8 @@ menuPop.addEventListener("click", async (e) => {
   if (cmd === "archive") await archivePage();
   if (cmd === "unarchive") await unarchivePage();
 });
+
+$(".share-btn")?.addEventListener("click", () => void sharePage());
 
 /** The server's reason for a failed request, else its status. */
 async function failure(r: Response): Promise<string> {
@@ -2135,6 +2218,7 @@ function openAttach() {
     renderAttachPop();
     void loadAttach();
   }
+  renderTabs();
 }
 
 function closeAttach() {
@@ -2143,7 +2227,33 @@ function closeAttach() {
   attachPill?.setAttribute("aria-expanded", "false");
   attach.log = null;
   attach.error = "";
+  renderTabs();
 }
+
+/** The panel's views: Notes, or the Agent and History panels that open over it. */
+function renderTabs() {
+  const histEl = document.querySelector<HTMLElement>(".hist");
+  const histOpen = !!histEl && !histEl.hidden;
+  const current = attachPop && !attachPop.hidden ? "agent" : histOpen ? "history" : "notes";
+  for (const t of document.querySelectorAll<HTMLElement>(".panel-tab")) {
+    if (t.dataset.tab === current) t.setAttribute("aria-current", "true");
+    else t.removeAttribute("aria-current");
+  }
+  document.querySelector(".hist-btn")?.setAttribute("aria-expanded", String(histOpen));
+}
+
+$(".panel-tabs").addEventListener("click", (e) => {
+  const tab = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-tab]")?.dataset.tab : undefined;
+  if (!tab) return;
+  // The document's click closes the Agent panel: a tab click is not an outside click.
+  e.stopPropagation();
+  const histEl = document.querySelector<HTMLElement>(".hist");
+  if (tab !== "history" && histEl && !histEl.hidden) closeHistory();
+  if (tab !== "agent") closeAttach();
+  if (tab === "agent") openAttach();
+  if (tab === "history") void showHistory();
+  renderTabs();
+});
 
 /** Write the page's own row; from "Use project default", the page takes the fields it showed. */
 async function saveAttach(change: AttachChange) {
@@ -2182,7 +2292,7 @@ function renderAttachPop() {
       "div",
       { class: "attach-head" },
       h("strong", { text: "Agent on this page" }),
-      h("button", { type: "button", class: "icon-btn attach-close", "aria-label": "Close", text: "×", onclick: closeAttach }),
+      h("button", { type: "button", class: "icon-btn attach-close", "aria-label": "Close", onclick: closeAttach }, icon("close", { size: 16, width: 1.8 })),
     ),
   );
   if (!info) {
@@ -2342,14 +2452,17 @@ function setSheet(open: boolean) {
 function renderDock() {
   const dock = $(".dock");
   const n = state.queue.length;
-  const parts = ["Conversation"];
-  if (n) parts.push(`${n} queued`);
+  const parts = [n ? `${n} note${n === 1 ? "" : "s"} ready` : "Notes"];
   const last = state.transcript[state.transcript.length - 1];
   if (last?.role === "agent" && last.at > (SS.get<number>(`austere:seen:${SID}`) || 0)) parts.push("new reply");
   // On a phone the header hides the presence: the dock carries its label (none when an attached agent's pill says it).
   const p = $(".presence");
-  const label = p.classList.contains("attached") ? "" : `<span class="dock-presence ${esc(p.className.replace("presence", "").trim())}">${esc(p.textContent || "")}</span>`;
-  dock.innerHTML = `<span class="dock-grip"></span><span class="dock-text"><span>${esc(parts.join(" · "))}</span>${label}</span>`;
+  const label = p.classList.contains("attached") ? null : h("span", { class: `dock-presence ${p.className.replace("presence", "").trim()}`, text: p.textContent || "" });
+  dock.replaceChildren(
+    h("span", { class: "dock-grip" }),
+    h("span", { class: "dock-text" }, h("span", { class: "dock-title", text: parts.join(" · ") }), label),
+    icon("chevronDown", { size: 16, width: 2, cls: "dock-caret" }),
+  );
 }
 function pulseDock() {
   const dock = $(".dock");
@@ -2860,6 +2973,13 @@ async function startHosted() {
 
 // The owner's way between pages and the hub (RLM-358): never for a reviewer or a hosted page.
 const nav = OWNER && !HOSTED ? installNav({ id: SID, bar: $(".bar-title"), menu: menuPop, flash, highlight: (ids) => post({ type: "highlight", ids, scroll: true }), openAttach }) : null;
+const gotoBtn = document.querySelector<HTMLButtonElement>(".goto-btn");
+if (gotoBtn && nav) {
+  gotoBtn.append(icon("search", { size: 16, width: 1.8 }));
+  gotoBtn.hidden = false;
+  // After this click has reached the document, as the menu's Go to page does.
+  gotoBtn.addEventListener("click", () => setTimeout(() => nav.toggleSwitcher(), 0));
+} else gotoBtn?.remove();
 setMode(state.mode);
 if (isNarrow() && state.sheetOpen) setSheet(true);
 renderPresence();

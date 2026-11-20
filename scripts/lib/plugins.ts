@@ -134,6 +134,26 @@ export const fontPlugin: Plugin = {
   },
 };
 
+/** One latin variable-weight @font-face, inlined as a data URL. */
+function faceCss(family: string, file: string): string {
+  const b64 = fs.readFileSync(require.resolve(file)).toString("base64");
+  return `@font-face{font-family:"${family}";font-style:normal;font-display:swap;font-weight:100 900;src:url(data:font/woff2;base64,${b64}) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}`;
+}
+
+/** The review page and the hub (src/chrome/tokens.css imports "austere:fonts.css"): Inter and JetBrains Mono, inlined so they work offline. */
+export const chromeFontsPlugin: Plugin = {
+  name: "austere-chrome-fonts",
+  setup(build) {
+    build.onResolve({ filter: /^austere:fonts\.css$/ }, (args) => ({ path: args.path, namespace: "austere-chrome-fonts" }));
+    build.onLoad({ filter: /.*/, namespace: "austere-chrome-fonts" }, () => ({
+      contents:
+        faceCss("Inter Variable", "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") +
+        faceCss("JetBrains Mono Variable", "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2"),
+      loader: "css",
+    }));
+  },
+};
+
 // OpenUI's CodeBlock imports the full Prism build and every theme; swap in
 // the light build with common languages (saves ~0.5 MB).
 export const slimHighlighterPlugin: Plugin = {

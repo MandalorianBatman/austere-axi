@@ -18,7 +18,6 @@ We want everyone who reviews an agent's work to be able to use austere-axi: the 
 ## Known limitations
 
 - **Picking a part of the page to annotate needs a pointer.** Annotate mode finds the part under the mouse or a tap. There is no keyboard way to move between parts yet. Workaround: select the text with the keyboard and annotate the selection, or write the note in the composer and name the part.
-- **Mode switch:** the Annotate and Explore buttons switch with `Ctrl+I` or click, but do not yet expose their selected state (`aria-pressed`) to screen readers.
 - **Motion:** changed parts flash after the agent updates the page. The page does not yet follow `prefers-reduced-motion`.
 - **Screen readers:** the review page has not been tested with a screen reader. New notes and agent replies are not announced as they arrive.
 - **Agent-written pages:** components come from OpenUI and from packs. How accessible a page is depends on those components and on what the agent writes; `austere-axi check` does not check accessibility.
