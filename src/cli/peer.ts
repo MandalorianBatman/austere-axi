@@ -20,7 +20,7 @@
 // and the local page's status and focus go on to the page object. Nothing of it is stored.
 import crypto from "node:crypto";
 import WebSocket from "ws";
-import { cloudUrl, credential, hasOwner, onRefusal, ownerSocket, readCloud } from "./cloud.ts";
+import { cloudEnabled, cloudUrl, credential, hasOwner, onRefusal, ownerSocket, readCloud } from "./cloud.ts";
 import type { CloudError } from "./cloud.ts";
 import { reviewerItem } from "./items.ts";
 import { msEnv } from "./paths.ts";
@@ -123,8 +123,9 @@ export class Peer {
 
   // ── what the server calls ──
 
-  /** Server start: one pull for every published page, and the queue left from last time. */
+  /** Server start, or cloud features turned on: one pull for every published page, and the queue left from last time. */
   start(): void {
+    if (!cloudEnabled()) return;
     const state = readCloud();
     if (!hasOwner(state)) return;
     for (const [file, e] of Object.entries(state.pages)) this.kick(this.link(e.id, file), { pull: true });
@@ -196,6 +197,8 @@ export class Peer {
    * Call it in the transaction that changed them, so the change and its mutation commit together.
    */
   settled(entries: UserEntry[], name: "releaseNote" | "discardNote", s: Session): void {
+    // Cloud features off: the local change stands alone, nothing is queued for the hosted page.
+    if (!cloudEnabled()) return;
     for (const e of entries) {
       if (!e.remoteId) continue;
       const cut = e.remoteId.indexOf("/");
@@ -254,10 +257,21 @@ export class Peer {
     }
   }
 
+  /** Cloud features were turned off: every socket closes, no retry stays pending, and whoever waits hears now. start() picks up again. */
+  pause(): void {
+    for (const link of this.links.values()) {
+      clearTimeout(link.retry ?? undefined);
+      link.retry = null;
+      if (link.ws) this.drop(link, link.ws);
+      this.down(link);
+    }
+  }
+
   // ── links and sockets ──
 
-  /** The link for a published file (cloud.json is read again: `publish` may have run since). */
+  /** The link for a published file (cloud.json is read again: `publish` may have run since); none while cloud features are off. */
   private linkFor(file: string): Link | null {
+    if (!cloudEnabled()) return null;
     const state = readCloud();
     const e = hasOwner(state) ? state.pages[file] : undefined;
     return e ? this.link(e.id, file) : null;
@@ -289,7 +303,7 @@ export class Peer {
   }
 
   private wanted(link: Link): boolean {
-    if (link.stopped || this.closed) return false;
+    if (link.stopped || this.closed || !cloudEnabled()) return false;
     if (link.pullWanted || link.pulls.length) return true;
     const s = this.host.store.byFile(link.file);
     if (s && this.host.listening(s)) return true;
@@ -316,7 +330,7 @@ export class Peer {
     credential(state).then(
       (cred) => {
         link.connecting = false;
-        if (!link.ws && !link.stopped && !this.closed) this.open(link, base, cred);
+        if (!link.ws && !link.stopped && !this.closed && cloudEnabled()) this.open(link, base, cred);
       },
       (err: CloudError) => {
         link.connecting = false;

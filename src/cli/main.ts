@@ -23,7 +23,7 @@ import { installService, installedServiceFor, serverUnit, serviceContext, servic
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
 import type { AccessRequestSummary, AccessRequestsResponse, AccessSummary, ArchiveMissingResponse, ArchiveResponse, FeedbackResponse, OpenResponse, PollResponse, ProjectFeedbackResponse, RequestDecisionResponse, RequestSwitchResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
-import type { LocalNetwork } from "../shared/hub-api.ts";
+import type { CloudSettings, LocalNetwork } from "../shared/hub-api.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { renderCheck } from "./render-check.ts";
@@ -165,7 +165,7 @@ ENV
   AUSTERE_AXI_PORT (the running server's, else the service's, else 4388)  AUSTERE_AXI_STATE_DIR (~/.austere-axi)  AUSTERE_AXI_NO_OPEN=1
   AUSTERE_AXI_HOST  AUSTERE_AXI_NO_TAILSCALE=1
   AUSTERE_AXI_IDLE_TIMEOUT_MS (1800000)  AUSTERE_AXI_PERSIST=1  AUSTERE_AXI_ALLOWED_HOSTS  AUSTERE_AXI_LINK_URL
-  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)  AUSTERE_AXI_CLOUD_URL (https://austere.blundertech.com)
+  AUSTERE_AXI_NPM_REGISTRY  CHROME_PATH (check --render)  AUSTERE_AXI_CLOUD_URL (https://austere.blundertech.com; used only with \`${BIN} cloud on\`)
   A scope's token variable (registry add --token-env), sent only to that scope's registry
 `;
 }
@@ -446,11 +446,11 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: 'publish plan.html --invite "Ana" --invite "Ben"',
   },
   cloud: {
-    usage: "cloud login | cloud logout | cloud whoami",
+    usage: "cloud on | cloud off | cloud status | cloud login | cloud logout | cloud whoami",
     summary:
-      "your account on the hosted service (WorkOS sign-in: email code, Google, GitHub, passkey). `cloud login` prints a code and opens the browser to approve it, once per machine; you are then the owner of all your hosted pages, from every machine you log in on and in the browser with the same account, and pages this machine published before become the account's. `cloud whoami` prints the account, `cloud logout` forgets it here. Only for hosted pages: the local server needs no account",
+      "cloud features: publish, clone, cloud login|whoami and the sync of hosted pages. Off by default: only local features work and nothing reaches the hosted service. `cloud on` and `cloud off` flip the switch (Settings → Cloud does the same), `cloud status` prints it. Your account on the hosted service (WorkOS sign-in: email code, Google, GitHub, passkey): `cloud login` prints a code and opens the browser to approve it, once per machine; you are then the owner of all your hosted pages, from every machine you log in on and in the browser with the same account, and pages this machine published before become the account's. `cloud whoami` prints the account, `cloud logout` forgets it here. Only for hosted pages: the local server needs no account",
     flags: {},
-    example: "cloud login",
+    example: "cloud on   |   cloud login",
   },
   clone: {
     usage: "clone [<id> [<file>]]",
@@ -2858,10 +2858,12 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
 
 // ── cloud account and clone (RLM-414) ──
 
-/** `cloud login|logout|whoami`: the hosted service's account on this machine. */
+/** `cloud on|off|status|login|logout|whoami`: the cloud switch, and the hosted service's account on this machine. */
 async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> {
-  if (sub !== "login" && sub !== "logout" && sub !== "whoami") return usage(`cloud needs login, logout or whoami${sub ? `, not ${sub}` : ""}`, "cloud");
+  const subs = ["on", "off", "status", "login", "logout", "whoami"];
+  if (!sub || !subs.includes(sub)) return usage(`cloud needs on, off, status, login, logout or whoami${sub ? `, not ${sub}` : ""}`, "cloud");
   if (rest.length) return usage(`cloud ${sub} takes no arguments; it got ${rest.map((a) => `"${a}"`).join(" ")}`, "cloud");
+  if (sub === "on" || sub === "off" || sub === "status") return cloudSwitch(sub);
   try {
     if (sub === "logout") {
       const was = await cloud.logout();
@@ -2895,6 +2897,27 @@ async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> 
     const err = caught as { message: string; status?: number; code?: string };
     fail(err.message, { http: err.status, code: err.code });
   }
+}
+
+/** `cloud on|off|status`: the switch of Settings → Cloud, through the server so its sync follows at once. */
+async function cloudSwitch(sub: "on" | "off" | "status"): Promise<void> {
+  await ensureServer();
+  const r = sub === "status" ? await request<CloudSettings>("GET", "/api/settings/cloud") : await request<CloudSettings>("POST", "/api/settings/cloud", { on: sub === "on" });
+  // An older server does not know the route.
+  if (r.status === 404) return fail(`the running server is older than this CLI and does not know cloud ${sub}: run \`${BIN} stop\` (or restart its service), then try again`);
+  if (r.status !== 200) return fail(r.data?.error || `cloud ${sub} failed (${r.status})`);
+  const c = r.data;
+  print({
+    status: sub === "status" ? undefined : "saved",
+    cloud: c.on ? "on" : "off",
+    service: c.on ? c.service : undefined,
+    account: c.account ?? undefined,
+    published: c.published || undefined,
+    note: c.on
+      ? "publish, clone and the sync of hosted pages talk to the service."
+      : `Only local features work; nothing reaches the hosted service.${c.published ? " Published pages stay up there but do not sync, and publish rm needs cloud on." : ""}`,
+    next: c.on ? undefined : `${BIN} cloud on`,
+  });
 }
 
 /** `clone [<id> [<file>]]`: list the owner's hosted pages, or bring one down as a local, attached file. */

@@ -13,10 +13,11 @@ import type { AttachSettingRow, AttachState } from "../src/cli/attach.ts";
 import { commandLine } from "../src/cli/adapters/config.ts";
 import type { AdaptersConfig } from "../src/cli/adapters/config.ts";
 import { openDatabase } from "../src/cli/hub.ts";
-import { claimLink, ownerHeaders } from "./owner.ts";
+import { claimLink, cloudOn, ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
 const STATE = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-attach-state-")));
+cloudOn(STATE);
 const WORK = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-attach-work-")));
 const PROJECT = path.join(WORK, "site");
 const MAIN = path.resolve("src/cli/main.ts");

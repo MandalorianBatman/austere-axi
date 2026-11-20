@@ -43,6 +43,7 @@ austere-axi publish <file>       hosted copy of the page on austere.blundertech.
 austere-axi publish invites|revoke <file> [name]   see a page's invites, cut one off
 austere-axi publish login <file>   single-use link that signs your browser in to your hosted page
 austere-axi publish list|rm <file|id>   your hosted pages; delete one now
+austere-axi cloud on|off|status   cloud features: publish, clone, cloud login and hosted-page sync (off by default; the hub's Settings → Cloud too)
 austere-axi cloud login|logout|whoami   your account on the hosted service: owner of all your hosted pages (see Hosted pages)
 austere-axi clone [<id> [<file>]]   your hosted pages from any machine; one as a local, attached file
 austere-axi stop                 stop the background server
@@ -206,7 +207,7 @@ austere-axi attach inherit <file>                        the page goes back to i
 | `AUSTERE_AXI_PAGE_HOLD_MS` | `600000` | how long a page poll's unacknowledged batch keeps the page out of the project `poll`; `0` disables |
 | `AUSTERE_AXI_STALE_WORKING_MS` | `600000` | how long an agent that took a page's notes may stay quiet (no reply, poll or change to the file) before the page reads `stale`; `0` disables |
 | `AUSTERE_AXI_NPM_REGISTRY` | `npm_config_registry`, else npmjs | where `components add` gets packs and `components search` finds them, except scopes mapped with `registry add` |
-| `AUSTERE_AXI_CLOUD_URL` | `https://austere.blundertech.com` | the service `publish` talks to (self-hosting, tests) |
+| `AUSTERE_AXI_CLOUD_URL` | `https://austere.blundertech.com` | the service `publish` talks to (self-hosting, tests), once `cloud on` |
 | `AUSTERE_AXI_SYNC_RETRY_MS` | `1000` | first wait before the local server reconnects to a hosted page; it doubles up to 60 s |
 | `CHROME_PATH` | an installed Chrome, Chromium or Edge | the browser `check --render` uses |
 

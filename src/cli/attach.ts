@@ -11,7 +11,7 @@ import { HARNESSES, grantCommand, hasWriteGrant, isHarness } from "./adapters/co
 import type { AdaptersConfig } from "./adapters/config.ts";
 import { ATTACH_MODES } from "./adapters/types.ts";
 import type { Adapter, AdapterKind, AttachMode, Capabilities } from "./adapters/types.ts";
-import { readCloud } from "./cloud.ts";
+import { cloudEnabled, readCloud } from "./cloud.ts";
 import { DeviceStore } from "./devices.ts";
 import { inTransaction } from "./projects.ts";
 
@@ -135,7 +135,8 @@ export type LiveAuto = (pageId: string, fallback: boolean) => boolean;
  * cloud.json's auto, since it may predate this machine's own `publish --auto`.
  */
 export function autoConflict(db: sqlite.DatabaseSync, file: string, artifactId: string, liveAuto: LiveAuto = (_, fallback) => fallback): string | null {
-  const entry = readCloud().pages[file];
+  // With cloud features off no hosted note comes in, so a published --auto page conflicts with nothing.
+  const entry = cloudEnabled() ? readCloud().pages[file] : undefined;
   if (entry && (entry.auto || liveAuto(entry.id, entry.auto))) return `${file} is published with --auto: reviewers' notes reach the agent without the owner`;
   const projectId = (db.prepare("SELECT project_id FROM artifacts WHERE id = ?").get(artifactId)?.project_id as string | null | undefined) ?? null;
   const auto = new DeviceStore(db).autoNames(artifactId, projectId);

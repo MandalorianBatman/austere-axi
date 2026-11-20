@@ -1,9 +1,9 @@
 // Settings (RLM-396): the owner's page for this local server, a view of the hub shell (shell.ts). People
-// (links, devices, requests: /hub/api/people), Network, Review defaults, Projects and About (/hub/api/settings).
+// (links, devices, requests: /hub/api/people), Network, Review defaults, Cloud, Projects and About (/hub/api/settings).
 // Nothing here runs a command: what names one (`server install`, `adapter set`, `trigger add`) stays at a
 // terminal. Every setting here has a CLI form too; the hints name it.
 // Drawn from the Hub-Settings artboard: each part is a card, People across the top, Network beside Review
-// defaults and About, Projects below.
+// defaults, Cloud and About, Projects below.
 import { h } from "./dom.ts";
 import type { Child } from "./dom.ts";
 import { icon, svgIcon } from "./icons.ts";
@@ -32,6 +32,7 @@ const PARTS = [
   { id: "people", label: "People and access" },
   { id: "network", label: "Network" },
   { id: "review", label: "Review defaults" },
+  { id: "cloud", label: "Cloud" },
   { id: "projects", label: "Projects" },
   { id: "about", label: "About" },
 ];
@@ -428,6 +429,35 @@ export async function renderSettings(ui: SettingsUi): Promise<Child[]> {
     ),
   );
 
+  // ── Cloud (RLM-421) ──
+
+  const c = settings.cloud;
+  const cloudBox = toggle(c.on, { "aria-describedby": "set-cloud-state" });
+  cloudBox.addEventListener("change", () => {
+    if (!cloudBox.checked && c.published && !confirm(`Turn cloud features off? Pages published from this machine (${c.published}) stay up on the service, but their notes stop reaching you here until you turn cloud back on.`)) {
+      cloudBox.checked = true;
+      return;
+    }
+    void act<ProjectActionResult>("/hub/api/settings/cloud", { on: cloudBox.checked }, (d) => d.message);
+  });
+  const cloudPart = h(
+    "section",
+    { id: "set-cloud", class: "set", "aria-labelledby": "set-cloud-h" },
+    cardHead("cloud", "Cloud", words("Hosted share links: `publish`, `clone`, `cloud login` and the sync of hosted pages. Off by default; off, only local features work and nothing reaches the hosted service. At a terminal: `austere-axi cloud on|off`.")),
+    h(
+      "div",
+      { class: "set-block setting", "data-slot": "cloud" },
+      h(
+        "label",
+        { class: "switch" },
+        h("span", { class: "set-switch-text" }, h("span", { class: "set-title", text: "Cloud features" }), h("span", { class: "meta", id: "set-cloud-state", text: c.on ? `On: talks to ${c.service}.` : "Off: only local features work." })),
+        cloudBox,
+      ),
+      c.account ? h("span", { class: "meta", text: `Signed in as ${c.account}.` }) : null,
+      c.published ? h("span", { class: "meta", text: `${ui.plural(c.published, "page")} published from this machine${c.on ? "." : ": still up on the service, not synced while cloud is off."}` }) : null,
+    ),
+  );
+
   // ── About ──
 
   const about = h(
@@ -482,7 +512,7 @@ export async function renderSettings(ui: SettingsUi): Promise<Child[]> {
         }),
       ),
       people,
-      h("div", { class: "set-grid" }, network, h("div", { class: "set-col" }, review, about)),
+      h("div", { class: "set-grid" }, network, h("div", { class: "set-col" }, review, cloudPart, about)),
       projectsPart,
     ),
   ];

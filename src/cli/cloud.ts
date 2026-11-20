@@ -179,8 +179,45 @@ export class CloudError extends Error {
   }
 }
 
+// ── the switch ──
+
+/**
+ * <state>/settings.json: `{ "cloud": true }` turns the cloud features on (`publish`, `clone`,
+ * `cloud login|whoami`, the server's sync peer). Off (false, no file, or an unreadable one) is the
+ * default: only local features work and nothing here reaches the service. A file, not hub.db, because
+ * cloud commands run without a server; Settings → Cloud and `cloud on|off` write it through the server.
+ */
+export function settingsFile(): string {
+  return path.join(stateDir(), "settings.json");
+}
+
+export function cloudEnabled(): boolean {
+  try {
+    const raw: unknown = JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
+    return !!raw && typeof raw === "object" && "cloud" in raw && raw.cloud === true;
+  } catch {
+    return false;
+  }
+}
+
+export function setCloudEnabled(on: boolean): void {
+  const file = settingsFile();
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ cloud: on }, null, 2) + "\n", { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+/** CloudError.code when the switch is off. */
+export const CLOUD_OFF = "cloud_off";
+
+/** Every request and socket to the service goes through here first. */
+function requireCloud(): void {
+  if (!cloudEnabled()) throw new CloudError("cloud features are off, so only local review works: turn them on in Settings → Cloud, or run `austere-axi cloud on`", undefined, CLOUD_OFF);
+}
+
 /** The state for the current service URL. A credential belongs to one service, so another URL is an error, not a silent mix. */
 function stateFor(url: string): CloudState {
+  requireCloud();
   const state = readCloud();
   if ((state.token || state.account) && state.url && state.url !== url) {
     throw new CloudError(
@@ -289,6 +326,7 @@ async function call<T>(base: string, method: string, route: string, opts: CallOp
     headers["content-type"] = opts.body.type;
     headers["content-encoding"] = "gzip";
   }
+  requireCloud();
   let res: Response;
   try {
     res = await fetch(base + route, { method, headers, body: payload, redirect: "error" });
@@ -343,6 +381,7 @@ const fresh = (a: Account) => tokenExp(a.accessToken) - REFRESH_MARGIN_S > Date.
 
 /** A WorkOS answer: the JSON body, with its `error` code on a refusal. */
 async function workos(apiBase: string, route: string, form: Record<string, string>): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  requireCloud();
   let res: Response;
   try {
     res = await fetch(apiBase + route, {
@@ -503,6 +542,7 @@ export async function whoami(): Promise<{ email: string; name: string; pages: nu
  * subprotocols; an access token (a JWT, no valid subprotocol) in the upgrade's Authorization header.
  */
 export function ownerSocket(base: string, credential: string, id: string): WebSocket {
+  requireCloud();
   const url = `${base.replace(/^http/, "ws")}/api/pages/${encodeURIComponent(id)}/sync?cli=${encodeURIComponent(VERSION)}`;
   const jwt = credential.includes(".");
   const headers: Record<string, string> = { "user-agent": `austere-axi/${VERSION}` };

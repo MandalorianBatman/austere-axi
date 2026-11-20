@@ -300,6 +300,7 @@ export interface SettingsResponse {
     auto: boolean;
     viewing: PageViewers[];
   };
+  cloud: CloudSettings;
   /** Copies opened for review whose file is gone: what "Archive missing pages" puts away. */
   missing: number;
   /** Project folders (roots) that are gone from disk: forgetting one archives its pages (`project forget-root --drop`). */
@@ -310,6 +311,20 @@ export interface SettingsResponse {
     /** The newest CLI that called this server, when it is newer than the server; null otherwise. */
     newer_cli: string | null;
   };
+}
+
+/**
+ * The cloud switch (RLM-421): GET /hub/api/settings's `cloud`, and GET|POST /api/settings/cloud {on}. Off by
+ * default: `publish`, `clone`, `cloud login|whoami` and hosted-page sync refuse, and only local features work.
+ */
+export interface CloudSettings {
+  on: boolean;
+  /** The service cloud.json belongs to, else the one `publish` would use. */
+  service: string;
+  /** The account this machine is signed in as (cloud.json, never asked of the service); null when signed out. */
+  account: string | null;
+  /** Pages this machine published (cloud.json): with cloud off they stay up but no longer sync. */
+  published: number;
 }
 
 /**
