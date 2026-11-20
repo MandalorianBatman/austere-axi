@@ -726,9 +726,12 @@ test("an unsupervised server waits out the idle exit while a run is active or an
     await new Promise((r) => setTimeout(r, 1200));
     assert.equal(child.exitCode, null, "the server idle-exited while a run was active");
     assert.ok(await health(port));
-    // The run is done and an agent is attached instead: still no idle exit.
+    // The run is done and an agent is attached instead: still no idle exit. One transaction: between
+    // two commits there is no work at all, and the server's check may land there (a slow commit on Windows).
+    db.exec("BEGIN");
     db.exec("UPDATE runs SET status = 'done'");
     db.exec("INSERT INTO attach_settings (scope, scope_id, state) VALUES ('page', 'p1', 'on')");
+    db.exec("COMMIT");
     assert.equal(hasActiveWork(db), true);
     await new Promise((r) => setTimeout(r, 1200));
     assert.equal(child.exitCode, null, "the server idle-exited while an agent was attached");

@@ -3,6 +3,7 @@ process.env.OPENUI_TELEMETRY_DISABLED = process.env.OPENUI_TELEMETRY_DISABLED ||
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 import { mergeStatements } from "@openuidev/lang-core";
 import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
@@ -17,7 +18,7 @@ import { changesOutput, decisionsOutput, findOutput, historyOutput, outlineOutpu
 import { ageOf, keepPage, recordWithHub, reindex, restoredProgram } from "./history.ts";
 import { addRoot, copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
-import { lockStateDir } from "./lock.ts";
+import { lockStateDir, processAlive } from "./lock.ts";
 import { installService, installedServiceFor, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
@@ -2925,6 +2926,9 @@ async function cmdClone(args: string[]): Promise<void> {
   }
 }
 
+/** How long stop waits for the server to exit: its runs get 1 s to end, then a kill (dispatch.ts). */
+const STOP_WAIT_MS = 10_000;
+
 async function cmdStop(): Promise<void> {
   // A server from before the health proof is stopped too (without the key).
   const h = await serverIfRunning({ legacy: true });
@@ -2932,8 +2936,13 @@ async function cmdStop(): Promise<void> {
   // The port that server answered on, read before it stops and lets go of server.lock.
   const port = commandPort();
   await shutdownServer(h, port);
+  // The server answers /api/shutdown first and closes hub.db after (its runs end, then the store):
+  // stop returns when the process is gone, so the next command has the state dir to itself.
+  // A server from before the proof has no proven pid: it is not waited for.
+  const pid = h.legacy ? 0 : h.pid;
+  for (const deadline = Date.now() + STOP_WAIT_MS; pid && processAlive(pid) && Date.now() < deadline; ) await sleep(50);
   print({
-    status: "stopped",
+    status: pid && processAlive(pid) ? "stopping" : "stopped",
     port,
     note: h.supervised ? `It runs under ${h.supervised}; the next command that needs a server starts the service again. \`${BIN} server uninstall\` takes the service away for good.` : undefined,
   });

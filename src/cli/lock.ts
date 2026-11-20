@@ -170,7 +170,7 @@ async function lockHolder(text: string, dir: string): Promise<LockHolder | null>
   return Date.now() - Number(lock.at) < STARTING_MS ? { pid, port, serving: false, supervised, unit, version } : null;
 }
 
-function processAlive(pid: number): boolean {
+export function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
