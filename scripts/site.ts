@@ -7,6 +7,8 @@
 //   gallery/index.html  thumbnail, OpenUI Lang source and token count for each example
 //   assets/hero.png     the landing page's screenshot, unless docs/demo.gif exists (copied to assets/demo.gif)
 //   assets/social-preview.png  og:image, copied from docs/social-preview.png when present (else hero.png)
+//   docs/<name>.html    each docs/*.md rendered with marked into the site's page template (docs/README.md is docs/index.html);
+//                       relative .md links become .html, links out of docs/ point at GitHub, and every link is checked
 //   copy.js             site/copy.ts compiled (site/*.ts sources are not copied)
 //   play/play.js        site/play/*.ts bundled (the parser, checker and editor), with play/data.json beside it:
 //                       spec, component catalog and a starter template per example
@@ -14,6 +16,7 @@
 // Needs `npm run build` first, and Chrome or CHROME_PATH (same as `npm run shot`).
 // Nothing here is published to npm: package.json `files` lists neither site/ nor _site/.
 import * as esbuild from "esbuild";
+import { Marked } from "marked";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -41,6 +44,7 @@ const SITE = path.join(ROOT, "site");
 const DIST = path.join(ROOT, "dist");
 const EXAMPLES = path.join(ROOT, "examples");
 const OUT = path.join(ROOT, "_site");
+const DOCS = path.join(ROOT, "docs");
 const DEMO_GIF = path.join(ROOT, "docs", "demo.gif");
 const SOCIAL = path.join(ROOT, "docs", "social-preview.png");
 // The footer and the npm card name the version npm installs. main runs ahead of the release and
@@ -54,6 +58,7 @@ const HERO_EXAMPLE = "session-migration";
 // Gallery order. Examples not listed follow, alphabetically.
 const ORDER = ["session-migration", "incident-postmortem", "api-design-review", "pr-summary", "sprint-plan", "code-review", "shadcn"];
 const NAV = [
+  { href: "docs/", label: "Docs" },
   { href: "play/", label: "Play" },
   { href: "gallery/", label: "Gallery" },
   { href: REPO, label: "GitHub" },
@@ -75,7 +80,7 @@ const decode = (s: string): string => s.replace(/&lt;/g, "<").replace(/&gt;/g, "
 function render(html: string, rel: string, vars: Record<string, string> = {}): string {
   const depth = rel.split("/").length - 1;
   const root = "../".repeat(depth);
-  const current = rel === "gallery/index.html" ? "gallery/" : rel.replace(/index\.html$/, "");
+  const current = rel === "gallery/index.html" ? "gallery/" : rel.startsWith("docs/") ? "docs/" : rel.replace(/index\.html$/, "");
   const nav = `<nav class="site-nav" aria-label="Main">${NAV.map((n) => {
     const href = /^https?:/.test(n.href) ? n.href : `{{root}}${n.href}`;
     return `<a href="${href}"${n.href === current ? ' aria-current="page"' : ""}>${escapeHtml(n.label)}</a>`;
@@ -102,6 +107,154 @@ async function publishedVersion(): Promise<string> {
   const { version } = (await res.json()) as { version?: unknown };
   if (typeof version !== "string" || !/^\d+\.\d+\.\d+/.test(version)) throw new Error(`${NPM_LATEST}: no version in the answer`);
   return version;
+}
+
+/** Text of rendered inline HTML: tags dropped, entities decoded. */
+const plainText = (html: string): string => decode(html.replace(/<[^>]*>/g, "")).trim();
+
+/** GitHub's heading id: lower case, punctuation dropped, spaces to hyphens. Docs link to these. */
+const slug = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\p{M} _-]/gu, "").replace(/ /g, "-");
+
+interface DocPage {
+  name: string; // "install" for docs/install.md
+  out: string; // path inside _site/, "docs/install.html"
+  html: string;
+  ids: Set<string>;
+  links: { href: string; text: string }[]; // links this page points at inside the site, "docs/x.html#id" resolved against _site/
+}
+
+/** docs/*.md as site pages, one docs/<name>.html each. No browser is involved: Markdown in, HTML out. */
+function buildDocs(): DocPage[] {
+  const names = fs
+    .readdirSync(DOCS)
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => f.slice(0, -".md".length))
+    .sort();
+  fs.mkdirSync(path.join(OUT, "docs"), { recursive: true });
+  const outName = (name: string): string => (name === "README" ? "index" : name);
+  const copied = new Set<string>();
+
+  const pages = names.map((name): DocPage => {
+    const out = `docs/${outName(name)}.html`;
+    const ids = new Set<string>();
+    const seen = new Map<string, number>();
+    const links: DocPage["links"] = [];
+    let title = "";
+
+    /** Where a relative link or image of this page points: a path from docs/<page>.html, or GitHub. */
+    const resolve = (href: string, kind: "link" | "image"): string => {
+      if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return href;
+      if (href.startsWith("#")) {
+        links.push({ href: `${out}${href}`, text: href });
+        return href;
+      }
+      const [file, hash = ""] = href.split("#");
+      const target = path.posix.normalize(path.posix.join("docs", file));
+      if (!fs.existsSync(path.join(ROOT, target))) throw new Error(`docs/${name}.md: ${href} points at ${target}, which does not exist`);
+      const suffix = hash ? `#${hash}` : "";
+      if (target.startsWith("docs/") && target.endsWith(".md")) {
+        const dest = `docs/${outName(target.slice("docs/".length, -".md".length))}.html`;
+        links.push({ href: `${dest}${suffix}`, text: href });
+        return `../${dest}${suffix}`;
+      }
+      if (target.startsWith("docs/") && kind === "image") {
+        if (!copied.has(target)) {
+          copied.add(target);
+          fs.copyFileSync(path.join(ROOT, target), path.join(OUT, target));
+        }
+        return `../${target}`;
+      }
+      const example = /^examples\/([^/]+)\.html$/.exec(target);
+      if (example) return `../gallery/${example[1]}.html${suffix}`; // the live page on the site
+      return `${REPO}/blob/main/${target}${suffix}`;
+    };
+
+    const marked = new Marked({
+      gfm: true,
+      renderer: {
+        heading({ tokens, depth }) {
+          const inner = this.parser.parseInline(tokens);
+          const text = plainText(inner);
+          if (depth === 1 && !title) title = text;
+          const base = slug(text);
+          const n = seen.get(base) ?? 0;
+          seen.set(base, n + 1);
+          const id = n ? `${base}-${n}` : base;
+          ids.add(id);
+          return `<h${depth} id="${escapeHtml(id)}">${inner}</h${depth}>\n`;
+        },
+        link({ href, title: t, tokens }) {
+          const url = resolve(href, "link");
+          return `<a href="${escapeHtml(url)}"${t ? ` title="${escapeHtml(t)}"` : ""}>${this.parser.parseInline(tokens)}</a>`;
+        },
+        image({ href, title: t, text }) {
+          const url = resolve(href, "image");
+          return `<img src="${escapeHtml(url)}" alt="${escapeHtml(text)}"${t ? ` title="${escapeHtml(t)}"` : ""} loading="lazy">`;
+        },
+      },
+    });
+    const body = marked.parse(fs.readFileSync(path.join(DOCS, `${name}.md`), "utf8"), { async: false });
+    const intro = /<p>([\s\S]*?)<\/p>/.exec(body)?.[1] ?? "";
+    let description = plainText(intro).replace(/\s+/g, " ");
+    if (description.length > 200) description = `${description.slice(0, 197).trimEnd()}...`;
+    const heading = title || name;
+    // The shell goes through render() before the body is put in, so a literal {{x}} in a guide stays as written.
+    const shell = render(
+      `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(heading)} · austere-axi docs</title>
+<meta name="description" content="${escapeHtml(description)}">
+<link rel="stylesheet" href="{{root}}site.css">
+<link rel="icon" href="{{root}}favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="{{root}}">austere-axi</a>
+    {{nav}}
+  </div>
+</header>
+<main class="wrap">
+  <article class="doc">
+{{body}}
+  </article>
+  <p class="doc-edit"><a href="${REPO}/edit/main/docs/${name}.md">Edit this page on GitHub</a></p>
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <span>austere-axi v{{version}} · MIT license</span>
+    <span><a href="${REPO}">Source on GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>
+`,
+      out,
+      { body: "\0" },
+    );
+    return { name, out, html: shell.replace("\0", () => body), ids, links };
+  });
+
+  // Every link that stays inside the site must reach a built page and, with a #fragment, a heading on it.
+  const byOut = new Map(pages.map((p) => [p.out, p]));
+  const bad: string[] = [];
+  for (const page of pages) {
+    for (const link of page.links) {
+      const [file, hash] = link.href.split("#");
+      const dest = file === "" ? page : byOut.get(file);
+      if (!dest) bad.push(`${page.out}: ${link.text} -> ${file} is not a built page`);
+      else if (hash && !dest.ids.has(hash)) bad.push(`${page.out}: ${link.text} -> no heading #${hash} on ${dest.out}`);
+    }
+  }
+  if (bad.length) {
+    console.error(`broken links in docs/:\n  ${bad.join("\n  ")}`);
+    process.exit(1);
+  }
+  for (const page of pages) fs.writeFileSync(path.join(OUT, page.out), page.html);
+  return pages;
 }
 
 function* htmlFiles(dir: string): Generator<string> {
@@ -272,6 +425,9 @@ fs.mkdirSync(path.join(OUT, "gallery", "thumbs"), { recursive: true });
 fs.mkdirSync(path.join(OUT, "assets"), { recursive: true });
 for (const ex of examples) fs.writeFileSync(path.join(OUT, "gallery", `${ex.id}.html`), ex.live);
 
+// docs/*.md as pages. They need no screenshots, so they are built before the slow step.
+const docPages = buildDocs();
+
 // The playground (site/play/): its modules are bundled into one file, and the data it needs
 // (the parser's schema, the component catalog, one template per example) sits beside it.
 await esbuild.build({
@@ -309,8 +465,9 @@ fs.writeFileSync(path.join(OUT, "gallery", "index.html"), galleryPage(examples))
 for (const file of htmlFiles(OUT)) {
   const rel = path.relative(OUT, file).split(path.sep).join("/");
   if (rel.startsWith("gallery/") && rel !== "gallery/index.html") continue; // live examples are artifacts, not site pages
+  if (rel.startsWith("docs/")) continue; // already rendered by buildDocs()
   fs.writeFileSync(file, render(fs.readFileSync(file, "utf8"), rel, { hero: heroHtml(heroExample), ogImage: social ? "social-preview.png" : "hero.png" }));
 }
 
-console.log(`site: ${path.relative(ROOT, OUT)}/ (${examples.length} examples)`);
+console.log(`site: ${path.relative(ROOT, OUT)}/ (${examples.length} examples, ${docPages.length} docs pages)`);
 for (const ex of examples) console.log(`  gallery/${ex.id}.html  ~${formatInt(ex.tokens)} tokens, ${ex.statements} statements`);
