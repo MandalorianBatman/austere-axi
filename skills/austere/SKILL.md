@@ -1,6 +1,6 @@
 ---
 name: austere
-description: Turn plans, comparisons, decisions, code reviews and reports into reviewable pages the user can annotate in the browser, using the austere-axi CLI. The page is a short OpenUI Lang program, not hand-written HTML, so it is fast to write and to revise. Use when a response would be clearer as a page than as prose.
+description: "Use when the answer is a plan, a comparison of options, a recommendation or decision the user must make, a code review, a design or architecture proposal, a walkthrough of how a system works, or a status or research report: anything with several parts the user may want to comment on one by one. Also use when the user asks to review, compare, lay out, approve or see something as a page. Shows it as a browser page (austere-axi CLI) where the user annotates each part. Not for short answers, single facts, or plain code edits."
 license: MIT
 metadata:
   argument-hint: <what the page should show>
