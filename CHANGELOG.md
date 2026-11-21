@@ -2,6 +2,12 @@
 
 Versions before 0.11.0 are listed only in the [GitHub releases](https://github.com/MandalorianBatman/austere-axi/releases).
 
+## Unreleased
+
+### Changed
+
+- The `austere-setup` skill's description now lists when to use it (install, update, a missing `/austere` command, a failing `npx`, old Node, pages that do not open, phone review, an always-on server) instead of what it does, like the `austere` skill's in 0.17.0. An update request now updates a global install and restarts a running server. (RLM-425)
+
 ## 0.17.0 (2026-11-22)
 
 ### Changed

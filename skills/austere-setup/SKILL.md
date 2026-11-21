@@ -1,6 +1,6 @@
 ---
 name: austere-setup
-description: Set up austere-axi on this machine for the user. Checks Node, installs the `austere` skill, optionally installs the CLI globally, then proves the review loop works with a test page. Use when the user asks to install, set up or configure austere-axi.
+description: "Use when the user wants austere-axi installed, set up, configured, updated or checked on this machine, or when it is missing or broken: the `austere` skill or `/austere` command is not available, `npx austere-axi` fails, Node is too old, or review pages do not open (headless machine, 403 at a printed link). Also use when the user asks for phone review over Tailscale or an always-on review server. Not for making a review page; that is the `austere` skill."
 license: MIT
 ---
 
@@ -22,6 +22,8 @@ If Node is older than 22.18, stop. Tell the user to install a current Node LTS.
 
 Run `npx -y austere-axi --help`. It must print the `WORKFLOW` section. If npm cannot reach the registry, stop and show the error.
 
+**Update.** If the user asked to update and `npm ls -g austere-axi` lists a global install, run `npm update -g austere-axi`, then `austere-axi --version`, and tell the user the new version. `npx -y austere-axi` does not change a global install. Then run `austere-axi server status`: if a server runs, run `austere-axi server restart`, so it serves the new version.
+
 ## 3. Install the `austere` skill
 
 This skill tells agents when to make a page, and adds the `/austere` command.
@@ -41,7 +43,7 @@ If the `skills` tool asks which agents to install for, pick the agent the user w
 
 Ask the user about each item. Default: no.
 
-- **Global command.** `npm install -g austere-axi`. Then `austere-axi` works without `npx -y`. Update it later with `npm update -g austere-axi`.
+- **Global command.** `npm install -g austere-axi`. Then `austere-axi` works without `npx -y`. Update it later with `npm update -g austere-axi`, then `austere-axi server restart` if a server runs.
 - **Phone review.** If Tailscale is running, the server also listens on the tailnet, and `open` prints a phone link. Nothing to install. Run `tailscale status` to check.
 - **Always-on server.** `austere-axi server install` makes the server a per-user service (systemd or launchd) that starts at login, so the hub and notes are there without an agent running. The user runs it at a terminal: it shows what it will write and asks first. See `docs/hub.md`.
 
