@@ -46,7 +46,10 @@ import {
   shortId,
 } from "./agent-sessions.ts";
 import type { CallerReport, SessionAction } from "./agent-sessions.ts";
-import type { Liveness } from "./caller.ts";
+import { Wake, parseClientId } from "./wake.ts";
+import type { WakeAckResponse } from "./wake.ts";
+import { parseSessionOverride } from "./caller.ts";
+import type { Caller, Liveness } from "./caller.ts";
 import { detectUnit } from "./service.ts";
 import type { ServerUnit, Supervisor } from "./service.ts";
 import { installedPackFile, pagePacks, readLock } from "./packs.ts";
@@ -675,6 +678,22 @@ export async function runServer({
     // The page row the last pull cached counts too: --auto may have been turned on elsewhere since; either saying auto refuses.
     autoConflict: (s) => autoConflict(store.db, s.file, s.id, liveAuto),
     emit: (id, event) => broadcastOwners(id, "run", event),
+  });
+  // Push delivery (RLM-447): a live, idle agent session with a role on the page is woken when no poll holds it.
+  const wakes = new Wake({
+    db: store.db,
+    store,
+    log,
+    listening: (s) => Boolean(listener(s)),
+    autoConflict: (s) => autoConflict(store.db, s.file, s.id, liveAuto),
+    delivered: (s, entries) => {
+      store.markDelivered(s, entries);
+      dispatcher.pollArrived(s, "An agent session was woken with the notes: they go to it.");
+      s.workingSince = Date.now();
+      agentActive(s);
+      broadcastTranscript(s, entries);
+      broadcastPresence(s);
+    },
   });
   // Activity triggers (RLM-360): a command the owner named at a terminal runs once a project has gone quiet.
   const triggers = new TriggerScheduler({
@@ -2100,13 +2119,53 @@ export async function runServer({
 
   /**
    * New notes on `s`: a listening poll gets them, else, when the owner sent or released them
-   * (`ownersNote`), the attached agent's run is queued (RLM-345). Who listens is read before the
-   * wake, which ends the poll it answers.
+   * (`ownersNote`), an idle agent session with a role on the page is woken (RLM-447) and the
+   * attached agent's run is queued (RLM-345); a wake that is delivered cancels that run before its
+   * debounce ends. Who listens is read before the wake, which ends the poll it answers.
    */
   function wakeOrRun(s: Session, ownersNote: boolean): void {
     const held = Boolean(listener(s));
     wake(s);
-    if (ownersNote && !held) dispatcher.noteSeq(s);
+    if (!ownersNote || held) return;
+    wakes.offer([s.id]);
+    dispatcher.noteSeq(s);
+  }
+
+  /**
+   * `POST /api/sessions/<harness>:<id>/wake-poll` and `/wake-ack` (RLM-447): a harness client inside
+   * the agent session asks for a wake while the session is idle, then acknowledges it. `client` names
+   * the client process, so two processes on one session never both deliver.
+   */
+  async function wakeApi(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    who: string,
+    op: string,
+  ): Promise<void> {
+    if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
+    let caller: Caller;
+    try {
+      caller = parseSessionOverride(decodeURIComponent(who));
+    } catch (err) {
+      return send(res, 400, { error: String((err as Error).message) });
+    }
+    const body = await readBody(req);
+    const client = parseClientId(body.client);
+    if (!client)
+      return send(res, 400, { error: "client must be 8 to 64 letters, digits, '_' or '-'" });
+    if (op === "wake-ack") {
+      const outcome = body.outcome;
+      if (typeof body.claim !== "string" || (outcome !== "delivered" && outcome !== "released"))
+        return send(res, 400, { error: "claim and outcome (delivered or released) are required" });
+      return send(res, 200, wakes.ack(caller, body.claim, outcome) satisfies WakeAckResponse);
+    }
+    wakes.poll(
+      caller,
+      client,
+      Number(body.timeoutMs) || 0,
+      (answer) => send(res, 200, answer),
+      (gone) => res.on("close", gone),
+    );
   }
 
   /** The `cursor` or `after` of a poll or reply: a whole number, or null when absent. */
@@ -2403,6 +2462,9 @@ export async function runServer({
         addresses: addressSettings(),
       } satisfies HealthInfo);
     }
+    // A waiting agent session is not a user either: its client asks again every minute, and must not keep an idle server up.
+    const wakeRoute = /^sessions\/([^/]+)\/(wake-poll|wake-ack)$/.exec(route);
+    if (wakeRoute) return wakeApi(req, res, wakeRoute[1], wakeRoute[2]);
     // A health probe is not a user: a CLI that only checks, or a locked-out unit that probes
     // every few seconds, must not keep an idle server up.
     activity();
@@ -4307,6 +4369,7 @@ export async function runServer({
     }
     for (const poll of [...rootPolls.values(), ...projectPolls.values()])
       finishProjectPoll(poll, { status: "interrupted", reason });
+    wakes.close();
     for (const id of watchers.keys()) unwatch(id);
     peer.close();
     for (const server of listeners.values()) server.close();

@@ -691,20 +691,17 @@ export class Dispatcher {
     this.timers.set(s.id, t);
   }
 
-  /** A poll arrived for `s`: it gets the notes, so a run that has not started is not needed. */
-  pollArrived(s: Session): void {
+  /** A poll arrived for `s`, or a woken agent session took its notes: a run that has not started is not needed. */
+  pollArrived(
+    s: Session,
+    message = "An agent started polling the page: the notes go to it.",
+  ): void {
     const rows = this.db
       .prepare(
         "SELECT * FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session')",
       )
       .all(s.id) as unknown as RunRow[];
-    for (const row of rows)
-      this.end(
-        row,
-        "stopped",
-        "listener",
-        "An agent started polling the page: the notes go to it.",
-      );
+    for (const row of rows) this.end(row, "stopped", "listener", message);
   }
 
   /**
