@@ -24,7 +24,15 @@ function DiffView({ props }: RendererArgs<z.infer<typeof diffProps>>) {
   return (
     <div className="austere-diff">
       {/* A title that just repeats the file path would show it twice. */}
-      {props.title && !files.some((f) => f.name && f.name === String(props.title).trim().replace(/^[ab]\//, "")) ? (
+      {props.title &&
+      !files.some(
+        (f) =>
+          f.name &&
+          f.name ===
+            String(props.title)
+              .trim()
+              .replace(/^[ab]\//, ""),
+      ) ? (
         <div className="austere-diff-title">{props.title}</div>
       ) : null}
       {files.map((file, fi) => {
@@ -35,7 +43,8 @@ function DiffView({ props }: RendererArgs<z.infer<typeof diffProps>>) {
               <div className="austere-diff-file-head">
                 <span className="austere-diff-path">{file.name}</span>
                 <span className="austere-diff-stat">
-                  <span className="austere-diff-a">+{a}</span> <span className="austere-diff-d">-{d}</span>
+                  <span className="austere-diff-a">+{a}</span>{" "}
+                  <span className="austere-diff-d">-{d}</span>
                 </span>
               </div>
             ) : null}
@@ -87,7 +96,9 @@ export default austereComponent({
   props: diffProps,
   description:
     "Unified diff (git diff output, one or more files) with line numbers. patch is a raw multi-line string. Clicked lines reach the agent as file:+line.",
-  notes: ["- Diff for code changes: show the hunks that matter, not whole files. Hunk counts are recomputed, so only start lines matter."],
+  notes: [
+    "- Diff for code changes: show the hunks that matter, not whole files. Hunk counts are recomputed, so only start lines matter.",
+  ],
   renderer: DiffView,
   example: `retryPatch = Diff("diff --git a/src/retry.ts b/src/retry.ts
 --- a/src/retry.ts

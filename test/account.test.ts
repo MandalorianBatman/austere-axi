@@ -23,12 +23,14 @@ let STATE = "";
 const WORK = path.join(ROOT, "work");
 fs.mkdirSync(WORK);
 
-const RUNTIME_TAG = '<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>';
+const RUNTIME_TAG =
+  '<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>';
 const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Plan</title>\n${RUNTIME_TAG}</head>\n<body><script type="text/openui">\nroot = Stack([intro])\nintro = TextContent("hello")\n</script></body></html>\n`;
 
 const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64url");
 /** An access token: the CLI only reads `exp` (the service verifies it), so the signature is a placeholder. */
-const jwt = (sub: string, expIn = 300) => `${b64({ alg: "RS256", kid: "k" })}.${b64({ sub, exp: Math.floor(Date.now() / 1000) + expIn, n: crypto.randomUUID() })}.sig`;
+const jwt = (sub: string, expIn = 300) =>
+  `${b64({ alg: "RS256", kid: "k" })}.${b64({ sub, exp: Math.floor(Date.now() / 1000) + expIn, n: crypto.randomUUID() })}.sig`;
 
 const stub = {
   requests: [] as string[],
@@ -45,10 +47,19 @@ const stub = {
   wsAuth: [] as string[],
 };
 
-const USER = { object: "user", id: "user_ana", email: "ana@example.com", first_name: "Ana", last_name: "Lima" };
+const USER = {
+  object: "user",
+  id: "user_ana",
+  email: "ana@example.com",
+  first_name: "Ana",
+  last_name: "Lima",
+};
 let BASE = "";
 let server: http.Server;
-const wss = new WebSocketServer({ noServer: true, handleProtocols: (p) => (p.has(SUBPROTOCOL) ? SUBPROTOCOL : false) });
+const wss = new WebSocketServer({
+  noServer: true,
+  handleProtocols: (p) => (p.has(SUBPROTOCOL) ? SUBPROTOCOL : false),
+});
 
 function tokens() {
   const at = jwt(USER.id, stub.expIn);
@@ -73,7 +84,9 @@ before(async () => {
     req.on("end", () => {
       const url = req.url ?? "";
       const raw = Buffer.concat(chunks);
-      const body = (req.headers["content-encoding"] === "gzip" ? zlib.gunzipSync(raw) : raw).toString("utf8");
+      const body = (
+        req.headers["content-encoding"] === "gzip" ? zlib.gunzipSync(raw) : raw
+      ).toString("utf8");
       const json = (status: number, v: unknown) => {
         res.writeHead(status, { "content-type": "application/json" });
         res.end(JSON.stringify(v));
@@ -84,7 +97,14 @@ before(async () => {
         const form = new URLSearchParams(body);
         assert.equal(form.get("client_id"), "client_test");
         assert.equal(form.has("client_secret"), false, "a public client sends no secret");
-        return json(200, { device_code: "dev_1", user_code: "ABCD-EFGH", verification_uri: `${BASE}/device`, verification_uri_complete: `${BASE}/device?user_code=ABCD-EFGH`, expires_in: 300, interval: 5 });
+        return json(200, {
+          device_code: "dev_1",
+          user_code: "ABCD-EFGH",
+          verification_uri: `${BASE}/device`,
+          verification_uri_complete: `${BASE}/device?user_code=ABCD-EFGH`,
+          expires_in: 300,
+          interval: 5,
+        });
       }
       if (url === "/user_management/authenticate") {
         const form = new URLSearchParams(body);
@@ -104,7 +124,11 @@ before(async () => {
       if (url === "/auth/config") return json(200, { clientId: "client_test", apiBase: BASE });
       const me = who(req.headers.authorization);
       if (!me) return json(401, { error: "invalid token" });
-      if (url === "/api/me") return json(200, { user: { id: USER.id, email: USER.email, name: "Ana Lima" }, pages: [...stub.pages.values()].filter((p) => owns(me, p.owner)).length });
+      if (url === "/api/me")
+        return json(200, {
+          user: { id: USER.id, email: USER.email, name: "Ana Lima" },
+          pages: [...stub.pages.values()].filter((p) => owns(me, p.owner)).length,
+        });
       const obj = /^\/api\/objects\/([0-9a-f]{64})$/.exec(url);
       if (req.method === "PUT" && obj) {
         stub.objects.set(obj[1], body);
@@ -117,7 +141,15 @@ before(async () => {
         return json(201, { id, url: `${BASE}/p/${id}` });
       }
       if (req.method === "GET" && url === "/api/pages") {
-        const pages = [...stub.pages].filter(([, p]) => owns(me, p.owner) && p.row).map(([id, p]) => ({ id, title: p.row!.title, url: `${BASE}/p/${id}`, expiresAt: p.row!.expiresAt, notes: 0 }));
+        const pages = [...stub.pages]
+          .filter(([, p]) => owns(me, p.owner) && p.row)
+          .map(([id, p]) => ({
+            id,
+            title: p.row!.title,
+            url: `${BASE}/p/${id}`,
+            expiresAt: p.row!.expiresAt,
+            notes: 0,
+          }));
         return json(200, { pages });
       }
       const html = /^\/api\/pages\/([^/]+)\/html$/.exec(url);
@@ -146,14 +178,32 @@ before(async () => {
         const parsed = parseClientFrame(data.toString());
         if (!parsed.ok) return;
         const f = parsed.value;
-        if (f.t === "pull") return ws.send(JSON.stringify({ v: SYNC_VERSION, t: "changes", rows: p.row ? [p.row] : [], cursor: 1 }));
+        if (f.t === "pull")
+          return ws.send(
+            JSON.stringify({
+              v: SYNC_VERSION,
+              t: "changes",
+              rows: p.row ? [p.row] : [],
+              cursor: 1,
+            }),
+          );
         if (f.t === "mutation" && f.name === "publish") {
           const args = f.args as PageRow & { html: string };
           p.html = stub.objects.get(args.html) ?? "";
           const now = Date.now();
-          p.row = { v: SYNC_VERSION, type: "page", id, seq: 1, ...(f.args as object), publishedAt: now, expiresAt: now + 86400000, deleted: false } as PageRow;
+          p.row = {
+            v: SYNC_VERSION,
+            type: "page",
+            id,
+            seq: 1,
+            ...(f.args as object),
+            publishedAt: now,
+            expiresAt: now + 86400000,
+            deleted: false,
+          } as PageRow;
         }
-        if (f.t === "mutation") ws.send(JSON.stringify({ v: SYNC_VERSION, t: "ack", clientId: f.clientId, n: f.n }));
+        if (f.t === "mutation")
+          ws.send(JSON.stringify({ v: SYNC_VERSION, t: "ack", clientId: f.clientId, n: f.n }));
       });
     });
   });
@@ -176,8 +226,15 @@ beforeEach(() => {
   stub.expIn = 300;
 });
 
-function cli(args: string[], env: Record<string, string> = {}): Promise<{ code: number | null; out: string; err: string }> {
-  const { promise, resolve } = Promise.withResolvers<{ code: number | null; out: string; err: string }>();
+function cli(
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<{ code: number | null; out: string; err: string }> {
+  const { promise, resolve } = Promise.withResolvers<{
+    code: number | null;
+    out: string;
+    err: string;
+  }>();
   const child = spawn(process.execPath, ["src/cli/main.ts", ...args], {
     cwd: path.resolve(import.meta.dirname, ".."),
     env: {
@@ -209,8 +266,18 @@ test("cloud login on a clean machine: device code, approve, tokens in cloud.json
   stub.polls.push("authorization_pending", "slow_down", "authorization_pending");
   const r = await cli(["cloud", "login"]);
   assert.equal(r.code, 0, r.out + r.err);
-  assert.match(r.err, new RegExp(`Sign in at ${BASE}/device\\?user_code=ABCD-EFGH \\(code ABCD-EFGH, works for 5 minutes\\)`), "the full link with the code is shown");
-  assert.match(r.err, new RegExp(`Or open ${BASE}/device and enter the code ABCD-EFGH\\.`), "the bare link is the fallback");
+  assert.match(
+    r.err,
+    new RegExp(
+      `Sign in at ${BASE}/device\\?user_code=ABCD-EFGH \\(code ABCD-EFGH, works for 5 minutes\\)`,
+    ),
+    "the full link with the code is shown",
+  );
+  assert.match(
+    r.err,
+    new RegExp(`Or open ${BASE}/device and enter the code ABCD-EFGH\\.`),
+    "the bare link is the fallback",
+  );
   assert.match(r.err, /AUSTERE_AXI_NO_OPEN is set: no browser was started\./);
   assert.equal(field(r.out, "status"), "signed in");
   assert.equal(field(r.out, "email"), "ana@example.com");
@@ -223,7 +290,8 @@ test("cloud login on a clean machine: device code, approve, tokens in cloud.json
   assert.equal(st.account.clientId, "client_test");
   assert.equal(st.owner, USER.id, "the published files' account");
   assert.equal("token" in st, false, "no owner token");
-  if (process.platform !== "win32") assert.equal(fs.statSync(path.join(STATE, "cloud.json")).mode & 0o777, 0o600);
+  if (process.platform !== "win32")
+    assert.equal(fs.statSync(path.join(STATE, "cloud.json")).mode & 0o777, 0o600);
 
   const w = await cli(["cloud", "whoami"]);
   assert.equal(w.code, 0, w.out);
@@ -231,18 +299,31 @@ test("cloud login on a clean machine: device code, approve, tokens in cloud.json
   assert.equal(field(w.out, "pages"), "0");
 });
 
-test("cloud login that opens the browser still prints the sign-in link for another device", { skip: process.platform === "win32" }, async () => {
-  // A stand-in for the platform's opener that records the url it was given.
-  const bin = fs.mkdtempSync(path.join(STATE, "bin-"));
-  const mark = path.join(bin, "launched");
-  for (const name of ["xdg-open", "open"]) fs.writeFileSync(path.join(bin, name), `#!/bin/sh\necho "$1" > "${mark}"\n`, { mode: 0o755 });
-  const r = await cli(["cloud", "login"], { AUSTERE_AXI_NO_OPEN: "", PATH: `${bin}${path.delimiter}${process.env.PATH}` });
-  assert.equal(r.code, 0, r.out + r.err);
-  assert.match(r.err, new RegExp(`Sign in at ${BASE}/device\\?user_code=ABCD-EFGH `));
-  assert.match(r.err, /Opened your browser\. Check that the page shows the code ABCD-EFGH\./);
-  for (let i = 0; i < 40 && !fs.existsSync(mark); i++) await new Promise((res) => setTimeout(res, 50));
-  assert.equal(fs.readFileSync(mark, "utf8").trim(), `${BASE}/device?user_code=ABCD-EFGH`, "the browser opened the full link");
-});
+test(
+  "cloud login that opens the browser still prints the sign-in link for another device",
+  { skip: process.platform === "win32" },
+  async () => {
+    // A stand-in for the platform's opener that records the url it was given.
+    const bin = fs.mkdtempSync(path.join(STATE, "bin-"));
+    const mark = path.join(bin, "launched");
+    for (const name of ["xdg-open", "open"])
+      fs.writeFileSync(path.join(bin, name), `#!/bin/sh\necho "$1" > "${mark}"\n`, { mode: 0o755 });
+    const r = await cli(["cloud", "login"], {
+      AUSTERE_AXI_NO_OPEN: "",
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+    });
+    assert.equal(r.code, 0, r.out + r.err);
+    assert.match(r.err, new RegExp(`Sign in at ${BASE}/device\\?user_code=ABCD-EFGH `));
+    assert.match(r.err, /Opened your browser\. Check that the page shows the code ABCD-EFGH\./);
+    for (let i = 0; i < 40 && !fs.existsSync(mark); i++)
+      await new Promise((res) => setTimeout(res, 50));
+    assert.equal(
+      fs.readFileSync(mark, "utf8").trim(),
+      `${BASE}/device?user_code=ABCD-EFGH`,
+      "the browser opened the full link",
+    );
+  },
+);
 
 test("device flow refusals: access_denied and expired_token are errors, nothing is stored", async () => {
   for (const code of ["access_denied", "expired_token"]) {
@@ -258,12 +339,25 @@ test("a pre-0.17 cloud.json: login sends no claim, forgets the anonymous token's
   const file = path.join(WORK, "anon.html");
   fs.writeFileSync(file, PAGE);
   const abs = fs.realpathSync(file);
-  const entry = { id: crypto.randomBytes(16).toString("base64url"), auto: false, unlisted: false, presence: true, invites: {} };
-  fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: BASE, token: "t".repeat(43), pages: { [abs]: entry } }), { mode: 0o600 });
+  const entry = {
+    id: crypto.randomBytes(16).toString("base64url"),
+    auto: false,
+    unlisted: false,
+    presence: true,
+    invites: {},
+  };
+  fs.writeFileSync(
+    path.join(STATE, "cloud.json"),
+    JSON.stringify({ url: BASE, token: "t".repeat(43), pages: { [abs]: entry } }),
+    { mode: 0o600 },
+  );
 
   const r = await cli(["cloud", "login"]);
   assert.equal(r.code, 0, r.out);
-  assert.match(field(r.out, "forgotten") ?? "", /^1 published file of another account \(or of an anonymous owner token from before 0\.17\)/);
+  assert.match(
+    field(r.out, "forgotten") ?? "",
+    /^1 published file of another account \(or of an anonymous owner token from before 0\.17\)/,
+  );
   assert.ok(!stub.requests.some((q) => q.includes("/api/owners")), "no claim, no owner token");
   const st = cloudJson();
   assert.equal("token" in st, false, "the owner token is dropped");
@@ -279,8 +373,19 @@ test("the published files belong to one account: another account's are forgotten
   const file = path.join(WORK, "mine.html");
   fs.writeFileSync(file, PAGE);
   const abs = fs.realpathSync(file);
-  const entry = { id: crypto.randomBytes(16).toString("base64url"), auto: false, unlisted: false, presence: true, invites: {} };
-  const seed = (owner: string) => fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: BASE, owner, account: null, pages: { [abs]: entry } }), { mode: 0o600 });
+  const entry = {
+    id: crypto.randomBytes(16).toString("base64url"),
+    auto: false,
+    unlisted: false,
+    presence: true,
+    invites: {},
+  };
+  const seed = (owner: string) =>
+    fs.writeFileSync(
+      path.join(STATE, "cloud.json"),
+      JSON.stringify({ url: BASE, owner, account: null, pages: { [abs]: entry } }),
+      { mode: 0o600 },
+    );
 
   seed("user_ben");
   let r = await cli(["cloud", "login"]);
@@ -339,7 +444,14 @@ test("clone lists the account's pages and writes one down as a local, attached f
   const first = STATE;
   STATE = fs.mkdtempSync(path.join(ROOT, "state-"));
   cloudOn(STATE);
-  fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(first, "cloud.json"), "utf8")), pages: {} }), { mode: 0o600 });
+  fs.writeFileSync(
+    path.join(STATE, "cloud.json"),
+    JSON.stringify({
+      ...JSON.parse(fs.readFileSync(path.join(first, "cloud.json"), "utf8")),
+      pages: {},
+    }),
+    { mode: 0o600 },
+  );
   const list = await cli(["clone"]);
   assert.match(list.out, new RegExp(`id: ${id}`));
 
@@ -354,8 +466,16 @@ test("clone lists the account's pages and writes one down as a local, attached f
   const entry = cloudJson().pages[fs.realpathSync(dest)];
   assert.equal(entry.id, id);
 
-  assert.equal((await cli(["clone", id, path.join(WORK, "again.html")])).code, 1, "a page attached to a file is not cloned twice");
-  assert.equal((await cli(["clone", "x".repeat(22), dest])).code, 1, "an existing file is not overwritten");
+  assert.equal(
+    (await cli(["clone", id, path.join(WORK, "again.html")])).code,
+    1,
+    "a page attached to a file is not cloned twice",
+  );
+  assert.equal(
+    (await cli(["clone", "x".repeat(22), dest])).code,
+    1,
+    "an existing file is not overwritten",
+  );
 
   // The clone republishes to the same link.
   const p = await cli(["publish", dest]);

@@ -20,16 +20,26 @@ const listeners = new Set<(pack: RegisteredPack) => void>();
  * runtime adds to the page once.
  */
 export function registerPack(pack: PackRegistration): RegisteredPack {
-  if (!pack || typeof pack.name !== "string" || !pack.name) throw new Error("registerPack needs a name");
-  if (typeof pack.version !== "string" || !pack.version) throw new Error(`pack ${pack.name}: registerPack needs a version`);
+  if (!pack || typeof pack.name !== "string" || !pack.name)
+    throw new Error("registerPack needs a name");
+  if (typeof pack.version !== "string" || !pack.version)
+    throw new Error(`pack ${pack.name}: registerPack needs a version`);
   if ((pack.api ?? PACK_API) !== PACK_API) {
     throw new Error(`pack ${pack.name} targets pack API ${pack.api}; this runtime has ${PACK_API}`);
   }
-  const components = ([] as (AustereComponent | AustereComponent[])[]).concat(pack.components || []).flat();
+  const components = ([] as (AustereComponent | AustereComponent[])[])
+    .concat(pack.components || [])
+    .flat();
   for (const c of components) {
-    if (!c || !c.definition) throw new Error(`pack ${pack.name}: components must be austereComponent(...) results`);
+    if (!c || !c.definition)
+      throw new Error(`pack ${pack.name}: components must be austereComponent(...) results`);
   }
-  const entry: RegisteredPack = { name: pack.name, version: pack.version, components, css: typeof pack.css === "string" ? pack.css : "" };
+  const entry: RegisteredPack = {
+    name: pack.name,
+    version: pack.version,
+    components,
+    css: typeof pack.css === "string" ? pack.css : "",
+  };
   const i = registered.findIndex((p) => p.name === entry.name);
   if (i >= 0) registered[i] = entry;
   else registered.push(entry);

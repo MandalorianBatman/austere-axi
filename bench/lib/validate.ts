@@ -98,16 +98,30 @@ interface LavishMessage {
 
 type BenchWindow = typeof window & { __benchMessage(m: unknown): void };
 
-function node(args: string[], { cwd, env = {}, input }: { cwd?: string; env?: Record<string, string>; input?: string } = {}): Promise<{ code: number; out: string }> {
+function node(
+  args: string[],
+  { cwd, env = {}, input }: { cwd?: string; env?: Record<string, string>; input?: string } = {},
+): Promise<{ code: number; out: string }> {
   return new Promise((resolve) => {
-    const child = execFile("node", args, { cwd, env: { ...process.env, ...env }, maxBuffer: 16 << 20, timeout: 120000 }, (err, stdout, stderr) =>
-      resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, out: `${stdout}${stderr}` }),
+    const child = execFile(
+      "node",
+      args,
+      { cwd, env: { ...process.env, ...env }, maxBuffer: 16 << 20, timeout: 120000 },
+      (err, stdout, stderr) =>
+        resolve({
+          code: err ? (typeof err.code === "number" ? err.code : 1) : 0,
+          out: `${stdout}${stderr}`,
+        }),
     );
     if (input != null) child.stdin?.end(input);
   });
 }
 
-const austereEnv = () => ({ AUSTERE_AXI_STATE_DIR: path.join(STATE, "austere"), AUSTERE_AXI_NO_OPEN: "1", AUSTERE_AXI_NO_TAILSCALE: "1" });
+const austereEnv = () => ({
+  AUSTERE_AXI_STATE_DIR: path.join(STATE, "austere"),
+  AUSTERE_AXI_NO_OPEN: "1",
+  AUSTERE_AXI_NO_TAILSCALE: "1",
+});
 
 /** `austere-axi check`: ok, and the error codes it listed. */
 export async function austereCheck(file: string): Promise<AustereCheck> {
@@ -117,18 +131,31 @@ export async function austereCheck(file: string): Promise<AustereCheck> {
 }
 
 /** `austere-axi patch`, with the statements on stdin. */
-export async function austerePatch(file: string, statements: string): Promise<{ ok: boolean; output: string }> {
-  const { code, out } = await node([AUSTERE_CLI, "patch", file], { env: austereEnv(), input: statements });
+export async function austerePatch(
+  file: string,
+  statements: string,
+): Promise<{ ok: boolean; output: string }> {
+  const { code, out } = await node([AUSTERE_CLI, "patch", file], {
+    env: austereEnv(),
+    input: statements,
+  });
   return { ok: code === 0 && /status: patched/.test(out), output: out.slice(0, 4000) };
 }
 
 /** The smallest statement whose source contains the anchor text: what austere-axi poll names. */
 export function austereAnchor(html: string, anchorText: string): AustereAnchor {
   const want = anchorText.toLowerCase();
-  let best: { statement: string; line: number; source: string; found?: boolean; component?: string } | null = null;
+  let best: {
+    statement: string;
+    line: number;
+    source: string;
+    found?: boolean;
+    component?: string;
+  } | null = null;
   for (const [id, s] of statementLines(html)) {
     if (!s.text.toLowerCase().includes(want)) continue;
-    if (!best || s.text.length < best.source.length) best = { statement: id, line: s.line, source: s.text };
+    if (!best || s.text.length < best.source.length)
+      best = { statement: id, line: s.line, source: s.text };
   }
   if (!best) {
     const root = statementLines(html).get("root");
@@ -182,7 +209,9 @@ export class Checker {
       page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text().slice(0, 300)));
       // A page under review gets the runtime from the review server; here it comes from dist/.
       await page.route(/\/(austere\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {
-        const name = /\/(austere\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())![1];
+        const name = /\/(austere\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(
+          route.request().url(),
+        )![1];
         route.fulfill({ path: path.join(ROOT, "dist", name), contentType: "text/javascript" });
       });
       try {
@@ -197,31 +226,63 @@ export class Checker {
           const has = (el: Element) => (el.textContent || "").toLowerCase().includes(want);
           let el: Element | null = document.body && has(document.body) ? document.body : null;
           while (el) {
-            const next = [...el.children].find((c) => !["SCRIPT", "STYLE", "TEMPLATE"].includes(c.tagName) && has(c));
+            const next = [...el.children].find(
+              (c) => !["SCRIPT", "STYLE", "TEMPLATE"].includes(c.tagName) && has(c),
+            );
             if (!next) break;
             el = next;
           }
           const part = (e: Element) => {
             let s = e.tagName.toLowerCase();
             if (e.id) return `${s}#${CSS.escape(e.id)}`;
-            const cls = [...e.classList].slice(0, 2).map((c) => `.${CSS.escape(c)}`).join("");
-            const sib = e.parentElement ? [...e.parentElement.children].filter((c) => c.tagName === e.tagName) : [];
+            const cls = [...e.classList]
+              .slice(0, 2)
+              .map((c) => `.${CSS.escape(c)}`)
+              .join("");
+            const sib = e.parentElement
+              ? [...e.parentElement.children].filter((c) => c.tagName === e.tagName)
+              : [];
             return s + cls + (sib.length > 1 ? `:nth-of-type(${sib.indexOf(e) + 1})` : "");
           };
           const chain: string[] = [];
-          for (let e: Element | null = el; e && e !== document.body && chain.length < 4; e = e.parentElement) chain.unshift(part(e));
+          for (
+            let e: Element | null = el;
+            e && e !== document.body && chain.length < 4;
+            e = e.parentElement
+          )
+            chain.unshift(part(e));
           return {
             overflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
-            renderErrors: [...document.querySelectorAll(".austere-render-error")].map((e) => (e.textContent || "").trim().slice(0, 300)),
-            anchor: el && el !== document.body ? { selector: chain.join(" > "), text: (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 200) } : null,
+            renderErrors: [...document.querySelectorAll(".austere-render-error")].map((e) =>
+              (e.textContent || "").trim().slice(0, 300),
+            ),
+            anchor:
+              el && el !== document.body
+                ? {
+                    selector: chain.join(" > "),
+                    text: (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 200),
+                  }
+                : null,
           };
         }, anchorText)
-        .catch((err: Error) => ({ overflowX: false, renderErrors: [`evaluate: ${err.message}`], anchor: null }));
-      result[name] = { pageErrors, consoleErrors, overflowX: info.overflowX, renderErrors: info.renderErrors };
+        .catch((err: Error) => ({
+          overflowX: false,
+          renderErrors: [`evaluate: ${err.message}`],
+          anchor: null,
+        }));
+      result[name] = {
+        pageErrors,
+        consoleErrors,
+        overflowX: info.overflowX,
+        renderErrors: info.renderErrors,
+      };
       if (name === "desktop") result.anchor = info.anchor;
       await context.close();
     }
-    result.ok = (["desktop", "mobile"] as const).every((v) => !result[v]?.pageErrors.length && !result[v]?.renderErrors.length && !result[v]?.overflowX);
+    result.ok = (["desktop", "mobile"] as const).every(
+      (v) =>
+        !result[v]?.pageErrors.length && !result[v]?.renderErrors.length && !result[v]?.overflowX,
+    );
     return result;
   }
 
@@ -231,7 +292,14 @@ export class Checker {
     const open = await node([LAVISH_CLI, file, "--no-open"], { cwd, env: lavishEnv() });
     const url = /url: "?(http[^"\s]+)/.exec(open.out)?.[1];
     const openWarnings = [...open.out.matchAll(/^(\w+_warning):/gm)].map((m) => m[1]);
-    if (!url) return { ok: false, openWarnings, findings: [], incomplete: true, output: open.out.slice(0, 2000) };
+    if (!url)
+      return {
+        ok: false,
+        openWarnings,
+        findings: [],
+        incomplete: true,
+        output: open.out.slice(0, 2000),
+      };
     const sessionUrl = `http://127.0.0.1:${this.lavishPort}${new URL(url).pathname}`;
     const findings: LayoutFinding[] = [];
     const failures: unknown[] = [];
@@ -245,22 +313,41 @@ export class Checker {
         if (window.top !== window) return;
         window.addEventListener("message", (e) => {
           const t = e.data?.type;
-          if (t === "lavish:layoutDiagnostics" || t === "lavish:artifactAssetFailure") (window as BenchWindow).__benchMessage(e.data);
+          if (t === "lavish:layoutDiagnostics" || t === "lavish:artifactAssetFailure")
+            (window as BenchWindow).__benchMessage(e.data);
         });
       });
       await page.goto(sessionUrl, { waitUntil: "load", timeout: 60000 }).catch(() => {});
       const deadline = Date.now() + 30000;
-      while (Date.now() < deadline && !messages.some((m) => m.type === "lavish:layoutDiagnostics" && m.complete)) await page.waitForTimeout(500);
+      while (
+        Date.now() < deadline &&
+        !messages.some((m) => m.type === "lavish:layoutDiagnostics" && m.complete)
+      )
+        await page.waitForTimeout(500);
       await page.waitForTimeout(1500);
       const audits = messages.filter((m) => m.type === "lavish:layoutDiagnostics");
       const last = audits.findLast((m) => m.complete) ?? audits.at(-1);
       if (!last?.complete) incomplete = true;
-      for (const f of last?.findings ?? []) findings.push({ viewport: name, width: last?.viewport_width, kind: f.kind, selector: String(f.selector).slice(0, 200) });
-      for (const m of messages.filter((m) => m.type === "lavish:artifactAssetFailure")) failures.push(m.detail);
+      for (const f of last?.findings ?? [])
+        findings.push({
+          viewport: name,
+          width: last?.viewport_width,
+          kind: f.kind,
+          selector: String(f.selector).slice(0, 200),
+        });
+      for (const m of messages.filter((m) => m.type === "lavish:artifactAssetFailure"))
+        failures.push(m.detail);
       await context.close();
     }
     await node([LAVISH_CLI, "end", file], { cwd, env: lavishEnv() });
-    return { ok: !openWarnings.length && !findings.length && !failures.length, openWarnings, findings, failures, incomplete, output: open.out.slice(0, 4000) };
+    return {
+      ok: !openWarnings.length && !findings.length && !failures.length,
+      openWarnings,
+      findings,
+      failures,
+      incomplete,
+      output: open.out.slice(0, 4000),
+    };
   }
 }
 

@@ -14,13 +14,21 @@ test("an unbundled CLI with no variables uses <checkout>/.dev/state and the chec
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "austere-devhome-"));
   try {
     const { AUSTERE_AXI_STATE_DIR, AUSTERE_AXI_PORT, ...rest } = process.env;
-    const r = spawnSync(process.execPath, ["src/cli/main.ts", "help"], { cwd: ROOT, env: { ...rest, HOME: home, USERPROFILE: home }, encoding: "utf8" });
+    const r = spawnSync(process.execPath, ["src/cli/main.ts", "help"], {
+      cwd: ROOT,
+      env: { ...rest, HOME: home, USERPROFILE: home },
+      encoding: "utf8",
+    });
     assert.equal(r.status, 0, r.stderr);
     const state = path.join(ROOT, ".dev", "state");
     const lines = r.stderr.split("\n").filter(Boolean);
     assert.equal(lines.length, 1, r.stderr);
     assert.ok(lines[0].includes(`state dir ${state}, port ${devPort(ROOT)}`), lines[0]);
-    assert.equal(fs.existsSync(path.join(home, ".austere-axi")), false, "the real state dir is left alone");
+    assert.equal(
+      fs.existsSync(path.join(home, ".austere-axi")),
+      false,
+      "the real state dir is left alone",
+    );
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -31,7 +39,11 @@ test("dev defaults: sources and dist/ in a git checkout get them; an explicit AU
   const checkout = fs.mkdtempSync(path.join(os.tmpdir(), "austere-checkout-"));
   try {
     fs.mkdirSync(path.join(checkout, "dist"));
-    assert.equal(devCheckout(true, path.join(checkout, "dist")), null, "dist/ outside a git checkout");
+    assert.equal(
+      devCheckout(true, path.join(checkout, "dist")),
+      null,
+      "dist/ outside a git checkout",
+    );
     // A worktree's .git is a file.
     fs.writeFileSync(path.join(checkout, ".git"), "gitdir: /elsewhere\n");
     assert.equal(devCheckout(true, path.join(checkout, "dist")), checkout);
@@ -51,7 +63,11 @@ test("dev defaults: sources and dist/ in a git checkout get them; an explicit AU
 
   const explicit: NodeJS.ProcessEnv = { AUSTERE_AXI_STATE_DIR: "/real" };
   assert.equal(applyDevDefaults(explicit, ROOT), null);
-  assert.deepEqual(explicit, { AUSTERE_AXI_STATE_DIR: "/real" }, "the port stays the real default too");
+  assert.deepEqual(
+    explicit,
+    { AUSTERE_AXI_STATE_DIR: "/real" },
+    "the port stays the real default too",
+  );
 });
 
 test("the packed npm build uses ~/.austere-axi and port 4388", () => {
@@ -83,8 +99,14 @@ test("every test and script that runs the CLI or the server sets AUSTERE_AXI_STA
   const missing = files.filter((f) => {
     const text = fs.readFileSync(path.join(ROOT, f), "utf8");
     // The CLI by any spelling of its path ("src/cli/main.ts", path.join(ROOT, "dist", "cli.mjs")) or entry point.
-    const runsCli = /\b(spawn|spawnSync|execFile|execFileSync|fork)\(/.test(text) && /main\.ts|cli\.mjs|CLI_ENTRY|runServer/.test(text);
+    const runsCli =
+      /\b(spawn|spawnSync|execFile|execFileSync|fork)\(/.test(text) &&
+      /main\.ts|cli\.mjs|CLI_ENTRY|runServer/.test(text);
     return runsCli && !text.includes("AUSTERE_AXI_STATE_DIR");
   });
-  assert.deepEqual(missing, [], "these run the CLI on the owner's state dir: set AUSTERE_AXI_STATE_DIR to a scratch dir");
+  assert.deepEqual(
+    missing,
+    [],
+    "these run the CLI on the owner's state dir: set AUSTERE_AXI_STATE_DIR to a scratch dir",
+  );
 });

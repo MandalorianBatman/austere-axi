@@ -20,12 +20,17 @@ const initials = (name: string) =>
     .toUpperCase() || "?";
 
 /** Only https and data: images; anything else falls back to initials. */
-const safeSrc = (src: unknown): string => (typeof src === "string" && /^(https:\/\/|data:image\/)/i.test(src) ? src : "");
+const safeSrc = (src: unknown): string =>
+  typeof src === "string" && /^(https:\/\/|data:image\/)/i.test(src) ? src : "";
 
 function Face({ name, src, size }: AvatarProps) {
   const url = safeSrc(src);
   return (
-    <span className={`sh-avatar sh-avatar-${size === "lg" ? "lg" : "md"}`} title={name} data-austere-part={name || undefined}>
+    <span
+      className={`sh-avatar sh-avatar-${size === "lg" ? "lg" : "md"}`}
+      title={name}
+      data-austere-part={name || undefined}
+    >
       {url ? <img src={url} alt={name || ""} /> : <span aria-hidden="true">{initials(name)}</span>}
     </span>
   );
@@ -39,8 +44,13 @@ export const Avatar = austereComponent({
   name: "Avatar",
   group: "Data",
   tier: "extended",
-  props: z.object({ name: z.string(), src: z.string().optional(), size: z.enum(["md", "lg"]).optional() }),
-  description: "Round avatar for a person. Shows the initials of name; src is an optional https image URL.",
+  props: z.object({
+    name: z.string(),
+    src: z.string().optional(),
+    size: z.enum(["md", "lg"]).optional(),
+  }),
+  description:
+    "Round avatar for a person. Shows the initials of name; src is an optional https image URL.",
   renderer: AvatarView,
   example: `owner = Avatar("Ada Lovelace")`,
 });
@@ -52,7 +62,8 @@ interface AvatarGroupProps {
 
 function AvatarGroupView({ props }: RendererArgs<AvatarGroupProps>) {
   const list = (Array.isArray(props.avatars) ? props.avatars : []).filter(isElement<AvatarProps>);
-  const max = typeof props.max === "number" && Number.isInteger(props.max) && props.max > 0 ? props.max : 4;
+  const max =
+    typeof props.max === "number" && Number.isInteger(props.max) && props.max > 0 ? props.max : 4;
   const shown = list.slice(0, max);
   const rest = list.length - shown.length;
   return (
@@ -70,7 +81,8 @@ export const AvatarGroup = austereComponent({
   group: "Data",
   tier: "extended",
   props: z.object({ avatars: z.array(Avatar.definition.ref), max: z.number().int().optional() }),
-  description: "Overlapping Avatars, for reviewers or owners. max (default 4) shows the rest as +N.",
+  description:
+    "Overlapping Avatars, for reviewers or owners. max (default 4) shows the rest as +N.",
   renderer: AvatarGroupView,
   example: `team = AvatarGroup([ada, grace, linus], 2)
 ada = Avatar("Ada Lovelace")

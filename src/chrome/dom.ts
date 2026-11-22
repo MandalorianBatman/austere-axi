@@ -7,7 +7,11 @@ export type Child = Node | string | number | null | undefined | false;
  * An element with attributes and children. `text` sets textContent, `on…` adds a listener, `html` sets
  * innerHTML (only for markup this code builds itself); strings and numbers become text nodes.
  */
-export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, AttrValue> = {}, ...children: (Child | Child[])[]): HTMLElementTagNameMap[K] {
+export function h<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs: Record<string, AttrValue> = {},
+  ...children: (Child | Child[])[]
+): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (v == null || v === false) continue;
@@ -18,6 +22,8 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<s
     else if (k === "html") el.innerHTML = String(v);
     else el.setAttribute(k, v === true ? "" : String(v));
   }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  for (const c of children.flat())
+    if (c != null && c !== false)
+      el.append(c instanceof Node ? c : document.createTextNode(String(c)));
   return el;
 }

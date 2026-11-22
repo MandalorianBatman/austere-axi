@@ -2,7 +2,12 @@
 // group, tier, examples, pack). It is what `components list|search|show`
 // read, what a pack ships as catalog.json, and where the prompt's tiers are
 // decided. Plain data and pure functions: used by the build, the CLI and tests.
-import type { Catalog, CatalogEntry, CatalogFromSpecOptions, LibrarySpec } from "../../types/catalog.d.ts";
+import type {
+  Catalog,
+  CatalogEntry,
+  CatalogFromSpecOptions,
+  LibrarySpec,
+} from "../../types/catalog.d.ts";
 
 export const CATALOG_FORMAT = 1;
 
@@ -10,9 +15,19 @@ export const CATALOG_FORMAT = 1;
  * Catalog from an OpenUI library spec (`library.toSpec()`).
  * `only` keeps just these components (a pack's own, out of a library that also holds the core).
  */
-export function catalogFromSpec(spec: LibrarySpec, { pack = "core", version = "", tiers = {}, examples = {}, only = null }: CatalogFromSpecOptions = {}): Catalog {
+export function catalogFromSpec(
+  spec: LibrarySpec,
+  {
+    pack = "core",
+    version = "",
+    tiers = {},
+    examples = {},
+    only = null,
+  }: CatalogFromSpecOptions = {},
+): Catalog {
   const groupOf = new Map<string, string>();
-  for (const g of spec.componentGroups || []) for (const n of g.components) if (!groupOf.has(n)) groupOf.set(n, g.name);
+  for (const g of spec.componentGroups || [])
+    for (const n of g.components) if (!groupOf.has(n)) groupOf.set(n, g.name);
   const keep = only ? new Set(only) : null;
   const components = Object.entries(spec.components)
     .filter(([name]) => !keep || keep.has(name))
@@ -38,15 +53,24 @@ export function catalogFromSpec(spec: LibrarySpec, { pack = "core", version = ""
  * asks for the full signature only when it needs one.
  */
 export function promptSpec<S extends LibrarySpec>(spec: S, tiers: Record<string, string> = {}): S {
-  const extended = new Set(Object.keys(tiers).filter((n) => tiers[n] === "extended" && spec.components[n]));
+  const extended = new Set(
+    Object.keys(tiers).filter((n) => tiers[n] === "extended" && spec.components[n]),
+  );
   if (!extended.size) return spec;
-  const components = Object.fromEntries(Object.entries(spec.components).filter(([n]) => !extended.has(n)));
+  const components = Object.fromEntries(
+    Object.entries(spec.components).filter(([n]) => !extended.has(n)),
+  );
   const componentGroups = (spec.componentGroups || []).map((g) => {
     const more = g.components.filter((n) => extended.has(n));
     return {
       ...g,
       components: g.components.filter((n) => !extended.has(n)),
-      notes: more.length ? [...(g.notes || []), `- Also in ${g.name} (\`austere-axi components show <Name>\` for the signature): ${more.join(", ")}.`] : g.notes,
+      notes: more.length
+        ? [
+            ...(g.notes || []),
+            `- Also in ${g.name} (\`austere-axi components show <Name>\` for the signature): ${more.join(", ")}.`,
+          ]
+        : g.notes,
     };
   });
   return { ...spec, components, componentGroups };
@@ -62,8 +86,14 @@ const words = (text: string | undefined) =>
  * Rank catalog entries for a free-text query: names first, then groups,
  * descriptions, signatures and the notes of the entry's group.
  */
-export function searchCatalog<E extends CatalogEntry>(entries: E[], query: string, { notesOf = () => [], limit = 8 }: { notesOf?: (entry: E) => string[]; limit?: number } = {}): { entry: E; score: number }[] {
-  const q = String(query || "").trim().toLowerCase();
+export function searchCatalog<E extends CatalogEntry>(
+  entries: E[],
+  query: string,
+  { notesOf = () => [], limit = 8 }: { notesOf?: (entry: E) => string[]; limit?: number } = {},
+): { entry: E; score: number }[] {
+  const q = String(query || "")
+    .trim()
+    .toLowerCase();
   const terms = words(q);
   if (!terms.length) return [];
   const scored: { entry: E; score: number }[] = [];
@@ -85,5 +115,7 @@ export function searchCatalog<E extends CatalogEntry>(entries: E[], query: strin
     }
     if (score > 0) scored.push({ entry: e, score: score - (e.tier === "extended" ? 1 : 0) });
   }
-  return scored.sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name)).slice(0, limit);
+  return scored
+    .sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name))
+    .slice(0, limit);
 }

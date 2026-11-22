@@ -41,22 +41,34 @@ function freePort(): Promise<number> {
 
 function api(route: string, body: unknown): Promise<ApiReply> {
   return new Promise((resolve, reject) => {
-    const r = http.request({ host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } }, (res) => {
-      let data = "";
-      res.on("data", (c) => (data += c));
-      res.on("end", () => resolve(JSON.parse(data) as ApiReply));
-    });
+    const r = http.request(
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: route,
+        headers: { "content-type": "application/json", "x-austere-key": KEY },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => resolve(JSON.parse(data) as ApiReply));
+      },
+    );
     r.on("error", reject);
     r.end(JSON.stringify(body));
   });
 }
 
-const svg = (fill: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="${fill}"/></svg>`;
+const svg = (fill: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="${fill}"/></svg>`;
 
 /** Every Image in `frame` has decoded: not the broken-image state. */
 async function imageWidths(frame: Frame): Promise<number[]> {
   await frame.waitForSelector("img");
-  await frame.waitForFunction(() => [...document.images].every((i) => i.complete), null, { timeout: 5000 });
+  await frame.waitForFunction(() => [...document.images].every((i) => i.complete), null, {
+    timeout: 5000,
+  });
   return frame.evaluate(() => [...document.images].map((i) => i.naturalWidth));
 }
 
@@ -85,7 +97,13 @@ b = Image("A blue square", "strata.svg")
   );
   port = await freePort();
   server = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(port)], {
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_LINK_HOST: "127.0.0.1", OPENUI_TELEMETRY_DISABLED: "1" },
+    env: {
+      ...process.env,
+      AUSTERE_AXI_STATE_DIR: STATE,
+      AUSTERE_AXI_NO_TAILSCALE: "1",
+      AUSTERE_AXI_LINK_HOST: "127.0.0.1",
+      OPENUI_TELEMETRY_DISABLED: "1",
+    },
     stdio: "ignore",
   });
   for (let i = 0; i < 100; i++) {
@@ -117,13 +135,17 @@ test("relative images load in the review frame for the owner and for an invited 
   try {
     const owner = await ownerCtx.newPage();
     await owner.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${KEY}`);
-    const ownerFrame = (await (await owner.waitForSelector("iframe.frame")).contentFrame()) as Frame;
+    const ownerFrame = (await (
+      await owner.waitForSelector("iframe.frame")
+    ).contentFrame()) as Frame;
     assert.deepEqual(await imageWidths(ownerFrame), [40, 40], "owner");
 
     const guest = await guestCtx.newPage();
     await guest.goto(invite.link);
     await guest.click("form[action$='/join'] button");
-    const guestFrame = (await (await guest.waitForSelector("iframe.frame")).contentFrame()) as Frame;
+    const guestFrame = (await (
+      await guest.waitForSelector("iframe.frame")
+    ).contentFrame()) as Frame;
     assert.deepEqual(await imageWidths(guestFrame), [40, 40], "reviewer");
   } finally {
     await ownerCtx.close();
@@ -134,7 +156,10 @@ test("relative images load in the review frame for the owner and for an invited 
 test("an exported page shows its images when opened from another folder", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const out = path.join(ELSEWHERE, "story.export.html");
-  const r = spawnSync(process.execPath, ["src/cli/main.ts", "export", FILE, "--out", out], { env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE }, encoding: "utf8" });
+  const r = spawnSync(process.execPath, ["src/cli/main.ts", "export", FILE, "--out", out], {
+    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE },
+    encoding: "utf8",
+  });
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stdout, /notices/, "nothing was left out");
   const context = await browser.newContext();

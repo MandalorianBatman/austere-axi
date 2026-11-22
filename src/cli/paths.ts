@@ -11,13 +11,13 @@ const BUNDLED = typeof __AUSTERE_BUNDLED__ !== "undefined";
 export const ASSET_DIR = BUNDLED ? HERE : path.resolve(HERE, "../../dist");
 
 export const VERSION: string =
-  typeof __AUSTERE_VERSION__ === "string"
-    ? __AUSTERE_VERSION__
-    : packageVersion();
+  typeof __AUSTERE_VERSION__ === "string" ? __AUSTERE_VERSION__ : packageVersion();
 
 function packageVersion(): string {
   // Our own package.json, beside the sources in development.
-  const pkg: { version: string } = JSON.parse(fs.readFileSync(path.resolve(HERE, "../../package.json"), "utf8"));
+  const pkg: { version: string } = JSON.parse(
+    fs.readFileSync(path.resolve(HERE, "../../package.json"), "utf8"),
+  );
   return pkg.version;
 }
 
@@ -58,7 +58,10 @@ export function devPort(root: string): number {
  * checkout's own port. Written into `env`, so a server, service or child CLI this process starts
  * means the same ones. Returns the line that says so, or null when nothing changed.
  */
-export function applyDevDefaults(env: NodeJS.ProcessEnv = process.env, root = devCheckout()): string | null {
+export function applyDevDefaults(
+  env: NodeJS.ProcessEnv = process.env,
+  root = devCheckout(),
+): string | null {
   if (!root || env.AUSTERE_AXI_STATE_DIR) return null;
   env.AUSTERE_AXI_STATE_DIR = path.join(root, ".dev", "state");
   env.AUSTERE_AXI_PORT ||= String(devPort(root));
@@ -70,7 +73,9 @@ let securedDir: string | null = null;
 export function stateDir(): string {
   // An absolute path, always: the state dir is named by a server, a CLI command and a
   // service that may run from different folders, and they have to mean the same one.
-  const dir = process.env.AUSTERE_AXI_STATE_DIR ? path.resolve(process.env.AUSTERE_AXI_STATE_DIR) : path.join(os.homedir(), ".austere-axi");
+  const dir = process.env.AUSTERE_AXI_STATE_DIR
+    ? path.resolve(process.env.AUSTERE_AXI_STATE_DIR)
+    : path.join(os.homedir(), ".austere-axi");
   // Sessions, invites, the owner key and logs live here: the owner's only. mkdir's mode only applies to
   // a new dir, so tighten one made by an older version too (POSIX; Windows ignores modes).
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -100,7 +105,7 @@ export function msEnv(name: string, fallback: number): number {
 export function canonicalFile(file: string): string {
   const abs = path.resolve(file);
   const rest: string[] = [];
-  for (let dir = abs; ; ) {
+  for (let dir = abs; ;) {
     try {
       return path.join(fs.realpathSync(dir), ...rest);
     } catch {
@@ -114,8 +119,12 @@ export function canonicalFile(file: string): string {
 
 /** Newer-than comparison for x.y.z versions. */
 export function versionGt(a: unknown, b: unknown): boolean {
-  const pa = String(a).split(/[.-]/).map((x) => parseInt(x, 10) || 0);
-  const pb = String(b).split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+  const pa = String(a)
+    .split(/[.-]/)
+    .map((x) => parseInt(x, 10) || 0);
+  const pb = String(b)
+    .split(/[.-]/)
+    .map((x) => parseInt(x, 10) || 0);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
   }

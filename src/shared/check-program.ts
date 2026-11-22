@@ -49,14 +49,22 @@ function elementsOf(root: unknown, typeName: string): ElementNode[] {
 }
 
 /** `program` is OpenUI Lang source. */
-export function checkProgram(program: string, { parser, lineOf = () => undefined, decorate = (entry) => entry }: CheckProgramOptions): CheckResult {
+export function checkProgram(
+  program: string,
+  { parser, lineOf = () => undefined, decorate = (entry) => entry }: CheckProgramOptions,
+): CheckResult {
   const errors: CheckEntry[] = [];
   const warnings: CheckEntry[] = [];
   let parsed: ParseResult;
   try {
     parsed = parser().parse(program);
   } catch (err) {
-    errors.push({ code: "parse-failed", message: String((err && typeof err === "object" && "message" in err ? err.message : undefined) || err) });
+    errors.push({
+      code: "parse-failed",
+      message: String(
+        (err && typeof err === "object" && "message" in err ? err.message : undefined) || err,
+      ),
+    });
     return { statements: 0, errors, warnings };
   }
   // The parser reports a bad statement once per reference to it; say it once.
@@ -83,7 +91,11 @@ export function checkProgram(program: string, { parser, lineOf = () => undefined
     });
   }
   for (const id of parsed.meta.unresolved) {
-    errors.push({ code: "unresolved", statement: id, message: `${id} is referenced but never defined, so it renders as nothing.` });
+    errors.push({
+      code: "unresolved",
+      statement: id,
+      message: `${id} is referenced but never defined, so it renders as nothing.`,
+    });
   }
   if (parsed.root && parsed.meta.orphaned.length) {
     const ids = parsed.meta.orphaned;
@@ -94,7 +106,10 @@ export function checkProgram(program: string, { parser, lineOf = () => undefined
     });
   }
   if (parsed.meta.incomplete) {
-    errors.push({ code: "incomplete", message: "The program ends mid-statement (an unclosed string or bracket)." });
+    errors.push({
+      code: "incomplete",
+      message: "The program ends mid-statement (an unclosed string or bracket).",
+    });
   }
   // Diagrams: what the layout will do, which the parser cannot see.
   const diagrams = new Set<string | undefined>();
@@ -104,7 +119,12 @@ export function checkProgram(program: string, { parser, lineOf = () => undefined
     diagrams.add(el.statementId);
     try {
       for (const note of architectureNotes(el.props)) {
-        warnings.push({ code: note.code, statement: el.statementId, line: lineOf(el.statementId), message: note.message });
+        warnings.push({
+          code: note.code,
+          statement: el.statementId,
+          line: lineOf(el.statementId),
+          message: note.message,
+        });
       }
     } catch {
       // A layout bug must never fail check; the page reports it when it renders.
@@ -113,7 +133,12 @@ export function checkProgram(program: string, { parser, lineOf = () => undefined
   const dupes = new Map<string, number>();
   for (const s of splitStatements(program)) dupes.set(s.id, (dupes.get(s.id) || 0) + 1);
   for (const [id, n] of dupes) {
-    if (n > 1) warnings.push({ code: "duplicate", statement: id, message: `${id} is defined ${n} times; the last one wins.` });
+    if (n > 1)
+      warnings.push({
+        code: "duplicate",
+        statement: id,
+        message: `${id} is defined ${n} times; the last one wins.`,
+      });
   }
   return { statements: parsed.meta.statementCount, errors, warnings };
 }

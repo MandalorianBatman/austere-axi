@@ -44,29 +44,60 @@ export interface EffectiveAttach {
 /** The harness of a `new` run when neither the page nor the project names one (Q11). */
 export const DEFAULT_HARNESS = "omp";
 
-export const isAttachMode = (v: unknown): v is AttachMode => (ATTACH_MODES as readonly unknown[]).includes(v);
+export const isAttachMode = (v: unknown): v is AttachMode =>
+  (ATTACH_MODES as readonly unknown[]).includes(v);
 
 /** The ids a copy's settings are stored under: its page (`pages.id`, else the copy's own id) and its project. */
-export function scopeIds(db: sqlite.DatabaseSync, artifactId: string): { page: string; project: string | null } {
-  const row = db.prepare("SELECT page_id, project_id FROM artifacts WHERE id = ?").get(artifactId) as { page_id: string | null; project_id: string | null } | undefined;
+export function scopeIds(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+): { page: string; project: string | null } {
+  const row = db
+    .prepare("SELECT page_id, project_id FROM artifacts WHERE id = ?")
+    .get(artifactId) as { page_id: string | null; project_id: string | null } | undefined;
   return { page: row?.page_id || artifactId, project: row?.project_id ?? null };
 }
 
-export function readSetting(db: sqlite.DatabaseSync, scope: AttachScope, scopeId: string): AttachSettingRow | null {
-  const row = db.prepare("SELECT * FROM attach_settings WHERE scope = ? AND scope_id = ?").get(scope, scopeId) as unknown as AttachSettingRow | undefined;
+export function readSetting(
+  db: sqlite.DatabaseSync,
+  scope: AttachScope,
+  scopeId: string,
+): AttachSettingRow | null {
+  const row = db
+    .prepare("SELECT * FROM attach_settings WHERE scope = ? AND scope_id = ?")
+    .get(scope, scopeId) as unknown as AttachSettingRow | undefined;
   return row ?? null;
 }
 
 /** The effective attach setting of a copy (docs/review-loop-v2.md "Data model > Attach"). */
 export function effectiveAttach(db: sqlite.DatabaseSync, artifactId: string): EffectiveAttach {
   const ids = scopeIds(db, artifactId);
-  return resolveSetting(readSetting(db, "page", ids.page), ids.project ? readSetting(db, "project", ids.project) : null);
+  return resolveSetting(
+    readSetting(db, "page", ids.page),
+    ids.project ? readSetting(db, "project", ids.project) : null,
+  );
 }
 
 /** The page row, unless absent or `inherit` → the project row, unless absent or `inherit` → off. */
-export function resolveSetting(page: AttachSettingRow | null, project: AttachSettingRow | null): EffectiveAttach {
-  const chosen = page && page.state !== "inherit" ? page : project && project.state !== "inherit" ? project : null;
-  if (!chosen) return { state: "off", source: "default", mode: "same", session: "author", harness: project?.harness || DEFAULT_HARNESS, model: null };
+export function resolveSetting(
+  page: AttachSettingRow | null,
+  project: AttachSettingRow | null,
+): EffectiveAttach {
+  const chosen =
+    page && page.state !== "inherit"
+      ? page
+      : project && project.state !== "inherit"
+        ? project
+        : null;
+  if (!chosen)
+    return {
+      state: "off",
+      source: "default",
+      mode: "same",
+      session: "author",
+      harness: project?.harness || DEFAULT_HARNESS,
+      model: null,
+    };
   return {
     state: chosen.state === "on" ? "on" : "off",
     source: chosen.scope,
@@ -86,12 +117,18 @@ export interface RunTarget {
 }
 
 function sessionRow(db: sqlite.DatabaseSync, id: string): AgentSessionRow | null {
-  return (db.prepare("SELECT * FROM agent_sessions WHERE id = ?").get(id) as unknown as AgentSessionRow | undefined) ?? null;
+  return (
+    (db.prepare("SELECT * FROM agent_sessions WHERE id = ?").get(id) as unknown as
+      | AgentSessionRow
+      | undefined) ?? null
+  );
 }
 
 /** The newest session that continues `row` through `continuation` edges (A14), never a fork; `row` itself when none does. */
 export function newestContinuation(db: sqlite.DatabaseSync, row: AgentSessionRow): AgentSessionRow {
-  const next = db.prepare("SELECT * FROM agent_sessions WHERE parent_id = ? AND parent_kind = 'continuation' ORDER BY first_seen DESC, rowid DESC LIMIT 1");
+  const next = db.prepare(
+    "SELECT * FROM agent_sessions WHERE parent_id = ? AND parent_kind = 'continuation' ORDER BY first_seen DESC, rowid DESC LIMIT 1",
+  );
   const seen = new Set([row.id]);
   let cur = row;
   for (;;) {
@@ -104,7 +141,11 @@ export function newestContinuation(db: sqlite.DatabaseSync, row: AgentSessionRow
 
 /** The session that wrote the copy first (its `author`), or null. */
 export function authorOf(db: sqlite.DatabaseSync, artifactId: string): AgentSessionRow | null {
-  const link = db.prepare("SELECT agent_session_id FROM page_sessions WHERE artifact_id = ? AND role = 'author' ORDER BY at LIMIT 1").get(artifactId) as { agent_session_id: string } | undefined;
+  const link = db
+    .prepare(
+      "SELECT agent_session_id FROM page_sessions WHERE artifact_id = ? AND role = 'author' ORDER BY at LIMIT 1",
+    )
+    .get(artifactId) as { agent_session_id: string } | undefined;
   return link ? sessionRow(db, link.agent_session_id) : null;
 }
 
@@ -114,7 +155,11 @@ export function authorOf(db: sqlite.DatabaseSync, artifactId: string): AgentSess
  * No session found → `new` with the setting's harness. `new` never looks for a session here (the
  * dispatcher resumes the session its own first `new` run made, A18).
  */
-export function resolveTarget(db: sqlite.DatabaseSync, artifactId: string, setting: Pick<EffectiveAttach, "mode" | "session" | "harness">): RunTarget {
+export function resolveTarget(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  setting: Pick<EffectiveAttach, "mode" | "session" | "harness">,
+): RunTarget {
   if (setting.mode === "new") return { mode: "new", harness: setting.harness, session: null };
   const author = setting.session === "author";
   const base = author ? authorOf(db, artifactId) : sessionRow(db, setting.session);
@@ -134,13 +179,24 @@ export type LiveAuto = (pageId: string, fallback: boolean) => boolean;
  * Either source saying auto is enough: a cached row that says not auto never overrides
  * cloud.json's auto, since it may predate this machine's own `publish --auto`.
  */
-export function autoConflict(db: sqlite.DatabaseSync, file: string, artifactId: string, liveAuto: LiveAuto = (_, fallback) => fallback): string | null {
+export function autoConflict(
+  db: sqlite.DatabaseSync,
+  file: string,
+  artifactId: string,
+  liveAuto: LiveAuto = (_, fallback) => fallback,
+): string | null {
   // With cloud features off no hosted note comes in, so a published --auto page conflicts with nothing.
   const entry = cloudEnabled() ? readCloud().pages[file] : undefined;
-  if (entry && (entry.auto || liveAuto(entry.id, entry.auto))) return `${file} is published with --auto: reviewers' notes reach the agent without the owner`;
-  const projectId = (db.prepare("SELECT project_id FROM artifacts WHERE id = ?").get(artifactId)?.project_id as string | null | undefined) ?? null;
+  if (entry && (entry.auto || liveAuto(entry.id, entry.auto)))
+    return `${file} is published with --auto: reviewers' notes reach the agent without the owner`;
+  const projectId =
+    (db.prepare("SELECT project_id FROM artifacts WHERE id = ?").get(artifactId)?.project_id as
+      | string
+      | null
+      | undefined) ?? null;
   const auto = new DeviceStore(db).autoNames(artifactId, projectId);
-  if (auto.length) return `${file} is shared with --auto (${auto.join(", ")}): those reviewers' notes reach the agent without the owner`;
+  if (auto.length)
+    return `${file} is shared with --auto (${auto.join(", ")}): those reviewers' notes reach the agent without the owner`;
   return null;
 }
 
@@ -157,7 +213,13 @@ export interface AttachFields {
 }
 
 /** Write a row of `attach_settings`, keeping the fields not given. Returns the row as stored. */
-export function writeSetting(db: sqlite.DatabaseSync, scope: AttachScope, scopeId: string, state: AttachState, fields: AttachFields = {}): AttachSettingRow {
+export function writeSetting(
+  db: sqlite.DatabaseSync,
+  scope: AttachScope,
+  scopeId: string,
+  state: AttachState,
+  fields: AttachFields = {},
+): AttachSettingRow {
   const old = readSetting(db, scope, scopeId);
   const row: AttachSettingRow = {
     scope,
@@ -168,15 +230,9 @@ export function writeSetting(db: sqlite.DatabaseSync, scope: AttachScope, scopeI
     harness: fields.harness ?? old?.harness ?? null,
     model: fields.model === undefined ? (old?.model ?? null) : fields.model || null,
   };
-  db.prepare("INSERT OR REPLACE INTO attach_settings (scope, scope_id, state, mode, session, harness, model) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
-    row.scope,
-    row.scope_id,
-    row.state,
-    row.mode,
-    row.session,
-    row.harness,
-    row.model,
-  );
+  db.prepare(
+    "INSERT OR REPLACE INTO attach_settings (scope, scope_id, state, mode, session, harness, model) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(row.scope, row.scope_id, row.state, row.mode, row.session, row.harness, row.model);
   return row;
 }
 
@@ -191,8 +247,13 @@ export function resolveSessionValue(db: sqlite.DatabaseSync, value: string): str
   const exact = rows.filter((r) => r.id === value || r.session_id === value);
   const hits = exact.length ? exact : rows.filter((r) => shortId(r.session_id) === value);
   if (hits.length === 1) return hits[0].id;
-  if (hits.length > 1) throw new Error(`session ${value} names ${hits.length} sessions (${hits.map((r) => `${r.harness} ${r.session_id}`).join(", ")}); give its full id`);
-  throw new Error(`no agent session ${value}: author, or a session \`austere-axi sessions list\` shows (its short id or full id)`);
+  if (hits.length > 1)
+    throw new Error(
+      `session ${value} names ${hits.length} sessions (${hits.map((r) => `${r.harness} ${r.session_id}`).join(", ")}); give its full id`,
+    );
+  throw new Error(
+    `no agent session ${value}: author, or a session \`austere-axi sessions list\` shows (its short id or full id)`,
+  );
 }
 
 /**
@@ -202,18 +263,26 @@ export function resolveSessionValue(db: sqlite.DatabaseSync, value: string): str
  */
 export function unsupported(harness: string, mode: AttachMode, cfg: AdaptersConfig): string | null {
   const adapter = adapterFor(harness, cfg);
-  if (!adapter) return `no adapter named ${harness}: a harness (omp, copilot) or a command set with \`austere-axi adapter set <name> --command\``;
+  if (!adapter)
+    return `no adapter named ${harness}: a harness (omp, copilot) or a command set with \`austere-axi adapter set <name> --command\``;
   const cap = adapter.capabilities[mode];
   return cap.ok ? null : `${harness} cannot run mode ${mode}: ${cap.reason}`;
 }
 
 /** Why the setting cannot be turned on for this copy, or null: its harness, or the session it resolves to, cannot run its mode. */
-export function settingProblem(db: sqlite.DatabaseSync, artifactId: string | null, setting: Pick<EffectiveAttach, "mode" | "session" | "harness">, cfg: AdaptersConfig): string | null {
+export function settingProblem(
+  db: sqlite.DatabaseSync,
+  artifactId: string | null,
+  setting: Pick<EffectiveAttach, "mode" | "session" | "harness">,
+  cfg: AdaptersConfig,
+): string | null {
   const own = unsupported(setting.harness, setting.mode, cfg);
   if (own) return own;
   if (!artifactId) {
     const row = setting.session === "author" ? null : sessionRow(db, setting.session);
-    return row && row.harness !== setting.harness ? unsupported(row.harness, setting.mode, cfg) : null;
+    return row && row.harness !== setting.harness
+      ? unsupported(row.harness, setting.mode, cfg)
+      : null;
   }
   const target = resolveTarget(db, artifactId, setting);
   return target.harness !== setting.harness ? unsupported(target.harness, target.mode, cfg) : null;
@@ -231,18 +300,31 @@ export interface HarnessInfo {
   grantCommand?: string;
 }
 
-export function harnessInfo(adapter: Adapter, cfg: AdaptersConfig, env: NodeJS.ProcessEnv = process.env): HarnessInfo {
+export function harnessInfo(
+  adapter: Adapter,
+  cfg: AdaptersConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): HarnessInfo {
   const grant = hasWriteGrant(adapter.id, cfg);
-  const info: HarnessInfo = { kind: adapter.id, found: findOnPath(adapter.bin, env) !== null, capabilities: adapter.capabilities, writeGrant: grant };
+  const info: HarnessInfo = {
+    kind: adapter.id,
+    found: findOnPath(adapter.bin, env) !== null,
+    capabilities: adapter.capabilities,
+    writeGrant: grant,
+  };
   if (!grant && isHarness(adapter.id)) info.grantCommand = grantCommand(adapter.id);
   return info;
 }
 
 /** Every adapter a page can name: the harnesses, then the owner's command adapters. */
-export function harnessInfos(cfg: AdaptersConfig, env: NodeJS.ProcessEnv = process.env): Record<string, HarnessInfo> {
+export function harnessInfos(
+  cfg: AdaptersConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, HarnessInfo> {
   const out: Record<string, HarnessInfo> = {};
   for (const h of HARNESSES) out[h] = harnessInfo(ADAPTERS[h], cfg, env);
-  for (const name of Object.keys(cfg.commands)) out[name] = harnessInfo(adapterFor(name, cfg) as Adapter, cfg, env);
+  for (const name of Object.keys(cfg.commands))
+    out[name] = harnessInfo(adapterFor(name, cfg) as Adapter, cfg, env);
   return out;
 }
 
@@ -270,18 +352,29 @@ export function attachReport(
 ): AttachReport {
   const ids = scopeIds(db, artifactId);
   const effective = effectiveAttach(db, artifactId);
-  const projectRow = ids.project ? (db.prepare("SELECT id, name FROM projects WHERE id = ?").get(ids.project) as { id: string; name: string } | undefined) : undefined;
+  const projectRow = ids.project
+    ? (db.prepare("SELECT id, name FROM projects WHERE id = ?").get(ids.project) as
+        | { id: string; name: string }
+        | undefined)
+    : undefined;
   const target = resolveTarget(db, artifactId, effective);
   const auto = autoConflict(db, file, artifactId, liveAuto);
   const warnings = adapterWarnings(target, cfg, env);
   if (target.mode === "same" && target.session && liveness(target.session) === "unknown") {
-    warnings.push(`cannot tell whether ${target.session.harness} session ${shortId(target.session.session_id)} is still open (no harness process was recorded for it), so a same run fails with session_unknown: choose fork or new`);
+    warnings.push(
+      `cannot tell whether ${target.session.harness} session ${shortId(target.session.session_id)} is still open (no harness process was recorded for it), so a same run fails with session_unknown: choose fork or new`,
+    );
   }
-  if (auto && effective.state === "on") warnings.push(`${auto}; runs refuse to start on it (Q3): attach off, or publish or share it without --auto`);
+  if (auto && effective.state === "on")
+    warnings.push(
+      `${auto}; runs refuse to start on it (Q3): attach off, or publish or share it without --auto`,
+    );
   return {
     effective,
     page: readSetting(db, "page", ids.page),
-    project: projectRow ? { ...projectRow, setting: readSetting(db, "project", projectRow.id) } : null,
+    project: projectRow
+      ? { ...projectRow, setting: readSetting(db, "project", projectRow.id) }
+      : null,
     target,
     warnings,
     auto,
@@ -289,13 +382,26 @@ export function attachReport(
 }
 
 /** What would stop a run of `target` on this machine, or let it run without the right to patch (A13). */
-export function adapterWarnings(target: Pick<RunTarget, "mode" | "harness">, cfg: AdaptersConfig, env: NodeJS.ProcessEnv = process.env): string[] {
+export function adapterWarnings(
+  target: Pick<RunTarget, "mode" | "harness">,
+  cfg: AdaptersConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
   const adapter = adapterFor(target.harness, cfg);
-  if (!adapter) return [`no adapter named ${target.harness}: runs fail (unavailable). Use omp, copilot, or a command set with \`austere-axi adapter set <name> --command\``];
+  if (!adapter)
+    return [
+      `no adapter named ${target.harness}: runs fail (unavailable). Use omp, copilot, or a command set with \`austere-axi adapter set <name> --command\``,
+    ];
   const warnings: string[] = [];
   const cap = adapter.capabilities[target.mode];
-  if (!cap.ok) warnings.push(`${target.harness} cannot run mode ${target.mode}: ${cap.reason}. Choose another mode`);
-  if (!findOnPath(adapter.bin, env)) warnings.push(`${adapter.bin} not found on PATH: runs fail (unavailable) until it is installed`);
+  if (!cap.ok)
+    warnings.push(
+      `${target.harness} cannot run mode ${target.mode}: ${cap.reason}. Choose another mode`,
+    );
+  if (!findOnPath(adapter.bin, env))
+    warnings.push(
+      `${adapter.bin} not found on PATH: runs fail (unavailable) until it is installed`,
+    );
   if (!hasWriteGrant(adapter.id, cfg) && isHarness(adapter.id)) {
     warnings.push(
       `${adapter.id} has no write grant: its runs cannot patch the page (${adapter.id} denies writing commands without one and still exits 0, so the run fails with no_reply). The user grants it once, at a terminal: \`${grantCommand(adapter.id)}\``,
@@ -324,30 +430,56 @@ export type AttachWhere = { page: { artifactId: string; file: string } } | { pro
  * Also when the harness, or the session it resumes, cannot run the mode: for the setting itself,
  * and for each copy it leaves on (each resolves its own author, A19). Returns the row as stored.
  */
-export function changeSetting(db: sqlite.DatabaseSync, where: AttachWhere, state: AttachState, fields: AttachFields, cfg: AdaptersConfig, liveAuto?: LiveAuto): AttachSettingRow {
+export function changeSetting(
+  db: sqlite.DatabaseSync,
+  where: AttachWhere,
+  state: AttachState,
+  fields: AttachFields,
+  cfg: AdaptersConfig,
+  liveAuto?: LiveAuto,
+): AttachSettingRow {
   return inTransaction(db, () => {
     const page = "page" in where ? where.page : null;
-    const ids = page ? scopeIds(db, page.artifactId) : { page: null, project: (where as { projectId: string }).projectId };
-    const row = ids.page !== null ? writeSetting(db, "page", ids.page, state, fields) : writeSetting(db, "project", ids.project as string, state, fields);
+    const ids = page
+      ? scopeIds(db, page.artifactId)
+      : { page: null, project: (where as { projectId: string }).projectId };
+    const row =
+      ids.page !== null
+        ? writeSetting(db, "page", ids.page, state, fields)
+        : writeSetting(db, "project", ids.project as string, state, fields);
     // The copies this row decides for, as the change leaves them on: every copy of the page (A19), or every copy in the project.
     const on: { id: string; file: string }[] = [];
     if (state !== "off") {
       const copies = (
-        ids.page !== null ? db.prepare("SELECT id, file FROM artifacts WHERE page_id = ? OR id = ?").all(ids.page, page?.artifactId ?? null) : db.prepare("SELECT id, file FROM artifacts WHERE project_id = ?").all(ids.project)
+        ids.page !== null
+          ? db
+              .prepare("SELECT id, file FROM artifacts WHERE page_id = ? OR id = ?")
+              .all(ids.page, page?.artifactId ?? null)
+          : db.prepare("SELECT id, file FROM artifacts WHERE project_id = ?").all(ids.project)
       ) as { id: string; file: string }[];
-      if (page && !copies.some((c) => c.id === page.artifactId)) copies.push({ id: page.artifactId, file: page.file });
+      if (page && !copies.some((c) => c.id === page.artifactId))
+        copies.push({ id: page.artifactId, file: page.file });
       on.push(...copies.filter((c) => effectiveAttach(db, c.id).state === "on"));
       for (const c of on) {
         const conflict = autoConflict(db, c.file, c.id, liveAuto);
         if (!conflict) continue;
         // Throwing rolls the row back.
         const kept = page && state === "on" ? "attach stays off" : "the setting stays as it was";
-        throw new AttachRefused("auto_conflict", `${conflict}. Attach and --auto exclude each other (Q3), so ${kept}: publish or share the page without --auto first${page ? "" : ", or turn attach off for that page"}.`);
+        throw new AttachRefused(
+          "auto_conflict",
+          `${conflict}. Attach and --auto exclude each other (Q3), so ${kept}: publish or share the page without --auto first${page ? "" : ", or turn attach off for that page"}.`,
+        );
       }
     }
     if (state === "on") {
-      const project = ids.page !== null && ids.project ? readSetting(db, "project", ids.project) : null;
-      const problem = settingProblem(db, page?.artifactId ?? null, resolveSetting(ids.page !== null ? row : null, ids.page !== null ? project : row), cfg);
+      const project =
+        ids.page !== null && ids.project ? readSetting(db, "project", ids.project) : null;
+      const problem = settingProblem(
+        db,
+        page?.artifactId ?? null,
+        resolveSetting(ids.page !== null ? row : null, ids.page !== null ? project : row),
+        cfg,
+      );
       if (problem) throw new AttachRefused("unsupported", problem);
     }
     // Each copy runs its own target: a project's `author` is one copy's Copilot session and another's omp one.

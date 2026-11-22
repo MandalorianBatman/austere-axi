@@ -49,7 +49,10 @@ export function agentPrompt({ file, hosted, project }: AgentPromptInput): string
         : `Notes from reviewers on the shared page arrive through the same poll, marked remote: true, but only after I send them on in the review page; the poll stays quiet until then.`,
     );
   }
-  lines.push(``, `Do not open, screenshot or inspect the page, and do not run publish; I will ask if I want either.`);
+  lines.push(
+    ``,
+    `Do not open, screenshot or inspect the page, and do not run publish; I will ask if I want either.`,
+  );
   return lines.join("\n");
 }
 

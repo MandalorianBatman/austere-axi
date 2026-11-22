@@ -32,13 +32,18 @@ export function claimLink(port: number, link: string): Promise<string> {
       port,
       method: "POST",
       path: `/s/${id}/join`,
-      headers: { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/x-www-form-urlencoded" },
+      headers: {
+        host: `127.0.0.1:${port}`,
+        origin: `http://127.0.0.1:${port}`,
+        "content-type": "application/x-www-form-urlencoded",
+      },
     },
     (res) => {
       res.resume();
       res.on("end", () => {
         const set = (res.headers["set-cookie"] ?? []).find((c) => c.startsWith(`${COOKIE}_`));
-        if (res.statusCode !== 303 || !set) return reject(new Error(`join refused: ${res.statusCode}`));
+        if (res.statusCode !== 303 || !set)
+          return reject(new Error(`join refused: ${res.statusCode}`));
         resolve(set.split(";")[0]);
       });
     },

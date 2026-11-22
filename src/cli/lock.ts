@@ -15,7 +15,17 @@ const STARTING_MS = 60_000;
 const REFRESH_MS = 15_000;
 
 /** What server.lock holds: `{ pid, port?, at, supervised?, unit?, version? }`, or a bare pid (the old format); anything else when corrupt. */
-type LockFile = { pid?: unknown; port?: unknown; at?: unknown; supervised?: unknown; unit?: unknown; version?: unknown } | number | null;
+type LockFile =
+  | {
+      pid?: unknown;
+      port?: unknown;
+      at?: unknown;
+      supervised?: unknown;
+      unit?: unknown;
+      version?: unknown;
+    }
+  | number
+  | null;
 
 /**
  * A live holder of the lock. `serving`: a server that answered on its port. `supervised`: the service manager that runs it, and `unit`
@@ -41,12 +51,24 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  */
 export async function lockStateDir(
   dir: string,
-  { port = null, wait = 0, unit = null }: { port?: number | null; wait?: number; unit?: ServerUnit | null } = {},
+  {
+    port = null,
+    wait = 0,
+    unit = null,
+  }: { port?: number | null; wait?: number; unit?: ServerUnit | null } = {},
 ): Promise<() => void> {
   const file = path.join(dir, "server.lock");
   const deadline = Date.now() + wait;
-  for (let stale = 0; stale < 3; ) {
-    const lock = port ? { pid: process.pid, port, at: Date.now(), version: VERSION, ...(unit ? { supervised: unit.supervisor, unit: unit.unit } : {}) } : { pid: process.pid, at: Date.now(), version: VERSION };
+  for (let stale = 0; stale < 3;) {
+    const lock = port
+      ? {
+          pid: process.pid,
+          port,
+          at: Date.now(),
+          version: VERSION,
+          ...(unit ? { supervised: unit.supervisor, unit: unit.unit } : {}),
+        }
+      : { pid: process.pid, at: Date.now(), version: VERSION };
     try {
       fs.writeFileSync(file, JSON.stringify(lock), { flag: "wx" });
       let held = true;
@@ -94,9 +116,13 @@ export async function lockStateDir(
       continue;
     }
     if (holder.port) {
-      throw new Error(`another austere-axi server (pid ${holder.pid}, port ${holder.port}) is using ${dir}; stop it first (\`austere-axi stop\`, with AUSTERE_AXI_PORT=${holder.port})`);
+      throw new Error(
+        `another austere-axi server (pid ${holder.pid}, port ${holder.port}) is using ${dir}; stop it first (\`austere-axi stop\`, with AUSTERE_AXI_PORT=${holder.port})`,
+      );
     }
-    throw new Error(`another austere-axi process (pid ${holder.pid}) is using ${dir}; try again, or delete ${file} if that process is not austere-axi`);
+    throw new Error(
+      `another austere-axi process (pid ${holder.pid}) is using ${dir}; try again, or delete ${file} if that process is not austere-axi`,
+    );
   }
   throw new Error(`could not lock ${dir} (${file})`);
 }
@@ -131,7 +157,8 @@ export function lockedPort(dir: string): number | null {
   if (!lock || typeof lock !== "object") return null;
   const pid = Number(lock.pid);
   const port = lock.port;
-  if (typeof port !== "number" || !Number.isInteger(port) || port <= 0 || port >= 65536) return null;
+  if (typeof port !== "number" || !Number.isInteger(port) || port <= 0 || port >= 65536)
+    return null;
   if (!(Date.now() - Number(lock.at) < STARTING_MS)) return null;
   return Number.isInteger(pid) && pid > 0 && processAlive(pid) ? port : null;
 }
@@ -153,13 +180,18 @@ async function lockHolder(text: string, dir: string): Promise<LockHolder | null>
   if (typeof lock === "number") lock = { pid: lock };
   const pid = Number(lock?.pid);
   if (!lock || !Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null;
-  const port = typeof lock.port === "number" && Number.isInteger(lock.port) && lock.port > 0 ? lock.port : undefined;
-  const supervised = lock.supervised === "systemd" || lock.supervised === "launchd" ? lock.supervised : undefined;
+  const port =
+    typeof lock.port === "number" && Number.isInteger(lock.port) && lock.port > 0
+      ? lock.port
+      : undefined;
+  const supervised =
+    lock.supervised === "systemd" || lock.supervised === "launchd" ? lock.supervised : undefined;
   const unit = supervised && typeof lock.unit === "string" && lock.unit ? lock.unit : undefined;
   if (port) {
     // A server proves it holds this state dir's owner key (no key is sent) and is that pid on that dir.
     const h = await health(port);
-    if (h && !h.foreign && h.pid === pid && h.stateDir === dir) return { pid, port, serving: true, supervised, unit, version: h.version };
+    if (h && !h.foreign && h.pid === pid && h.stateDir === dir)
+      return { pid, port, serving: true, supervised, unit, version: h.version };
   }
   if (!processAlive(pid)) return null;
   const version = typeof lock.version === "string" ? lock.version : undefined;
@@ -167,7 +199,9 @@ async function lockHolder(text: string, dir: string): Promise<LockHolder | null>
   // taking a lock a server still holds would put two writers on hub.db, while wrongly
   // keeping one only blocks with a message that says to delete the file.
   if (lock.at == null) return { pid, port, serving: false };
-  return Date.now() - Number(lock.at) < STARTING_MS ? { pid, port, serving: false, supervised, unit, version } : null;
+  return Date.now() - Number(lock.at) < STARTING_MS
+    ? { pid, port, serving: false, supervised, unit, version }
+    : null;
 }
 
 export function processAlive(pid: number): boolean {

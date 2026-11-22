@@ -31,7 +31,13 @@ export interface Overflow {
   statements: string[];
 }
 export type RenderReport =
-  | { status: "ok"; statements: number; errors: RenderError[]; overflow: Overflow[]; notices: string[] }
+  | {
+      status: "ok";
+      statements: number;
+      errors: RenderError[];
+      overflow: Overflow[];
+      notices: string[];
+    }
   | { status: "unavailable"; reason: string };
 
 /** CHROME_PATH, else the first Chrome, Chromium or Edge found in the usual places. */
@@ -40,15 +46,33 @@ export function findChrome(): string | null {
   if (fromEnv) return fs.existsSync(fromEnv) ? fromEnv : null;
   const candidates: string[] = [];
   if (process.platform === "darwin") {
-    for (const p of ["Google Chrome.app/Contents/MacOS/Google Chrome", "Chromium.app/Contents/MacOS/Chromium", "Microsoft Edge.app/Contents/MacOS/Microsoft Edge"]) {
+    for (const p of [
+      "Google Chrome.app/Contents/MacOS/Google Chrome",
+      "Chromium.app/Contents/MacOS/Chromium",
+      "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ]) {
       candidates.push(path.join("/Applications", p));
     }
   } else if (process.platform === "win32") {
-    const roots = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter((x): x is string => typeof x === "string");
-    for (const r of roots) candidates.push(path.join(r, "Google/Chrome/Application/chrome.exe"), path.join(r, "Microsoft/Edge/Application/msedge.exe"));
+    const roots = [
+      process.env.PROGRAMFILES,
+      process.env["PROGRAMFILES(X86)"],
+      process.env.LOCALAPPDATA,
+    ].filter((x): x is string => typeof x === "string");
+    for (const r of roots)
+      candidates.push(
+        path.join(r, "Google/Chrome/Application/chrome.exe"),
+        path.join(r, "Microsoft/Edge/Application/msedge.exe"),
+      );
   } else {
     const dirs = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
-    for (const name of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"]) {
+    for (const name of [
+      "google-chrome",
+      "google-chrome-stable",
+      "chromium",
+      "chromium-browser",
+      "microsoft-edge",
+    ]) {
       for (const d of dirs) candidates.push(path.join(d, name));
     }
   }
@@ -214,7 +238,9 @@ function connect(url: string): Cdp {
     send<T>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
       const id = ++next;
       ws.send(JSON.stringify({ id, method, params, sessionId }));
-      return new Promise<T>((resolve, reject) => pending.set(id, { resolve: (v) => resolve(v as T), reject }));
+      return new Promise<T>((resolve, reject) =>
+        pending.set(id, { resolve: (v) => resolve(v as T), reject }),
+      );
     },
     on(fn: (m: CdpMessage) => void): void {
       listeners.push(fn);
@@ -226,7 +252,10 @@ function connect(url: string): Cdp {
 }
 
 /** Starts Chrome headless; `endpoint` resolves with its DevTools WebSocket url, `exited` once it is gone (or never started). */
-function launch(bin: string, profile: string): { child: ChildProcess; endpoint: Promise<string>; exited: Promise<void> } {
+function launch(
+  bin: string,
+  profile: string,
+): { child: ChildProcess; endpoint: Promise<string>; exited: Promise<void> } {
   const args = [
     "--headless=new",
     "--remote-debugging-port=0",
@@ -257,7 +286,10 @@ function launch(bin: string, profile: string): { child: ChildProcess; endpoint: 
   });
   const endpoint = new Promise<string>((resolve, reject) => {
     let err = "";
-    const timer = setTimeout(() => reject(new Error(`Chrome did not start within ${LAUNCH_TIMEOUT_MS / 1000} s`)), LAUNCH_TIMEOUT_MS);
+    const timer = setTimeout(
+      () => reject(new Error(`Chrome did not start within ${LAUNCH_TIMEOUT_MS / 1000} s`)),
+      LAUNCH_TIMEOUT_MS,
+    );
     child.stderr?.on("data", (c: Buffer) => {
       err += c;
       const m = /DevTools listening on (ws:\/\/\S+)/.exec(err);
@@ -282,9 +314,17 @@ function launch(bin: string, profile: string): { child: ChildProcess; endpoint: 
 function serve(page: string): Promise<{ url: string; close: () => void }> {
   const server = http.createServer((req, res) => {
     if (req.url === "/") {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }).end(HARNESS);
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" })
+        .end(HARNESS);
     } else if (req.url === "/page.html") {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": `sandbox ${FRAME_SANDBOX}` }).end(page);
+      res
+        .writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "content-security-policy": `sandbox ${FRAME_SANDBOX}`,
+        })
+        .end(page);
     } else res.writeHead(404).end();
   });
   return new Promise((resolve, reject) => {
@@ -313,7 +353,9 @@ interface HarnessReport {
 export async function renderCheck(html: string, dir: string): Promise<RenderReport> {
   const bin = findChrome();
   if (!bin) {
-    const reason = process.env.CHROME_PATH ? `CHROME_PATH does not exist: ${process.env.CHROME_PATH}` : "no Chrome, Chromium or Edge found; install one or set CHROME_PATH";
+    const reason = process.env.CHROME_PATH
+      ? `CHROME_PATH does not exist: ${process.env.CHROME_PATH}`
+      : "no Chrome, Chromium or Edge found; install one or set CHROME_PATH";
     return { status: "unavailable", reason };
   }
   const { html: page, notices } = exportHtml(html, dir);
@@ -327,24 +369,50 @@ export async function renderCheck(html: string, dir: string): Promise<RenderRepo
       const conn = connect(await endpoint);
       cdp = conn;
       await conn.opened;
-      const { targetId } = await conn.send<{ targetId: string }>("Target.createTarget", { url: "about:blank" });
-      const { sessionId } = await conn.send<{ sessionId: string }>("Target.attachToTarget", { targetId, flatten: true });
+      const { targetId } = await conn.send<{ targetId: string }>("Target.createTarget", {
+        url: "about:blank",
+      });
+      const { sessionId } = await conn.send<{ sessionId: string }>("Target.attachToTarget", {
+        targetId,
+        flatten: true,
+      });
       await conn.send("Page.enable", {}, sessionId);
-      const loaded = new Promise<void>((resolve) => conn.on((m) => m.method === "Page.loadEventFired" && m.sessionId === sessionId && resolve()));
+      const loaded = new Promise<void>((resolve) =>
+        conn.on(
+          (m) => m.method === "Page.loadEventFired" && m.sessionId === sessionId && resolve(),
+        ),
+      );
       await conn.send("Page.navigate", { url: site.url }, sessionId);
       await loaded;
-      const r = await conn.send<{ result: { value: HarnessReport }; exceptionDetails?: { text: string } }>(
+      const r = await conn.send<{
+        result: { value: HarnessReport };
+        exceptionDetails?: { text: string };
+      }>(
         "Runtime.evaluate",
-        { expression: `window.__austereReport(${JSON.stringify(WIDTHS)})`, awaitPromise: true, returnByValue: true },
+        {
+          expression: `window.__austereReport(${JSON.stringify(WIDTHS)})`,
+          awaitPromise: true,
+          returnByValue: true,
+        },
         sessionId,
       );
       if (r.exceptionDetails) throw new Error(`render report failed: ${r.exceptionDetails.text}`);
       const report = r.result.value;
-      if (!report.rendered && !report.errors.length) report.errors.push({ statement: "", error: "the page did not finish rendering" });
-      return { status: "ok", statements: report.statements, errors: report.errors, overflow: report.overflow, notices };
+      if (!report.rendered && !report.errors.length)
+        report.errors.push({ statement: "", error: "the page did not finish rendering" });
+      return {
+        status: "ok",
+        statements: report.statements,
+        errors: report.errors,
+        overflow: report.overflow,
+        notices,
+      };
     })();
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`rendering took longer than ${RENDER_TIMEOUT_MS / 1000} s`)), RENDER_TIMEOUT_MS);
+      timer = setTimeout(
+        () => reject(new Error(`rendering took longer than ${RENDER_TIMEOUT_MS / 1000} s`)),
+        RENDER_TIMEOUT_MS,
+      );
     });
     return await Promise.race([run, timeout]);
   } catch (err) {

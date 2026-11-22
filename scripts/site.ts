@@ -56,7 +56,15 @@ const REPO = "https://github.com/MandalorianBatman/austere-axi";
 const THUMB = { width: 1280, height: 800 };
 const HERO_EXAMPLE = "session-migration";
 // Gallery order. Examples not listed follow, alphabetically.
-const ORDER = ["session-migration", "incident-postmortem", "api-design-review", "pr-summary", "sprint-plan", "code-review", "shadcn"];
+const ORDER = [
+  "session-migration",
+  "incident-postmortem",
+  "api-design-review",
+  "pr-summary",
+  "sprint-plan",
+  "code-review",
+  "shadcn",
+];
 const NAV = [
   { href: "docs/", label: "Docs" },
   { href: "play/", label: "Play" },
@@ -74,13 +82,24 @@ for (const f of ["austere.js", "spec.json", "catalog.json"]) {
 }
 
 const formatInt = (n: number): string => n.toLocaleString("en-US");
-const decode = (s: string): string => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+const decode = (s: string): string =>
+  s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 
 /** Fill the placeholders of a site page. `rel` is the page's path inside _site/, with forward slashes. */
 function render(html: string, rel: string, vars: Record<string, string> = {}): string {
   const depth = rel.split("/").length - 1;
   const root = "../".repeat(depth);
-  const current = rel === "gallery/index.html" ? "gallery/" : rel.startsWith("docs/") ? "docs/" : rel.replace(/index\.html$/, "");
+  const current =
+    rel === "gallery/index.html"
+      ? "gallery/"
+      : rel.startsWith("docs/")
+        ? "docs/"
+        : rel.replace(/index\.html$/, "");
   const nav = `<nav class="site-nav" aria-label="Main">${NAV.map((n) => {
     const href = /^https?:/.test(n.href) ? n.href : `{{root}}${n.href}`;
     return `<a href="${href}"${n.href === current ? ' aria-current="page"' : ""}>${escapeHtml(n.label)}</a>`;
@@ -99,13 +118,18 @@ function render(html: string, rel: string, vars: Record<string, string> = {}): s
 async function publishedVersion(): Promise<string> {
   const given = process.env.AUSTERE_AXI_SITE_VERSION;
   if (given) {
-    if (!/^\d+\.\d+\.\d+/.test(given)) throw new Error(`AUSTERE_AXI_SITE_VERSION is not a version: ${given}`);
+    if (!/^\d+\.\d+\.\d+/.test(given))
+      throw new Error(`AUSTERE_AXI_SITE_VERSION is not a version: ${given}`);
     return given;
   }
-  const res = await fetch(NPM_LATEST, { headers: { "cache-control": "no-cache" }, signal: AbortSignal.timeout(15_000) });
+  const res = await fetch(NPM_LATEST, {
+    headers: { "cache-control": "no-cache" },
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!res.ok) throw new Error(`${NPM_LATEST}: HTTP ${res.status}`);
   const { version } = (await res.json()) as { version?: unknown };
-  if (typeof version !== "string" || !/^\d+\.\d+\.\d+/.test(version)) throw new Error(`${NPM_LATEST}: no version in the answer`);
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+/.test(version))
+    throw new Error(`${NPM_LATEST}: no version in the answer`);
   return version;
 }
 
@@ -113,7 +137,11 @@ async function publishedVersion(): Promise<string> {
 const plainText = (html: string): string => decode(html.replace(/<[^>]*>/g, "")).trim();
 
 /** GitHub's heading id: lower case, punctuation dropped, spaces to hyphens. Docs link to these. */
-const slug = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\p{M} _-]/gu, "").replace(/ /g, "-");
+const slug = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\p{M} _-]/gu, "")
+    .replace(/ /g, "-");
 
 /** A #fragment as the browser matches it against ids: percent-decoded, or as written when that is not valid encoding. */
 const decodeFragment = (hash: string): string => {
@@ -159,7 +187,8 @@ function buildDocs(): DocPage[] {
       }
       const [file, hash = ""] = href.split("#");
       const target = path.posix.normalize(path.posix.join("docs", file));
-      if (!fs.existsSync(path.join(ROOT, target))) throw new Error(`docs/${name}.md: ${href} points at ${target}, which does not exist`);
+      if (!fs.existsSync(path.join(ROOT, target)))
+        throw new Error(`docs/${name}.md: ${href} points at ${target}, which does not exist`);
       const suffix = hash ? `#${hash}` : "";
       if (target.startsWith("docs/") && target.endsWith(".md")) {
         const dest = `docs/${outName(target.slice("docs/".length, -".md".length))}.html`;
@@ -205,7 +234,9 @@ function buildDocs(): DocPage[] {
         },
       },
     });
-    const body = marked.parse(fs.readFileSync(path.join(DOCS, `${name}.md`), "utf8"), { async: false });
+    const body = marked.parse(fs.readFileSync(path.join(DOCS, `${name}.md`), "utf8"), {
+      async: false,
+    });
     const intro = /<p>([\s\S]*?)<\/p>/.exec(body)?.[1] ?? "";
     let description = plainText(intro).replace(/\s+/g, " ");
     if (description.length > 200) description = `${description.slice(0, 197).trimEnd()}...`;
@@ -258,7 +289,8 @@ function buildDocs(): DocPage[] {
       const [file, hash] = link.href.split("#");
       const dest = file === "" ? page : byOut.get(file);
       if (!dest) bad.push(`${page.out}: ${link.text} -> ${file} is not a built page`);
-      else if (hash && !dest.ids.has(decodeFragment(hash))) bad.push(`${page.out}: ${link.text} -> no heading #${hash} on ${dest.out}`);
+      else if (hash && !dest.ids.has(decodeFragment(hash)))
+        bad.push(`${page.out}: ${link.text} -> no heading #${hash} on ${dest.out}`);
     }
   }
   if (bad.length) {
@@ -278,12 +310,29 @@ function* htmlFiles(dir: string): Generator<string> {
 }
 
 /** Run scripts/shot.ts on a page; it exits non-zero on render errors and page errors. */
-function shot(file: string, out: string, { width, height }: { width: number; height: number }): Promise<ShotResult> {
+function shot(
+  file: string,
+  out: string,
+  { width, height }: { width: number; height: number },
+): Promise<ShotResult> {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join(ROOT, "scripts/shot.ts"), file, "--out", out, "--width", String(width), "--height", String(height)], {
-      cwd: ROOT,
-      env: process.env,
-    });
+    const child = spawn(
+      process.execPath,
+      [
+        path.join(ROOT, "scripts/shot.ts"),
+        file,
+        "--out",
+        out,
+        "--width",
+        String(width),
+        "--height",
+        String(height),
+      ],
+      {
+        cwd: ROOT,
+        env: process.env,
+      },
+    );
     let output = "";
     child.stdout.on("data", (d) => (output += d));
     child.stderr.on("data", (d) => (output += d));
@@ -315,8 +364,11 @@ function loadExamples(): Example[] {
   return ids.map((id) => {
     const html = fs.readFileSync(path.join(EXAMPLES, `${id}.html`), "utf8");
     const art = readArtifact(html);
-    if (art.program === null) throw new Error(`examples/${id}.html has no <script type="text/openui"> block`);
-    const description = /<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i.exec(html)?.[1];
+    if (art.program === null)
+      throw new Error(`examples/${id}.html has no <script type="text/openui"> block`);
+    const description = /<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i.exec(
+      html,
+    )?.[1];
     const program = art.program.trim();
     const result = checkHtml(html);
     return {
@@ -353,7 +405,9 @@ function galleryPage(examples: Example[]): string {
   </div>
 </article>`;
   });
-  const index = examples.map((ex) => `<li><a href="#${ex.id}">${escapeHtml(ex.title)}</a></li>`).join("");
+  const index = examples
+    .map((ex) => `<li><a href="#${ex.id}">${escapeHtml(ex.title)}</a></li>`)
+    .join("");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -394,7 +448,9 @@ ${entries.join("\n")}
 function heroHtml(example: Example): string {
   const gif = fs.existsSync(DEMO_GIF);
   const src = gif ? "assets/demo.gif" : "assets/hero.png";
-  const alt = gif ? "Demo: an agent writes a page, the reviewer clicks a part and sends a note." : `The ${example.title} page, rendered by austere-axi.`;
+  const alt = gif
+    ? "Demo: an agent writes a page, the reviewer clicks a part and sends a note."
+    : `The ${example.title} page, rendered by austere-axi.`;
   const caption = gif
     ? "The review loop in about 30 seconds."
     : `A real page: ${example.title.toLowerCase()}, written in about ${formatInt(Math.round(example.tokens / 50) * 50)} tokens. <a href="{{root}}gallery/${example.id}.html">Open the live page</a>.`;
@@ -408,8 +464,11 @@ function heroHtml(example: Example): string {
 // 1. Examples must pass `check` before anything is written.
 const examples = loadExamples();
 const failed = examples.filter((ex) => !ex.check.ok);
-for (const ex of failed) console.error(`examples/${ex.id}.html fails check:\n${JSON.stringify(ex.check.errors, null, 1)}`);
-for (const ex of examples) for (const w of ex.check.warnings || []) console.warn(`examples/${ex.id}.html: ${w.message || JSON.stringify(w)}`);
+for (const ex of failed)
+  console.error(`examples/${ex.id}.html fails check:\n${JSON.stringify(ex.check.errors, null, 1)}`);
+for (const ex of examples)
+  for (const w of ex.check.warnings || [])
+    console.warn(`examples/${ex.id}.html: ${w.message || JSON.stringify(w)}`);
 if (failed.length) process.exit(1);
 const heroExample = examples.find((ex) => ex.id === HERO_EXAMPLE) || examples[0];
 
@@ -452,22 +511,41 @@ await esbuild.build({
   legalComments: "none",
   logLevel: "warning",
 });
-const readJson = (name: string): unknown => JSON.parse(fs.readFileSync(path.join(DIST, name), "utf8"));
+const readJson = (name: string): unknown =>
+  JSON.parse(fs.readFileSync(path.join(DIST, name), "utf8"));
 fs.writeFileSync(
   path.join(OUT, "play", "data.json"),
   JSON.stringify({
     spec: readJson("spec.json"),
     catalog: readJson("catalog.json"),
-    templates: examples.map(({ id, title, description, program }) => ({ id, title, description, program })),
+    templates: examples.map(({ id, title, description, program }) => ({
+      id,
+      title,
+      description,
+      program,
+    })),
   }),
 );
 // 3. Screenshots, from the pages as deployed. shot.ts fails on render errors.
-const jobs = examples.map((ex) => ({ ex, file: path.join(OUT, "gallery", `${ex.id}.html`), out: path.join(OUT, "gallery", "thumbs", `${ex.id}.png`) }));
-const shots = await pool(jobs, 4, async (job) => ({ job, ...(await shot(job.file, job.out, THUMB)) }));
+const jobs = examples.map((ex) => ({
+  ex,
+  file: path.join(OUT, "gallery", `${ex.id}.html`),
+  out: path.join(OUT, "gallery", "thumbs", `${ex.id}.png`),
+}));
+const shots = await pool(jobs, 4, async (job) => ({
+  job,
+  ...(await shot(job.file, job.out, THUMB)),
+}));
 const broken = shots.filter((s) => s.code !== 0);
-for (const s of broken) console.error(`gallery/${s.job.ex.id}.html did not render cleanly (exit ${s.code}):\n${s.output}`);
+for (const s of broken)
+  console.error(
+    `gallery/${s.job.ex.id}.html did not render cleanly (exit ${s.code}):\n${s.output}`,
+  );
 if (broken.length) process.exit(1);
-fs.copyFileSync(path.join(OUT, "gallery", "thumbs", `${heroExample.id}.png`), path.join(OUT, "assets", "hero.png"));
+fs.copyFileSync(
+  path.join(OUT, "gallery", "thumbs", `${heroExample.id}.png`),
+  path.join(OUT, "assets", "hero.png"),
+);
 if (fs.existsSync(DEMO_GIF)) fs.copyFileSync(DEMO_GIF, path.join(OUT, "assets", "demo.gif"));
 const social = fs.existsSync(SOCIAL);
 if (social) fs.copyFileSync(SOCIAL, path.join(OUT, "assets", "social-preview.png"));
@@ -478,8 +556,19 @@ for (const file of htmlFiles(OUT)) {
   const rel = path.relative(OUT, file).split(path.sep).join("/");
   if (rel.startsWith("gallery/") && rel !== "gallery/index.html") continue; // live examples are artifacts, not site pages
   if (rel.startsWith("docs/")) continue; // already rendered by buildDocs()
-  fs.writeFileSync(file, render(fs.readFileSync(file, "utf8"), rel, { hero: heroHtml(heroExample), ogImage: social ? "social-preview.png" : "hero.png" }));
+  fs.writeFileSync(
+    file,
+    render(fs.readFileSync(file, "utf8"), rel, {
+      hero: heroHtml(heroExample),
+      ogImage: social ? "social-preview.png" : "hero.png",
+    }),
+  );
 }
 
-console.log(`site: ${path.relative(ROOT, OUT)}/ (${examples.length} examples, ${docPages.length} docs pages)`);
-for (const ex of examples) console.log(`  gallery/${ex.id}.html  ~${formatInt(ex.tokens)} tokens, ${ex.statements} statements`);
+console.log(
+  `site: ${path.relative(ROOT, OUT)}/ (${examples.length} examples, ${docPages.length} docs pages)`,
+);
+for (const ex of examples)
+  console.log(
+    `  gallery/${ex.id}.html  ~${formatInt(ex.tokens)} tokens, ${ex.statements} statements`,
+  );

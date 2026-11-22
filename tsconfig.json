@@ -17,5 +17,15 @@
     "types": ["node"],
     "paths": { "austere-axi/*": ["./types/*.d.ts"] }
   },
-  "include": ["src", "packs/*/src", "scripts", "action", "bench/*.ts", "bench/lib", "site", "test", "types"]
+  "include": [
+    "src",
+    "packs/*/src",
+    "scripts",
+    "action",
+    "bench/*.ts",
+    "bench/lib",
+    "site",
+    "test",
+    "types"
+  ]
 }

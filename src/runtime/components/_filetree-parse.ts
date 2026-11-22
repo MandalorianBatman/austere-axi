@@ -120,7 +120,11 @@ export function parseEntry(raw: unknown): FileEntry | null {
 }
 
 function clean(p: string): string {
-  return p.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/{2,}/g, "/");
+  return p
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/\/{2,}/g, "/");
 }
 
 /** Last entry wins for a repeated path, in first-appearance order. */
@@ -139,7 +143,9 @@ export function parseEntries(list: unknown): FileEntry[] {
 export function fromLabel(entry: FileEntry): string | undefined {
   if (!entry.from) return undefined;
   const dir = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
-  return dir(entry.from) === dir(entry.path) ? entry.from.slice(entry.from.lastIndexOf("/") + 1) : entry.from;
+  return dir(entry.from) === dir(entry.path)
+    ? entry.from.slice(entry.from.lastIndexOf("/") + 1)
+    : entry.from;
 }
 
 /**

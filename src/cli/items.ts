@@ -4,12 +4,14 @@
 // Tag characters, bidi controls and zero-width space/LRM/RLM can hide text from the owner that the agent
 // still reads. ZWNJ/ZWJ (U+200C/U+200D) stay: emoji and some scripts need them.
 const INVISIBLE = /[\u{E0000}-\u{E007F}\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
-const str = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(INVISIBLE, "") : undefined);
+const str = (v: unknown): string | undefined =>
+  typeof v === "string" ? v.replace(INVISIBLE, "") : undefined;
 // The owner's view shortens target and component, so keep them only when they are what the annotator
 // produces: a statement id and a component name. Anything longer or odder could hide text from the owner.
 const ID = /^[A-Za-z_$][\w$]{0,99}$/;
 const COMPONENT = /^[A-Za-z_][\w.-]{0,99}$/;
-const match = (re: RegExp, v: unknown): string | undefined => (typeof v === "string" && re.test(v) ? v : undefined);
+const match = (re: RegExp, v: unknown): string | undefined =>
+  typeof v === "string" && re.test(v) ? v : undefined;
 
 /** Drop keys whose value is undefined, so a stored item has only the fields that were valid. */
 function defined<T extends object>(o: T): T {
@@ -48,7 +50,13 @@ export type ReviewerItem = ReviewerMessage | ReviewerAnnotation;
 /** Mirrors `detailOf` in runtime/annotate.ts: string part/row/column and an integer rowIndex. */
 function detailOf(d: unknown): ItemDetail | undefined {
   if (!isRecord(d)) return undefined;
-  const out: ItemDetail = defined({ part: str(d.part), row: str(d.row), column: str(d.column), rowIndex: typeof d.rowIndex === "number" && Number.isInteger(d.rowIndex) ? d.rowIndex : undefined });
+  const out: ItemDetail = defined({
+    part: str(d.part),
+    row: str(d.row),
+    column: str(d.column),
+    rowIndex:
+      typeof d.rowIndex === "number" && Number.isInteger(d.rowIndex) ? d.rowIndex : undefined,
+  });
   return Object.keys(out).length ? out : undefined;
 }
 
@@ -59,7 +67,9 @@ export function reviewerItem(x: Record<string, unknown>): ReviewerItem {
     kind: "annotation",
     target: match(ID, x.target),
     component: match(COMPONENT, x.component),
-    path: Array.isArray(x.path) ? x.path.filter((p): p is string => match(ID, p) !== undefined) : undefined,
+    path: Array.isArray(x.path)
+      ? x.path.filter((p): p is string => match(ID, p) !== undefined)
+      : undefined,
     selection: str(x.selection),
     excerpt: str(x.excerpt),
     note: str(x.note),

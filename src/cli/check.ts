@@ -33,8 +33,13 @@ function packParser(packs: InstalledPack[]): { parser: Parser; spec: SpecSchema 
   const key = packs.map((p) => `${p.name}@${p.version}:${p.integrity || ""}`).join(",");
   let made = packParsers.get(key);
   if (!made) {
-    const core: SpecSchema = (coreSpec ||= JSON.parse(fs.readFileSync(assetPath("spec.json"), "utf8")));
-    const spec = mergePackSchemas(core, packs.map((p) => p.catalog));
+    const core: SpecSchema = (coreSpec ||= JSON.parse(
+      fs.readFileSync(assetPath("spec.json"), "utf8"),
+    ));
+    const spec = mergePackSchemas(
+      core,
+      packs.map((p) => p.catalog),
+    );
     packParsers.set(key, (made = { parser: createParser(spec, spec.root || "Stack"), spec }));
   }
   return made;
@@ -70,7 +75,8 @@ export function parseArtifact(html: string): { root: unknown; spec: SpecSchema }
 
 /** Components austere-axi used to have: an old page names them, so say what replaced them. */
 const REMOVED: Record<string, string> = {
-  Mermaid: "Mermaid was removed from austere-axi. Draw the diagram with Architecture, or show the source as text in a CodeBlock.",
+  Mermaid:
+    "Mermaid was removed from austere-axi. Draw the diagram with Architecture, or show the source as text in a CodeBlock.",
 };
 
 /** The parser lists every component on an unknown name; say where to look instead. */
@@ -104,19 +110,32 @@ export function statementLines(html: string): Map<string, { line: number; text: 
   const art = readArtifact(html);
   const out = new Map<string, { line: number; text: string }>();
   if (art.program == null) return out;
-  for (const s of splitStatements(art.program)) out.set(s.id, { line: art.programLine + s.line - 1, text: s.text });
+  for (const s of splitStatements(art.program))
+    out.set(s.id, { line: art.programLine + s.line - 1, text: s.text });
   return out;
 }
 
-export function checkHtml(html: string, { schema, file = "<file>" }: CheckOptions = {}): CheckResult {
+export function checkHtml(
+  html: string,
+  { schema, file = "<file>" }: CheckOptions = {},
+): CheckResult {
   const art = readArtifact(html);
-  const packs: PagePacks = schema ? { installed: [], missing: [], mismatched: [], stale: [], declared: [], thirdParty: [] } : pagePacks(html);
-  const result: CheckResult = { ok: true, errors: [], warnings: [], statements: 0, title: art.title };
+  const packs: PagePacks = schema
+    ? { installed: [], missing: [], mismatched: [], stale: [], declared: [], thirdParty: [] }
+    : pagePacks(html);
+  const result: CheckResult = {
+    ok: true,
+    errors: [],
+    warnings: [],
+    statements: 0,
+    title: art.title,
+  };
   if (art.program == null) {
     result.ok = false;
     result.errors.push({
       code: "no-program",
-      message: 'No <script type="text/openui"> block found. Put the OpenUI Lang program inside one (see `austere-axi --help`).',
+      message:
+        'No <script type="text/openui"> block found. Put the OpenUI Lang program inside one (see `austere-axi --help`).',
     });
     return result;
   }
@@ -128,7 +147,8 @@ export function checkHtml(html: string, { schema, file = "<file>" }: CheckOption
   } else if (!art.runtimeSrc) {
     result.warnings.push({
       code: "no-runtime-tag",
-      message: "No austere.js runtime <script> tag. Review still works, but the file will not render when opened directly.",
+      message:
+        "No austere.js runtime <script> tag. Review still works, but the file will not render when opened directly.",
     });
   }
   for (const p of packs.missing) {
@@ -153,7 +173,8 @@ export function checkHtml(html: string, { schema, file = "<file>" }: CheckOption
   const core = checkProgram(art.program, {
     parser: () => getParser(schema, packs.installed),
     lineOf: (id) => (id && lines.get(id)?.line) || undefined,
-    decorate: (entry) => (entry.code === "unknown-component" ? unknownComponent(entry, packs, file) : entry),
+    decorate: (entry) =>
+      entry.code === "unknown-component" ? unknownComponent(entry, packs, file) : entry,
   });
   result.statements = core.statements;
   result.errors.push(...core.errors);

@@ -13,7 +13,11 @@ const temp = process.env.RUNNER_TEMP || os.tmpdir();
 const outDir = path.join(temp, "austere-review");
 const resultsFile = path.join(temp, "austere-results.json");
 const input = (process.env.INPUT_CLI || "").trim().split(/\s+/).filter(Boolean);
-const cli = resolveCli(input.length ? input : ["npx", "-y", `austere-axi@${(process.env.INPUT_VERSION || "latest").trim()}`]);
+const cli = resolveCli(
+  input.length
+    ? input
+    : ["npx", "-y", `austere-axi@${(process.env.INPUT_VERSION || "latest").trim()}`],
+);
 
 // check registers pages with the hub when it is on; never touch a user-level state dir on a runner.
 const env = {
@@ -31,14 +35,20 @@ function austere(args: string[]): { code: number; stdout: string; stderr: string
     shell: false,
     maxBuffer: 64 * 1024 * 1024,
   });
-  return { code: r.status ?? 1, stdout: r.stdout || "", stderr: r.stderr || (r.error ? String(r.error.message) : "") };
+  return {
+    code: r.status ?? 1,
+    stdout: r.stdout || "",
+    stderr: r.stderr || (r.error ? String(r.error.message) : ""),
+  };
 }
 
 const oneLine = (s: unknown): string => String(s).replace(/[\r\n%]+/g, " ");
 
 const pages = expandPages(process.env.INPUT_PAGES, cwd);
 if (!pages.length) {
-  console.log(`::error title=austere-axi::No page matched \`pages\`: ${oneLine(process.env.INPUT_PAGES || "(empty)")}`);
+  console.log(
+    `::error title=austere-axi::No page matched \`pages\`: ${oneLine(process.env.INPUT_PAGES || "(empty)")}`,
+  );
   process.exit(1);
 }
 
@@ -65,7 +75,8 @@ for (const page of pages) {
   };
   if (ok) {
     let name = path.basename(page).replace(/\.html?$/i, "") + ".html";
-    for (let n = 2; used.has(name); n++) name = `${path.basename(page).replace(/\.html?$/i, "")}-${n}.html`;
+    for (let n = 2; used.has(name); n++)
+      name = `${path.basename(page).replace(/\.html?$/i, "")}-${n}.html`;
     used.add(name);
     console.log(`$ austere-axi export ${page}`);
     const exported = austere(["export", page, "--out", path.join(outDir, name)]);
@@ -80,7 +91,9 @@ for (const page of pages) {
   } else {
     for (const e of result.errors.length ? result.errors : [{ message: result.error }]) {
       const where = e.statement ? `${e.statement}${e.line ? `:${e.line}` : ""} ` : "";
-      console.log(`::error file=${page},title=austere-axi check::${oneLine(where + (e.message || e.code || "check failed"))}`);
+      console.log(
+        `::error file=${page},title=austere-axi check::${oneLine(where + (e.message || e.code || "check failed"))}`,
+      );
     }
   }
   results.push(result);
@@ -89,10 +102,15 @@ for (const page of pages) {
 fs.writeFileSync(resultsFile, JSON.stringify(results, null, 2));
 const failed = results.filter((r) => !r.ok);
 if (process.env.GITHUB_OUTPUT) {
-  fs.appendFileSync(process.env.GITHUB_OUTPUT, `ok=${failed.length ? "false" : "true"}\nexported=${results.filter((r) => r.exported).length}\n`);
+  fs.appendFileSync(
+    process.env.GITHUB_OUTPUT,
+    `ok=${failed.length ? "false" : "true"}\nexported=${results.filter((r) => r.exported).length}\n`,
+  );
 }
 if (failed.length) {
-  console.log(`\naustere-axi: ${failed.length} of ${results.length} page(s) failed: ${failed.map((r) => r.page).join(", ")}`);
+  console.log(
+    `\naustere-axi: ${failed.length} of ${results.length} page(s) failed: ${failed.map((r) => r.page).join(", ")}`,
+  );
   process.exit(1);
 }
 console.log(`\naustere-axi: ${results.length} page(s) checked and exported to ${outDir}`);

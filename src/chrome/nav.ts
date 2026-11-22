@@ -36,7 +36,17 @@ const RECENT_MAX = 12;
 function recents(): Recent[] {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(RECENT) || "[]");
-    return Array.isArray(raw) ? raw.filter((r): r is Recent => !!r && typeof r === "object" && typeof r.id === "string" && typeof r.title === "string").slice(0, RECENT_MAX) : [];
+    return Array.isArray(raw)
+      ? raw
+          .filter(
+            (r): r is Recent =>
+              !!r &&
+              typeof r === "object" &&
+              typeof r.id === "string" &&
+              typeof r.title === "string",
+          )
+          .slice(0, RECENT_MAX)
+      : [];
   } catch {
     return [];
   }
@@ -44,7 +54,12 @@ function recents(): Recent[] {
 
 function remember(r: Recent): void {
   // One entry a page: a copy in another worktree replaces it.
-  const list = [r, ...recents().filter((x) => x.id !== r.id && !(x.project === r.project && x.rel_path === r.rel_path))].slice(0, RECENT_MAX);
+  const list = [
+    r,
+    ...recents().filter(
+      (x) => x.id !== r.id && !(x.project === r.project && x.rel_path === r.rel_path),
+    ),
+  ].slice(0, RECENT_MAX);
   try {
     localStorage.setItem(RECENT, JSON.stringify(list));
   } catch {
@@ -77,7 +92,12 @@ const GROUPS: [Item["kind"], string][] = [
 function pageState(p: ShellPage): Item["state"] {
   if (p.group === "needs_you") return { cls: "needs", label: "Needs you" };
   // As the hub's Inbox: green only while an agent has the notes or is there to take them.
-  if (p.group === "waiting_on_agent") return p.run_active ? { cls: "working", label: "Agent working" } : p.taker === "listening" ? { cls: "working", label: "Agent listening" } : { cls: "waiting", label: "Waiting on an agent" };
+  if (p.group === "waiting_on_agent")
+    return p.run_active
+      ? { cls: "working", label: "Agent working" }
+      : p.taker === "listening"
+        ? { cls: "working", label: "Agent listening" }
+        : { cls: "waiting", label: "Waiting on an agent" };
   return { cls: "quiet", label: "Quiet" };
 }
 
@@ -113,7 +133,12 @@ function marked(text: string, words: string[]): Child[] {
 
 /** A link in the breadcrumb: its name, or on a phone a back arrow (the name stays its text). */
 function crumbLink(href: string, name: string, title?: string): HTMLAnchorElement {
-  return h("a", { class: "crumb", href, title }, svgIcon([["path", { d: "m15 6-6 6 6 6" }]], { size: 20, width: 2, cls: "crumb-back" }), h("span", { class: "crumb-name", text: name }));
+  return h(
+    "a",
+    { class: "crumb", href, title },
+    svgIcon([["path", { d: "m15 6-6 6 6 6" }]], { size: 20, width: 2, cls: "crumb-back" }),
+    h("span", { class: "crumb-name", text: name }),
+  );
 }
 
 /** Install the owner's navigation; returns what the chrome calls once the frame has rendered. */
@@ -124,39 +149,91 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
     const attach = fragment.has("attach");
     fragment.delete("part");
     fragment.delete("attach");
-    history.replaceState(history.state, "", `${location.pathname}${location.search}${fragment.size ? `#${fragment}` : ""}`);
+    history.replaceState(
+      history.state,
+      "",
+      `${location.pathname}${location.search}${fragment.size ? `#${fragment}` : ""}`,
+    );
     if (attach) setTimeout(hooks.openAttach, 0);
   }
 
   // ── breadcrumb and copy switcher ──
-  const crumbs = h("nav", { class: "crumbs", "aria-label": "Breadcrumb" }, crumbLink("/", "Hub"), h("span", { class: "crumb-sep", "aria-hidden": "true", text: "/" }));
+  const crumbs = h(
+    "nav",
+    { class: "crumbs", "aria-label": "Breadcrumb" },
+    crumbLink("/", "Hub"),
+    h("span", { class: "crumb-sep", "aria-hidden": "true", text: "/" }),
+  );
   hooks.bar.prepend(crumbs);
   void fetch(`/hub/api/page/${hooks.id}`)
     .then((r) => (r.ok ? (r.json() as Promise<CopySummary>) : null))
     .then((summary) => {
       if (!summary) return;
       if (summary.project) {
-        crumbs.firstElementChild?.replaceWith(crumbLink(`/?project=${encodeURIComponent(summary.project.id)}`, summary.project.name, `${summary.project.name} in the hub`));
+        crumbs.firstElementChild?.replaceWith(
+          crumbLink(
+            `/?project=${encodeURIComponent(summary.project.id)}`,
+            summary.project.name,
+            `${summary.project.name} in the hub`,
+          ),
+        );
       }
-      remember({ id: summary.id, title: summary.title || summary.rel_path, project: summary.project?.name ?? "", rel_path: summary.rel_path });
+      remember({
+        id: summary.id,
+        title: summary.title || summary.rel_path,
+        project: summary.project?.name ?? "",
+        rel_path: summary.rel_path,
+      });
       if (summary.copies.length < 2) return;
       const select = h(
         "select",
-        { class: "copy-switch", "aria-label": "Copy of this page (worktree)", title: "The same page in another worktree" },
-        summary.copies.map((c) => h("option", { value: c.id, selected: c.id === summary.id, text: `${c.label}${c.missing ? " (missing)" : c.archived ? " (archived)" : ""}` })),
+        {
+          class: "copy-switch",
+          "aria-label": "Copy of this page (worktree)",
+          title: "The same page in another worktree",
+        },
+        summary.copies.map((c) =>
+          h("option", {
+            value: c.id,
+            selected: c.id === summary.id,
+            text: `${c.label}${c.missing ? " (missing)" : c.archived ? " (archived)" : ""}`,
+          }),
+        ),
       );
       select.addEventListener("change", () => {
         if (select.value !== summary.id) location.href = open(select.value);
       });
-      hooks.bar.append(h("span", { class: "copy-switch-wrap" }, icon("branch", { size: 12, width: 2, cls: "copy-switch-icon" }), select, icon("chevronDown", { size: 12, width: 2, cls: "copy-switch-caret" })));
+      hooks.bar.append(
+        h(
+          "span",
+          { class: "copy-switch-wrap" },
+          icon("branch", { size: 12, width: 2, cls: "copy-switch-icon" }),
+          select,
+          icon("chevronDown", { size: 12, width: 2, cls: "copy-switch-caret" }),
+        ),
+      );
     })
     .catch(() => {
       // the server is gone: the crumb still links to the hub
     });
 
   // ── quick switcher ──
-  const input = h("input", { type: "search", class: "qs-input", placeholder: "Search pages and parts", "aria-label": "Search pages and parts", role: "combobox", "aria-expanded": "true", "aria-controls": "qs-list", autocomplete: "off" });
-  const list = h("ul", { class: "qs-list", id: "qs-list", role: "listbox", "aria-label": "Pages and parts" });
+  const input = h("input", {
+    type: "search",
+    class: "qs-input",
+    placeholder: "Search pages and parts",
+    "aria-label": "Search pages and parts",
+    role: "combobox",
+    "aria-expanded": "true",
+    "aria-controls": "qs-list",
+    autocomplete: "off",
+  });
+  const list = h("ul", {
+    class: "qs-list",
+    id: "qs-list",
+    role: "listbox",
+    "aria-label": "Pages and parts",
+  });
   const kbd = (text: string): HTMLElement => h("kbd", { class: "qs-kbd", text });
   const hubLink = h("a", { class: "qs-hub", href: "/", text: "Open the hub" });
   const dialog = h(
@@ -165,7 +242,13 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
     h(
       "div",
       { class: "qs-box" },
-      h("label", { class: "qs-field" }, icon("search", { size: 17, width: 1.8 }), input, h("kbd", { class: "qs-kbd qs-esc", "aria-hidden": "true", text: "Esc" })),
+      h(
+        "label",
+        { class: "qs-field" },
+        icon("search", { size: 17, width: 1.8 }),
+        input,
+        h("kbd", { class: "qs-kbd qs-esc", "aria-hidden": "true", text: "Esc" }),
+      ),
       list,
       h(
         "div",
@@ -193,14 +276,36 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
       it.kind === "part"
         ? h("span", { class: "qs-chip", text: it.chip ?? "" })
         : it.state
-          ? h("span", { class: `qs-dot ${it.state.cls}`, role: "img", "aria-label": it.state.label, title: it.state.label })
+          ? h("span", {
+              class: `qs-dot ${it.state.cls}`,
+              role: "img",
+              "aria-label": it.state.label,
+              title: it.state.label,
+            })
           : icon("file", { size: 15, cls: "qs-lead" });
     return h(
       "li",
-      { id: `qs-${i}`, role: "option", class: `qs-item ${it.kind}`, "aria-selected": String(i === active), onclick: () => (location.href = it.href), onmousemove: () => select(i) },
+      {
+        id: `qs-${i}`,
+        role: "option",
+        class: `qs-item ${it.kind}`,
+        "aria-selected": String(i === active),
+        onclick: () => (location.href = it.href),
+        onmousemove: () => select(i),
+      },
       lead,
-      h("span", { class: "qs-text" }, h("span", { class: "qs-title" }, it.kind === "part" ? marked(it.title, words) : it.title), h("span", { class: it.kind === "part" ? "qs-sub" : "qs-sub qs-path", text: it.sub })),
-      it.meta ? h("span", { class: it.meta.cls ? `qs-meta ${it.meta.cls}` : "qs-meta", text: it.meta.text }) : null,
+      h(
+        "span",
+        { class: "qs-text" },
+        h("span", { class: "qs-title" }, it.kind === "part" ? marked(it.title, words) : it.title),
+        h("span", { class: it.kind === "part" ? "qs-sub" : "qs-sub qs-path", text: it.sub }),
+      ),
+      it.meta
+        ? h("span", {
+            class: it.meta.cls ? `qs-meta ${it.meta.cls}` : "qs-meta",
+            text: it.meta.text,
+          })
+        : null,
       h("kbd", { class: "qs-kbd qs-enter", "aria-hidden": "true", text: "Enter" }),
     );
   }
@@ -213,9 +318,25 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
             const rows = items.flatMap((it, i) => (it.kind === kind ? [row(it, i, words)] : []));
             if (!rows.length) return [];
             const id = `qs-g-${kind}`;
-            return [h("li", { class: "qs-group", role: "group", "aria-labelledby": id }, h("span", { class: "qs-group-label", id, text: label }), h("ul", { class: "qs-rows", role: "none" }, rows))];
+            return [
+              h(
+                "li",
+                { class: "qs-group", role: "group", "aria-labelledby": id },
+                h("span", { class: "qs-group-label", id, text: label }),
+                h("ul", { class: "qs-rows", role: "none" }, rows),
+              ),
+            ];
           })
-        : [h("li", { class: "qs-empty", text: searching ? "Searching…" : input.value.trim() ? "Nothing matches." : "No other page opened lately. Type to search every page." })]),
+        : [
+            h("li", {
+              class: "qs-empty",
+              text: searching
+                ? "Searching…"
+                : input.value.trim()
+                  ? "Nothing matches."
+                  : "No other page opened lately. Type to search every page.",
+            }),
+          ]),
     );
     options = [...list.querySelectorAll<HTMLElement>(".qs-item")];
     input.setAttribute("aria-activedescendant", items.length ? `qs-${active}` : "");
@@ -232,7 +353,12 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
   function recentItems(): Item[] {
     return recents()
       .filter((r) => r.id !== hooks.id)
-      .map((r) => ({ href: open(r.id), title: r.title, sub: [r.project, r.rel_path].filter(Boolean).join(" / "), kind: "recent" as const }));
+      .map((r) => ({
+        href: open(r.id),
+        title: r.title,
+        sub: [r.project, r.rel_path].filter(Boolean).join(" / "),
+        kind: "recent" as const,
+      }));
   }
 
   async function lookUp(): Promise<void> {
@@ -260,12 +386,27 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
     // Pages opened lately come first among the pages that match.
     const order = new Map(recents().map((r, i) => [`${r.project}\0${r.rel_path}`, i]));
     const rank = (key: string): number => order.get(key) ?? RECENT_MAX;
-    const pages = [...data.pages].sort((a, b) => rank(`${a.project}\0${a.rel_path}`) - rank(`${b.project}\0${b.rel_path}`));
+    const pages = [...data.pages].sort(
+      (a, b) => rank(`${a.project}\0${a.rel_path}`) - rank(`${b.project}\0${b.rel_path}`),
+    );
     items = [
-      ...pages.map((p): Item => ({ href: open(p.open_id), title: p.title || p.rel_path, sub: [p.project, p.rel_path].filter(Boolean).join(" / "), kind: "page", state: pageState(p), meta: pageMeta(p) })),
+      ...pages.map((p): Item => ({
+        href: open(p.open_id),
+        title: p.title || p.rel_path,
+        sub: [p.project, p.rel_path].filter(Boolean).join(" / "),
+        kind: "page",
+        state: pageState(p),
+        meta: pageMeta(p),
+      })),
       ...data.parts.map((x): Item => {
         const page = x.title || x.file.split(/[\\/]/).pop() || x.file;
-        return { href: open(x.artifact_id, `?part=${encodeURIComponent(x.statement)}`), title: x.snippet || page, sub: [x.component, `in ${page}`, x.copy].filter(Boolean).join(" · "), kind: "part", chip: x.statement };
+        return {
+          href: open(x.artifact_id, `?part=${encodeURIComponent(x.statement)}`),
+          title: x.snippet || page,
+          sub: [x.component, `in ${page}`, x.copy].filter(Boolean).join(" · "),
+          kind: "part",
+          chip: x.statement,
+        };
       }),
     ];
     active = 0;
@@ -300,7 +441,8 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
   input.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      if (items.length) select((active + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length);
+      if (items.length)
+        select((active + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length);
     } else if (e.key === "Enter") {
       e.preventDefault();
       const it = items[active];
@@ -346,13 +488,32 @@ export function installNav(hooks: NavHooks): { frameReady(): void; toggleSwitche
     const pages = [...inbox.needs_you, ...inbox.waiting_on_agent].filter((p) => p.unanswered > 0);
     const here = pages.findIndex((p) => p.copies.some((c) => c.id === hooks.id));
     const next = here < 0 ? pages[0] : pages.slice(here + 1).concat(pages.slice(0, here))[0];
-    if (!next) return hooks.flash(here < 0 ? "No page has unanswered notes." : "No other page has unanswered notes.");
+    if (!next)
+      return hooks.flash(
+        here < 0 ? "No page has unanswered notes." : "No other page has unanswered notes.",
+      );
     // The copy with the notes: chips come with unanswered copies first.
     location.href = open(next.copies.find((c) => c.unanswered > 0)?.id ?? next.open_id);
   }
 
-  const goto = h("button", { type: "button", "data-cmd": "goto", title: "Pages and parts of every project (Ctrl/Cmd+K)", onclick: () => setTimeout(show, 0) }, "Go to page…", h("kbd", { class: "nav-kbd", text: "Ctrl K" }));
-  const next = h("button", { type: "button", "data-cmd": "next-unanswered", title: "The next page in the hub's inbox with notes no agent answered", text: "Next page with unanswered notes", onclick: () => void nextUnanswered() });
+  const goto = h(
+    "button",
+    {
+      type: "button",
+      "data-cmd": "goto",
+      title: "Pages and parts of every project (Ctrl/Cmd+K)",
+      onclick: () => setTimeout(show, 0),
+    },
+    "Go to page…",
+    h("kbd", { class: "nav-kbd", text: "Ctrl K" }),
+  );
+  const next = h("button", {
+    type: "button",
+    "data-cmd": "next-unanswered",
+    title: "The next page in the hub's inbox with notes no agent answered",
+    text: "Next page with unanswered notes",
+    onclick: () => void nextUnanswered(),
+  });
   hooks.menu.prepend(goto, next);
 
   return {

@@ -5,11 +5,25 @@
 // fails with SessionInUseError, exit 1 (A14).
 import crypto from "node:crypto";
 import { OK, jsonLine, lines, requireMode, requireSession, str } from "./types.ts";
-import type { Adapter, BuildInput, BuiltCommand, Capabilities, RunOutput, RunResult } from "./types.ts";
+import type {
+  Adapter,
+  BuildInput,
+  BuiltCommand,
+  Capabilities,
+  RunOutput,
+  RunResult,
+} from "./types.ts";
 
-export const COPILOT_NO_FORK = "Copilot CLI has no fork: no flag, and /fork does nothing in print mode";
+export const COPILOT_NO_FORK =
+  "Copilot CLI has no fork: no flag, and /fork does nothing in print mode";
 
-const capabilities: Capabilities = { same: OK, fork: { ok: false, reason: COPILOT_NO_FORK }, new: OK, model: OK, maxCost: OK };
+const capabilities: Capabilities = {
+  same: OK,
+  fork: { ok: false, reason: COPILOT_NO_FORK },
+  new: OK,
+  model: OK,
+  maxCost: OK,
+};
 
 function build(input: BuildInput): BuiltCommand {
   requireMode("copilot", capabilities, input.mode);
@@ -21,9 +35,16 @@ function build(input: BuildInput): BuiltCommand {
     args.push("--session-id", sessionId);
   }
   args.push("--model", input.model || "auto", "--no-ask-user", "--output-format", "json");
-  if (input.limits.maxAiCredits !== undefined) args.push("--max-ai-credits", String(input.limits.maxAiCredits));
+  if (input.limits.maxAiCredits !== undefined)
+    args.push("--max-ai-credits", String(input.limits.maxAiCredits));
   args.push(...input.extraArgs);
-  const built: BuiltCommand = { bin: "copilot", args, env: {}, stdinFile: input.promptFile, cwd: input.cwd };
+  const built: BuiltCommand = {
+    bin: "copilot",
+    args,
+    env: {},
+    stdinFile: input.promptFile,
+    cwd: input.cwd,
+  };
   if (sessionId) built.sessionId = sessionId;
   return built;
 }
@@ -47,7 +68,8 @@ function readResult(out: RunOutput): RunResult {
     if (data && typeof data === "object") id = str((data as Record<string, unknown>).sessionId);
   }
   if (id) result.sessionId = id;
-  if (out.exitCode === 1 && `${out.stderr}\n${out.stdout}`.includes("SessionInUseError")) result.reason = "session_in_use";
+  if (out.exitCode === 1 && `${out.stderr}\n${out.stdout}`.includes("SessionInUseError"))
+    result.reason = "session_in_use";
   return result;
 }
 

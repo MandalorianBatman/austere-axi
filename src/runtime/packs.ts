@@ -37,7 +37,8 @@ export function packsFor(program: string, declared: PackRef[]): WantedPack[] {
   const out: WantedPack[] = [...declared];
   for (const [id, b] of Object.entries(bundledPacks)) {
     if (out.some((p) => p.name === b.name)) continue;
-    if (b.components.some((n) => new RegExp(`\\b${n}\\s*\\(`).test(program))) out.push({ name: b.name, version: b.version, bundled: id });
+    if (b.components.some((n) => new RegExp(`\\b${n}\\s*\\(`).test(program)))
+      out.push({ name: b.name, version: b.version, bundled: id });
   }
   return out;
 }
@@ -56,11 +57,17 @@ export function served(): boolean {
  */
 export function packSource(p: WantedPack): PackSource {
   if (p.bundled) {
-    return { src: assetUrl(`packs/${p.bundled}/pack.js`) || `${CDN}/austere-axi@${p.version}/dist/packs/${p.bundled}/pack.js` };
+    return {
+      src:
+        assetUrl(`packs/${p.bundled}/pack.js`) ||
+        `${CDN}/austere-axi@${p.version}/dist/packs/${p.bundled}/pack.js`,
+    };
   }
   if (served()) {
     const q = p.integrity ? `?integrity=${encodeURIComponent(p.integrity)}` : "";
-    return { src: `${RUNTIME_BASE}installed-packs/${encodeURIComponent(`${p.name}@${p.version}`)}/pack.js${q}` };
+    return {
+      src: `${RUNTIME_BASE}installed-packs/${encodeURIComponent(`${p.name}@${p.version}`)}/pack.js${q}`,
+    };
   }
   return { src: `${CDN}/${p.name}@${p.version}/dist/pack.js`, integrity: p.integrity };
 }
@@ -84,7 +91,10 @@ function loadScript(src: string, integrity: string | undefined): Promise<void> {
  * Load the packs not registered yet (an exported page has them inline).
  * Never rejects: a pack that fails is reported and the page renders without it.
  */
-export async function loadPacks(list: WantedPack[], { onError }: { onError?: (pack: WantedPack, err: Error) => void } = {}): Promise<RegisteredPack[]> {
+export async function loadPacks(
+  list: WantedPack[],
+  { onError }: { onError?: (pack: WantedPack, err: Error) => void } = {},
+): Promise<RegisteredPack[]> {
   const missing = list.filter((p) => !registeredPacks().some((r) => r.name === p.name));
   await Promise.all(
     missing.map((p) => {

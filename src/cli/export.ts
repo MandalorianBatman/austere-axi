@@ -16,7 +16,10 @@ function packedScript(name: string, code: string): string {
 
 /** The scripts an export packed, unpacked, in page order (for tests and `check`). */
 export function packedScripts(html: string): { name: string; code: string }[] {
-  return packedBlocks(html).map((b) => ({ name: b.name, code: zlib.gunzipSync(Buffer.from(b.gzipB64, "base64")).toString("utf8") }));
+  return packedBlocks(html).map((b) => ({
+    name: b.name,
+    code: zlib.gunzipSync(Buffer.from(b.gzipB64, "base64")).toString("utf8"),
+  }));
 }
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -54,7 +57,8 @@ function stringAt(src: string, i: number): Literal | null {
 function skipBlank(src: string, i: number): number {
   for (;;) {
     while (i < src.length && /\s/.test(src[i])) i++;
-    if (src[i] === "#" || (src[i] === "/" && src[i + 1] === "/")) while (i < src.length && src[i] !== "\n") i++;
+    if (src[i] === "#" || (src[i] === "/" && src[i + 1] === "/"))
+      while (i < src.length && src[i] !== "\n") i++;
     else return i;
   }
 }
@@ -114,7 +118,11 @@ function imageSources(src: string): Literal[] {
  * stays as it was and is passed to `warn` with the reason; `export` turns that into a notice,
  * `publish` into an error. Shared so both read sibling images by the same rules.
  */
-export function inlineImages(program: string, dir: string, warn: (src: string, why: string) => void): { program: string; inlined: number } {
+export function inlineImages(
+  program: string,
+  dir: string,
+  warn: (src: string, why: string) => void,
+): { program: string; inlined: number } {
   let out = "";
   let at = 0;
   const inlined = new Set<string>();
@@ -133,7 +141,12 @@ export function inlineImages(program: string, dir: string, warn: (src: string, w
     }
     const sib = resolveSibling(dir, rel, MAX_INLINE_BYTES);
     if (!sib.ok) {
-      const why = { missing: "no such file next to the page", outside: "it is outside the page's folder", hidden: "hidden files are never read", "too-large": "it is over 10 MB" }[sib.reason];
+      const why = {
+        missing: "no such file next to the page",
+        outside: "it is outside the page's folder",
+        hidden: "hidden files are never read",
+        "too-large": "it is over 10 MB",
+      }[sib.reason];
       warn(lit.value, why);
       continue;
     }
@@ -144,7 +157,9 @@ export function inlineImages(program: string, dir: string, warn: (src: string, w
       warn(lit.value, "it cannot be read (permissions?)");
       continue;
     }
-    out += program.slice(at, lit.start) + JSON.stringify(`data:${type};base64,${bytes.toString("base64")}`);
+    out +=
+      program.slice(at, lit.start) +
+      JSON.stringify(`data:${type};base64,${bytes.toString("base64")}`);
     at = lit.end;
     inlined.add(lit.value);
   }
@@ -157,22 +172,35 @@ export function exportHtml(html: string, dir: string): { html: string; notices: 
   const notices: string[] = [];
   if (art.program == null) throw new Error('no <script type="text/openui"> block');
   // Already exported: inlining again would add a second runtime.
-  if (hasInlineRuntime(html)) return { html, notices: ["The page is already an exported copy; it is returned as it is."] };
+  if (hasInlineRuntime(html))
+    return { html, notices: ["The page is already an exported copy; it is returned as it is."] };
   const scripts = [packedScript("austere.js", fs.readFileSync(assetPath("austere.js"), "utf8"))];
   // Packs register with the runtime, so they come after it.
-  for (const p of implicitPacks(art.program)) scripts.push(packedScript(`packs/${p.id}/pack.js`, fs.readFileSync(path.join(p.dir, "pack.js"), "utf8")));
+  for (const p of implicitPacks(art.program))
+    scripts.push(
+      packedScript(`packs/${p.id}/pack.js`, fs.readFileSync(path.join(p.dir, "pack.js"), "utf8")),
+    );
   const packs = pagePacks(html);
-  for (const p of packs.installed) scripts.push(packedScript(`${p.name}@${p.version}`, fs.readFileSync(path.join(p.dir, "pack.js"), "utf8")));
+  for (const p of packs.installed)
+    scripts.push(
+      packedScript(`${p.name}@${p.version}`, fs.readFileSync(path.join(p.dir, "pack.js"), "utf8")),
+    );
   const tags = [...scripts, LOADER_TAG].join("\n");
   for (const p of [...packs.missing, ...packs.mismatched]) {
-    notices.push(`Pack ${p.name}@${p.version} is not installed here, so the exported page loads it from the CDN (needs network).`);
+    notices.push(
+      `Pack ${p.name}@${p.version} is not installed here, so the exported page loads it from the CDN (needs network).`,
+    );
   }
   const seen = new Set<string>();
   const { program: inlined } = inlineImages(art.program, dir, (src, why) => {
-    if (!seen.has(src)) notices.push(`Image "${src}" is not inlined: ${why}. Keep it next to the exported file.`);
+    if (!seen.has(src))
+      notices.push(`Image "${src}" is not inlined: ${why}. Keep it next to the exported file.`);
     seen.add(src);
   });
-  const withImages = inlined === art.program ? html : html.slice(0, art.programStart) + inlined + html.slice(art.programEnd);
+  const withImages =
+    inlined === art.program
+      ? html
+      : html.slice(0, art.programStart) + inlined + html.slice(art.programEnd);
   // Function replacement: the bundles contain "$&"-like sequences.
   return { html: rewriteRuntime(withImages, () => tags), notices };
 }

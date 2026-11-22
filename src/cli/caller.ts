@@ -38,8 +38,14 @@ export function parseSessionOverride(value: string): Caller {
   const at = value.indexOf(":");
   const harness = at > 0 ? value.slice(0, at) : "";
   const id = at > 0 ? value.slice(at + 1) : "";
-  if (!isHarness(harness)) throw new Error(`--session takes <harness>:<id> with a harness of ${CALLER_HARNESSES.join(", ")}; got "${value}"`);
-  if (!SESSION_ID.test(id)) throw new Error(`--session ${harness}:<id>: the id must be letters, digits, '.', '_' or '-' (at most 128); got "${id}"`);
+  if (!isHarness(harness))
+    throw new Error(
+      `--session takes <harness>:<id> with a harness of ${CALLER_HARNESSES.join(", ")}; got "${value}"`,
+    );
+  if (!SESSION_ID.test(id))
+    throw new Error(
+      `--session ${harness}:<id>: the id must be letters, digits, '.', '_' or '-' (at most 128); got "${id}"`,
+    );
   return { harness, sessionId: id };
 }
 
@@ -49,7 +55,12 @@ export function parseSessionOverride(value: string): Caller {
  * variables), the nearest harness among this process's parents wins, else the first in
  * CALLER_HARNESSES order. Null when nothing is set.
  */
-export function detectCaller(env: NodeJS.ProcessEnv, override?: string, table: ProcessTable | null = systemProcessTable(), startPid = process.ppid): Caller | null {
+export function detectCaller(
+  env: NodeJS.ProcessEnv,
+  override?: string,
+  table: ProcessTable | null = systemProcessTable(),
+  startPid = process.ppid,
+): Caller | null {
   if (override !== undefined) return parseSessionOverride(override);
   const found: Caller[] = [];
   for (const harness of CALLER_HARNESSES) {
@@ -60,7 +71,11 @@ export function detectCaller(env: NodeJS.ProcessEnv, override?: string, table: P
     found.push(file ? { harness, sessionId: id, sessionFile: file } : { harness, sessionId: id });
   }
   if (found.length < 2 || !table) return found[0] ?? null;
-  const nearest = findHarnessProcess(found.map((c) => c.harness), table, startPid);
+  const nearest = findHarnessProcess(
+    found.map((c) => c.harness),
+    table,
+    startPid,
+  );
   return found.find((c) => c.harness === nearest?.harness) ?? found[0];
 }
 
@@ -109,7 +124,10 @@ export function procfsTable(root = "/proc"): ProcessTable {
         start,
         argv: () => {
           try {
-            return fs.readFileSync(path.join(root, String(pid), "cmdline"), "utf8").split("\0").filter(Boolean);
+            return fs
+              .readFileSync(path.join(root, String(pid), "cmdline"), "utf8")
+              .split("\0")
+              .filter(Boolean);
           } catch {
             return [];
           }
@@ -125,7 +143,13 @@ export type PsRunner = (args: string[]) => string | null;
 function runPs(args: string[]): string | null {
   try {
     // lstart is printed in the locale and time zone of the environment: one fixed form, so every caller's string compares equal.
-    return execFileSync("ps", args, { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, stdio: ["ignore", "pipe", "ignore"], timeout: 2000, windowsHide: true });
+    return execFileSync("ps", args, {
+      encoding: "utf8",
+      env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
+      windowsHide: true,
+    });
   } catch (err) {
     // `ps -p` exits 1 when no process matched; a timeout or a missing `ps` says nothing about the process.
     return err instanceof Error && "status" in err && err.status === 1 ? "" : null;
@@ -147,7 +171,8 @@ export function psTable(run: PsRunner = runPs): ProcessTable {
         ppid: Number(m[1]),
         comm: m[3],
         start: m[2].replace(/\s+/g, " "),
-        argv: () => (run(["-o", "args=", "-p", String(pid)]) || "").trim().split(/\s+/).filter(Boolean),
+        argv: () =>
+          (run(["-o", "args=", "-p", String(pid)]) || "").trim().split(/\s+/).filter(Boolean),
       };
     },
   };
@@ -156,7 +181,12 @@ export function psTable(run: PsRunner = runPs): ProcessTable {
 /** The process table of this OS: procfs on Linux, `ps` on macOS and the BSDs, none on Windows (liveness is unknown there). */
 export function systemProcessTable(): ProcessTable | null {
   if (process.platform === "linux") return procfsTable();
-  if (process.platform === "darwin" || process.platform === "freebsd" || process.platform === "openbsd") return psTable();
+  if (
+    process.platform === "darwin" ||
+    process.platform === "freebsd" ||
+    process.platform === "openbsd"
+  )
+    return psTable();
   return null;
 }
 
@@ -174,7 +204,10 @@ export function isHarnessProcess(p: ProcInfo, harness: CallerHarness): boolean {
   if (name === harness) return true;
   if (!INTERPRETERS.has(name)) return false;
   const script = p.argv()[1];
-  return !!script && script.split(/[\\/]/).some((seg) => seg.replace(/\.(m?js|cjs|ts|sh)$/, "") === harness);
+  return (
+    !!script &&
+    script.split(/[\\/]/).some((seg) => seg.replace(/\.(m?js|cjs|ts|sh)$/, "") === harness)
+  );
 }
 
 /** A harness process found among the parents. */
@@ -185,9 +218,13 @@ export interface HarnessProcess {
 }
 
 /** The nearest parent of `startPid` (itself included) that is one of `harnesses`; null when none is, or the walk cannot read on. */
-export function findHarnessProcess(harnesses: readonly CallerHarness[], table: ProcessTable, startPid = process.ppid): HarnessProcess | null {
+export function findHarnessProcess(
+  harnesses: readonly CallerHarness[],
+  table: ProcessTable,
+  startPid = process.ppid,
+): HarnessProcess | null {
   const seen = new Set<number>();
-  for (let pid = startPid; pid > 0 && !seen.has(pid) && seen.size < 64; ) {
+  for (let pid = startPid; pid > 0 && !seen.has(pid) && seen.size < 64;) {
     seen.add(pid);
     const p = table.info(pid);
     if (!p || p === "unreadable") return null;
@@ -199,7 +236,11 @@ export function findHarnessProcess(harnesses: readonly CallerHarness[], table: P
 }
 
 /** The caller's harness process, for liveness; null when it is not among this process's parents or the OS has no table. */
-export function callerProcess(caller: Caller, table: ProcessTable | null = systemProcessTable(), startPid = process.ppid): HarnessProcess | null {
+export function callerProcess(
+  caller: Caller,
+  table: ProcessTable | null = systemProcessTable(),
+  startPid = process.ppid,
+): HarnessProcess | null {
   return table ? findHarnessProcess([caller.harness], table, startPid) : null;
 }
 
@@ -210,7 +251,11 @@ export type Liveness = "alive" | "exited" | "unknown";
  * pid is another process now); `unknown`: no pid was recorded, no process table here, or the table
  * could not tell (a resume must not start on a session that may still be open).
  */
-export function processLiveness(pid: number | null, start: string | null, table: ProcessTable | null = systemProcessTable()): Liveness {
+export function processLiveness(
+  pid: number | null,
+  start: string | null,
+  table: ProcessTable | null = systemProcessTable(),
+): Liveness {
   if (pid == null || !start || !table) return "unknown";
   const p = table.info(pid);
   if (p === "unreadable") return "unknown";

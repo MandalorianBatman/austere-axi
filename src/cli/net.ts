@@ -30,11 +30,15 @@ function tailscaleOff(): boolean {
 
 function run(bin: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: 2500, windowsHide: true }, (err, stdout) => resolve(err ? null : stdout));
+    execFile(bin, args, { timeout: 2500, windowsHide: true }, (err, stdout) =>
+      resolve(err ? null : stdout),
+    );
   });
 }
 
-export async function detectTailscale({ fresh = false }: { fresh?: boolean } = {}): Promise<Tailnet | null> {
+export async function detectTailscale({
+  fresh = false,
+}: { fresh?: boolean } = {}): Promise<Tailnet | null> {
   if (tailscaleOff()) return null;
   if (!fresh && Date.now() - cache.at < 30_000) return cache.value;
   let value: Tailnet | null = null;
@@ -78,7 +82,12 @@ export interface TailscalePerson {
 
 /** The parts of `tailscale whois --json <ip>` read here. */
 interface TailscaleWhois {
-  Node?: { Name?: string; ComputedName?: string; Tags?: string[] | null; Hostinfo?: { Hostname?: string } };
+  Node?: {
+    Name?: string;
+    ComputedName?: string;
+    Tags?: string[] | null;
+    Hostinfo?: { Hostname?: string };
+  };
   UserProfile?: { LoginName?: string; DisplayName?: string };
 }
 
@@ -96,10 +105,22 @@ export function parseWhois(out: string | null): TailscalePerson | null {
     return null;
   }
   if (!j || typeof j !== "object" || j.Node?.Tags?.length) return null;
-  const login = String(j.UserProfile?.LoginName || "").trim().slice(0, 200);
+  const login = String(j.UserProfile?.LoginName || "")
+    .trim()
+    .slice(0, 200);
   if (!login || login === "tagged-devices") return null;
-  const name = String(j.UserProfile?.DisplayName || "").trim().slice(0, 200) || login;
-  const device = String(j.Node?.ComputedName || j.Node?.Hostinfo?.Hostname || String(j.Node?.Name || "").split(".")[0] || "").trim().slice(0, 200);
+  const name =
+    String(j.UserProfile?.DisplayName || "")
+      .trim()
+      .slice(0, 200) || login;
+  const device = String(
+    j.Node?.ComputedName ||
+      j.Node?.Hostinfo?.Hostname ||
+      String(j.Node?.Name || "").split(".")[0] ||
+      "",
+  )
+    .trim()
+    .slice(0, 200);
   return { login, name, device };
 }
 
@@ -147,7 +168,9 @@ export interface LanAddress {
  * The addresses this machine has on local networks: not loopback, not Tailscale's, not
  * link-local IPv6 (which needs a zone to be reached). The local-network listener binds to one of these only.
  */
-export function lanAddresses(interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): LanAddress[] {
+export function lanAddresses(
+  interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces(),
+): LanAddress[] {
   const out: LanAddress[] = [];
   for (const [iface, list] of Object.entries(interfaces)) {
     if (/^tailscale/i.test(iface)) continue;
@@ -164,7 +187,8 @@ export function lanAddresses(interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> 
 export function allowedHosts(extra: (string | null | undefined)[] = []): Set<string> {
   const set = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
   for (const h of extra) if (h) set.add(h.toLowerCase());
-  for (const h of String(process.env.AUSTERE_AXI_ALLOWED_HOSTS || "").split(/\s+/)) if (h) set.add(h.toLowerCase());
+  for (const h of String(process.env.AUSTERE_AXI_ALLOWED_HOSTS || "").split(/\s+/))
+    if (h) set.add(h.toLowerCase());
   return set;
 }
 
@@ -173,19 +197,27 @@ export function allowedHosts(extra: (string | null | undefined)[] = []): Set<str
  * them, so a CLI that replaces the server starts the new one with the same ones, not with
  * whatever its own caller's environment says (RLM-311).
  */
-export const ADDRESS_ENV = { linkUrl: "AUSTERE_AXI_LINK_URL", linkHost: "AUSTERE_AXI_LINK_HOST", allowedHosts: "AUSTERE_AXI_ALLOWED_HOSTS" } as const;
+export const ADDRESS_ENV = {
+  linkUrl: "AUSTERE_AXI_LINK_URL",
+  linkHost: "AUSTERE_AXI_LINK_HOST",
+  allowedHosts: "AUSTERE_AXI_ALLOWED_HOSTS",
+} as const;
 
 /** The ADDRESS_ENV values a server runs with; a key is missing when its variable is unset. */
 export type AddressSettings = { -readonly [K in keyof typeof ADDRESS_ENV]?: string };
 
 export function addressSettings(env: NodeJS.ProcessEnv = process.env): AddressSettings {
   const out: AddressSettings = {};
-  for (const [key, name] of Object.entries(ADDRESS_ENV) as [keyof AddressSettings, string][]) if (env[name]) out[key] = env[name];
+  for (const [key, name] of Object.entries(ADDRESS_ENV) as [keyof AddressSettings, string][])
+    if (env[name]) out[key] = env[name];
   return out;
 }
 
 /** `env` with the ADDRESS_ENV variables set to `settings`: each one the settings lack is removed. */
-export function withAddressSettings(env: NodeJS.ProcessEnv, settings: AddressSettings): NodeJS.ProcessEnv {
+export function withAddressSettings(
+  env: NodeJS.ProcessEnv,
+  settings: AddressSettings,
+): NodeJS.ProcessEnv {
   const out = { ...env };
   for (const [key, name] of Object.entries(ADDRESS_ENV) as [keyof AddressSettings, string][]) {
     const value = settings[key];
@@ -215,12 +247,19 @@ export function parseLinkUrl(value: string): { base: string; host: string } | nu
   } catch {
     throw new Error(`AUSTERE_AXI_LINK_URL is not a URL: ${raw}`);
   }
-  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error(`AUSTERE_AXI_LINK_URL must be http or https: ${raw}`);
-  if (u.pathname !== "/" || u.search || u.hash || u.username || u.password) throw new Error(`AUSTERE_AXI_LINK_URL must be just scheme, host and optional port, like https://austere.example.com: ${raw}`);
+  if (u.protocol !== "http:" && u.protocol !== "https:")
+    throw new Error(`AUSTERE_AXI_LINK_URL must be http or https: ${raw}`);
+  if (u.pathname !== "/" || u.search || u.hash || u.username || u.password)
+    throw new Error(
+      `AUSTERE_AXI_LINK_URL must be just scheme, host and optional port, like https://austere.example.com: ${raw}`,
+    );
   // A host name of letters, digits, dots, hyphens and underscores (an IDN is already punycode here),
   // or a bracketed IPv6 address. WHATWG URL keeps `$`, backticks, `&` and `;` in a host; the url goes
   // into a unit and into commands printed for the owner to paste, where a shell would run them.
-  if (!/^(?:[a-z0-9._-]+|\[[0-9a-f:.]+\])$/i.test(u.hostname)) throw new Error(`AUSTERE_AXI_LINK_URL host may hold only letters, digits, dots, hyphens and underscores: ${raw}`);
+  if (!/^(?:[a-z0-9._-]+|\[[0-9a-f:.]+\])$/i.test(u.hostname))
+    throw new Error(
+      `AUSTERE_AXI_LINK_URL host may hold only letters, digits, dots, hyphens and underscores: ${raw}`,
+    );
   return { base: u.origin, host: u.hostname.toLowerCase() };
 }
 

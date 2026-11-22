@@ -18,7 +18,13 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { freePort } from "./port.ts";
 import { cloudOn, ownerHeaders } from "./owner.ts";
-import { SUBPROTOCOL, SYNC_VERSION, grantId, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
+import {
+  SUBPROTOCOL,
+  SYNC_VERSION,
+  grantId,
+  parseClientFrame,
+  readProtocols,
+} from "../src/shared/sync.ts";
 import type { AclRow, MutationArgs, PageRow, ServerFrame, SyncError } from "../src/shared/sync.ts";
 import { format } from "../src/cli/output.ts";
 
@@ -30,18 +36,34 @@ process.env.AUSTERE_AXI_STATE_DIR = STATE;
 const { bundlePage } = await import("../src/cli/cloud.ts");
 const { VERSION } = await import("../src/cli/paths.ts");
 
-const BASE_ENV = { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" };
-const RUNTIME_TAG = '<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>';
+const BASE_ENV = {
+  ...process.env,
+  AUSTERE_AXI_NO_TAILSCALE: "1",
+  AUSTERE_AXI_NO_OPEN: "1",
+  OPENUI_TELEMETRY_DISABLED: "1",
+};
+const RUNTIME_TAG =
+  '<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script>';
 const page = (program: string, head = "") =>
   `<!doctype html><html><head><meta charset="utf-8"><title>Plan</title>\n${head}${RUNTIME_TAG}</head>\n<body><script type="text/openui">\n${program}\n</script></body></html>\n`;
 const sha256 = (data: string | Buffer) => crypto.createHash("sha256").update(data).digest("hex");
 const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64url");
 /** The signed-in account's access token: the CLI reads only `exp` (no refresh within the test run); the stub takes it as the owner. */
 const ACCESS = `${b64({ alg: "RS256", kid: "k" })}.${b64({ sub: "user_ana", exp: Math.floor(Date.now() / 1000) + 86400 })}.sig`;
-const ACCOUNT = { clientId: "client_test", apiBase: "http://127.0.0.1:9", accessToken: ACCESS, refreshToken: "rt_unused", user: { id: "user_ana", email: "ana@example.com", name: "Ana" } };
+const ACCOUNT = {
+  clientId: "client_test",
+  apiBase: "http://127.0.0.1:9",
+  accessToken: ACCESS,
+  refreshToken: "rt_unused",
+  user: { id: "user_ana", email: "ana@example.com", name: "Ana" },
+};
 /** Sign a state dir in, as `cloud login` leaves cloud.json (RLM-432: every owner command needs the account). */
 const signIn = (state: string, extra: Record<string, unknown> = {}) =>
-  fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: CLOUD, account: ACCOUNT, pages: {}, ...extra }), { mode: 0o600 });
+  fs.writeFileSync(
+    path.join(state, "cloud.json"),
+    JSON.stringify({ url: CLOUD, account: ACCOUNT, pages: {}, ...extra }),
+    { mode: 0o600 },
+  );
 
 // ── stub service ──
 
@@ -84,7 +106,10 @@ const stub = {
 };
 let CLOUD = "";
 let server: http.Server;
-const wss = new WebSocketServer({ noServer: true, handleProtocols: (protocols) => (protocols.has(SUBPROTOCOL) ? SUBPROTOCOL : false) });
+const wss = new WebSocketServer({
+  noServer: true,
+  handleProtocols: (protocols) => (protocols.has(SUBPROTOCOL) ? SUBPROTOCOL : false),
+});
 
 const json = (res: http.ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { "content-type": "application/json" });
@@ -93,7 +118,9 @@ const json = (res: http.ServerResponse, status: number, body: unknown) => {
 
 function refuse(socket: Duplex, status: number, code: string, message: string) {
   const body = JSON.stringify({ error: { code, message } });
-  socket.end(`HTTP/1.1 ${status} ${http.STATUS_CODES[status]}\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`);
+  socket.end(
+    `HTTP/1.1 ${status} ${http.STATUS_CODES[status]}\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`,
+  );
 }
 
 function send(ws: WebSocket, frame: ServerFrame | Record<string, unknown>) {
@@ -107,7 +134,8 @@ function ownerSocket(ws: WebSocket, id: string) {
     const parsed = parseClientFrame(data.toString());
     if (!parsed.ok) {
       stub.requests.push(`ws invalid: ${parsed.error.message}`);
-      if (parsed.key) return send(ws, { v: SYNC_VERSION, t: "ack", ...parsed.key, error: parsed.error });
+      if (parsed.key)
+        return send(ws, { v: SYNC_VERSION, t: "ack", ...parsed.key, error: parsed.error });
       return send(ws, { v: SYNC_VERSION, t: "error", ...parsed.error });
     }
     const f = parsed.value;
@@ -166,18 +194,38 @@ function ownerSocket(ws: WebSocket, id: string) {
     }
     if (f.name === "revoke") {
       const a = p.acl.get((f.args as MutationArgs["revoke"]).name);
-      if (!a) return send(ws, { ...ack, error: { code: "invalid", message: `invite ${(f.args as MutationArgs["revoke"]).name} does not exist` } });
+      if (!a)
+        return send(ws, {
+          ...ack,
+          error: {
+            code: "invalid",
+            message: `invite ${(f.args as MutationArgs["revoke"]).name} does not exist`,
+          },
+        });
       a.row = { ...a.row, revoked: true, seq: ++stub.seq };
       return send(ws, ack);
     }
     if (f.name === "publish") {
       const args = f.args as MutationArgs["publish"];
       for (const sha of [args.html, ...args.packs.map((x) => x.sha256)]) {
-        if (!stub.objects.has(sha)) return send(ws, { ...ack, error: { code: "invalid", message: `object ${sha} was not uploaded` } });
+        if (!stub.objects.has(sha))
+          return send(ws, {
+            ...ack,
+            error: { code: "invalid", message: `object ${sha} was not uploaded` },
+          });
       }
       stub.publishes.push(args);
       const now = Date.now();
-      p.row = { v: SYNC_VERSION, type: "page", id, seq: ++stub.seq, ...args, publishedAt: now, expiresAt: now + 30 * 86400000, deleted: false };
+      p.row = {
+        v: SYNC_VERSION,
+        type: "page",
+        id,
+        seq: ++stub.seq,
+        ...args,
+        publishedAt: now,
+        expiresAt: now + 30 * 86400000,
+        deleted: false,
+      };
       send(ws, ack);
       if (stub.closeAfterAck) ws.close(1001);
       stub.closeAfterAck = false;
@@ -198,7 +246,9 @@ before(async () => {
     req.on("end", () => {
       const url = req.url ?? "";
       const raw = Buffer.concat(chunks);
-      stub.wire.push(`${req.method} ${url} ${JSON.stringify(req.headers)} ${(req.headers["content-encoding"] === "gzip" ? zlib.gunzipSync(raw) : raw).toString("utf8")}`);
+      stub.wire.push(
+        `${req.method} ${url} ${JSON.stringify(req.headers)} ${(req.headers["content-encoding"] === "gzip" ? zlib.gunzipSync(raw) : raw).toString("utf8")}`,
+      );
       stub.requests.push(`${req.method} ${url}`);
       if (stub.fail) {
         const { status, error } = stub.fail;
@@ -225,7 +275,13 @@ before(async () => {
       if (req.method === "GET" && url === "/api/pages") {
         const pages = [...stub.pages]
           .filter(([, p]) => p.owner === auth && p.row)
-          .map(([id, p]) => ({ id, title: p.row?.title, url: `${CLOUD}/p/${id}`, expiresAt: p.row?.expiresAt, notes: p.notes }));
+          .map(([id, p]) => ({
+            id,
+            title: p.row?.title,
+            url: `${CLOUD}/p/${id}`,
+            expiresAt: p.row?.expiresAt,
+            notes: p.notes,
+          }));
         return json(res, 200, { pages });
       }
       const login = /^\/api\/pages\/([^/]+)\/login$/.exec(url);
@@ -248,10 +304,12 @@ before(async () => {
       stub.refuse = null;
       return refuse(socket, r.status, r.code, r.message);
     }
-    if (!m || !creds.sync || u.searchParams.get("cli") !== VERSION) return refuse(socket, 426, "upgrade_required", "offer austere-sync.1 and ?cli=");
+    if (!m || !creds.sync || u.searchParams.get("cli") !== VERSION)
+      return refuse(socket, 426, "upgrade_required", "offer austere-sync.1 and ?cli=");
     const p = stub.pages.get(m[1]);
     const owner = /^Bearer (\S+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "";
-    if (!stub.owners.has(owner)) return refuse(socket, 403, "forbidden", "owner credential required");
+    if (!stub.owners.has(owner))
+      return refuse(socket, 403, "forbidden", "owner credential required");
     if (!p || p.owner !== owner) return refuse(socket, 404, "invalid", "page not found");
     wss.handleUpgrade(req, socket, head, (ws) => ownerSocket(ws, m[1]));
   });
@@ -282,7 +340,10 @@ beforeEach(() => {
   stub.regrantBeforePull = null;
 });
 
-function cli(args: string[], env: Record<string, string> = {}): Promise<{ code: number | null; out: string }> {
+function cli(
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ["src/cli/main.ts", ...args], {
       env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_CLOUD_URL: CLOUD, ...env },
@@ -298,9 +359,19 @@ interface CloudJson {
   url: string;
   token?: string;
   account: { accessToken: string } | null;
-  pages: Record<string, { id: string; auto: boolean; unlisted: boolean; presence: boolean; invites: Record<string, { token: string; expiresAt: number | null }> }>;
+  pages: Record<
+    string,
+    {
+      id: string;
+      auto: boolean;
+      unlisted: boolean;
+      presence: boolean;
+      invites: Record<string, { token: string; expiresAt: number | null }>;
+    }
+  >;
 }
-const cloudState = (): CloudJson => JSON.parse(fs.readFileSync(path.join(STATE, "cloud.json"), "utf8"));
+const cloudState = (): CloudJson =>
+  JSON.parse(fs.readFileSync(path.join(STATE, "cloud.json"), "utf8"));
 /** A top-level output field, unquoted: a Windows path has backslashes, so the output JSON-quotes it. */
 const field = (out: string, name: string) => {
   const v = new RegExp(`^${name}: (.*)$`, "m").exec(out)?.[1];
@@ -320,8 +391,14 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   assert.equal(r.code, 0, r.out);
   assert.equal(field(r.out, "status"), "published");
   assert.equal(field(r.out, "mode"), "hold");
-  assert.match(field(r.out, "expires") ?? "", /^\d{4}-\d\d-\d\d \d\d:\d\d$/, "expiry comes from the page row");
-  const html = fs.readFileSync(file, "utf8").replace(RUNTIME_TAG, `<script src="/rt/${VERSION}/austere.js"></script>`);
+  assert.match(
+    field(r.out, "expires") ?? "",
+    /^\d{4}-\d\d-\d\d \d\d:\d\d$/,
+    "expiry comes from the page row",
+  );
+  const html = fs
+    .readFileSync(file, "utf8")
+    .replace(RUNTIME_TAG, `<script src="/rt/${VERSION}/austere.js"></script>`);
   const first = cloudState();
   const id = first.pages[abs].id;
   assert.deepEqual(stub.requests, [
@@ -331,17 +408,42 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
     "ws publish",
     "ws pull 0",
   ]);
-  assert.equal(stub.objects.get(sha256(html))?.data.toString(), html, "only the runtime tag changes");
+  assert.equal(
+    stub.objects.get(sha256(html))?.data.toString(),
+    html,
+    "only the runtime tag changes",
+  );
   assert.match(stub.objects.get(sha256(html))?.type ?? "", /^text\/html/);
-  assert.deepEqual(stub.publishes, [{ title: "Plan", cliVersion: VERSION, html: sha256(html), packs: [], auto: false, unlisted: false, presence: true }]);
+  assert.deepEqual(stub.publishes, [
+    {
+      title: "Plan",
+      cliVersion: VERSION,
+      html: sha256(html),
+      packs: [],
+      auto: false,
+      unlisted: false,
+      presence: true,
+    },
+  ]);
   assert.equal(field(r.out, "id"), id);
-  assert.equal(field(r.out, "url"), undefined, "an invite-only page has no link to hand out without an invite");
+  assert.equal(
+    field(r.out, "url"),
+    undefined,
+    "an invite-only page has no link to hand out without an invite",
+  );
   assert.equal(field(r.out, "access"), "invite-only");
   assert.match(r.out, /Nobody can open this page yet: add --invite <name>, or --unlisted/);
   assert.equal(first.url, CLOUD);
   assert.equal(first.account?.accessToken, ACCESS, "the account stays as login left it");
-  assert.deepEqual(first.pages[abs], { id, auto: false, unlisted: false, presence: true, invites: {} });
-  if (process.platform !== "win32") assert.equal(fs.statSync(path.join(STATE, "cloud.json")).mode & 0o777, 0o600);
+  assert.deepEqual(first.pages[abs], {
+    id,
+    auto: false,
+    unlisted: false,
+    presence: true,
+    invites: {},
+  });
+  if (process.platform !== "win32")
+    assert.equal(fs.statSync(path.join(STATE, "cloud.json")).mode & 0o777, 0o600);
 
   // Republish: same id, no new page, the same credential on the socket.
   stub.requests.length = 0;
@@ -355,7 +457,13 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   assert.equal(stub.publishes.at(-1)?.auto, true);
   assert.equal(stub.publishes.at(-1)?.presence, false);
   assert.match(field(r.out, "next") ?? "", /--auto --no-presence again/);
-  assert.deepEqual(cloudState().pages[abs], { id, auto: true, unlisted: false, presence: false, invites: {} });
+  assert.deepEqual(cloudState().pages[abs], {
+    id,
+    auto: true,
+    unlisted: false,
+    presence: false,
+    invites: {},
+  });
 
   // --new: a fresh page, and the file now maps to it.
   r = await cli(["publish", file, "--new"]);
@@ -413,16 +521,26 @@ test("service errors print the service's message: HTTP, handshake and mutation a
   assert.ok(r.out.includes("answered 413: object is 2000000 bytes; the limit is 1048576"), r.out);
   assert.match(r.out, /http: 413/);
 
-  stub.refuse = { status: 426, code: "upgrade_required", message: "austere-axi 0.0.1 is below MIN_CLI_VERSION 9.9.9" };
+  stub.refuse = {
+    status: 426,
+    code: "upgrade_required",
+    message: "austere-axi 0.0.1 is below MIN_CLI_VERSION 9.9.9",
+  };
   r = await cli(["publish", file]);
   assert.equal(r.code, 1);
-  assert.ok(r.out.includes("answered 426: austere-axi 0.0.1 is below MIN_CLI_VERSION 9.9.9"), r.out);
+  assert.ok(
+    r.out.includes("answered 426: austere-axi 0.0.1 is below MIN_CLI_VERSION 9.9.9"),
+    r.out,
+  );
   assert.match(r.out, /code: upgrade_required/);
 
   stub.ackError = { code: "rate_limited", message: "20 publishes a day", retryAfter: 3600 };
   r = await cli(["publish", file]);
   assert.equal(r.code, 1);
-  assert.ok(r.out.includes("rejected publish: rate_limited: 20 publishes a day (retry after 3600s)"), r.out);
+  assert.ok(
+    r.out.includes("rejected publish: rate_limited: 20 publishes a day (retry after 3600s)"),
+    r.out,
+  );
 });
 
 test("a socket lost after the publish ack still records the page, without an expiry", async () => {
@@ -435,13 +553,20 @@ test("a socket lost after the publish ack still records the page, without an exp
   assert.equal(field(r.out, "expires"), undefined);
   const id = cloudState().pages[fs.realpathSync(file)].id;
   r = await cli(["publish", file]);
-  assert.equal(field(r.out, "status"), "updated", "the next publish reuses the page instead of making another");
+  assert.equal(
+    field(r.out, "status"),
+    "updated",
+    "the next publish reuses the page instead of making another",
+  );
   assert.equal(field(r.out, "id"), id);
 });
 
 test("an account for another service URL is not sent there", async () => {
   const state = tmp("austere-publish-other-");
-  fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: "https://elsewhere.test", account: ACCOUNT, pages: {} }));
+  fs.writeFileSync(
+    path.join(state, "cloud.json"),
+    JSON.stringify({ url: "https://elsewhere.test", account: ACCOUNT, pages: {} }),
+  );
   cloudOn(state);
   try {
     const r = await cli(["publish", "list"], { AUSTERE_AXI_STATE_DIR: state });
@@ -458,7 +583,10 @@ test("a page that cannot be bundled fails before any request", async () => {
   fs.writeFileSync(file, page('root = Image("x", "nope.png")'));
   const r = await cli(["publish", file]);
   assert.equal(r.code, 1);
-  assert.match(r.out, /images the hosted page could not show: nope\.png \(no such file next to the page\)/);
+  assert.match(
+    r.out,
+    /images the hosted page could not show: nope\.png \(no such file next to the page\)/,
+  );
   assert.deepEqual(stub.requests, []);
 });
 
@@ -468,7 +596,9 @@ test("session ids stay on this machine: nothing publish sends carries the agent 
   const file = path.join(WORK, "session.html");
   fs.writeFileSync(file, page('root = Stack([intro])\nintro = TextContent("hello")'));
   const patched = await new Promise<string>((resolve) => {
-    const child = spawn(process.execPath, ["src/cli/main.ts", "patch", file], { env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: STATE, ...env } });
+    const child = spawn(process.execPath, ["src/cli/main.ts", "patch", file], {
+      env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: STATE, ...env },
+    });
     let out = "";
     child.stdout.on("data", (c: Buffer) => (out += c));
     child.on("close", () => resolve(out));
@@ -477,14 +607,25 @@ test("session ids stay on this machine: nothing publish sends carries the agent 
   assert.match(patched, /^session: omp 6789ab registered$/m);
   const db = new DatabaseSync(path.join(STATE, "hub.db"), { readOnly: true });
   try {
-    assert.equal((db.prepare("SELECT count(*) AS n FROM agent_sessions WHERE session_id = ?").get(sid) as { n: number }).n, 1, "the session is registered here");
+    assert.equal(
+      (
+        db.prepare("SELECT count(*) AS n FROM agent_sessions WHERE session_id = ?").get(sid) as {
+          n: number;
+        }
+      ).n,
+      1,
+      "the session is registered here",
+    );
   } finally {
     db.close();
   }
 
   const r = await cli(["publish", file, "--invite", "Ana"], env);
   assert.equal(r.code, 0, r.out);
-  assert.ok(stub.wire.some((w) => w.includes("patched")), "the page itself went out");
+  assert.ok(
+    stub.wire.some((w) => w.includes("patched")),
+    "the page itself went out",
+  );
   for (const secret of [sid, "6789ab", env.PI_SESSION_FILE]) {
     assert.ok(!stub.wire.some((w) => w.includes(secret)), `${secret} reached the service`);
     assert.ok(!r.out.includes(secret), `${secret} is in the printed links`);
@@ -512,7 +653,10 @@ test("--invite grants each name on the publish socket and prints its own link; t
   let r = await cli(["publish", file, "--invite", "Ana", "--invite", "Ben", "--expires", "7d"]);
   assert.equal(r.code, 0, r.out);
   const id = cloudState().pages[abs].id;
-  assert.deepEqual(stub.requests.filter((x) => x.startsWith("ws")), ["ws publish", "ws grant", "ws grant", "ws pull 0"]);
+  assert.deepEqual(
+    stub.requests.filter((x) => x.startsWith("ws")),
+    ["ws publish", "ws grant", "ws grant", "ws pull 0"],
+  );
   assert.equal(field(r.out, "access"), "invite-only");
   assert.doesNotMatch(r.out, /Nobody can open/);
   const first = links(r.out);
@@ -537,7 +681,10 @@ test("--invite grants each name on the publish socket and prints its own link; t
   assert.ok(cloudState().pages[abs].invites.Ana.expiresAt! > Date.now());
   stub.requests.length = 0;
   r = await cli(["publish", file]);
-  assert.deepEqual(stub.requests.filter((x) => x.startsWith("ws")), ["ws publish", "ws pull 0"]);
+  assert.deepEqual(
+    stub.requests.filter((x) => x.startsWith("ws")),
+    ["ws publish", "ws pull 0"],
+  );
   assert.doesNotMatch(r.out, /Nobody can open/, "earlier invites still open it");
 
   // invites: both live, with this machine's links.
@@ -581,7 +728,10 @@ test("publish login prints the page's single-use owner sign-in link; an unpublis
   let r = await cli(["publish", "login", file]);
   assert.equal(r.code, 1);
   assert.match(r.out, /has not been published from this machine/);
-  assert.ok(!stub.requests.some((x) => x.includes("/login")), "nothing is asked before the page is published");
+  assert.ok(
+    !stub.requests.some((x) => x.includes("/login")),
+    "nothing is asked before the page is published",
+  );
 
   assert.equal((await cli(["publish", file])).code, 0);
   const id = cloudState().pages[fs.realpathSync(file)].id;
@@ -612,13 +762,19 @@ test("invite flags are checked before any request; a failed grant still records 
     assert.match(r.out, msg);
   }
   assert.deepEqual(stub.requests, []);
-  assert.match((await cli(["publish", "invites", file])).out, /has not been published from this machine/);
+  assert.match(
+    (await cli(["publish", "invites", file])).out,
+    /has not been published from this machine/,
+  );
 
   stub.ackError = { code: "invalid", message: "grant.tokenHash belongs to another invite" };
   stub.ackErrorOn = "grant";
   let r = await cli(["publish", file, "--invite", "Ana"]);
   assert.equal(r.code, 1);
-  assert.ok(r.out.includes("rejected grant Ana: invalid: grant.tokenHash belongs to another invite"), r.out);
+  assert.ok(
+    r.out.includes("rejected grant Ana: invalid: grant.tokenHash belongs to another invite"),
+    r.out,
+  );
   const id = cloudState().pages[fs.realpathSync(file)].id;
   r = await cli(["publish", file, "--invite", "Ana"]);
   assert.equal(r.code, 0, r.out);
@@ -633,11 +789,23 @@ test("invite edge cases: special names keep their link, missing sources can stil
   const emoji = "😀".repeat(20); // 40 UTF-16 units: the limit
 
   // "__proto__" and "constructor" are names like any other: saved, and re-sent with the same link.
-  let r = await cli(["publish", file, "--invite", "__proto__", "--invite", "constructor", "--invite", emoji]);
+  let r = await cli([
+    "publish",
+    file,
+    "--invite",
+    "__proto__",
+    "--invite",
+    "constructor",
+    "--invite",
+    emoji,
+  ]);
   assert.equal(r.code, 0, r.out);
   const first = links(r.out);
   assert.deepEqual(Object.keys(first), ["__proto__", "constructor", emoji]);
-  assert.deepEqual(Object.keys(cloudState().pages[abs].invites).sort(), ["__proto__", "constructor", emoji].sort());
+  assert.deepEqual(
+    Object.keys(cloudState().pages[abs].invites).sort(),
+    ["__proto__", "constructor", emoji].sort(),
+  );
   r = await cli(["publish", file, "--invite", "__proto__", "--invite", "constructor"]);
   assert.equal(r.code, 0, r.out);
   // Entries, not object literals: `{ __proto__: … }` would set a prototype instead of a key.
@@ -650,7 +818,15 @@ test("invite edge cases: special names keep their link, missing sources can stil
 
   // Another machine re-grants "constructor" (a new token): this machine no longer shows its old link.
   const other = acl.get("constructor")!;
-  acl.set("constructor", { row: { ...other.row, grantedAt: other.row.grantedAt + 1, grant: "x".repeat(16), seq: ++stub.seq }, tokenHash: "x".repeat(43) });
+  acl.set("constructor", {
+    row: {
+      ...other.row,
+      grantedAt: other.row.grantedAt + 1,
+      grant: "x".repeat(16),
+      seq: ++stub.seq,
+    },
+    tokenHash: "x".repeat(43),
+  });
   r = await cli(["publish", "invites", file]);
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(Object.entries(links(r.out)).sort(), [
@@ -689,7 +865,11 @@ test("invites: the link shows only for the token the name has now, also when row
   const ana = links(r.out).Ana;
   const id = cloudState().pages[fs.realpathSync(file)].id;
   const acl = stub.pages.get(id)!.acl;
-  assert.equal(acl.get("Ana")!.row.grant, grantId(acl.get("Ana")!.tokenHash), "the row names its token by a hash prefix");
+  assert.equal(
+    acl.get("Ana")!.row.grant,
+    grantId(acl.get("Ana")!.tokenHash),
+    "the row names its token by a hash prefix",
+  );
 
   // Ben new, but the socket drops before the rows come back: the link is still the live one.
   stub.closeBeforePull = true;
@@ -708,10 +888,16 @@ test("invites: the link shows only for the token the name has now, also when row
   // Output values are JSON-quoted when they hold quotes or backslashes (a Windows path does): decode before matching.
   const raw = /- name: Ana\n\s+status: live\n\s+note: (.*)\n/.exec(r.out)?.[1] ?? "";
   const note = raw.startsWith('"') ? (JSON.parse(raw) as string) : raw;
-  const again = /^granted again from another machine, which has the link; austere-axi publish (.+) --auto --unlisted --invite Ana makes this machine's link the live one again/.exec(note);
+  const again =
+    /^granted again from another machine, which has the link; austere-axi publish (.+) --auto --unlisted --invite Ana makes this machine's link the live one again/.exec(
+      note,
+    );
   assert.ok(again, note);
   assert.match(again[1], /grant-id\.html"?$/);
-  assert.match(field(r.out, "next") ?? "", /grant-id\.html"? --auto --unlisted --invite <name> adds one/);
+  assert.match(
+    field(r.out, "next") ?? "",
+    /grant-id\.html"? --auto --unlisted --invite <name> adds one/,
+  );
 });
 
 test("a pull cut off after the page row leaves the invite count unknown: no false nobody-can-open warning", async () => {
@@ -725,26 +911,30 @@ test("a pull cut off after the page row leaves the invite count unknown: no fals
   assert.doesNotMatch(r.out, /Nobody can open/);
 });
 
-test("revoke and invites find a deleted file published through a symlinked folder", { skip: process.platform === "win32" && "symlinks need privileges" }, async () => {
-  const real = fs.mkdtempSync(path.join(os.tmpdir(), "austere-publish-real-"));
-  const link = path.join(WORK, `linked-${process.pid}`);
-  fs.symlinkSync(real, link, "dir");
-  try {
-    const file = path.join(link, "plan.html");
-    fs.writeFileSync(file, page('root = TextContent("x")'));
-    assert.equal((await cli(["publish", file, "--invite", "Ana"])).code, 0);
-    fs.rmSync(path.join(real, "plan.html"));
-    let r = await cli(["publish", "invites", file]);
-    assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /- name: Ana\n\s+status: live/);
-    r = await cli(["publish", "revoke", file, "Ana"]);
-    assert.equal(r.code, 0, r.out);
-    assert.equal(field(r.out, "status"), "revoked");
-  } finally {
-    fs.rmSync(link, { force: true });
-    fs.rmSync(real, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-  }
-});
+test(
+  "revoke and invites find a deleted file published through a symlinked folder",
+  { skip: process.platform === "win32" && "symlinks need privileges" },
+  async () => {
+    const real = fs.mkdtempSync(path.join(os.tmpdir(), "austere-publish-real-"));
+    const link = path.join(WORK, `linked-${process.pid}`);
+    fs.symlinkSync(real, link, "dir");
+    try {
+      const file = path.join(link, "plan.html");
+      fs.writeFileSync(file, page('root = TextContent("x")'));
+      assert.equal((await cli(["publish", file, "--invite", "Ana"])).code, 0);
+      fs.rmSync(path.join(real, "plan.html"));
+      let r = await cli(["publish", "invites", file]);
+      assert.equal(r.code, 0, r.out);
+      assert.match(r.out, /- name: Ana\n\s+status: live/);
+      r = await cli(["publish", "revoke", file, "Ana"]);
+      assert.equal(r.code, 0, r.out);
+      assert.equal(field(r.out, "status"), "revoked");
+    } finally {
+      fs.rmSync(link, { force: true });
+      fs.rmSync(real, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    }
+  },
+);
 
 // ── bundling ──
 
@@ -753,7 +943,10 @@ test("bundling: bundled packs get /rt/ tags after the runtime; relative images a
   fs.mkdirSync(path.join(WORK, "img"), { recursive: true });
   fs.writeFileSync(path.join(WORK, "img", "shot.png"), png);
   const abs = path.join(WORK, "flow.html");
-  const out = bundlePage(abs, page('root = Stack([i, p])\ni = Image("Shot", "img/shot.png")\np = Progress(40)'));
+  const out = bundlePage(
+    abs,
+    page('root = Stack([i, p])\ni = Image("Shot", "img/shot.png")\np = Progress(40)'),
+  );
   const tags = [...out.html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(tags, [`/rt/${VERSION}/austere.js`, `/rt/${VERSION}/packs/shadcn.js`]);
   assert.ok(out.html.includes(`Image("Shot", "data:image/png;base64,${png.toString("base64")}")`));
@@ -761,12 +954,19 @@ test("bundling: bundled packs get /rt/ tags after the runtime; relative images a
   assert.equal(out.sha256, sha256(out.html));
   assert.equal(out.title, "Plan");
 
-  assert.throws(() => bundlePage(abs, page('root = Image("x", "../outside.png")')), /outside the page's folder/);
-  assert.throws(() => bundlePage(abs, page('root = Image("x", "img/.hidden.png")')), /hidden files/);
+  assert.throws(
+    () => bundlePage(abs, page('root = Image("x", "../outside.png")')),
+    /outside the page's folder/,
+  );
+  assert.throws(
+    () => bundlePage(abs, page('root = Image("x", "img/.hidden.png")')),
+    /hidden files/,
+  );
   assert.throws(() => bundlePage(abs, page('root = Image("x", "img/none.png")')), /no such file/);
 
   // Path-like text that is not an Image src stays text.
-  const text = 'root = Stack([t, c])\nt = FileTree(["img/shot.png", "src/missing.png"])\nc = CodeBlock("js", "Image(\\"x\\", \\"./logo.svg\\")")';
+  const text =
+    'root = Stack([t, c])\nt = FileTree(["img/shot.png", "src/missing.png"])\nc = CodeBlock("js", "Image(\\"x\\", \\"./logo.svg\\")")';
   assert.equal(bundlePage(abs, page(text)).images, 0);
 
   // A symlink beside the page that leads out of its folder is refused, as the local server refuses to serve it.
@@ -775,7 +975,10 @@ test("bundling: bundled packs get /rt/ tags after the runtime; relative images a
     fs.writeFileSync(secret, "SECRET");
     fs.symlinkSync(secret, path.join(WORK, "img", "leak.png"));
     try {
-      assert.throws(() => bundlePage(abs, page('root = Image("x", "img/leak.png")')), /outside the page's folder/);
+      assert.throws(
+        () => bundlePage(abs, page('root = Image("x", "img/leak.png")')),
+        /outside the page's folder/,
+      );
     } finally {
       fs.rmSync(secret, { force: true });
     }
@@ -787,19 +990,55 @@ test("bundling: installed packs are objects named by SHA-256 and tagged /pk/; mi
   const dir = path.join(STATE, "packs", "@acme+charts@1.2.0");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "pack.js"), code);
-  fs.writeFileSync(path.join(dir, "catalog.json"), JSON.stringify({ format: 1, pack: "@acme/charts", version: "1.2.0", groups: [], components: [] }));
-  fs.writeFileSync(path.join(STATE, "packs.json"), JSON.stringify({ format: 1, packs: { "@acme/charts": { version: "1.2.0", integrity: "sha384-x", source: "folder" } } }));
+  fs.writeFileSync(
+    path.join(dir, "catalog.json"),
+    JSON.stringify({
+      format: 1,
+      pack: "@acme/charts",
+      version: "1.2.0",
+      groups: [],
+      components: [],
+    }),
+  );
+  fs.writeFileSync(
+    path.join(STATE, "packs.json"),
+    JSON.stringify({
+      format: 1,
+      packs: { "@acme/charts": { version: "1.2.0", integrity: "sha384-x", source: "folder" } },
+    }),
+  );
   try {
     const meta = (spec: string) => `<meta name="austere-packs" content="${spec}">\n`;
-    const out = bundlePage(path.join(WORK, "c.html"), page('root = TextContent("x")', meta("@acme/charts@1.2.0 sha384-x")));
-    assert.deepEqual(out.packs, [{ sha256: sha256(code), name: "@acme/charts", version: "1.2.0", code }]);
-    assert.ok(out.html.includes(`<script src="/rt/${VERSION}/austere.js"></script>\n<script src="/pk/${sha256(code)}.js"></script>`));
-    assert.ok(out.html.includes(meta("@acme/charts@1.2.0 sha384-x").trim()), "the page's declaration stays");
+    const out = bundlePage(
+      path.join(WORK, "c.html"),
+      page('root = TextContent("x")', meta("@acme/charts@1.2.0 sha384-x")),
+    );
+    assert.deepEqual(out.packs, [
+      { sha256: sha256(code), name: "@acme/charts", version: "1.2.0", code },
+    ]);
+    assert.ok(
+      out.html.includes(
+        `<script src="/rt/${VERSION}/austere.js"></script>\n<script src="/pk/${sha256(code)}.js"></script>`,
+      ),
+    );
+    assert.ok(
+      out.html.includes(meta("@acme/charts@1.2.0 sha384-x").trim()),
+      "the page's declaration stays",
+    );
 
     const x = 'root = TextContent("x")';
-    assert.throws(() => bundlePage("/x.html", page(x, meta("@acme/other@1.0.0"))), /@acme\/other@1\.0\.0 is not installed/);
-    assert.throws(() => bundlePage("/x.html", page(x, meta("@acme/charts@2.0.0"))), /1\.2\.0 is installed/);
-    assert.throws(() => bundlePage("/x.html", page(x, meta("@acme/charts@1.2.0 sha384-other"))), /does not match the page's hash/);
+    assert.throws(
+      () => bundlePage("/x.html", page(x, meta("@acme/other@1.0.0"))),
+      /@acme\/other@1\.0\.0 is not installed/,
+    );
+    assert.throws(
+      () => bundlePage("/x.html", page(x, meta("@acme/charts@2.0.0"))),
+      /1\.2\.0 is installed/,
+    );
+    assert.throws(
+      () => bundlePage("/x.html", page(x, meta("@acme/charts@1.2.0 sha384-other"))),
+      /does not match the page's hash/,
+    );
   } finally {
     fs.rmSync(path.join(STATE, "packs"), { recursive: true, force: true });
     fs.rmSync(path.join(STATE, "packs.json"), { force: true });
@@ -814,7 +1053,12 @@ test("poll and feedback make no request to the service when nothing is published
   const port = await freePort();
   const file = path.join(WORK, "quiet.html");
   fs.writeFileSync(file, page('root = TextContent("x")'));
-  const env = { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port), AUSTERE_AXI_CLOUD_URL: CLOUD };
+  const env = {
+    ...BASE_ENV,
+    AUSTERE_AXI_STATE_DIR: state,
+    AUSTERE_AXI_PORT: String(port),
+    AUSTERE_AXI_CLOUD_URL: CLOUD,
+  };
   const run = (...args: string[]) =>
     new Promise<{ code: number | null; out: string }>((resolve) => {
       const child = spawn(process.execPath, ["src/cli/main.ts", ...args], { env });
@@ -828,7 +1072,12 @@ test("poll and feedback make no request to the service when nothing is published
     const id = (/\/s\/([\w-]+)/.exec(r.out) as RegExpExecArray)[1];
     const sent = await fetch(`http://127.0.0.1:${port}/s/${id}/send`, {
       method: "POST",
-      headers: { ...ownerHeaders(state), host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/json" },
+      headers: {
+        ...ownerHeaders(state),
+        host: `127.0.0.1:${port}`,
+        origin: `http://127.0.0.1:${port}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ items: [{ kind: "message", text: "hi" }] }),
     });
     assert.equal(sent.status, 200);
@@ -849,7 +1098,8 @@ test("cloud off (the default): publish and clone refuse before any request, and 
   const port = await freePort();
   const file = path.join(WORK, "off.html");
   fs.writeFileSync(file, page('root = TextContent("x")'));
-  const run = (...args: string[]) => cli(args, { AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) });
+  const run = (...args: string[]) =>
+    cli(args, { AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) });
   try {
     for (const args of [["publish", file], ["clone"], ["cloud", "whoami"]]) {
       const r = await run(...args);
@@ -862,7 +1112,11 @@ test("cloud off (the default): publish and clone refuse before any request, and 
     let r = await run("cloud", "on");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /cloud: on/);
-    assert.match(r.out, /^next: austere-axi cloud login$/m, "on but not signed in: cloud on names the next step");
+    assert.match(
+      r.out,
+      /^next: austere-axi cloud login$/m,
+      "on but not signed in: cloud on names the next step",
+    );
     signIn(state);
     r = await run("publish", file);
     assert.equal(r.code, 0, r.out);
@@ -883,7 +1137,10 @@ test("cloud off (the default): publish and clone refuse before any request, and 
     await run("cloud", "on");
     r = await run("feedback", file, "--all");
     assert.equal(r.code, 0, r.out);
-    assert.ok((stub.requests as string[]).some((q) => q.startsWith("ws pull")), stub.requests.join("\n"));
+    assert.ok(
+      (stub.requests as string[]).some((q) => q.startsWith("ws pull")),
+      stub.requests.join("\n"),
+    );
   } finally {
     await run("stop");
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -900,33 +1157,65 @@ test("not signed in: every owner command refuses before any request, a pre-0.17 
     // Cloud off: help shows the sign-in line; `cloud login` itself then says to turn cloud on.
     let r = await run("--help");
     assert.doesNotMatch(r.out, /austere-axi publish/);
-    assert.match(r.out, /austere-axi cloud login +sign in to share pages, only when the user asks$/m);
+    assert.match(
+      r.out,
+      /austere-axi cloud login +sign in to share pages, only when the user asks$/m,
+    );
 
     // Cloud on, with only an owner token from an older version: still not signed in.
     cloudOn(state);
     const entry = { id: "p".repeat(22), auto: false, unlisted: false, presence: true, invites: {} };
-    fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: CLOUD, token: "t".repeat(43), pages: { [abs]: entry } }), { mode: 0o600 });
+    fs.writeFileSync(
+      path.join(state, "cloud.json"),
+      JSON.stringify({ url: CLOUD, token: "t".repeat(43), pages: { [abs]: entry } }),
+      { mode: 0o600 },
+    );
     r = await run("--help");
     assert.doesNotMatch(r.out, /austere-axi publish/);
-    assert.match(r.out, /austere-axi cloud login +sign in to share pages, only when the user asks$/m);
+    assert.match(
+      r.out,
+      /austere-axi cloud login +sign in to share pages, only when the user asks$/m,
+    );
     r = await run("help", "all");
     assert.doesNotMatch(r.out, /^ {2}austere-axi (publish|clone)\b/m);
     assert.match(r.out, /^ {2}austere-axi cloud on/m);
     r = await run("publish", "--help");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /NOT SIGNED IN\n {2}publish needs the hosted service's account on this machine: austere-axi cloud login/);
+    assert.match(
+      r.out,
+      /NOT SIGNED IN\n {2}publish needs the hosted service's account on this machine: austere-axi cloud login/,
+    );
 
-    const owner = [["publish", file], ["publish", file, "--invite", "Ana"], ["publish", "list"], ["publish", "invites", file], ["publish", "revoke", file, "Ana"], ["publish", "login", file], ["publish", "rm", file], ["publish", "rm", entry.id], ["clone"], ["clone", entry.id, path.join(WORK, "anon-clone.html")]];
+    const owner = [
+      ["publish", file],
+      ["publish", file, "--invite", "Ana"],
+      ["publish", "list"],
+      ["publish", "invites", file],
+      ["publish", "revoke", file, "Ana"],
+      ["publish", "login", file],
+      ["publish", "rm", file],
+      ["publish", "rm", entry.id],
+      ["clone"],
+      ["clone", entry.id, path.join(WORK, "anon-clone.html")],
+    ];
     for (const args of owner) {
       r = await run(...args);
       assert.equal(r.code, 1, `${args.join(" ")}: ${r.out}`);
-      assert.match(r.out, /not signed in to the hosted service: run `austere-axi cloud login` first/, args.join(" "));
+      assert.match(
+        r.out,
+        /not signed in to the hosted service: run `austere-axi cloud login` first/,
+        args.join(" "),
+      );
       assert.match(r.out, /^code: login_required$/m, args.join(" "));
       assert.match(r.out, /^next: austere-axi cloud login$/m, args.join(" "));
     }
     assert.deepEqual(stub.requests, [], "nothing reaches the service, not even POST /api/owners");
     assert.equal(fs.existsSync(path.join(WORK, "anon-clone.html")), false);
-    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(state, "cloud.json"), "utf8")), { url: CLOUD, token: "t".repeat(43), pages: { [abs]: entry } }, "cloud.json is left alone");
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(path.join(state, "cloud.json"), "utf8")),
+      { url: CLOUD, token: "t".repeat(43), pages: { [abs]: entry } },
+      "cloud.json is left alone",
+    );
 
     // Signed in: publish and clone are back in help.
     signIn(state, { pages: { [abs]: entry } });

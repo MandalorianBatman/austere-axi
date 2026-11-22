@@ -23,8 +23,25 @@ import { CDN_RUNTIME_URL, readArtifact, rewriteRuntime } from "./artifact.ts";
 import { inlineImages } from "./export.ts";
 import { VERSION, msEnv, stateDir } from "./paths.ts";
 import { bundledPacks, implicitPacks, pagePacks } from "./packs.ts";
-import { LIMITS, SYNC_VERSION, grantId, mutation, parseServerFrame, syncProtocols } from "../shared/sync.ts";
-import type { AclRow, MutationArgs, MutationName, PackRef, PageRow, PullFrame, ReceivedFrame, Row, SyncError } from "../shared/sync.ts";
+import {
+  LIMITS,
+  SYNC_VERSION,
+  grantId,
+  mutation,
+  parseServerFrame,
+  syncProtocols,
+} from "../shared/sync.ts";
+import type {
+  AclRow,
+  MutationArgs,
+  MutationName,
+  PackRef,
+  PageRow,
+  PullFrame,
+  ReceivedFrame,
+  Row,
+  SyncError,
+} from "../shared/sync.ts";
 
 export const DEFAULT_CLOUD_URL = "https://austere.blundertech.com";
 
@@ -81,11 +98,26 @@ export interface CloudState {
 /** `owner` of a pre-0.17 file whose pages an anonymous owner token published: no account holds them. */
 const ANONYMOUS = "(anonymous)";
 
-const str = (o: object, k: string): string | null => (k in o && typeof (o as Record<string, unknown>)[k] === "string" ? ((o as Record<string, unknown>)[k] as string) : null);
+const str = (o: object, k: string): string | null =>
+  k in o && typeof (o as Record<string, unknown>)[k] === "string"
+    ? ((o as Record<string, unknown>)[k] as string)
+    : null;
 
 function accountOf(raw: unknown): Account | null {
-  if (!raw || typeof raw !== "object" || !("user" in raw) || !raw.user || typeof raw.user !== "object") return null;
-  const [clientId, apiBase, accessToken, refreshToken] = ["clientId", "apiBase", "accessToken", "refreshToken"].map((k) => str(raw, k));
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    !("user" in raw) ||
+    !raw.user ||
+    typeof raw.user !== "object"
+  )
+    return null;
+  const [clientId, apiBase, accessToken, refreshToken] = [
+    "clientId",
+    "apiBase",
+    "accessToken",
+    "refreshToken",
+  ].map((k) => str(raw, k));
   const [id, email, name] = ["id", "email", "name"].map((k) => str(raw.user as object, k));
   if (!clientId || !apiBase || !accessToken || !refreshToken || !id || !email) return null;
   return { clientId, apiBase, accessToken, refreshToken, user: { id, email, name: name ?? "" } };
@@ -114,7 +146,14 @@ export function readCloud(): CloudState {
     const invites: Record<string, InviteEntry> = Object.create(null);
     const raw = "invites" in e && e.invites && typeof e.invites === "object" ? e.invites : {};
     for (const [name, i] of Object.entries(raw)) {
-      if (!i || typeof i !== "object" || !("token" in i) || typeof i.token !== "string" || !INVITE_TOKEN_RE.test(i.token)) continue;
+      if (
+        !i ||
+        typeof i !== "object" ||
+        !("token" in i) ||
+        typeof i.token !== "string" ||
+        !INVITE_TOKEN_RE.test(i.token)
+      )
+        continue;
       const expiresAt = "expiresAt" in i && typeof i.expiresAt === "number" ? i.expiresAt : null;
       invites[name] = { token: i.token, expiresAt };
     }
@@ -159,7 +198,8 @@ async function withCloudLock<T>(fn: () => Promise<T>): Promise<T> {
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
       const age = Date.now() - (fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs ?? Date.now());
       if (age > 30_000) fs.rmSync(dir, { recursive: true, force: true });
-      else if (Date.now() > deadline) throw new CloudError(`${dir} is held by another austere-axi; remove it if none is running`);
+      else if (Date.now() > deadline)
+        throw new CloudError(`${dir} is held by another austere-axi; remove it if none is running`);
       else await sleep(50);
     }
   }
@@ -223,11 +263,17 @@ export const CLOUD_OFF = "cloud_off";
 /** CloudError.code when this machine is not signed in to the hosted service. */
 export const LOGIN_REQUIRED = "login_required";
 
-const NOT_SIGNED_IN = "not signed in to the hosted service: run `austere-axi cloud login` first (once per machine), then try again";
+const NOT_SIGNED_IN =
+  "not signed in to the hosted service: run `austere-axi cloud login` first (once per machine), then try again";
 
 /** Every request and socket to the service goes through here first. */
 function requireCloud(): void {
-  if (!cloudEnabled()) throw new CloudError("cloud features are off, so only local review works: turn them on in Settings → Cloud, or run `austere-axi cloud on`", undefined, CLOUD_OFF);
+  if (!cloudEnabled())
+    throw new CloudError(
+      "cloud features are off, so only local review works: turn them on in Settings → Cloud, or run `austere-axi cloud on`",
+      undefined,
+      CLOUD_OFF,
+    );
 }
 
 /** The state for the current service URL. A credential belongs to one service, so another URL is an error, not a silent mix. */
@@ -283,30 +329,60 @@ export function bundlePage(abs: string, html: string, version = VERSION): Bundle
   const bundledNames = new Set(bundledPacks().map((p) => p.name));
   const pp = pagePacks(html);
   const problems = [
-    ...pp.missing.filter((p) => !bundledNames.has(p.name)).map((p) => `${p.name}@${p.version} is not installed (austere-axi components add ${p.name}@${p.version})`),
-    ...pp.mismatched.map((p) => `${p.name}@${p.version} is declared, but ${p.installedVersion} is installed (austere-axi check --fix)`),
-    ...pp.stale.map((p) => `${p.name}@${p.version}: the installed build does not match the page's hash (austere-axi check --fix)`),
+    ...pp.missing
+      .filter((p) => !bundledNames.has(p.name))
+      .map(
+        (p) =>
+          `${p.name}@${p.version} is not installed (austere-axi components add ${p.name}@${p.version})`,
+      ),
+    ...pp.mismatched.map(
+      (p) =>
+        `${p.name}@${p.version} is declared, but ${p.installedVersion} is installed (austere-axi check --fix)`,
+    ),
+    ...pp.stale.map(
+      (p) =>
+        `${p.name}@${p.version}: the installed build does not match the page's hash (austere-axi check --fix)`,
+    ),
   ];
-  if (problems.length) throw new CloudError(`the hosted page cannot load its packs from a CDN: ${problems.join("; ")}`);
+  if (problems.length)
+    throw new CloudError(
+      `the hosted page cannot load its packs from a CDN: ${problems.join("; ")}`,
+    );
 
   // A hosted page has no folder to read images from: an image that cannot be inlined is an error.
   const skipped: string[] = [];
-  const images = inlineImages(art.program, path.dirname(abs), (src, why) => skipped.push(`${src} (${why})`));
-  if (skipped.length) throw new CloudError(`images the hosted page could not show: ${[...new Set(skipped)].join("; ")}`);
+  const images = inlineImages(art.program, path.dirname(abs), (src, why) =>
+    skipped.push(`${src} (${why})`),
+  );
+  if (skipped.length)
+    throw new CloudError(
+      `images the hosted page could not show: ${[...new Set(skipped)].join("; ")}`,
+    );
   const withImages = html.slice(0, art.programStart) + images.program + html.slice(art.programEnd);
 
   // The runtime, then packs: they register with it. Bundled packs need a tag because the
   // service allow-lists /rt/<v>/packs/<id>.js, not the runtime's own packs/<id>/pack.js.
   const rt = `/rt/${version}`;
-  const srcs = [`${rt}/austere.js`, ...implicitPacks(art.program).map((p) => `${rt}/packs/${p.id}.js`)];
+  const srcs = [
+    `${rt}/austere.js`,
+    ...implicitPacks(art.program).map((p) => `${rt}/packs/${p.id}.js`),
+  ];
   const packs = pp.installed.map((p) => {
     const code = fs.readFileSync(path.join(p.dir, "pack.js"), "utf8");
     return { sha256: sha256Hex(code), name: p.name, version: p.version, code };
   });
   for (const p of packs) srcs.push(`/pk/${p.sha256}.js`);
 
-  const out = rewriteRuntime(withImages, () => srcs.map((src) => `<script src="${src}"></script>`).join("\n"));
-  return { html: out, sha256: sha256Hex(out), title: art.title || path.basename(abs), packs, images: images.inlined };
+  const out = rewriteRuntime(withImages, () =>
+    srcs.map((src) => `<script src="${src}"></script>`).join("\n"),
+  );
+  return {
+    html: out,
+    sha256: sha256Hex(out),
+    title: art.title || path.basename(abs),
+    packs,
+    images: images.inlined,
+  };
 }
 
 // ── HTTP ──
@@ -321,8 +397,16 @@ function errorOf(text: string, fallback: string): { message: string; code?: stri
   }
   const error = data && typeof data === "object" && "error" in data ? data.error : undefined;
   if (typeof error === "string") return { message: error };
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
-    return { message: error.message, code: "code" in error && typeof error.code === "string" ? error.code : undefined };
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return {
+      message: error.message,
+      code: "code" in error && typeof error.code === "string" ? error.code : undefined,
+    };
   }
   return { message: text.trim().slice(0, 200) || fallback };
 }
@@ -336,8 +420,16 @@ interface CallOptions {
   text?: boolean;
 }
 
-async function call<T>(base: string, method: string, route: string, opts: CallOptions = {}): Promise<T | null> {
-  const headers: Record<string, string> = { accept: "application/json", "user-agent": `austere-axi/${VERSION}` };
+async function call<T>(
+  base: string,
+  method: string,
+  route: string,
+  opts: CallOptions = {},
+): Promise<T | null> {
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "user-agent": `austere-axi/${VERSION}`,
+  };
   if (opts.token) headers.authorization = `Bearer ${opts.token}`;
   let payload: BodyInit | undefined;
   if (opts.json !== undefined) {
@@ -377,7 +469,9 @@ const REFRESH_MARGIN_S = 60;
 
 function tokenExp(jwt: string): number {
   try {
-    const exp: unknown = JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString("utf8")).exp;
+    const exp: unknown = JSON.parse(
+      Buffer.from(jwt.split(".")[1], "base64url").toString("utf8"),
+    ).exp;
     return typeof exp === "number" ? exp : 0;
   } catch {
     return 0;
@@ -387,13 +481,21 @@ function tokenExp(jwt: string): number {
 const fresh = (a: Account) => tokenExp(a.accessToken) - REFRESH_MARGIN_S > Date.now() / 1000;
 
 /** A WorkOS answer: the JSON body, with its `error` code on a refusal. */
-async function workos(apiBase: string, route: string, form: Record<string, string>): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+async function workos(
+  apiBase: string,
+  route: string,
+  form: Record<string, string>,
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
   requireCloud();
   let res: Response;
   try {
     res = await fetch(apiBase + route, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json", "user-agent": `austere-axi/${VERSION}` },
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        accept: "application/json",
+        "user-agent": `austere-axi/${VERSION}`,
+      },
       body: new URLSearchParams(form),
       redirect: "error",
     });
@@ -413,7 +515,11 @@ function accountFrom(clientId: string, apiBase: string, data: Record<string, unk
     apiBase,
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
-    user: { id: u.id, email: u.email, name: [u.first_name, u.last_name].filter((s) => typeof s === "string" && s).join(" ") },
+    user: {
+      id: u.id,
+      email: u.email,
+      name: [u.first_name, u.last_name].filter((s) => typeof s === "string" && s).join(" "),
+    },
   });
   if (!account) throw new CloudError(`${apiBase} answered without tokens or a user`);
   return account;
@@ -432,14 +538,25 @@ export async function credential(state: CloudState): Promise<string> {
     if (!cur) throw new CloudError(NOT_SIGNED_IN, undefined, LOGIN_REQUIRED);
     state.account = cur;
     if (fresh(cur)) return cur.accessToken;
-    const r = await workos(cur.apiBase, "/user_management/authenticate", { grant_type: "refresh_token", refresh_token: cur.refreshToken, client_id: cur.clientId });
+    const r = await workos(cur.apiBase, "/user_management/authenticate", {
+      grant_type: "refresh_token",
+      refresh_token: cur.refreshToken,
+      client_id: cur.clientId,
+    });
     if (!r.ok) {
       if (r.data.error === "invalid_grant") {
         saveAccount(null);
         state.account = null;
-        throw new CloudError("the austere account session has ended (signed out elsewhere, or expired): run austere-axi cloud login", 401, "invalid_grant");
+        throw new CloudError(
+          "the austere account session has ended (signed out elsewhere, or expired): run austere-axi cloud login",
+          401,
+          "invalid_grant",
+        );
       }
-      throw new CloudError(`${cur.apiBase} refused the refresh (${r.status}${typeof r.data.error === "string" ? `: ${r.data.error}` : ""}); try again`, r.status);
+      throw new CloudError(
+        `${cur.apiBase} refused the refresh (${r.status}${typeof r.data.error === "string" ? `: ${r.data.error}` : ""}); try again`,
+        r.status,
+      );
     }
     const next = accountFrom(cur.clientId, cur.apiBase, r.data);
     saveAccount(next);
@@ -474,37 +591,67 @@ export async function login(prompt: (p: DevicePrompt) => void | Promise<void>): 
   stateFor(base); // cloud on, and no account of another service here
   const config = await call<{ clientId?: unknown; apiBase?: unknown }>(base, "GET", "/auth/config");
   const clientId = typeof config?.clientId === "string" ? config.clientId : "";
-  const apiBase = typeof config?.apiBase === "string" && /^https?:\/\//.test(config.apiBase) ? config.apiBase.replace(/\/+$/, "") : "";
+  const apiBase =
+    typeof config?.apiBase === "string" && /^https?:\/\//.test(config.apiBase)
+      ? config.apiBase.replace(/\/+$/, "")
+      : "";
   if (!clientId || !apiBase) throw new CloudError(`${base} did not say how to sign in`);
 
   const start = await workos(apiBase, "/user_management/authorize/device", { client_id: clientId });
   const d = start.data;
-  if (!start.ok || typeof d.device_code !== "string" || typeof d.user_code !== "string" || typeof d.verification_uri !== "string") {
-    throw new CloudError(`${apiBase} did not start the sign-in (${start.status}${typeof d.error === "string" ? `: ${d.error}` : ""})`);
+  if (
+    !start.ok ||
+    typeof d.device_code !== "string" ||
+    typeof d.user_code !== "string" ||
+    typeof d.verification_uri !== "string"
+  ) {
+    throw new CloudError(
+      `${apiBase} did not start the sign-in (${start.status}${typeof d.error === "string" ? `: ${d.error}` : ""})`,
+    );
   }
   const expiresIn = typeof d.expires_in === "number" ? d.expires_in : 300;
   await prompt({
     userCode: d.user_code,
     verificationUri: d.verification_uri,
-    verificationUriComplete: typeof d.verification_uri_complete === "string" ? d.verification_uri_complete : d.verification_uri,
+    verificationUriComplete:
+      typeof d.verification_uri_complete === "string"
+        ? d.verification_uri_complete
+        : d.verification_uri,
     expiresIn,
   });
 
   // RFC 8628: poll every `interval` seconds; `slow_down` adds 5 s. The env override is for tests.
-  let wait = msEnv("AUSTERE_AXI_DEVICE_POLL_MS", (typeof d.interval === "number" ? d.interval : 5) * 1000);
+  let wait = msEnv(
+    "AUSTERE_AXI_DEVICE_POLL_MS",
+    (typeof d.interval === "number" ? d.interval : 5) * 1000,
+  );
   const step = msEnv("AUSTERE_AXI_DEVICE_POLL_MS", 5000);
   const deadline = Date.now() + expiresIn * 1000;
   let account: Account | null = null;
   while (!account) {
-    if (Date.now() > deadline) throw new CloudError("the sign-in code expired before it was approved: run austere-axi cloud login again");
+    if (Date.now() > deadline)
+      throw new CloudError(
+        "the sign-in code expired before it was approved: run austere-axi cloud login again",
+      );
     await sleep(wait);
-    const r = await workos(apiBase, "/user_management/authenticate", { grant_type: "urn:ietf:params:oauth:grant-type:device_code", device_code: d.device_code, client_id: clientId });
+    const r = await workos(apiBase, "/user_management/authenticate", {
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      device_code: d.device_code,
+      client_id: clientId,
+    });
     if (r.ok) account = accountFrom(clientId, apiBase, r.data);
     else if (r.data.error === "authorization_pending") continue;
     else if (r.data.error === "slow_down") wait += step;
-    else if (r.data.error === "access_denied") throw new CloudError("the sign-in was denied in the browser");
-    else if (r.data.error === "expired_token") throw new CloudError("the sign-in code expired before it was approved: run austere-axi cloud login again");
-    else throw new CloudError(`${apiBase} refused the sign-in (${r.status}${typeof r.data.error === "string" ? `: ${r.data.error}` : ""})`);
+    else if (r.data.error === "access_denied")
+      throw new CloudError("the sign-in was denied in the browser");
+    else if (r.data.error === "expired_token")
+      throw new CloudError(
+        "the sign-in code expired before it was approved: run austere-axi cloud login again",
+      );
+    else
+      throw new CloudError(
+        `${apiBase} refused the sign-in (${r.status}${typeof r.data.error === "string" ? `: ${r.data.error}` : ""})`,
+      );
   }
   let forgotten = 0;
   await withCloudLock(async () => {
@@ -532,9 +679,19 @@ export async function whoami(): Promise<{ email: string; name: string; pages: nu
   const base = cloudUrl();
   const state = stateFor(base);
   if (!state.account) return null;
-  const me = await call<{ user?: { email?: unknown; name?: unknown } | null; pages?: unknown }>(base, "GET", "/api/me", { token: await credential(state) });
-  if (!me?.user || typeof me.user.email !== "string") throw new CloudError(`${base} did not recognise the account`);
-  return { email: me.user.email, name: typeof me.user.name === "string" ? me.user.name : "", pages: typeof me.pages === "number" ? me.pages : 0 };
+  const me = await call<{ user?: { email?: unknown; name?: unknown } | null; pages?: unknown }>(
+    base,
+    "GET",
+    "/api/me",
+    { token: await credential(state) },
+  );
+  if (!me?.user || typeof me.user.email !== "string")
+    throw new CloudError(`${base} did not recognise the account`);
+  return {
+    email: me.user.email,
+    name: typeof me.user.name === "string" ? me.user.name : "",
+    pages: typeof me.pages === "number" ? me.pages : 0,
+  };
 }
 
 // ── owner socket ──
@@ -554,7 +711,11 @@ export function ownerSocket(base: string, credential: string, id: string): WebSo
  * Calls `done` when the handshake is refused: a plain HTTP response with its status and
  * `{ error: { code, message } }`, and `retryAfter` (seconds) from a 429's Retry-After.
  */
-export function onRefusal(ws: WebSocket, base: string, done: (err: CloudError, retryAfter?: number) => void): void {
+export function onRefusal(
+  ws: WebSocket,
+  base: string,
+  done: (err: CloudError, retryAfter?: number) => void,
+): void {
   ws.on("unexpected-response", (_req, res) => {
     let text = "";
     res.setEncoding("utf8");
@@ -562,7 +723,10 @@ export function onRefusal(ws: WebSocket, base: string, done: (err: CloudError, r
     res.on("end", () => {
       const e = errorOf(text, res.statusMessage || "");
       const retry = Number(res.headers["retry-after"]);
-      done(new CloudError(`${base} answered ${res.statusCode}: ${e.message}`, res.statusCode, e.code), Number.isFinite(retry) && retry >= 0 ? retry : undefined);
+      done(
+        new CloudError(`${base} answered ${res.statusCode}: ${e.message}`, res.statusCode, e.code),
+        Number.isFinite(retry) && retry >= 0 ? retry : undefined,
+      );
     });
   });
 }
@@ -575,7 +739,13 @@ type Send = { [N in MutationName]: { name: N; args: MutationArgs[N] } }[Mutation
  * (a frame without `more` arrived). Once every mutation is acked they are applied: a failure while
  * pulling still resolves, with whatever rows arrived and `complete: false`.
  */
-async function ownerSession(base: string, token: string, id: string, mutations: Send[], { pull = false } = {}): Promise<{ rows: Row[]; complete: boolean }> {
+async function ownerSession(
+  base: string,
+  token: string,
+  id: string,
+  mutations: Send[],
+  { pull = false } = {},
+): Promise<{ rows: Row[]; complete: boolean }> {
   // A one-shot command makes a fresh clientId per run (docs: Idempotency), so n counts from 1.
   const clientId = crypto.randomBytes(16).toString("base64url");
   const frames = mutations.map((m, i) => mutation(m.name, m.args as never, { clientId, n: i + 1 }));
@@ -598,10 +768,20 @@ async function ownerSession(base: string, token: string, id: string, mutations: 
       reject(err);
     } else resolve({ rows, complete });
   };
-  const timer = setTimeout(() => finish(new CloudError(`${base} did not answer ${what} within ${SOCKET_TIMEOUT_MS / 1000}s`)), SOCKET_TIMEOUT_MS);
+  const timer = setTimeout(
+    () =>
+      finish(new CloudError(`${base} did not answer ${what} within ${SOCKET_TIMEOUT_MS / 1000}s`)),
+    SOCKET_TIMEOUT_MS,
+  );
   const failWith = (e: SyncError, where: string) => {
     const retry = e.retryAfter !== undefined ? ` (retry after ${e.retryAfter}s)` : "";
-    finish(new CloudError(`${base} rejected ${where}: ${e.code}: ${e.message}${retry}`, undefined, e.code));
+    finish(
+      new CloudError(
+        `${base} rejected ${where}: ${e.code}: ${e.message}${retry}`,
+        undefined,
+        e.code,
+      ),
+    );
   };
   const afterAcks = () => {
     if (!pull) return finish(null);
@@ -613,7 +793,11 @@ async function ownerSession(base: string, token: string, id: string, mutations: 
   onRefusal(ws, base, (err) => finish(err));
   ws.on("error", (err) => finish(new CloudError(`could not reach ${base}: ${err.message}`)));
   ws.on("close", (code, reason) => {
-    finish(new CloudError(`${base} closed the connection (${code}${reason.length ? `: ${reason.toString()}` : ""}) before answering ${what}`));
+    finish(
+      new CloudError(
+        `${base} closed the connection (${code}${reason.length ? `: ${reason.toString()}` : ""}) before answering ${what}`,
+      ),
+    );
   });
   ws.on("open", () => {
     for (const f of frames) ws.send(JSON.stringify(f));
@@ -629,7 +813,11 @@ async function ownerSession(base: string, token: string, id: string, mutations: 
     if (f.t === "ack") {
       if (f.clientId !== clientId || f.n !== acked + 1) return;
       const m = mutations[acked];
-      if (f.error) return failWith(f.error, m.name === "grant" || m.name === "revoke" ? `${m.name} ${m.args.name}` : m.name);
+      if (f.error)
+        return failWith(
+          f.error,
+          m.name === "grant" || m.name === "revoke" ? `${m.name} ${m.args.name}` : m.name,
+        );
       if (++acked === mutations.length) afterAcks();
       return;
     }
@@ -659,15 +847,23 @@ function latest(rows: Row[]): Row[] {
 /** `name` trimmed, or an error for one the service would refuse (the same UTF-16 length rule as the schema). */
 export function inviteName(name: string): string {
   const n = name.trim();
-  if (!n || n.length > MAX_INVITE_NAME) throw new CloudError(`invite name ${JSON.stringify(name)} must be 1-${MAX_INVITE_NAME} characters (emoji count as 2)`);
+  if (!n || n.length > MAX_INVITE_NAME)
+    throw new CloudError(
+      `invite name ${JSON.stringify(name)} must be 1-${MAX_INVITE_NAME} characters (emoji count as 2)`,
+    );
   return n;
 }
 
 /** `30m`, `12h`, `7d` or `2w` from now, in epoch ms. */
 export function expiryOf(text: string, now = Date.now()): number {
   const m = /^(\d{1,4})([mhdw])$/.exec(text.trim());
-  if (!m || Number(m[1]) === 0) throw new CloudError(`--expires ${JSON.stringify(text)}: use a duration like 30m, 12h, 7d or 2w`);
-  const unit = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[m[2] as "m" | "h" | "d" | "w"];
+  if (!m || Number(m[1]) === 0)
+    throw new CloudError(
+      `--expires ${JSON.stringify(text)}: use a duration like 30m, 12h, 7d or 2w`,
+    );
+  const unit = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[
+    m[2] as "m" | "h" | "d" | "w"
+  ];
   return now + Number(m[1]) * unit;
 }
 
@@ -690,7 +886,10 @@ function grants(entry: PageEntry, names: string[], expiresAt: number | null | un
       expiresAt: expiresAt === undefined ? (prev?.expiresAt ?? null) : expiresAt,
     };
     entry.invites[name] = invite;
-    return { name: "grant", args: { name, tokenHash: tokenHash(invite.token), expiresAt: invite.expiresAt } };
+    return {
+      name: "grant",
+      args: { name, tokenHash: tokenHash(invite.token), expiresAt: invite.expiresAt },
+    };
   });
 }
 
@@ -738,22 +937,33 @@ export interface PublishOptions {
 export async function publish(abs: string, opts: PublishOptions = {}): Promise<Published> {
   const { auto = false, fresh = false, unlisted = false, presence = true } = opts;
   const names = [...new Set((opts.invite ?? []).map(inviteName))];
-  if (opts.expiresAt !== undefined && !names.length) throw new CloudError("--expires applies to the invites of this publish: add --invite <name>");
+  if (opts.expiresAt !== undefined && !names.length)
+    throw new CloudError("--expires applies to the invites of this publish: add --invite <name>");
   const base = cloudUrl();
   const state = ownerState(base);
   // Everything that can fail locally fails before the first request.
   const bundle = bundlePage(abs, fs.readFileSync(abs, "utf8"));
   const token = await credential(state);
 
-  await call(base, "PUT", `/api/objects/${bundle.sha256}`, { token, body: { type: "text/html; charset=utf-8", data: bundle.html } });
-  for (const p of bundle.packs) await call(base, "PUT", `/api/objects/${p.sha256}`, { token, body: { type: "text/javascript; charset=utf-8", data: p.code } });
+  await call(base, "PUT", `/api/objects/${bundle.sha256}`, {
+    token,
+    body: { type: "text/html; charset=utf-8", data: bundle.html },
+  });
+  for (const p of bundle.packs)
+    await call(base, "PUT", `/api/objects/${p.sha256}`, {
+      token,
+      body: { type: "text/javascript; charset=utf-8", data: p.code },
+    });
 
   const prev = fresh ? undefined : state.pages[abs];
   let id = prev?.id;
   let url = id ? `${base}/p/${id}` : "";
   if (!id) {
-    const created = await call<{ id?: unknown; url?: unknown }>(base, "POST", "/api/pages", { token });
-    if (!created || typeof created.id !== "string" || !PAGE_ID_RE.test(created.id)) throw new CloudError(`${base} returned no page id`);
+    const created = await call<{ id?: unknown; url?: unknown }>(base, "POST", "/api/pages", {
+      token,
+    });
+    if (!created || typeof created.id !== "string" || !PAGE_ID_RE.test(created.id))
+      throw new CloudError(`${base} returned no page id`);
     id = created.id;
     url = typeof created.url === "string" ? created.url : `${base}/p/${id}`;
   }
@@ -768,14 +978,23 @@ export async function publish(abs: string, opts: PublishOptions = {}): Promise<P
     unlisted,
     presence,
   };
-  const entry: PageEntry = { id, auto, unlisted, presence, invites: Object.assign(Object.create(null), prev?.invites) };
+  const entry: PageEntry = {
+    id,
+    auto,
+    unlisted,
+    presence,
+    invites: Object.assign(Object.create(null), prev?.invites),
+  };
   const sends = [{ name: "publish", args } as Send, ...grants(entry, names, opts.expiresAt)];
   let session: { rows: Row[]; complete: boolean };
   try {
     session = await ownerSession(base, token, id, sends, { pull: true });
   } catch (err) {
     if (prev && err instanceof CloudError && err.status === 404) {
-      throw new CloudError(`the hosted page for this file (${prev.id}) is gone from ${base}: it expired or was deleted. publish --new makes a new link.`, 404);
+      throw new CloudError(
+        `the hosted page for this file (${prev.id}) is gone from ${base}: it expired or was deleted. publish --new makes a new link.`,
+        404,
+      );
     }
     // The page was published but an invite failed: keep the link, so a retry updates it.
     if (err instanceof CloudError && err.applied > 0) {
@@ -798,9 +1017,15 @@ export async function publish(abs: string, opts: PublishOptions = {}): Promise<P
     auto,
     unlisted,
     presence,
-    invites: names.map((name) => ({ name, link: inviteLink(base, id, entry.invites[name].token), expiresAt: entry.invites[name].expiresAt })),
+    invites: names.map((name) => ({
+      name,
+      link: inviteLink(base, id, entry.invites[name].token),
+      expiresAt: entry.invites[name].expiresAt,
+    })),
     // Only a finished pull says how many invites there are: a partial one could be missing some.
-    otherInvites: session.complete ? acl.filter((r) => !names.includes(r.name) && liveAcl(r, now)).length : null,
+    otherInvites: session.complete
+      ? acl.filter((r) => !names.includes(r.name) && liveAcl(r, now)).length
+      : null,
     packs: bundle.packs.length,
     images: bundle.images,
   };
@@ -820,16 +1045,27 @@ export interface InviteInfo {
 /** The page entry of a published file, or an error naming what to do. */
 function entryOf(state: CloudState, abs: string): PageEntry {
   const entry = state.pages[abs];
-  if (!entry) throw new CloudError(`${abs} has not been published from this machine (see austere-axi publish list)`);
+  if (!entry)
+    throw new CloudError(
+      `${abs} has not been published from this machine (see austere-axi publish list)`,
+    );
   return entry;
 }
 
 /** The page's invites, as the service has them (`acl` rows), with this machine's links. */
-export async function listInvites(abs: string): Promise<{ id: string; unlisted: boolean; auto: boolean; presence: boolean; invites: InviteInfo[] }> {
+export async function listInvites(abs: string): Promise<{
+  id: string;
+  unlisted: boolean;
+  auto: boolean;
+  presence: boolean;
+  invites: InviteInfo[];
+}> {
   const base = cloudUrl();
   const state = ownerState(base);
   const entry = entryOf(state, abs);
-  const rows = latest((await ownerSession(base, await credential(state), entry.id, [], { pull: true })).rows);
+  const rows = latest(
+    (await ownerSession(base, await credential(state), entry.id, [], { pull: true })).rows,
+  );
   const page = rows.find((r): r is PageRow => r.type === "page");
   const now = Date.now();
   const invites = rows
@@ -839,22 +1075,41 @@ export async function listInvites(abs: string): Promise<{ id: string; unlisted: 
       const status = r.revoked ? "revoked" : liveAcl(r, now) ? "live" : "expired";
       // The link only for the token the name has now: the row's `grant` names it (a hash prefix, never the token).
       const local = entry.invites[r.name];
-      const mine = local !== undefined && r.grant !== undefined && r.grant === grantId(tokenHash(local.token));
+      const mine =
+        local !== undefined && r.grant !== undefined && r.grant === grantId(tokenHash(local.token));
       const link = status === "live" && mine ? inviteLink(base, entry.id, local.token) : undefined;
       const replaced = status === "live" && local !== undefined && !mine ? true : undefined;
-      return { name: r.name, link, replaced, grantedAt: r.grantedAt, expiresAt: r.expiresAt, status };
+      return {
+        name: r.name,
+        link,
+        replaced,
+        grantedAt: r.grantedAt,
+        expiresAt: r.expiresAt,
+        status,
+      };
     });
   // `auto`, `unlisted` and `presence` as the page has them now, so a suggested re-publish keeps them.
-  return { id: entry.id, unlisted: page?.unlisted ?? entry.unlisted, auto: page?.auto ?? entry.auto, presence: page?.presence ?? entry.presence, invites };
+  return {
+    id: entry.id,
+    unlisted: page?.unlisted ?? entry.unlisted,
+    auto: page?.auto ?? entry.auto,
+    presence: page?.presence ?? entry.presence,
+    invites,
+  };
 }
 
 /** Revoke invite `name`: its link stops working and its open pages are disconnected at once. */
-export async function revokeInvite(abs: string, name: string): Promise<{ id: string; name: string }> {
+export async function revokeInvite(
+  abs: string,
+  name: string,
+): Promise<{ id: string; name: string }> {
   const base = cloudUrl();
   const state = ownerState(base);
   const entry = entryOf(state, abs);
   const n = inviteName(name);
-  await ownerSession(base, await credential(state), entry.id, [{ name: "revoke", args: { name: n } }]);
+  await ownerSession(base, await credential(state), entry.id, [
+    { name: "revoke", args: { name: n } },
+  ]);
   delete entry.invites[n];
   writeCloud(state);
   return { id: entry.id, name: n };
@@ -868,8 +1123,18 @@ export async function ownerLogin(abs: string): Promise<{ id: string; url: string
   const base = cloudUrl();
   const state = ownerState(base);
   const entry = entryOf(state, abs);
-  const data = await call<{ code?: unknown; ttlMs?: unknown }>(base, "POST", `/api/pages/${encodeURIComponent(entry.id)}/login`, { token: await credential(state) });
-  if (!data || typeof data.code !== "string" || !/^[A-Za-z0-9_-]+$/.test(data.code) || typeof data.ttlMs !== "number") {
+  const data = await call<{ code?: unknown; ttlMs?: unknown }>(
+    base,
+    "POST",
+    `/api/pages/${encodeURIComponent(entry.id)}/login`,
+    { token: await credential(state) },
+  );
+  if (
+    !data ||
+    typeof data.code !== "string" ||
+    !/^[A-Za-z0-9_-]+$/.test(data.code) ||
+    typeof data.ttlMs !== "number"
+  ) {
     throw new CloudError(`${base} did not return a sign-in code`);
   }
   return { id: entry.id, url: `${base}/p/${entry.id}?login=${data.code}`, ttlMs: data.ttlMs };
@@ -888,7 +1153,9 @@ export interface ListedPage {
 export async function listPages(): Promise<ListedPage[]> {
   const base = cloudUrl();
   const state = ownerState(base);
-  const data = await call<{ pages?: ListedPage[] }>(base, "GET", "/api/pages", { token: await credential(state) });
+  const data = await call<{ pages?: ListedPage[] }>(base, "GET", "/api/pages", {
+    token: await credential(state),
+  });
   const fileOf = new Map(Object.entries(state.pages).map(([file, e]) => [e.id, file]));
   return (data?.pages || []).map((p) => ({ ...p, file: fileOf.get(p.id) }));
 }
@@ -898,13 +1165,18 @@ export async function listPages(): Promise<ListedPage[]> {
  * @param key a page id, or a published file's canonical path
  * @returns gone: the service no longer had it
  */
-export async function removePage(key: string): Promise<{ id: string; file?: string; gone: boolean }> {
+export async function removePage(
+  key: string,
+): Promise<{ id: string; file?: string; gone: boolean }> {
   const base = cloudUrl();
   const state = ownerState(base);
   let file = state.pages[key] ? key : undefined;
   const id = file ? state.pages[key].id : key;
   if (!file) file = Object.keys(state.pages).find((f) => state.pages[f].id === id);
-  if (!file && !PAGE_ID_RE.test(id)) throw new CloudError(`${key} is not a published file or a page id (see austere-axi publish list)`);
+  if (!file && !PAGE_ID_RE.test(id))
+    throw new CloudError(
+      `${key} is not a published file or a page id (see austere-axi publish list)`,
+    );
   let gone = false;
   try {
     await ownerSession(base, await credential(state), id, [{ name: "delete", args: {} }]);
@@ -921,11 +1193,15 @@ export async function removePage(key: string): Promise<{ id: string; file?: stri
 }
 
 /** The script tags `bundlePage` adds for packs (bundled from /rt/, installed from /pk/): a local copy loads its packs itself. */
-const HOSTED_PACK_TAG_RE = /<script\b[^>]*\bsrc\s*=\s*["'](?:\/rt\/[^/"']+\/packs\/[a-z0-9-]+\.js|\/pk\/[0-9a-f]{64}\.js)["'][^>]*>\s*<\/script\s*>\n?/gi;
+const HOSTED_PACK_TAG_RE =
+  /<script\b[^>]*\bsrc\s*=\s*["'](?:\/rt\/[^/"']+\/packs\/[a-z0-9-]+\.js|\/pk\/[0-9a-f]{64}\.js)["'][^>]*>\s*<\/script\s*>\n?/gi;
 
 /** A hosted page's HTML as a local file: the runtime from the CDN again, the hosted pack tags gone. */
 export function localCopy(html: string): string {
-  return rewriteRuntime(html.replace(HOSTED_PACK_TAG_RE, ""), `<script src="${CDN_RUNTIME_URL}"></script>`);
+  return rewriteRuntime(
+    html.replace(HOSTED_PACK_TAG_RE, ""),
+    `<script src="${CDN_RUNTIME_URL}"></script>`,
+  );
 }
 
 /**
@@ -934,7 +1210,10 @@ export function localCopy(html: string): string {
  * syncs its notes. Works for any page the credential owns (an account's pages from any machine).
  * @param abs canonical absolute path of a file that does not exist yet
  */
-export async function clonePage(id: string, abs: string): Promise<{ id: string; file: string; url: string; title: string }> {
+export async function clonePage(
+  id: string,
+  abs: string,
+): Promise<{ id: string; file: string; url: string; title: string }> {
   if (!PAGE_ID_RE.test(id)) throw new CloudError(`${id} is not a page id (see austere-axi clone)`);
   const base = cloudUrl();
   const state = ownerState(base);
@@ -942,14 +1221,23 @@ export async function clonePage(id: string, abs: string): Promise<{ id: string; 
   if (other) throw new CloudError(`page ${id} is already attached to ${other}`);
   if (fs.existsSync(abs)) throw new CloudError(`${abs} exists already: clone writes a new file`);
   const token = await credential(state);
-  const html = await call<string>(base, "GET", `/api/pages/${encodeURIComponent(id)}/html`, { token, text: true });
+  const html = await call<string>(base, "GET", `/api/pages/${encodeURIComponent(id)}/html`, {
+    token,
+    text: true,
+  });
   if (!html) throw new CloudError(`${base} returned no html for ${id}`);
   // The page row says how the page is published, so a later `publish <file>` keeps it so.
   const rows = latest((await ownerSession(base, token, id, [], { pull: true })).rows);
   const page = rows.find((r): r is PageRow => r.type === "page" && r.id === id);
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, localCopy(html), { flag: "wx" });
-  state.pages[abs] = { id, auto: page?.auto ?? false, unlisted: page?.unlisted ?? false, presence: page?.presence ?? true, invites: Object.create(null) };
+  state.pages[abs] = {
+    id,
+    auto: page?.auto ?? false,
+    unlisted: page?.unlisted ?? false,
+    presence: page?.presence ?? true,
+    invites: Object.create(null),
+  };
   writeCloud(state);
   return { id, file: abs, url: `${base}/p/${id}`, title: page?.title ?? readArtifact(html).title };
 }

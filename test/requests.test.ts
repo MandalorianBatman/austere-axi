@@ -10,8 +10,19 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { DeviceStore, hashSecret } from "../src/cli/devices.ts";
 import { openDatabase } from "../src/cli/hub.ts";
-import { MAX_WAITING, REQUESTS_PER_ADDR_HOUR, RequestStore, WAITING_TTL_MS, describeAgent } from "../src/cli/requests.ts";
-import type { AccessRequestsResponse, RequestDecisionResponse, RequestSwitchResponse, ShareListResponse } from "../src/cli/server.ts";
+import {
+  MAX_WAITING,
+  REQUESTS_PER_ADDR_HOUR,
+  RequestStore,
+  WAITING_TTL_MS,
+  describeAgent,
+} from "../src/cli/requests.ts";
+import type {
+  AccessRequestsResponse,
+  RequestDecisionResponse,
+  RequestSwitchResponse,
+  ShareListResponse,
+} from "../src/cli/server.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
@@ -25,27 +36,72 @@ test("the store: one approval per asking browser, collected once; deny, block; p
   try {
     assert.equal(store.enabled(null), false, "off by default");
     store.setEnabled("p1", true);
-    assert.deepEqual([store.enabled("p1"), store.enabled("p2"), store.enabled(null)], [true, false, false]);
+    assert.deepEqual(
+      [store.enabled("p1"), store.enabled("p2"), store.enabled(null)],
+      [true, false, false],
+    );
     store.setEnabled(null, true);
-    assert.deepEqual(store.switches(), { all: true, projects: [] }, "every page's setting clears the projects' own");
+    assert.deepEqual(
+      store.switches(),
+      { all: true, projects: [] },
+      "every page's setting clears the projects' own",
+    );
     store.setEnabled("p2", false);
-    assert.deepEqual([store.enabled("p1"), store.enabled("p2"), store.enabled(null)], [true, false, true], "a project's own setting wins");
+    assert.deepEqual(
+      [store.enabled("p1"), store.enabled("p2"), store.enabled(null)],
+      [true, false, true],
+      "a project's own setting wins",
+    );
     assert.deepEqual(store.switches(), { all: true, projects: [{ id: "p2", on: false }] });
     store.setEnabled("p2", true);
-    assert.deepEqual(store.switches(), { all: true, projects: [] }, "the same as every page's: no setting of its own");
+    assert.deepEqual(
+      store.switches(),
+      { all: true, projects: [] },
+      "the same as every page's: no setting of its own",
+    );
 
-    assert.throws(() => store.ask({ name: " ", page: PAGE, meta: {} }), (e: Error & { status?: number }) => e.status === 400 && /Type your name/.test(e.message));
-    assert.throws(() => store.ask({ name: "Owner", page: PAGE, meta: {} }), /reserved/, "names are cleaned as invite names are");
-    const ana = store.ask({ name: " Ana\n ", page: PAGE, meta: { addr: "10.0.0.1", userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 Chrome/120.0 Safari/537.36" } });
+    assert.throws(
+      () => store.ask({ name: " ", page: PAGE, meta: {} }),
+      (e: Error & { status?: number }) => e.status === 400 && /Type your name/.test(e.message),
+    );
+    assert.throws(
+      () => store.ask({ name: "Owner", page: PAGE, meta: {} }),
+      /reserved/,
+      "names are cleaned as invite names are",
+    );
+    const ana = store.ask({
+      name: " Ana\n ",
+      page: PAGE,
+      meta: {
+        addr: "10.0.0.1",
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
+      },
+    });
     assert.equal(ana.row.name, "Ana");
     assert.equal(ana.row.status, "waiting");
-    assert.equal(ana.row.secret_hash, hashSecret(ana.secret), "only the pending secret's hash is stored");
+    assert.equal(
+      ana.row.secret_hash,
+      hashSecret(ana.secret),
+      "only the pending secret's hash is stored",
+    );
     const mal = store.ask({ name: "Ana", page: PAGE, meta: { addr: "10.0.0.2" } });
 
     const device = store.approve(ana.row.id, { kind: "page", id: PAGE }, false);
-    assert.deepEqual([device.name, device.origin, device.secret_hash, device.scope_id], ["Ana", "request", null, PAGE], "no secret until the browser that asked collects it");
-    assert.throws(() => store.approve(ana.row.id, { kind: "all", id: null }, false), /approved already/);
-    assert.equal(store.collect(mal.secret), null, "another browser with the same name gets nothing");
+    assert.deepEqual(
+      [device.name, device.origin, device.secret_hash, device.scope_id],
+      ["Ana", "request", null, PAGE],
+      "no secret until the browser that asked collects it",
+    );
+    assert.throws(
+      () => store.approve(ana.row.id, { kind: "all", id: null }, false),
+      /approved already/,
+    );
+    assert.equal(
+      store.collect(mal.secret),
+      null,
+      "another browser with the same name gets nothing",
+    );
     const got = store.collect(ana.secret);
     assert.ok(got);
     assert.notEqual(got.secret, ana.secret, "the device secret is fresh, not the pending one");
@@ -55,9 +111,16 @@ test("the store: one approval per asking browser, collected once; deny, block; p
 
     // One name, one person: a stranger who types Ana's name is not let in as a second Ana with her scope.
     const eve = store.ask({ name: "ANA", page: PAGE, meta: { addr: "10.0.0.4" } });
-    assert.throws(() => store.approve(eve.row.id, { kind: "page", id: PAGE }, false), (e: Error & { status?: number }) => e.status === 409 && /already has access/.test(e.message));
+    assert.throws(
+      () => store.approve(eve.row.id, { kind: "page", id: PAGE }, false),
+      (e: Error & { status?: number }) => e.status === 409 && /already has access/.test(e.message),
+    );
     assert.equal(store.get(eve.row.id)?.status, "waiting", "still waiting for the owner");
-    assert.equal(store.approve(eve.row.id, { kind: "page", id: PAGE }, false, "Ana (phone)").name, "Ana (phone)", "the owner may let it in under another name");
+    assert.equal(
+      store.approve(eve.row.id, { kind: "page", id: PAGE }, false, "Ana (phone)").name,
+      "Ana (phone)",
+      "the owner may let it in under another name",
+    );
 
     // A revoked approval cannot be collected.
     const bo = store.ask({ name: "Bo", page: PAGE, meta: { addr: "10.0.0.3" } });
@@ -70,21 +133,38 @@ test("the store: one approval per asking browser, collected once; deny, block; p
     assert.throws(() => store.decide(mal.row.id, "denied"), /blocked already/);
 
     // Five requests per address an hour.
-    for (let i = 0; i < REQUESTS_PER_ADDR_HOUR - 1; i++) store.decide(store.ask({ name: `Cy${i}`, page: PAGE, meta: { addr: "10.0.0.1" } }).row.id, "denied");
-    assert.throws(() => store.ask({ name: "Cy", page: PAGE, meta: { addr: "10.0.0.1" } }), (e: Error & { status?: number }) => e.status === 429 && /this address/.test(e.message));
+    for (let i = 0; i < REQUESTS_PER_ADDR_HOUR - 1; i++)
+      store.decide(
+        store.ask({ name: `Cy${i}`, page: PAGE, meta: { addr: "10.0.0.1" } }).row.id,
+        "denied",
+      );
+    assert.throws(
+      () => store.ask({ name: "Cy", page: PAGE, meta: { addr: "10.0.0.1" } }),
+      (e: Error & { status?: number }) => e.status === 429 && /this address/.test(e.message),
+    );
     now += 3_600_001;
-    assert.doesNotThrow(() => store.ask({ name: "Cy", page: PAGE, meta: { addr: "10.0.0.1" } }), "an hour later it may ask again");
+    assert.doesNotThrow(
+      () => store.ask({ name: "Cy", page: PAGE, meta: { addr: "10.0.0.1" } }),
+      "an hour later it may ask again",
+    );
 
     // Fifty waiting at most.
-    for (let i = store.list("waiting").length; i < MAX_WAITING; i++) store.ask({ name: `W${i}`, page: PAGE, meta: { addr: `10.1.${i}.1` } });
-    assert.throws(() => store.ask({ name: "Late", page: PAGE, meta: { addr: "10.2.0.1" } }), (e: Error & { status?: number }) => e.status === 429 && /waiting/.test(e.message));
+    for (let i = store.list("waiting").length; i < MAX_WAITING; i++)
+      store.ask({ name: `W${i}`, page: PAGE, meta: { addr: `10.1.${i}.1` } });
+    assert.throws(
+      () => store.ask({ name: "Late", page: PAGE, meta: { addr: "10.2.0.1" } }),
+      (e: Error & { status?: number }) => e.status === 429 && /waiting/.test(e.message),
+    );
 
     // A request nobody decided lapses after a week: it leaves the queue, and its browser may ask again.
     const [oldest] = store.list("waiting");
     now += WAITING_TTL_MS;
     assert.equal(store.list("waiting").length, 0);
     assert.equal(store.get(oldest.id)?.status, "lapsed");
-    assert.throws(() => store.approve(oldest.id, { kind: "all", id: null }, false), /lapsed already/);
+    assert.throws(
+      () => store.approve(oldest.id, { kind: "all", id: null }, false),
+      /lapsed already/,
+    );
     assert.doesNotThrow(() => store.ask({ name: "Late", page: PAGE, meta: { addr: "10.2.0.1" } }));
   } finally {
     db.close();
@@ -92,9 +172,22 @@ test("the store: one approval per asking browser, collected once; deny, block; p
 });
 
 test("the owner recognises a request by its browser and system", () => {
-  assert.equal(describeAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"), "Chrome on macOS");
-  assert.equal(describeAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"), "Safari on iOS");
-  assert.equal(describeAgent("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"), "Firefox on Linux");
+  assert.equal(
+    describeAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+    ),
+    "Chrome on macOS",
+  );
+  assert.equal(
+    describeAgent(
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+    ),
+    "Safari on iOS",
+  );
+  assert.equal(
+    describeAgent("Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"),
+    "Firefox on Linux",
+  );
   assert.equal(describeAgent(null), "unknown browser");
 });
 
@@ -124,9 +217,30 @@ const owner = ownerHeaders(STATE);
  * A request as a browser elsewhere on the tailnet sends it: from `from` (127.0.0.2 and up, which the
  * server does not count as loopback), with a same-origin Origin on POST unless `origin` says otherwise.
  */
-function browser(from: string, method: string, route: string, { cookie = "", form, origin = true, json, headers = {} }: { cookie?: string; form?: Record<string, string>; origin?: boolean; json?: unknown; headers?: Record<string, string> } = {}): Promise<Res> {
+function browser(
+  from: string,
+  method: string,
+  route: string,
+  {
+    cookie = "",
+    form,
+    origin = true,
+    json,
+    headers = {},
+  }: {
+    cookie?: string;
+    form?: Record<string, string>;
+    origin?: boolean;
+    json?: unknown;
+    headers?: Record<string, string>;
+  } = {},
+): Promise<Res> {
   const { promise, resolve, reject } = Promise.withResolvers<Res>();
-  const payload = form ? new URLSearchParams(form).toString() : json !== undefined ? JSON.stringify(json) : undefined;
+  const payload = form
+    ? new URLSearchParams(form).toString()
+    : json !== undefined
+      ? JSON.stringify(json)
+      : undefined;
   const r = http.request(
     {
       host: "127.0.0.1",
@@ -138,8 +252,13 @@ function browser(from: string, method: string, route: string, { cookie = "", for
         host: `127.0.0.1:${port}`,
         ...(cookie ? { cookie } : {}),
         ...(method === "POST" && origin ? { origin: `http://127.0.0.1:${port}` } : {}),
-        ...(form ? { "content-type": "application/x-www-form-urlencoded" } : json !== undefined ? { "content-type": "application/json" } : {}),
-        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        ...(form
+          ? { "content-type": "application/x-www-form-urlencoded" }
+          : json !== undefined
+            ? { "content-type": "application/json" }
+            : {}),
+        "user-agent":
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
         ...headers,
       },
     },
@@ -155,14 +274,37 @@ function browser(from: string, method: string, route: string, { cookie = "", for
 }
 
 /** The owner's CLI route. */
-async function api<T>(method: string, route: string, body?: unknown): Promise<{ status: number; data: T }> {
-  const r = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { "x-austere-key": owner["x-austere-key"], ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+async function api<T>(
+  method: string,
+  route: string,
+  body?: unknown,
+): Promise<{ status: number; data: T }> {
+  const r = await fetch(`http://127.0.0.1:${port}${route}`, {
+    method,
+    headers: {
+      "x-austere-key": owner["x-austere-key"],
+      ...(body ? { "content-type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
   return { status: r.status, data: (await r.json()) as T };
 }
 
 /** The owner's browser on the hub's People API: owner cookie, same origin. */
-async function hub<T>(method: string, route: string, body?: unknown): Promise<{ status: number; data: T }> {
-  const r = await fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { cookie: owner.cookie, ...(method === "POST" ? { origin: `http://127.0.0.1:${port}` } : {}), ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+async function hub<T>(
+  method: string,
+  route: string,
+  body?: unknown,
+): Promise<{ status: number; data: T }> {
+  const r = await fetch(`http://127.0.0.1:${port}${route}`, {
+    method,
+    headers: {
+      cookie: owner.cookie,
+      ...(method === "POST" ? { origin: `http://127.0.0.1:${port}` } : {}),
+      ...(body ? { "content-type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
   return { status: r.status, data: (await r.json()) as T };
 }
 
@@ -173,27 +315,50 @@ function setCookie(res: Res, name: string): string {
 }
 
 /** Ask for access on page `pid` from `from`: the pending cookie, or "" when refused. */
-async function ask(from: string, name: string, pid = id, cookie = ""): Promise<{ res: Res; cookie: string }> {
+async function ask(
+  from: string,
+  name: string,
+  pid = id,
+  cookie = "",
+): Promise<{ res: Res; cookie: string }> {
   const res = await browser(from, "POST", `/s/${pid}/request`, { form: { name }, cookie });
   return { res, cookie: setCookie(res, "austere_rq=") };
 }
 
-const switchTo = (on: boolean, project?: string) => api<RequestSwitchResponse>("POST", "/api/share/requests", { on, project });
-const waiting = async () => (await api<AccessRequestsResponse>("GET", "/api/share/requests")).data.waiting;
+const switchTo = (on: boolean, project?: string) =>
+  api<RequestSwitchResponse>("POST", "/api/share/requests", { on, project });
+const waiting = async () =>
+  (await api<AccessRequestsResponse>("GET", "/api/share/requests")).data.waiting;
 
 before(async () => {
   fs.writeFileSync(path.join(WORK, "plan.html"), PAGE_HTML);
   port = await freePort();
   child = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(port)], {
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_LINK_HOST: "127.0.0.1", OPENUI_TELEMETRY_DISABLED: "1" },
+    env: {
+      ...process.env,
+      AUSTERE_AXI_STATE_DIR: STATE,
+      AUSTERE_AXI_NO_TAILSCALE: "1",
+      AUSTERE_AXI_LINK_HOST: "127.0.0.1",
+      OPENUI_TELEMETRY_DISABLED: "1",
+    },
     stdio: "ignore",
   });
   for (let i = 0; ; i++) {
-    if (await fetch(`http://127.0.0.1:${port}/api/health`).then((r) => r.ok, () => false)) break;
+    if (
+      await fetch(`http://127.0.0.1:${port}/api/health`).then(
+        (r) => r.ok,
+        () => false,
+      )
+    )
+      break;
     if (i > 100) throw new Error("server did not start");
     await new Promise((r) => setTimeout(r, 50));
   }
-  id = (await api<{ session: { id: string } }>("POST", "/api/open", { file: path.join(WORK, "plan.html") })).data.session.id;
+  id = (
+    await api<{ session: { id: string } }>("POST", "/api/open", {
+      file: path.join(WORK, "plan.html"),
+    })
+  ).data.session.id;
 });
 
 after(async () => {
@@ -216,7 +381,10 @@ test("requests off (the default): an unknown browser gets the 403 it got before,
   assert.equal(asked.cookie, "");
   assert.equal((await browser("127.0.0.2", "GET", `/s/${id}/request`)).status, 403);
   assert.deepEqual(await waiting(), []);
-  assert.deepEqual((await api<AccessRequestsResponse>("GET", "/api/share/requests")).data.switch, { all: false, projects: [] });
+  assert.deepEqual((await api<AccessRequestsResponse>("GET", "/api/share/requests")).data.switch, {
+    all: false,
+    projects: [],
+  });
 });
 
 test("request → approve: the browser that asked gets in, another browser with the same name does not; nothing of the page shows before", async () => {
@@ -227,10 +395,19 @@ test("request → approve: the browser that asked gets in, another browser with 
     assert.match(gate.data, /<title>Ask for access<\/title>/);
     assert.match(gate.data, /Ask the owner for access/);
     assert.match(gate.data, /<form method="post" action="\/s\/[a-f0-9]{12}\/request">/);
-    for (const leak of [TITLE, BODY, "plan.html", WORK]) assert.ok(!gate.data.includes(leak), `the gate does not show ${leak}`);
+    for (const leak of [TITLE, BODY, "plan.html", WORK])
+      assert.ok(!gate.data.includes(leak), `the gate does not show ${leak}`);
 
     // Cross-site or Origin-less POSTs are refused.
-    assert.equal((await browser("127.0.0.3", "POST", `/s/${id}/request`, { form: { name: "Ana" }, origin: false })).status, 403);
+    assert.equal(
+      (
+        await browser("127.0.0.3", "POST", `/s/${id}/request`, {
+          form: { name: "Ana" },
+          origin: false,
+        })
+      ).status,
+      403,
+    );
 
     const ana = await ask("127.0.0.3", "Ana");
     assert.equal(ana.res.status, 303, ana.res.data);
@@ -239,8 +416,14 @@ test("request → approve: the browser that asked gets in, another browser with 
     const waitPage = await browser("127.0.0.3", "GET", `/s/${id}`, { cookie: ana.cookie });
     assert.equal(waitPage.status, 403);
     assert.match(waitPage.data, /Waiting for the owner/);
-    for (const leak of [TITLE, BODY, "plan.html"]) assert.ok(!waitPage.data.includes(leak), `the waiting page does not show ${leak}`);
-    assert.deepEqual(JSON.parse((await browser("127.0.0.3", "GET", `/s/${id}/request`, { cookie: ana.cookie })).data), { state: "waiting" });
+    for (const leak of [TITLE, BODY, "plan.html"])
+      assert.ok(!waitPage.data.includes(leak), `the waiting page does not show ${leak}`);
+    assert.deepEqual(
+      JSON.parse(
+        (await browser("127.0.0.3", "GET", `/s/${id}/request`, { cookie: ana.cookie })).data,
+      ),
+      { state: "waiting" },
+    );
     // Sending again from the same browser keeps its one request.
     assert.equal((await ask("127.0.0.3", "Ana again", id, ana.cookie)).cookie, "");
 
@@ -249,21 +432,46 @@ test("request → approve: the browser that asked gets in, another browser with 
 
     const list = await hub<AccessRequestsResponse>("GET", "/hub/api/people/requests");
     assert.equal(list.status, 200);
-    assert.deepEqual(list.data.waiting.map((r) => [r.name, r.addr, r.browser, r.file]), [
-      ["Ana", "127.0.0.3", "Chrome on Linux", path.join(WORK, "plan.html")],
-      ["Ana", "127.0.0.4", "Chrome on Linux", path.join(WORK, "plan.html")],
-    ]);
-    assert.ok(list.data.waiting.every((r) => r.verifiedLogin === null && r.tailscaleDevice === null), "off the tailnet listener nobody is named by Tailscale");
-    assert.ok(!JSON.stringify(list.data).includes(ana.cookie.split("=")[1]), "the pending secret is never listed");
+    assert.deepEqual(
+      list.data.waiting.map((r) => [r.name, r.addr, r.browser, r.file]),
+      [
+        ["Ana", "127.0.0.3", "Chrome on Linux", path.join(WORK, "plan.html")],
+        ["Ana", "127.0.0.4", "Chrome on Linux", path.join(WORK, "plan.html")],
+      ],
+    );
+    assert.ok(
+      list.data.waiting.every((r) => r.verifiedLogin === null && r.tailscaleDevice === null),
+      "off the tailnet listener nobody is named by Tailscale",
+    );
+    assert.ok(
+      !JSON.stringify(list.data).includes(ana.cookie.split("=")[1]),
+      "the pending secret is never listed",
+    );
 
-    const approved = await hub<RequestDecisionResponse>("POST", `/hub/api/people/requests/${list.data.waiting[0].id}/approve`, { scope: "page" });
+    const approved = await hub<RequestDecisionResponse>(
+      "POST",
+      `/hub/api/people/requests/${list.data.waiting[0].id}/approve`,
+      { scope: "page" },
+    );
     assert.equal(approved.status, 200, JSON.stringify(approved.data));
     assert.equal(approved.data.request.status, "approved");
-    assert.deepEqual([approved.data.device?.name, approved.data.device?.origin, approved.data.device?.scope], ["Ana", "request", "page"]);
-    assert.equal((await hub("POST", `/hub/api/people/requests/${list.data.waiting[0].id}/deny`)).status, 409, "decided once");
+    assert.deepEqual(
+      [approved.data.device?.name, approved.data.device?.origin, approved.data.device?.scope],
+      ["Ana", "request", "page"],
+    );
+    assert.equal(
+      (await hub("POST", `/hub/api/people/requests/${list.data.waiting[0].id}/deny`)).status,
+      409,
+      "decided once",
+    );
 
     // The other browser with the same name is still outside.
-    assert.deepEqual(JSON.parse((await browser("127.0.0.4", "GET", `/s/${id}/request`, { cookie: mal.cookie })).data), { state: "waiting" });
+    assert.deepEqual(
+      JSON.parse(
+        (await browser("127.0.0.4", "GET", `/s/${id}/request`, { cookie: mal.cookie })).data,
+      ),
+      { state: "waiting" },
+    );
     const still = await browser("127.0.0.4", "GET", `/s/${id}`, { cookie: mal.cookie });
     assert.equal(still.status, 403);
     assert.ok(!still.data.includes(TITLE));
@@ -278,13 +486,26 @@ test("request → approve: the browser that asked gets in, another browser with 
     assert.deepEqual(JSON.parse(poll.data), { state: "approved" });
     const device = setCookie(poll, "austere_rv_d");
     assert.match(device, /^austere_rv_d[0-9a-f]{10}=/);
-    assert.notEqual(device.split("=")[1], ana.cookie.split("=")[1], "the device cookie is a fresh secret");
-    assert.match(String(poll.headers["set-cookie"]), /austere_rq=; Path=\/s\/; HttpOnly; SameSite=Lax; Max-Age=0/, "the pending cookie is cleared");
+    assert.notEqual(
+      device.split("=")[1],
+      ana.cookie.split("=")[1],
+      "the device cookie is a fresh secret",
+    );
+    assert.match(
+      String(poll.headers["set-cookie"]),
+      /austere_rq=; Path=\/s\/; HttpOnly; SameSite=Lax; Max-Age=0/,
+      "the pending cookie is cleared",
+    );
     const inside = await browser("127.0.0.3", "GET", `/s/${id}`, { cookie: device });
     assert.equal(inside.status, 200);
     assert.match(inside.data, new RegExp(TITLE));
     // A copied pending cookie is worth nothing now.
-    assert.deepEqual(JSON.parse((await browser("127.0.0.5", "GET", `/s/${id}/request`, { cookie: ana.cookie })).data), { state: "none" });
+    assert.deepEqual(
+      JSON.parse(
+        (await browser("127.0.0.5", "GET", `/s/${id}/request`, { cookie: ana.cookie })).data,
+      ),
+      { state: "none" },
+    );
 
     const people = await hub<ShareListResponse>("GET", "/hub/api/people");
     assert.deepEqual(
@@ -305,7 +526,12 @@ test("deny lets the browser ask again; block stops it asking; both show on its p
     const [req1] = await waiting();
     const denied = await api<RequestDecisionResponse>("POST", "/api/share/deny", { id: req1.id });
     assert.equal(denied.data.request.status, "denied");
-    assert.deepEqual(JSON.parse((await browser("127.0.0.6", "GET", `/s/${id}/request`, { cookie: first.cookie })).data), { state: "denied" });
+    assert.deepEqual(
+      JSON.parse(
+        (await browser("127.0.0.6", "GET", `/s/${id}/request`, { cookie: first.cookie })).data,
+      ),
+      { state: "denied" },
+    );
     const page = await browser("127.0.0.6", "GET", `/s/${id}`, { cookie: first.cookie });
     assert.match(page.data, /declined your last request/);
     assert.match(page.data, /<form/);
@@ -314,7 +540,10 @@ test("deny lets the browser ask again; block stops it asking; both show on its p
     assert.equal(second.res.status, 303);
     assert.notEqual(second.cookie, first.cookie);
     const [req2] = await waiting();
-    const blocked = await hub<RequestDecisionResponse>("POST", `/hub/api/people/requests/${req2.id}/block`);
+    const blocked = await hub<RequestDecisionResponse>(
+      "POST",
+      `/hub/api/people/requests/${req2.id}/block`,
+    );
     assert.equal(blocked.data.request.status, "blocked");
     const blockedPage = await browser("127.0.0.6", "GET", `/s/${id}`, { cookie: second.cookie });
     assert.match(blockedPage.data, /blocked this browser/);
@@ -323,7 +552,12 @@ test("deny lets the browser ask again; block stops it asking; both show on its p
     assert.equal(again.res.status, 403);
     assert.equal(again.cookie, "");
     assert.deepEqual(await waiting(), []);
-    assert.deepEqual((await api<AccessRequestsResponse>("GET", "/api/share/requests")).data.blocked.map((r) => r.id), [req2.id]);
+    assert.deepEqual(
+      (await api<AccessRequestsResponse>("GET", "/api/share/requests")).data.blocked.map(
+        (r) => r.id,
+      ),
+      [req2.id],
+    );
   } finally {
     await switchTo(false);
   }
@@ -343,7 +577,11 @@ test("five requests per address an hour; a bad name is refused with the form", a
     const sixth = await ask("127.0.0.7", "Cy5");
     assert.equal(sixth.res.status, 429);
     assert.match(sixth.res.data, /Too many requests from this address/);
-    assert.equal((await ask("127.0.0.8", "Dee")).res.status, 303, "another address is not limited by it");
+    assert.equal(
+      (await ask("127.0.0.8", "Dee")).res.status,
+      303,
+      "another address is not limited by it",
+    );
     for (const r of await waiting()) await api("POST", "/api/share/deny", { id: r.id });
   } finally {
     await switchTo(false);
@@ -354,19 +592,31 @@ test("the switch is per project or for every page; a page outside it answers as 
   const dir = path.join(WORK, "alpha");
   fs.mkdirSync(path.join(dir, ".git"), { recursive: true });
   fs.writeFileSync(path.join(dir, "a.html"), PAGE_HTML);
-  const aid = (await api<{ session: { id: string } }>("POST", "/api/open", { file: path.join(dir, "a.html") })).data.session.id;
+  const aid = (
+    await api<{ session: { id: string } }>("POST", "/api/open", { file: path.join(dir, "a.html") })
+  ).data.session.id;
   const on = await switchTo(true, dir);
   assert.equal(on.status, 200, JSON.stringify(on.data));
-  assert.deepEqual(on.data.projects.map((p) => p.name), ["alpha"]);
+  assert.deepEqual(
+    on.data.projects.map((p) => p.name),
+    ["alpha"],
+  );
   try {
     assert.match((await browser("127.0.0.9", "GET", `/s/${aid}`)).data, /Ask the owner for access/);
-    assert.equal((await browser("127.0.0.9", "GET", `/s/${id}`)).data, "Ask the owner for a link to this page.", "a page of no project");
+    assert.equal(
+      (await browser("127.0.0.9", "GET", `/s/${id}`)).data,
+      "Ask the owner for a link to this page.",
+      "a page of no project",
+    );
     const asked = await ask("127.0.0.9", "Eli", aid);
     assert.equal(asked.res.status, 303);
     const [r] = await waiting();
     assert.deepEqual(r.project?.name, "alpha");
     // Approved for the project: the device reaches the project's pages, not the others.
-    const approved = await api<RequestDecisionResponse>("POST", "/api/share/approve", { id: r.id, scope: "project" });
+    const approved = await api<RequestDecisionResponse>("POST", "/api/share/approve", {
+      id: r.id,
+      scope: "project",
+    });
     assert.equal(approved.status, 200, JSON.stringify(approved.data));
     assert.match(approved.data.device?.reaches ?? "", /^project alpha/);
     const joined = await browser("127.0.0.9", "GET", `/s/${aid}`, { cookie: asked.cookie });
@@ -383,9 +633,15 @@ test("the switch is per project or for every page; a page outside it answers as 
 test("behind a reverse proxy on this machine, a request carries the address the proxy saw; a remote peer's own header is ignored", async () => {
   await switchTo(true);
   try {
-    const proxied = await browser("127.0.0.1", "POST", `/s/${id}/request`, { form: { name: "Hal" }, headers: { "x-forwarded-for": "203.0.113.9, 100.64.0.7" } });
+    const proxied = await browser("127.0.0.1", "POST", `/s/${id}/request`, {
+      form: { name: "Hal" },
+      headers: { "x-forwarded-for": "203.0.113.9, 100.64.0.7" },
+    });
     assert.equal(proxied.status, 303, proxied.data);
-    const forged = await browser("127.0.0.13", "POST", `/s/${id}/request`, { form: { name: "Ivy" }, headers: { "x-forwarded-for": "100.64.0.8" } });
+    const forged = await browser("127.0.0.13", "POST", `/s/${id}/request`, {
+      form: { name: "Ivy" },
+      headers: { "x-forwarded-for": "100.64.0.8" },
+    });
     assert.equal(forged.status, 303, forged.data);
     assert.deepEqual(
       (await waiting()).map((r) => [r.name, r.addr]),
@@ -412,7 +668,12 @@ test("a request whose body arrives after the owner turned requests off is refuse
         method: "POST",
         path: `/s/${id}/request`,
         localAddress: "127.0.0.10",
-        headers: { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/x-www-form-urlencoded", "content-length": String(payload.length) },
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          "content-type": "application/x-www-form-urlencoded",
+          "content-length": String(payload.length),
+        },
       },
       (res) => {
         let data = "";
@@ -439,7 +700,14 @@ test("a request whose body arrives after the owner turned requests off is refuse
 function cli(...args: string[]): Promise<{ code: number | null; out: string }> {
   const { promise, resolve } = Promise.withResolvers<{ code: number | null; out: string }>();
   const p = spawn(process.execPath, ["src/cli/main.ts", ...args], {
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_PORT: String(port), AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" },
+    env: {
+      ...process.env,
+      AUSTERE_AXI_STATE_DIR: STATE,
+      AUSTERE_AXI_PORT: String(port),
+      AUSTERE_AXI_NO_TAILSCALE: "1",
+      AUSTERE_AXI_NO_OPEN: "1",
+      OPENUI_TELEMETRY_DISABLED: "1",
+    },
   });
   let out = "";
   p.stdout.on("data", (c) => (out += c));
@@ -481,8 +749,14 @@ test("the CLI: share requests on|off, lists who waits, approves under another na
 
 test("the request routes are the owner's: a device or a stranger cannot list or decide", async () => {
   assert.equal((await browser("127.0.0.2", "GET", "/hub/api/people/requests")).status, 403);
-  assert.equal((await browser("127.0.0.2", "POST", "/hub/api/people/requests/switch", { json: { on: true } })).status, 403);
-  const foreign = await fetch(`http://127.0.0.1:${port}/hub/api/people/requests`, { headers: { cookie: owner.cookie, origin: "http://evil.example" } });
+  assert.equal(
+    (await browser("127.0.0.2", "POST", "/hub/api/people/requests/switch", { json: { on: true } }))
+      .status,
+    403,
+  );
+  const foreign = await fetch(`http://127.0.0.1:${port}/hub/api/people/requests`, {
+    headers: { cookie: owner.cookie, origin: "http://evil.example" },
+  });
   assert.equal(foreign.status, 403, "not for another site, GET included");
   assert.equal((await hub("POST", "/hub/api/people/requests/switch", { on: "yes" })).status, 400);
   assert.equal((await api("POST", "/api/share/approve", { id: "r0000000000" })).status, 404);

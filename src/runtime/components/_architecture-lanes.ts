@@ -4,7 +4,20 @@
 // gaps between columns and rows. Free of JSX and DOM so it is unit-tested in
 // Node (test/components.test.ts). Never throws on agent input.
 import { SIZES, sizeEdgeLabel, sizeNode, textWidth, wrapText } from "./_architecture-model.ts";
-import type { EdgeLabelSize, LabelBox, LaidOutEdge, LaidOutGroup, LaidOutNode, Layout, Model, ModelEdge, ModelGroup, ModelNode, NodeSize, Point } from "./_architecture-model.ts";
+import type {
+  EdgeLabelSize,
+  LabelBox,
+  LaidOutEdge,
+  LaidOutGroup,
+  LaidOutNode,
+  Layout,
+  Model,
+  ModelEdge,
+  ModelGroup,
+  ModelNode,
+  NodeSize,
+  Point,
+} from "./_architecture-model.ts";
 
 export type Side = "left" | "right" | "top" | "bottom";
 
@@ -136,7 +149,10 @@ export const LANES = {
 export function runLanes(model: Model): Layout | null {
   const plan = planColumns(model);
   if (!plan) return null;
-  if (!plan.layout) plan.layout = routeWithGrowth(model, plan.sizes, () => placeColumns(plan.lanes, plan.byId, plan.rowCount, plan.sizes, model));
+  if (!plan.layout)
+    plan.layout = routeWithGrowth(model, plan.sizes, () =>
+      placeColumns(plan.lanes, plan.byId, plan.rowCount, plan.sizes, model),
+    );
   return plan.layout;
 }
 
@@ -167,7 +183,8 @@ function planColumns(model: Model): Plan | null {
   // A labelled line dropping to the next row needs room for its label and
   // its arrowhead.
   const rowOf = new Map<string, { g: number; lane: Lane }>();
-  for (const lane of lanes) for (const [g, ids] of lane.phys) for (const id of ids) rowOf.set(id, { g, lane });
+  for (const lane of lanes)
+    for (const [g, ids] of lane.phys) for (const id of ids) rowOf.set(id, { g, lane });
   for (const e of model.edges) {
     const a = rowOf.get(e.from);
     const b = rowOf.get(e.to);
@@ -176,7 +193,14 @@ function planColumns(model: Model): Plan | null {
     const key = `r${Math.min(a.g, b.g)}`;
     sizes.set(key, Math.max(sizes.get(key) ?? LANES.rowGap, lb.height + 30));
   }
-  const plan: Plan = { lanes, byId, rowCount, sizes, width: placeColumns(lanes, byId, rowCount, sizes, model).width, layout: null };
+  const plan: Plan = {
+    lanes,
+    byId,
+    rowCount,
+    sizes,
+    width: placeColumns(lanes, byId, rowCount, sizes, model).width,
+    layout: null,
+  };
   plans.set(model, plan);
   return plan;
 }
@@ -196,7 +220,12 @@ export function runStackedLanes(model: Model, targetWidth: number): Layout | nul
     ["left", 22],
     ["right", 22],
   ]);
-  const layout = routeWithGrowth(model, sizes, () => placeBands(lanes, byId, sizes, model, targetWidth), STACKED_MAX_CHANNEL);
+  const layout = routeWithGrowth(
+    model,
+    sizes,
+    () => placeBands(lanes, byId, sizes, model, targetWidth),
+    STACKED_MAX_CHANNEL,
+  );
   if (layout) layout.rankdir = "stacked";
   return layout;
 }
@@ -212,7 +241,12 @@ function prepareLanes(model: Model): Lane[] | null {
 }
 
 /** Route, then widen any channel that ran out of tracks and route again. */
-function routeWithGrowth(model: Model, sizes: Map<string, number>, place: () => Geometry, maxSize = Infinity): Layout {
+function routeWithGrowth(
+  model: Model,
+  sizes: Map<string, number>,
+  place: () => Geometry,
+  maxSize = Infinity,
+): Layout {
   let result: { geo: Geometry; routed: Map<string, Point[]> } | null = null;
   for (let pass = 0; pass < 2; pass++) {
     const geo = place();
@@ -239,7 +273,17 @@ function assignLanes(model: Model): Lane[] | null {
   const top = model.groups.filter((g) => !g.parent);
   if (!top.length) return null;
   const laneOf = new Map<string, Lane>();
-  const newLane = (group: ModelGroup | null, nodes: string[]): Lane => ({ group, nodes, index: 0, laneOf, rows: [], phys: new Map(), inner: 0, headLine: "", frame: { x: 0, y: 0, w: 0, h: 0 } });
+  const newLane = (group: ModelGroup | null, nodes: string[]): Lane => ({
+    group,
+    nodes,
+    index: 0,
+    laneOf,
+    rows: [],
+    phys: new Map(),
+    inner: 0,
+    headLine: "",
+    frame: { x: 0, y: 0, w: 0, h: 0 },
+  });
   const lanes = top.map((group) => newLane(group, []));
   for (const lane of lanes) {
     for (const m of lane.group?.members ?? []) {
@@ -482,7 +526,10 @@ function initialGutters(lanes: Lane[], edges: ModelEdge[]): number[] {
     if (lb) {
       const g = b > a ? a : a - 1;
       // Labels in a gutter wrap narrower rather than widen the diagram.
-      gutters[g] = Math.max(gutters[g], (narrowLabel(e.label, GUTTER_LABEL_W)?.width ?? lb.width) + 22);
+      gutters[g] = Math.max(
+        gutters[g],
+        (narrowLabel(e.label, GUTTER_LABEL_W)?.width ?? lb.width) + 22,
+      );
     }
   }
   return gutters.map((g, i) => Math.max(g, 24 + crossing[i] * LANES.track));
@@ -497,7 +544,13 @@ function sizeLaneHeads(lanes: Lane[], inner: (lane: Lane) => number): void {
   }
 }
 
-function placeColumns(lanes: Lane[], byId: Map<string, ModelNode>, rowCount: number, sizes: Map<string, number>, model: Model): Geometry {
+function placeColumns(
+  lanes: Lane[],
+  byId: Map<string, ModelNode>,
+  rowCount: number,
+  sizes: Map<string, number>,
+  model: Model,
+): Geometry {
   const L = LANES;
   const natural = new Map(model.nodes.map((n) => [n.id, sizeNode(n)]));
   // A group inside a lane puts its label above its first box: leave room
@@ -510,11 +563,13 @@ function placeColumns(lanes: Lane[], byId: Map<string, ModelNode>, rowCount: num
   for (const lane of lanes) {
     let inner = L.laneMinW;
     for (const ids of lane.phys.values()) {
-      const w = ids.reduce((sum, id) => sum + known(natural, id).width, 0) + L.colGap * (ids.length - 1);
+      const w =
+        ids.reduce((sum, id) => sum + known(natural, id).width, 0) + L.colGap * (ids.length - 1);
       inner = Math.max(inner, w);
     }
     const label = lane.group?.label || "";
-    if (label) inner = Math.max(inner, Math.min(textWidth(label, L.headSize, true) + 4, L.laneMaxHeadW));
+    if (label)
+      inner = Math.max(inner, Math.min(textWidth(label, L.headSize, true) + 4, L.laneMaxHeadW));
     lane.inner = inner;
   }
   sizeLaneHeads(lanes, (lane) => lane.inner);
@@ -525,11 +580,14 @@ function placeColumns(lanes: Lane[], byId: Map<string, ModelNode>, rowCount: num
     for (const ids of lane.phys.values()) {
       const sum = ids.reduce((acc, id) => acc + known(natural, id).width, 0);
       const extra = (lane.inner - sum - L.colGap * (ids.length - 1)) / ids.length;
-      for (const id of ids) sized.set(id, sizeNode(known(byId, id), Math.floor(known(natural, id).width + extra)));
+      for (const id of ids)
+        sized.set(id, sizeNode(known(byId, id), Math.floor(known(natural, id).width + extra)));
     }
   }
   const rowH: number[] = new Array(rowCount).fill(0);
-  for (const lane of lanes) for (const [g, ids] of lane.phys) for (const id of ids) rowH[g] = Math.max(rowH[g], known(sized, id).height);
+  for (const lane of lanes)
+    for (const [g, ids] of lane.phys)
+      for (const id of ids) rowH[g] = Math.max(rowH[g], known(sized, id).height);
 
   const rowTop: number[] = [];
   let y = L.margin + headH + L.lanePad;
@@ -550,7 +608,13 @@ function placeColumns(lanes: Lane[], byId: Map<string, ModelNode>, rowCount: num
       let bx = x + L.lanePad;
       for (const id of ids) {
         const b = known(sized, id);
-        boxes.set(id, { ...b, x: bx, y: Math.round(rowTop[g] + (rowH[g] - b.height) / 2), rowIndex: g, laneIndex: lane.index });
+        boxes.set(id, {
+          ...b,
+          x: bx,
+          y: Math.round(rowTop[g] + (rowH[g] - b.height) / 2),
+          rowIndex: g,
+          laneIndex: lane.index,
+        });
         bx += b.width + L.colGap;
       }
     }
@@ -561,17 +625,31 @@ function placeColumns(lanes: Lane[], byId: Map<string, ModelNode>, rowCount: num
 
   const channels: Channel[] = [];
   lanes.forEach((lane, i) => {
-    if (i < lanes.length - 1) channels.push({ key: `g${i}`, axis: "x", lo: lane.frame.x + lane.frame.w, hi: lanes[i + 1].frame.x });
+    if (i < lanes.length - 1)
+      channels.push({
+        key: `g${i}`,
+        axis: "x",
+        lo: lane.frame.x + lane.frame.w,
+        hi: lanes[i + 1].frame.x,
+      });
   });
-  for (let g = 0; g < rowCount - 1; g++) channels.push({ key: `r${g}`, axis: "y", lo: rowTop[g] + rowH[g], hi: rowTop[g + 1] });
+  for (let g = 0; g < rowCount - 1; g++)
+    channels.push({ key: `r${g}`, axis: "y", lo: rowTop[g] + rowH[g], hi: rowTop[g + 1] });
   channels.push({ key: "bottom", axis: "y", lo: contentBottom, hi: frameBottom - 4, fixed: true });
-  channels.push({ key: "outL", axis: "x", lo: 0, hi: L.margin, fixed: true }, { key: "outR", axis: "x", lo: width - L.margin, hi: width, fixed: true });
+  channels.push(
+    { key: "outL", axis: "x", lo: 0, hi: L.margin, fixed: true },
+    { key: "outR", axis: "x", lo: width - L.margin, hi: width, fixed: true },
+  );
   channels.push({ key: "outB", axis: "y", lo: frameBottom, hi: height, fixed: true });
-  const frameLines = { xs: lanes.flatMap((l) => [l.frame.x, l.frame.x + l.frame.w]), ys: [frameTop, frameBottom] };
+  const frameLines = {
+    xs: lanes.flatMap((l) => [l.frame.x, l.frame.x + l.frame.w]),
+    ys: [frameTop, frameBottom],
+  };
   const sides = (e: ModelEdge): [Side, Side] => {
     const a = known(boxes, e.from);
     const b = known(boxes, e.to);
-    if (a.laneIndex !== b.laneIndex) return b.laneIndex > a.laneIndex ? ["right", "left"] : ["left", "right"];
+    if (a.laneIndex !== b.laneIndex)
+      return b.laneIndex > a.laneIndex ? ["right", "left"] : ["left", "right"];
     if (b.rowIndex > a.rowIndex) return ["bottom", "top"];
     if (b.rowIndex < a.rowIndex) return ["top", "bottom"];
     return b.x > a.x ? ["right", "left"] : ["left", "right"];
@@ -579,7 +657,13 @@ function placeColumns(lanes: Lane[], byId: Map<string, ModelNode>, rowCount: num
   return { lanes, boxes, channels, frameLines, sides, width, height };
 }
 
-function placeBands(lanes: Lane[], byId: Map<string, ModelNode>, sizes: Map<string, number>, model: Model, targetWidth: number): Geometry {
+function placeBands(
+  lanes: Lane[],
+  byId: Map<string, ModelNode>,
+  sizes: Map<string, number>,
+  model: Model,
+  targetWidth: number,
+): Geometry {
   const L = LANES;
   const left = known(sizes, "left");
   const right = known(sizes, "right");
@@ -598,12 +682,14 @@ function placeBands(lanes: Lane[], byId: Map<string, ModelNode>, sizes: Map<stri
   for (const lane of lanes) {
     const top = y;
     y += (lane.headLine ? L.head : 0) + (nested ? 16 : 0) + L.lanePad;
-    if (prevBottom !== null) channels.push({ key: `band${lane.index}`, axis: "y", lo: prevBottom, hi: top, fixed: true });
+    if (prevBottom !== null)
+      channels.push({ key: `band${lane.index}`, axis: "y", lo: prevBottom, hi: top, fixed: true });
     let first = true;
     for (const row of lane.rows) {
       // Side by side only when the boxes fit; otherwise one per row.
       const natural = row.ids.map((id) => sizeNode(known(byId, id)));
-      const fits = natural.reduce((sum, n) => sum + n.width, 0) + L.colGap * (row.ids.length - 1) <= room;
+      const fits =
+        natural.reduce((sum, n) => sum + n.width, 0) + L.colGap * (row.ids.length - 1) <= room;
       const lines = fits ? [row.ids] : row.ids.map((id) => [id]);
       for (const ids of lines) {
         if (!first) {
@@ -623,7 +709,13 @@ function placeBands(lanes: Lane[], byId: Map<string, ModelNode>, sizes: Map<stri
         const h = Math.max(...sized.map((b) => b.height));
         let bx = x0;
         ids.forEach((id, k) => {
-          boxes.set(id, { ...sized[k], x: bx, y: Math.round(y + (h - sized[k].height) / 2), rowIndex: seq, laneIndex: lane.index });
+          boxes.set(id, {
+            ...sized[k],
+            x: bx,
+            y: Math.round(y + (h - sized[k].height) / 2),
+            rowIndex: seq,
+            laneIndex: lane.index,
+          });
           bx += sized[k].width + L.colGap;
         });
         y += h;
@@ -639,15 +731,22 @@ function placeBands(lanes: Lane[], byId: Map<string, ModelNode>, sizes: Map<stri
   const width = left + room + L.lanePad * 2 + right;
   // Every model with lanes has at least one lane.
   const height = (prevBottom as number) + L.margin;
-  channels.push({ key: "left", axis: "x", lo: 0, hi: left }, { key: "right", axis: "x", lo: width - right, hi: width });
-  const frameLines = { xs: [left, width - right], ys: lanes.flatMap((l) => [l.frame.y, l.frame.y + l.frame.h]) };
+  channels.push(
+    { key: "left", axis: "x", lo: 0, hi: left },
+    { key: "right", axis: "x", lo: width - right, hi: width },
+  );
+  const frameLines = {
+    xs: [left, width - right],
+    ys: lanes.flatMap((l) => [l.frame.y, l.frame.y + l.frame.h]),
+  };
   // Down the right side going forward, up the left going back; the next box
   // directly below gets a straight drop.
   const sides = (e: ModelEdge): [Side, Side] => {
     const a = known(boxes, e.from);
     const b = known(boxes, e.to);
     if (a.rowIndex === b.rowIndex) return b.x > a.x ? ["right", "left"] : ["left", "right"];
-    if (b.rowIndex === a.rowIndex + 1 && b.x < a.x + a.width && a.x < b.x + b.width) return ["bottom", "top"];
+    if (b.rowIndex === a.rowIndex + 1 && b.x < a.x + a.width && a.x < b.x + b.width)
+      return ["bottom", "top"];
     return b.rowIndex > a.rowIndex ? ["right", "right"] : ["left", "left"];
   };
   return { lanes, boxes, channels, frameLines, sides, width, height };
@@ -676,7 +775,13 @@ function routeAll(geo: Geometry, model: Model): Map<string, Point[]> {
     const [fromSide, toSide] = geo.sides(e);
     const a = known(boxes, e.from);
     const b = known(boxes, e.to);
-    edges.push({ id: e.id, from: e.from, to: e.to, fromSide: openSide(a, fromSide, b, boxes), toSide: openSide(b, toSide, a, boxes) });
+    edges.push({
+      id: e.id,
+      from: e.from,
+      to: e.to,
+      fromSide: openSide(a, fromSide, b, boxes),
+      toSide: openSide(b, toSide, a, boxes),
+    });
   }
   const xs: number[] = [];
   const ys: number[] = [];
@@ -716,16 +821,27 @@ function openSide(box: Rect, side: Side, other: Rect, boxes: Map<string, Rect>):
       if (o === box) continue;
       const ySpan = o.y < box.y + box.height && box.y < o.y + o.height;
       const xSpan = o.x < box.x + box.width && box.x < o.x + o.width;
-      if (sd === "right" && ySpan && o.x >= box.x + box.width && o.x - (box.x + box.width) < reach) return true;
-      if (sd === "left" && ySpan && o.x + o.width <= box.x && box.x - (o.x + o.width) < reach) return true;
-      if (sd === "bottom" && xSpan && o.y >= box.y + box.height && o.y - (box.y + box.height) < reach) return true;
-      if (sd === "top" && xSpan && o.y + o.height <= box.y && box.y - (o.y + o.height) < reach) return true;
+      if (sd === "right" && ySpan && o.x >= box.x + box.width && o.x - (box.x + box.width) < reach)
+        return true;
+      if (sd === "left" && ySpan && o.x + o.width <= box.x && box.x - (o.x + o.width) < reach)
+        return true;
+      if (
+        sd === "bottom" &&
+        xSpan &&
+        o.y >= box.y + box.height &&
+        o.y - (box.y + box.height) < reach
+      )
+        return true;
+      if (sd === "top" && xSpan && o.y + o.height <= box.y && box.y - (o.y + o.height) < reach)
+        return true;
     }
     return false;
   };
   if (!blocked(side)) return side;
-  const towardY: Side[] = other.y + other.height / 2 >= box.y + box.height / 2 ? ["bottom", "top"] : ["top", "bottom"];
-  const towardX: Side[] = other.x + other.width / 2 >= box.x + box.width / 2 ? ["right", "left"] : ["left", "right"];
+  const towardY: Side[] =
+    other.y + other.height / 2 >= box.y + box.height / 2 ? ["bottom", "top"] : ["top", "bottom"];
+  const towardX: Side[] =
+    other.x + other.width / 2 >= box.x + box.width / 2 ? ["right", "left"] : ["left", "right"];
   const order = side === "left" || side === "right" ? towardY : towardX;
   return order.find((sd) => !blocked(sd)) || side;
 }
@@ -752,7 +868,12 @@ function channelShortfall(geo: Geometry, routes: Map<string, Point[]>): Map<stri
   return need;
 }
 
-const NORMAL: Record<Side, [number, number]> = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] };
+const NORMAL: Record<Side, [number, number]> = {
+  left: [-1, 0],
+  right: [1, 0],
+  top: [0, -1],
+  bottom: [0, 1],
+};
 
 /** Spread the ends that share a side, each as close as possible to where its line wants to go. */
 interface PortItem {
@@ -765,7 +886,13 @@ interface PortItem {
 
 function placePorts(boxes: Map<string, Rect>, edges: RouteEdge[]): void {
   const sides = new Map<string, { node: string; side: Side; items: PortItem[] }>();
-  const add = (node: string, side: Side, other: string, edge: RouteEdge, end: "fromPort" | "toPort") => {
+  const add = (
+    node: string,
+    side: Side,
+    other: string,
+    edge: RouteEdge,
+    end: "fromPort" | "toPort",
+  ) => {
     const key = `${node}\u0000${side}`;
     if (!sides.has(key)) sides.set(key, { node, side, items: [] });
     known(sides, key).items.push({ other, edge, end, want: 0, pos: 0 });
@@ -809,7 +936,9 @@ function placePorts(boxes: Map<string, Rect>, edges: RouteEdge[]): void {
     }
     for (const it of items) {
       const pos = Math.round(it.pos);
-      const p = horizontal ? { x: side === "left" ? b.x : b.x + b.width, y: pos } : { x: pos, y: side === "top" ? b.y : b.y + b.height };
+      const p = horizontal
+        ? { x: side === "left" ? b.x : b.x + b.width, y: pos }
+        : { x: pos, y: side === "top" ? b.y : b.y + b.height };
       it.edge[it.end] = p;
     }
   }
@@ -881,13 +1010,23 @@ const SEARCH = { weight: 1.5, maxSteps: 120000, maxTracks: 14 };
  * lines plus lines just clear of every box, preferring few bends, no shared
  * runs and few crossings with lines already routed (short edges first).
  */
-export function routeOrthogonal({ boxes, edges: input, xLines = [], yLines = [], avoid = { xs: [], ys: [] }, bounds }: RouteOptions): Map<string, Point[]> {
+export function routeOrthogonal({
+  boxes,
+  edges: input,
+  xLines = [],
+  yLines = [],
+  avoid = { xs: [], ys: [] },
+  bounds,
+}: RouteOptions): Map<string, Point[]> {
   const C = LANES.clear;
   const S = LANES.stub;
   placePorts(boxes, input);
   // placePorts gave every edge both ports.
   const edges = input as PortedEdge[];
-  const stubOf = (p: Point, side: Side): Point => ({ x: p.x + NORMAL[side][0] * S, y: p.y + NORMAL[side][1] * S });
+  const stubOf = (p: Point, side: Side): Point => ({
+    x: p.x + NORMAL[side][0] * S,
+    y: p.y + NORMAL[side][1] * S,
+  });
 
   const rnd = (v: number) => Math.round(v * 2) / 2;
   const hugXs = new Set<number>();
@@ -913,7 +1052,8 @@ export function routeOrthogonal({ boxes, edges: input, xLines = [], yLines = [],
       ysAll.push(p.y, st.y);
     }
   }
-  const uniq = (arr: number[], lo: number, hi: number) => [...new Set(arr.map(rnd))].filter((v) => v >= lo && v <= hi).sort((a, b) => a - b);
+  const uniq = (arr: number[], lo: number, hi: number) =>
+    [...new Set(arr.map(rnd))].filter((v) => v >= lo && v <= hi).sort((a, b) => a - b);
   const xs = uniq(xsAll, bounds.x0, bounds.x1);
   const ys = uniq(ysAll, bounds.y0, bounds.y1);
   const nx = xs.length;
@@ -981,23 +1121,55 @@ export function routeOrthogonal({ boxes, edges: input, xLines = [], yLines = [],
   const routes = new Map<string, Point[]>();
   const order = [...edges].sort(
     (a, b) =>
-      Math.abs(a.fromPort.x - a.toPort.x) + Math.abs(a.fromPort.y - a.toPort.y) - (Math.abs(b.fromPort.x - b.toPort.x) + Math.abs(b.fromPort.y - b.toPort.y)),
+      Math.abs(a.fromPort.x - a.toPort.x) +
+      Math.abs(a.fromPort.y - a.toPort.y) -
+      (Math.abs(b.fromPort.x - b.toPort.x) + Math.abs(b.fromPort.y - b.toPort.y)),
   );
   const solid = [...boxes.entries()];
   for (const e of order) {
     // Facing ports in line with nothing between them: one straight line.
     const a = e.fromPort;
     const b = e.toPort;
-    if ((a.x === b.x || a.y === b.y) && dirOf(e.fromSide) === reverse[dirOf(e.toSide)] && towards(a, b, e.fromSide)) {
-      const seg = { x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) };
-      const blocked = solid.some(([id, r]) => id !== e.from && id !== e.to && seg.x0 < r.x + r.width && r.x < seg.x1 && seg.y0 < r.y + r.height && r.y < seg.y1);
+    if (
+      (a.x === b.x || a.y === b.y) &&
+      dirOf(e.fromSide) === reverse[dirOf(e.toSide)] &&
+      towards(a, b, e.fromSide)
+    ) {
+      const seg = {
+        x0: Math.min(a.x, b.x),
+        y0: Math.min(a.y, b.y),
+        x1: Math.max(a.x, b.x),
+        y1: Math.max(a.y, b.y),
+      };
+      const blocked = solid.some(
+        ([id, r]) =>
+          id !== e.from &&
+          id !== e.to &&
+          seg.x0 < r.x + r.width &&
+          r.x < seg.x1 &&
+          seg.y0 < r.y + r.height &&
+          r.y < seg.y1,
+      );
       if (!blocked) {
         routes.set(e.id, [a, b]);
         const path: [number | undefined, number | undefined][] = [];
         const [i0, j0, i1, j1] = [ix(a.x), iy(a.y), ix(b.x), iy(b.y)];
-        if (j0 === j1) for (let i = Math.min(i0 as number, i1 as number); i <= Math.max(i0 as number, i1 as number); i++) path.push([i, j0]);
-        else for (let j = Math.min(j0 as number, j1 as number); j <= Math.max(j0 as number, j1 as number); j++) path.push([i0, j]);
-        if (path.every((pt): pt is [number, number] => pt[0] !== undefined && pt[1] !== undefined)) mark(path);
+        if (j0 === j1)
+          for (
+            let i = Math.min(i0 as number, i1 as number);
+            i <= Math.max(i0 as number, i1 as number);
+            i++
+          )
+            path.push([i, j0]);
+        else
+          for (
+            let j = Math.min(j0 as number, j1 as number);
+            j <= Math.max(j0 as number, j1 as number);
+            j++
+          )
+            path.push([i0, j]);
+        if (path.every((pt): pt is [number, number] => pt[0] !== undefined && pt[1] !== undefined))
+          mark(path);
         continue;
       }
     }
@@ -1017,7 +1189,14 @@ export function routeOrthogonal({ boxes, edges: input, xLines = [], yLines = [],
   }
   return routes;
 
-  function search(si: number, sj: number, sd: number, ti: number, tj: number, endDir: number): [number, number][] | null {
+  function search(
+    si: number,
+    sj: number,
+    sd: number,
+    ti: number,
+    tj: number,
+    endDir: number,
+  ): [number, number][] | null {
     stamp++;
     const W = SEARCH.weight;
     const tx = xs[ti];
@@ -1140,13 +1319,19 @@ function simplify(pts: Point[]): Point[] {
  * middle (paths and topics break at "/", "-", "_", ".", ":" like any wrap).
  */
 function narrowLabel(label: string, width: number): EdgeLabelSize | null {
-  if (label.split(/[\s/\-_.:]+/).some((word) => textWidth(word, SIZES.edge) > width - 12)) return null;
+  if (label.split(/[\s/\-_.:]+/).some((word) => textWidth(word, SIZES.edge) > width - 12))
+    return null;
   if (textWidth(label, SIZES.edge) + 12 <= width) return null; // fits already: nothing to narrow
   const lines = wrapText(label, SIZES.edge, width - 12, 2);
-  return { lines, width: Math.max(...lines.map((l) => textWidth(l, SIZES.edge))) + 12, height: 6 + lines.length * 13 };
+  return {
+    lines,
+    width: Math.max(...lines.map((l) => textWidth(l, SIZES.edge))) + 12,
+    height: 6 + lines.length * 13,
+  };
 }
 
-const rectsOverlap = (a: Bounds, b: Bounds, pad = 0) => a.x0 < b.x1 + pad && b.x0 < a.x1 + pad && a.y0 < b.y1 + pad && b.y0 < a.y1 + pad;
+const rectsOverlap = (a: Bounds, b: Bounds, pad = 0) =>
+  a.x0 < b.x1 + pad && b.x0 < a.x1 + pad && a.y0 < b.y1 + pad && b.y0 < a.y1 + pad;
 
 /**
  * Put each edge label on its route where it covers no box, lane heading,
@@ -1155,15 +1340,29 @@ const rectsOverlap = (a: Bounds, b: Bounds, pad = 0) => a.x0 < b.x1 + pad && b.x
  * that fits nowhere at full width gets a narrower chip (full text in its
  * tooltip); one that fits nowhere at all stays inside the drawing.
  */
-function placeLabels(edges: ModelEdge[], routes: Map<string, Point[]>, geo: Geometry): Map<string, LabelBox> {
+function placeLabels(
+  edges: ModelEdge[],
+  routes: Map<string, Point[]>,
+  geo: Geometry,
+): Map<string, LabelBox> {
   const { boxes } = geo;
   const bounds: Bounds = { x0: 2, y0: 2, x1: geo.width - 2, y1: geo.height - 2 };
-  const boxRects: Bounds[] = [...boxes.values()].map((b) => ({ x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height }));
+  const boxRects: Bounds[] = [...boxes.values()].map((b) => ({
+    x0: b.x,
+    y0: b.y,
+    x1: b.x + b.width,
+    y1: b.y + b.height,
+  }));
   const solid = [...boxRects];
   for (const lane of geo.lanes) {
     if (!lane.headLine) continue;
     const f = lane.frame;
-    solid.push({ x0: f.x + 8, y0: f.y + 4, x1: f.x + 20 + textWidth(lane.headLine, LANES.headSize + 1, true), y1: f.y + LANES.head - 2 });
+    solid.push({
+      x0: f.x + 8,
+      y0: f.y + 4,
+      x1: f.x + 20 + textWidth(lane.headLine, LANES.headSize + 1, true),
+      y1: f.y + LANES.head - 2,
+    });
   }
   // Arrowheads: the last stretch of every route.
   for (const pts of routes.values()) {
@@ -1173,13 +1372,25 @@ function placeLabels(edges: ModelEdge[], routes: Map<string, Point[]>, geo: Geom
     const ux = Math.sign(b.x - a.x);
     const uy = Math.sign(b.y - a.y);
     const tail = { x: b.x - ux * 12, y: b.y - uy * 12 };
-    solid.push({ x0: Math.min(tail.x, b.x) - 6, y0: Math.min(tail.y, b.y) - 6, x1: Math.max(tail.x, b.x) + 6, y1: Math.max(tail.y, b.y) + 6 });
+    solid.push({
+      x0: Math.min(tail.x, b.x) - 6,
+      y0: Math.min(tail.y, b.y) - 6,
+      x1: Math.max(tail.x, b.x) + 6,
+      y1: Math.max(tail.y, b.y) + 6,
+    });
   }
   const gutters = geo.channels.filter((c) => c.axis === "x" && !c.fixed);
   const inGutter = (x: number) => gutters.some((c) => x > c.lo && x < c.hi);
   const placed: Bounds[] = [];
   const out = new Map<string, LabelBox>();
-  const area = (r: Bounds, list: Bounds[]) => list.reduce((sum, b) => sum + Math.max(0, Math.min(r.x1, b.x1) - Math.max(r.x0, b.x0)) * Math.max(0, Math.min(r.y1, b.y1) - Math.max(r.y0, b.y0)), 0);
+  const area = (r: Bounds, list: Bounds[]) =>
+    list.reduce(
+      (sum, b) =>
+        sum +
+        Math.max(0, Math.min(r.x1, b.x1) - Math.max(r.x0, b.x0)) *
+          Math.max(0, Math.min(r.y1, b.y1) - Math.max(r.y0, b.y0)),
+      0,
+    );
   for (const e of edges) {
     const full = sizeEdgeLabel(e.label);
     const pts = routes.get(e.id);
@@ -1195,13 +1406,29 @@ function placeLabels(edges: ModelEdge[], routes: Map<string, Point[]>, geo: Geom
       segs.push({ a, b, vertical, score });
     }
     segs.sort((p, q) => q.score - p.score);
-    const sizesToTry = [full, ...[GUTTER_LABEL_W, 76].filter((w) => w < full.width).map((w) => narrowLabel(e.label, w)).filter((lb): lb is EdgeLabelSize => !!lb)];
+    const sizesToTry = [
+      full,
+      ...[GUTTER_LABEL_W, 76]
+        .filter((w) => w < full.width)
+        .map((w) => narrowLabel(e.label, w))
+        .filter((lb): lb is EdgeLabelSize => !!lb),
+    ];
     let choice: { cx: number; cy: number; r: Bounds; lb: EdgeLabelSize } | null = null;
     let best: { cx: number; cy: number; r: Bounds; lb: EdgeLabelSize; cost: number } | null = null;
     for (const lb of sizesToTry) {
       for (const seg of segs) {
         // Centred on the line, then beside it (a narrow channel).
-        const offsets: [number, number][] = seg.vertical ? [[0, 0], [lb.width / 2 - 5, 0], [-(lb.width / 2 - 5), 0]] : [[0, 0], [0, -(lb.height / 2 - 3)], [0, lb.height / 2 - 3]];
+        const offsets: [number, number][] = seg.vertical
+          ? [
+              [0, 0],
+              [lb.width / 2 - 5, 0],
+              [-(lb.width / 2 - 5), 0],
+            ]
+          : [
+              [0, 0],
+              [0, -(lb.height / 2 - 3)],
+              [0, lb.height / 2 - 3],
+            ];
         // Middle first, then outward in small steps (so a label finds the gap
         // between two boxes along a long side channel).
         const len = Math.abs(seg.a.x - seg.b.x) + Math.abs(seg.a.y - seg.b.y);
@@ -1212,11 +1439,21 @@ function placeLabels(edges: ModelEdge[], routes: Map<string, Point[]>, geo: Geom
           for (const t of ts) {
             const cx = seg.a.x + (seg.b.x - seg.a.x) * t + dx;
             const cy = seg.a.y + (seg.b.y - seg.a.y) * t + dy;
-            const r = { x0: cx - lb.width / 2, y0: cy - lb.height / 2, x1: cx + lb.width / 2, y1: cy + lb.height / 2 };
-            if (r.x0 < bounds.x0 || r.x1 > bounds.x1 || r.y0 < bounds.y0 || r.y1 > bounds.y1) continue;
+            const r = {
+              x0: cx - lb.width / 2,
+              y0: cy - lb.height / 2,
+              x1: cx + lb.width / 2,
+              y1: cy + lb.height / 2,
+            };
+            if (r.x0 < bounds.x0 || r.x1 > bounds.x1 || r.y0 < bounds.y0 || r.y1 > bounds.y1)
+              continue;
             const cost = area(r, boxRects) * 4 + area(r, solid) + area(r, placed) * 2;
             if (!best || cost < best.cost) best = { cx, cy, r, lb, cost };
-            if (solid.some((q) => rectsOverlap(r, q, 3)) || placed.some((q) => rectsOverlap(r, q, 3))) continue;
+            if (
+              solid.some((q) => rectsOverlap(r, q, 3)) ||
+              placed.some((q) => rectsOverlap(r, q, 3))
+            )
+              continue;
             choice = { cx, cy, r, lb };
             break;
           }
@@ -1232,30 +1469,70 @@ function placeLabels(edges: ModelEdge[], routes: Map<string, Point[]>, geo: Geom
         // Nowhere inside the drawing: the middle of the longest segment, clamped in.
         const seg = segs[0];
         const lb = sizesToTry[sizesToTry.length - 1];
-        const cx = Math.min(bounds.x1 - lb.width / 2, Math.max(bounds.x0 + lb.width / 2, (seg.a.x + seg.b.x) / 2));
-        const cy = Math.min(bounds.y1 - lb.height / 2, Math.max(bounds.y0 + lb.height / 2, (seg.a.y + seg.b.y) / 2));
-        choice = { cx, cy, lb, r: { x0: cx - lb.width / 2, y0: cy - lb.height / 2, x1: cx + lb.width / 2, y1: cy + lb.height / 2 } };
+        const cx = Math.min(
+          bounds.x1 - lb.width / 2,
+          Math.max(bounds.x0 + lb.width / 2, (seg.a.x + seg.b.x) / 2),
+        );
+        const cy = Math.min(
+          bounds.y1 - lb.height / 2,
+          Math.max(bounds.y0 + lb.height / 2, (seg.a.y + seg.b.y) / 2),
+        );
+        choice = {
+          cx,
+          cy,
+          lb,
+          r: {
+            x0: cx - lb.width / 2,
+            y0: cy - lb.height / 2,
+            x1: cx + lb.width / 2,
+            y1: cy + lb.height / 2,
+          },
+        };
       }
     }
     placed.push(choice.r);
-    out.set(e.id, { cx: choice.cx, cy: choice.cy, width: choice.lb.width, height: choice.lb.height, lines: choice.lb.lines });
+    out.set(e.id, {
+      cx: choice.cx,
+      cy: choice.cy,
+      width: choice.lb.width,
+      height: choice.lb.height,
+      lines: choice.lb.lines,
+    });
   }
   return out;
 }
 
-function finish({ geo, routed }: { geo: Geometry; routed: Map<string, Point[]> }, model: Model): Layout {
+function finish(
+  { geo, routed }: { geo: Geometry; routed: Map<string, Point[]> },
+  model: Model,
+): Layout {
   const { boxes, lanes } = geo;
-  const nodes: LaidOutNode[] = model.nodes.filter((n) => boxes.has(n.id)).map((n) => ({ ...n, ...known(boxes, n.id) }));
+  const nodes: LaidOutNode[] = model.nodes
+    .filter((n) => boxes.has(n.id))
+    .map((n) => ({ ...n, ...known(boxes, n.id) }));
   const labels = placeLabels(model.edges, routed, geo);
   const edges: LaidOutEdge[] = model.edges
     .filter((e) => routed.has(e.id))
-    .map((e) => ({ ...e, orthogonal: true, points: known(routed, e.id), labelBox: labels.get(e.id) || null }));
+    .map((e) => ({
+      ...e,
+      orthogonal: true,
+      points: known(routed, e.id),
+      labelBox: labels.get(e.id) || null,
+    }));
 
   const groups: LaidOutGroup[] = [];
   for (const lane of lanes) {
     if (!lane.group) continue;
     const f = lane.frame;
-    groups.push({ ...lane.group, lane: true, labelLine: lane.headLine, x: f.x, y: f.y, width: f.w, height: f.h });
+    groups.push({
+      ...lane.group,
+      lane: true,
+      labelLine: lane.headLine,
+      x: f.x,
+      y: f.y,
+      width: f.w,
+      height: f.h,
+    });
   }
   // Groups inside a lane: a frame around their members.
   for (const g of model.groups) {
@@ -1267,7 +1544,9 @@ function finish({ geo, routed }: { geo: Geometry; routed: Map<string, Point[]> }
     const y0 = Math.min(...ms.map((b) => b.y)) - pad - (g.label ? 6 : 0);
     const x1 = Math.max(...ms.map((b) => b.x + b.width)) + pad;
     const y1 = Math.max(...ms.map((b) => b.y + b.height)) + pad;
-    const labelLine = g.label ? wrapText(g.label, SIZES.group, Math.max(24, x1 - x0 - 24 - 14), 1)[0] : "";
+    const labelLine = g.label
+      ? wrapText(g.label, SIZES.group, Math.max(24, x1 - x0 - 24 - 14), 1)[0]
+      : "";
     groups.push({ ...g, labelLine, x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
   }
   // Everything drawn, including routes that went around the outside.
@@ -1295,7 +1574,11 @@ export function orthogonalPath(points: Point[], radius = 6): string {
     const p = points[k - 1];
     const c = points[k];
     const n = points[k + 1];
-    const r = Math.min(radius, Math.hypot(c.x - p.x, c.y - p.y) / 2, Math.hypot(n.x - c.x, n.y - c.y) / 2);
+    const r = Math.min(
+      radius,
+      Math.hypot(c.x - p.x, c.y - p.y) / 2,
+      Math.hypot(n.x - c.x, n.y - c.y) / 2,
+    );
     const ux = Math.sign(c.x - p.x);
     const uy = Math.sign(c.y - p.y);
     const vx = Math.sign(n.x - c.x);

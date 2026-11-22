@@ -33,7 +33,11 @@ interface HubBoot {
   sep: string;
 }
 
-const BOOT: HubBoot = (window as Window & { __AUSTERE_HUB__?: HubBoot }).__AUSTERE_HUB__ ?? { version: "", home: "", sep: "/" };
+const BOOT: HubBoot = (window as Window & { __AUSTERE_HUB__?: HubBoot }).__AUSTERE_HUB__ ?? {
+  version: "",
+  home: "",
+  sep: "/",
+};
 
 type View = "inbox" | "pages" | "notes" | "runs" | "settings" | "search";
 const VIEWS: { id: Exclude<View, "search">; label: string; icon: IconName }[] = [
@@ -90,7 +94,15 @@ function fromUrl(): State {
     const last = stored<string>(LAST_VIEW, "inbox");
     view = isView(last) ? last : "inbox";
   }
-  return { view, project: p.get("project") || "", pagesView, q: p.get("q") || "", status: p.get("status") || "", author: p.get("author") || "", device: p.get("device") || "" };
+  return {
+    view,
+    project: p.get("project") || "",
+    pagesView,
+    q: p.get("q") || "",
+    status: p.get("status") || "",
+    author: p.get("author") || "",
+    device: p.get("device") || "",
+  };
 }
 
 function toUrl(s: State): string {
@@ -142,8 +154,16 @@ function middle(text: string, max: number): string {
 const basename = (p: string): string => p.split(/[\\/]/).pop() || p;
 const titleOf = (p: ShellPage): string => p.title || basename(p.rel_path);
 
-const TAKER: Record<string, string> = { listening: "an agent is listening", nobody: "nobody is taking them" };
-const STATUS_LABEL: Record<string, string> = { open: "unanswered", received: "unanswered", addressed: "answered", held: "held for you" };
+const TAKER: Record<string, string> = {
+  listening: "an agent is listening",
+  nobody: "nobody is taking them",
+};
+const STATUS_LABEL: Record<string, string> = {
+  open: "unanswered",
+  received: "unanswered",
+  addressed: "answered",
+  held: "held for you",
+};
 
 // ── layout ──
 
@@ -156,7 +176,13 @@ function logoMark(): SVGSVGElement {
     for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
     return node;
   };
-  const svg = el("svg", { class: "logo", width: "24", height: "24", viewBox: "0 0 32 32", "aria-hidden": "true" }) as SVGSVGElement;
+  const svg = el("svg", {
+    class: "logo",
+    width: "24",
+    height: "24",
+    viewBox: "0 0 32 32",
+    "aria-hidden": "true",
+  }) as SVGSVGElement;
   svg.append(
     el("rect", { class: "logo-ground", width: "32", height: "32", rx: "7" }),
     el("rect", { class: "logo-edge", x: "1", y: "1", width: "30", height: "30", rx: "6" }),
@@ -172,7 +198,13 @@ document.body.append(
     h(
       "aside",
       { class: "side", id: "side", "aria-label": "Projects and views" },
-      h("div", { class: "brand" }, logoMark(), h("a", { href: "/?view=inbox", text: "austere-axi" }), h("small", { text: BOOT.version })),
+      h(
+        "div",
+        { class: "brand" },
+        logoMark(),
+        h("a", { href: "/?view=inbox", text: "austere-axi" }),
+        h("small", { text: BOOT.version }),
+      ),
       h(
         "form",
         { class: "search", role: "search" },
@@ -180,11 +212,22 @@ document.body.append(
           "label",
           { class: "search-box" },
           icon("search", { size: 15, width: 1.8 }),
-          h("input", { type: "search", name: "q", placeholder: "Search pages and parts", "aria-label": "Search pages and parts", autocomplete: "off" }),
+          h("input", {
+            type: "search",
+            name: "q",
+            placeholder: "Search pages and parts",
+            "aria-label": "Search pages and parts",
+            autocomplete: "off",
+          }),
         ),
       ),
       h("nav", { class: "views", "aria-label": "Views" }),
-      h("div", { class: "side-h" }, h("span", { text: "Projects" }), h("a", { class: "all-projects", href: "/", hidden: true, text: "All" })),
+      h(
+        "div",
+        { class: "side-h" },
+        h("span", { text: "Projects" }),
+        h("a", { class: "all-projects", href: "/", hidden: true, text: "All" }),
+      ),
       h("ul", { class: "projects" }),
     ),
     h("div", { class: "scrim" }),
@@ -195,8 +238,22 @@ document.body.append(
       h(
         "header",
         { class: "top" },
-        h("button", { type: "button", class: "side-toggle", "aria-controls": "side", "aria-expanded": "false" }, icon("menu", { size: 18 }), h("span", { class: "side-toggle-text", text: "Projects" })),
-        h("button", { type: "button", class: "top-search", "aria-label": "Search pages and parts" }, icon("search", { size: 20, width: 1.8 })),
+        h(
+          "button",
+          {
+            type: "button",
+            class: "side-toggle",
+            "aria-controls": "side",
+            "aria-expanded": "false",
+          },
+          icon("menu", { size: 18 }),
+          h("span", { class: "side-toggle-text", text: "Projects" }),
+        ),
+        h(
+          "button",
+          { type: "button", class: "top-search", "aria-label": "Search pages and parts" },
+          icon("search", { size: 20, width: 1.8 }),
+        ),
       ),
       h("div", { class: "status", role: "status", "aria-live": "polite" }),
       h("main", { class: "content", id: "content", tabindex: "-1" }),
@@ -228,7 +285,9 @@ function setSide(open: boolean): void {
 }
 narrow.addEventListener("change", syncSide);
 syncSide();
-$(".side-toggle").addEventListener("click", () => setSide(!document.documentElement.classList.contains("side-open")));
+$(".side-toggle").addEventListener("click", () =>
+  setSide(!document.documentElement.classList.contains("side-open")),
+);
 $(".top-search").addEventListener("click", () => {
   setSide(true);
   searchInput.focus();
@@ -252,14 +311,21 @@ class Refused extends Error {}
 
 async function get<T>(route: string): Promise<T> {
   const r = await fetch(route, { headers: { accept: "application/json" } });
-  if (r.status === 403) throw new Refused("This browser is not signed in as the owner. Run `austere-axi hub open` to sign in again.");
+  if (r.status === 403)
+    throw new Refused(
+      "This browser is not signed in as the owner. Run `austere-axi hub open` to sign in again.",
+    );
   if (!r.ok) throw new Error(`austere-axi answered ${r.status}`);
   return (await r.json()) as T;
 }
 
 async function post(route: string, body: object = {}): Promise<ArchiveResult | null> {
   try {
-    const r = await fetch(route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(route, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
     return r.ok ? ((await r.json()) as ArchiveResult) : null;
   } catch {
     return null;
@@ -282,10 +348,20 @@ function openLink(id: string, extra: Record<string, string> = {}): string {
 }
 
 function chip(c: ShellCopy): HTMLElement {
-  const extra = [c.unanswered ? `${c.unanswered} unanswered` : "", c.listening ? "agent listening" : "", c.missing ? "missing" : "", c.archived ? "archived" : ""].filter(Boolean);
+  const extra = [
+    c.unanswered ? `${c.unanswered} unanswered` : "",
+    c.listening ? "agent listening" : "",
+    c.missing ? "missing" : "",
+    c.archived ? "archived" : "",
+  ].filter(Boolean);
   return h(
     "a",
-    { class: `chip${c.unanswered ? " waiting" : ""}${c.missing ? " gone" : ""}`, href: openLink(c.id), title: `${c.label} · ${c.file}`, "data-copy": c.id },
+    {
+      class: `chip${c.unanswered ? " waiting" : ""}${c.missing ? " gone" : ""}`,
+      href: openLink(c.id),
+      title: `${c.label} · ${c.file}`,
+      "data-copy": c.id,
+    },
     icon("branch", { size: 12, width: 2 }),
     h("span", { class: "chip-label", text: middle(c.label, 28) }),
     extra.length ? h("span", { class: "chip-note", text: extra.join(" · ") }) : null,
@@ -303,7 +379,14 @@ function chips(copies: ShellCopy[], least = 2): HTMLElement | null {
     "div",
     { class: "chips" },
     copies.slice(0, CHIPS).map(chip),
-    rest.length ? h("details", { class: "more" }, h("summary", { text: `+${rest.length} more` }), h("div", { class: "chips" }, rest.map(chip))) : null,
+    rest.length
+      ? h(
+          "details",
+          { class: "more" },
+          h("summary", { text: `+${rest.length} more` }),
+          h("div", { class: "chips" }, rest.map(chip)),
+        )
+      : null,
   );
 }
 
@@ -313,7 +396,8 @@ function stateWords(p: ShellPage): Child[] {
   if (!only) {
     const out: Child[] = [plural(p.copies.length, "copy", "copies")];
     if (p.copies.every((c) => c.missing)) out.push(h("em", { class: "gone", text: "missing" }));
-    else if (p.copies.some((c) => c.listening)) out.push(h("em", { class: "live", text: "agent listening" }));
+    else if (p.copies.some((c) => c.listening))
+      out.push(h("em", { class: "live", text: "agent listening" }));
     return out;
   }
   return [
@@ -332,11 +416,25 @@ function joined(parts: Child[]): Child[] {
 /** Why a page is in its inbox group, in words. */
 function reasons(p: ShellPage): HTMLElement | null {
   const lines: HTMLElement[] = [];
-  if (p.changed) lines.push(h("li", { class: "need", text: `Changed since you looked: ${plural(p.changed, "revision")}` }));
-  if (p.held) lines.push(h("li", { class: "need", text: `${plural(p.held, "note")} held for you to release` }));
+  if (p.changed)
+    lines.push(
+      h("li", {
+        class: "need",
+        text: `Changed since you looked: ${plural(p.changed, "revision")}`,
+      }),
+    );
+  if (p.held)
+    lines.push(
+      h("li", { class: "need", text: `${plural(p.held, "note")} held for you to release` }),
+    );
   if (p.failed) {
     const run = p.copies.find((c) => c.failed_run)?.failed_run;
-    lines.push(h("li", { class: "need fail", text: `Agent run failed${run?.reason ? ` (${run.reason.replace(/_/g, " ")})` : ""}${run?.ended_at ? ` · ${when(run.ended_at)}` : ""}` }));
+    lines.push(
+      h("li", {
+        class: "need fail",
+        text: `Agent run failed${run?.reason ? ` (${run.reason.replace(/_/g, " ")})` : ""}${run?.ended_at ? ` · ${when(run.ended_at)}` : ""}`,
+      }),
+    );
   }
   if (p.taker) {
     const waiting = p.unanswered - p.held;
@@ -362,7 +460,16 @@ function notePreview(notes: InboxPage["notes"]): HTMLElement | null {
         "li",
         {},
         h("span", { class: "quote", text: n.text || "(no text)" }),
-        h("span", { class: "by" }, joined([n.author || "You", n.target ? h("span", {}, "on ", h("code", { class: "target", text: n.target })) : null, n.label, STATUS_LABEL[n.status] ?? n.status])),
+        h(
+          "span",
+          { class: "by" },
+          joined([
+            n.author || "You",
+            n.target ? h("span", {}, "on ", h("code", { class: "target", text: n.target })) : null,
+            n.label,
+            STATUS_LABEL[n.status] ?? n.status,
+          ]),
+        ),
       ),
     ),
   );
@@ -372,26 +479,60 @@ type Tone = "amber" | "red" | "green" | "grey" | "plain";
 
 /** The tile at the start of a row: what kind of attention the page wants. */
 function tileOf(p: ShellPage): [IconName, Tone] {
-  if (p.group === "needs_you") return p.failed ? ["alert", "red"] : p.held ? ["person", "amber"] : ["pencil", "amber"];
-  if (p.group === "waiting_on_agent") return p.run_active || p.taker === "listening" ? ["bolt", "green"] : p.taker === "attach_on" ? ["bolt", "grey"] : ["waiting", "grey"];
+  if (p.group === "needs_you")
+    return p.failed ? ["alert", "red"] : p.held ? ["person", "amber"] : ["pencil", "amber"];
+  if (p.group === "waiting_on_agent")
+    return p.run_active || p.taker === "listening"
+      ? ["bolt", "green"]
+      : p.taker === "attach_on"
+        ? ["bolt", "grey"]
+        : ["waiting", "grey"];
   return ["file", "plain"];
 }
 
 /** The one next step a row offers, when there is one. Each opens the page (or turns its agent on). */
 function nextStep(p: ShellPage): HTMLElement | null {
-  if (p.taker === "nobody") return h("a", { class: "btn fill", href: openLink(p.open_id, { attach: "1" }), text: "Turn agent on" });
+  if (p.taker === "nobody")
+    return h("a", {
+      class: "btn fill",
+      href: openLink(p.open_id, { attach: "1" }),
+      text: "Turn agent on",
+    });
   if (p.group !== "needs_you") return null;
-  if (p.changed) return h("a", { class: "btn fill", href: openLink(p.open_id), text: "Review changes" });
-  if (p.held) return h("a", { class: "btn fill", href: openLink(p.open_id), text: "Open held notes" });
+  if (p.changed)
+    return h("a", { class: "btn fill", href: openLink(p.open_id), text: "Review changes" });
+  if (p.held)
+    return h("a", { class: "btn fill", href: openLink(p.open_id), text: "Open held notes" });
   return null;
 }
 
 function archiveButton(p: ShellPage, archivedView = false): HTMLButtonElement {
   const label = `${archivedView ? "Unarchive" : "Archive"} ${titleOf(p)}`;
-  const title = archivedView ? "Bring this page back to the lists" : p.copies.length > 1 ? "Put every copy of this page away; its notes are kept" : "Put this page away; its notes are kept";
+  const title = archivedView
+    ? "Bring this page back to the lists"
+    : p.copies.length > 1
+      ? "Put every copy of this page away; its notes are kept"
+      : "Put this page away; its notes are kept";
   const button: HTMLButtonElement = archivedView
-    ? h("button", { type: "button", class: "btn ghost", text: "Unarchive", title, "aria-label": label, onclick: () => void flip(p, button, "unarchive") })
-    : h("button", { type: "button", class: "icon-btn", title, "aria-label": label, onclick: () => void flip(p, button, "archive") }, icon("archive"));
+    ? h("button", {
+        type: "button",
+        class: "btn ghost",
+        text: "Unarchive",
+        title,
+        "aria-label": label,
+        onclick: () => void flip(p, button, "unarchive"),
+      })
+    : h(
+        "button",
+        {
+          type: "button",
+          class: "icon-btn",
+          title,
+          "aria-label": label,
+          onclick: () => void flip(p, button, "archive"),
+        },
+        icon("archive"),
+      );
   return button;
 }
 
@@ -403,29 +544,53 @@ interface RowOptions {
 
 function pageRow(p: ShellPage, opts: RowOptions = {}): HTMLElement {
   const main = p.copies.find((c) => c.id === p.open_id) ?? p.copies[0];
-  const counts: Child[] = [p.unanswered ? h("b", { class: "open", text: `${p.unanswered} unanswered` }) : null, p.addressed ? `${p.addressed} answered` : null];
+  const counts: Child[] = [
+    p.unanswered ? h("b", { class: "open", text: `${p.unanswered} unanswered` }) : null,
+    p.addressed ? `${p.addressed} answered` : null,
+  ];
   const facts = joined([...stateWords(p), ...counts]);
   const [name, tone] = tileOf(p);
   const time = when(p.activity);
   return h(
     "li",
     { class: `row page-row ${p.group}`, "data-page": p.id },
-    h("span", { class: `tile ${tone}`, "aria-hidden": "true" }, icon(name, { size: 16, width: 1.8 })),
+    h(
+      "span",
+      { class: `tile ${tone}`, "aria-hidden": "true" },
+      icon(name, { size: 16, width: 1.8 }),
+    ),
     h(
       "div",
       { class: "row-main" },
-      h("a", { class: "row-title", href: openLink(p.open_id), title: main?.file ?? "" }, titleOf(p)),
-      h("span", { class: "path", text: opts.showProject ? `${p.project} / ${p.rel_path}` : p.rel_path }),
+      h(
+        "a",
+        { class: "row-title", href: openLink(p.open_id), title: main?.file ?? "" },
+        titleOf(p),
+      ),
+      h("span", {
+        class: "path",
+        text: opts.showProject ? `${p.project} / ${p.rel_path}` : p.rel_path,
+      }),
       facts.length ? h("span", { class: "meta" }, facts) : null,
       reasons(p),
       notePreview(opts.notes ?? []),
       chips(p.copies),
     ),
-    h("div", { class: "row-actions" }, time ? h("span", { class: "when", text: time }) : null, nextStep(p), archiveButton(p, opts.archivedView)),
+    h(
+      "div",
+      { class: "row-actions" },
+      time ? h("span", { class: "when", text: time }) : null,
+      nextStep(p),
+      archiveButton(p, opts.archivedView),
+    ),
   );
 }
 
-async function flip(p: ShellPage, button: HTMLButtonElement, action: "archive" | "unarchive"): Promise<void> {
+async function flip(
+  p: ShellPage,
+  button: HTMLButtonElement,
+  action: "archive" | "unarchive",
+): Promise<void> {
   // One request at a time: a second click would archive again and take the first Undo's place.
   if (button.disabled) return;
   button.disabled = true;
@@ -459,9 +624,26 @@ async function flip(p: ShellPage, button: HTMLButtonElement, action: "archive" |
   void loadSide();
 }
 
-function section(title: string, count: number | null, body: Child, extra: Child = null, cls = ""): HTMLElement {
+function section(
+  title: string,
+  count: number | null,
+  body: Child,
+  extra: Child = null,
+  cls = "",
+): HTMLElement {
   const id = `h-${title.toLowerCase().replace(/[^a-z]+/g, "-")}`;
-  return h("section", { class: cls, "aria-labelledby": id }, h("h2", { id }, title, count == null ? null : h("span", { class: "n", text: String(count) }), extra), body);
+  return h(
+    "section",
+    { class: cls, "aria-labelledby": id },
+    h(
+      "h2",
+      { id },
+      title,
+      count == null ? null : h("span", { class: "n", text: String(count) }),
+      extra,
+    ),
+    body,
+  );
 }
 
 function empty(...parts: Child[]): HTMLElement {
@@ -480,16 +662,33 @@ let sidePages: ShellPage[] = [];
 
 function projectFilter(p: { name: string; id: string } | null): HTMLElement | null {
   if (!state.project) return null;
-  return h("p", { class: "filter" }, `Project ${p?.name ? tilde(p.name) : state.project}`, " · ", viewLink({ project: "" }, "all projects"));
+  return h(
+    "p",
+    { class: "filter" },
+    `Project ${p?.name ? tilde(p.name) : state.project}`,
+    " · ",
+    viewLink({ project: "" }, "all projects"),
+  );
 }
 
 /** An inbox group: its heading, count and what puts a page there, then its rows. */
-function groupSection(title: string, count: number, hint: string, body: Child, cls: string): HTMLElement {
+function groupSection(
+  title: string,
+  count: number,
+  hint: string,
+  body: Child,
+  cls: string,
+): HTMLElement {
   const id = `h-${title.toLowerCase().replace(/[^a-z]+/g, "-")}`;
   return h(
     "section",
     { class: cls, "aria-labelledby": id },
-    h("div", { class: "sec-h" }, h("h2", { id }, title, h("span", { class: "n", text: String(count) })), h("p", { class: "hint", text: hint })),
+    h(
+      "div",
+      { class: "sec-h" },
+      h("h2", { id }, title, h("span", { class: "n", text: String(count) })),
+      h("p", { class: "hint", text: hint }),
+    ),
     body,
   );
 }
@@ -498,34 +697,67 @@ async function renderInbox(): Promise<Child[]> {
   const data = await get<InboxResponse>(`/hub/api/inbox${query({ project: state.project })}`);
   const all = data.needs_you.length + data.waiting_on_agent.length + data.quiet.length;
   const showProject = !state.project;
-  const rows = (list: InboxPage[]): HTMLElement => h("ul", { class: "rows card" }, list.map((p) => pageRow(p, { showProject, notes: p.notes })));
+  const rows = (list: InboxPage[]): HTMLElement =>
+    h(
+      "ul",
+      { class: "rows card" },
+      list.map((p) => pageRow(p, { showProject, notes: p.notes })),
+    );
   if (!all) {
     return [
       h("header", { class: "view-h" }, h("h1", { text: "Inbox" })),
       projectFilter(data.project),
-      empty(state.project ? "Nothing is open for review in this project." : "No pages yet. Open one for review with austere-axi and it shows up here."),
+      empty(
+        state.project
+          ? "Nothing is open for review in this project."
+          : "No pages yet. Open one for review with austere-axi and it shows up here.",
+      ),
     ];
   }
   const waiting = data.waiting_on_agent.length;
   const summary = joined([
-    data.needs_you.length ? h("span", { class: "need", text: `${plural(data.needs_you.length, "page needs", "pages need")} you` }) : "nothing needs you",
+    data.needs_you.length
+      ? h("span", {
+          class: "need",
+          text: `${plural(data.needs_you.length, "page needs", "pages need")} you`,
+        })
+      : "nothing needs you",
     waiting ? `${waiting} ${waiting === 1 ? "waits" : "wait"} on an agent` : null,
     data.quiet.length ? `${data.quiet.length} quiet` : null,
     data.held ? `${plural(data.held, "note")} held for release` : null,
     data.failed_runs.length ? plural(data.failed_runs.length, "failed run") : null,
   ]);
   return [
-    h("header", { class: "view-h" }, h("h1", { text: "Inbox" }), h("p", { class: "summary" }, summary)),
+    h(
+      "header",
+      { class: "view-h" },
+      h("h1", { text: "Inbox" }),
+      h("p", { class: "summary" }, summary),
+    ),
     projectFilter(data.project),
     groupSection(
       "Needs you",
       data.needs_you.length,
       "The agent changed the page, a teammate's notes wait for you, or a run failed",
-      data.needs_you.length ? rows(data.needs_you) : empty("Nothing changed since you looked, no note is held for you and no run failed."),
+      data.needs_you.length
+        ? rows(data.needs_you)
+        : empty("Nothing changed since you looked, no note is held for you and no run failed."),
       "group needs",
     ),
-    groupSection("Waiting on agent", waiting, "Notes no agent has answered yet, and who takes them", waiting ? rows(data.waiting_on_agent) : empty("No unanswered notes."), "group waiting"),
-    groupSection("Quiet", data.quiet.length, "Open for review, nothing waiting", data.quiet.length ? rows(data.quiet) : empty("Every page has something going on."), "group quiet"),
+    groupSection(
+      "Waiting on agent",
+      waiting,
+      "Notes no agent has answered yet, and who takes them",
+      waiting ? rows(data.waiting_on_agent) : empty("No unanswered notes."),
+      "group waiting",
+    ),
+    groupSection(
+      "Quiet",
+      data.quiet.length,
+      "Open for review, nothing waiting",
+      data.quiet.length ? rows(data.quiet) : empty("Every page has something going on."),
+      "group quiet",
+    ),
   ];
 }
 
@@ -535,42 +767,87 @@ const PAGE_VIEWS: { id: PagesView; label: string; count: "open" | "everything" |
   { id: "archived", label: "Archived", count: "archived" },
 ];
 
-const GROUP_LABEL: Record<string, string> = { needs_you: "Needs you", waiting_on_agent: "Waiting on agent", quiet: "Quiet" };
+const GROUP_LABEL: Record<string, string> = {
+  needs_you: "Needs you",
+  waiting_on_agent: "Waiting on agent",
+  quiet: "Quiet",
+};
 
 /** The Notes column under the count: why the page wants the owner, or who takes its notes. */
 function notesLine(p: ShellPage): HTMLElement | null {
   if (p.changed) return h("span", { class: "why-short need", text: "Changed since you looked" });
-  if (p.held) return h("span", { class: "why-short need", text: `${plural(p.held, "note")} held for you` });
+  if (p.held)
+    return h("span", { class: "why-short need", text: `${plural(p.held, "note")} held for you` });
   if (p.failed) return h("span", { class: "why-short fail", text: "Agent run failed" });
-  if (p.taker === "attach_on") return h("span", { class: `why-short${p.run_active ? " live" : ""}`, text: p.run_active ? "A run is working on them" : "Agent on: your next note starts a run" });
-  if (p.taker === "nobody") return h("span", { class: "why-short" }, "Nobody is taking them · ", h("a", { href: openLink(p.open_id, { attach: "1" }), text: "Turn agent on" }));
+  if (p.taker === "attach_on")
+    return h("span", {
+      class: `why-short${p.run_active ? " live" : ""}`,
+      text: p.run_active ? "A run is working on them" : "Agent on: your next note starts a run",
+    });
+  if (p.taker === "nobody")
+    return h(
+      "span",
+      { class: "why-short" },
+      "Nobody is taking them · ",
+      h("a", { href: openLink(p.open_id, { attach: "1" }), text: "Turn agent on" }),
+    );
   return null;
 }
 
 /** A row of the Pages table: page · copies · notes · last activity · archive. */
 function tableRow(p: ShellPage, archivedView: boolean): HTMLElement {
   const main = p.copies.find((c) => c.id === p.open_id) ?? p.copies[0];
-  const counts = joined([p.unanswered ? h("b", { class: "open", text: `${p.unanswered} unanswered` }) : null, p.addressed ? `${p.addressed} answered` : null]);
+  const counts = joined([
+    p.unanswered ? h("b", { class: "open", text: `${p.unanswered} unanswered` }) : null,
+    p.addressed ? `${p.addressed} answered` : null,
+  ]);
   const words = joined(stateWords(p));
-  const dot = p.failed ? "fail" : p.group === "needs_you" ? "need" : p.run_active || p.taker === "listening" ? "live" : "idle";
+  const dot = p.failed
+    ? "fail"
+    : p.group === "needs_you"
+      ? "need"
+      : p.run_active || p.taker === "listening"
+        ? "live"
+        : "idle";
   return h(
     "li",
     { class: `row page-row trow ${p.group}`, "data-page": p.id },
     h(
       "div",
       { class: "t-page" },
-      h("span", { class: `dot ${dot}`, role: "img", "aria-label": p.failed ? "Agent run failed" : (GROUP_LABEL[p.group] ?? p.group) }),
-      h("div", { class: "row-main" }, h("a", { class: "row-title", href: openLink(p.open_id), title: main?.file ?? "" }, titleOf(p)), h("span", { class: "path", text: p.rel_path })),
+      h("span", {
+        class: `dot ${dot}`,
+        role: "img",
+        "aria-label": p.failed ? "Agent run failed" : (GROUP_LABEL[p.group] ?? p.group),
+      }),
+      h(
+        "div",
+        { class: "row-main" },
+        h(
+          "a",
+          { class: "row-title", href: openLink(p.open_id), title: main?.file ?? "" },
+          titleOf(p),
+        ),
+        h("span", { class: "path", text: p.rel_path }),
+      ),
     ),
     h("div", { class: "t-copies" }, chips(p.copies, 1)),
-    h("div", { class: "t-notes" }, counts.length ? h("span", { class: "t-count" }, counts) : null, notesLine(p), words.length ? h("span", { class: "meta" }, words) : null),
+    h(
+      "div",
+      { class: "t-notes" },
+      counts.length ? h("span", { class: "t-count" }, counts) : null,
+      notesLine(p),
+      words.length ? h("span", { class: "meta" }, words) : null,
+    ),
     h("span", { class: "when", text: when(p.activity) }),
     h("div", { class: "row-actions" }, archiveButton(p, archivedView)),
   );
 }
 
 async function renderPages(): Promise<Child[]> {
-  const data = await get<PagesResponse>(`/hub/api/pages${query({ project: state.project, view: state.pagesView })}`);
+  const data = await get<PagesResponse>(
+    `/hub/api/pages${query({ project: state.project, view: state.pagesView })}`,
+  );
   const { counts } = data;
   const tabs = h(
     "nav",
@@ -588,18 +865,49 @@ async function renderPages(): Promise<Child[]> {
     h(
       "header",
       { class: "view-h split" },
-      h("div", {}, h("h1", { text: "Pages" }), h("p", { class: "summary", text: joined([`${plural(data.pages.length, "page")} in ${plural(projectCount, "project")}`, unanswered ? plural(unanswered, "unanswered note") : null]).join("") })),
+      h(
+        "div",
+        {},
+        h("h1", { text: "Pages" }),
+        h("p", {
+          class: "summary",
+          text: joined([
+            `${plural(data.pages.length, "page")} in ${plural(projectCount, "project")}`,
+            unanswered ? plural(unanswered, "unanswered note") : null,
+          ]).join(""),
+        }),
+      ),
       tabs,
     ),
     projectFilter(data.project),
   ];
   if (!data.pages.length) {
-    const others = PAGE_VIEWS.filter((v) => v.id !== state.pagesView && counts[v.count] > 0).map((v) => viewLink({ pagesView: v.id }, `${v.label} (${counts[v.count]})`));
-    if (counts.everything === 0 && !state.project) return [...head, empty("No pages yet. Open one for review with austere-axi and it shows up here.")];
-    if (state.pagesView === "archived") return [...head, empty("No archived pages.", ...(others.length ? [" See: ", ...joined(others), "."] : []))];
+    const others = PAGE_VIEWS.filter((v) => v.id !== state.pagesView && counts[v.count] > 0).map(
+      (v) => viewLink({ pagesView: v.id }, `${v.label} (${counts[v.count]})`),
+    );
+    if (counts.everything === 0 && !state.project)
+      return [
+        ...head,
+        empty("No pages yet. Open one for review with austere-axi and it shows up here."),
+      ];
+    if (state.pagesView === "archived")
+      return [
+        ...head,
+        empty("No archived pages.", ...(others.length ? [" See: ", ...joined(others), "."] : [])),
+      ];
     const parts: Child[] = ["Nothing is open for review."];
-    if (counts.checked) parts.push(` ${plural(counts.checked, "page was", "pages were")} checked but never opened: `, viewLink({ pagesView: "all" }, "show them"), ".");
-    if (counts.archived) parts.push(` ${counts.archived} archived: `, viewLink({ pagesView: "archived" }, "show"), ".");
+    if (counts.checked)
+      parts.push(
+        ` ${plural(counts.checked, "page was", "pages were")} checked but never opened: `,
+        viewLink({ pagesView: "all" }, "show them"),
+        ".",
+      );
+    if (counts.archived)
+      parts.push(
+        ` ${counts.archived} archived: `,
+        viewLink({ pagesView: "archived" }, "show"),
+        ".",
+      );
     return [...head, empty(...parts)];
   }
   const byProject = new Map<string, ShellPage[]>();
@@ -615,15 +923,29 @@ async function renderPages(): Promise<Child[]> {
     const pinfo = info.get(id);
     const roots = pinfo?.roots ?? [];
     const waiting = list.reduce((n, p) => n + p.unanswered, 0);
-    const where = roots.length ? `${middle(tilde(roots[0]), 48)}${roots.length > 1 ? ` · +${roots.length - 1} more ${roots.length === 2 ? "folder" : "folders"}` : ""}` : "";
+    const where = roots.length
+      ? `${middle(tilde(roots[0]), 48)}${roots.length > 1 ? ` · +${roots.length - 1} more ${roots.length === 2 ? "folder" : "folders"}` : ""}`
+      : "";
     items.push(
       h(
         "li",
         { class: "proj-row" },
         h("h2", {}, viewLink({ project: id }, list[0].project)),
         where ? h("small", { class: "path", title: roots.join("\n"), text: where }) : null,
-        waiting ? h("span", { class: `proj-wait${list.some((p) => p.needs_you) ? " need" : ""}`, text: `${waiting} unanswered` }) : null,
-        pinfo?.same_as ? h("p", { class: "same" }, `Same repository as project ${pinfo.same_as.name}: `, h("code", { text: pinfo.same_as.merge })) : null,
+        waiting
+          ? h("span", {
+              class: `proj-wait${list.some((p) => p.needs_you) ? " need" : ""}`,
+              text: `${waiting} unanswered`,
+            })
+          : null,
+        pinfo?.same_as
+          ? h(
+              "p",
+              { class: "same" },
+              `Same repository as project ${pinfo.same_as.name}: `,
+              h("code", { text: pinfo.same_as.merge }),
+            )
+          : null,
       ),
       ...list.map((p) => tableRow(p, archivedView)),
     );
@@ -631,21 +953,38 @@ async function renderPages(): Promise<Child[]> {
   const table = h(
     "div",
     { class: `table card pages-table${archivedView ? " archived" : ""}` },
-    h("div", { class: "thead", "aria-hidden": "true" }, ["Page", "Copies", "Notes", "Last activity", ""].map((t) => h("span", { text: t }))),
+    h(
+      "div",
+      { class: "thead", "aria-hidden": "true" },
+      ["Page", "Copies", "Notes", "Last activity", ""].map((t) => h("span", { text: t })),
+    ),
     h("ul", { class: "rows" }, items),
   );
   const checked =
     state.pagesView === "open" && counts.checked
-      ? h("p", { class: "foot" }, `${plural(counts.checked, "more page was", "more pages were")} checked but never opened for review. `, viewLink({ pagesView: "all" }, "Show them"))
+      ? h(
+          "p",
+          { class: "foot" },
+          `${plural(counts.checked, "more page was", "more pages were")} checked but never opened for review. `,
+          viewLink({ pagesView: "all" }, "Show them"),
+        )
       : null;
   return [...head, table, checked];
 }
 
-const NOTE_STATE: Record<string, string> = { open: "Unanswered", received: "Unanswered", addressed: "Answered", held: "Held for you" };
+const NOTE_STATE: Record<string, string> = {
+  open: "Unanswered",
+  received: "Unanswered",
+  addressed: "Answered",
+  held: "Held for you",
+};
 
 async function renderNotes(): Promise<Child[]> {
-  const data = await get<NotesResponse>(`/hub/api/notes${query({ project: state.project, q: state.q, status: state.status, author: state.author, device: state.device })}`);
-  const option = (value: string, label: string, current: string): HTMLOptionElement => h("option", { value, selected: current === value, text: label });
+  const data = await get<NotesResponse>(
+    `/hub/api/notes${query({ project: state.project, q: state.q, status: state.status, author: state.author, device: state.device })}`,
+  );
+  const option = (value: string, label: string, current: string): HTMLOptionElement =>
+    h("option", { value, selected: current === value, text: label });
   const form = h(
     "form",
     {
@@ -653,40 +992,74 @@ async function renderNotes(): Promise<Child[]> {
       onsubmit: (e: Event) => {
         e.preventDefault();
         const f = new FormData(e.target as HTMLFormElement);
-        go(null, { q: String(f.get("q") ?? ""), status: String(f.get("status") ?? ""), author: String(f.get("author") ?? "") });
+        go(null, {
+          q: String(f.get("q") ?? ""),
+          status: String(f.get("status") ?? ""),
+          author: String(f.get("author") ?? ""),
+        });
       },
     },
     h(
       "label",
       { class: "search-box" },
       icon("search", { size: 15, width: 1.8 }),
-      h("input", { type: "search", name: "q", value: state.q, placeholder: "Search notes, targets, page titles", "aria-label": "Search notes" }),
+      h("input", {
+        type: "search",
+        name: "q",
+        value: state.q,
+        placeholder: "Search notes, targets, page titles",
+        "aria-label": "Search notes",
+      }),
     ),
-    h("select", { name: "status", "aria-label": "Status" }, option("", "All", state.status), option("unanswered", "Unanswered", state.status), option("answered", "Answered", state.status)),
+    h(
+      "select",
+      { name: "status", "aria-label": "Status" },
+      option("", "All", state.status),
+      option("unanswered", "Unanswered", state.status),
+      option("answered", "Answered", state.status),
+    ),
     data.authors.length
-      ? h("select", { name: "author", "aria-label": "Author" }, option("", "Everyone", state.author), option("owner", "Owner", state.author), data.authors.map((a) => option(a, a, state.author)))
+      ? h(
+          "select",
+          { name: "author", "aria-label": "Author" },
+          option("", "Everyone", state.author),
+          option("owner", "Owner", state.author),
+          data.authors.map((a) => option(a, a, state.author)),
+        )
       : null,
     h("button", { type: "submit", class: "btn", text: "Filter" }),
   );
   const waiting = data.notes.filter((n) => n.status !== "addressed").length;
   const list = data.notes.map((n: NoteRow) => {
     const where = n.label && n.label !== n.project ? `${n.project} · ${n.label}` : n.project;
-    const tone = n.status === "addressed" ? "done" : n.status === "held" ? "waiting held" : "waiting";
+    const tone =
+      n.status === "addressed" ? "done" : n.status === "held" ? "waiting held" : "waiting";
     const time = when(n.at);
     return h(
       "li",
       { class: "note" },
-      h("span", { class: `st ${tone}` }, h("span", { class: "st-dot", "aria-hidden": "true" }), NOTE_STATE[n.status] ?? n.status),
+      h(
+        "span",
+        { class: `st ${tone}` },
+        h("span", { class: "st-dot", "aria-hidden": "true" }),
+        NOTE_STATE[n.status] ?? n.status,
+      ),
       h(
         "div",
         { class: "note-main" },
-        h("a", { href: openLink(n.artifact_id), title: n.file }, h("p", { class: "quote", text: n.text || "(no text)" })),
+        h(
+          "a",
+          { href: openLink(n.artifact_id), title: n.file },
+          h("p", { class: "quote", text: n.text || "(no text)" }),
+        ),
         h(
           "span",
           { class: "meta" },
           n.author ? h("b", { class: "by", text: n.author }) : null,
           n.remote ? h("span", { text: "hosted page" }) : null,
-          n.target ? [h("span", { text: "on" }), h("code", { class: "target", text: n.target })] : null,
+          n.target
+            ? [h("span", { text: "on" }), h("code", { class: "target", text: n.target })]
+            : null,
           h("span", { text: "in" }),
           h("a", { href: openLink(n.artifact_id), text: n.title || basename(n.file) }),
           where ? h("span", { text: `· ${where}` }) : null,
@@ -701,29 +1074,63 @@ async function renderNotes(): Promise<Child[]> {
       "header",
       { class: "view-h" },
       h("h1", { text: "Notes" }),
-      h("p", { class: "summary", text: `${filtered ? "Newest first" : "Every note on every page, newest first"} · ${plural(data.notes.length, "note")}${waiting ? ` · ${waiting} unanswered` : ""}` }),
+      h("p", {
+        class: "summary",
+        text: `${filtered ? "Newest first" : "Every note on every page, newest first"} · ${plural(data.notes.length, "note")}${waiting ? ` · ${waiting} unanswered` : ""}`,
+      }),
     ),
     form,
     projectFilter(data.project),
-    data.device ? h("p", { class: "filter" }, `Device ${data.device.name} (${data.device.id}) · `, viewLink({ device: "" }, "everyone")) : null,
-    list.length ? h("ul", { class: "notes card" }, list) : empty(filtered ? "No notes match." : "No notes yet."),
+    data.device
+      ? h(
+          "p",
+          { class: "filter" },
+          `Device ${data.device.name} (${data.device.id}) · `,
+          viewLink({ device: "" }, "everyone"),
+        )
+      : null,
+    list.length
+      ? h("ul", { class: "notes card" }, list)
+      : empty(filtered ? "No notes match." : "No notes yet."),
   ];
 }
 
-const RUN_STATUS: Record<string, string> = { queued: "Queued", waiting_for_session: "Waiting for its session", running: "Running", done: "Done", failed: "Failed", stopped: "Stopped", interrupted: "Interrupted" };
+const RUN_STATUS: Record<string, string> = {
+  queued: "Queued",
+  waiting_for_session: "Waiting for its session",
+  running: "Running",
+  done: "Done",
+  failed: "Failed",
+  stopped: "Stopped",
+  interrupted: "Interrupted",
+};
 
 async function renderRuns(): Promise<Child[]> {
   const data = await get<HubRunsResponse>(`/hub/api/runs${query({ project: state.project })}`);
   const row = (r: RunItem): HTMLElement => {
-    const took = r.started_at && r.ended_at ? `${Math.max(1, Math.round((r.ended_at - r.started_at) / 1000))} s` : "";
+    const took =
+      r.started_at && r.ended_at
+        ? `${Math.max(1, Math.round((r.ended_at - r.started_at) / 1000))} s`
+        : "";
     return h(
       "li",
       { class: `run ${r.status}` },
-      h("span", { class: `rstat ${r.status}` }, h("span", { class: "st-dot", "aria-hidden": "true" }), RUN_STATUS[r.status] ?? r.status),
+      h(
+        "span",
+        { class: `rstat ${r.status}` },
+        h("span", { class: "st-dot", "aria-hidden": "true" }),
+        RUN_STATUS[r.status] ?? r.status,
+      ),
       h(
         "div",
         { class: "run-main" },
-        r.artifact_id ? h("a", { href: openLink(r.artifact_id), title: r.file ?? "", text: r.title || basename(r.file ?? r.artifact_id) }) : h("span", { text: r.kind === "trigger" ? "Trigger run" : "Run" }),
+        r.artifact_id
+          ? h("a", {
+              href: openLink(r.artifact_id),
+              title: r.file ?? "",
+              text: r.title || basename(r.file ?? r.artifact_id),
+            })
+          : h("span", { text: r.kind === "trigger" ? "Trigger run" : "Run" }),
         r.reason ? h("span", { class: "run-why", text: r.reason.replace(/_/g, " ") }) : null,
       ),
       h("span", { class: "agent", text: joined([r.harness, r.mode]).join("") }),
@@ -732,16 +1139,30 @@ async function renderRuns(): Promise<Child[]> {
     );
   };
   return [
-    h("header", { class: "view-h" }, h("h1", { text: "Runs" }), h("p", { class: "summary", text: "Agent runs your notes started on pages where the agent is on, newest first" })),
+    h(
+      "header",
+      { class: "view-h" },
+      h("h1", { text: "Runs" }),
+      h("p", {
+        class: "summary",
+        text: "Agent runs your notes started on pages where the agent is on, newest first",
+      }),
+    ),
     projectFilter(data.project),
     data.runs.length
       ? h(
           "div",
           { class: "table card runs-table" },
-          h("div", { class: "thead", "aria-hidden": "true" }, ["Status", "Page", "Agent", "Started", "Took"].map((t) => h("span", { text: t }))),
+          h(
+            "div",
+            { class: "thead", "aria-hidden": "true" },
+            ["Status", "Page", "Agent", "Started", "Took"].map((t) => h("span", { text: t })),
+          ),
           h("ul", { class: "runs" }, data.runs.map(row)),
         )
-      : empty("No runs yet. Turn an agent on in a page's Agent menu and the owner's notes start one."),
+      : empty(
+          "No runs yet. Turn an agent on in a page's Agent menu and the owner's notes start one.",
+        ),
   ];
 }
 
@@ -751,13 +1172,37 @@ async function renderSearch(): Promise<Child[]> {
     h(
       "li",
       { class: "part" },
-      h("a", { href: openLink(hit.artifact_id, { part: hit.statement }), title: hit.file }, h("span", { class: "part-title", text: `${hit.title || basename(hit.file)} · ${hit.statement}` }), h("span", { class: "snippet", text: hit.snippet })),
+      h(
+        "a",
+        { href: openLink(hit.artifact_id, { part: hit.statement }), title: hit.file },
+        h("span", {
+          class: "part-title",
+          text: `${hit.title || basename(hit.file)} · ${hit.statement}`,
+        }),
+        h("span", { class: "snippet", text: hit.snippet }),
+      ),
       h("span", { class: "meta", text: joined([hit.component || null, hit.copy]).join("") }),
     );
   return [
     h("header", { class: "view-h" }, h("h1", {}, "Search: ", h("q", { text: data.q }))),
-    section("Pages", data.pages.length, data.pages.length ? h("ul", { class: "rows card" }, data.pages.map((p) => pageRow(p, { showProject: true }))) : empty("No page title, path or project matches.")),
-    section("Parts", data.parts.length, data.parts.length ? h("ul", { class: "parts card" }, data.parts.map(part)) : empty("No part of a page says that.")),
+    section(
+      "Pages",
+      data.pages.length,
+      data.pages.length
+        ? h(
+            "ul",
+            { class: "rows card" },
+            data.pages.map((p) => pageRow(p, { showProject: true })),
+          )
+        : empty("No page title, path or project matches."),
+    ),
+    section(
+      "Parts",
+      data.parts.length,
+      data.parts.length
+        ? h("ul", { class: "parts card" }, data.parts.map(part))
+        : empty("No part of a page says that."),
+    ),
   ];
 }
 
@@ -773,11 +1218,22 @@ const settingsUi: SettingsUi = {
   plural,
   section,
   empty,
-  notesOf: (d) => viewLink({ view: "notes", device: d.id, project: "", q: "", status: "", author: "" }, `Notes by ${d.name}`),
+  notesOf: (d) =>
+    viewLink(
+      { view: "notes", device: d.id, project: "", q: "", status: "", author: "" },
+      `Notes by ${d.name}`,
+    ),
   get,
 };
 
-const RENDER: Record<View, () => Promise<Child[]>> = { inbox: renderInbox, pages: renderPages, notes: renderNotes, runs: renderRuns, settings: () => renderSettings(settingsUi), search: renderSearch };
+const RENDER: Record<View, () => Promise<Child[]>> = {
+  inbox: renderInbox,
+  pages: renderPages,
+  notes: renderNotes,
+  runs: renderRuns,
+  settings: () => renderSettings(settingsUi),
+  search: renderSearch,
+};
 
 let generation = 0;
 
@@ -796,7 +1252,11 @@ async function refresh(): Promise<void> {
     nodes = [h("p", { class: "error", text: errorText(err) })];
   }
   if (gen !== generation) return;
-  content.replaceChildren(...nodes.filter((n): n is Node | string => n != null && n !== false).map((n) => (typeof n === "number" ? String(n) : n)));
+  content.replaceChildren(
+    ...nodes
+      .filter((n): n is Node | string => n != null && n !== false)
+      .map((n) => (typeof n === "number" ? String(n) : n)),
+  );
 }
 
 /** Move to another view or filter; `e`: the click that asked, whose default this replaces. */
@@ -806,7 +1266,8 @@ function go(e: Event | null, next: Partial<State>, push = true): void {
   e?.preventDefault();
   if (state.view !== "search") previous = state.view;
   state = { ...state, ...next };
-  if (next.view && next.view !== "notes" && next.view !== "search") state = { ...state, q: "", status: "", author: "", device: "" };
+  if (next.view && next.view !== "notes" && next.view !== "search")
+    state = { ...state, q: "", status: "", author: "", device: "" };
   if (state.view !== "search") store(LAST_VIEW, state.view);
   if (push) history.pushState(null, "", toUrl(state));
   else history.replaceState(null, "", toUrl(state));
@@ -844,11 +1305,28 @@ function viewLinks(tab: boolean, needsYou: number, waiting: number): HTMLAnchorE
   return VIEWS.map((v) =>
     h(
       "a",
-      { href: toUrl({ ...state, view: v.id }), "data-view": v.id, "aria-current": state.view === v.id ? "page" : false, onclick: (e: Event) => go(e, { view: v.id }) },
+      {
+        href: toUrl({ ...state, view: v.id }),
+        "data-view": v.id,
+        "aria-current": state.view === v.id ? "page" : false,
+        onclick: (e: Event) => go(e, { view: v.id }),
+      },
       icon(v.icon, tab ? { size: 20, width: 1.8 } : {}),
       h("span", { class: "label", text: v.label }),
-      v.id === "inbox" && needsYou ? h("span", { class: "count need", title: `${plural(needsYou, "page needs", "pages need")} you`, text: String(needsYou) }) : null,
-      v.id === "settings" && waiting ? h("span", { class: "count need", title: `${plural(waiting, "person asks", "people ask")} for access`, text: String(waiting) }) : null,
+      v.id === "inbox" && needsYou
+        ? h("span", {
+            class: "count need",
+            title: `${plural(needsYou, "page needs", "pages need")} you`,
+            text: String(needsYou),
+          })
+        : null,
+      v.id === "settings" && waiting
+        ? h("span", {
+            class: "count need",
+            title: `${plural(waiting, "person asks", "people ask")} for access`,
+            text: String(waiting),
+          })
+        : null,
     ),
   );
 }
@@ -861,7 +1339,8 @@ function renderViews(needsYou: number, waiting: number): void {
 /** Projects show their pages until the owner folds them. */
 const closedProjects = new Set<string>(stored<string[]>(CLOSED_PROJECTS, []));
 
-const needsDot = (): HTMLElement => h("span", { class: "dot need", role: "img", "aria-label": "Needs you" });
+const needsDot = (): HTMLElement =>
+  h("span", { class: "dot need", role: "img", "aria-label": "Needs you" });
 
 function renderSide(): void {
   renderViews(
@@ -907,8 +1386,23 @@ function renderSide(): void {
           "div",
           { class: "proj-head" },
           toggle,
-          h("a", { class: "proj-link", href: toUrl({ ...state, project: p.id }), title: p.roots.join("\n"), "aria-current": selected ? "true" : false, onclick: (e: Event) => go(e, { project: p.id }), text: p.name }),
-          p.unanswered ? h("span", { class: `count${p.needs_you ? " need" : ""}`, title: plural(p.unanswered, "unanswered note"), text: String(p.unanswered) }) : p.needs_you ? needsDot() : null,
+          h("a", {
+            class: "proj-link",
+            href: toUrl({ ...state, project: p.id }),
+            title: p.roots.join("\n"),
+            "aria-current": selected ? "true" : false,
+            onclick: (e: Event) => go(e, { project: p.id }),
+            text: p.name,
+          }),
+          p.unanswered
+            ? h("span", {
+                class: `count${p.needs_you ? " need" : ""}`,
+                title: plural(p.unanswered, "unanswered note"),
+                text: String(p.unanswered),
+              })
+            : p.needs_you
+              ? needsDot()
+              : null,
         ),
         expanded
           ? h(
@@ -920,18 +1414,45 @@ function renderSide(): void {
                   {},
                   h(
                     "a",
-                    { href: openLink(pg.open_id), title: pg.rel_path, class: pg.needs_you ? "need" : "" },
+                    {
+                      href: openLink(pg.open_id),
+                      title: pg.rel_path,
+                      class: pg.needs_you ? "need" : "",
+                    },
                     h("span", { class: "pg-title", text: titleOf(pg) }),
-                    pg.needs_you ? needsDot() : pg.unanswered ? h("span", { class: "count", title: plural(pg.unanswered, "unanswered note"), text: String(pg.unanswered) }) : null,
+                    pg.needs_you
+                      ? needsDot()
+                      : pg.unanswered
+                        ? h("span", {
+                            class: "count",
+                            title: plural(pg.unanswered, "unanswered note"),
+                            text: String(pg.unanswered),
+                          })
+                        : null,
                   ),
-                  pg.copies.length > 1 ? h("div", { class: "mini-chips" }, pg.copies.map((c) => h("a", { class: `mini-chip${c.unanswered ? " waiting" : ""}`, href: openLink(c.id), title: `${c.label} · ${c.file}`, text: middle(c.label, 18) }))) : null,
+                  pg.copies.length > 1
+                    ? h(
+                        "div",
+                        { class: "mini-chips" },
+                        pg.copies.map((c) =>
+                          h("a", {
+                            class: `mini-chip${c.unanswered ? " waiting" : ""}`,
+                            href: openLink(c.id),
+                            title: `${c.label} · ${c.file}`,
+                            text: middle(c.label, 18),
+                          }),
+                        ),
+                      )
+                    : null,
                 ),
               ),
             )
           : null,
       );
     });
-  $(".projects").replaceChildren(...(list.length ? list : [h("li", { class: "side-empty", text: "No projects yet." })]));
+  $(".projects").replaceChildren(
+    ...(list.length ? list : [h("li", { class: "side-empty", text: "No projects yet." })]),
+  );
 }
 
 /** Access requests waiting for the owner (RLM-398): a count on Settings. */
@@ -939,7 +1460,11 @@ let waitingPeople = 0;
 
 async function loadSide(): Promise<void> {
   try {
-    const [p, pages, asks] = await Promise.all([get<ProjectsResponse>("/hub/api/projects"), get<PagesResponse>("/hub/api/pages"), get<AccessRequestsResponse>("/hub/api/people/requests")]);
+    const [p, pages, asks] = await Promise.all([
+      get<ProjectsResponse>("/hub/api/projects"),
+      get<PagesResponse>("/hub/api/pages"),
+      get<AccessRequestsResponse>("/hub/api/people/requests"),
+    ]);
     projects = p.projects;
     sidePages = pages.pages;
     waitingPeople = asks.waiting.length;

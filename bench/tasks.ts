@@ -36,7 +36,17 @@ Plan: move user sessions from Redis to Postgres.
 - Risks: write latency on login (mitigation: async write with a 50 ms timeout); table bloat from expired rows (mitigation: nightly partition drop).
 - Extra cost: $140/month.
 - Decision needed: rollout strategy, either "Big bang" (one deploy, high risk) or "Dual-write" (gradual, low risk). Let the reviewer pick one and send the decision.`,
-    facts: ["38,214", "45 ms", "sessions_pg", "8080", "Dual-write", "Big bang", "$140", "partition", "backfill"],
+    facts: [
+      "38,214",
+      "45 ms",
+      "sessions_pg",
+      "8080",
+      "Dual-write",
+      "Big bang",
+      "$140",
+      "partition",
+      "backfill",
+    ],
     feedback: {
       anchor: "table bloat",
       note: "Add a third risk: connection pool exhaustion during the dual-write phase. Mitigation: put PgBouncer in transaction mode in front of Postgres.",
@@ -101,7 +111,17 @@ ADR-017: Event bus for order events.
 - Proposed decision: SQS + SNS. Orders publishes "order.placed" to an SNS topic; Billing, Shipping and Notifications each read from their own SQS queue.
 - Consequences: no event replay, so we keep an outbox table in the Orders database; at-least-once delivery, so every consumer must be idempotent.
 - Status: proposed. The reviewer should be able to Accept or Reject, with an optional comment.`,
-    facts: ["ADR-017", "Kafka", "NATS", "SQS", "order.placed", "outbox", "idempotent", "1M", "200k"],
+    facts: [
+      "ADR-017",
+      "Kafka",
+      "NATS",
+      "SQS",
+      "order.placed",
+      "outbox",
+      "idempotent",
+      "1M",
+      "200k",
+    ],
     feedback: {
       anchor: "NATS",
       note: "Add a row (or criterion) for monthly cost estimate: Kafka about $2,400, NATS JetStream about $900, SQS + SNS about $310 at our volume.",
@@ -126,7 +146,17 @@ Use case: semantic search over 40M document chunks, 768-dim embeddings, p95 quer
 | License | proprietary | BSD-3 | Apache-2.0 | Apache-2.0 |
 
 Our recommendation: shortlist Qdrant (best latency per dollar) and Pinecone (lowest latency, no ops). Let the reviewer change the shortlist with checkboxes and send it.`,
-    facts: ["Pinecone", "Weaviate", "Qdrant", "Milvus", "40M", "38 ms", "$1,250", "Apache-2.0", "BSD-3"],
+    facts: [
+      "Pinecone",
+      "Weaviate",
+      "Qdrant",
+      "Milvus",
+      "40M",
+      "38 ms",
+      "$1,250",
+      "Apache-2.0",
+      "BSD-3",
+    ],
     feedback: {
       anchor: "Milvus",
       note: "Add pgvector as a fifth option: self-host on our existing Postgres, p95 latency 95 ms, about $400/month, hybrid search yes (with tsvector), metadata filtering good, license PostgreSQL.",
@@ -151,10 +181,20 @@ Week of 2026-10-26.
   - INC-1047, Wed, Sev3, 12 min: bad config push to the cart cache. Status: resolved.
   - INC-1051, Sun, Sev3, ongoing: elevated p95 from a slow inventory query. Status: investigating.
 - Action items: add an index on inventory(sku, warehouse_id) (owner: Priya, due Nov 4); add a timeout alert for the payment provider (owner: Marco, due Nov 6).`,
-    facts: ["48.2M", "0.21%", "312 ms", "64%", "INC-1042", "INC-1051", "Priya", "warehouse_id", "15,900"],
+    facts: [
+      "48.2M",
+      "0.21%",
+      "312 ms",
+      "64%",
+      "INC-1042",
+      "INC-1051",
+      "Priya",
+      "warehouse_id",
+      "15,900",
+    ],
     feedback: {
       anchor: "INC-1047",
-      note: "INC-1047 was Sev2, not Sev3, and lasted 47 minutes. Fix the row and add a postmortem link label \"PM-1047\".",
+      note: 'INC-1047 was Sev2, not Sev3, and lasted 47 minutes. Fix the row and add a postmortem link label "PM-1047".',
       expect: ["PM-1047", "47 min"],
     },
   },
@@ -174,10 +214,20 @@ Release 3.8 ships Thursday. Code freeze is Wednesday 18:00.
 | BUG-327 | Push notification sent twice on Android 15 | medium | ~9% of Android | unknown |
 
 For each bug the reviewer picks one of: "fix for 3.8", "defer to 3.9", "won't fix". My suggestion: fix BUG-311 and BUG-318, defer BUG-322 and BUG-327.`,
-    facts: ["3.8", "BUG-311", "BUG-318", "BUG-322", "BUG-327", "10,000", "defer to 3.9", "won't fix", "Android 15"],
+    facts: [
+      "3.8",
+      "BUG-311",
+      "BUG-318",
+      "BUG-322",
+      "BUG-327",
+      "10,000",
+      "defer to 3.9",
+      "won't fix",
+      "Android 15",
+    ],
     feedback: {
       anchor: "BUG-327",
-      note: "Add BUG-330 \"Password reset email links expire after 5 minutes instead of 60\", severity high, all users who reset a password, fix estimate 1 hour. Suggest: fix for 3.8.",
+      note: 'Add BUG-330 "Password reset email links expire after 5 minutes instead of 60", severity high, all users who reset a password, fix estimate 1 hour. Suggest: fix for 3.8.',
       expect: ["BUG-330"],
     },
   },

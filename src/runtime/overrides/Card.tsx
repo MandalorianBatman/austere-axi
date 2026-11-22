@@ -35,7 +35,13 @@ const GAP: Record<string, string> = {
   xl: "var(--openui-space-xl)",
   "2xl": "var(--openui-space-2xl)",
 };
-const ALIGN: Record<string, string> = { start: "flex-start", center: "center", end: "flex-end", stretch: "stretch", baseline: "baseline" };
+const ALIGN: Record<string, string> = {
+  start: "flex-start",
+  center: "center",
+  end: "flex-end",
+  stretch: "stretch",
+  baseline: "baseline",
+};
 const JUSTIFY: Record<string, string> = {
   start: "flex-start",
   center: "center",
@@ -61,9 +67,14 @@ function titledHeader(children: unknown[]): ChildNode | undefined {
 // find-in-page reaches it (and unfolds it), and so does the annotation layer's reveal. A row
 // Card keeps the stock layout (its header is one cell of the row). The agent writes nothing
 // new: same props, no prompt text.
-export function FoldableCardRenderer({ props, renderNode, statementId }: ComponentRenderProps<CardProps>) {
+export function FoldableCardRenderer({
+  props,
+  renderNode,
+  statementId,
+}: ComponentRenderProps<CardProps>) {
   const children = Array.isArray(props.children) ? props.children : [];
-  const header = children.length > 1 && props.direction !== "row" ? titledHeader(children) : undefined;
+  const header =
+    children.length > 1 && props.direction !== "row" ? titledHeader(children) : undefined;
   const [folded, setFolded] = React.useState(() => !!statementId && foldedIds.has(statementId));
   const bodyRef = React.useRef<HTMLDivElement>(null);
 
@@ -115,7 +126,14 @@ export function FoldableCardRenderer({ props, renderNode, statementId }: Compone
           onClick={() => setFolded(!folded)}
         >
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-            <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M4 6l4 4 4-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </button>
       </div>

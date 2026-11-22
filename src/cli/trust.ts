@@ -57,7 +57,8 @@ export function readTrustList(): TrustList {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return { pins: {}, scopes: [] };
     throw err;
   }
-  const bad = (why: string) => new Error(`${file} is malformed (${why}); ask the user to fix or delete it`);
+  const bad = (why: string) =>
+    new Error(`${file} is malformed (${why}); ask the user to fix or delete it`);
   let data: { format?: unknown; pins?: unknown; scopes?: unknown };
   try {
     data = JSON.parse(raw);
@@ -65,14 +66,24 @@ export function readTrustList(): TrustList {
     throw bad("not JSON");
   }
   if (!data || typeof data !== "object" || Array.isArray(data)) throw bad("not an object");
-  if (data.format === 1) throw bad("format 1 does not record which registry a scope was trusted on; delete it and add the entries again with `trust add`");
-  if (data.format !== FORMAT) throw bad(`format ${JSON.stringify(data.format)}; this austere-axi reads ${FORMAT}`);
+  if (data.format === 1)
+    throw bad(
+      "format 1 does not record which registry a scope was trusted on; delete it and add the entries again with `trust add`",
+    );
+  if (data.format !== FORMAT)
+    throw bad(`format ${JSON.stringify(data.format)}; this austere-axi reads ${FORMAT}`);
   const { pins = {}, scopes = [] } = data;
   if (!pins || typeof pins !== "object" || Array.isArray(pins)) throw bad("pins is not an object");
   const list: TrustList = { pins: {}, scopes: [] };
   for (const [name, pin] of Object.entries(pins)) {
     const { version, integrity } = (pin || {}) as { version?: unknown; integrity?: unknown };
-    if (!isValidPackName(name) || typeof version !== "string" || !isValidVersion(version) || typeof integrity !== "string" || !INTEGRITY_RE.test(integrity)) {
+    if (
+      !isValidPackName(name) ||
+      typeof version !== "string" ||
+      !isValidVersion(version) ||
+      typeof integrity !== "string" ||
+      !INTEGRITY_RE.test(integrity)
+    ) {
       throw bad(`pin ${JSON.stringify(name)} needs a version x.y.z and a sha384 integrity`);
     }
     list.pins[name] = { version, integrity };
@@ -80,8 +91,15 @@ export function readTrustList(): TrustList {
   if (!Array.isArray(scopes)) throw bad("scopes is not a list");
   for (const s of scopes) {
     const { scope, registry } = (s || {}) as { scope?: unknown; registry?: unknown };
-    if (typeof scope !== "string" || !isScope(scope) || typeof registry !== "string" || !REGISTRY_RE.test(registry)) {
-      throw bad(`scope ${JSON.stringify(s)} needs an npm scope like "@acme" and the registry URL it was trusted on`);
+    if (
+      typeof scope !== "string" ||
+      !isScope(scope) ||
+      typeof registry !== "string" ||
+      !REGISTRY_RE.test(registry)
+    ) {
+      throw bad(
+        `scope ${JSON.stringify(s)} needs an npm scope like "@acme" and the registry URL it was trusted on`,
+      );
     }
     list.scopes.push({ scope, registry });
   }
@@ -115,9 +133,15 @@ export function mayTrust(list: TrustList, name: string, registry: string): boole
  * Why an agent may install this pack from `registry` without --trust, or null:
  * first-party, or on the list (its scope on that registry, or a pin of exactly this version and pack.js).
  */
-export function trustOf(list: TrustList, pack: { name: string; version: string; integrity: string }, registry: string): "first-party" | "trust-list" | null {
+export function trustOf(
+  list: TrustList,
+  pack: { name: string; version: string; integrity: string },
+  registry: string,
+): "first-party" | "trust-list" | null {
   if (isFirstParty(pack.name)) return "first-party";
   if (scopeTrusted(list, pack.name, registry)) return "trust-list";
   const pin = Object.hasOwn(list.pins, pack.name) ? list.pins[pack.name] : undefined;
-  return pin && pin.version === pack.version && pin.integrity === pack.integrity ? "trust-list" : null;
+  return pin && pin.version === pack.version && pin.integrity === pack.integrity
+    ? "trust-list"
+    : null;
 }

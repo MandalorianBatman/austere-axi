@@ -39,8 +39,13 @@ export function locator(lines: ReadonlyMap<string, { line: number; text: string 
 /** `at` says where a statement sits in the file. */
 export function describeItem(it: FeedbackItem, at: Locate): Record<string, unknown> {
   if (it.kind === "annotation") {
-    const o: Record<string, unknown> = { annotation: `${it.target} (${it.component})`, ...at(it.target) };
-    const within = (Array.isArray(it.path) ? it.path : []).slice(0, -1).filter((p) => typeof p === "string" && p !== "root");
+    const o: Record<string, unknown> = {
+      annotation: `${it.target} (${it.component})`,
+      ...at(it.target),
+    };
+    const within = (Array.isArray(it.path) ? it.path : [])
+      .slice(0, -1)
+      .filter((p) => typeof p === "string" && p !== "root");
     if (within.length) o.within = within.join(" > ");
     if (it.selection) o.selection = it.selection;
     else if (it.excerpt) o.excerpt = it.excerpt;
@@ -55,7 +60,12 @@ export function describeItem(it: FeedbackItem, at: Locate): Record<string, unkno
     return o;
   }
   if (it.kind === "render-error") {
-    return { render_error: it.statement || "(page)", ...at(it.statement), error: it.message, note: it.note };
+    return {
+      render_error: it.statement || "(page)",
+      ...at(it.statement),
+      error: it.message,
+      note: it.note,
+    };
   }
   return { message: it.text ?? it.note ?? "" };
 }

@@ -16,13 +16,35 @@ import { readArtifact, replaceProgram, rewriteRuntime, escapeHtml } from "./arti
 import { agentPrompt } from "./agent-prompt.ts";
 import { cloudEnabled, cloudUrl, readCloud, setCloudEnabled, signedIn } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
-import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, lanAddresses, linkUrl, whoIs } from "./net.ts";
+import {
+  addressSettings,
+  allowedHosts,
+  detectTailscale,
+  hostOnly,
+  isLoopback,
+  lanAddresses,
+  linkUrl,
+  whoIs,
+} from "./net.ts";
 import type { AddressSettings, Tailnet, TailscalePerson } from "./net.ts";
 import { ASSET_DIR, VERSION, canonicalFile, msEnv, stateDir, versionGt } from "./paths.ts";
 import { RENDER_CHECK_AUTHOR, SessionStore, newId, sessionId } from "./sessions.ts";
-import type { FeedbackEntry, NoteItem, QueuedEntry, Session, TranscriptEntry, UserEntry } from "./sessions.ts";
+import type {
+  FeedbackEntry,
+  NoteItem,
+  QueuedEntry,
+  Session,
+  TranscriptEntry,
+  UserEntry,
+} from "./sessions.ts";
 import { lockStateDir } from "./lock.ts";
-import { listSessions, liveness, parseCallerReport, registerSession, shortId } from "./agent-sessions.ts";
+import {
+  listSessions,
+  liveness,
+  parseCallerReport,
+  registerSession,
+  shortId,
+} from "./agent-sessions.ts";
 import type { CallerReport, SessionAction } from "./agent-sessions.ts";
 import type { Liveness } from "./caller.ts";
 import { detectUnit } from "./service.ts";
@@ -31,20 +53,68 @@ import { installedPackFile, pagePacks, readLock } from "./packs.ts";
 import { Hub, activeWorkNow } from "./hub.ts";
 import { statementMap } from "../shared/statements.ts";
 import type { ArchivePlan } from "./hub.ts";
-import { agentLabel, headRev, recordRevision, restoredProgram, revisionAt, revisionLog, setViewedRev, similarPages, statementVersions, viewedRev } from "./history.ts";
+import {
+  agentLabel,
+  headRev,
+  recordRevision,
+  restoredProgram,
+  revisionAt,
+  revisionLog,
+  setViewedRev,
+  similarPages,
+  statementVersions,
+  viewedRev,
+} from "./history.ts";
 import type { RevisionRow } from "./history.ts";
 import { Dispatcher, getRun, listRuns, logTail, summary } from "./dispatch.ts";
 import { TriggerScheduler, readTriggers } from "./triggers.ts";
 import type { RunEvent, RunSummary } from "./dispatch.ts";
-import { AttachRefused, attachReport, authorOf, autoConflict, changeSetting, effectiveAttach, harnessInfos, isAttachMode, resolveSessionValue, scopeIds } from "./attach.ts";
-import type { AttachFields, AttachSettingRow, AttachState, AttachWhere, EffectiveAttach, HarnessInfo, LiveAuto } from "./attach.ts";
+import {
+  AttachRefused,
+  attachReport,
+  authorOf,
+  autoConflict,
+  changeSetting,
+  effectiveAttach,
+  harnessInfos,
+  isAttachMode,
+  resolveSessionValue,
+  scopeIds,
+} from "./attach.ts";
+import type {
+  AttachFields,
+  AttachSettingRow,
+  AttachState,
+  AttachWhere,
+  EffectiveAttach,
+  HarnessInfo,
+  LiveAuto,
+} from "./attach.ts";
 import { adapterFor, findOnPath, spawnSpec } from "./adapters/index.ts";
 import { readAdapters } from "./adapters/config.ts";
 import type { AdaptersConfig } from "./adapters/config.ts";
 import type { AttachMode } from "./adapters/types.ts";
-import { copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
+import {
+  copyLabel,
+  findProject,
+  findRoot,
+  forgetRoot,
+  listProjects,
+  mergeProjects,
+  renameProject,
+} from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
-import { COOKIE, LoginCodes, OWNER_COOKIE, cleanName, ownerCookie, ownerKey, reviewerCookies, safeEqual, tokenFromCookie } from "./invites.ts";
+import {
+  COOKIE,
+  LoginCodes,
+  OWNER_COOKIE,
+  cleanName,
+  ownerCookie,
+  ownerKey,
+  reviewerCookies,
+  safeEqual,
+  tokenFromCookie,
+} from "./invites.ts";
 import { DeviceStore, covers, isLive } from "./devices.ts";
 import type { DeviceOrigin, DeviceRow, Scope, ScopeKind, SeenMeta } from "./devices.ts";
 import { RequestRefused, RequestStore, describeAgent } from "./requests.ts";
@@ -52,8 +122,30 @@ import type { AccessRequestRow, RequestStatus } from "./requests.ts";
 import dns from "node:dns";
 import { reviewerItem } from "./items.ts";
 import { missingPage } from "./hub-page.ts";
-import { copiesToFlip, copySummary, shellInbox, shellPages, shellProjects, shellRuns, shellSearch } from "./hub-api.ts";
-import type { ArchiveResult, CloudSettings, CopySummary, InboxResponse, LocalNetwork, NotesResponse, PagesResponse, PagesView, ProjectActionResult, ProjectsResponse, HubRunsResponse, SearchResponse, SettingsResponse } from "../shared/hub-api.ts";
+import {
+  copiesToFlip,
+  copySummary,
+  shellInbox,
+  shellPages,
+  shellProjects,
+  shellRuns,
+  shellSearch,
+} from "./hub-api.ts";
+import type {
+  ArchiveResult,
+  CloudSettings,
+  CopySummary,
+  InboxResponse,
+  LocalNetwork,
+  NotesResponse,
+  PagesResponse,
+  PagesView,
+  ProjectActionResult,
+  ProjectsResponse,
+  HubRunsResponse,
+  SearchResponse,
+  SettingsResponse,
+} from "../shared/hub-api.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
 import { Peer } from "./peer.ts";
 import { parseClientFrame } from "../shared/sync.ts";
@@ -170,7 +262,13 @@ export interface FeedbackResponse {
 export interface ProjectFeedbackResponse {
   project: string;
   /** `missing`: the file is gone; its notes are still here. */
-  batches: { file: string; copy: string; archived: boolean; missing?: boolean; entries: FeedbackEntry[] }[];
+  batches: {
+    file: string;
+    copy: string;
+    archived: boolean;
+    missing?: boolean;
+    entries: FeedbackEntry[];
+  }[];
 }
 
 /** /api/archive with `missing`: the copies put away, with the notes no agent had answered on each. */
@@ -311,7 +409,14 @@ export interface AttachInfo {
   /** The page's author session, which `author` resolves to (Q11). */
   author: { id: string; harness: string; short: string } | null;
   /** The agent sessions registered for this copy (RLM-343). */
-  sessions: { id: string; harness: string; short: string; roles: string[]; lastSeen: number; liveness: Liveness }[];
+  sessions: {
+    id: string;
+    harness: string;
+    short: string;
+    roles: string[];
+    lastSeen: number;
+    liveness: Liveness;
+  }[];
   /** Every adapter by name; omp's model list when `omp models` answered in time. */
   harnesses: Record<string, HarnessInfo & { models?: string[] }>;
   run: RunSummary | null;
@@ -332,10 +437,18 @@ function modelSelectors(json: string): string[] | null {
   } catch {
     return null;
   }
-  if (!data || typeof data !== "object" || !("models" in data) || !Array.isArray(data.models)) return null;
+  if (!data || typeof data !== "object" || !("models" in data) || !Array.isArray(data.models))
+    return null;
   const names: string[] = [];
   for (const m of data.models as unknown[]) {
-    if (!m || typeof m !== "object" || !("selector" in m) || typeof m.selector !== "string" || m.selector.length > 200) continue;
+    if (
+      !m ||
+      typeof m !== "object" ||
+      !("selector" in m) ||
+      typeof m.selector !== "string" ||
+      m.selector.length > 200
+    )
+      continue;
     if ("kind" in m && m.kind !== "chat") continue;
     names.push(m.selector);
     if (names.length >= 500) break;
@@ -346,7 +459,13 @@ function modelSelectors(json: string): string[] | null {
 /** Who is asking for a page: the owner, or a team reviewer on a live device whose scope reaches the page. */
 type OwnerViewer = { role: "owner"; name: string };
 /** `credential` is the device's current `secret_hash`: the frame's asset token is bound to it, so a replaced secret kills old tokens. */
-type ReviewerViewer = { role: "reviewer"; name: string; auto: boolean; deviceId: string; credential: string };
+type ReviewerViewer = {
+  role: "reviewer";
+  name: string;
+  auto: boolean;
+  deviceId: string;
+  credential: string;
+};
 type Viewer = OwnerViewer | ReviewerViewer;
 
 /** A browser's event stream. `stalledSince`: when its socket backed up. */
@@ -422,10 +541,12 @@ const LOGIN_TTL_MS = 60_000;
 // A device's cookie lasts as long as browsers allow (400 days); the owner ends it by revoking the device.
 const DEVICE_COOKIE_MAX_AGE = 400 * 86_400;
 const LINK_INVALID = "This link is not valid. It may have been revoked; ask for a new one.";
-const LINK_USED = "This link was already used on another device. Each link opens on one device only; ask the owner for a new one.";
+const LINK_USED =
+  "This link was already used on another device. Each link opens on one device only; ask the owner for a new one.";
 const LINK_EXPIRED = "This link expired before anyone opened it. Ask the owner for a new one.";
 /** Why the owner cannot sign in on the local-network listener (P7). */
-const LAN_NO_OWNER = "The owner does not sign in over the local network: its traffic is not encrypted. Use this computer, Tailscale or HTTPS.";
+const LAN_NO_OWNER =
+  "The owner does not sign in over the local network: its traffic is not encrypted. Use this computer, Tailscale or HTTPS.";
 // A browser that asked for access (RLM-398) holds its request's pending secret here until the owner decides.
 const REQUEST_COOKIE = "austere_rq";
 const REQUEST_COOKIE_MAX_AGE = 30 * 86_400;
@@ -528,12 +649,19 @@ export async function runServer({
     changed: (s, entries) => {
       broadcastTranscript(s, entries);
       // A hosted note that arrived released (or was released on another machine) is the owner's (RLM-345).
-      wakeOrRun(s, entries.some((e) => e.role === "user" && e.seq != null && !e.held && !e.discarded && !e.doneAt));
+      wakeOrRun(
+        s,
+        entries.some(
+          (e) => e.role === "user" && e.seq != null && !e.held && !e.discarded && !e.doneAt,
+        ),
+      );
       broadcastPresence(s);
     },
     viewing: (s) => Array.from(clients.get(s.id) || []).some((c) => c.viewer.role === "owner"),
     relay: (s, frame) => {
-      for (const c of Array.from(clients.get(s.id) || [])) if (c.viewer.role === "owner") sseWrite(clients.get(s.id) as Set<SseClient>, c, viewerEvent(frame));
+      for (const c of Array.from(clients.get(s.id) || []))
+        if (c.viewer.role === "owner")
+          sseWrite(clients.get(s.id) as Set<SseClient>, c, viewerEvent(frame));
     },
   });
   const liveAuto: LiveAuto = (pageId, fallback) => peer.liveAuto(pageId, fallback);
@@ -549,7 +677,12 @@ export async function runServer({
     emit: (id, event) => broadcastOwners(id, "run", event),
   });
   // Activity triggers (RLM-360): a command the owner named at a terminal runs once a project has gone quiet.
-  const triggers = new TriggerScheduler({ db: store.db, port, log, pollMs: msEnv("AUSTERE_AXI_TRIGGER_POLL_MS", 15_000) });
+  const triggers = new TriggerScheduler({
+    db: store.db,
+    port,
+    log,
+    pollMs: msEnv("AUSTERE_AXI_TRIGGER_POLL_MS", 15_000),
+  });
   // Render errors already sent per session, for one revision; a repeat or a second tab adds nothing.
   const renderReported = new Map<string, { revision: number; keys: Set<string> }>();
   let tailnet: Tailnet | null = null;
@@ -558,7 +691,10 @@ export async function runServer({
   /** The newest CLI version that called this server, when it is newer than the server (Settings → About). */
   let newestCli: string | null = null;
   // A supervised server is always on: its supervisor decides when it stops.
-  const idleMs = persist || persistEnv() || supervisorName ? 0 : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
+  const idleMs =
+    persist || persistEnv() || supervisorName
+      ? 0
+      : msEnv("AUSTERE_AXI_IDLE_TIMEOUT_MS", 30 * 60_000);
   const pageHoldMs = msEnv("AUSTERE_AXI_PAGE_HOLD_MS", PAGE_HOLD_MS);
   const staleWorkingMs = msEnv("AUSTERE_AXI_STALE_WORKING_MS", STALE_WORKING_MS);
   // Per page: the timer that tells its open review pages when a quiet agent turns stale.
@@ -610,7 +746,13 @@ export async function runServer({
     if (tailnet && listeners.has(tailnet.ip)) return tailnet.dnsName || tailnet.ip;
     const explicit = process.env.AUSTERE_AXI_HOST;
     // Never the local-network listener: the owner's remote link must not point there (P7).
-    if (explicit && !/^(0\.0\.0\.0|::|\*)$/.test(explicit) && explicit !== lanHost && listeners.has(explicit)) return explicit;
+    if (
+      explicit &&
+      !/^(0\.0\.0\.0|::|\*)$/.test(explicit) &&
+      explicit !== lanHost &&
+      listeners.has(explicit)
+    )
+      return explicit;
     return null;
   }
 
@@ -637,7 +779,11 @@ export async function runServer({
     // The owner key never travels in plain HTTP to the local-network listener, whatever override names it (P7);
     // an HTTPS proxy in front of it is fine.
     const target = base ? new URL(base) : null;
-    const toLan = target != null && lanHost != null && target.protocol === "http:" && target.hostname.replace(/^\[|\]$/g, "") === lanHost;
+    const toLan =
+      target != null &&
+      lanHost != null &&
+      target.protocol === "http:" &&
+      target.hostname.replace(/^\[|\]$/g, "") === lanHost;
     if (base && !toLan) out.remote = `${base}/s/${id}?key=${ownerToken}`;
     return out;
   }
@@ -651,7 +797,8 @@ export async function runServer({
   /** What a row's scope reaches, in words. */
   function reachesText(row: Pick<DeviceRow, "scope_kind" | "scope_id">): string {
     if (row.scope_kind === "all") return "every page";
-    if (row.scope_kind === "project") return `project ${(row.scope_id && findProject(hub.db, row.scope_id, { folders: false })?.name) || row.scope_id}`;
+    if (row.scope_kind === "project")
+      return `project ${(row.scope_id && findProject(hub.db, row.scope_id, { folders: false })?.name) || row.scope_id}`;
     return (row.scope_id && hub.artifact(row.scope_id)?.file) || String(row.scope_id);
   }
 
@@ -674,7 +821,8 @@ export async function runServer({
       lastHost: row.last_host,
       userAgent: row.user_agent,
       verifiedLogin: row.verified_login,
-      link: landing && row.link_token ? (shareLink(landing, row.link_token) ?? undefined) : undefined,
+      link:
+        landing && row.link_token ? (shareLink(landing, row.link_token) ?? undefined) : undefined,
     };
   }
 
@@ -725,10 +873,17 @@ export async function runServer({
   }
 
   /** A new link for the page `s`, from the CLI or the review page's Share. An HTTP error, or the link. */
-  async function createShare(s: Session, body: RequestBody): Promise<{ status: number; error: string } | ShareResponse> {
+  async function createShare(
+    s: Session,
+    body: RequestBody,
+  ): Promise<{ status: number; error: string } | ShareResponse> {
     await ensureTailnetListener();
     if (!reviewerBase()) {
-      return { status: 409, error: "no address a teammate can reach: Tailscale is not running here, the local network is off (Settings → Network), and neither AUSTERE_AXI_HOST nor AUSTERE_AXI_LINK_URL is set, so a teammate could not open the link" };
+      return {
+        status: 409,
+        error:
+          "no address a teammate can reach: Tailscale is not running here, the local network is off (Settings → Network), and neither AUSTERE_AXI_HOST nor AUSTERE_AXI_LINK_URL is set, so a teammate could not open the link",
+      };
     }
     const scope = scopeFor(s, body);
     if (typeof scope === "string") return { status: 400, error: scope };
@@ -736,7 +891,12 @@ export async function runServer({
     if (typeof auto === "string") return { status: 409, error: auto };
     let expiresAt: number | undefined;
     if (body.expiresAt !== undefined && body.expiresAt !== null) {
-      if (typeof body.expiresAt !== "number" || !Number.isFinite(body.expiresAt) || body.expiresAt <= Date.now()) return { status: 400, error: "expiresAt must be a time in the future (epoch ms)" };
+      if (
+        typeof body.expiresAt !== "number" ||
+        !Number.isFinite(body.expiresAt) ||
+        body.expiresAt <= Date.now()
+      )
+        return { status: 400, error: "expiresAt must be a time in the future (epoch ms)" };
       expiresAt = body.expiresAt;
     }
     let made: { row: DeviceRow; token: string };
@@ -750,7 +910,16 @@ export async function runServer({
     store.touch(s);
     log("share", made.row.name, made.row.id, made.row.scope_kind, made.row.auto ? "auto" : "hold");
     const { row } = made;
-    return { id: row.id, name: row.name, auto: Boolean(row.auto), scope: row.scope_kind, reaches: reachesText(row), link: shareLink(s.id, made.token) as string, file: s.file, expiresAt: row.link_expires_at as number };
+    return {
+      id: row.id,
+      name: row.name,
+      auto: Boolean(row.auto),
+      scope: row.scope_kind,
+      reaches: reachesText(row),
+      link: shareLink(s.id, made.token) as string,
+      file: s.file,
+      expiresAt: row.link_expires_at as number,
+    };
   }
 
   /**
@@ -758,7 +927,10 @@ export async function runServer({
    * The scope is relative to page `s` when there is one, as for a share; else `all`, or a `project` by id or
    * name (from the CLI, a folder inside one of its roots). The name defaults to the login.
    */
-  function allowTailscale(s: Session | null, body: RequestBody): { status: number; error: string } | AccessSummary {
+  function allowTailscale(
+    s: Session | null,
+    body: RequestBody,
+  ): { status: number; error: string } | AccessSummary {
     let scope: Scope | string;
     if (s) scope = scopeFor(s, body);
     else if (body.scope === "all") scope = { kind: "all", id: null };
@@ -771,14 +943,24 @@ export async function runServer({
       }
       if (!found) return { status: 404, error: `no project ${body.project}` };
       scope = { kind: "project", id: found.id };
-    } else return { status: 400, error: "say what the login reaches: a page (its file), a project, or every page (scope all)" };
+    } else
+      return {
+        status: 400,
+        error:
+          "say what the login reaches: a page (its file), a project, or every page (scope all)",
+      };
     if (typeof scope === "string") return { status: 400, error: scope };
     const auto = shareAuto(body.auto, scope);
     if (typeof auto === "string") return { status: 409, error: auto };
     const login = typeof body.login === "string" ? body.login.trim() : "";
     let row: DeviceRow;
     try {
-      row = devices.allowLogin({ login, name: typeof body.name === "string" && body.name.trim() ? body.name : login.slice(0, 40), scope, auto });
+      row = devices.allowLogin({
+        login,
+        name: typeof body.name === "string" && body.name.trim() ? body.name : login.slice(0, 40),
+        scope,
+        auto,
+      });
     } catch (err) {
       return { status: 400, error: String((err as Error).message || err) };
     }
@@ -793,14 +975,22 @@ export async function runServer({
     const gone = devices.revoke(key);
     for (const r of gone) cutOff(r.id, null);
     if (gone.length) log("share-revoke", gone.map((r) => `${r.name}(${r.id})`).join(","));
-    return { revoked: gone.map((r) => ({ id: r.id, name: r.name, kind: r.claimed_at == null ? "link" : "device" })) };
+    return {
+      revoked: gone.map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.claimed_at == null ? "link" : "device",
+      })),
+    };
   }
 
   // ── access requests (RLM-398) ──
 
   function requestSummary(r: AccessRequestRow): AccessRequestSummary {
     const art = hub.artifact(r.page);
-    const project = art?.project_id ? findProject(hub.db, art.project_id, { folders: false }) : null;
+    const project = art?.project_id
+      ? findProject(hub.db, art.project_id, { folders: false })
+      : null;
     return {
       id: r.id,
       name: r.name,
@@ -821,19 +1011,32 @@ export async function runServer({
 
   function requestSwitch(): RequestSwitchResponse {
     const on = requests.switches();
-    return { all: on.all, projects: on.projects.map((p) => ({ ...p, name: findProject(hub.db, p.id, { folders: false })?.name ?? p.id })) };
+    return {
+      all: on.all,
+      projects: on.projects.map((p) => ({
+        ...p,
+        name: findProject(hub.db, p.id, { folders: false })?.name ?? p.id,
+      })),
+    };
   }
 
   function requestsList(): AccessRequestsResponse {
-    return { waiting: requests.list("waiting").map(requestSummary), blocked: requests.list("blocked").map(requestSummary), switch: requestSwitch() };
+    return {
+      waiting: requests.list("waiting").map(requestSummary),
+      blocked: requests.list("blocked").map(requestSummary),
+      switch: requestSwitch(),
+    };
   }
 
   /** Turn requests on or off: `{ on, project? }`, a project by id or name (or, from the CLI, a folder inside one of its roots); none: every page. */
-  function changeRequestSwitch(body: RequestBody): { status: number; error: string } | RequestSwitchResponse {
+  function changeRequestSwitch(
+    body: RequestBody,
+  ): { status: number; error: string } | RequestSwitchResponse {
     if (typeof body.on !== "boolean") return { status: 400, error: "on must be true or false" };
     let projectId: string | null = null;
     if (body.project !== undefined && body.project !== null) {
-      if (typeof body.project !== "string" || !body.project) return { status: 400, error: "project must be a project's id or name" };
+      if (typeof body.project !== "string" || !body.project)
+        return { status: 400, error: "project must be a project's id or name" };
       let found: ProjectRow | null;
       try {
         found = findProject(hub.db, body.project, { folders: path.isAbsolute(body.project) });
@@ -852,7 +1055,11 @@ export async function runServer({
    * Approve (`{ scope?, project?, auto?, name? }`, scope relative to the page the request came from, as
    * for a share), deny, or block a waiting request.
    */
-  function decideRequest(id: unknown, action: string, body: RequestBody): { status: number; error: string } | RequestDecisionResponse {
+  function decideRequest(
+    id: unknown,
+    action: string,
+    body: RequestBody,
+  ): { status: number; error: string } | RequestDecisionResponse {
     const row = typeof id === "string" ? requests.get(id) : null;
     if (!row) return { status: 404, error: "no request with that id" };
     try {
@@ -860,7 +1067,12 @@ export async function runServer({
         const s = store.get(row.page);
         let scope: Scope | string;
         if (body.scope === "all") scope = { kind: "all", id: null };
-        else if (!s) return { status: 409, error: "the page this request came from is gone; approve it for every page (scope all), or deny it" };
+        else if (!s)
+          return {
+            status: 409,
+            error:
+              "the page this request came from is gone; approve it for every page (scope all), or deny it",
+          };
         else scope = scopeFor(s, body);
         if (typeof scope === "string") return { status: 400, error: scope };
         const auto = shareAuto(body.auto, scope);
@@ -870,8 +1082,18 @@ export async function runServer({
           watch(s);
           rescanSharedPolls();
         }
-        log("share-approve", row.id, device.name, device.id, device.scope_kind, device.auto ? "auto" : "hold");
-        return { request: requestSummary(requests.get(row.id) as AccessRequestRow), device: accessSummary(device, false) };
+        log(
+          "share-approve",
+          row.id,
+          device.name,
+          device.id,
+          device.scope_kind,
+          device.auto ? "auto" : "hold",
+        );
+        return {
+          request: requestSummary(requests.get(row.id) as AccessRequestRow),
+          device: accessSummary(device, false),
+        };
       }
       const decided = requests.decide(row.id, action === "block" ? "blocked" : "denied");
       log(`share-${action}`, row.id, row.name);
@@ -896,13 +1118,18 @@ export async function runServer({
     const got = requests.collect(pending);
     if (!got) return null;
     log("share-request-joined", got.device.name, got.device.id);
-    return [`${COOKIE}_${got.device.id}=${got.secret}; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_COOKIE_MAX_AGE}${overHttps(req) ? "; Secure" : ""}`, requestCookie(req, null)];
+    return [
+      `${COOKIE}_${got.device.id}=${got.secret}; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_COOKIE_MAX_AGE}${overHttps(req) ? "; Secure" : ""}`,
+      requestCookie(req, null),
+    ];
   }
 
   /** This browser's request, as the browser may know it: waiting, denied, blocked, or none (no request, or one it cannot use: collected, lapsed). */
   function requestStateOf(req: http.IncomingMessage): "none" | "waiting" | "denied" | "blocked" {
     const mine = requests.bySecret(tokenFromCookie(req.headers.cookie, REQUEST_COOKIE));
-    return mine?.status === "waiting" || mine?.status === "denied" || mine?.status === "blocked" ? mine.status : "none";
+    return mine?.status === "waiting" || mine?.status === "denied" || mine?.status === "blocked"
+      ? mine.status
+      : "none";
   }
 
   /**
@@ -910,16 +1137,27 @@ export async function runServer({
    * its file, and holds nothing of its content: only the form, or where the browser's request stands.
    * Over the tailnet listener, Tailscale names the person: the form then asks under that name.
    */
-  function requestPage(req: http.IncomingMessage, s: Session, person: TailscalePerson | null, error = ""): string {
+  function requestPage(
+    req: http.IncomingMessage,
+    s: Session,
+    person: TailscalePerson | null,
+    error = "",
+  ): string {
     const state = requestStateOf(req);
     const head = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Ask for access</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:28rem;margin:12vh auto;padding:0 1rem;color:#222}input{font:inherit;padding:.4rem .5rem;width:100%;box-sizing:border-box;margin:.25rem 0 .75rem}button{font:inherit;padding:.4rem 1rem}.err{color:#b00020}.muted{color:#666}</style>`;
-    if (state === "blocked") return `${head}<h1>No access</h1><p>The owner has blocked this browser from asking for access.</p>`;
+    if (state === "blocked")
+      return `${head}<h1>No access</h1><p>The owner has blocked this browser from asking for access.</p>`;
     if (state === "waiting") {
       return `${head}<h1>Waiting for the owner</h1><p>Your request was sent. This page opens by itself once the owner lets you in.</p><p class="muted">Keep this tab open, or come back to this address later.</p><script>setInterval(function(){fetch(${JSON.stringify(`/s/${s.id}/request`)},{cache:"no-store",credentials:"same-origin"}).then(function(r){return r.ok?r.json():null}).then(function(j){if(!j||j.state!=="waiting")location.reload()},function(){})},${REQUEST_POLL_MS})</script>`;
     }
-    const denied = state === "denied" ? `<p class="err">The owner declined your last request. You can ask again.</p>` : "";
+    const denied =
+      state === "denied"
+        ? `<p class="err">The owner declined your last request. You can ask again.</p>`
+        : "";
     const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
-    const local = isLoopback(clientAddr(req)) ? `<p class="muted">If this is your page, sign this browser in instead: run <code>austere-axi login</code> and open the link it prints.</p>` : "";
+    const local = isLoopback(clientAddr(req))
+      ? `<p class="muted">If this is your page, sign this browser in instead: run <code>austere-axi login</code> and open the link it prints.</p>`
+      : "";
     if (person) {
       const device = person.device ? ` on <strong>${escapeHtml(person.device)}</strong>` : "";
       return `${head}<h1>Ask the owner for access</h1>${denied}${err}<p>Tailscale says you are <strong>${escapeHtml(person.name)}</strong> (${escapeHtml(person.login)})${device}.</p><form method="post" action="/s/${s.id}/request"><button>Ask as ${escapeHtml(personName(person))}</button></form><p class="muted">The owner sees your Tailscale login and device, your address and your browser, and lets this browser in.</p>`;
@@ -940,7 +1178,12 @@ export async function runServer({
   }
 
   /** Headers for a page of the request flow: not framed, and a form POST keeps its Origin (see the join page). */
-  const REQUEST_PAGE_HEADERS = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "same-origin", "x-frame-options": "DENY" };
+  const REQUEST_PAGE_HEADERS = {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "referrer-policy": "same-origin",
+    "x-frame-options": "DENY",
+  };
 
   /**
    * The hostname of address `addr`, handed to `save` once it resolves both ways: a reverse lookup
@@ -968,7 +1211,13 @@ export async function runServer({
    * request then takes their name and keeps their login and device. False: requests are off here,
    * so the caller answers as without them.
    */
-  async function requestRoute(req: http.IncomingMessage, res: http.ServerResponse, s: Session, sub: string, person: TailscalePerson | null): Promise<boolean> {
+  async function requestRoute(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    s: Session,
+    sub: string,
+    person: TailscalePerson | null,
+  ): Promise<boolean> {
     if (!requests.enabled(store.projectIdOf(s))) return false;
     if (sub === "/request" && req.method === "GET") {
       send(res, 200, { state: requestStateOf(req) });
@@ -1012,7 +1261,9 @@ export async function runServer({
       res.end();
       return true;
     }
-    const name = person ? personName(person) : new URLSearchParams(Buffer.concat(chunks).toString("utf8")).get("name");
+    const name = person
+      ? personName(person)
+      : new URLSearchParams(Buffer.concat(chunks).toString("utf8")).get("name");
     let made: { row: AccessRequestRow; secret: string };
     try {
       made = requests.ask({ name, page: s.id, meta: seenMeta(req), tailscale: person });
@@ -1024,7 +1275,11 @@ export async function runServer({
     const { id } = made.row;
     lookUpHost(made.row.addr, (host) => requests.setHost(id, host));
     log("share-request", made.row.id, made.row.name, made.row.addr ?? "");
-    res.writeHead(303, { location: `/s/${s.id}`, "set-cookie": requestCookie(req, made.secret), "cache-control": "no-store" });
+    res.writeHead(303, {
+      location: `/s/${s.id}`,
+      "set-cookie": requestCookie(req, made.secret),
+      "cache-control": "no-store",
+    });
     res.end();
     return true;
   }
@@ -1037,7 +1292,11 @@ export async function runServer({
   function clientAddr(req: http.IncomingMessage): string | undefined {
     const socket = req.socket.remoteAddress;
     if (!isLoopback(socket)) return socket;
-    const forwarded = String(req.headers["x-forwarded-for"] || "").split(",").pop()?.trim() ?? "";
+    const forwarded =
+      String(req.headers["x-forwarded-for"] || "")
+        .split(",")
+        .pop()
+        ?.trim() ?? "";
     return net.isIP(forwarded) ? forwarded : socket;
   }
 
@@ -1048,13 +1307,26 @@ export async function runServer({
    */
   function seenMeta(req: http.IncomingMessage, person: TailscalePerson | null = null): SeenMeta {
     const ua = req.headers["user-agent"];
-    return { addr: clientAddr(req) ?? null, host: person?.device || null, userAgent: typeof ua === "string" ? ua : null };
+    return {
+      addr: clientAddr(req) ?? null,
+      host: person?.device || null,
+      userAgent: typeof ua === "string" ? ua : null,
+    };
   }
 
   /** Whether the browser reached this server over HTTPS: a proxy says so, or the link URL is https and this is its host. */
   function overHttps(req: http.IncomingMessage): boolean {
-    if (String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https") return true;
-    return Boolean(linkBase && linkBase.base.startsWith("https:") && hostOnly(req.headers.host) === hostOnly(linkBase.host));
+    if (
+      String(req.headers["x-forwarded-proto"] || "")
+        .split(",")[0]
+        .trim() === "https"
+    )
+      return true;
+    return Boolean(
+      linkBase &&
+      linkBase.base.startsWith("https:") &&
+      hostOnly(req.headers.host) === hostOnly(linkBase.host),
+    );
   }
 
   /**
@@ -1069,7 +1341,10 @@ export async function runServer({
   }
 
   /** The 403 text for a request that is not the owner. On loopback it is most likely the owner in a browser without the cookie yet. */
-  function notOwner(req: http.IncomingMessage, text = "Only the owner can open this. Ask the owner for a link to the page.") {
+  function notOwner(
+    req: http.IncomingMessage,
+    text = "Only the owner can open this. Ask the owner for a link to the page.",
+  ) {
     if (via(req) === "lan") return `${text}\n${LAN_NO_OWNER}`;
     if (!isLoopback(req.socket.remoteAddress)) return text;
     return `${text}\nIf this is your page, sign this browser in: run \`austere-axi login\` (or \`austere-axi login <file>\`) and open the single-use link it prints.`;
@@ -1091,10 +1366,20 @@ export async function runServer({
    * is attached to a page it reaches (Q3, A17). Why `scope` cannot be auto now, or "".
    */
   function autoAttachConflict(scope: Scope): string {
-    const attached = (store.db.prepare("SELECT id, file, project_id FROM artifacts").all() as { id: string; file: string; project_id: string | null }[]).find(
-      (a) => covers({ scope_kind: scope.kind, scope_id: scope.id }, a.id, a.project_id) && effectiveAttach(store.db, a.id).state === "on",
+    const attached = (
+      store.db.prepare("SELECT id, file, project_id FROM artifacts").all() as {
+        id: string;
+        file: string;
+        project_id: string | null;
+      }[]
+    ).find(
+      (a) =>
+        covers({ scope_kind: scope.kind, scope_id: scope.id }, a.id, a.project_id) &&
+        effectiveAttach(store.db, a.id).state === "on",
     );
-    return attached ? `attach is on for ${attached.file}: an --auto link would let a reviewer's notes start the attached agent without you. Run \`austere-axi attach off ${attached.file}\` first, or share without --auto.` : "";
+    return attached
+      ? `attach is on for ${attached.file}: an --auto link would let a reviewer's notes start the attached agent without you. Run \`austere-axi attach off ${attached.file}\` first, or share without --auto.`
+      : "";
   }
 
   // ── who is asking ──
@@ -1124,14 +1409,21 @@ export async function runServer({
   /** What a row proves a reviewer with: its secret's hash, or for a Tailscale login the owner let in, that login. */
   function credentialOf(row: DeviceRow): string | null {
     if (row.secret_hash) return row.secret_hash;
-    return row.origin === "tailscale" && row.verified_login ? `tailscale\0${row.verified_login}` : null;
+    return row.origin === "tailscale" && row.verified_login
+      ? `tailscale\0${row.verified_login}`
+      : null;
   }
 
   /** Record that `row` was seen now, and look up the address's hostname when Tailscale did not name the device. */
-  function seenDevice(row: DeviceRow, req: http.IncomingMessage, person: TailscalePerson | null): void {
+  function seenDevice(
+    row: DeviceRow,
+    req: http.IncomingMessage,
+    person: TailscalePerson | null,
+  ): void {
     const meta = seenMeta(req, person);
     const addr = meta.addr;
-    if (devices.seen(row, meta) && !meta.host && addr) lookUpHost(addr, (host) => devices.setHost(row.id, addr, host));
+    if (devices.seen(row, meta) && !meta.host && addr)
+      lookUpHost(addr, (host) => devices.setHost(row.id, addr, host));
   }
 
   /**
@@ -1141,17 +1433,37 @@ export async function runServer({
    * reaches this page; over the tailnet, only for the login first seen behind it); else nobody. A
    * request with a reviewer cookie is never the owner, so revoking cuts access.
    */
-  function identify(req: http.IncomingMessage, s: Session, person: TailscalePerson | null): Viewer | null {
+  function identify(
+    req: http.IncomingMessage,
+    s: Session,
+    person: TailscalePerson | null,
+  ): Viewer | null {
     const cookies = reviewerCookies(req.headers.cookie).length > 0;
     if (!cookies && isOwner(req)) return OWNER;
     const pid = store.projectIdOf(s);
-    const allowed = person ? devices.byLogin(person.login).find((r) => covers(r, s.id, pid)) : undefined;
-    const row = allowed ?? (cookies ? cookieDevices(req).find((r) => covers(r, s.id, pid) && (!person || r.verified_login == null || r.verified_login === person.login)) : undefined);
+    const allowed = person
+      ? devices.byLogin(person.login).find((r) => covers(r, s.id, pid))
+      : undefined;
+    const row =
+      allowed ??
+      (cookies
+        ? cookieDevices(req).find(
+            (r) =>
+              covers(r, s.id, pid) &&
+              (!person || r.verified_login == null || r.verified_login === person.login),
+          )
+        : undefined);
     if (!row) return null;
     // An old-style link's token is many browsers' cookie: it belongs to no one login.
     if (person && !row.reusable) devices.bindLogin(row, person.login);
     seenDevice(row, req, person);
-    return { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id, credential: credentialOf(row) as string };
+    return {
+      role: "reviewer",
+      name: row.name,
+      auto: Boolean(row.auto),
+      deviceId: row.id,
+      credential: credentialOf(row) as string,
+    };
   }
 
   /** A note this reviewer wrote: by device, or by name for a note from before devices. */
@@ -1166,11 +1478,18 @@ export async function runServer({
     return true;
   }
 
-  function send(res: http.ServerResponse, status: number, body: unknown, headers: http.OutgoingHttpHeaders = {}): void {
+  function send(
+    res: http.ServerResponse,
+    status: number,
+    body: unknown,
+    headers: http.OutgoingHttpHeaders = {},
+  ): void {
     const isText = typeof body === "string" || Buffer.isBuffer(body);
     const payload = isText ? body : JSON.stringify(body);
     res.writeHead(status, {
-      "content-type": isText ? String(headers["content-type"] || "text/plain; charset=utf-8") : "application/json; charset=utf-8",
+      "content-type": isText
+        ? String(headers["content-type"] || "text/plain; charset=utf-8")
+        : "application/json; charset=utf-8",
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
       ...headers,
@@ -1178,7 +1497,10 @@ export async function runServer({
     res.end(payload);
   }
 
-  async function readBody(req: http.IncomingMessage, limit = 2 * 1024 * 1024): Promise<RequestBody> {
+  async function readBody(
+    req: http.IncomingMessage,
+    limit = 2 * 1024 * 1024,
+  ): Promise<RequestBody> {
     let size = 0;
     const chunks: Buffer[] = [];
     for await (const c of req as AsyncIterable<Buffer>) {
@@ -1225,13 +1547,19 @@ export async function runServer({
   function presence(s: Session): Presence {
     if (listener(s)) return "listening";
     if (!s.workingSince) return "idle";
-    return staleWorkingMs && Date.now() - (s.agentAt ?? s.workingSince) >= staleWorkingMs - 10 ? "stale" : "working";
+    return staleWorkingMs && Date.now() - (s.agentAt ?? s.workingSince) >= staleWorkingMs - 10
+      ? "stale"
+      : "working";
   }
 
   /** Presence as the review page gets it: `since`, while an agent has the notes, is when it took them; `now` lets the page read it against its own clock. */
   function presenceInfo(s: Session): { presence: Presence; since?: number; now: number } {
     const p = presence(s);
-    return { presence: p, since: p === "working" || p === "stale" ? (s.workingSince ?? undefined) : undefined, now: Date.now() };
+    return {
+      presence: p,
+      since: p === "working" || p === "stale" ? (s.workingSince ?? undefined) : undefined,
+      now: Date.now(),
+    };
   }
 
   /** The agent working on `s` showed a sign of life: the page reads `working` again, and turns `stale` (told to its open pages) after staleWorkingMs more of silence. */
@@ -1256,7 +1584,13 @@ export async function runServer({
   }
 
   function publicSession(s: Session): PublicSession {
-    return { id: s.id, file: s.file, title: s.title, archived: Boolean(s.archivedAt), unread: store.unread(s).length };
+    return {
+      id: s.id,
+      file: s.file,
+      title: s.title,
+      archived: Boolean(s.archivedAt),
+      unread: store.unread(s).length,
+    };
   }
 
   /** The page's project, with `ref` naming it for `--project`: its name, or its id when another project has that name. */
@@ -1280,7 +1614,10 @@ export async function runServer({
    */
   function sseWrite(set: Set<SseClient>, c: SseClient, msg: string): void {
     const queued = c.res.writableLength;
-    if (queued > SSE_HARD_MAX || (queued > SSE_MAX_BUFFER && c.stalledSince && Date.now() - c.stalledSince > SSE_STALL_MS)) {
+    if (
+      queued > SSE_HARD_MAX ||
+      (queued > SSE_MAX_BUFFER && c.stalledSince && Date.now() - c.stalledSince > SSE_STALL_MS)
+    ) {
       set.delete(c);
       c.res.destroy();
       return;
@@ -1299,7 +1636,11 @@ export async function runServer({
   }
 
   /** An event for the owner's review pages of a copy only, never a reviewer's. */
-  function broadcastOwners(id: string, event: "run" | "attach", data: RunEvent | Record<string, never>): void {
+  function broadcastOwners(
+    id: string,
+    event: "run" | "attach",
+    data: RunEvent | Record<string, never>,
+  ): void {
     const set = clients.get(id);
     if (!set) return;
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -1307,7 +1648,11 @@ export async function runServer({
   }
 
   /** `omp models` for the popover's model list (ompModels). */
-  let modelCache: { at: number; models: string[] | null; pending: Promise<string[] | null> | null } = { at: 0, models: null, pending: null };
+  let modelCache: {
+    at: number;
+    models: string[] | null;
+    pending: Promise<string[] | null> | null;
+  } = { at: 0, models: null, pending: null };
 
   /** What the owner's attach popover shows for a copy (RLM-346). A malformed adapters.json is a warning here, not an error. */
   async function attachInfo(s: Session): Promise<AttachInfo> {
@@ -1339,8 +1684,14 @@ export async function runServer({
       effective: report.effective,
       page: report.page,
       project: report.project,
-      target: { mode: report.target.mode, harness: report.target.harness, session: session ? shortId(session.session_id) : null },
-      author: author ? { id: author.id, harness: author.harness, short: shortId(author.session_id) } : null,
+      target: {
+        mode: report.target.mode,
+        harness: report.target.harness,
+        session: session ? shortId(session.session_id) : null,
+      },
+      author: author
+        ? { id: author.id, harness: author.harness, short: shortId(author.session_id) }
+        : null,
       sessions: listSessions(store.db, { artifactId: s.id }).map((p) => ({
         id: p.session.id,
         harness: p.session.harness,
@@ -1375,7 +1726,12 @@ export async function runServer({
     // A .cmd shim on Windows goes through cmd.exe; spawn can still throw at once (EINVAL, EACCES): no models then.
     try {
       const spec = spawnSpec(bin, ["models", "--json"]);
-      const child = spawn(spec.file, spec.args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, windowsVerbatimArguments: spec.windowsVerbatimArguments, timeout: 15_000 });
+      const child = spawn(spec.file, spec.args, {
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
+        windowsVerbatimArguments: spec.windowsVerbatimArguments,
+        timeout: 15_000,
+      });
       let out = "";
       child.stdout.on("data", (c: Buffer) => {
         if (out.length < 4 * 1024 * 1024) out += c.toString("utf8");
@@ -1394,9 +1750,12 @@ export async function runServer({
   }
 
   /** The body of POST /s/:id/attach, or why it is malformed. */
-  function parseAttachChange(body: Record<string, unknown>): { state: AttachState; fields: AttachFields } | string {
+  function parseAttachChange(
+    body: Record<string, unknown>,
+  ): { state: AttachState; fields: AttachFields } | string {
     const state = body.state;
-    if (state !== "on" && state !== "off" && state !== "inherit") return "state must be on, off or inherit";
+    if (state !== "on" && state !== "off" && state !== "inherit")
+      return "state must be on, off or inherit";
     const fields: AttachFields = {};
     if (body.mode !== undefined && body.mode !== null) {
       if (!isAttachMode(body.mode)) return "mode must be same, fork or new";
@@ -1410,7 +1769,8 @@ export async function runServer({
     }
     if (body.model !== undefined) {
       const m = body.model;
-      if (m !== null && (typeof m !== "string" || m.length > 200 || /[\s\0-\x1f]/.test(m))) return "model must be a name without spaces, or empty";
+      if (m !== null && (typeof m !== "string" || m.length > 200 || /[\s\0-\x1f]/.test(m)))
+        return "model must be a name without spaces, or empty";
       fields.model = m || null;
     }
     return { state, fields };
@@ -1420,14 +1780,19 @@ export async function runServer({
    * The owner's attach change, from the review page's popover or the CLI: the row written, and the
    * owner tabs of every copy it decides for told to look again. An HTTP error, or null when done.
    */
-  function changeAttach(where: AttachWhere, body: RequestBody): { status: number; error: string; code?: string } | null {
+  function changeAttach(
+    where: AttachWhere,
+    body: RequestBody,
+  ): { status: number; error: string; code?: string } | null {
     const change = parseAttachChange(body);
     if (typeof change === "string") return { status: 400, error: change };
     let cfg: AdaptersConfig;
     try {
       cfg = readAdapters();
-      if (change.fields.harness !== undefined && !adapterFor(change.fields.harness, cfg)) return { status: 400, error: `no adapter named ${change.fields.harness}` };
-      if (change.fields.session !== undefined) change.fields.session = resolveSessionValue(store.db, change.fields.session);
+      if (change.fields.harness !== undefined && !adapterFor(change.fields.harness, cfg))
+        return { status: 400, error: `no adapter named ${change.fields.harness}` };
+      if (change.fields.session !== undefined)
+        change.fields.session = resolveSessionValue(store.db, change.fields.session);
     } catch (err) {
       return { status: 400, error: (err as Error).message };
     }
@@ -1440,16 +1805,26 @@ export async function runServer({
     // A page row decides for every copy of the page (A19), a project row for every copy in the project.
     const copies = (
       "page" in where
-        ? store.db.prepare("SELECT id FROM artifacts WHERE page_id = ? OR id = ?").all(scopeIds(store.db, where.page.artifactId).page, where.page.artifactId)
+        ? store.db
+            .prepare("SELECT id FROM artifacts WHERE page_id = ? OR id = ?")
+            .all(scopeIds(store.db, where.page.artifactId).page, where.page.artifactId)
         : store.db.prepare("SELECT id FROM artifacts WHERE project_id = ?").all(where.projectId)
     ) as { id: string }[];
     for (const c of copies) broadcastOwners(c.id, "attach", {});
-    log("attach", "page" in where ? where.page.artifactId : `project:${where.projectId}`, change.state);
+    log(
+      "attach",
+      "page" in where ? where.page.artifactId : `project:${where.projectId}`,
+      change.state,
+    );
     return null;
   }
 
   function broadcastPresence(s: Session): void {
-    broadcast(s.id, "presence", { ...presenceInfo(s), archived: Boolean(s.archivedAt), unread: store.unread(s).length });
+    broadcast(s.id, "presence", {
+      ...presenceInfo(s),
+      archived: Boolean(s.archivedAt),
+      unread: store.unread(s).length,
+    });
   }
 
   /** A hosted viewer's presence frame for the owner's review page, unchanged. */
@@ -1462,7 +1837,8 @@ export async function runServer({
     if (!set) return;
     for (const c of Array.from(set)) {
       const visible = entries.filter((e) => canSee(e, c.viewer));
-      if (visible.length) sseWrite(set, c, `event: transcript\ndata: ${JSON.stringify({ entries: visible })}\n\n`);
+      if (visible.length)
+        sseWrite(set, c, `event: transcript\ndata: ${JSON.stringify({ entries: visible })}\n\n`);
     }
   }
 
@@ -1486,7 +1862,9 @@ export async function runServer({
   /** After pages change project (merge, forget-root): every open reviewer stream is checked against its device's scope again. */
   function recheckScopes(): void {
     const ids = new Set<string>();
-    for (const set of clients.values()) for (const c of set) if (c.viewer.role === "reviewer" && c.viewer.deviceId) ids.add(c.viewer.deviceId);
+    for (const set of clients.values())
+      for (const c of set)
+        if (c.viewer.role === "reviewer" && c.viewer.deviceId) ids.add(c.viewer.deviceId);
     for (const id of ids) {
       const row = devices.get(id);
       cutOff(id, row && row.revoked_at == null ? row : null);
@@ -1507,7 +1885,12 @@ export async function runServer({
     if (watchers.has(s.id)) return;
     const html = readFileSafe(s.file);
     const art = html == null ? null : readArtifact(html);
-    const w: Watcher = { html, program: art?.program ?? null, shell: art?.shell ?? null, timer: undefined };
+    const w: Watcher = {
+      html,
+      program: art?.program ?? null,
+      shell: art?.shell ?? null,
+      timer: undefined,
+    };
     watchers.set(s.id, w);
     if (art?.title) s.title = art.title;
     // An edit made while no server watched this file becomes a revision now.
@@ -1530,16 +1913,35 @@ export async function runServer({
   /** Pages of the same project with a title or card heading like this page's (`open` lists them; it never blocks). */
   function similarTo(s: Session): OpenResponse["similar"] {
     try {
-      const headings = [s.title, ...(store.db.prepare("SELECT text FROM statements WHERE artifact_id = ? AND component = 'CardHeader'").all(s.id) as unknown as { text: string }[]).map((h) => h.text.split("\n")[0])];
-      const found = similarPages(store.db, { artifactId: s.id, projectId: store.projectIdOf(s), headings });
-      return found.length ? found.map((f) => ({ title: f.title, file: f.file, updatedAt: f.updated_at })) : undefined;
+      const headings = [
+        s.title,
+        ...(
+          store.db
+            .prepare(
+              "SELECT text FROM statements WHERE artifact_id = ? AND component = 'CardHeader'",
+            )
+            .all(s.id) as unknown as { text: string }[]
+        ).map((h) => h.text.split("\n")[0]),
+      ];
+      const found = similarPages(store.db, {
+        artifactId: s.id,
+        projectId: store.projectIdOf(s),
+        headings,
+      });
+      return found.length
+        ? found.map((f) => ({ title: f.title, file: f.file, updatedAt: f.updated_at }))
+        : undefined;
     } catch {
       return undefined;
     }
   }
 
   /** Record the file's program as the page's next revision, if it differs from the head. Never fails the page: history is a convenience. */
-  function recordHistory(s: Session, html: string, source: "open" | "file" | "restore"): RevisionRow | null {
+  function recordHistory(
+    s: Session,
+    html: string,
+    source: "open" | "file" | "restore",
+  ): RevisionRow | null {
     try {
       return recordRevision(store.db, s.id, html, { source });
     } catch (err) {
@@ -1562,7 +1964,9 @@ export async function runServer({
     if (art.title) s.title = art.title;
     log("change", s.id, `rev=${s.revision}`, shellChanged ? "shell" : "program");
     // Receipts: work started on delivered-but-unanswered feedback.
-    const touched = s.transcript.filter((e): e is UserEntry => e.role === "user" && Boolean(e.seenAt) && !e.doneAt && !e.workAt);
+    const touched = s.transcript.filter(
+      (e): e is UserEntry => e.role === "user" && Boolean(e.seenAt) && !e.doneAt && !e.workAt,
+    );
     if (touched.length) {
       store.markWorking(s, touched);
       broadcastTranscript(s, touched);
@@ -1593,7 +1997,12 @@ export async function runServer({
     const entries = store.after(s, poll.from);
     // A page always takes notes: final only tells the agent the newest batch was sent with Done or Send & finish, so it stops listening after applying it. A later plain note in the same answer means the reviewer carries on.
     const final = Boolean(entries[entries.length - 1].end);
-    const body: PollResponse = { status: "feedback", items: itemsOf(entries), cursor: entries[entries.length - 1].seq, final: final || undefined };
+    const body: PollResponse = {
+      status: "feedback",
+      items: itemsOf(entries),
+      cursor: entries[entries.length - 1].seq,
+      final: final || undefined,
+    };
     finishPoll(s, poll, body, () => {
       store.markDelivered(s, entries);
       s.workingSince = Date.now();
@@ -1611,7 +2020,10 @@ export async function runServer({
   function itemsOf(entries: UserEntry[]): NoteItem[] {
     const items: NoteItem[] = [];
     for (const e of entries) {
-      for (const it of e.items || []) items.push(e.author ? { ...it, author: e.author, ...(e.remote ? { remote: true } : {}) } : it);
+      for (const it of e.items || [])
+        items.push(
+          e.author ? { ...it, author: e.author, ...(e.remote ? { remote: true } : {}) } : it,
+        );
     }
     return items;
   }
@@ -1652,14 +2064,20 @@ export async function runServer({
       status: "feedback",
       project: poll.project,
       cursor: Math.max(...batches.flatMap((b) => b.entries.map((e) => e.seq))),
-      batches: batches.map(({ s, entries }) => ({ file: s.file, copy: copyOf(s), items: itemsOf(entries), final: entries[entries.length - 1].end ? (true as const) : undefined })),
+      batches: batches.map(({ s, entries }) => ({
+        file: s.file,
+        copy: copyOf(s),
+        items: itemsOf(entries),
+        final: entries[entries.length - 1].end ? (true as const) : undefined,
+      })),
     };
     finishProjectPoll(poll, body, () => {
       for (const { s, entries } of batches) {
         store.markDelivered(s, entries);
         s.workingSince = Date.now();
         // A checkout's batch keeps its page from the project poll until acknowledged, as a page poll's does.
-        if (poll.root && (!s.pageHold || s.pageHold.seq <= (body.cursor as number))) s.pageHold = { seq: body.cursor as number, at: s.workingSince, root: true };
+        if (poll.root && (!s.pageHold || s.pageHold.seq <= (body.cursor as number)))
+          s.pageHold = { seq: body.cursor as number, at: s.workingSince, root: true };
         agentActive(s);
         broadcastTranscript(s, entries);
         broadcastPresence(s);
@@ -1695,7 +2113,10 @@ export async function runServer({
   function seqParam(v: unknown): number | null {
     if (v == null || v === "") return null;
     const n = Number(v);
-    if (!Number.isInteger(n) || n < 0) throw Object.assign(new Error("cursor and after are whole numbers from a poll"), { status: 400 });
+    if (!Number.isInteger(n) || n < 0)
+      throw Object.assign(new Error("cursor and after are whole numbers from a poll"), {
+        status: 400,
+      });
     return n;
   }
 
@@ -1753,7 +2174,9 @@ export async function runServer({
   function retireProjectPoll(poll: Poll): void {
     poll.done = true;
     clearInterval(poll.refresh);
-    const [scope, key] = poll.root ? [rootPolls, poll.root] : [projectPolls, poll.project as string];
+    const [scope, key] = poll.root
+      ? [rootPolls, poll.root]
+      : [projectPolls, poll.project as string];
     if (scope.get(key) === poll) scope.delete(key);
     refreshWatch(poll.project as string);
   }
@@ -1812,7 +2235,12 @@ export async function runServer({
    * A shared poll gets its pages without a poll of their own (see `covered`), including pages registered after
    * it started. `cursor` acknowledges the notes up to that seq on those pages. The newest poll of the same scope wins.
    */
-  async function projectRoute(route: "poll" | "feedback", body: RequestBody, res: http.ServerResponse, caller: CallerReport | null): Promise<void> {
+  async function projectRoute(
+    route: "poll" | "feedback",
+    body: RequestBody,
+    res: http.ServerResponse,
+    caller: CallerReport | null,
+  ): Promise<void> {
     let project: ProjectRow | null;
     try {
       project = findProject(hub.db, String(body.project), { folders: false });
@@ -1821,10 +2249,19 @@ export async function runServer({
     }
     if (!project) return send(res, 404, { error: `no project ${String(body.project)}` });
     const root = typeof body.root === "string" && body.root ? body.root : undefined;
-    if (root && !hub.db.prepare("SELECT 1 FROM project_roots WHERE root = ? AND project_id = ?").get(root, project.id)) {
+    if (
+      root &&
+      !hub.db
+        .prepare("SELECT 1 FROM project_roots WHERE root = ? AND project_id = ?")
+        .get(root, project.id)
+    ) {
       return send(res, 404, { error: `${root} is not a root of project ${project.name}` });
     }
-    noteCaller(caller, (root ? store.inRoot(root) : store.inProject(project.id)).map((s) => s.id), route);
+    noteCaller(
+      caller,
+      (root ? store.inRoot(root) : store.inProject(project.id)).map((s) => s.id),
+      route,
+    );
 
     if (route === "feedback") {
       const batches: ProjectFeedbackResponse["batches"] = [];
@@ -1836,14 +2273,32 @@ export async function runServer({
           broadcastTranscript(s, fresh);
           broadcastPresence(s);
         }
-        if (entries.length) batches.push({ file: s.file, copy: copyOf(s), archived: Boolean(s.archivedAt), missing: !fs.existsSync(s.file) || undefined, entries });
+        if (entries.length)
+          batches.push({
+            file: s.file,
+            copy: copyOf(s),
+            archived: Boolean(s.archivedAt),
+            missing: !fs.existsSync(s.file) || undefined,
+            entries,
+          });
       }
       return send(res, 200, { project: project.name, batches } satisfies ProjectFeedbackResponse);
     }
 
-    if (body.agentReply) return send(res, 400, { error: "a reply belongs to one page: use `reply <file> --agent-reply ...`" });
+    if (body.agentReply)
+      return send(res, 400, {
+        error: "a reply belongs to one page: use `reply <file> --agent-reply ...`",
+      });
     const projectId = project.id;
-    const poll: Poll = { res, startedAt: Date.now(), done: false, from: 0, project: projectId, root, after: seqParam(body.after) };
+    const poll: Poll = {
+      res,
+      startedAt: Date.now(),
+      done: false,
+      from: 0,
+      project: projectId,
+      root,
+      after: seqParam(body.after),
+    };
     const cursor = seqParam(body.cursor);
     const mine = covered(poll);
     if (cursor != null) {
@@ -1864,7 +2319,10 @@ export async function runServer({
     scope.set(key, poll);
     refreshWatch(projectId);
     // Pages can join the project without this server hearing of it (`project merge` in another process): look again now and then.
-    poll.refresh = setInterval(() => rescanProjectPoll(poll), msEnv("AUSTERE_AXI_PROJECT_REFRESH_MS", PROJECT_REFRESH_MS) || PROJECT_REFRESH_MS);
+    poll.refresh = setInterval(
+      () => rescanProjectPoll(poll),
+      msEnv("AUSTERE_AXI_PROJECT_REFRESH_MS", PROJECT_REFRESH_MS) || PROJECT_REFRESH_MS,
+    );
     res.on("close", () => {
       if (poll.done) return;
       retireProjectPoll(poll);
@@ -1880,7 +2338,11 @@ export async function runServer({
   }
 
   /** Record the agent session a CLI command runs in and link it to the pages it works on (RLM-343). Never fails the request. */
-  function noteCaller(caller: CallerReport | null, artifactIds: string[], action: SessionAction): void {
+  function noteCaller(
+    caller: CallerReport | null,
+    artifactIds: string[],
+    action: SessionAction,
+  ): void {
     if (!caller) return;
     try {
       registerSession(store.db, caller, { artifactIds, action });
@@ -1889,24 +2351,35 @@ export async function runServer({
     }
   }
 
-
   // ── routes ──
 
-  async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
-    if (!isLoopback(req.socket.remoteAddress)) return send(res, 403, { error: "control routes are loopback-only" });
+  async function handleApi(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: URL,
+  ): Promise<void> {
+    if (!isLoopback(req.socket.remoteAddress))
+      return send(res, 403, { error: "control routes are loopback-only" });
     // The CLI sends no Origin; a browser always does on POST. Any web page could
     // otherwise reach these routes on localhost.
-    if (req.headers.origin || req.headers["sec-fetch-site"]) return send(res, 403, { error: "control routes are for the CLI" });
+    if (req.headers.origin || req.headers["sec-fetch-site"])
+      return send(res, 403, { error: "control routes are for the CLI" });
     const route = url.pathname.slice(5);
     // Loopback is not a person: every other OS user on this machine can reach it. The CLI proves it
     // is the owner with the key from owner.key (mode 0600). Health stays open so a CLI can find and
     // check the server; it answers the CLI's nonce with an HMAC under the key instead of the key.
     if (route !== "health") {
       const key = req.headers["x-austere-key"];
-      if (typeof key !== "string" || !safeEqual(key, ownerToken)) return send(res, 403, { error: "owner key required" });
+      if (typeof key !== "string" || !safeEqual(key, ownerToken))
+        return send(res, 403, { error: "owner key required" });
       // Settings → About says when a newer CLI talks to this server (the owner updated austere-axi but not the running server).
       const cli = req.headers["x-austere-cli"];
-      if (typeof cli === "string" && /^\d+\.\d+\.\d+[\w.+-]{0,40}$/.test(cli) && versionGt(cli, newestCli ?? VERSION)) newestCli = cli;
+      if (
+        typeof cli === "string" &&
+        /^\d+\.\d+\.\d+[\w.+-]{0,40}$/.test(cli) &&
+        versionGt(cli, newestCli ?? VERSION)
+      )
+        newestCli = cli;
     }
     if (route === "health") {
       const nonce = url.searchParams.get("nonce");
@@ -1917,7 +2390,9 @@ export async function runServer({
         port,
         stateDir: stateDir(),
         // Bound to the port this server listens on: a listener elsewhere cannot relay it as its own.
-        proof: nonce ? crypto.createHmac("sha256", ownerToken).update(`${port}:${nonce}`).digest("base64url") : undefined,
+        proof: nonce
+          ? crypto.createHmac("sha256", ownerToken).update(`${port}:${nonce}`).digest("base64url")
+          : undefined,
         listen: Array.from(listeners.keys()),
         lan: lanHost ?? undefined,
         tailnet: tailnet || undefined,
@@ -1948,15 +2423,25 @@ export async function runServer({
       setTimeout(() => shutdown("requested"), 50);
       return;
     }
-    if (route === "login" && req.method === "POST") return send(res, 200, { code: logins.issue(), ttlMs: LOGIN_TTL_MS } satisfies LoginResponse);
-    if (route === "share/list") return send(res, 200, accessList(url.searchParams.get("links") === "1") satisfies ShareListResponse);
-    if (route === "share/requests" && req.method === "GET") return send(res, 200, requestsList() satisfies AccessRequestsResponse);
+    if (route === "login" && req.method === "POST")
+      return send(res, 200, { code: logins.issue(), ttlMs: LOGIN_TTL_MS } satisfies LoginResponse);
+    if (route === "share/list")
+      return send(
+        res,
+        200,
+        accessList(url.searchParams.get("links") === "1") satisfies ShareListResponse,
+      );
+    if (route === "share/requests" && req.method === "GET")
+      return send(res, 200, requestsList() satisfies AccessRequestsResponse);
     // `share default [hold|auto]`: the owner's default for a new reviewer's notes, as Settings → Review defaults sets it.
-    if (route === "share/default" && req.method === "GET") return send(res, 200, { auto: requests.defaultAuto() });
+    if (route === "share/default" && req.method === "GET")
+      return send(res, 200, { auto: requests.defaultAuto() });
     // `cloud status`: the cloud switch of Settings → Cloud.
-    if (route === "settings/cloud" && req.method === "GET") return send(res, 200, cloudView() satisfies CloudSettings);
+    if (route === "settings/cloud" && req.method === "GET")
+      return send(res, 200, cloudView() satisfies CloudSettings);
     // `server lan`: the local-network switch of Settings → Network (RLM-399).
-    if (route === "settings/lan" && req.method === "GET") return send(res, 200, settingsView().network.lan satisfies LocalNetwork);
+    if (route === "settings/lan" && req.method === "GET")
+      return send(res, 200, settingsView().network.lan satisfies LocalNetwork);
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req);
     // The agent session the command runs in (RLM-343); recorded once the route knows its pages.
@@ -1967,24 +2452,30 @@ export async function runServer({
       return send(res, 400, { error: String((err as Error).message) });
     }
     if (route === "share/default") {
-      if (typeof body.auto !== "boolean") return send(res, 400, { error: "auto must be true or false" });
+      if (typeof body.auto !== "boolean")
+        return send(res, 400, { error: "auto must be true or false" });
       requests.setDefaultAuto(body.auto);
       log("settings-review", body.auto ? "auto" : "hold");
       return send(res, 200, { auto: body.auto });
     }
     if (route === "share/revoke") {
       const done = revokeAccess(body.key);
-      if (!done.revoked.length) return send(res, 404, { error: "no link or device matches that name or id" });
+      if (!done.revoked.length)
+        return send(res, 404, { error: "no link or device matches that name or id" });
       return send(res, 200, done satisfies RevokeResponse);
     }
     if (route === "settings/cloud") {
-      if (typeof body.on !== "boolean") return send(res, 400, { error: "on must be true or false" });
+      if (typeof body.on !== "boolean")
+        return send(res, 400, { error: "on must be true or false" });
       setCloud(body.on);
       return send(res, 200, cloudView() satisfies CloudSettings);
     }
     if (route === "settings/lan") {
       const lan = body.lan;
-      if (lan !== null && typeof lan !== "string") return send(res, 400, { error: "lan must be one of this computer's local-network addresses, or null" });
+      if (lan !== null && typeof lan !== "string")
+        return send(res, 400, {
+          error: "lan must be one of this computer's local-network addresses, or null",
+        });
       const failed = await setLan(lan || null);
       if (failed) return send(res, 400, { error: failed });
       return send(res, 200, settingsView().network.lan satisfies LocalNetwork);
@@ -1996,24 +2487,38 @@ export async function runServer({
         const file = canonicalFile(body.file);
         if (!fs.existsSync(file)) return send(res, 404, { error: `no such file: ${file}` });
         try {
-          s = store.ensure(file, typeof body.cwd === "string" && path.isAbsolute(body.cwd) ? body.cwd : undefined);
+          s = store.ensure(
+            file,
+            typeof body.cwd === "string" && path.isAbsolute(body.cwd) ? body.cwd : undefined,
+          );
         } catch (err) {
           return send(res, 400, { error: String((err as Error).message || err) });
         }
       }
       const made = allowTailscale(s, body);
-      return "error" in made ? send(res, made.status, { error: made.error }) : send(res, 200, made satisfies AccessSummary);
+      return "error" in made
+        ? send(res, made.status, { error: made.error })
+        : send(res, 200, made satisfies AccessSummary);
     }
     // Access requests (RLM-398): `share requests on|off [--project]`, `share approve|deny|block <id>`.
-    if (route === "share/requests" || route === "share/approve" || route === "share/deny" || route === "share/block") {
-      const done = route === "share/requests" ? changeRequestSwitch(body) : decideRequest(body.id, route.slice("share/".length), body);
+    if (
+      route === "share/requests" ||
+      route === "share/approve" ||
+      route === "share/deny" ||
+      route === "share/block"
+    ) {
+      const done =
+        route === "share/requests"
+          ? changeRequestSwitch(body)
+          : decideRequest(body.id, route.slice("share/".length), body);
       return "error" in done ? send(res, done.status, { error: done.error }) : send(res, 200, done);
     }
     // `attach on|off|inherit` at a terminal while this server runs: written here, so open owner tabs hear it.
     if (route === "attach") {
       let where: AttachWhere;
       if (typeof body.project === "string" && body.project && !body.file) {
-        if (!store.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(body.project)) return send(res, 404, { error: `no such project: ${body.project}` });
+        if (!store.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(body.project))
+          return send(res, 404, { error: `no such project: ${body.project}` });
         where = { projectId: body.project };
       } else {
         const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
@@ -2022,13 +2527,20 @@ export async function runServer({
         const s = store.ensure(file);
         where = { page: { artifactId: s.id, file: s.file } };
       }
-      const change = body.change && typeof body.change === "object" ? (body.change as RequestBody) : {};
+      const change =
+        body.change && typeof body.change === "object" ? (body.change as RequestBody) : {};
       const failed = changeAttach(where, change);
       if (failed) return send(res, failed.status, { error: failed.error, code: failed.code });
       return send(res, 200, { ok: true });
     }
     // A whole project: `poll` and `feedback` with no file.
-    if ((route === "poll" || route === "feedback") && typeof body.project === "string" && body.project && !body.file) return projectRoute(route, body, res, caller);
+    if (
+      (route === "poll" || route === "feedback") &&
+      typeof body.project === "string" &&
+      body.project &&
+      !body.file
+    )
+      return projectRoute(route, body, res, caller);
     // Put away every copy whose file is gone (`archive --missing`): the CLI names a project by id, or none for all.
     if (route === "archive" && body.missing) {
       const copies = hub.missingCopies(typeof body.project === "string" ? body.project : "");
@@ -2045,7 +2557,10 @@ export async function runServer({
         return send(res, 400, { error: String((err as Error).message || err) });
       }
       if (!projectId) return send(res, 404, { error: `no project ${body.project}` });
-      return send(res, 200, { ok: true, stopped: await triggers.stop(projectId) } satisfies RunStopResponse);
+      return send(res, 200, {
+        ok: true,
+        stopped: await triggers.stop(projectId),
+      } satisfies RunStopResponse);
     }
     // One key per file however the caller spelled the path (symlinks, relative parts), so `open` and `archive` meet on the same session id.
     const file = typeof body.file === "string" && body.file ? canonicalFile(body.file) : "";
@@ -2078,7 +2593,11 @@ export async function runServer({
       noteCaller(caller, [s.id], "open");
       const p = projectOfPage(s);
       // A bare poll from `cwd` covers its checkout only: the page's root must be that one.
-      const project: OpenResponse["project"] = p && { name: p.name, ref: p.ref, here: cwd !== undefined && findRoot(hub.db, cwd) === store.rootOf(s) };
+      const project: OpenResponse["project"] = p && {
+        name: p.name,
+        ref: p.ref,
+        here: cwd !== undefined && findRoot(hub.db, cwd) === store.rootOf(s),
+      };
       return send(res, 200, {
         session: publicSession(s),
         links: links(s.id),
@@ -2110,7 +2629,10 @@ export async function runServer({
     const s = store.byFile(file);
     const pageRoute = route === "reply" || route === "feedback" || route === "poll" ? route : null;
     if (pageRoute) noteCaller(caller, s ? [s.id] : [], pageRoute);
-    if (!s) return send(res, 404, { error: "this page is not registered yet: run `austere-axi <file>` first" });
+    if (!s)
+      return send(res, 404, {
+        error: "this page is not registered yet: run `austere-axi <file>` first",
+      });
 
     if (route === "reply") {
       const text = String(body.text || "").trim();
@@ -2124,7 +2646,13 @@ export async function runServer({
         return e;
       });
       s.workingSince = null;
-      broadcastTranscript(s, [...acked, entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at && !acked.includes(e))]);
+      broadcastTranscript(s, [
+        ...acked,
+        entry,
+        ...s.transcript.filter(
+          (e) => e.role === "user" && e.doneAt === entry.at && !acked.includes(e),
+        ),
+      ]);
       broadcastPresence(s);
       const warning = await pushed;
       return send(res, 200, { ok: true, warning });
@@ -2151,7 +2679,13 @@ export async function runServer({
           void peer.reply(s, e.text);
           return e;
         });
-        broadcastTranscript(s, [...acked, entry, ...s.transcript.filter((e) => e.role === "user" && e.doneAt === entry.at && !acked.includes(e))]);
+        broadcastTranscript(s, [
+          ...acked,
+          entry,
+          ...s.transcript.filter(
+            (e) => e.role === "user" && e.doneAt === entry.at && !acked.includes(e),
+          ),
+        ]);
       } else if (acked.length) broadcastTranscript(s, acked);
       s.workingSince = null;
       // The newest listener wins: the older poll is told to stop.
@@ -2205,7 +2739,12 @@ export async function runServer({
       return send(res, 400, "bad pack name");
     }
     const file = installedPackFile(spec.name, spec.version);
-    if (!file) return send(res, 404, `pack ${spec.name}@${spec.version} is not installed (austere-axi components add ${spec.name}@${spec.version})`);
+    if (!file)
+      return send(
+        res,
+        404,
+        `pack ${spec.name}@${spec.version} is not installed (austere-axi components add ${spec.name}@${spec.version})`,
+      );
     fs.readFile(file, (err, buf) => {
       if (err) return send(res, 404, "not found");
       const actual = `sha384-${crypto.createHash("sha384").update(buf).digest("base64")}`;
@@ -2213,11 +2752,19 @@ export async function runServer({
       const wanted = url.searchParams.get("integrity");
       if (locked && locked !== actual) {
         log("pack-integrity", spec.name, spec.version, "file changed since install");
-        return send(res, 409, `pack ${spec.name}@${spec.version} changed on disk since it was installed; add it again`);
+        return send(
+          res,
+          409,
+          `pack ${spec.name}@${spec.version} changed on disk since it was installed; add it again`,
+        );
       }
       if (wanted && wanted !== actual) {
         log("pack-integrity", spec.name, spec.version, "page pins another build");
-        return send(res, 409, `the page pins another build of ${spec.name}@${spec.version}; \`austere-axi check --fix <file>\` updates it`);
+        return send(
+          res,
+          409,
+          `the page pins another build of ${spec.name}@${spec.version}; \`austere-axi check --fix <file>\` updates it`,
+        );
       }
       res.writeHead(200, {
         "content-type": MIME[".js"],
@@ -2237,13 +2784,25 @@ export async function runServer({
   function gzipOf(file: string, key: string): Promise<Buffer> {
     const hit = gzipped.get(file);
     if (hit && hit.key === key) return hit.body;
-    const body = fs.promises.readFile(file).then((buf) => new Promise<Buffer>((resolve, reject) => zlib.gzip(buf, { level: 9 }, (e, out) => (e ? reject(e) : resolve(out)))));
+    const body = fs.promises
+      .readFile(file)
+      .then(
+        (buf) =>
+          new Promise<Buffer>((resolve, reject) =>
+            zlib.gzip(buf, { level: 9 }, (e, out) => (e ? reject(e) : resolve(out))),
+          ),
+      );
     body.catch(() => gzipped.delete(file));
     gzipped.set(file, { key, body });
     return body;
   }
 
-  function serveAsset(req: http.IncomingMessage, res: http.ServerResponse, rel: string, url: URL): void {
+  function serveAsset(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    rel: string,
+    url: URL,
+  ): void {
     if (rel.startsWith("installed-packs/")) return serveInstalledPack(res, rel, url);
     const clean = path.normalize(rel).replace(/^(\.\.[/\\])+/, "");
     const file = path.join(ASSET_DIR, clean);
@@ -2251,7 +2810,10 @@ export async function runServer({
     fs.stat(file, (err, st) => {
       if (err || !st.isFile()) return send(res, 404, "not found");
       const key = `${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}`;
-      const gzip = COMPRESSIBLE.has(path.extname(file)) && st.size > 1024 && /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""));
+      const gzip =
+        COMPRESSIBLE.has(path.extname(file)) &&
+        st.size > 1024 &&
+        /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""));
       const etag = `"${key}${gzip ? "-gz" : ""}"`;
       const headers: http.OutgoingHttpHeaders = {
         "content-type": MIME[path.extname(file)] || "application/octet-stream",
@@ -2267,7 +2829,11 @@ export async function runServer({
       if (!gzip) return streamFile(res, file, { ...headers, "content-length": st.size });
       gzipOf(file, key).then(
         (body) => {
-          res.writeHead(200, { ...headers, "content-encoding": "gzip", "content-length": body.length });
+          res.writeHead(200, {
+            ...headers,
+            "content-encoding": "gzip",
+            "content-length": body.length,
+          });
           res.end(body);
         },
         () => send(res, 404, "not found"),
@@ -2281,13 +2847,18 @@ export async function runServer({
   // drop that sandbox so external links work from a page opened on its own:
   // in the review frame they still inherit the iframe's flags, and a popup on
   // an artifact URL gets this header again.
-  const ARTIFACT_CSP = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms";
+  const ARTIFACT_CSP =
+    "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms";
   /**
    * Stream a file as a 200. Headers go out only once the file has opened, so an open failure
    * (EACCES) is a 404 and a later read failure drops the connection. Without the error
    * listener either one would be an unhandled 'error' event and exit the server.
    */
-  function streamFile(res: http.ServerResponse, file: string, headers: http.OutgoingHttpHeaders): void {
+  function streamFile(
+    res: http.ServerResponse,
+    file: string,
+    headers: http.OutgoingHttpHeaders,
+  ): void {
     const rs = fs.createReadStream(file);
     rs.once("open", () => {
       res.writeHead(200, headers);
@@ -2310,8 +2881,12 @@ export async function runServer({
    * token opens only what `serveArtifact` serves anyway.
    */
   function assetToken(s: Session, viewer: Viewer): string {
-    const who = viewer.role === "owner" ? "owner" : `device:${viewer.deviceId}\0${viewer.credential}`;
-    return crypto.createHmac("sha256", ownerToken).update(`austere-axi asset\0${s.id}\0${who}`).digest("base64url");
+    const who =
+      viewer.role === "owner" ? "owner" : `device:${viewer.deviceId}\0${viewer.credential}`;
+    return crypto
+      .createHmac("sha256", ownerToken)
+      .update(`austere-axi asset\0${s.id}\0${who}`)
+      .digest("base64url");
   }
 
   /** Does `token` belong to the owner or to a live device whose scope reaches this page? */
@@ -2321,19 +2896,42 @@ export async function runServer({
     for (const row of devices.list()) {
       const credential = credentialOf(row);
       if (credential == null || !isLive(row) || !covers(row, s.id, pid)) continue;
-      if (safeEqual(token, assetToken(s, { role: "reviewer", name: row.name, auto: Boolean(row.auto), deviceId: row.id, credential }))) ok = true;
+      if (
+        safeEqual(
+          token,
+          assetToken(s, {
+            role: "reviewer",
+            name: row.name,
+            auto: Boolean(row.auto),
+            deviceId: row.id,
+            credential,
+          }),
+        )
+      )
+        ok = true;
     }
     return ok;
   }
 
-  function serveArtifact(req: http.IncomingMessage, res: http.ServerResponse, s: Session, rest: string): void {
+  function serveArtifact(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    s: Session,
+    rest: string,
+  ): void {
     const dir = path.dirname(s.file);
     const base = path.basename(s.file);
     if (rest === base || rest === "") {
       const html = readFileSafe(s.file);
       if (html == null) return send(res, 404, "artifact file is missing");
-      const out = rewriteRuntime(html, `<script src="/__austere/austere.js?v=${VERSION}"></script>`);
-      return send(res, 200, out, { "content-type": "text/html; charset=utf-8", "content-security-policy": ARTIFACT_CSP });
+      const out = rewriteRuntime(
+        html,
+        `<script src="/__austere/austere.js?v=${VERSION}"></script>`,
+      );
+      return send(res, 200, out, {
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy": ARTIFACT_CSP,
+      });
     }
     let decoded: string;
     try {
@@ -2357,7 +2955,11 @@ export async function runServer({
       id: s.id,
       title: s.title,
       file: viewer.role === "owner" ? s.file : "",
-      viewer: { role: viewer.role, name: viewer.name, auto: viewer.role === "reviewer" ? viewer.auto : undefined },
+      viewer: {
+        role: viewer.role,
+        name: viewer.name,
+        auto: viewer.role === "reviewer" ? viewer.auto : undefined,
+      },
       name: path.basename(s.file),
       artifactUrl: `/s/${s.id}/a/${assetToken(s, viewer)}/${encodeURIComponent(path.basename(s.file))}`,
       version: VERSION,
@@ -2391,7 +2993,11 @@ export async function runServer({
   }
 
   /** The `project` field of an answer: null for every project; `id` empty when `?project=` matched nothing. */
-  function projectField(p: { ref: string; id: string; name: string }): { id: string; name: string; ref: string } | null {
+  function projectField(p: {
+    ref: string;
+    id: string;
+    name: string;
+  }): { id: string; name: string; ref: string } | null {
     return p.ref ? { id: p.id === "\0none" ? "" : p.id, name: p.name, ref: p.ref } : null;
   }
 
@@ -2424,7 +3030,11 @@ export async function runServer({
    * /inbox?project=, /search?q=, /page/<copy id>, /notes?q=&status=&project=&author=&device=, /runs?project=;
    * POST /hub/api/page/<copy id>/archive (every open copy of the page) and /unarchive (every archived copy); with `{ids}`, exactly those copies of the page (Undo).
    */
-  async function hubApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
+  async function hubApi(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: URL,
+  ): Promise<void> {
     // Every page and note: never for another site, GET included.
     if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
     const route = url.pathname.slice("/hub/api/".length);
@@ -2432,7 +3042,9 @@ export async function runServer({
     if (flip) {
       if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
       const body = await readBody(req, 16 * 1024);
-      const asked = Array.isArray(body.ids) ? body.ids.filter((x): x is string => typeof x === "string") : null;
+      const asked = Array.isArray(body.ids)
+        ? body.ids.filter((x): x is string => typeof x === "string")
+        : null;
       const archive = flip[2] === "archive";
       const ids = copiesToFlip(hub, flip[1], archive, asked);
       if (!ids) return send(res, 404, { error: "not in the hub" });
@@ -2440,22 +3052,47 @@ export async function runServer({
       for (const id of ids) setArchived(id, at);
       return send(res, 200, { ok: true, ids } satisfies ArchiveResult);
     }
-    if (route === "settings" || route.startsWith("settings/") || route.startsWith("projects/")) return hubSettings(req, res, route);
-    if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
+    if (route === "settings" || route.startsWith("settings/") || route.startsWith("projects/"))
+      return hubSettings(req, res, route);
+    if (req.method !== "GET" && req.method !== "HEAD")
+      return send(res, 405, { error: "GET expected" });
     const project = projectParam(url);
-    if (route === "projects") return send(res, 200, { projects: shellProjects(hub, copyListening) } satisfies ProjectsResponse);
+    if (route === "projects")
+      return send(res, 200, {
+        projects: shellProjects(hub, copyListening),
+      } satisfies ProjectsResponse);
     if (route === "pages") {
       const v = url.searchParams.get("view");
       const view: PagesView = v === "all" || v === "archived" ? v : "open";
       const pages = shellPages(hub, { project: project.id, view }, copyListening);
-      return send(res, 200, { view, project: projectField(project), pages, counts: hub.viewCounts({ project: project.id }) } satisfies PagesResponse);
+      return send(res, 200, {
+        view,
+        project: projectField(project),
+        pages,
+        counts: hub.viewCounts({ project: project.id }),
+      } satisfies PagesResponse);
     }
-    if (route === "inbox") return send(res, 200, { project: projectField(project), ...shellInbox(hub, { project: project.id }, copyListening) } satisfies InboxResponse);
-    if (route === "search") return send(res, 200, shellSearch(hub, (url.searchParams.get("q") || "").slice(0, 200), copyListening) satisfies SearchResponse);
+    if (route === "inbox")
+      return send(res, 200, {
+        project: projectField(project),
+        ...shellInbox(hub, { project: project.id }, copyListening),
+      } satisfies InboxResponse);
+    if (route === "search")
+      return send(
+        res,
+        200,
+        shellSearch(
+          hub,
+          (url.searchParams.get("q") || "").slice(0, 200),
+          copyListening,
+        ) satisfies SearchResponse,
+      );
     const page = /^page\/([a-f0-9]{12})$/.exec(route);
     if (page) {
       const summary = copySummary(hub, page[1]);
-      return summary ? send(res, 200, summary satisfies CopySummary) : send(res, 404, { error: "not in the hub" });
+      return summary
+        ? send(res, 200, summary satisfies CopySummary)
+        : send(res, 404, { error: "not in the hub" });
     }
     if (route === "notes") {
       const st = url.searchParams.get("status");
@@ -2469,10 +3106,21 @@ export async function runServer({
         status: st === "unanswered" || st === "answered" ? st : "",
       });
       const notes = rows.map((n) => ({ ...n, remote: Boolean(n.remote) }));
-      const device = deviceId ? { id: deviceId, name: devices.get(deviceId)?.name ?? deviceId } : null;
-      return send(res, 200, { notes, authors: hub.authors(), device, project: projectField(project) } satisfies NotesResponse);
+      const device = deviceId
+        ? { id: deviceId, name: devices.get(deviceId)?.name ?? deviceId }
+        : null;
+      return send(res, 200, {
+        notes,
+        authors: hub.authors(),
+        device,
+        project: projectField(project),
+      } satisfies NotesResponse);
     }
-    if (route === "runs") return send(res, 200, { runs: shellRuns(hub, { project: project.id }), project: projectField(project) } satisfies HubRunsResponse);
+    if (route === "runs")
+      return send(res, 200, {
+        runs: shellRuns(hub, { project: project.id }),
+        project: projectField(project),
+      } satisfies HubRunsResponse);
     return send(res, 404, { error: "not found" });
   }
 
@@ -2481,14 +3129,23 @@ export async function runServer({
     if (linkBase) return { url: linkBase.base, from: "link_url" };
     const host = remoteHost();
     if (!host) return lanHost ? { url: hostUrl(lanHost), from: "lan" } : null;
-    const from = process.env.AUSTERE_AXI_LINK_HOST ? "link_host" : tailnet && listeners.has(tailnet.ip) ? "tailscale" : "host";
+    const from = process.env.AUSTERE_AXI_LINK_HOST
+      ? "link_host"
+      : tailnet && listeners.has(tailnet.ip)
+        ? "tailscale"
+        : "host";
     return { url: `http://${host}:${port}`, from };
   }
 
   /** Settings → Cloud, from cloud.json and settings.json alone: nothing here asks the service. */
   function cloudView(): CloudSettings {
     const state = readCloud();
-    return { on: cloudEnabled(), service: state.url || cloudUrl(), account: state.account?.user.email ?? null, published: Object.keys(state.pages).length };
+    return {
+      on: cloudEnabled(),
+      service: state.url || cloudUrl(),
+      account: state.account?.user.email ?? null,
+      published: Object.keys(state.pages).length,
+    };
   }
 
   /** Turn cloud features on (sync picks up every published page) or off (every socket to the service closes). */
@@ -2501,7 +3158,14 @@ export async function runServer({
 
   function settingsView(): SettingsResponse {
     const addresses = Array.from(listeners.keys()).map((host) => ({
-      kind: host === "127.0.0.1" ? ("this_computer" as const) : host === tailnetBound ? ("tailscale" as const) : host === lanHost ? ("local_network" as const) : ("added" as const),
+      kind:
+        host === "127.0.0.1"
+          ? ("this_computer" as const)
+          : host === tailnetBound
+            ? ("tailscale" as const)
+            : host === lanHost
+              ? ("local_network" as const)
+              : ("added" as const),
       host,
       url: hostUrl(host),
     }));
@@ -2510,9 +3174,19 @@ export async function runServer({
     const viewing: SettingsResponse["review"]["viewing"] = [];
     for (const [id, set] of clients) {
       const seen = new Map<string, { name: string; role: "owner" | "reviewer" }>();
-      for (const c of set) seen.set(c.viewer.role === "owner" ? "owner" : `r:${c.viewer.deviceId}`, { name: c.viewer.name, role: c.viewer.role });
+      for (const c of set)
+        seen.set(c.viewer.role === "owner" ? "owner" : `r:${c.viewer.deviceId}`, {
+          name: c.viewer.name,
+          role: c.viewer.role,
+        });
       const a = seen.size ? hub.artifact(id) : null;
-      if (a) viewing.push({ id, title: a.title || path.basename(a.file), file: a.file, viewers: [...seen.values()] });
+      if (a)
+        viewing.push({
+          id,
+          title: a.title || path.basename(a.file),
+          file: a.file,
+          viewers: [...seen.values()],
+        });
     }
     return {
       network: {
@@ -2521,7 +3195,12 @@ export async function runServer({
         share: shareAddress(),
         tailscale: tailnet ? { ip: tailnet.ip, dns_name: tailnet.dnsName } : null,
         tailscale_names: tailnetBound != null,
-        lan: { address: lanChosen, listening: lanChosen != null && lanHost === lanChosen, url: lanHost === lanChosen && lanHost ? hostUrl(lanHost) : null, choices: lanAddresses() },
+        lan: {
+          address: lanChosen,
+          listening: lanChosen != null && lanHost === lanChosen,
+          url: lanHost === lanChosen && lanHost ? hostUrl(lanHost) : null,
+          choices: lanAddresses(),
+        },
         always_on: {
           mode: runBy ? "service" : idleMs === 0 ? "kept_on" : "idles",
           supervisor: supervisorName,
@@ -2532,7 +3211,9 @@ export async function runServer({
       review: { auto: requests.defaultAuto(), viewing },
       cloud: cloudView(),
       missing: hub.missingCopies().length,
-      gone_folders: listProjects(hub.db).flatMap((p) => p.roots.filter((r) => !fs.existsSync(r.root)).map((r) => r.root)),
+      gone_folders: listProjects(hub.db).flatMap((p) =>
+        p.roots.filter((r) => !fs.existsSync(r.root)).map((r) => r.root),
+      ),
       about: { version: VERSION, state_dir: stateDir(), newer_cli: newestCli },
     };
   }
@@ -2543,35 +3224,58 @@ export async function runServer({
    * the CLI does it: POST /hub/api/projects/<id>/rename {name}, /merge {from}, /forget-root {root, drop?}, and
    * POST /hub/api/projects/archive-missing {project?}. People is /hub/api/people (hubPeople).
    */
-  async function hubSettings(req: http.IncomingMessage, res: http.ServerResponse, route: string): Promise<void> {
+  async function hubSettings(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    route: string,
+  ): Promise<void> {
     if (route === "settings") {
-      if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
+      if (req.method !== "GET" && req.method !== "HEAD")
+        return send(res, 405, { error: "GET expected" });
       // A Tailscale that came up or moved since the last check shows now, not in a minute.
       if (!fixedHost) await recheckTailnet();
       return send(res, 200, settingsView() satisfies SettingsResponse);
     }
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req, 16 * 1024);
-    const done = (message: string) => send(res, 200, { ok: true, message } satisfies ProjectActionResult);
+    const done = (message: string) =>
+      send(res, 200, { ok: true, message } satisfies ProjectActionResult);
     if (route === "settings/review") {
-      if (typeof body.auto !== "boolean") return send(res, 400, { error: "auto must be true or false" });
+      if (typeof body.auto !== "boolean")
+        return send(res, 400, { error: "auto must be true or false" });
       requests.setDefaultAuto(body.auto);
       log("settings-review", body.auto ? "auto" : "hold");
-      return done(body.auto ? "New reviewers' notes go straight to the agent." : "New reviewers' notes wait for you.");
+      return done(
+        body.auto
+          ? "New reviewers' notes go straight to the agent."
+          : "New reviewers' notes wait for you.",
+      );
     }
     // Cloud features (RLM-421): `{ on }`. `cloud on|off` at a terminal does the same.
     if (route === "settings/cloud") {
-      if (typeof body.on !== "boolean") return send(res, 400, { error: "on must be true or false" });
+      if (typeof body.on !== "boolean")
+        return send(res, 400, { error: "on must be true or false" });
       setCloud(body.on);
-      return done(body.on ? "Cloud features are on: publish, clone and hosted-page sync work." : "Cloud features are off: only local features work, and nothing reaches the service.");
+      return done(
+        body.on
+          ? "Cloud features are on: publish, clone and hosted-page sync work."
+          : "Cloud features are off: only local features work, and nothing reaches the service.",
+      );
     }
     // The local network (P6): `{ lan: "<address>" }` listens there, `{ lan: null }` stops. `server lan` at a terminal does the same.
     if (route === "settings/network") {
       const lan = body.lan;
-      if (lan !== null && typeof lan !== "string") return send(res, 400, { error: "lan must be one of this computer's local-network addresses, or null" });
+      if (lan !== null && typeof lan !== "string")
+        return send(res, 400, {
+          error: "lan must be one of this computer's local-network addresses, or null",
+        });
       const failed = await setLan(lan || null);
       if (failed) return send(res, 400, { error: failed });
-      return done(lan ? `Listening on the local network at ${hostUrl(lan)}: reviewers only, unencrypted.` : "Not listening on the local network.");
+      return done(
+        lan
+          ? `Listening on the local network at ${hostUrl(lan)}: reviewers only, unencrypted.`
+          : "Not listening on the local network.",
+      );
     }
     if (route === "projects/archive-missing") {
       const project = typeof body.project === "string" ? body.project : "";
@@ -2579,12 +3283,18 @@ export async function runServer({
       const at = Date.now();
       for (const c of copies) setArchived(c.id, at);
       const waiting = copies.reduce((n, c) => n + c.unanswered, 0);
-      return done(copies.length ? `Archived ${copies.length} missing ${copies.length === 1 ? "page" : "pages"}${waiting ? `, with ${waiting} unanswered ${waiting === 1 ? "note" : "notes"} (kept)` : ""}.` : "No page opened for review has a missing file.");
+      return done(
+        copies.length
+          ? `Archived ${copies.length} missing ${copies.length === 1 ? "page" : "pages"}${waiting ? `, with ${waiting} unanswered ${waiting === 1 ? "note" : "notes"} (kept)` : ""}.`
+          : "No page opened for review has a missing file.",
+      );
     }
     const m = /^projects\/([^/]{1,80})\/(rename|merge|forget-root)$/.exec(route);
     if (!m) return send(res, 404, { error: "not found" });
     const [, id, action] = m;
-    const p = hub.db.prepare("SELECT id, name FROM projects WHERE id = ?").get(id) as { id: string; name: string } | undefined;
+    const p = hub.db.prepare("SELECT id, name FROM projects WHERE id = ?").get(id) as
+      | { id: string; name: string }
+      | undefined;
     if (!p) return send(res, 404, { error: "no such project" });
     try {
       if (action === "rename") {
@@ -2594,7 +3304,12 @@ export async function runServer({
         return done(`Renamed ${p.name} to ${renamed.name}.`);
       }
       if (action === "merge") {
-        const from = typeof body.from === "string" ? (hub.db.prepare("SELECT id, name FROM projects WHERE id = ?").get(body.from) as { id: string; name: string } | undefined) : undefined;
+        const from =
+          typeof body.from === "string"
+            ? (hub.db.prepare("SELECT id, name FROM projects WHERE id = ?").get(body.from) as
+                | { id: string; name: string }
+                | undefined)
+            : undefined;
         if (!from) return send(res, 400, { error: "from must be another project's id" });
         mergeProjects(hub.db, p.id, from.id);
         // Pages changed project: a reviewer scoped to the old project loses them now, not on the next request.
@@ -2604,15 +3319,28 @@ export async function runServer({
       }
       // forget-root: only a root of this project, as the page lists them.
       const root = typeof body.root === "string" ? body.root : "";
-      if (!listProjects(hub.db).find((x) => x.id === p.id)?.roots.some((r) => r.root === root)) return send(res, 400, { error: `not a root of ${p.name}` });
+      if (
+        !listProjects(hub.db)
+          .find((x) => x.id === p.id)
+          ?.roots.some((r) => r.root === root)
+      )
+        return send(res, 400, { error: `not a root of ${p.name}` });
       const r = forgetRoot(hub.db, root, { drop: body.drop === true });
       recheckScopes();
       const at = Date.now();
       for (const file of r.archived) archivedInMemory(sessionId(file), at);
       log("project-forget-root", p.id, root, r.status);
-      if (r.status === "dropped") return done(`Forgot ${root}. Its pages stay in ${r.project}, archived; their notes are kept.`);
-      if (r.again) return done(`${root} is a folder of ${r.again.project} again at once: it has a .git, or pages right in it and no project folder above.`);
-      return done(`Forgot ${root}.${r.went.length ? ` Its pages moved to the projects their folders belong to.` : ""}`);
+      if (r.status === "dropped")
+        return done(
+          `Forgot ${root}. Its pages stay in ${r.project}, archived; their notes are kept.`,
+        );
+      if (r.again)
+        return done(
+          `${root} is a folder of ${r.again.project} again at once: it has a .git, or pages right in it and no project folder above.`,
+        );
+      return done(
+        `Forgot ${root}.${r.went.length ? ` Its pages moved to the projects their folders belong to.` : ""}`,
+      );
     } catch (err) {
       return send(res, 400, { error: String((err as Error).message || err) });
     }
@@ -2626,8 +3354,15 @@ export async function runServer({
     const a = /^[a-f0-9]{12}$/.test(id) ? hub.artifact(id) : null;
     if (!a) return send(res, 404, "not in the hub");
     if (!fs.existsSync(a.file)) {
-      const project = (a.project_id ? findProject(hub.db, a.project_id, { folders: false })?.name : null) ?? a.project;
-      const page = missingPage(a, { version: VERSION, project, label: a.root ? copyLabel(a.root) : "", notes: hub.notes({ artifact: a.id, limit: 500 }) });
+      const project =
+        (a.project_id ? findProject(hub.db, a.project_id, { folders: false })?.name : null) ??
+        a.project;
+      const page = missingPage(a, {
+        version: VERSION,
+        project,
+        label: a.root ? copyLabel(a.root) : "",
+        notes: hub.notes({ artifact: a.id, limit: 500 }),
+      });
       return send(res, 410, page, { "content-type": "text/html; charset=utf-8" });
     }
     const existed = store.byFile(a.file);
@@ -2654,7 +3389,13 @@ export async function runServer({
   function linkRefusal(link: DeviceRow | null, s: Session): string {
     if (!link || !covers(link, s.id, store.projectIdOf(s))) return LINK_INVALID;
     const state = devices.linkState(link);
-    return state === "claimed" ? LINK_USED : state === "expired" ? LINK_EXPIRED : state === "revoked" ? LINK_INVALID : "";
+    return state === "claimed"
+      ? LINK_USED
+      : state === "expired"
+        ? LINK_EXPIRED
+        : state === "revoked"
+          ? LINK_INVALID
+          : "";
   }
 
   /**
@@ -2668,14 +3409,22 @@ export async function runServer({
    * Network → Names from Tailscale (RLM-399): POST /hub/api/people/tailscale {login, name?, scope (all or
    * project), project?, auto?} lets a Tailscale login in without a link. The owner's only.
    */
-  async function hubPeople(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
+  async function hubPeople(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: URL,
+  ): Promise<void> {
     // It holds the links: never for another site, GET included.
     if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
     if (url.pathname === "/hub/api/people/requests") {
-      if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
+      if (req.method !== "GET" && req.method !== "HEAD")
+        return send(res, 405, { error: "GET expected" });
       return send(res, 200, requestsList() satisfies AccessRequestsResponse);
     }
-    const asked = /^\/hub\/api\/people\/requests\/(?:switch|(r[0-9a-f]{10})\/(approve|deny|block))$/.exec(url.pathname);
+    const asked =
+      /^\/hub\/api\/people\/requests\/(?:switch|(r[0-9a-f]{10})\/(approve|deny|block))$/.exec(
+        url.pathname,
+      );
     if (asked) {
       if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
       const body = await readBody(req, 16 * 1024);
@@ -2685,28 +3434,39 @@ export async function runServer({
     if (url.pathname === "/hub/api/people/share") {
       if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
       const body = await readBody(req, 16 * 1024);
-      const a = typeof body.page === "string" && /^[a-f0-9]{12}$/.test(body.page) ? hub.artifact(body.page) : null;
+      const a =
+        typeof body.page === "string" && /^[a-f0-9]{12}$/.test(body.page)
+          ? hub.artifact(body.page)
+          : null;
       if (!a) return send(res, 404, { error: "not in the hub" });
       if (!fs.existsSync(a.file)) return send(res, 409, { error: `the file is gone: ${a.file}` });
       const made = await createShare(store.ensure(a.file), body);
-      return "error" in made ? send(res, made.status, { error: made.error }) : send(res, 200, made satisfies ShareResponse);
+      return "error" in made
+        ? send(res, made.status, { error: made.error })
+        : send(res, 200, made satisfies ShareResponse);
     }
     if (url.pathname === "/hub/api/people/tailscale") {
       if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
       const made = allowTailscale(null, await readBody(req, 16 * 1024));
-      return "error" in made ? send(res, made.status, { error: made.error }) : send(res, 200, made satisfies AccessSummary);
+      return "error" in made
+        ? send(res, made.status, { error: made.error })
+        : send(res, 200, made satisfies AccessSummary);
     }
     if (url.pathname === "/hub/api/people") {
-      if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "GET expected" });
+      if (req.method !== "GET" && req.method !== "HEAD")
+        return send(res, 405, { error: "GET expected" });
       return send(res, 200, accessList(true) satisfies ShareListResponse);
     }
-    const m = /^\/hub\/api\/people\/(d[0-9a-f]{10})\/(rename|scope|revoke|single-use)$/.exec(url.pathname);
+    const m = /^\/hub\/api\/people\/(d[0-9a-f]{10})\/(rename|scope|revoke|single-use)$/.exec(
+      url.pathname,
+    );
     if (!m) return send(res, 404, { error: "not found" });
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const [, id, action] = m;
     const body = await readBody(req, 16 * 1024);
     const row = devices.get(id);
-    if (!row || !isLive(row)) return send(res, 404, { error: "no live link or device with that id" });
+    if (!row || !isLive(row))
+      return send(res, 404, { error: "no live link or device with that id" });
     if (action === "revoke") return send(res, 200, revokeAccess(id) satisfies RevokeResponse);
     try {
       if (action === "rename") {
@@ -2717,12 +3477,30 @@ export async function runServer({
       if (action === "scope") {
         let scope: Scope;
         if (body.scope === "all") scope = { kind: "all", id: null };
-        else if (body.scope === "page" && typeof body.page === "string" && hub.artifact(body.page)) scope = { kind: "page", id: body.page };
-        else if (body.scope === "project" && typeof body.project === "string" && findProject(hub.db, body.project, { folders: false })?.id === body.project) scope = { kind: "project", id: body.project };
-        else return send(res, 400, { error: "scope is all, page with `page` (a page's id), or project with `project` (a project's id)" });
+        else if (body.scope === "page" && typeof body.page === "string" && hub.artifact(body.page))
+          scope = { kind: "page", id: body.page };
+        else if (
+          body.scope === "project" &&
+          typeof body.project === "string" &&
+          findProject(hub.db, body.project, { folders: false })?.id === body.project
+        )
+          scope = { kind: "project", id: body.project };
+        else
+          return send(res, 400, {
+            error:
+              "scope is all, page with `page` (a page's id), or project with `project` (a project's id)",
+          });
         // An unclaimed link opens on its page: a project that does not hold that page would leave a link that opens nowhere.
-        if (row.claimed_at == null && scope.kind === "project" && row.link_page && hub.artifact(row.link_page)?.project_id !== scope.id) {
-          return send(res, 400, { error: "this link opens on a page outside that project; revoke it and share a page of that project" });
+        if (
+          row.claimed_at == null &&
+          scope.kind === "project" &&
+          row.link_page &&
+          hub.artifact(row.link_page)?.project_id !== scope.id
+        ) {
+          return send(res, 400, {
+            error:
+              "this link opens on a page outside that project; revoke it and share a page of that project",
+          });
         }
         const refused = row.auto ? autoAttachConflict(scope) : "";
         if (refused) return send(res, 409, { error: refused });
@@ -2732,7 +3510,12 @@ export async function runServer({
         log("share-scope", id, scope.kind);
         return send(res, 200, accessSummary(changed, true));
       }
-      const fresh = devices.makeSingleUse(id, typeof body.expiresAt === "number" && body.expiresAt > Date.now() ? body.expiresAt : undefined);
+      const fresh = devices.makeSingleUse(
+        id,
+        typeof body.expiresAt === "number" && body.expiresAt > Date.now()
+          ? body.expiresAt
+          : undefined,
+      );
       // The old token was a cookie too: its open pages stop now, as on revoke.
       cutOff(id, null);
       log("share-single-use", id);
@@ -2742,7 +3525,10 @@ export async function runServer({
     }
   }
 
-  async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<http.ServerResponse | void> {
+  async function handle(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<http.ServerResponse | void> {
     const url = new URL(String(req.url), "http://x");
     const host = hostOnly(req.headers.host);
     if (!hostsAllowed().has(host) && process.env.AUSTERE_AXI_ALLOWED_HOSTS !== "*") {
@@ -2752,15 +3538,33 @@ export async function runServer({
     // sign-in, link or cookie. An owner cookie sent there is refused and cleared.
     if (via(req) === "lan") {
       const ownerCookieSent = tokenFromCookie(req.headers.cookie, OWNER_COOKIE) != null;
-      const ownerPath = url.pathname.startsWith("/api/") || url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
-      if (ownerPath || ownerCookieSent || url.searchParams.has("key") || url.searchParams.has("login")) {
-        return send(res, 403, LAN_NO_OWNER, ownerCookieSent ? { "set-cookie": `${OWNER_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0` } : {});
+      const ownerPath =
+        url.pathname.startsWith("/api/") ||
+        url.pathname === "/" ||
+        url.pathname === "/notes" ||
+        url.pathname.startsWith("/hub/");
+      if (
+        ownerPath ||
+        ownerCookieSent ||
+        url.searchParams.has("key") ||
+        url.searchParams.has("login")
+      ) {
+        return send(
+          res,
+          403,
+          LAN_NO_OWNER,
+          ownerCookieSent
+            ? { "set-cookie": `${OWNER_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0` }
+            : {},
+        );
       }
     }
     if (url.pathname.startsWith("/api/")) return handleApi(req, res, url);
-    if (url.pathname.startsWith("/__austere/")) return serveAsset(req, res, url.pathname.slice("/__austere/".length), url);
+    if (url.pathname.startsWith("/__austere/"))
+      return serveAsset(req, res, url.pathname.slice("/__austere/".length), url);
     // A browser POST from another site never reaches a page route, the hub's included.
-    if (req.method === "POST" && !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+    if (req.method === "POST" && !checkOrigin(req))
+      return send(res, 403, { error: "cross-origin request refused" });
     // The owner's remote link: trade the key for the owner cookie, then drop it from the URL.
     const key = url.searchParams.get("key");
     if (key != null) {
@@ -2770,20 +3574,40 @@ export async function runServer({
     // A link from the CLI: trade the single-use login code for the owner cookie, the same way.
     const login = url.searchParams.get("login");
     if (login != null) {
-      if (!logins.take(login)) return send(res, 403, "This sign-in link was used already or has expired. Run `austere-axi login` for a new one.");
+      if (!logins.take(login))
+        return send(
+          res,
+          403,
+          "This sign-in link was used already or has expired. Run `austere-axi login` for a new one.",
+        );
       return signIn(res, url, "login");
     }
     // The hub lists every page and every note: the owner's only.
-    const ownerOnly = url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
+    const ownerOnly =
+      url.pathname === "/" || url.pathname === "/notes" || url.pathname.startsWith("/hub/");
     if (ownerOnly && !isOwner(req)) return send(res, 403, notOwner(req));
     // The hub shows pages and opens reviews by link. It takes a POST for the Archive button of a missing copy, for People (/hub/api/people), and for the shell's archive (/hub/api/page/<id>/archive).
-    const archiveId = req.method === "POST" && ownerOnly && url.pathname.startsWith("/hub/archive/") ? url.pathname.slice("/hub/archive/".length) : null;
-    const people = ownerOnly && (url.pathname === "/hub/api/people" || url.pathname.startsWith("/hub/api/people/"));
+    const archiveId =
+      req.method === "POST" && ownerOnly && url.pathname.startsWith("/hub/archive/")
+        ? url.pathname.slice("/hub/archive/".length)
+        : null;
+    const people =
+      ownerOnly &&
+      (url.pathname === "/hub/api/people" || url.pathname.startsWith("/hub/api/people/"));
     const api = ownerOnly && !people && url.pathname.startsWith("/hub/api/");
-    if (ownerOnly && archiveId === null && !people && !api && req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
+    if (
+      ownerOnly &&
+      archiveId === null &&
+      !people &&
+      !api &&
+      req.method !== "GET" &&
+      req.method !== "HEAD"
+    )
+      return send(res, 405, "method not allowed", { allow: "GET, HEAD" });
     // Owner browsing the hub keeps the server up.
     if (ownerOnly) activity();
-    if (url.pathname === "/") return send(res, 200, hubShell(), { "content-type": "text/html; charset=utf-8" });
+    if (url.pathname === "/")
+      return send(res, 200, hubShell(), { "content-type": "text/html; charset=utf-8" });
     // The Notes view moved into the shell; its old links (People's per-device link among them) keep their filters.
     if (url.pathname === "/notes") {
       url.searchParams.set("view", "notes");
@@ -2791,7 +3615,8 @@ export async function runServer({
       return res.end();
     }
     if (archiveId !== null) return hubArchive(res, archiveId);
-    if (url.pathname.startsWith("/hub/open/")) return hubOpen(res, url.pathname.slice("/hub/open/".length), url);
+    if (url.pathname.startsWith("/hub/open/"))
+      return hubOpen(res, url.pathname.slice("/hub/open/".length), url);
     if (api) return hubApi(req, res, url);
     if (people) return hubPeople(req, res, url);
     if (url.pathname === "/favicon.ico") return send(res, 204, "");
@@ -2810,20 +3635,30 @@ export async function runServer({
       const link = devices.findLink(invite);
       const refused = linkRefusal(link, s);
       if (refused || !link) return send(res, 403, refused);
-      const once = link.reusable ? "" : "<p>This link works on one device only: the browser that continues becomes yours, and the link stops working.</p>";
+      const once = link.reusable
+        ? ""
+        : "<p>This link works on one device only: the browser that continues becomes yours, and the link stops working.</p>";
       // The owner testing their own link would turn this browser into the reviewer on every page the link reaches.
-      const owner = isOwner(req) ? `<p><strong>This browser is signed in as the page's owner.</strong> Continuing makes it ${escapeHtml(link.name)}'s device: the pages this link reaches then open as ${escapeHtml(link.name)} here. Send the link to ${escapeHtml(link.name)} instead.</p>` : "";
+      const owner = isOwner(req)
+        ? `<p><strong>This browser is signed in as the page's owner.</strong> Continuing makes it ${escapeHtml(link.name)}'s device: the pages this link reaches then open as ${escapeHtml(link.name)} here. Send the link to ${escapeHtml(link.name)} instead.</p>`
+        : "";
       return send(
         res,
         200,
         `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Join review</title><form method="post" action="/s/${s.id}/join"><input type="hidden" name="invite" value="${escapeHtml(invite)}">${owner}${once}<button>Continue as ${escapeHtml(link.name)}</button></form>`,
         // "same-origin", not "no-referrer": Chrome and Firefox send `Origin: null` on a form POST under no-referrer, which the join check would refuse.
-        { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "same-origin", "x-frame-options": "DENY" },
+        {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "referrer-policy": "same-origin",
+          "x-frame-options": "DENY",
+        },
       );
     }
     if (sub === "/join" && req.method === "POST") {
       // Require a same-origin browser POST: Origin must be present and equal Host (checkOrigin alone allows a missing Origin).
-      if (!req.headers.origin || !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+      if (!req.headers.origin || !checkOrigin(req))
+        return send(res, 403, { error: "cross-origin request refused" });
       // The form posts application/x-www-form-urlencoded; readBody() only parses JSON, so read the small body here.
       const chunks: Buffer[] = [];
       let size = 0;
@@ -2832,7 +3667,9 @@ export async function runServer({
         if (size > 4096) return send(res, 413, "payload too large");
         chunks.push(c);
       }
-      const link = devices.findLink(new URLSearchParams(Buffer.concat(chunks).toString("utf8")).get("invite") || "");
+      const link = devices.findLink(
+        new URLSearchParams(Buffer.concat(chunks).toString("utf8")).get("invite") || "",
+      );
       const refused = linkRefusal(link, s);
       if (refused || !link) return send(res, 403, refused);
       // Claimed once: a second browser racing the first gets null here. The cookie is a fresh secret, never the link token.
@@ -2842,7 +3679,10 @@ export async function runServer({
       // Opened over the tailnet: the device is that login's from now on (identify). Else its address may have a hostname.
       const { device } = claimed;
       if (person) devices.bindLogin(device, person.login);
-      else if (device.last_addr) lookUpHost(device.last_addr, (name) => devices.setHost(device.id, device.last_addr as string, name));
+      else if (device.last_addr)
+        lookUpHost(device.last_addr, (name) =>
+          devices.setHost(device.id, device.last_addr as string, name),
+        );
       log("share-claim", claimed.device.name, claimed.device.id);
       res.writeHead(303, {
         location: `/s/${s.id}`,
@@ -2855,17 +3695,28 @@ export async function runServer({
 
     // The artifact frame's subresources carry no cookie (see assetToken); the token in the path is their credential.
     const tokened = /^\/a\/([A-Za-z0-9_-]{43})\/(.*)$/.exec(sub);
-    if (tokened && (req.method === "GET" || req.method === "HEAD") && assetTokenValid(s, tokened[1])) {
+    if (
+      tokened &&
+      (req.method === "GET" || req.method === "HEAD") &&
+      assetTokenValid(s, tokened[1])
+    ) {
       return serveArtifact(req, res, s, tokened[2]);
     }
 
-    const asking = ((sub === "" || sub === "/") && req.method === "GET") || (sub === "/request" && (req.method === "GET" || req.method === "POST"));
+    const asking =
+      ((sub === "" || sub === "/") && req.method === "GET") ||
+      (sub === "/request" && (req.method === "GET" || req.method === "POST"));
     // A browser whose request the owner approved: its pending secret is traded for the device's cookie, once.
     if (asking && req.method === "GET") {
       const joined = collectApproval(req);
       if (joined) {
-        if (sub === "/request") return send(res, 200, { state: "approved" }, { "set-cookie": joined });
-        res.writeHead(303, { location: `/s/${s.id}`, "set-cookie": joined, "cache-control": "no-store" });
+        if (sub === "/request")
+          return send(res, 200, { state: "approved" }, { "set-cookie": joined });
+        res.writeHead(303, {
+          location: `/s/${s.id}`,
+          "set-cookie": joined,
+          "cache-control": "no-store",
+        });
         return res.end();
       }
     }
@@ -2876,17 +3727,34 @@ export async function runServer({
       const presented = reviewerCookies(req.headers.cookie);
       // An unknown browser may ask for access where the owner turned requests on (RLM-398).
       if (!presented.length && asking && (await requestRoute(req, res, s, sub, person))) return;
-      if (!presented.length) return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
+      if (!presented.length)
+        return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
       // A live device whose scope does not reach this page keeps its cookie: it still opens the pages it does reach.
-      if (cookieDevices(req).length) return send(res, 403, "This page is not shared with you. Ask the owner for access to it.");
+      if (cookieDevices(req).length)
+        return send(res, 403, "This page is not shared with you. Ask the owner for access to it.");
       return send(res, 403, "This device no longer has access. Ask the owner for a new link.", {
         // A device's cookie lives on /s/; an old-style invite's on its page.
-        "set-cookie": presented.flatMap(({ name }) => [`${name}=; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=0`, ...(name === COOKIE ? [`${name}=; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=0`] : [])]),
+        "set-cookie": presented.flatMap(({ name }) => [
+          `${name}=; Path=/s/; HttpOnly; SameSite=Lax; Max-Age=0`,
+          ...(name === COOKIE
+            ? [`${name}=; Path=/s/${s.id}; HttpOnly; SameSite=Lax; Max-Age=0`]
+            : []),
+        ]),
       });
     }
     // Reviewers read the page and the conversation and add notes. Everything else is the owner's.
     const reviewer = who.role === "reviewer";
-    if (reviewer && !(sub === "" || sub === "/" || sub.startsWith("/a/") || sub === "/events" || sub === "/transcript" || sub === "/send")) {
+    if (
+      reviewer &&
+      !(
+        sub === "" ||
+        sub === "/" ||
+        sub.startsWith("/a/") ||
+        sub === "/events" ||
+        sub === "/transcript" ||
+        sub === "/send"
+      )
+    ) {
       return send(res, 403, { error: "reviewers can only read the page and add notes" });
     }
 
@@ -2900,14 +3768,28 @@ export async function runServer({
     if (sub === "/transcript") {
       const visible = s.transcript.filter((e) => !e.discarded && canSee(e, who));
       const before = url.searchParams.get("before");
-      const end = before == null ? visible.length : Math.max(0, visible.findIndex((e) => e.id === before));
-      return send(res, 200, { entries: visible.slice(Math.max(0, end - PAGE), end), more: end > PAGE });
+      const end =
+        before == null
+          ? visible.length
+          : Math.max(
+              0,
+              visible.findIndex((e) => e.id === before),
+            );
+      return send(res, 200, {
+        entries: visible.slice(Math.max(0, end - PAGE), end),
+        more: end > PAGE,
+      });
     }
 
     if (sub === "/events") {
       if (reviewer) {
-        const open = Array.from(clients.get(s.id) || []).filter((c): c is SseClient & { viewer: ReviewerViewer } => c.viewer.role === "reviewer");
-        if (open.length >= SSE_MAX_PER_SESSION || open.filter((c) => c.viewer.deviceId === who.deviceId).length >= SSE_MAX_PER_REVIEWER) {
+        const open = Array.from(clients.get(s.id) || []).filter(
+          (c): c is SseClient & { viewer: ReviewerViewer } => c.viewer.role === "reviewer",
+        );
+        if (
+          open.length >= SSE_MAX_PER_SESSION ||
+          open.filter((c) => c.viewer.deviceId === who.deviceId).length >= SSE_MAX_PER_REVIEWER
+        ) {
           return send(res, 429, { error: "too many event streams" });
         }
       }
@@ -2954,9 +3836,14 @@ export async function runServer({
     if (sub === "/send" && req.method === "POST") {
       const body = await readBody(req, 4 * 1024 * 1024);
       const end = !reviewer && !!body.end;
-      let items: NoteItem[] = Array.isArray(body.items) ? body.items.filter((x: unknown) => x && typeof x === "object").slice(0, reviewer ? 50 : 200) : [];
+      let items: NoteItem[] = Array.isArray(body.items)
+        ? body.items
+            .filter((x: unknown) => x && typeof x === "object")
+            .slice(0, reviewer ? 50 : 200)
+        : [];
       if (reviewer) items = items.filter((x) => REVIEWER_KINDS.has(x.kind)).map(reviewerItem);
-      if (s.archivedAt) return send(res, 409, { error: "this page is archived; unarchive it to add notes" });
+      if (s.archivedAt)
+        return send(res, 409, { error: "this page is archived; unarchive it to add notes" });
       // The owner's Done: an empty final batch only tells the agent there are no more notes.
       if (!items.length && !end) return send(res, 400, { error: "nothing to send" });
       // The server decides who wrote a note. A reviewer's own item id could overwrite another note in the hub.
@@ -2965,8 +3852,19 @@ export async function runServer({
         it.id = reviewer || !it.id ? newId("i") : it.id;
       }
       const hold = reviewer && !who.auto;
-      if (hold && store.heldEntries(s).filter((e) => wroteIt(e, who)).length >= MAX_HELD_PER_REVIEWER) return send(res, 429, { error: "too many notes awaiting the owner; wait for them to be released" });
-      const entry = store.addUserBatch(s, items, { end, author: who.name, deviceId: reviewer ? who.deviceId : "", hold });
+      if (
+        hold &&
+        store.heldEntries(s).filter((e) => wroteIt(e, who)).length >= MAX_HELD_PER_REVIEWER
+      )
+        return send(res, 429, {
+          error: "too many notes awaiting the owner; wait for them to be released",
+        });
+      const entry = store.addUserBatch(s, items, {
+        end,
+        author: who.name,
+        deviceId: reviewer ? who.deviceId : "",
+        hold,
+      });
       broadcastTranscript(s, [entry]);
       wakeOrRun(s, !reviewer);
       broadcastPresence(s);
@@ -2975,11 +3873,16 @@ export async function runServer({
     if (sub === "/render-errors" && req.method === "POST") {
       const body = await readBody(req);
       // A report for an older revision describes a program the agent has already replaced.
-      if (s.archivedAt || body.revision !== s.revision) return send(res, 200, { ok: true, count: 0, stale: true });
+      if (s.archivedAt || body.revision !== s.revision)
+        return send(res, 200, { ok: true, count: 0, stale: true });
       // Third-party pack code runs in the frame and could forge errors; those wait for the owner's "Queue fix".
-      if (thirdPartyPacks(watchers.get(s.id)?.html).length) return send(res, 409, { error: "this page uses third-party packs; queue render errors by hand" });
+      if (thirdPartyPacks(watchers.get(s.id)?.html).length)
+        return send(res, 409, {
+          error: "this page uses third-party packs; queue render errors by hand",
+        });
       let seen = renderReported.get(s.id);
-      if (!seen || seen.revision !== s.revision) renderReported.set(s.id, (seen = { revision: s.revision, keys: new Set() }));
+      if (!seen || seen.revision !== s.revision)
+        renderReported.set(s.id, (seen = { revision: s.revision, keys: new Set() }));
       const items = [];
       for (const e of Array.isArray(body.errors) ? body.errors.slice(0, MAX_RENDER_ERRORS) : []) {
         if (!e || typeof e !== "object" || typeof e.message !== "string" || !e.message) continue;
@@ -2988,7 +3891,13 @@ export async function runServer({
         const key = `${statement}\n${message}`;
         if (seen.keys.has(key)) continue;
         seen.keys.add(key);
-        items.push({ kind: "render-error", statement: statement || undefined, target: statement || undefined, message, note: "Reported when the page rendered." });
+        items.push({
+          kind: "render-error",
+          statement: statement || undefined,
+          target: statement || undefined,
+          message,
+          note: "Reported when the page rendered.",
+        });
       }
       if (!items.length) return send(res, 200, { ok: true, count: 0 });
       const entry = store.addUserBatch(s, items, { author: RENDER_CHECK_AUTHOR });
@@ -2999,7 +3908,11 @@ export async function runServer({
     }
     if ((sub === "/release" || sub === "/discard") && req.method === "POST") {
       const body = await readBody(req);
-      const ids: string[] | null = Array.isArray(body.ids) ? body.ids.map(String) : sub === "/discard" && body.all ? null : [];
+      const ids: string[] | null = Array.isArray(body.ids)
+        ? body.ids.map(String)
+        : sub === "/discard" && body.all
+          ? null
+          : [];
       // Notes from a hosted page: the page hears it too, so the owner's other machines follow. The change and its mutation commit together.
       const done = store.tx(() => {
         const d = sub === "/release" ? store.release(s, ids) : store.discard(s, ids);
@@ -3032,7 +3945,11 @@ export async function runServer({
       if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
       const statement = url.searchParams.get("statement");
       const html = readFileSafe(s.file);
-      if (statement) return send(res, 200, { statement, versions: statementVersions(store.db, s.id, statement.slice(0, 200), html) });
+      if (statement)
+        return send(res, 200, {
+          statement,
+          versions: statementVersions(store.db, s.id, statement.slice(0, 200), html),
+        });
       const revisions = revisionLog(store.db, s.id, { limit: 100 }).map((r) => ({
         rev: r.rev,
         at: r.at,
@@ -3040,31 +3957,45 @@ export async function runServer({
         changed: r.changed,
         removed: r.removed,
         created: r.created,
-        cause: r.cause.map((n) => ({ author: n.author, target: n.target, text: n.text.slice(0, 300) })),
+        cause: r.cause.map((n) => ({
+          author: n.author,
+          target: n.target,
+          text: n.text.slice(0, 300),
+        })),
         by: agentLabel(store.db, r.agent_session_id),
       }));
-      return send(res, 200, { head: headRev(store.db, s.id), viewed: viewedRev(store.db, s.id), revisions });
+      return send(res, 200, {
+        head: headRev(store.db, s.id),
+        viewed: viewedRev(store.db, s.id),
+        revisions,
+      });
     }
     if (sub === "/viewed" && req.method === "POST") {
       if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
       const rev = Number((await readBody(req, 1024)).rev);
-      if (!Number.isInteger(rev) || rev < 0) return send(res, 400, { error: "rev must be a whole number" });
+      if (!Number.isInteger(rev) || rev < 0)
+        return send(res, 400, { error: "rev must be a whole number" });
       setViewedRev(store.db, s.id, Math.min(rev, headRev(store.db, s.id)));
       return send(res, 200, { ok: true, viewed: viewedRev(store.db, s.id) });
     }
     if (sub === "/restore" && req.method === "POST") {
       if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
-      if (s.archivedAt) return send(res, 409, { error: "this page is archived; unarchive it to change it" });
+      if (s.archivedAt)
+        return send(res, 409, { error: "this page is archived; unarchive it to change it" });
       const body = await readBody(req, 16 * 1024);
       const rev = Number(body.rev);
-      const names: string[] = Array.isArray(body.statements) ? body.statements.map(String).slice(0, 50) : [];
+      const names: string[] = Array.isArray(body.statements)
+        ? body.statements.map(String).slice(0, 50)
+        : [];
       const old = Number.isInteger(rev) ? revisionAt(store.db, s.id, rev) : null;
       if (!old) return send(res, 404, { error: `this page has no revision ${body.rev}` });
       const missing = names.filter((n) => !statementMap(old.program).has(n));
-      if (missing.length) return send(res, 404, { error: `revision ${rev} has no statement ${missing.join(", ")}` });
+      if (missing.length)
+        return send(res, 404, { error: `revision ${rev} has no statement ${missing.join(", ")}` });
       const html = readFileSafe(s.file);
       const current = html == null ? null : readArtifact(html).program;
-      if (html == null || current == null) return send(res, 409, { error: "the page's file cannot be read" });
+      if (html == null || current == null)
+        return send(res, 409, { error: "the page's file cannot be read" });
       // The same patch path as `austere-axi restore`; the file watcher then tells every open page.
       let merged: string | null;
       try {
@@ -3089,11 +4020,16 @@ export async function runServer({
     if (sub === "/share" && req.method === "GET") {
       if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
       const p = projectOfPage(s);
-      return send(res, 200, { project: p ? { id: p.id, name: p.name } : null, remote: Boolean(reviewerBase()), auto: requests.defaultAuto() });
+      return send(res, 200, {
+        project: p ? { id: p.id, name: p.name } : null,
+        remote: Boolean(reviewerBase()),
+        auto: requests.defaultAuto(),
+      });
     }
     // The attach popover and the run panel (RLM-346): the owner's only, as reviewers are refused above.
     // A GET from a foreign Origin is refused too: it lists the page's agent sessions.
-    if ((sub === "/attach" || sub === "/runs" || sub.startsWith("/run/")) && !checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
+    if ((sub === "/attach" || sub === "/runs" || sub.startsWith("/run/")) && !checkOrigin(req))
+      return send(res, 403, { error: "cross-origin request refused" });
     if (sub === "/run/stop" && req.method === "POST") {
       const stopped = await dispatcher.stop(s.id);
       return send(res, 200, { ok: true, stopped } satisfies RunStopResponse);
@@ -3107,23 +4043,33 @@ export async function runServer({
     const logRoute = /^\/run\/(r[a-f0-9]{12})\/log$/.exec(sub);
     if (logRoute && req.method === "GET") {
       const row = getRun(store.db, logRoute[1]);
-      if (!row || row.artifact_id !== s.id) return send(res, 404, { error: "no such run on this page" });
-      return send(res, 200, { run: summary(row), tail: logTail(row.log_file, LOG_TAIL_LINES) } satisfies RunLogResponse);
+      if (!row || row.artifact_id !== s.id)
+        return send(res, 404, { error: "no such run on this page" });
+      return send(res, 200, {
+        run: summary(row),
+        tail: logTail(row.log_file, LOG_TAIL_LINES),
+      } satisfies RunLogResponse);
     }
     if (sub === "/runs" && req.method === "GET") {
       const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit")) || 20));
-      return send(res, 200, { runs: listRuns(store.db, { artifactId: s.id }, limit).map(summary) } satisfies RunsResponse);
+      return send(res, 200, {
+        runs: listRuns(store.db, { artifactId: s.id }, limit).map(summary),
+      } satisfies RunsResponse);
     }
     if (sub === "/attach" && req.method === "GET") return send(res, 200, await attachInfo(s));
     if (sub === "/attach" && req.method === "POST") {
-      const failed = changeAttach({ page: { artifactId: s.id, file: s.file } }, await readBody(req, 4096));
+      const failed = changeAttach(
+        { page: { artifactId: s.id, file: s.file } },
+        await readBody(req, 4096),
+      );
       if (failed) return send(res, failed.status, { error: failed.error, code: failed.code });
       return send(res, 200, await attachInfo(s));
     }
     if (sub === "/presence" && req.method === "POST") {
       // The owner's own status and focus for the hosted page's viewers; nothing happens when the file is not published.
       const parsed = parseClientFrame(await readBody(req, 4096));
-      if (!parsed.ok || parsed.value.t === "mutation" || parsed.value.t === "pull") return send(res, 400, { error: "a presence frame is expected" });
+      if (!parsed.ok || parsed.value.t === "mutation" || parsed.value.t === "pull")
+        return send(res, 400, { error: "a presence frame is expected" });
       peer.presenceFrom(s, parsed.value);
       return send(res, 204, "");
     }
@@ -3132,12 +4078,20 @@ export async function runServer({
       // With cloud features off the page counts as not published: nothing of it reaches the service.
       const state = readCloud();
       const entry = cloudEnabled() && signedIn(state) ? state.pages[s.file] : undefined;
-      const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: peer.liveAuto(entry.id, entry.auto) } : undefined;
+      const hosted = entry
+        ? {
+            url: `${state.url || cloudUrl()}/p/${entry.id}`,
+            auto: peer.liveAuto(entry.id, entry.auto),
+          }
+        : undefined;
       const p = projectOfPage(s);
       // An agent already polls this project (a second project poll would replace it) or this page's checkout (it would keep
       // the page from a project poll): the prompt names the page poll, which takes only this page.
       const shared = p ? projectPolls.get(p.id) : undefined;
-      const project = p && !(shared && !shared.done) && !sharedListener(s) ? { name: p.name, ref: p.ref } : undefined;
+      const project =
+        p && !(shared && !shared.done) && !sharedListener(s)
+          ? { name: p.name, ref: p.ref }
+          : undefined;
       return send(res, 200, agentPrompt({ file: s.file, hosted, project }));
     }
     if (sub === "/export") {
@@ -3165,8 +4119,18 @@ export async function runServer({
       if (listeners.has(host)) return resolve(true);
       const server = http.createServer((req, res) => {
         handle(req, res).catch((err: HttpError) => {
-          log("error", req.method, String(req.url).split("?")[0].replace(/\/a\/[\w-]{43}\//, "/a/…/"), String(err?.stack || err));
-          if (!res.headersSent) send(res, err.status || 500, { error: err.status ? String(err.message) : "internal error" });
+          log(
+            "error",
+            req.method,
+            String(req.url)
+              .split("?")[0]
+              .replace(/\/a\/[\w-]{43}\//, "/a/…/"),
+            String(err?.stack || err),
+          );
+          if (!res.headersSent)
+            send(res, err.status || 500, {
+              error: err.status ? String(err.message) : "internal error",
+            });
           else res.end();
         });
       });
@@ -3188,7 +4152,10 @@ export async function runServer({
   }
 
   /** AUSTERE_AXI_HOST, when it names one address: the server listens there instead of on the tailnet. */
-  const fixedHost = process.env.AUSTERE_AXI_HOST && !/^(0\.0\.0\.0|::|\*)$/.test(process.env.AUSTERE_AXI_HOST) ? process.env.AUSTERE_AXI_HOST : null;
+  const fixedHost =
+    process.env.AUSTERE_AXI_HOST && !/^(0\.0\.0\.0|::|\*)$/.test(process.env.AUSTERE_AXI_HOST)
+      ? process.env.AUSTERE_AXI_HOST
+      : null;
   /** The tailnet address the server listens on, kept apart from `tailnet` (what Tailscale said last), so a move always lets go of it. */
   let tailnetBound: string | null = null;
   let stopping = false;
@@ -3258,7 +4225,8 @@ export async function runServer({
   }
 
   async function applyLan(address: string | null): Promise<string> {
-    if (address !== null && !lanAddresses().some((a) => a.address === address)) return `${address} is not an address of this computer on a local network`;
+    if (address !== null && !lanAddresses().some((a) => a.address === address))
+      return `${address} is not an address of this computer on a local network`;
     if (lanHost && lanHost !== address) leaveLan(lanHost);
     if (address && lanHost !== address) {
       const failed = await joinLan(address);
@@ -3296,7 +4264,9 @@ export async function runServer({
   if (!ok) {
     store.close();
     releaseLock();
-    throw new Error(`could not listen on 127.0.0.1:${port} (is another server using it? set AUSTERE_AXI_PORT)`);
+    throw new Error(
+      `could not listen on 127.0.0.1:${port} (is another server using it? set AUSTERE_AXI_PORT)`,
+    );
   }
   // The local network, when Settings switched it on: unless this computer no longer has that address
   // (another network, a new lease). The setting stays; Settings says the server is not listening there.
@@ -3308,13 +4278,16 @@ export async function runServer({
   const tailnetCheckMs = msEnv("AUSTERE_AXI_TAILNET_CHECK_MS", 60_000);
   if (!fixedHost && tailnetCheckMs > 0) {
     let checking = false;
-    setInterval(() => {
-      if (checking) return;
-      checking = true;
-      void recheckTailnet().finally(() => {
-        checking = false;
-      });
-    }, Math.min(tailnetCheckMs, MAX_TIMER_MS)).unref();
+    setInterval(
+      () => {
+        if (checking) return;
+        checking = true;
+        void recheckTailnet().finally(() => {
+          checking = false;
+        });
+      },
+      Math.min(tailnetCheckMs, MAX_TIMER_MS),
+    ).unref();
   }
 
   function shutdown(reason: string): void {
@@ -3332,7 +4305,8 @@ export async function runServer({
       const s = store.get(id);
       if (s && !poll.done) finishPoll(s, poll, { status: "interrupted", reason });
     }
-    for (const poll of [...rootPolls.values(), ...projectPolls.values()]) finishProjectPoll(poll, { status: "interrupted", reason });
+    for (const poll of [...rootPolls.values(), ...projectPolls.values()])
+      finishProjectPoll(poll, { status: "interrupted", reason });
     for (const id of watchers.keys()) unwatch(id);
     peer.close();
     for (const server of listeners.values()) server.close();
@@ -3349,22 +4323,31 @@ export async function runServer({
 
   if (idleMs > 0) {
     let checking = false;
-    setInterval(() => {
-      // A run or an attach is written by another process, so the check reads the database with
-      // a connection of its own; the server's own connection may hold an older snapshot.
-      if (checking) return;
-      checking = true;
-      void activeWorkNow()
-        .then((working) => {
-          // A trigger is waiting for its project to go quiet: the server stays to run it.
-          const busy = polls.size > 0 || rootPolls.size > 0 || projectPolls.size > 0 || Array.from(clients.values()).some((set) => set.size > 0) || working || triggersConfigured();
-          if (busy) activity();
-          else if (Date.now() - lastActivity > idleMs) shutdown("idle");
-        })
-        .finally(() => {
-          checking = false;
-        });
-    }, Math.min(60_000, idleMs)).unref();
+    setInterval(
+      () => {
+        // A run or an attach is written by another process, so the check reads the database with
+        // a connection of its own; the server's own connection may hold an older snapshot.
+        if (checking) return;
+        checking = true;
+        void activeWorkNow()
+          .then((working) => {
+            // A trigger is waiting for its project to go quiet: the server stays to run it.
+            const busy =
+              polls.size > 0 ||
+              rootPolls.size > 0 ||
+              projectPolls.size > 0 ||
+              Array.from(clients.values()).some((set) => set.size > 0) ||
+              working ||
+              triggersConfigured();
+            if (busy) activity();
+            else if (Date.now() - lastActivity > idleMs) shutdown("idle");
+          })
+          .finally(() => {
+            checking = false;
+          });
+      },
+      Math.min(60_000, idleMs),
+    ).unref();
   }
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));

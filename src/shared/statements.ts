@@ -96,7 +96,10 @@ export function statementMap(source: string | null | undefined): StatementMap {
 }
 
 /** Ids whose text is new or different in `next` compared to `prev`. */
-export function changedStatementIds(prevSource: string | null | undefined, nextSource: string | null | undefined): string[] {
+export function changedStatementIds(
+  prevSource: string | null | undefined,
+  nextSource: string | null | undefined,
+): string[] {
   const prev = statementMap(prevSource);
   const next = statementMap(nextSource);
   const changed: string[] = [];
@@ -145,12 +148,13 @@ function mentionedIds(text: string, known: ReadonlyMap<string, unknown>, self: s
     let k = from;
     while (k < body.length) {
       if (/\s/.test(body[k])) k++;
-      else if (body[k] === "#" || (body[k] === "/" && body[k + 1] === "/")) while (k < body.length && body[k] !== "\n") k++;
+      else if (body[k] === "#" || (body[k] === "/" && body[k + 1] === "/"))
+        while (k < body.length && body[k] !== "\n") k++;
       else return body[k];
     }
     return "";
   };
-  for (let i = 0; i < body.length; ) {
+  for (let i = 0; i < body.length;) {
     const c = body[i];
     if (c === '"' || c === "'") {
       let j = i + 1;

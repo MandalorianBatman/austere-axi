@@ -38,7 +38,12 @@ export interface SearchReplaceResult {
 const PREAMBLE = (tool: string) =>
   `You are a coding agent. The user uses ${tool} for review pages. Earlier in this session you ran the commands below; their output follows. You cannot run commands now, so answer with file contents in the exact format the user asks for.`;
 
-const sh = (cmd: string, args: string[], env?: Record<string, string>) => execFileSync(cmd, args, { encoding: "utf8", env: { ...process.env, ...env }, maxBuffer: 16 << 20 }).trim();
+const sh = (cmd: string, args: string[], env?: Record<string, string>) =>
+  execFileSync(cmd, args, {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+    maxBuffer: 16 << 20,
+  }).trim();
 
 export function captureGuidance(): Record<Tool, ToolGuidance> {
   const austereCli = path.join(ROOT, "dist", "cli.mjs");
@@ -61,7 +66,12 @@ export function captureGuidance(): Record<Tool, ToolGuidance> {
   return {
     austere: {
       version: austereVersion,
-      system: () => [PREAMBLE("austere-axi"), block("austere-axi --help", austereHelp), block("austere-axi spec", austereSpec)].join("\n"),
+      system: () =>
+        [
+          PREAMBLE("austere-axi"),
+          block("austere-axi --help", austereHelp),
+          block("austere-axi spec", austereSpec),
+        ].join("\n"),
     },
     lavish: {
       version: lavishVersion,
@@ -153,7 +163,8 @@ export function applySearchReplace(source: string, reply: string): SearchReplace
     const [, search, replace] = m;
     const at = out.indexOf(search);
     if (at < 0) return { error: `edit ${count}: SEARCH text not found` };
-    if (out.indexOf(search, at + 1) >= 0) return { error: `edit ${count}: SEARCH text matches more than once` };
+    if (out.indexOf(search, at + 1) >= 0)
+      return { error: `edit ${count}: SEARCH text matches more than once` };
     out = out.slice(0, at) + replace + out.slice(at + search.length);
   }
   if (!count) return { error: "no SEARCH/REPLACE blocks in the reply" };

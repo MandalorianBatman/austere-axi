@@ -3,7 +3,11 @@
 // service.ts does the file and service manager work.
 
 /** The variables the unit `server install` writes sets itself, from its options. */
-const MANAGED_ENV: Record<string, true> = { AUSTERE_AXI_LINK_URL: true, AUSTERE_AXI_STATE_DIR: true, AUSTERE_AXI_PORT: true };
+const MANAGED_ENV: Record<string, true> = {
+  AUSTERE_AXI_LINK_URL: true,
+  AUSTERE_AXI_STATE_DIR: true,
+  AUSTERE_AXI_PORT: true,
+};
 
 /** Settings a drop-in carries over to the new unit, by section. Everything else is the new unit's own. */
 const KEPT_KEYS: Record<string, Record<string, true>> = {
@@ -92,7 +96,8 @@ function words(value: string): { raw: string; text: string }[] {
 }
 
 /** Where node is in a command: the word that is `node` (or `nodejs`), or -1. */
-const nodeIndex = (argv: string[]): number => argv.findIndex((a) => /(^|[\\/])(node|nodejs)(\.exe)?$/i.test(a));
+const nodeIndex = (argv: string[]): number =>
+  argv.findIndex((a) => /(^|[\\/])(node|nodejs)(\.exe)?$/i.test(a));
 
 /** The script a command runs with node: the word after `node` (or `nodejs`), or null. */
 function scriptOf(argv: string[]): string | null {
@@ -108,7 +113,9 @@ const portOf = (s: string | undefined): number | null => {
 /** The port a command line names, as the CLI reads it: `--port n` or `--port=n`. */
 function portArg(argv: string[]): number | null {
   const i = argv.indexOf("--port");
-  return portOf(i >= 0 ? argv[i + 1] : argv.find((a) => a.startsWith("--port="))?.slice("--port=".length));
+  return portOf(
+    i >= 0 ? argv[i + 1] : argv.find((a) => a.startsWith("--port="))?.slice("--port=".length),
+  );
 }
 
 /** What a systemd unit runs with, and what of it a drop-in keeps. */
@@ -121,7 +128,9 @@ export function systemdSettings(text: string): UnitSettings {
     if (a.section === "Service" && a.key === "ExecStart") {
       // A prefix such as `-` or `@` changes how systemd runs it, not what.
       // systemd's escapes for a literal `%` and `$`, undone.
-      argv = words(a.value.replace(/^[-@:+!]+/, "")).map((w) => w.text.replace(/%%/g, "%").replace(/\$\$/g, "$"));
+      argv = words(a.value.replace(/^[-@:+!]+/, "")).map((w) =>
+        w.text.replace(/%%/g, "%").replace(/\$\$/g, "$"),
+      );
       continue;
     }
     if (a.section === "Service" && a.key === "Environment") {
@@ -137,7 +146,8 @@ export function systemdSettings(text: string): UnitSettings {
       continue;
     }
     if (a.section === "Unit" && a.key === "Description") continue;
-    if (KEPT_KEYS[a.section]?.[a.key] === true) kept.push({ section: a.section as KeptLine["section"], line: a.raw });
+    if (KEPT_KEYS[a.section]?.[a.key] === true)
+      kept.push({ section: a.section as KeptLine["section"], line: a.raw });
     else other.push(a.raw);
   }
   return {
@@ -151,7 +161,13 @@ export function systemdSettings(text: string): UnitSettings {
   };
 }
 
-const unxml = (s: string): string => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+const unxml = (s: string): string =>
+  s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
 
 /** What a launchd agent runs with; the variables it sets besides the managed ones are kept. */
 export function launchdSettings(text: string): UnitSettings {

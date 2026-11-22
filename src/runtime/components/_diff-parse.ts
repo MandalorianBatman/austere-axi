@@ -46,7 +46,9 @@ export function parseUnifiedDiff(patch: unknown): DiffFile[] {
     }
     return file;
   };
-  const lines = String(patch ?? "").replace(/\r\n/g, "\n").split("\n");
+  const lines = String(patch ?? "")
+    .replace(/\r\n/g, "\n")
+    .split("\n");
   if (lines.length && lines[lines.length - 1] === "") lines.pop();
   for (const raw of lines) {
     if (raw.startsWith("diff --git ")) {
@@ -56,7 +58,11 @@ export function parseUnifiedDiff(patch: unknown): DiffFile[] {
       hunk = null;
       continue;
     }
-    if (/^(index |new file mode|deleted file mode|similarity index|rename (from|to) |old mode|new mode)/.test(raw)) {
+    if (
+      /^(index |new file mode|deleted file mode|similarity index|rename (from|to) |old mode|new mode)/.test(
+        raw,
+      )
+    ) {
       continue;
     }
     if (raw.startsWith("--- ")) {
@@ -79,7 +85,15 @@ export function parseUnifiedDiff(patch: unknown): DiffFile[] {
       if (m) {
         oldNo = Number(m[1]);
         newNo = Number(m[2]);
-        const counted: CountedHunk = { kind: "hunk", text: raw, oldStart: oldNo, newStart: newNo, tail: m[3], oldCount: 0, newCount: 0 };
+        const counted: CountedHunk = {
+          kind: "hunk",
+          text: raw,
+          oldStart: oldNo,
+          newStart: newNo,
+          tail: m[3],
+          oldCount: 0,
+          newCount: 0,
+        };
         hunk = counted;
       } else {
         hunk = { kind: "hunk", text: raw };

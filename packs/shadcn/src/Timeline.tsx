@@ -23,7 +23,9 @@ interface TimelineProps {
 const isState = (s: unknown): s is TimelineState => STATES.some((x) => x === s);
 
 function TimelineView({ props }: RendererArgs<TimelineProps>) {
-  const items = (Array.isArray(props.items) ? props.items : []).filter(isElement<TimelineItemProps>);
+  const items = (Array.isArray(props.items) ? props.items : []).filter(
+    isElement<TimelineItemProps>,
+  );
   return (
     <ol className="sh-timeline">
       {items.map((el, i) => {
@@ -67,7 +69,8 @@ export const Timeline = austereComponent({
   group: "Content",
   tier: "extended",
   props: z.object({ items: z.array(TimelineItem.definition.ref) }),
-  description: "Vertical history or schedule of TimelineItems, oldest first. Each item is a click target.",
+  description:
+    "Vertical history or schedule of TimelineItems, oldest first. Each item is a click target.",
   renderer: TimelineView,
   example: `history = Timeline([found, fixed, rollout])
 found = TimelineItem("Bug found", "Oct 28", "Retries double-charge on timeout.")

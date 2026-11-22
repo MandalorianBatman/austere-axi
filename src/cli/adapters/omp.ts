@@ -2,7 +2,14 @@
 // stdin, `--mode json` so line 1 is the session header, `--wait-async` so background jobs finish
 // inside the run (A16). `--max-time` is not passed (A15); exit 3 is the cost cap.
 import { OK, jsonLine, lines, requireMode, requireSession, str } from "./types.ts";
-import type { Adapter, BuildInput, BuiltCommand, Capabilities, RunOutput, RunResult } from "./types.ts";
+import type {
+  Adapter,
+  BuildInput,
+  BuiltCommand,
+  Capabilities,
+  RunOutput,
+  RunResult,
+} from "./types.ts";
 
 const capabilities: Capabilities = { same: OK, fork: OK, new: OK, model: OK, maxCost: OK };
 

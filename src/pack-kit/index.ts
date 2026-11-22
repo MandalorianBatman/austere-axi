@@ -53,7 +53,10 @@ export function sri(buffer: Uint8Array): string {
 }
 
 /** $defs reachable from the pack's own components: what `check` adds to the core schema. */
-function reachableDefs(schema: { $defs?: Record<string, unknown> }, roots: string[]): Record<string, unknown> {
+function reachableDefs(
+  schema: { $defs?: Record<string, unknown> },
+  roots: string[],
+): Record<string, unknown> {
   const defs = schema.$defs || {};
   const keep: Record<string, unknown> = {};
   const queue = [...roots];
@@ -95,13 +98,23 @@ function buildError(err: BuildRejection, what: string): Error {
 }
 
 /** Build a pack. */
-export async function buildPack({ dir, esbuild, outDir, name, version, coreNames = [], minify = true }: BuildPackOptions): Promise<BuildPackResult> {
+export async function buildPack({
+  dir,
+  esbuild,
+  outDir,
+  name,
+  version,
+  coreNames = [],
+  minify = true,
+}: BuildPackOptions): Promise<BuildPackResult> {
   dir = path.resolve(dir);
   const pkg = readPackageJson(dir);
   name = name || pkg.name;
   version = version || pkg.version;
-  if (!name || !isValidPackName(name)) throw new Error(`pack name ${JSON.stringify(name || "")} is not a valid npm package name`);
-  if (!version || !isValidVersion(version)) throw new Error(`pack ${name}: version ${JSON.stringify(version || "")} is not x.y.z`);
+  if (!name || !isValidPackName(name))
+    throw new Error(`pack name ${JSON.stringify(name || "")} is not a valid npm package name`);
+  if (!version || !isValidVersion(version))
+    throw new Error(`pack ${name}: version ${JSON.stringify(version || "")} is not x.y.z`);
   const entry = packEntry(dir, pkg);
   outDir = path.resolve(outDir || path.join(dir, "dist"));
   fs.mkdirSync(outDir, { recursive: true });
@@ -138,33 +151,52 @@ export async function buildPack({ dir, esbuild, outDir, name, version, coreNames
   const tmp = path.join(outDir, `.catalog-${process.pid}-${Date.now()}.mjs`);
   let exported: PackExport;
   try {
-    await esbuild.build({ ...BUILD_DEFAULTS, entryPoints: [entry], platform: "node", format: "esm", outfile: tmp });
+    await esbuild.build({
+      ...BUILD_DEFAULTS,
+      entryPoints: [entry],
+      platform: "node",
+      format: "esm",
+      outfile: tmp,
+    });
     installHost();
     exported = (await import(pathToFileURL(tmp).href)).default;
   } catch (caught) {
     const err = caught as BuildRejection;
     const e = buildError(err, `pack ${name}: could not load its components in Node`);
-    if (!err.errors) e.message += " (keep window/document access inside renderers and effects, not at module level)";
+    if (!err.errors)
+      e.message +=
+        " (keep window/document access inside renderers and effects, not at module level)";
     throw e;
   } finally {
     fs.rmSync(tmp, { force: true });
   }
-  const components = ([] as unknown[]).concat(exported && exported.components ? exported.components : exported || []).flat();
-  if (!components.length) throw new Error(`pack ${name}: the entry module must export default { components: [...] }`);
-  if (!components.every(isAustereComponent)) throw new Error(`pack ${name}: components must be austereComponent(...) results`);
+  const components = ([] as unknown[])
+    .concat(exported && exported.components ? exported.components : exported || [])
+    .flat();
+  if (!components.length)
+    throw new Error(`pack ${name}: the entry module must export default { components: [...] }`);
+  if (!components.every(isAustereComponent))
+    throw new Error(`pack ${name}: components must be austereComponent(...) results`);
   const seen = new Set<string>();
   const parents = new Set([...coreNames, ...components.map((c) => c.name)]);
   for (const c of components) {
     if (seen.has(c.name)) throw new Error(`pack ${name}: two components are named ${c.name}`);
     seen.add(c.name);
     for (const slot of c.slots || []) {
-      if (!/^[A-Z][A-Za-z0-9]*\.[a-z][A-Za-z0-9]*$/.test(slot)) throw new Error(`pack ${name}: ${c.name} slot ${JSON.stringify(slot)} is not "Parent.prop"`);
+      if (!/^[A-Z][A-Za-z0-9]*\.[a-z][A-Za-z0-9]*$/.test(slot))
+        throw new Error(
+          `pack ${name}: ${c.name} slot ${JSON.stringify(slot)} is not "Parent.prop"`,
+        );
       if (coreNames.length && !parents.has(slot.split(".")[0])) {
-        throw new Error(`pack ${name}: ${c.name} slot ${slot}: ${slot.split(".")[0]} is not a component here (core slots: ${CONTENT_SLOTS.join(", ")})`);
+        throw new Error(
+          `pack ${name}: ${c.name} slot ${slot}: ${slot.split(".")[0]} is not a component here (core slots: ${CONTENT_SLOTS.join(", ")})`,
+        );
       }
     }
-    if (coreNames.includes(c.name)) warnings.push(`${c.name} is already a core component; pages will use the core one`);
-    if (c.slots !== null && !c.example) warnings.push(`${c.name} has no example; add one so \`components show\` can teach it`);
+    if (coreNames.includes(c.name))
+      warnings.push(`${c.name} is already a core component; pages will use the core one`);
+    if (c.slots !== null && !c.example)
+      warnings.push(`${c.name} has no example; add one so \`components show\` can teach it`);
   }
 
   // 3. Catalog: signatures from a library of just the pack's components.
@@ -176,14 +208,22 @@ export async function buildPack({ dir, esbuild, outDir, name, version, coreNames
     g.notes.push(...c.notes);
   }
   // AustereComponent.definition is typed loosely in types/pack.d.ts; it holds a defineComponent() result.
-  const library = createLibrary({ id: name, components: components.map((c) => c.definition as DefinedComponent), componentGroups: groups });
+  const library = createLibrary({
+    id: name,
+    components: components.map((c) => c.definition as DefinedComponent),
+    componentGroups: groups,
+  });
   const spec = library.toSpec();
   const schema = library.toJSONSchema();
   const base = catalogFromSpec(spec, {
     pack: name,
     version,
     tiers: Object.fromEntries(components.map((c) => [c.name, c.tier] as const)),
-    examples: Object.fromEntries(components.filter((c): c is AustereComponent & { example: string[] } => !!c.example).map((c) => [c.name, c.example] as const)),
+    examples: Object.fromEntries(
+      components
+        .filter((c): c is AustereComponent & { example: string[] } => !!c.example)
+        .map((c) => [c.name, c.example] as const),
+    ),
   });
   const bytes = fs.readFileSync(packFile);
   const catalog: PackCatalog = {
@@ -193,8 +233,14 @@ export async function buildPack({ dir, esbuild, outDir, name, version, coreNames
     size: bytes.length,
     css: Boolean(exported && typeof exported.css === "string" && exported.css),
     // Every catalog entry comes from one of these components.
-    components: base.components.map((e) => ({ ...e, slots: components.find((c) => c.name === e.name)!.slots })),
-    defs: reachableDefs(schema, components.map((c) => c.name)),
+    components: base.components.map((e) => ({
+      ...e,
+      slots: components.find((c) => c.name === e.name)!.slots,
+    })),
+    defs: reachableDefs(
+      schema,
+      components.map((c) => c.name),
+    ),
   };
   const catalogFile = path.join(outDir, "catalog.json");
   fs.writeFileSync(catalogFile, JSON.stringify(catalog, null, 1) + "\n");

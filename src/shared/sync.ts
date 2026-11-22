@@ -62,7 +62,13 @@ export const SYNC_VERSION = 1;
 export const MIN_SYNC_VERSION = 1;
 export const SUBPROTOCOL = "austere-sync.1";
 export const LIMITS = { frameBytes: 65536, noteItemsBytes: 4096, nameChars: 40 } as const;
-export const ERROR_CODES = ["upgrade_required", "forbidden", "rate_limited", "too_large", "invalid"] as const;
+export const ERROR_CODES = [
+  "upgrade_required",
+  "forbidden",
+  "rate_limited",
+  "too_large",
+  "invalid",
+] as const;
 export const MUTATION_ROLE = {
   publish: "owner",
   addNote: "reviewer",
@@ -73,7 +79,16 @@ export const MUTATION_ROLE = {
   revoke: "owner",
   delete: "owner",
 } as const;
-export const MUTATIONS = ["publish", "addNote", "releaseNote", "discardNote", "addReply", "grant", "revoke", "delete"] as const;
+export const MUTATIONS = [
+  "publish",
+  "addNote",
+  "releaseNote",
+  "discardNote",
+  "addReply",
+  "grant",
+  "revoke",
+  "delete",
+] as const;
 export const ROW_TYPES = ["page", "note", "reply", "acl"] as const;
 
 const STATEMENT = /^[A-Za-z_$][\w$]{0,99}$/;
@@ -94,10 +109,17 @@ const sha256 = z.string().regex(SHA256_HEX);
 const statement = z.string().regex(STATEMENT).nullable();
 const status = z.enum(["viewing", "away", "writing"]);
 const role = z.enum(["owner", "reviewer"]);
-const errorBody = { code: z.enum(ERROR_CODES), message: z.string(), retryAfter: z.int().nonnegative().optional() };
+const errorBody = {
+  code: z.enum(ERROR_CODES),
+  message: z.string(),
+  retryAfter: z.int().nonnegative().optional(),
+};
 
 const noteItem = z.discriminatedUnion("kind", [
-  z.looseObject({ kind: z.literal("message"), text: z.string() }) satisfies z.ZodType<api.NoteMessage>,
+  z.looseObject({
+    kind: z.literal("message"),
+    text: z.string(),
+  }) satisfies z.ZodType<api.NoteMessage>,
   z.looseObject({
     kind: z.literal("annotation"),
     target: z.string().optional(),
@@ -107,12 +129,21 @@ const noteItem = z.discriminatedUnion("kind", [
     excerpt: z.string().optional(),
     note: z.string().optional(),
     detail: z
-      .looseObject({ part: z.string().optional(), row: z.string().optional(), column: z.string().optional(), rowIndex: z.int().optional() })
+      .looseObject({
+        part: z.string().optional(),
+        row: z.string().optional(),
+        column: z.string().optional(),
+        rowIndex: z.int().optional(),
+      })
       .optional(),
   }) satisfies z.ZodType<api.NoteAnnotation>,
 ]);
 
-const packRef = z.looseObject({ sha256, name: z.string().min(1), version: z.string().min(1) }) satisfies z.ZodType<api.PackRef>;
+const packRef = z.looseObject({
+  sha256,
+  name: z.string().min(1),
+  version: z.string().min(1),
+}) satisfies z.ZodType<api.PackRef>;
 
 const ARGS: { [N in api.MutationName]: z.ZodType<api.MutationArgs[N]> } = {
   publish: z.looseObject({
@@ -128,7 +159,11 @@ const ARGS: { [N in api.MutationName]: z.ZodType<api.MutationArgs[N]> } = {
   releaseNote: z.looseObject({ note: z.string().min(1) }),
   discardNote: z.looseObject({ note: z.string().min(1) }),
   addReply: z.looseObject({ text: z.string().min(1) }),
-  grant: z.looseObject({ name, tokenHash: z.string().regex(SHA256_B64URL), expiresAt: ms.nullable() }),
+  grant: z.looseObject({
+    name,
+    tokenHash: z.string().regex(SHA256_B64URL),
+    expiresAt: ms.nullable(),
+  }),
   revoke: z.looseObject({ name }),
   delete: z.looseObject({}),
 };
@@ -179,7 +214,9 @@ const ROWS: { [T in api.RowType]: z.ZodType<Extract<api.Row, { type: T }>> } = {
   }),
 };
 
-const CLIENT_FRAMES: { [T in Exclude<api.ClientFrame["t"], "mutation">]: z.ZodType<Extract<api.ClientFrame, { t: T }>> } = {
+const CLIENT_FRAMES: {
+  [T in Exclude<api.ClientFrame["t"], "mutation">]: z.ZodType<Extract<api.ClientFrame, { t: T }>>;
+} = {
   pull: z.looseObject({ v: z.int(), t: z.literal("pull"), after: cursor }),
   hello: z.looseObject({ v: z.int(), t: z.literal("hello"), status, name: z.string().optional() }),
   status: z.looseObject({ v: z.int(), t: z.literal("status"), status }),
@@ -197,13 +234,26 @@ const changesFrame = z.looseObject({
 });
 
 const viewerId = z.string().min(1);
-const SERVER_FRAMES: { [T in Exclude<api.ServerFrame["t"], "changes">]: z.ZodType<Extract<api.ServerFrame, { t: T }>> } = {
-  ack: z.looseObject({ v: z.int(), t: z.literal("ack"), clientId: z.string(), n: seq, error: z.looseObject(errorBody).optional() }),
+const SERVER_FRAMES: {
+  [T in Exclude<api.ServerFrame["t"], "changes">]: z.ZodType<Extract<api.ServerFrame, { t: T }>>;
+} = {
+  ack: z.looseObject({
+    v: z.int(),
+    t: z.literal("ack"),
+    clientId: z.string(),
+    n: seq,
+    error: z.looseObject(errorBody).optional(),
+  }),
   error: z.looseObject({ v: z.int(), t: z.literal("error"), ...errorBody }),
   hello: z.looseObject({
     v: z.int(),
     t: z.literal("hello"),
-    viewer: z.looseObject({ id: viewerId, name: z.string(), colour: z.string().regex(COLOUR), role }),
+    viewer: z.looseObject({
+      id: viewerId,
+      name: z.string(),
+      colour: z.string().regex(COLOUR),
+      role,
+    }),
     status,
     focus: statement,
     self: z.boolean(),
@@ -214,8 +264,12 @@ const SERVER_FRAMES: { [T in Exclude<api.ServerFrame["t"], "changes">]: z.ZodTyp
 };
 
 const ok = <T>(value: T): api.Parsed<T> => ({ ok: true, value });
-const fail = (code: api.ErrorCode, message: string): { ok: false; error: api.SyncError } => ({ ok: false, error: { code, message } });
-const has = <K extends string>(o: Record<K, unknown>, key: unknown): key is K => typeof key === "string" && Object.hasOwn(o, key);
+const fail = (code: api.ErrorCode, message: string): { ok: false; error: api.SyncError } => ({
+  ok: false,
+  error: { code, message },
+});
+const has = <K extends string>(o: Record<K, unknown>, key: unknown): key is K =>
+  typeof key === "string" && Object.hasOwn(o, key);
 
 function utf8Bytes(s: string): number {
   return new TextEncoder().encode(s).length;
@@ -248,22 +302,29 @@ function frameOf(data: unknown, maxBytes: number | null): api.Parsed<Record<stri
   }
   if (text === undefined) return fail("invalid", "frame is not JSON");
   const bytes = maxBytes === null ? undefined : overLimit(text, maxBytes);
-  if (bytes !== undefined) return fail("too_large", `frame is ${bytes} bytes; the limit is ${maxBytes}`);
+  if (bytes !== undefined)
+    return fail("too_large", `frame is ${bytes} bytes; the limit is ${maxBytes}`);
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch {
     return fail("invalid", "frame is not JSON");
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) return fail("invalid", "frame is not a JSON object");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return fail("invalid", "frame is not a JSON object");
   const frame = value as Record<string, unknown>;
   const error = versionError(frame.v, "frame");
   return error ? { ok: false, error } : ok(frame);
 }
 
 function versionError(v: unknown, what: string): api.SyncError | undefined {
-  if (typeof v !== "number" || !Number.isInteger(v)) return { code: "invalid", message: `${what}.v: expected an integer protocol version` };
-  if (v < MIN_SYNC_VERSION) return { code: "upgrade_required", message: `${what} speaks sync v${v}; v${MIN_SYNC_VERSION} or later is required` };
+  if (typeof v !== "number" || !Number.isInteger(v))
+    return { code: "invalid", message: `${what}.v: expected an integer protocol version` };
+  if (v < MIN_SYNC_VERSION)
+    return {
+      code: "upgrade_required",
+      message: `${what} speaks sync v${v}; v${MIN_SYNC_VERSION} or later is required`,
+    };
   return undefined;
 }
 
@@ -274,19 +335,24 @@ export function parseClientFrame(data: unknown): api.Parsed<api.ClientFrame> {
   if (frame.t === "mutation") {
     // A rejected mutation whose key is readable is answered with an ack, so its sender can drop it.
     const keyed = mutationKey.safeParse(frame);
-    const reject = (r: { ok: false; error: api.SyncError }) => (keyed.success ? { ...r, key: { clientId: keyed.data.clientId, n: keyed.data.n } } : r);
+    const reject = (r: { ok: false; error: api.SyncError }) =>
+      keyed.success ? { ...r, key: { clientId: keyed.data.clientId, n: keyed.data.n } } : r;
     const head = mutationFrame.safeParse(frame);
     if (!head.success) return reject(invalid("mutation", head.error));
     const args = ARGS[head.data.name].safeParse(head.data.args);
     if (!args.success) return reject(invalid(`${head.data.name}.args`, args.error));
     if (head.data.name === "addNote" && "items" in args.data) {
       const bytes = utf8Bytes(JSON.stringify(args.data.items));
-      if (bytes > LIMITS.noteItemsBytes) return reject(fail("too_large", `note items are ${bytes} bytes; the limit is ${LIMITS.noteItemsBytes}`));
+      if (bytes > LIMITS.noteItemsBytes)
+        return reject(
+          fail("too_large", `note items are ${bytes} bytes; the limit is ${LIMITS.noteItemsBytes}`),
+        );
     }
     // The head and args schemas together are exactly Mutation<name>.
     return ok({ ...head.data, args: args.data } as api.Mutation);
   }
-  if (!has(CLIENT_FRAMES, frame.t)) return fail("invalid", `unknown frame type ${JSON.stringify(frame.t)}`);
+  if (!has(CLIENT_FRAMES, frame.t))
+    return fail("invalid", `unknown frame type ${JSON.stringify(frame.t)}`);
   const parsed = CLIENT_FRAMES[frame.t].safeParse(frame);
   return parsed.success ? ok(parsed.data) : invalid(frame.t, parsed.error);
 }
@@ -320,12 +386,24 @@ export function parseServerFrame(data: unknown): api.Parsed<api.ReceivedFrame | 
   return parsed.success ? ok(parsed.data) : invalid(frame.t, parsed.error);
 }
 
-export function mutation<N extends api.MutationName>(name: N, args: api.MutationArgs[N], key: api.MutationKey): api.Mutation<N> {
+export function mutation<N extends api.MutationName>(
+  name: N,
+  args: api.MutationArgs[N],
+  key: api.MutationKey,
+): api.Mutation<N> {
   // Mutation<N> is a distributive conditional, which TypeScript cannot match against a generic N.
-  const frame = { v: SYNC_VERSION, t: "mutation", clientId: key.clientId, n: key.n, name, args } as api.Mutation<N>;
+  const frame = {
+    v: SYNC_VERSION,
+    t: "mutation",
+    clientId: key.clientId,
+    n: key.n,
+    name,
+    args,
+  } as api.Mutation<N>;
   // Too large to parse means no key to ack: queued, it would be re-sent forever.
   const bytes = overLimit(JSON.stringify(frame), LIMITS.frameBytes);
-  if (bytes !== undefined) throw new RangeError(`${name} is ${bytes} bytes; a frame may be at most ${LIMITS.frameBytes}`);
+  if (bytes !== undefined)
+    throw new RangeError(`${name} is ${bytes} bytes; a frame may be at most ${LIMITS.frameBytes}`);
   return frame;
 }
 
@@ -346,13 +424,17 @@ export function syncProtocols(credentials: api.Credentials): string[] {
   return out;
 }
 
-export function readProtocols(header: string | null | undefined): api.Credentials & { sync: boolean } {
+export function readProtocols(
+  header: string | null | undefined,
+): api.Credentials & { sync: boolean } {
   const out: api.Credentials & { sync: boolean } = { sync: false };
   for (const item of (header ?? "").split(",")) {
     const p = item.trim();
     if (p === SUBPROTOCOL) out.sync = true;
-    else if (p.startsWith(OWNER_PREFIX) && TOKEN.test(p.slice(OWNER_PREFIX.length))) out.owner ??= p.slice(OWNER_PREFIX.length);
-    else if (p.startsWith(INVITE_PREFIX) && TOKEN.test(p.slice(INVITE_PREFIX.length))) out.invite ??= p.slice(INVITE_PREFIX.length);
+    else if (p.startsWith(OWNER_PREFIX) && TOKEN.test(p.slice(OWNER_PREFIX.length)))
+      out.owner ??= p.slice(OWNER_PREFIX.length);
+    else if (p.startsWith(INVITE_PREFIX) && TOKEN.test(p.slice(INVITE_PREFIX.length)))
+      out.invite ??= p.slice(INVITE_PREFIX.length);
   }
   return out;
 }

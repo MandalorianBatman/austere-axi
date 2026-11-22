@@ -65,7 +65,10 @@ export const EXTENDED = [
 ];
 
 /** Stock renderers replaced with page-appropriate behavior (props unchanged). Each reads only its own props. */
-export const STOCK_RENDERERS: Record<string, ComponentRenderer<TabsProps & ImageProps & CardProps>> = {
+export const STOCK_RENDERERS: Record<
+  string,
+  ComponentRenderer<TabsProps & ImageProps & CardProps>
+> = {
   Tabs: StaticTabsRenderer,
   Image: WholeImageRenderer,
   Card: FoldableCardRenderer,

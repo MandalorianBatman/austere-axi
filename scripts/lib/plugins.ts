@@ -43,7 +43,9 @@ export function bundledPackSources(): BundledPackSource[] {
     .filter((id) => fs.existsSync(path.join(PACKS_DIR, id, "package.json")))
     .map((id) => {
       const dir = path.join(PACKS_DIR, id);
-      const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")) as PackPackageJson;
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(dir, "package.json"), "utf8"),
+      ) as PackPackageJson;
       const candidates = pkg.austere?.entry ? [pkg.austere.entry] : ENTRY_CANDIDATES;
       const entry = candidates.map((c) => path.join(dir, c)).find((f) => fs.existsSync(f));
       if (!entry) throw new Error(`packs/${id} has no entry module (${candidates.join(", ")})`);
@@ -60,14 +62,24 @@ export function bundledPacksPlugin(distDir: string): Plugin {
   return {
     name: "austere-bundled-packs",
     setup(build) {
-      build.onResolve({ filter: /^austere:bundled-packs$/ }, () => ({ path: "bundled-packs", namespace: "austere-bundled-packs" }));
+      build.onResolve({ filter: /^austere:bundled-packs$/ }, () => ({
+        path: "bundled-packs",
+        namespace: "austere-bundled-packs",
+      }));
       build.onLoad({ filter: /.*/, namespace: "austere-bundled-packs" }, () => {
         const index: Record<string, { name: string; version: string; components: string[] }> = {};
         for (const { id } of bundledPackSources()) {
           const file = path.join(distDir, "packs", id, "catalog.json");
-          if (!fs.existsSync(file)) throw new Error(`dist/packs/${id}/catalog.json is missing: build the packs first (node scripts/build.ts packs)`);
+          if (!fs.existsSync(file))
+            throw new Error(
+              `dist/packs/${id}/catalog.json is missing: build the packs first (node scripts/build.ts packs)`,
+            );
           const cat = JSON.parse(fs.readFileSync(file, "utf8")) as Catalog;
-          index[id] = { name: cat.pack, version: cat.version, components: cat.components.map((c) => c.name) };
+          index[id] = {
+            name: cat.pack,
+            version: cat.version,
+            components: cat.components.map((c) => c.name),
+          };
         }
         return { contents: `export default ${JSON.stringify(index)};`, loader: "js" };
       });
@@ -79,7 +91,9 @@ export function bundledPacksPlugin(distDir: string): Plugin {
 const packApiAlias: Plugin = {
   name: "austere-pack-api",
   setup(build) {
-    build.onResolve({ filter: /^austere-axi\/pack$/ }, () => ({ path: path.join(ROOT, "src/runtime/pack-api.ts") }));
+    build.onResolve({ filter: /^austere-axi\/pack$/ }, () => ({
+      path: path.join(ROOT, "src/runtime/pack-api.ts"),
+    }));
   },
 };
 
@@ -99,7 +113,10 @@ export function componentFiles(): string[] {
 export const registryPlugin: Plugin = {
   name: "austere-registry",
   setup(build) {
-    build.onResolve({ filter: /^austere:components$/ }, () => ({ path: "components", namespace: "austere-registry" }));
+    build.onResolve({ filter: /^austere:components$/ }, () => ({
+      path: "components",
+      namespace: "austere-registry",
+    }));
     build.onLoad({ filter: /.*/, namespace: "austere-registry" }, () => {
       const files = componentFiles();
       const imports = files.map((f, i) => `import c${i} from ${JSON.stringify(`./${f}`)};`);
@@ -110,7 +127,11 @@ export const registryPlugin: Plugin = {
           )});`,
       );
       return {
-        contents: [...imports, ...check, `export default [${files.map((_, i) => `c${i}`).join(", ")}].flat();`].join("\n"),
+        contents: [
+          ...imports,
+          ...check,
+          `export default [${files.map((_, i) => `c${i}`).join(", ")}].flat();`,
+        ].join("\n"),
         resolveDir: COMPONENTS_DIR,
         loader: "js",
         watchFiles: files.map((f) => path.join(COMPONENTS_DIR, f)),
@@ -129,8 +150,14 @@ function fontCss(): string {
 export const fontPlugin: Plugin = {
   name: "austere-font",
   setup(build) {
-    build.onResolve({ filter: /\/font\.css$/ }, (args) => ({ path: args.path, namespace: "austere-font" }));
-    build.onLoad({ filter: /.*/, namespace: "austere-font" }, () => ({ contents: fontCss(), loader: "text" }));
+    build.onResolve({ filter: /\/font\.css$/ }, (args) => ({
+      path: args.path,
+      namespace: "austere-font",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "austere-font" }, () => ({
+      contents: fontCss(),
+      loader: "text",
+    }));
   },
 };
 
@@ -144,11 +171,20 @@ function faceCss(family: string, file: string): string {
 export const chromeFontsPlugin: Plugin = {
   name: "austere-chrome-fonts",
   setup(build) {
-    build.onResolve({ filter: /^austere:fonts\.css$/ }, (args) => ({ path: args.path, namespace: "austere-chrome-fonts" }));
+    build.onResolve({ filter: /^austere:fonts\.css$/ }, (args) => ({
+      path: args.path,
+      namespace: "austere-chrome-fonts",
+    }));
     build.onLoad({ filter: /.*/, namespace: "austere-chrome-fonts" }, () => ({
       contents:
-        faceCss("Inter Variable", "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") +
-        faceCss("JetBrains Mono Variable", "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2"),
+        faceCss(
+          "Inter Variable",
+          "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2",
+        ) +
+        faceCss(
+          "JetBrains Mono Variable",
+          "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2",
+        ),
       loader: "css",
     }));
   },
@@ -162,9 +198,12 @@ export const slimHighlighterPlugin: Plugin = {
     build.onResolve({ filter: /^react-syntax-highlighter$/ }, () => ({
       path: path.join(ROOT, "src/runtime/highlighter.ts"),
     }));
-    build.onResolve({ filter: /^react-syntax-highlighter\/dist\/cjs\/styles\/prism(\/index\.js)?$/ }, () => ({
-      path: path.join(ROOT, "src/runtime/highlighter-styles.ts"),
-    }));
+    build.onResolve(
+      { filter: /^react-syntax-highlighter\/dist\/cjs\/styles\/prism(\/index\.js)?$/ },
+      () => ({
+        path: path.join(ROOT, "src/runtime/highlighter-styles.ts"),
+      }),
+    );
   },
 };
 
@@ -176,7 +215,12 @@ export const zodLocalesPlugin: Plugin = {
   name: "austere-zod-locales",
   setup(build) {
     build.onResolve({ filter: /^\.\.\/locales\/index\.js$/ }, (args) =>
-      /[\\/]zod[\\/]v4[\\/]/.test(args.importer) ? { path: path.join(path.dirname(args.importer), "../locales/en.js"), namespace: "austere-zod-locales" } : undefined,
+      /[\\/]zod[\\/]v4[\\/]/.test(args.importer)
+        ? {
+            path: path.join(path.dirname(args.importer), "../locales/en.js"),
+            namespace: "austere-zod-locales",
+          }
+        : undefined,
     );
     build.onLoad({ filter: /.*/, namespace: "austere-zod-locales" }, (args) => ({
       contents: `export { default as en } from ${JSON.stringify(args.path)};`,
@@ -193,7 +237,8 @@ const nodeExternals: Plugin = {
   setup(build) {
     build.onResolve({ filter: /^[^./]/ }, (args) => {
       if (args.path.startsWith("austere:")) return undefined;
-      return args.path.startsWith("@openuidev/react-ui/") && args.path !== "@openuidev/react-ui/genui-lib"
+      return args.path.startsWith("@openuidev/react-ui/") &&
+        args.path !== "@openuidev/react-ui/genui-lib"
         ? undefined
         : { path: args.path, external: true };
     });
@@ -231,7 +276,14 @@ interface LibraryModule {
   TIERS: Record<string, string>;
   EXAMPLES: Record<string, string[]>;
   buildLibrary: (extra?: AustereComponent[], options?: BuildLibraryOptions) => AustereLibrary;
-  catalogFromSpec: (spec: LibrarySpec, options?: { version?: string; tiers?: Record<string, string>; examples?: Record<string, string[]> }) => Catalog;
+  catalogFromSpec: (
+    spec: LibrarySpec,
+    options?: {
+      version?: string;
+      tiers?: Record<string, string>;
+      examples?: Record<string, string[]>;
+    },
+  ) => Catalog;
   promptSpec: (spec: LibrarySpec, tiers?: Record<string, string>) => LibrarySpec;
   PROMPT_OPTIONS: unknown;
   generateSystemPrompt: (options: { library: LibrarySpec; promptOptions: unknown }) => string;
@@ -255,7 +307,10 @@ export async function loadLibrary(): Promise<LoadedLibrary> {
         ${packs.map((p, i) => `import pack${i} from ${JSON.stringify("./" + path.relative(ROOT, p.entry).split(path.sep).join("/"))};`).join("\n")}
         // Bundled packs (shadcn) are part of the core spec: no tag needed to use them.
         export const BUNDLED_PACKS = [${packs
-          .map((p, i) => `{ id: ${JSON.stringify(p.id)}, name: ${JSON.stringify(p.name)}, components: [].concat(pack${i}.components || pack${i}) }`)
+          .map(
+            (p, i) =>
+              `{ id: ${JSON.stringify(p.id)}, name: ${JSON.stringify(p.name)}, components: [].concat(pack${i}.components || pack${i}) }`,
+          )
           .join(", ")}];
         const packComponents = BUNDLED_PACKS.flatMap((p) => p.components);
         export const CUSTOM_COMPONENTS = [...CORE_COMPONENTS, ...packComponents];
@@ -286,16 +341,27 @@ export async function loadLibrary(): Promise<LoadedLibrary> {
     return {
       ...mod,
       prompt: () =>
-        mod.generateSystemPrompt({ library: mod.promptSpec(mod.austereLibrary.toSpec(), mod.TIERS), promptOptions: mod.PROMPT_OPTIONS }),
+        mod.generateSystemPrompt({
+          library: mod.promptSpec(mod.austereLibrary.toSpec(), mod.TIERS),
+          promptOptions: mod.PROMPT_OPTIONS,
+        }),
       catalog: (version: string) => {
-        const cat = mod.catalogFromSpec(mod.austereLibrary.toSpec(), { version, tiers: mod.TIERS, examples: mod.EXAMPLES });
+        const cat = mod.catalogFromSpec(mod.austereLibrary.toSpec(), {
+          version,
+          tiers: mod.TIERS,
+          examples: mod.EXAMPLES,
+        });
         // Mark what a bundled pack provides, so `components` can say where it comes from.
         for (const p of mod.BUNDLED_PACKS) {
-          for (const e of cat.components) if (p.components.some((c) => c.name === e.name)) e.pack = p.name;
+          for (const e of cat.components)
+            if (p.components.some((c) => c.name === e.name)) e.pack = p.name;
         }
         return cat;
       },
-      schema: () => ({ ...mod.austereLibrary.toJSONSchema(), root: mod.austereLibrary.root || "Stack" }),
+      schema: () => ({
+        ...mod.austereLibrary.toJSONSchema(),
+        root: mod.austereLibrary.root || "Stack",
+      }),
     };
   } finally {
     fs.rmSync(out, { force: true });
@@ -306,12 +372,19 @@ export async function loadLibrary(): Promise<LoadedLibrary> {
 export const estimateTokens = (text: string): number => Math.round(text.length / 3.8);
 
 /** Wrap each component's examples (or its stress examples) in a minimal page program, one card each. */
-export function examplePage(components: AustereComponent[], field: "example" | "stress" = "example"): string {
+export function examplePage(
+  components: AustereComponent[],
+  field: "example" | "stress" = "example",
+): string {
   const cards = components
     .flatMap((c) => (c[field] || []).map((program) => ({ name: c.name, program })))
     .map(({ name, program }, i) => {
       const first = program.match(/^\s*([A-Za-z_][\w]*)\s*=/m)?.[1];
-      return { id: `demo${i}`, line: `demo${i} = Card([CardHeader(${JSON.stringify(name)}), ${first}])`, program };
+      return {
+        id: `demo${i}`,
+        line: `demo${i} = Card([CardHeader(${JSON.stringify(name)}), ${first}])`,
+        program,
+      };
     });
   return [
     `root = Stack([${cards.map((c) => c.id).join(", ")}], "column", "l")`,

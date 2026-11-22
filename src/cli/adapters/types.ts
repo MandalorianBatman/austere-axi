@@ -105,14 +105,16 @@ export const OK: Capability = { ok: true };
 
 /** The session id build() needs for `same` and `fork`. */
 export function requireSession(id: AdapterKind, input: BuildInput): string {
-  if (!input.sessionId) throw new AdapterError("missing_session", `${id} ${input.mode} needs a session id`);
+  if (!input.sessionId)
+    throw new AdapterError("missing_session", `${id} ${input.mode} needs a session id`);
   return input.sessionId;
 }
 
 /** Throws when the capability for this mode is off, with its reason. */
 export function requireMode(id: AdapterKind, caps: Capabilities, mode: AttachMode): void {
   const cap = caps[mode];
-  if (!cap.ok) throw new AdapterError("unsupported_mode", `${id} cannot run mode ${mode}: ${cap.reason}`);
+  if (!cap.ok)
+    throw new AdapterError("unsupported_mode", `${id} cannot run mode ${mode}: ${cap.reason}`);
 }
 
 /** Non-empty lines of a run's stdout. */
@@ -131,4 +133,5 @@ export function jsonLine(line: string | undefined): Record<string, unknown> | nu
   }
 }
 
-export const str = (v: unknown): string | undefined => (typeof v === "string" && v !== "" ? v : undefined);
+export const str = (v: unknown): string | undefined =>
+  typeof v === "string" && v !== "" ? v : undefined;

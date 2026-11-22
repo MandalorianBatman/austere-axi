@@ -42,7 +42,11 @@ export interface CallerReport extends Caller {
   pidStart?: string;
 }
 
-export function callerReport(caller: Caller, proc: HarnessProcess | null, cwd: string): CallerReport {
+export function callerReport(
+  caller: Caller,
+  proc: HarnessProcess | null,
+  cwd: string,
+): CallerReport {
   return proc ? { ...caller, cwd, pid: proc.pid, pidStart: proc.start } : { ...caller, cwd };
 }
 
@@ -55,7 +59,8 @@ export function parseCallerReport(v: unknown): CallerReport | null {
   const text = (key: string, max: number): string | undefined => {
     const s = o[key];
     if (s === undefined) return undefined;
-    if (typeof s !== "string" || !s || s.length > max) throw new Error(`session.${key} must be a string of at most ${max} characters`);
+    if (typeof s !== "string" || !s || s.length > max)
+      throw new Error(`session.${key} must be a string of at most ${max} characters`);
     return s;
   };
   const sessionFile = text("sessionFile", 4096);
@@ -63,10 +68,12 @@ export function parseCallerReport(v: unknown): CallerReport | null {
   const pidStart = text("pidStart", 64);
   let pid: number | undefined;
   if (o.pid !== undefined) {
-    if (typeof o.pid !== "number" || !Number.isInteger(o.pid) || o.pid <= 0) throw new Error("session.pid must be a positive integer");
+    if (typeof o.pid !== "number" || !Number.isInteger(o.pid) || o.pid <= 0)
+      throw new Error("session.pid must be a positive integer");
     pid = o.pid;
   }
-  if ((pid === undefined) !== (pidStart === undefined)) throw new Error("session.pid and session.pidStart go together");
+  if ((pid === undefined) !== (pidStart === undefined))
+    throw new Error("session.pid and session.pidStart go together");
   return { ...caller, sessionFile, cwd, pid, pidStart };
 }
 
@@ -79,7 +86,13 @@ export function shortId(sessionId: string): string {
 }
 
 /** Link a session to a page in a role; the same link again only moves its time. */
-export function linkPage(db: sqlite.DatabaseSync, artifactId: string, agentSessionId: string, role: PageRole, at = Date.now()): void {
+export function linkPage(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  agentSessionId: string,
+  role: PageRole,
+  at = Date.now(),
+): void {
   db.prepare(
     `INSERT INTO page_sessions (artifact_id, agent_session_id, role, at) VALUES (?, ?, ?, ?)
      ON CONFLICT(artifact_id, agent_session_id, role) DO UPDATE SET at = MAX(page_sessions.at, excluded.at)`,
@@ -92,7 +105,15 @@ export function linkPage(db: sqlite.DatabaseSync, artifactId: string, agentSessi
  * `poll`, `reply` and `feedback` make it a listener. A known session keeps its first-seen time
  * and the last harness process seen for it.
  */
-export function registerSession(db: sqlite.DatabaseSync, report: CallerReport, { artifactIds, action, at = Date.now() }: { artifactIds: string[]; action: SessionAction; at?: number }): AgentSessionRow {
+export function registerSession(
+  db: sqlite.DatabaseSync,
+  report: CallerReport,
+  {
+    artifactIds,
+    action,
+    at = Date.now(),
+  }: { artifactIds: string[]; action: SessionAction; at?: number },
+): AgentSessionRow {
   return inTransaction(db, () => {
     const row = db
       .prepare(
@@ -106,9 +127,21 @@ export function registerSession(db: sqlite.DatabaseSync, report: CallerReport, {
            last_seen = MAX(agent_sessions.last_seen, excluded.last_seen)
          RETURNING *`,
       )
-      .get(crypto.randomBytes(6).toString("hex"), report.harness, report.sessionId, report.sessionFile ?? null, report.cwd ?? null, report.pid ?? null, report.pidStart ?? null, at, at) as unknown as AgentSessionRow;
+      .get(
+        crypto.randomBytes(6).toString("hex"),
+        report.harness,
+        report.sessionId,
+        report.sessionFile ?? null,
+        report.cwd ?? null,
+        report.pid ?? null,
+        report.pidStart ?? null,
+        at,
+        at,
+      ) as unknown as AgentSessionRow;
     const writes = action === "open" || action === "patch";
-    const authorOf = db.prepare("SELECT agent_session_id FROM page_sessions WHERE artifact_id = ? AND role = 'author' ORDER BY at LIMIT 1");
+    const authorOf = db.prepare(
+      "SELECT agent_session_id FROM page_sessions WHERE artifact_id = ? AND role = 'author' ORDER BY at LIMIT 1",
+    );
     for (const artifactId of artifactIds) {
       let role: PageRole = "listener";
       if (writes) {
@@ -126,9 +159,17 @@ export function registerSession(db: sqlite.DatabaseSync, report: CallerReport, {
  * parent's. Returns the new row (or the existing one, which keeps its first parent). The caller
  * links it to its pages with `linkPage`.
  */
-export function recordContinuation(db: sqlite.DatabaseSync, fromId: string, sessionId: string, kind: ParentKind, at = Date.now()): AgentSessionRow {
+export function recordContinuation(
+  db: sqlite.DatabaseSync,
+  fromId: string,
+  sessionId: string,
+  kind: ParentKind,
+  at = Date.now(),
+): AgentSessionRow {
   return inTransaction(db, () => {
-    const parent = db.prepare("SELECT * FROM agent_sessions WHERE id = ?").get(fromId) as unknown as AgentSessionRow | undefined;
+    const parent = db
+      .prepare("SELECT * FROM agent_sessions WHERE id = ?")
+      .get(fromId) as unknown as AgentSessionRow | undefined;
     if (!parent) throw new Error(`no agent session ${fromId}`);
     return db
       .prepare(
@@ -140,7 +181,17 @@ export function recordContinuation(db: sqlite.DatabaseSync, fromId: string, sess
            last_seen = MAX(agent_sessions.last_seen, excluded.last_seen)
          RETURNING *`,
       )
-      .get(crypto.randomBytes(6).toString("hex"), parent.harness, sessionId, parent.cwd, parent.model, fromId, kind, at, at) as unknown as AgentSessionRow;
+      .get(
+        crypto.randomBytes(6).toString("hex"),
+        parent.harness,
+        sessionId,
+        parent.cwd,
+        parent.model,
+        fromId,
+        kind,
+        at,
+        at,
+      ) as unknown as AgentSessionRow;
   });
 }
 
@@ -158,7 +209,10 @@ export interface PageSession {
 const ROLES: PageRole[] = ["author", "editor", "listener"];
 
 /** The sessions of one copy (`artifactId`) or of every copy in a project (`projectId`), the most recent first. */
-export function listSessions(db: sqlite.DatabaseSync, where: { artifactId: string } | { projectId: string }): PageSession[] {
+export function listSessions(
+  db: sqlite.DatabaseSync,
+  where: { artifactId: string } | { projectId: string },
+): PageSession[] {
   const byPage = "artifactId" in where;
   const rows = db
     .prepare(
@@ -170,15 +224,29 @@ export function listSessions(db: sqlite.DatabaseSync, where: { artifactId: strin
        GROUP BY p.artifact_id, s.id
        ORDER BY page_at DESC, s.id`,
     )
-    .all(byPage ? where.artifactId : where.projectId) as unknown as (AgentSessionRow & { page_artifact: string; page_file: string; page_roles: string; page_at: number })[];
+    .all(byPage ? where.artifactId : where.projectId) as unknown as (AgentSessionRow & {
+    page_artifact: string;
+    page_file: string;
+    page_roles: string;
+    page_at: number;
+  })[];
   return rows.map(({ page_artifact, page_file, page_roles, page_at, ...session }) => {
     const roles = new Set(page_roles.split(","));
-    return { session, artifactId: page_artifact, file: page_file, roles: ROLES.filter((r) => roles.has(r)), at: page_at };
+    return {
+      session,
+      artifactId: page_artifact,
+      file: page_file,
+      roles: ROLES.filter((r) => roles.has(r)),
+      at: page_at,
+    };
   });
 }
 
 /** Whether the session's harness process still runs: `alive`, `exited`, or `unknown` (no process was found at registration, or no process table here). */
-export function liveness(row: Pick<AgentSessionRow, "pid" | "pid_start">, table?: ProcessTable | null): Liveness {
+export function liveness(
+  row: Pick<AgentSessionRow, "pid" | "pid_start">,
+  table?: ProcessTable | null,
+): Liveness {
   return processLiveness(row.pid, row.pid_start, table);
 }
 
@@ -186,7 +254,11 @@ export function liveness(row: Pick<AgentSessionRow, "pid" | "pid_start">, table?
  * Record a caller straight in hub.db, for a command that runs without the server. Never fails the
  * command: false when it could not, as when a server of another version holds the state dir.
  */
-export async function registerWithHubDb(report: CallerReport, artifactIds: string[], action: SessionAction): Promise<boolean> {
+export async function registerWithHubDb(
+  report: CallerReport,
+  artifactIds: string[],
+  action: SessionAction,
+): Promise<boolean> {
   try {
     const hub = await openHubDirect({ write: true });
     try {

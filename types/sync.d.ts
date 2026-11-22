@@ -153,7 +153,11 @@ export type Mutation<N extends MutationName = MutationName> = N extends Mutation
  * Builds a mutation frame at SYNC_VERSION. Throws a RangeError when the frame would be over
  * LIMITS.frameBytes: the server could not read its key to ack it.
  */
-export declare function mutation<N extends MutationName>(name: N, args: MutationArgs[N], key: MutationKey): Mutation<N>;
+export declare function mutation<N extends MutationName>(
+  name: N,
+  args: MutationArgs[N],
+  key: MutationKey,
+): Mutation<N>;
 
 // ── Rows (server → client) ───────────────────────────────────────────────────
 
@@ -383,7 +387,9 @@ export interface Credentials {
 export declare function syncProtocols(credentials: Credentials): string[];
 
 /** Reads a Sec-WebSocket-Protocol request header. `sync` is false when SUBPROTOCOL is missing. */
-export declare function readProtocols(header: string | null | undefined): Credentials & { sync: boolean };
+export declare function readProtocols(
+  header: string | null | undefined,
+): Credentials & { sync: boolean };
 
 /** The `acl` row's `grant` for a token hash (`GrantArgs.tokenHash`, base64url SHA-256): its first 16 characters. */
 export declare function grantId(tokenHash: string): string;

@@ -21,23 +21,44 @@ cloudOn(STATE);
 const WORK = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-attach-work-")));
 const PROJECT = path.join(WORK, "site");
 const MAIN = path.resolve("src/cli/main.ts");
-const AT_TERMINAL = "data:text/javascript,Object.defineProperty(process.stdin,'isTTY',{value:true})";
+const AT_TERMINAL =
+  "data:text/javascript,Object.defineProperty(process.stdin,'isTTY',{value:true})";
 const PORT = await freePort();
 process.env.AUSTERE_AXI_STATE_DIR = STATE;
 
 // The test may itself run inside a harness: its session must not become a page's author.
-const ENV: NodeJS.ProcessEnv = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_PORT: String(PORT), AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" };
-for (const name of ["PI_SESSION_ID", "PI_SESSION_FILE", "COPILOT_AGENT_SESSION_ID", "DSH_SESSION_ID"]) delete ENV[name];
+const ENV: NodeJS.ProcessEnv = {
+  ...process.env,
+  AUSTERE_AXI_STATE_DIR: STATE,
+  AUSTERE_AXI_PORT: String(PORT),
+  AUSTERE_AXI_NO_TAILSCALE: "1",
+  AUSTERE_AXI_NO_OPEN: "1",
+  OPENUI_TELEMETRY_DISABLED: "1",
+};
+for (const name of [
+  "PI_SESSION_ID",
+  "PI_SESSION_FILE",
+  "COPILOT_AGENT_SESSION_ID",
+  "DSH_SESSION_ID",
+])
+  delete ENV[name];
 
 function cli(args: string[], opts: { tty?: boolean } = {}): { code: number | null; out: string } {
-  const r = spawnSync(process.execPath, [...(opts.tty ? ["--import", AT_TERMINAL] : []), MAIN, ...args], { env: ENV, encoding: "utf8", cwd: PROJECT });
+  const r = spawnSync(
+    process.execPath,
+    [...(opts.tty ? ["--import", AT_TERMINAL] : []), MAIN, ...args],
+    { env: ENV, encoding: "utf8", cwd: PROJECT },
+  );
   return { code: r.status, out: r.stdout + r.stderr };
 }
 
 /** cli at a terminal, without blocking this process: a test's own SSE client keeps reading meanwhile. */
 function cliAsync(args: string[]): Promise<{ code: number | null; out: string }> {
   const { promise, resolve } = Promise.withResolvers<{ code: number | null; out: string }>();
-  const child = spawn(process.execPath, ["--import", AT_TERMINAL, MAIN, ...args], { env: ENV, cwd: PROJECT });
+  const child = spawn(process.execPath, ["--import", AT_TERMINAL, MAIN, ...args], {
+    env: ENV,
+    cwd: PROJECT,
+  });
   let out = "";
   child.stdout.on("data", (c) => (out += c));
   child.stderr.on("data", (c) => (out += c));
@@ -47,17 +68,43 @@ function cliAsync(args: string[]): Promise<{ code: number | null; out: string }>
 
 function page(name: string): string {
   const file = path.join(PROJECT, `${name}.html`);
-  fs.writeFileSync(file, `<!doctype html><html><head><title>${name}</title></head><body><script type="text/openui">\nroot = Stack([intro])\nintro = TextContent("hello")\n</script></body></html>`);
+  fs.writeFileSync(
+    file,
+    `<!doctype html><html><head><title>${name}</title></head><body><script type="text/openui">\nroot = Stack([intro])\nintro = TextContent("hello")\n</script></body></html>`,
+  );
   return file;
 }
 
-const row = (scope: "page" | "project", state: AttachState, fields: Partial<AttachSettingRow> = {}): AttachSettingRow => ({ scope, scope_id: "x", state, mode: null, session: null, harness: null, model: null, ...fields });
+const row = (
+  scope: "page" | "project",
+  state: AttachState,
+  fields: Partial<AttachSettingRow> = {},
+): AttachSettingRow => ({
+  scope,
+  scope_id: "x",
+  state,
+  mode: null,
+  session: null,
+  harness: null,
+  model: null,
+  ...fields,
+});
 
 test("the effective setting: the page's row, unless inherit, then the project's, else off", () => {
-  const projects: (AttachSettingRow | null)[] = [row("project", "on", { mode: "fork", harness: "copilot" }), row("project", "off"), row("project", "inherit"), null];
+  const projects: (AttachSettingRow | null)[] = [
+    row("project", "on", { mode: "fork", harness: "copilot" }),
+    row("project", "off"),
+    row("project", "inherit"),
+    null,
+  ];
   for (const project of projects) {
     const projectSays = project && project.state !== "inherit" ? project.state : null;
-    for (const page of [row("page", "on", { mode: "new", model: "m" }), row("page", "off"), row("page", "inherit"), null]) {
+    for (const page of [
+      row("page", "on", { mode: "new", model: "m" }),
+      row("page", "off"),
+      row("page", "inherit"),
+      null,
+    ]) {
       const e = resolveSetting(page, project);
       const where = `page ${page?.state ?? "none"} × project ${project?.state ?? "none"}`;
       if (page && page.state !== "inherit") {
@@ -73,23 +120,39 @@ test("the effective setting: the page's row, unless inherit, then the project's,
     }
   }
   // The page's own fields win; a page row without a harness takes the project's (Q11); the default session is the author.
-  assert.deepEqual(resolveSetting(row("page", "on", { mode: "new", model: "m" }), row("project", "on", { mode: "fork", harness: "copilot" })), {
-    state: "on",
-    source: "page",
-    mode: "new",
-    session: "author",
-    harness: "copilot",
-    model: "m",
-  });
-  assert.deepEqual(resolveSetting(row("page", "inherit", { mode: "new" }), row("project", "on", { mode: "fork" })), {
-    state: "on",
-    source: "project",
-    mode: "fork",
+  assert.deepEqual(
+    resolveSetting(
+      row("page", "on", { mode: "new", model: "m" }),
+      row("project", "on", { mode: "fork", harness: "copilot" }),
+    ),
+    {
+      state: "on",
+      source: "page",
+      mode: "new",
+      session: "author",
+      harness: "copilot",
+      model: "m",
+    },
+  );
+  assert.deepEqual(
+    resolveSetting(row("page", "inherit", { mode: "new" }), row("project", "on", { mode: "fork" })),
+    {
+      state: "on",
+      source: "project",
+      mode: "fork",
+      session: "author",
+      harness: "omp",
+      model: null,
+    },
+  );
+  assert.deepEqual(resolveSetting(null, null), {
+    state: "off",
+    source: "default",
+    mode: "same",
     session: "author",
     harness: "omp",
     model: null,
   });
-  assert.deepEqual(resolveSetting(null, null), { state: "off", source: "default", mode: "same", session: "author", harness: "omp", model: null });
 });
 
 test("a project change is checked against each copy's own target: a copy Copilot wrote cannot go on in fork", async () => {
@@ -98,19 +161,31 @@ test("a project change is checked against each copy's own target: a copy Copilot
     const cfg: AdaptersConfig = { extraArgs: {}, commands: {} };
     const now = Date.now();
     db.prepare("INSERT INTO projects (id, name, created_at) VALUES ('p', 'site', ?)").run(now);
-    const copy = db.prepare("INSERT INTO artifacts (id, file, project, created_at, updated_at, project_id) VALUES (?, ?, 'site', ?, ?, 'p')");
+    const copy = db.prepare(
+      "INSERT INTO artifacts (id, file, project, created_at, updated_at, project_id) VALUES (?, ?, 'site', ?, ?, 'p')",
+    );
     copy.run("a-omp", "/w/omp.html", now, now);
     copy.run("a-cop", "/w/cop.html", now, now);
-    db.prepare("INSERT INTO agent_sessions (id, harness, session_id, first_seen, last_seen) VALUES ('s-cop', 'copilot', 'c1', ?, ?)").run(now, now);
-    db.prepare("INSERT INTO page_sessions (artifact_id, agent_session_id, role, at) VALUES ('a-cop', 's-cop', 'author', ?)").run(now);
+    db.prepare(
+      "INSERT INTO agent_sessions (id, harness, session_id, first_seen, last_seen) VALUES ('s-cop', 'copilot', 'c1', ?, ?)",
+    ).run(now, now);
+    db.prepare(
+      "INSERT INTO page_sessions (artifact_id, agent_session_id, role, at) VALUES ('a-cop', 's-cop', 'author', ?)",
+    ).run(now);
     // The setting itself (omp, fork) is fine; the Copilot copy resolves to Copilot, which has no fork.
     assert.throws(
       () => changeSetting(db, { projectId: "p" }, "on", { mode: "fork", harness: "omp" }, cfg),
-      (err: unknown) => err instanceof AttachRefused && err.code === "unsupported" && /\/w\/cop\.html: copilot cannot run mode fork/.test(err.message),
+      (err: unknown) =>
+        err instanceof AttachRefused &&
+        err.code === "unsupported" &&
+        /\/w\/cop\.html: copilot cannot run mode fork/.test(err.message),
     );
     assert.equal(readSetting(db, "project", "p"), null, "nothing written");
     // Mode same is fine for both copies.
-    assert.equal(changeSetting(db, { projectId: "p" }, "on", { mode: "same", harness: "omp" }, cfg).state, "on");
+    assert.equal(
+      changeSetting(db, { projectId: "p" }, "on", { mode: "same", harness: "omp" }, cfg).state,
+      "on",
+    );
   } finally {
     db.close();
   }
@@ -135,11 +210,19 @@ after(async () => {
 
 test("attach on|off|inherit without a terminal exits 2, changes nothing and names the command for the user", () => {
   const file = page("tty");
-  for (const args of [["on", file, "--mode", "fork"], ["off", file], ["inherit", file], ["on", "--project", PROJECT]]) {
+  for (const args of [
+    ["on", file, "--mode", "fork"],
+    ["off", file],
+    ["inherit", file],
+    ["on", "--project", PROJECT],
+  ]) {
     const r = cli(["attach", ...args]);
     assert.equal(r.code, 2, r.out);
     assert.match(r.out, /code: USAGE/);
-    assert.match(r.out, new RegExp(`attach ${args[0]} needs the user at a terminal and changes nothing here`));
+    assert.match(
+      r.out,
+      new RegExp(`attach ${args[0]} needs the user at a terminal and changes nothing here`),
+    );
     // The output quotes a value with backslashes (a Windows path) JSON-style, doubling them.
     const hint = `Ask the user to run \`austere-axi ${commandLine(["attach", ...args])}\` themselves`;
     assert.ok(r.out.includes(hint) || r.out.includes(JSON.stringify(hint).slice(1, -1)), r.out);
@@ -157,8 +240,15 @@ test("attach status warns while the harness has no write grant, and not once it 
   const without = cli(["attach", "status", file]);
   assert.equal(without.code, 0, without.out);
   assert.match(without.out, /omp has no write grant/);
-  assert.ok(without.out.includes('austere-axi adapter set omp --extra-args \\"--approval-mode yolo\\"'), without.out);
-  fs.writeFileSync(path.join(STATE, "adapters.json"), JSON.stringify({ format: 1, extraArgs: { omp: ["--approval-mode", "yolo"] } }), { mode: 0o600 });
+  assert.ok(
+    without.out.includes('austere-axi adapter set omp --extra-args \\"--approval-mode yolo\\"'),
+    without.out,
+  );
+  fs.writeFileSync(
+    path.join(STATE, "adapters.json"),
+    JSON.stringify({ format: 1, extraArgs: { omp: ["--approval-mode", "yolo"] } }),
+    { mode: 0o600 },
+  );
   try {
     const granted = cli(["attach", "status", file]);
     assert.equal(granted.code, 0, granted.out);
@@ -196,7 +286,14 @@ test("at a terminal: on, off and inherit write the page's row; an auto page and 
   assert.equal(cli(["attach", "off", file], { tty: true }).code, 0);
 
   // Published with --auto (Q3, A17): attach on refuses and names why.
-  fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t", pages: { [file]: { id: "p1", auto: true, unlisted: false, presence: true, invites: {} } } }));
+  fs.writeFileSync(
+    path.join(STATE, "cloud.json"),
+    JSON.stringify({
+      url: "http://127.0.0.1:9",
+      token: "t",
+      pages: { [file]: { id: "p1", auto: true, unlisted: false, presence: true, invites: {} } },
+    }),
+  );
   try {
     r = cli(["attach", "on", file], { tty: true });
     assert.equal(r.code, 1, r.out);
@@ -231,20 +328,37 @@ interface Res {
   data: string;
 }
 
-function req(method: string, route: string, headers: Record<string, string>, body?: unknown): Promise<Res> {
+function req(
+  method: string,
+  route: string,
+  headers: Record<string, string>,
+  body?: unknown,
+): Promise<Res> {
   const { promise, resolve, reject } = Promise.withResolvers<Res>();
-  const r = http.request({ host: "127.0.0.1", port: PORT, method, path: route, headers: { host: `127.0.0.1:${PORT}`, "content-type": "application/json", ...headers } }, (res) => {
-    let data = "";
-    res.on("data", (c) => (data += c));
-    res.on("end", () => resolve({ status: res.statusCode, data }));
-  });
+  const r = http.request(
+    {
+      host: "127.0.0.1",
+      port: PORT,
+      method,
+      path: route,
+      headers: { host: `127.0.0.1:${PORT}`, "content-type": "application/json", ...headers },
+    },
+    (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => resolve({ status: res.statusCode, data }));
+    },
+  );
   r.on("error", reject);
   r.end(body === undefined ? undefined : JSON.stringify(body));
   return promise;
 }
 
 test("the owner's attach routes: reviewers and a foreign Origin get 403; the owner reads and sets the page's row", async () => {
-  server = spawn(process.execPath, [MAIN, "server", "--port", String(PORT)], { env: { ...ENV, AUSTERE_AXI_LINK_HOST: "127.0.0.1" }, stdio: "ignore" });
+  server = spawn(process.execPath, [MAIN, "server", "--port", String(PORT)], {
+    env: { ...ENV, AUSTERE_AXI_LINK_HOST: "127.0.0.1" },
+    stdio: "ignore",
+  });
   const owner = ownerHeaders(STATE);
   for (let i = 0; ; i++) {
     const up = await req("GET", "/api/health", {}).catch(() => null);
@@ -257,7 +371,9 @@ test("the owner's attach routes: reviewers and a foreign Origin get 403; the own
   assert.equal(opened.status, 200, opened.data);
   const id = (JSON.parse(opened.data) as { session: { id: string } }).session.id;
   const shared = await req("POST", "/api/share", owner, { file, name: "Ana" });
-  const reviewer = { cookie: await claimLink(PORT, (JSON.parse(shared.data) as { link: string }).link) };
+  const reviewer = {
+    cookie: await claimLink(PORT, (JSON.parse(shared.data) as { link: string }).link),
+  };
   const foreign = { cookie: owner.cookie, origin: "https://evil.example" };
 
   for (const [method, route, body] of [
@@ -266,22 +382,46 @@ test("the owner's attach routes: reviewers and a foreign Origin get 403; the own
     ["GET", `/s/${id}/runs`],
     ["POST", `/s/${id}/run/retry`, {}],
   ] as const) {
-    assert.equal((await req(method, route, reviewer, body)).status, 403, `${method} ${route} as a reviewer`);
-    assert.equal((await req(method, route, foreign, body)).status, 403, `${method} ${route} from a foreign Origin`);
+    assert.equal(
+      (await req(method, route, reviewer, body)).status,
+      403,
+      `${method} ${route} as a reviewer`,
+    );
+    assert.equal(
+      (await req(method, route, foreign, body)).status,
+      403,
+      `${method} ${route} from a foreign Origin`,
+    );
   }
   // The invite is not auto, so the owner may turn attach on.
   let r = await req("GET", `/s/${id}/attach`, { cookie: owner.cookie });
   assert.equal(r.status, 200, r.data);
-  const info = JSON.parse(r.data) as { effective: { state: string }; harnesses: Record<string, { capabilities: { fork: { ok: boolean; reason?: string } } }> };
+  const info = JSON.parse(r.data) as {
+    effective: { state: string };
+    harnesses: Record<string, { capabilities: { fork: { ok: boolean; reason?: string } } }>;
+  };
   assert.equal(info.effective.state, "off");
   assert.match(info.harnesses.copilot.capabilities.fork.reason ?? "", /Copilot CLI has no fork/);
 
-  r = await req("POST", `/s/${id}/attach`, { cookie: owner.cookie, origin: `http://127.0.0.1:${PORT}` }, { state: "on", mode: "new", model: "haiku" });
+  r = await req(
+    "POST",
+    `/s/${id}/attach`,
+    { cookie: owner.cookie, origin: `http://127.0.0.1:${PORT}` },
+    { state: "on", mode: "new", model: "haiku" },
+  );
   assert.equal(r.status, 200, r.data);
-  assert.equal((JSON.parse(r.data) as { effective: { state: string; mode: string } }).effective.mode, "new");
+  assert.equal(
+    (JSON.parse(r.data) as { effective: { state: string; mode: string } }).effective.mode,
+    "new",
+  );
   assert.match(cli(["attach", "status", file]).out, /attach: on\nfrom: page\nmode: new/);
 
-  r = await req("POST", `/s/${id}/attach`, { cookie: owner.cookie }, { state: "on", harness: "copilot", mode: "fork" });
+  r = await req(
+    "POST",
+    `/s/${id}/attach`,
+    { cookie: owner.cookie },
+    { state: "on", harness: "copilot", mode: "fork" },
+  );
   assert.equal(r.status, 409, r.data);
   assert.match(r.data, /Copilot CLI has no fork/);
   r = await req("POST", `/s/${id}/attach`, { cookie: owner.cookie }, { state: "sideways" });
@@ -293,7 +433,10 @@ test("the owner's attach routes: reviewers and a foreign Origin get 403; the own
   // An --auto invite makes the page auto: the owner cannot turn attach on from the page either (Q3, A17).
   await req("POST", `/s/${id}/attach`, { cookie: owner.cookie }, { state: "off" });
   await req("POST", "/api/share/revoke", owner, { key: "Ana" });
-  assert.equal((await req("POST", "/api/share", owner, { file, name: "Bo", auto: true })).status, 200);
+  assert.equal(
+    (await req("POST", "/api/share", owner, { file, name: "Bo", auto: true })).status,
+    200,
+  );
   r = await req("POST", `/s/${id}/attach`, { cookie: owner.cookie }, { state: "on" });
   assert.equal(r.status, 409, r.data);
   assert.match(r.data, /shared with --auto \(Bo\)/);
@@ -303,13 +446,21 @@ test("the owner's attach routes: reviewers and a foreign Origin get 403; the own
   // state dir's lock, so a direct write would time out), and the owner's open tab hears it.
   await req("POST", "/api/share/revoke", owner, { key: "Bo" });
   const heard = Promise.withResolvers<void>();
-  const events = http.get({ host: "127.0.0.1", port: PORT, path: `/s/${id}/events`, headers: { host: `127.0.0.1:${PORT}`, cookie: owner.cookie } }, (res) => {
-    let buf = "";
-    res.on("data", (c) => {
-      buf += c;
-      if (/^event: attach$/m.test(buf)) heard.resolve();
-    });
-  });
+  const events = http.get(
+    {
+      host: "127.0.0.1",
+      port: PORT,
+      path: `/s/${id}/events`,
+      headers: { host: `127.0.0.1:${PORT}`, cookie: owner.cookie },
+    },
+    (res) => {
+      let buf = "";
+      res.on("data", (c) => {
+        buf += c;
+        if (/^event: attach$/m.test(buf)) heard.resolve();
+      });
+    },
+  );
   events.on("error", () => {});
   await new Promise((r) => setTimeout(r, 200)); // the tab is connected before the change
   const set = await cliAsync(["attach", "on", file, "--mode", "fork"]);

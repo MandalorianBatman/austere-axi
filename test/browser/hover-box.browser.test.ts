@@ -56,7 +56,13 @@ notes = MarkDownRenderer("${FILLER}")`;
 function api(route: string, body: unknown): Promise<{ session: { id: string }; code: string }> {
   return new Promise((resolve, reject) => {
     const r = http.request(
-      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", ...ownerHeaders(STATE) } },
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: route,
+        headers: { "content-type": "application/json", ...ownerHeaders(STATE) },
+      },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -82,10 +88,19 @@ before(async () => {
   }
   browser = launched.browser;
   port = await freePort();
-  server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)], {
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" },
-    stdio: "ignore",
-  });
+  server = spawn(
+    process.execPath,
+    [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)],
+    {
+      env: {
+        ...process.env,
+        AUSTERE_AXI_STATE_DIR: STATE,
+        AUSTERE_AXI_NO_TAILSCALE: "1",
+        OPENUI_TELEMETRY_DISABLED: "1",
+      },
+      stdio: "ignore",
+    },
+  );
   for (let i = 0; i < 100; i++) {
     try {
       await new Promise<void>((resolve, reject) => {
@@ -130,7 +145,10 @@ function geometry(frame: Frame) {
       const r = el.getBoundingClientRect();
       return { left: r.left, top: r.top, width: r.width, height: r.height };
     };
-    return { node: rect('[data-oui-id="pg"] .austere-arch-node-box'), hover: rect(".austere-hover.locked") };
+    return {
+      node: rect('[data-oui-id="pg"] .austere-arch-node-box'),
+      hover: rect(".austere-hover.locked"),
+    };
   });
 }
 
@@ -156,7 +174,10 @@ async function assertOnNode(page: Page, frame: Frame, when: string) {
     g = await geometry(frame);
   }
   assert.ok(g.hover, `${when}: the locked hover box is gone`);
-  assert.ok(off() <= TOLERANCE, `${when}: hover box ${JSON.stringify(g.hover)} is off the node ${JSON.stringify(g.node)} by ${off()}px`);
+  assert.ok(
+    off() <= TOLERANCE,
+    `${when}: hover box ${JSON.stringify(g.hover)} is off the node ${JSON.stringify(g.node)} by ${off()}px`,
+  );
   return g.node as Rect;
 }
 
@@ -179,13 +200,22 @@ test("the locked hover box follows its node through a scroll and a live update",
 
     await frame.evaluate(() => window.scrollBy(0, 120));
     const scrolled = await assertOnNode(page, frame, "after a window scroll");
-    assert.ok(start.top - scrolled.top > 100, `the node did not move with the scroll (${start.top} → ${scrolled.top})`);
+    assert.ok(
+      start.top - scrolled.top > 100,
+      `the node did not move with the scroll (${start.top} → ${scrolled.top})`,
+    );
 
     writePage(true);
     await frame.waitForSelector('[data-oui-id="lb"]', { timeout: 10_000 });
-    assert.ok(await frame.locator(".austere-pop").isVisible(), "the note closed on the live update");
+    assert.ok(
+      await frame.locator(".austere-pop").isVisible(),
+      "the note closed on the live update",
+    );
     const moved = await assertOnNode(page, frame, "after a live update");
-    assert.ok(Math.abs(moved.left - scrolled.left) + Math.abs(moved.top - scrolled.top) > 20, "the live update did not move the node");
+    assert.ok(
+      Math.abs(moved.left - scrolled.left) + Math.abs(moved.top - scrolled.top) > 20,
+      "the live update did not move the node",
+    );
   } finally {
     await context.close();
   }
@@ -201,7 +231,9 @@ test("in Firefox the hover box fits a node that has an icon", async (t) => {
   writePage(false);
   const { session } = await api("/api/open", { file: FILE });
   try {
-    const page = await (await firefox.newContext({ viewport: { width: 1280, height: 700 } })).newPage();
+    const page = await (
+      await firefox.newContext({ viewport: { width: 1280, height: 700 } })
+    ).newPage();
     const { code } = await api("/api/login", {});
     await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
     const frame = (await (await page.waitForSelector("iframe.frame")).contentFrame()) as Frame;
@@ -255,7 +287,8 @@ plan = Table([Col("Binding", ["PAGES", "DB", "PAGE"]), Col("Kind", ["R2", "D1", 
       });
     type Boxes = Awaited<ReturnType<typeof boxes>>;
     const onRow = (b: Boxes) => !!b.hover && !!b.row && near(b.hover, b.row);
-    const onRoot = (b: Boxes) => !!b.hover && !!b.table && b.hover.height > b.table.height + PAD * 2 + TOLERANCE;
+    const onRoot = (b: Boxes) =>
+      !!b.hover && !!b.table && b.hover.height > b.table.height + PAD * 2 + TOLERANCE;
     const near = (hover: Rect, el: Rect) =>
       Math.max(
         Math.abs(hover.left + PAD - el.left),
@@ -276,7 +309,10 @@ plan = Table([Col("Binding", ["PAGES", "DB", "PAGE"]), Col("Kind", ["R2", "D1", 
     await cell.click();
     await frame.locator(".austere-pop").waitFor({ state: "visible" });
     let b = await settled(onRow);
-    assert.ok(onRow(b), `the box ${JSON.stringify(b.hover)} is not on row 2 ${JSON.stringify(b.row)}`);
+    assert.ok(
+      onRow(b),
+      `the box ${JSON.stringify(b.hover)} is not on row 2 ${JSON.stringify(b.row)}`,
+    );
     assert.equal(b.label, "plan · Table · row 2");
 
     // A re-render that drops the rows for a few frames: the box comes back to the new row 2.
@@ -289,7 +325,10 @@ plan = Table([Col("Binding", ["PAGES", "DB", "PAGE"]), Col("Kind", ["R2", "D1", 
       table.appendChild(fresh);
     });
     b = await settled(onRow);
-    assert.ok(onRow(b), `the box ${JSON.stringify(b.hover)} did not find row 2 again after the rows came back`);
+    assert.ok(
+      onRow(b),
+      `the box ${JSON.stringify(b.hover)} did not find row 2 again after the rows came back`,
+    );
 
     // Choosing the parent statement moves the box to it; choosing the row's statement again brings
     // it back, to the new row when a re-render replaced the rows in between.
@@ -311,7 +350,10 @@ plan = Table([Col("Binding", ["PAGES", "DB", "PAGE"]), Col("Kind", ["R2", "D1", 
     });
     await frame.locator(".austere-chip", { hasText: "root" }).click();
     b = await settled(onRoot);
-    assert.ok(onRoot(b), `the box ${JSON.stringify(b.hover)} did not move to root after the table was replaced`);
+    assert.ok(
+      onRoot(b),
+      `the box ${JSON.stringify(b.hover)} did not move to root after the table was replaced`,
+    );
 
     // A row inserted above moves the clicked row down; the label keeps the row number the note sends.
     await frame.evaluate(() => {
@@ -324,8 +366,14 @@ plan = Table([Col("Binding", ["PAGES", "DB", "PAGE"]), Col("Kind", ["R2", "D1", 
 
     await frame.locator(".austere-pop textarea").fill("D1 is the index");
     await frame.locator(".austere-pop textarea").press("Enter");
-    await page.waitForFunction(() => (window as unknown as { annotations: unknown[] }).annotations.length > 0);
-    const [item] = await page.evaluate(() => (window as unknown as { annotations: { target: string; detail?: { rowIndex?: number } }[] }).annotations);
+    await page.waitForFunction(
+      () => (window as unknown as { annotations: unknown[] }).annotations.length > 0,
+    );
+    const [item] = await page.evaluate(
+      () =>
+        (window as unknown as { annotations: { target: string; detail?: { rowIndex?: number } }[] })
+          .annotations,
+    );
     assert.equal(item.target, "plan");
     assert.equal(item.detail?.rowIndex, 2);
   } finally {

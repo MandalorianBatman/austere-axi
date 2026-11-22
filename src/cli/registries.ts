@@ -32,7 +32,10 @@ export function registriesFile(): string {
 
 /** AUSTERE_AXI_NPM_REGISTRY, else npm's configured registry, else npmjs. */
 export function defaultRegistry(): Registry {
-  const r = process.env.AUSTERE_AXI_NPM_REGISTRY || process.env.npm_config_registry || "https://registry.npmjs.org/";
+  const r =
+    process.env.AUSTERE_AXI_NPM_REGISTRY ||
+    process.env.npm_config_registry ||
+    "https://registry.npmjs.org/";
   return { scope: null, url: r.endsWith("/") ? r : r + "/" };
 }
 
@@ -41,9 +44,14 @@ export function defaultRegistry(): Registry {
  * loopback) with no credentials, query or fragment, and gets a trailing slash. Messages never echo
  * the URL or the token variable, either of which may hold a token typed in the wrong place.
  */
-export function registryEntry(scope: string, url: string, tokenEnv?: string): Registry & { scope: string } {
+export function registryEntry(
+  scope: string,
+  url: string,
+  tokenEnv?: string,
+): Registry & { scope: string } {
   if (!isScope(scope)) throw new Error(`${JSON.stringify(scope)} is not an npm scope like @acme`);
-  if (`${scope}/` === TRUSTED_SCOPE) throw new Error(`${scope} is first-party: its packs always come from the default registry`);
+  if (`${scope}/` === TRUSTED_SCOPE)
+    throw new Error(`${scope} is first-party: its packs always come from the default registry`);
   let u: URL;
   try {
     u = new URL(url);
@@ -51,11 +59,17 @@ export function registryEntry(scope: string, url: string, tokenEnv?: string): Re
     throw new Error(`the registry for ${scope} is not a URL`);
   }
   if (u.username || u.password || u.search || u.hash) {
-    throw new Error(`the registry URL for ${scope} must not carry credentials, a query or a fragment; name an environment variable that holds the token with --token-env`);
+    throw new Error(
+      `the registry URL for ${scope} must not carry credentials, a query or a fragment; name an environment variable that holds the token with --token-env`,
+    );
   }
-  if (u.protocol !== "https:" && !(u.protocol === "http:" && LOOPBACK.has(u.hostname))) throw new Error(`the registry for ${scope} must be https (http only on localhost)`);
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && LOOPBACK.has(u.hostname)))
+    throw new Error(`the registry for ${scope} must be https (http only on localhost)`);
   if (!u.pathname.endsWith("/")) u.pathname += "/";
-  if (tokenEnv !== undefined && !TOKEN_ENV_RE.test(tokenEnv)) throw new Error(`the token variable for ${scope} must be the name of an environment variable, like ACME_NPM_TOKEN, not the token`);
+  if (tokenEnv !== undefined && !TOKEN_ENV_RE.test(tokenEnv))
+    throw new Error(
+      `the token variable for ${scope} must be the name of an environment variable, like ACME_NPM_TOKEN, not the token`,
+    );
   return tokenEnv === undefined ? { scope, url: u.href } : { scope, url: u.href, tokenEnv };
 }
 
@@ -77,13 +91,16 @@ export function readRegistries(): Registries {
     throw bad("not JSON");
   }
   if (!data || typeof data !== "object" || Array.isArray(data)) throw bad("not an object");
-  if (data.format !== FORMAT) throw bad(`format ${JSON.stringify(data.format)}; this austere-axi reads ${FORMAT}`);
+  if (data.format !== FORMAT)
+    throw bad(`format ${JSON.stringify(data.format)}; this austere-axi reads ${FORMAT}`);
   const { scopes = {} } = data;
-  if (!scopes || typeof scopes !== "object" || Array.isArray(scopes)) throw bad("scopes is not an object");
+  if (!scopes || typeof scopes !== "object" || Array.isArray(scopes))
+    throw bad("scopes is not an object");
   const regs: Registries = new Map();
   for (const [scope, entry] of Object.entries(scopes)) {
     const { url, tokenEnv } = (entry || {}) as { url?: unknown; tokenEnv?: unknown };
-    if (typeof url !== "string" || (tokenEnv !== undefined && typeof tokenEnv !== "string")) throw bad(`${scope} needs a url and, optionally, a tokenEnv name`);
+    if (typeof url !== "string" || (tokenEnv !== undefined && typeof tokenEnv !== "string"))
+      throw bad(`${scope} needs a url and, optionally, a tokenEnv name`);
     try {
       regs.set(scope, registryEntry(scope, url, tokenEnv));
     } catch (err) {
@@ -94,7 +111,12 @@ export function readRegistries(): Registries {
 }
 
 export function writeRegistries(regs: Registries): void {
-  writeJsonAtomic(registriesFile(), { format: FORMAT, scopes: Object.fromEntries([...regs.values()].map(({ scope, url, tokenEnv }) => [scope, { url, tokenEnv }])) });
+  writeJsonAtomic(registriesFile(), {
+    format: FORMAT,
+    scopes: Object.fromEntries(
+      [...regs.values()].map(({ scope, url, tokenEnv }) => [scope, { url, tokenEnv }]),
+    ),
+  });
 }
 
 /** The registry a pack (or a bare "@scope") comes from: its scope's mapped registry, else the default one. */
@@ -105,7 +127,9 @@ export function registryFor(regs: Registries, name: string): Registry {
 /** The Authorization header for a request to `url`: only to the registry's own origin, and only when its token variable is set. */
 export function authHeaders(registry: Registry, url: string): Record<string, string> {
   const token = registry.tokenEnv && process.env[registry.tokenEnv];
-  return token && new URL(url).origin === new URL(registry.url).origin ? { authorization: `Bearer ${token}` } : {};
+  return token && new URL(url).origin === new URL(registry.url).origin
+    ? { authorization: `Bearer ${token}` }
+    : {};
 }
 
 /** The npm command that shows a pack's repository, pointed at a mapped registry. */

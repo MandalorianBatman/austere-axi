@@ -1,7 +1,16 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import type { ReactNode, RefObject, SVGProps } from "react";
-import { Cloud, Database, Globe, Inbox, Monitor, Server, ShieldCheck, TriangleAlert } from "lucide-react";
+import {
+  Cloud,
+  Database,
+  Globe,
+  Inbox,
+  Monitor,
+  Server,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { RendererArgs } from "../../../types/pack.d.ts";
 import { austereComponent } from "../define.ts";
@@ -23,7 +32,15 @@ import {
   layoutModel,
   textWidth,
 } from "./_architecture-model.ts";
-import type { ArchitectureInput, EdgeStyle, GroupKind, LaidOutEdge, LaidOutNode, Layout, NodeKind } from "./_architecture-model.ts";
+import type {
+  ArchitectureInput,
+  EdgeStyle,
+  GroupKind,
+  LaidOutEdge,
+  LaidOutNode,
+  Layout,
+  NodeKind,
+} from "./_architecture-model.ts";
 
 const ICONS: Record<NodeKind, LucideIcon> = {
   frontend: Monitor,
@@ -34,12 +51,21 @@ const ICONS: Record<NodeKind, LucideIcon> = {
   security: ShieldCheck,
   external: Globe,
 };
-const STYLE_NAMES: Partial<Record<EdgeStyle, string>> = { dashed: "async", emphasis: "main path", security: "auth / trust" };
-const GROUP_NAMES: Partial<Record<GroupKind, string>> = { region: "boundary", security: "trust zone" };
+const STYLE_NAMES: Partial<Record<EdgeStyle, string>> = {
+  dashed: "async",
+  emphasis: "main path",
+  security: "auth / trust",
+};
+const GROUP_NAMES: Partial<Record<GroupKind, string>> = {
+  region: "boundary",
+  security: "trust zone",
+};
 
 // Every SVG text ends in a space: annotation quotes use textContent, which
 // would otherwise run a label and its detail together.
-const T = ({ children, ...rest }: SVGProps<SVGTextElement> & { children?: ReactNode }) => <text {...rest}>{children} </text>;
+const T = ({ children, ...rest }: SVGProps<SVGTextElement> & { children?: ReactNode }) => (
+  <text {...rest}>{children} </text>
+);
 
 function NodeBox({ n }: { n: LaidOutNode }) {
   const Icon = ICONS[n.kind];
@@ -55,16 +81,42 @@ function NodeBox({ n }: { n: LaidOutNode }) {
     >
       <title>{[n.label, n.detail, n.tag].filter(Boolean).join(" · ")}</title>
       <g data-austere-part={n.label}>
-        <rect className="austere-arch-node-box" x={n.x} y={n.y} width={n.width} height={n.height} rx="9" />
-        <rect className="austere-arch-node-bar" x={n.x} y={n.y + 8} width="3" height={n.height - 16} rx="1.5" />
-        <Icon className="austere-arch-node-icon" x={left} y={top - 2} width={icon} height={icon} aria-hidden="true" />
+        <rect
+          className="austere-arch-node-box"
+          x={n.x}
+          y={n.y}
+          width={n.width}
+          height={n.height}
+          rx="9"
+        />
+        <rect
+          className="austere-arch-node-bar"
+          x={n.x}
+          y={n.y + 8}
+          width="3"
+          height={n.height - 16}
+          rx="1.5"
+        />
+        <Icon
+          className="austere-arch-node-icon"
+          x={left}
+          y={top - 2}
+          width={icon}
+          height={icon}
+          aria-hidden="true"
+        />
         {n.labelLines.map((line, i) => (
           <T key={i} className="austere-arch-node-label" x={left + icon + 6} y={top + 11 + i * 17}>
             {line}
           </T>
         ))}
         {n.detailLines.map((line, i) => (
-          <T key={`d${i}`} className="austere-arch-node-detail" x={left} y={top + 11 + n.labelLines.length * 17 + 4 + i * 15}>
+          <T
+            key={`d${i}`}
+            className="austere-arch-node-detail"
+            x={left}
+            y={top + 11 + n.labelLines.length * 17 + 4 + i * 15}
+          >
             {line}
           </T>
         ))}
@@ -93,7 +145,8 @@ function NodeBox({ n }: { n: LaidOutNode }) {
 }
 
 function errorText(err: unknown): string {
-  const message = err !== null && typeof err === "object" && "message" in err ? err.message : undefined;
+  const message =
+    err !== null && typeof err === "object" && "message" in err ? err.message : undefined;
   return String(message || err);
 }
 
@@ -155,7 +208,12 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
   const problemKey = problems.join("\n");
   useEffect(() => {
     for (const message of problems) {
-      reportRuntimeError({ source: "architecture", statementId, component: "Architecture", message });
+      reportRuntimeError({
+        source: "architecture",
+        statementId,
+        component: "Architecture",
+        message,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [problemKey, statementId]);
@@ -185,22 +243,25 @@ interface DrawingProps {
 }
 
 function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
-
   const byId = new Map(layout.nodes.map((n) => [n.id, n]));
   const kinds = [...new Set(layout.nodes.map((n) => n.kind))];
   // A tone overrides the style's colour, so a toned main-path edge stays out
   // of the style legend.
   // (Dashes and dots survive a tone, so those edges stay in.)
-  const styles = [...new Set(layout.edges.filter((e) => !e.tone || e.style !== "emphasis").map((e) => e.style))];
+  const styles = [
+    ...new Set(layout.edges.filter((e) => !e.tone || e.style !== "emphasis").map((e) => e.style)),
+  ];
   const groupKinds = [...new Set(layout.groups.map((g) => g.kind))].filter((k) => k !== "plain");
-  const risky = layout.nodes.some((n) => n.tone === "danger") || layout.edges.some((e) => e.tone === "danger");
+  const risky =
+    layout.nodes.some((n) => n.tone === "danger") || layout.edges.some((e) => e.tone === "danger");
   const W = layout.width;
   const H = layout.height;
   // Shrink to fit down to the legible scale, then scroll.
   const minWidth = Math.round(Math.min(W, Math.max(320, W * LEGIBLE_SCALE)));
   // Part names: "From → To", plus the label when two edges join the same pair.
   const pairs = new Map<string, number>();
-  for (const e of layout.edges) pairs.set(`${e.from}>${e.to}`, (pairs.get(`${e.from}>${e.to}`) || 0) + 1);
+  for (const e of layout.edges)
+    pairs.set(`${e.from}>${e.to}`, (pairs.get(`${e.from}>${e.to}`) || 0) + 1);
   const partOf = (e: LaidOutEdge) => {
     const base = `${byId.get(e.from)?.label} → ${byId.get(e.to)?.label}`;
     return (pairs.get(`${e.from}>${e.to}`) ?? 0) > 1 && e.label ? `${base} (${e.label})` : base;
@@ -233,7 +294,10 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
                 markerHeight="9"
                 orient="auto-start-reverse"
               >
-                <path d="M0,0L10,5L0,10z" className={`austere-arch-arrow ${s.startsWith("t-") ? s : `s-${s}`}`} />
+                <path
+                  d="M0,0L10,5L0,10z"
+                  className={`austere-arch-arrow ${s.startsWith("t-") ? s : `s-${s}`}`}
+                />
               </marker>
             ))}
           </defs>
@@ -246,7 +310,14 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
                 data-oui-id={g.named ? g.id : undefined}
                 data-oui-c={g.named ? "Group" : undefined}
               >
-                <rect className="austere-arch-group-frame" x={g.x} y={g.y} width={g.width} height={g.height} rx={g.lane ? 10 : 12} />
+                <rect
+                  className="austere-arch-group-frame"
+                  x={g.x}
+                  y={g.y}
+                  width={g.width}
+                  height={g.height}
+                  rx={g.lane ? 10 : 12}
+                />
               </g>
             ),
           )}
@@ -262,7 +333,11 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
                 data-oui-c={e.named ? "Edge" : undefined}
               >
                 <path className="austere-arch-edge-hit" d={d} data-austere-part={partOf(e)} />
-                <path className="austere-arch-edge-line" d={d} markerEnd={`url(#${uid}-${e.tone ? `t-${e.tone}` : e.style})`} />
+                <path
+                  className="austere-arch-edge-line"
+                  d={d}
+                  markerEnd={`url(#${uid}-${e.tone ? `t-${e.tone}` : e.style})`}
+                />
               </g>
             );
           })}
@@ -282,14 +357,25 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
                   // A lane names its column with a heading inside the top edge.
                   <g className="austere-arch-lane-head" data-austere-part={g.label}>
                     {/* A target the size of the heading text (lines may pass beside it). */}
-                    <rect x={g.x + 8} y={g.y + 5} width={textWidth(g.labelLine, LANES.headSize + 1, true) + 12} height={LANES.head - 8} />
+                    <rect
+                      x={g.x + 8}
+                      y={g.y + 5}
+                      width={textWidth(g.labelLine, LANES.headSize + 1, true) + 12}
+                      height={LANES.head - 8}
+                    />
                     <T x={g.x + 14} y={g.y + 21}>
                       {g.labelLine}
                     </T>
                   </g>
                 ) : (
                   <g className="austere-arch-group-label" data-austere-part={g.label}>
-                    <rect x={g.x + 12} y={g.y - 9} width={textWidth(g.labelLine, SIZES.group) + 14} height="18" rx="5" />
+                    <rect
+                      x={g.x + 12}
+                      y={g.y - 9}
+                      width={textWidth(g.labelLine, SIZES.group) + 14}
+                      height="18"
+                      rx="5"
+                    />
                     <T x={g.x + 19} y={g.y + 4}>
                       {g.labelLine}
                     </T>
@@ -318,7 +404,11 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
                   />
                   <text textAnchor="middle">
                     {box.lines.map((line, i) => (
-                      <tspan key={i} x={box.cx} y={box.cy + 4 + (i - (box.lines.length - 1) / 2) * 13}>
+                      <tspan
+                        key={i}
+                        x={box.cx}
+                        y={box.cy + 4 + (i - (box.lines.length - 1) / 2) * 13}
+                      >
                         {line}{" "}
                       </tspan>
                     ))}
@@ -388,7 +478,7 @@ const Node = austereComponent({
     row: z.number().int().positive().optional(),
   }),
   description:
-    "A box in an Architecture. kind sets icon and color (default backend); detail is monospace, up to 2 lines (\\n breaks); tag is a small chip such as \"new\"; tone tints it (danger = risk, strong = where it ends); row pins it to a row (1, 2, ...) in lanes.",
+    'A box in an Architecture. kind sets icon and color (default backend); detail is monospace, up to 2 lines (\\n breaks); tag is a small chip such as "new"; tone tints it (danger = risk, strong = where it ends); row pins it to a row (1, 2, ...) in lanes.',
   renderer: nothing,
   slots: null,
   tagged: false,

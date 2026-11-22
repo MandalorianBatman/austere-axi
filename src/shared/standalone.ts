@@ -14,13 +14,18 @@ export const PACKED_TYPE = "application/x-austere-gzip";
  */
 async function unpackAndRun(type: string): Promise<void> {
   try {
-    if (typeof DecompressionStream !== "function") throw new Error("this browser cannot unpack the page (no DecompressionStream)");
-    const blocks = Array.from(document.querySelectorAll<HTMLScriptElement>(`script[type="${type}"]`));
+    if (typeof DecompressionStream !== "function")
+      throw new Error("this browser cannot unpack the page (no DecompressionStream)");
+    const blocks = Array.from(
+      document.querySelectorAll<HTMLScriptElement>(`script[type="${type}"]`),
+    );
     const codes = await Promise.all(
       blocks.map((block) => {
         const bin = atob((block.textContent ?? "").trim());
         const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-        return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+        return new Response(
+          new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip")),
+        ).text();
       }),
     );
     for (const code of codes) {
@@ -43,6 +48,9 @@ export function packedTag(name: string, gzipB64: string): string {
 
 /** Every packed block in `html`, in page order, still gzipped and base64-encoded. */
 export function packedBlocks(html: string): { name: string; gzipB64: string }[] {
-  const re = new RegExp(`<script type="${PACKED_TYPE}" ${INLINE_ATTR}="([^"]*)">([^<]*)</script>`, "g");
+  const re = new RegExp(
+    `<script type="${PACKED_TYPE}" ${INLINE_ATTR}="([^"]*)">([^<]*)</script>`,
+    "g",
+  );
   return [...html.matchAll(re)].map((m) => ({ name: m[1], gzipB64: m[2] }));
 }

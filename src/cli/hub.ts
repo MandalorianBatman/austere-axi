@@ -10,7 +10,13 @@ import { stateDirHolder } from "./lock.ts";
 import { VERSION, stateDir } from "./paths.ts";
 import { DEVICES_SCHEMA, importInvites } from "./devices.ts";
 import { REQUESTS_SCHEMA } from "./requests.ts";
-import { backfillProjects, copyLabel, inTransaction, listProjects, resolveProject } from "./projects.ts";
+import {
+  backfillProjects,
+  copyLabel,
+  inTransaction,
+  listProjects,
+  resolveProject,
+} from "./projects.ts";
 import type { SameRepository } from "./projects.ts";
 import type { NoteItem } from "./sessions.ts";
 
@@ -148,9 +154,20 @@ let DatabaseSync: typeof sqlite.DatabaseSync | null = null;
 async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
   if (DatabaseSync) return DatabaseSync;
   // node:sqlite prints an ExperimentalWarning on load; the hub is not the place to show it.
-  const emit = process.emitWarning as (this: NodeJS.Process, warning: string | Error, ...rest: unknown[]) => void;
+  const emit = process.emitWarning as (
+    this: NodeJS.Process,
+    warning: string | Error,
+    ...rest: unknown[]
+  ) => void;
   process.emitWarning = function (warning: string | Error, ...rest: unknown[]) {
-    if (/sqlite/i.test(String(typeof warning !== "string" && warning && warning.message ? warning.message : warning))) return;
+    if (
+      /sqlite/i.test(
+        String(
+          typeof warning !== "string" && warning && warning.message ? warning.message : warning,
+        ),
+      )
+    )
+      return;
     return emit.call(process, warning, ...rest);
   };
   try {
@@ -177,7 +194,11 @@ export const SCHEMA_VERSION = 6;
 function schemaVersion(db: sqlite.DatabaseSync): number {
   const recorded = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
   if (recorded) return recorded;
-  const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  const has = (table: string, column: string): boolean =>
+    db
+      .prepare(`PRAGMA table_info(${table})`)
+      .all()
+      .some((c) => c.name === column);
   if (!has("artifacts", "archived_at") || !has("project_roots", "prefix")) return 0;
   if (!has("runs", "requeued_from") || !has("page_sessions", "role")) return 1;
   if (!has("notes", "device_id") || !has("items", "device_id")) return 2;
@@ -190,14 +211,19 @@ function schemaVersion(db: sqlite.DatabaseSync): number {
  * Open hub.db with the schema in place; `readOnly`: as it is, refused when it is older than this build's schema.
  * `fts: false` makes the full-text index unavailable, as it is where SQLite was built without FTS5: `find` then falls back to LIKE.
  */
-export async function openDatabase(file = hubDbFile(), { readOnly = false, fts = true }: { readOnly?: boolean; fts?: boolean } = {}): Promise<sqlite.DatabaseSync> {
+export async function openDatabase(
+  file = hubDbFile(),
+  { readOnly = false, fts = true }: { readOnly?: boolean; fts?: boolean } = {},
+): Promise<sqlite.DatabaseSync> {
   const Database = await loadSqlite();
   if (readOnly) {
     const db = new Database(file, { readOnly: true });
     const version = schemaVersion(db);
     if (version < SCHEMA_VERSION) {
       db.close();
-      throw new Error(`its schema (version ${version}) is older than this build's (${SCHEMA_VERSION}) and can only be read after a migration`);
+      throw new Error(
+        `its schema (version ${version}) is older than this build's (${SCHEMA_VERSION}) and can only be read after a migration`,
+      );
     }
     return db;
   }
@@ -226,7 +252,9 @@ export async function openHubDirect({ write }: { write: boolean }): Promise<Hub>
   try {
     return new Hub(await openDatabase(hubDbFile(), { readOnly: true }));
   } catch (err) {
-    throw new Error(`it is in use by ${who}; ${leave}, and ${err instanceof Error ? err.message : String(err)}. ${fix}`);
+    throw new Error(
+      `it is in use by ${who}; ${leave}, and ${err instanceof Error ? err.message : String(err)}. ${fix}`,
+    );
   }
 }
 
@@ -440,28 +468,40 @@ function migrate(db: sqlite.DatabaseSync, fts = true): void {
   db.exec(PRAGMAS);
   inTransaction(db, () => {
     db.exec(SCHEMA);
-    const has = (table: string, column: string): boolean => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    const has = (table: string, column: string): boolean =>
+      db
+        .prepare(`PRAGMA table_info(${table})`)
+        .all()
+        .some((c) => c.name === column);
     // Indexes made before team review have no author column.
-    if (!has("items", "author")) db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
+    if (!has("items", "author"))
+      db.exec("ALTER TABLE items ADD COLUMN author TEXT NOT NULL DEFAULT ''");
     // Before sessions moved into the database, artifacts had no review state of their own.
     if (!has("artifacts", "ended_at")) db.exec("ALTER TABLE artifacts ADD COLUMN ended_at INTEGER");
-    if (!has("artifacts", "closed_at")) db.exec("ALTER TABLE artifacts ADD COLUMN closed_at INTEGER");
-    if (!has("artifacts", "acked_seq")) db.exec("ALTER TABLE artifacts ADD COLUMN acked_seq INTEGER NOT NULL DEFAULT 0");
+    if (!has("artifacts", "closed_at"))
+      db.exec("ALTER TABLE artifacts ADD COLUMN closed_at INTEGER");
+    if (!has("artifacts", "acked_seq"))
+      db.exec("ALTER TABLE artifacts ADD COLUMN acked_seq INTEGER NOT NULL DEFAULT 0");
     db.exec(NOTES);
     // Notes from before hosted pages have no remote row.
     if (!has("notes", "remote_id")) db.exec("ALTER TABLE notes ADD COLUMN remote_id TEXT");
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS notes_remote ON notes(remote_id)");
     db.exec(CLOUD);
     db.exec(PROJECTS);
-    if (!has("project_roots", "prefix")) db.exec("ALTER TABLE project_roots ADD COLUMN prefix TEXT NOT NULL DEFAULT ''");
-    if (!has("artifacts", "project_id")) db.exec("ALTER TABLE artifacts ADD COLUMN project_id TEXT");
+    if (!has("project_roots", "prefix"))
+      db.exec("ALTER TABLE project_roots ADD COLUMN prefix TEXT NOT NULL DEFAULT ''");
+    if (!has("artifacts", "project_id"))
+      db.exec("ALTER TABLE artifacts ADD COLUMN project_id TEXT");
     if (!has("artifacts", "page_id")) db.exec("ALTER TABLE artifacts ADD COLUMN page_id TEXT");
     if (!has("artifacts", "root")) db.exec("ALTER TABLE artifacts ADD COLUMN root TEXT");
-    if (!has("artifacts", "archived_at")) db.exec("ALTER TABLE artifacts ADD COLUMN archived_at INTEGER");
+    if (!has("artifacts", "archived_at"))
+      db.exec("ALTER TABLE artifacts ADD COLUMN archived_at INTEGER");
     // Archive replaces close: a review the owner closed is put away. On every open, not only when the
     // column is added: 0.11.0 added `archived_at` without copying `closed_at`, and a 0.10.4 CLI sharing
     // this hub.db can still close one.
-    db.exec("UPDATE artifacts SET archived_at = COALESCE(archived_at, closed_at), closed_at = NULL WHERE closed_at IS NOT NULL");
+    db.exec(
+      "UPDATE artifacts SET archived_at = COALESCE(archived_at, closed_at), closed_at = NULL WHERE closed_at IS NOT NULL",
+    );
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_page ON artifacts(page_id)");
     db.exec("CREATE INDEX IF NOT EXISTS artifacts_project_id ON artifacts(project_id, updated_at)");
     db.exec(AGENT_SESSIONS);
@@ -472,7 +512,9 @@ function migrate(db: sqlite.DatabaseSync, fts = true): void {
     if (!has("runs", "bin")) db.exec("ALTER TABLE runs ADD COLUMN bin TEXT");
     // Activity triggers (RLM-360): a trigger run has no page (`artifact_id` NULL) and names its trigger; what a trigger last saw is kept here, not in triggers.json.
     if (!has("runs", "trigger_id")) db.exec("ALTER TABLE runs ADD COLUMN trigger_id TEXT");
-    db.exec("CREATE TABLE IF NOT EXISTS trigger_state (trigger_id TEXT PRIMARY KEY, last_cursor INTEGER NOT NULL DEFAULT 0, last_run_at INTEGER)");
+    db.exec(
+      "CREATE TABLE IF NOT EXISTS trigger_state (trigger_id TEXT PRIMARY KEY, last_cursor INTEGER NOT NULL DEFAULT 0, last_run_at INTEGER)",
+    );
     // Team review devices (RLM-397): who may review, and which device wrote each note.
     db.exec(DEVICES_SCHEMA);
     if (!has("notes", "device_id")) db.exec("ALTER TABLE notes ADD COLUMN device_id TEXT");
@@ -482,21 +524,29 @@ function migrate(db: sqlite.DatabaseSync, fts = true): void {
     // History (RLM-349–354): a page's versions, its statements as text, and where parts were copied from.
     db.exec(HISTORY);
     // The newest revision the owner had the page open on, to say what changed since they last looked.
-    if (!has("artifacts", "last_viewed_rev")) db.exec("ALTER TABLE artifacts ADD COLUMN last_viewed_rev INTEGER NOT NULL DEFAULT 0");
+    if (!has("artifacts", "last_viewed_rev"))
+      db.exec("ALTER TABLE artifacts ADD COLUMN last_viewed_rev INTEGER NOT NULL DEFAULT 0");
     // FTS5 may be missing from this SQLite: the index is then left out and `find` searches with LIKE.
     if (fts) {
       try {
-        const had = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'statements_fts'").get() != null;
-        db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS statements_fts USING fts5(title, name, component, text)");
+        const had =
+          db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'statements_fts'").get() != null;
+        db.exec(
+          "CREATE VIRTUAL TABLE IF NOT EXISTS statements_fts USING fts5(title, name, component, text)",
+        );
         // A database that ran without FTS5 may hold statements already: index them with the new table.
-        if (!had) db.exec("INSERT INTO statements_fts (rowid, title, name, component, text) SELECT s.id, COALESCE(a.title, ''), s.name, s.component, s.text FROM statements s LEFT JOIN artifacts a ON a.id = s.artifact_id");
+        if (!had)
+          db.exec(
+            "INSERT INTO statements_fts (rowid, title, name, component, text) SELECT s.id, COALESCE(a.title, ''), s.name, s.component, s.text FROM statements s LEFT JOIN artifacts a ON a.id = s.artifact_id",
+          );
       } catch {
         // no FTS5
       }
     }
     backfillProjects(db);
     // Recorded from now on; a newer build's database keeps its number: the steps above are all this build adds.
-    if (Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0) < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    if (Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0) < SCHEMA_VERSION)
+      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   });
 }
 
@@ -552,11 +602,34 @@ export class Hub {
   }
 
   /** An artifact `check` or `patch` saw (not necessarily reviewed); `cwd`: the folder the CLI ran in. */
-  register({ id, file, title, at = Date.now(), cwd }: { id: string; file: string; title?: string | null; at?: number; cwd?: string }): void {
+  register({
+    id,
+    file,
+    title,
+    at = Date.now(),
+    cwd,
+  }: {
+    id: string;
+    file: string;
+    title?: string | null;
+    at?: number;
+    cwd?: string;
+  }): void {
     // One transaction: a merge or forget-root in another process cannot prune the page between the two.
     inTransaction(this.db, () => {
       const loc = resolveProject(this.db, file, cwd);
-      this.q.upsertArtifact.run(id, file, loc.root, title || null, at, at, 0, loc.projectId, loc.root, loc.pageId);
+      this.q.upsertArtifact.run(
+        id,
+        file,
+        loc.root,
+        title || null,
+        at,
+        at,
+        0,
+        loc.projectId,
+        loc.root,
+        loc.pageId,
+      );
     });
   }
 
@@ -566,7 +639,11 @@ export class Hub {
 
   /** Archive a copy (`at`), or bring it back (null). False when it is not in the hub. */
   setArchived(id: string, at: number | null): boolean {
-    return Number(this.db.prepare("UPDATE artifacts SET archived_at = ? WHERE id = ?").run(at, id).changes) > 0;
+    return (
+      Number(
+        this.db.prepare("UPDATE artifacts SET archived_at = ? WHERE id = ?").run(at, id).changes,
+      ) > 0
+    );
   }
 
   /**
@@ -583,9 +660,19 @@ export class Hub {
          WHERE a.id = ? OR (a.reviewed = 1 AND a.archived_at IS NULL AND a.page_id = (SELECT page_id FROM artifacts WHERE id = ?))
          ORDER BY a.id = ? DESC, a.updated_at DESC`,
       )
-      .all(id, id, id) as unknown as { id: string; file: string; root: string; unanswered: number }[];
+      .all(id, id, id) as unknown as {
+      id: string;
+      file: string;
+      root: string;
+      unanswered: number;
+    }[];
     if (rows[0]?.id !== id) return null;
-    const live = rows.map((r): ArchiveCopy => ({ id: r.id, file: r.file, copy: copyLabel(r.root), unanswered: r.unanswered }));
+    const live = rows.map((r): ArchiveCopy => ({
+      id: r.id,
+      file: r.file,
+      copy: copyLabel(r.root),
+      unanswered: r.unanswered,
+    }));
     const archived = every ? live : live.slice(0, 1);
     return { copy: live[0].copy, archived, others: live.slice(archived.length) };
   }
@@ -612,7 +699,19 @@ export class Hub {
    * and a page with no copy left is too; `archived` lists archived copies instead, `all` every copy.
    * A copy whose file is gone is listed, marked `missing`.
    */
-  list({ q = "", project = "", archived = false, all = false, limit = 500 }: { q?: string; project?: string; archived?: boolean; all?: boolean; limit?: number } = {}): HubPage[] {
+  list({
+    q = "",
+    project = "",
+    archived = false,
+    all = false,
+    limit = 500,
+  }: {
+    q?: string;
+    project?: string;
+    archived?: boolean;
+    all?: boolean;
+    limit?: number;
+  } = {}): HubPage[] {
     const view = all ? "all" : archived ? "archived" : "default";
     const rows = this.db
       .prepare(
@@ -627,7 +726,10 @@ export class Hub {
            AND (? = 'all' OR (? = 'archived' AND a.archived_at IS NOT NULL) OR (? = 'default' AND a.archived_at IS NULL AND a.reviewed = 1))
          GROUP BY a.id ORDER BY a.updated_at DESC`,
       )
-      .all(...filterArgs(q, project), view, view, view) as unknown as (ArtifactRow & { project_name: string; rel_path: string | null } & Record<keyof HubCounts, number | null>)[];
+      .all(...filterArgs(q, project), view, view, view) as unknown as (ArtifactRow & {
+      project_name: string;
+      rel_path: string | null;
+    } & Record<keyof HubCounts, number | null>)[];
     const labels = new Map<string, string>();
     const pages = new Map<string, HubPage>();
     for (const r of rows) {
@@ -654,7 +756,19 @@ export class Hub {
       let page = pages.get(key);
       if (!page) {
         // Rows come newest first: the first copy seen gives the page its title and last activity.
-        page = { id: key, project_id: r.project_id || r.project, project: r.project_name, rel_path: r.rel_path ?? path.basename(r.file), title: r.title, updated_at: r.updated_at, open: 0, received: 0, addressed: 0, held: 0, copies: [] };
+        page = {
+          id: key,
+          project_id: r.project_id || r.project,
+          project: r.project_name,
+          rel_path: r.rel_path ?? path.basename(r.file),
+          title: r.title,
+          updated_at: r.updated_at,
+          open: 0,
+          received: 0,
+          addressed: 0,
+          held: 0,
+          copies: [],
+        };
         pages.set(key, page);
       }
       page.copies.push(copy);
@@ -667,13 +781,23 @@ export class Hub {
     const rank = new Map<string, number>();
     for (const p of pages.values()) if (!rank.has(p.project_id)) rank.set(p.project_id, rank.size);
     return [...pages.values()]
-      .sort((a, b) => (rank.get(a.project_id) ?? 0) - (rank.get(b.project_id) ?? 0) || Number(unanswered(b) > 0) - Number(unanswered(a) > 0) || b.updated_at - a.updated_at)
+      .sort(
+        (a, b) =>
+          (rank.get(a.project_id) ?? 0) - (rank.get(b.project_id) ?? 0) ||
+          Number(unanswered(b) > 0) - Number(unanswered(a) > 0) ||
+          b.updated_at - a.updated_at,
+      )
       .slice(0, limit);
   }
 
   /** Every project, its root folders (main root first) and an older project of the same repository, if any. */
   projects(): HubProject[] {
-    return listProjects(this.db).map((p) => ({ id: p.id, name: p.name, roots: p.roots.map((r) => r.root), ...(p.sameAs ? { sameAs: p.sameAs } : {}) }));
+    return listProjects(this.db).map((p) => ({
+      id: p.id,
+      name: p.name,
+      roots: p.roots.map((r) => r.root),
+      ...(p.sameAs ? { sameAs: p.sameAs } : {}),
+    }));
   }
 
   /**
@@ -683,7 +807,23 @@ export class Hub {
    * `device`: one team-review device's id (one person, where two share a name), or "" for any. Discarded notes are left out.
    * `limit` is the most rows returned; -1 returns all.
    */
-  notes({ q = "", status = "", project = "", artifact = "", author = "", device = "", limit = 200 }: { q?: string; status?: string; project?: string; artifact?: string; author?: string; device?: string; limit?: number } = {}): HubNoteRow[] {
+  notes({
+    q = "",
+    status = "",
+    project = "",
+    artifact = "",
+    author = "",
+    device = "",
+    limit = 200,
+  }: {
+    q?: string;
+    status?: string;
+    project?: string;
+    artifact?: string;
+    author?: string;
+    device?: string;
+    limit?: number;
+  } = {}): HubNoteRow[] {
     const anyAuthor = author === "" ? "all" : "one";
     const who = author === "owner" ? "" : author;
     const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
@@ -701,7 +841,24 @@ export class Hub {
            AND (? = '' OR (? = 'unanswered' AND i.status != 'addressed') OR (? = 'answered' AND i.status = 'addressed'))
          ORDER BY i.at DESC, i.id LIMIT ?`,
       )
-      .all(anyAuthor, who, device, device, q, like, like, like, project, project, artifact, artifact, status, status, status, limit) as unknown as Omit<HubNoteRow, "label">[];
+      .all(
+        anyAuthor,
+        who,
+        device,
+        device,
+        q,
+        like,
+        like,
+        like,
+        project,
+        project,
+        artifact,
+        artifact,
+        status,
+        status,
+        status,
+        limit,
+      ) as unknown as Omit<HubNoteRow, "label">[];
     const labels = new Map<string, string>();
     return rows.map((r) => {
       const root = r.root || "";
@@ -714,7 +871,9 @@ export class Hub {
   /** Reviewer names with notes in the index (the owner's own notes are not listed). */
   authors(): string[] {
     return this.db
-      .prepare(`SELECT DISTINCT author FROM items WHERE author != '' AND status != 'discarded' ORDER BY author COLLATE NOCASE`)
+      .prepare(
+        `SELECT DISTINCT author FROM items WHERE author != '' AND status != 'discarded' ORDER BY author COLLATE NOCASE`,
+      )
       .all()
       .map((r) => String(r.author));
   }
@@ -743,10 +902,23 @@ export class Hub {
  * so the answer is false.
  */
 export function hasActiveWork(db: sqlite.DatabaseSync): boolean {
-  const table = (name: string): boolean => db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name) != null;
+  const table = (name: string): boolean =>
+    db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name) != null;
   try {
-    if (table("runs") && db.prepare(`SELECT 1 FROM runs WHERE status IN ('queued', 'waiting_for_session', 'running') LIMIT 1`).get()) return true;
-    if (table("attach_settings") && db.prepare(`SELECT 1 FROM attach_settings WHERE state = 'on' LIMIT 1`).get()) return true;
+    if (
+      table("runs") &&
+      db
+        .prepare(
+          `SELECT 1 FROM runs WHERE status IN ('queued', 'waiting_for_session', 'running') LIMIT 1`,
+        )
+        .get()
+    )
+      return true;
+    if (
+      table("attach_settings") &&
+      db.prepare(`SELECT 1 FROM attach_settings WHERE state = 'on' LIMIT 1`).get()
+    )
+      return true;
   } catch {
     // The table is there but not shaped as expected: treat it as no work.
   }
@@ -776,7 +948,11 @@ export async function activeWorkNow(file = hubDbFile()): Promise<boolean> {
 }
 
 /** Register an artifact with the hub from a CLI command. Never fails the command; skipped while another version holds the state dir. */
-export async function registerWithHub(file: string, title: string | null | undefined, id: string): Promise<void> {
+export async function registerWithHub(
+  file: string,
+  title: string | null | undefined,
+  id: string,
+): Promise<void> {
   try {
     const hub = await openHubDirect({ write: true });
     try {
@@ -788,4 +964,3 @@ export async function registerWithHub(file: string, title: string | null | undef
     // the index is a convenience
   }
 }
-

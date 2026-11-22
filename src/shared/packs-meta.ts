@@ -10,7 +10,8 @@ export interface PackRef {
   integrity?: string;
 }
 
-export const PACKS_META_RE = /<meta\s+name=["']austere-packs["']\s+content=["']([^"']*)["']\s*\/?>/i;
+export const PACKS_META_RE =
+  /<meta\s+name=["']austere-packs["']\s+content=["']([^"']*)["']\s*\/?>/i;
 
 /** Split "name@version" (the name may be scoped: "@scope/name@1.0.0"). */
 export function splitSpec(spec: string): { name: string; version: string } {
@@ -31,13 +32,19 @@ export function parsePacksMeta(content: string | null | undefined): PackRef[] {
     const { name, version } = splitSpec(spec);
     if (!NAME_RE.test(name) || !VERSION_RE.test(version)) continue;
     if (out.some((p) => p.name === name)) continue;
-    out.push(integrity && /^sha(256|384|512)-[A-Za-z0-9+/=]+$/.test(integrity) ? { name, version, integrity } : { name, version });
+    out.push(
+      integrity && /^sha(256|384|512)-[A-Za-z0-9+/=]+$/.test(integrity)
+        ? { name, version, integrity }
+        : { name, version },
+    );
   }
   return out;
 }
 
 export function formatPacksMeta(packs: PackRef[]): string {
-  return packs.map((p) => `${p.name}@${p.version}${p.integrity ? ` ${p.integrity}` : ""}`).join(", ");
+  return packs
+    .map((p) => `${p.name}@${p.version}${p.integrity ? ` ${p.integrity}` : ""}`)
+    .join(", ");
 }
 
 export function isValidPackName(name: string): boolean {

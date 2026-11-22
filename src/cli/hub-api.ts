@@ -41,11 +41,18 @@ interface Facts {
 
 function facts(db: sqlite.DatabaseSync): Facts {
   const heads = new Map<string, { rev: number; at: number }>();
-  for (const r of db.prepare("SELECT artifact_id, MAX(rev) AS rev, MAX(at) AS at FROM revisions GROUP BY artifact_id").all() as unknown as { artifact_id: string; rev: number; at: number }[]) {
+  for (const r of db
+    .prepare(
+      "SELECT artifact_id, MAX(rev) AS rev, MAX(at) AS at FROM revisions GROUP BY artifact_id",
+    )
+    .all() as unknown as { artifact_id: string; rev: number; at: number }[]) {
     heads.set(r.artifact_id, { rev: r.rev, at: r.at });
   }
   const settings = new Map<string, AttachSettingRow>();
-  for (const r of db.prepare("SELECT * FROM attach_settings").all() as unknown as AttachSettingRow[]) settings.set(`${r.scope}\0${r.scope_id}`, r);
+  for (const r of db
+    .prepare("SELECT * FROM attach_settings")
+    .all() as unknown as AttachSettingRow[])
+    settings.set(`${r.scope}\0${r.scope_id}`, r);
   // The last run of each copy: failed (a later run that did not fail clears it), or still going.
   const failed = new Map<string, FailedRun>();
   const active = new Set<string>();
@@ -55,9 +62,16 @@ function facts(db: sqlite.DatabaseSync): Facts {
        JOIN (SELECT artifact_id, MAX(rowid) AS last FROM runs WHERE artifact_id IS NOT NULL GROUP BY artifact_id) x ON r.rowid = x.last
        WHERE r.status IN ('failed', 'queued', 'waiting_for_session', 'running')`,
     )
-    .all() as unknown as { id: string; artifact_id: string; status: string; reason: string | null; ended_at: number | null }[];
+    .all() as unknown as {
+    id: string;
+    artifact_id: string;
+    status: string;
+    reason: string | null;
+    ended_at: number | null;
+  }[];
   for (const r of rows) {
-    if (r.status === "failed") failed.set(r.artifact_id, { id: r.id, reason: r.reason, ended_at: r.ended_at });
+    if (r.status === "failed")
+      failed.set(r.artifact_id, { id: r.id, reason: r.reason, ended_at: r.ended_at });
     else active.add(r.artifact_id);
   }
   return { heads, settings, failed, active };
@@ -99,7 +113,10 @@ function shellPage(p: HubPage, f: Facts, listening: Listening): ShellPage {
   const openCopy = copies.find((c) => !c.missing) ?? copies[0];
   const rank = (c: ShellCopy): number => (c.unanswered ? 2 : 0) + (c.listening ? 1 : 0);
   const chips = [...copies].sort((a, b) => rank(b) - rank(a) || b.updated_at - a.updated_at);
-  const attach = resolveSetting(f.settings.get(`page\0${p.id}`) ?? null, f.settings.get(`project\0${p.project_id}`) ?? null).state;
+  const attach = resolveSetting(
+    f.settings.get(`page\0${p.id}`) ?? null,
+    f.settings.get(`project\0${p.project_id}`) ?? null,
+  ).state;
   const changed = copies.reduce((n, c) => n + c.changed, 0);
   const failed = copies.filter((c) => c.failed_run).length;
   const pending = copies.filter((c) => c.open + c.received > 0);
@@ -124,27 +141,52 @@ function shellPage(p: HubPage, f: Facts, listening: Listening): ShellPage {
     changed,
     failed,
     waiting_on_agent: waiting,
-    taker: !waiting ? null : pending.some((c) => c.listening) ? "listening" : attach === "on" ? "attach_on" : "nobody",
+    taker: !waiting
+      ? null
+      : pending.some((c) => c.listening)
+        ? "listening"
+        : attach === "on"
+          ? "attach_on"
+          : "nobody",
     run_active: runActive,
     group: needsYou ? "needs_you" : waiting ? "waiting_on_agent" : "quiet",
   };
 }
 
 /** Pages of one view, in Hub.list()'s order (projects by newest activity; unanswered first, then by activity). */
-export function shellPages(hub: Hub, { project = "", view = "open", q = "", limit = 500 }: { project?: string; view?: PagesView; q?: string; limit?: number }, listening: Listening): ShellPage[] {
+export function shellPages(
+  hub: Hub,
+  {
+    project = "",
+    view = "open",
+    q = "",
+    limit = 500,
+  }: { project?: string; view?: PagesView; q?: string; limit?: number },
+  listening: Listening,
+): ShellPage[] {
   const f = facts(hub.db);
-  return hub.list({ q, project, archived: view === "archived", all: view === "all", limit }).map((p) => shellPage(p, f, listening));
+  return hub
+    .list({ q, project, archived: view === "archived", all: view === "all", limit })
+    .map((p) => shellPage(p, f, listening));
 }
 
 const byActivity = (a: ShellPage, b: ShellPage): number => b.activity - a.activity;
 
 /** The inbox: pages open for review by group, each with its newest unanswered notes; held notes and failed runs. */
-export function shellInbox(hub: Hub, { project = "" }: { project?: string }, listening: Listening): Omit<InboxResponse, "project"> {
+export function shellInbox(
+  hub: Hub,
+  { project = "" }: { project?: string },
+  listening: Listening,
+): Omit<InboxResponse, "project"> {
   // Every page open for review: a page that needs the owner must never fall off the end of a list.
   const pages = shellPages(hub, { project, limit: Infinity }, listening);
   const pageOf = new Map<string, InboxPage>();
   const labelOf = new Map<string, string>();
-  const groups: Record<"needs_you" | "waiting_on_agent" | "quiet", InboxPage[]> = { needs_you: [], waiting_on_agent: [], quiet: [] };
+  const groups: Record<"needs_you" | "waiting_on_agent" | "quiet", InboxPage[]> = {
+    needs_you: [],
+    waiting_on_agent: [],
+    quiet: [],
+  };
   for (const p of pages) {
     const row: InboxPage = { ...p, notes: [] };
     for (const c of p.copies) {
@@ -168,12 +210,20 @@ export function shellInbox(hub: Hub, { project = "" }: { project?: string }, lis
       .all(project, project) as unknown as NoteRow[];
     for (const n of rows) {
       const row = pageOf.get(n.artifact_id);
-      if (row && row.notes.length < 3) row.notes.push({ ...n, label: labelOf.get(n.artifact_id) ?? "" });
+      if (row && row.notes.length < 3)
+        row.notes.push({ ...n, label: labelOf.get(n.artifact_id) ?? "" });
     }
   }
   const failedRuns: InboxRun[] = [];
   for (const p of pages) {
-    for (const c of p.copies) if (c.failed_run) failedRuns.push({ ...c.failed_run, artifact_id: c.id, page_id: p.id, title: p.title || p.rel_path });
+    for (const c of p.copies)
+      if (c.failed_run)
+        failedRuns.push({
+          ...c.failed_run,
+          artifact_id: c.id,
+          page_id: p.id,
+          title: p.title || p.rel_path,
+        });
   }
   failedRuns.sort((a, b) => (b.ended_at ?? 0) - (a.ended_at ?? 0));
   return {
@@ -199,7 +249,9 @@ export function shellProjects(hub: Hub, listening: Listening): ProjectSummary[] 
     id: p.id,
     name: p.name,
     roots: p.roots,
-    same_as: p.sameAs ? { id: p.sameAs.id, name: p.sameAs.name, merge: `austere-axi ${p.sameAs.merge}` } : null,
+    same_as: p.sameAs
+      ? { id: p.sameAs.id, name: p.sameAs.name, merge: `austere-axi ${p.sameAs.merge}` }
+      : null,
     ...(counts.get(p.id) ?? { pages: 0, unanswered: 0, needs_you: 0 }),
   }));
 }
@@ -212,7 +264,9 @@ export function shellSearch(hub: Hub, q: string, listening: Listening): SearchRe
   // `find` ranks a statement by its page's title too: a page listed above needs no part that only shares its title.
   const listed = new Set(pages.map((p) => p.id));
   const words = wordsOf(query);
-  const keep = (h: FindHit): boolean => !listed.has(h.page_id ?? h.artifact_id) || words.some((w) => h.snippet.toLowerCase().includes(w) || h.statement.toLowerCase().includes(w));
+  const keep = (h: FindHit): boolean =>
+    !listed.has(h.page_id ?? h.artifact_id) ||
+    words.some((w) => h.snippet.toLowerCase().includes(w) || h.statement.toLowerCase().includes(w));
   // Filter while reading: ask for more candidates until 12 are kept or there are no more.
   let kept: FindHit[] = [];
   for (let limit = 12; ; limit *= 4) {
@@ -220,18 +274,16 @@ export function shellSearch(hub: Hub, q: string, listening: Listening): SearchRe
     kept = hits.filter(keep);
     if (kept.length >= 12 || hits.length < limit || limit >= 768) break;
   }
-  const parts = kept
-    .slice(0, 12)
-    .map((h) => ({
-      artifact_id: h.artifact_id,
-      page_id: h.page_id,
-      title: h.title,
-      file: h.file,
-      copy: h.copy,
-      statement: h.statement,
-      component: h.component,
-      snippet: h.snippet,
-    }));
+  const parts = kept.slice(0, 12).map((h) => ({
+    artifact_id: h.artifact_id,
+    page_id: h.page_id,
+    title: h.title,
+    file: h.file,
+    copy: h.copy,
+    statement: h.statement,
+    component: h.component,
+    snippet: h.snippet,
+  }));
   return { q: query, pages, parts };
 }
 
@@ -241,9 +293,15 @@ export function copySummary(hub: Hub, id: string): CopySummary | null {
   if (!a) return null;
   type CopyRow = { id: string; file: string; root: string; archived_at: number | null };
   const rows: CopyRow[] = a.page_id
-    ? (hub.db.prepare("SELECT id, file, COALESCE(root, project) AS root, archived_at FROM artifacts WHERE page_id = ? AND (reviewed = 1 OR id = ?) ORDER BY updated_at DESC, id").all(a.page_id, id) as unknown as CopyRow[])
+    ? (hub.db
+        .prepare(
+          "SELECT id, file, COALESCE(root, project) AS root, archived_at FROM artifacts WHERE page_id = ? AND (reviewed = 1 OR id = ?) ORDER BY updated_at DESC, id",
+        )
+        .all(a.page_id, id) as unknown as CopyRow[])
     : [{ id: a.id, file: a.file, root: a.root || a.project, archived_at: a.archived_at }];
-  const page = a.page_id ? hub.db.prepare("SELECT rel_path FROM pages WHERE id = ?").get(a.page_id) : undefined;
+  const page = a.page_id
+    ? hub.db.prepare("SELECT rel_path FROM pages WHERE id = ?").get(a.page_id)
+    : undefined;
   const project = a.project_id ? findProject(hub.db, a.project_id, { folders: false }) : null;
   return {
     id: a.id,
@@ -251,7 +309,12 @@ export function copySummary(hub: Hub, id: string): CopySummary | null {
     file: a.file,
     rel_path: typeof page?.rel_path === "string" ? page.rel_path : path.basename(a.file),
     project: project && { id: project.id, name: project.name },
-    copies: rows.map((r) => ({ id: r.id, label: copyLabel(r.root), missing: !fs.existsSync(r.file), archived: r.archived_at != null })),
+    copies: rows.map((r) => ({
+      id: r.id,
+      label: copyLabel(r.root),
+      missing: !fs.existsSync(r.file),
+      archived: r.archived_at != null,
+    })),
     unanswered: hub.notes({ artifact: a.id, status: "unanswered", limit: -1 }).length,
     rev: headRev(hub.db, a.id),
     viewed_rev: a.last_viewed_rev || 0,
@@ -282,13 +345,22 @@ export function shellRuns(hub: Hub, { project = "" }: { project?: string }): Run
  * there. Without `ids`: archive takes `id` and every copy opened for review (as `archive --every-copy`), unarchive every
  * archived copy. Null when the hub does not know `id`.
  */
-export function copiesToFlip(hub: Hub, id: string, archive: boolean, ids: string[] | null): string[] | null {
+export function copiesToFlip(
+  hub: Hub,
+  id: string,
+  archive: boolean,
+  ids: string[] | null,
+): string[] | null {
   const a = hub.artifact(id);
   if (!a) return null;
   type Row = { id: string; reviewed: number; archived_at: number | null };
   const rows: Row[] = a.page_id
-    ? (hub.db.prepare("SELECT id, reviewed, archived_at FROM artifacts WHERE page_id = ?").all(a.page_id) as unknown as Row[])
+    ? (hub.db
+        .prepare("SELECT id, reviewed, archived_at FROM artifacts WHERE page_id = ?")
+        .all(a.page_id) as unknown as Row[])
     : [{ id: a.id, reviewed: a.reviewed, archived_at: a.archived_at }];
-  const asked = ids ? rows.filter((r) => ids.includes(r.id)) : rows.filter((r) => !archive || r.id === a.id || r.reviewed);
+  const asked = ids
+    ? rows.filter((r) => ids.includes(r.id))
+    : rows.filter((r) => !archive || r.id === a.id || r.reviewed);
   return asked.filter((r) => (r.archived_at == null) === archive).map((r) => r.id);
 }

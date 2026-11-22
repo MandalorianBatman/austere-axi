@@ -7,7 +7,20 @@ import { test } from "node:test";
 import { DEFAULT_CLOUD_URL } from "../src/cli/cloud.ts";
 
 const TEST_HOST = ["austere", "kasat", "xyz"].join(".");
-const ROOTS = ["src", "docs", "skills", "site", "types", "scripts", "examples", "packs", "test", "README.md", "AGENTS.md", "CONTRIBUTING.md"];
+const ROOTS = [
+  "src",
+  "docs",
+  "skills",
+  "site",
+  "types",
+  "scripts",
+  "examples",
+  "packs",
+  "test",
+  "README.md",
+  "AGENTS.md",
+  "CONTRIBUTING.md",
+];
 const SKIP = ["node_modules", "dist", ".git"];
 
 function* files(p: string): Generator<string> {

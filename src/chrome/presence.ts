@@ -2,7 +2,13 @@
 // in the header, other viewers' last click outlined in the frame, and this viewer's own status
 // and focus sent on. Transport-neutral: the hosted chrome feeds it the page socket, the local
 // review page the server's relay. Frames arrive already parsed (`parseServerFrame`).
-import type { ClientPresence, PresenceStatus, ServerPresence, SYNC_VERSION, Viewer } from "austere-axi/sync";
+import type {
+  ClientPresence,
+  PresenceStatus,
+  ServerPresence,
+  SYNC_VERSION,
+  Viewer,
+} from "austere-axi/sync";
 
 /** Other viewers' last click, as the frame draws it (`presence` bridge message). */
 export interface FocusMark {
@@ -34,7 +40,11 @@ interface Present {
 const V: typeof SYNC_VERSION = 1;
 /** `status` doubles as the heartbeat; the server drops a viewer after 60 s of silence. */
 const HEARTBEAT_MS = 25_000;
-const STATUS_TEXT: Record<PresenceStatus, string> = { viewing: "viewing", away: "away", writing: "writing a note" };
+const STATUS_TEXT: Record<PresenceStatus, string> = {
+  viewing: "viewing",
+  away: "away",
+  writing: "writing a note",
+};
 
 export type WritingIn = "composer" | "note";
 
@@ -64,7 +74,10 @@ export class Presence {
     this.hello();
     if (this.focus) send({ v: V, t: "focus", statement: this.focus });
     window.clearInterval(this.heartbeat);
-    this.heartbeat = window.setInterval(() => this.send?.({ v: V, t: "status", status: this.status() }), HEARTBEAT_MS);
+    this.heartbeat = window.setInterval(
+      () => this.send?.({ v: V, t: "status", status: this.status() }),
+      HEARTBEAT_MS,
+    );
   }
 
   /** The socket closed: its roster goes with it. */
@@ -88,12 +101,20 @@ export class Presence {
 
   private hello(): void {
     const name = this.host.name();
-    this.send?.(name ? { v: V, t: "hello", status: this.status(), name } : { v: V, t: "hello", status: this.status() });
+    this.send?.(
+      name
+        ? { v: V, t: "hello", status: this.status(), name }
+        : { v: V, t: "hello", status: this.status() },
+    );
   }
 
   handle(frame: ServerPresence): void {
     if (frame.t === "hello") {
-      this.roster.set(frame.viewer.id, { viewer: frame.viewer, status: frame.status, focus: frame.focus });
+      this.roster.set(frame.viewer.id, {
+        viewer: frame.viewer,
+        status: frame.status,
+        focus: frame.focus,
+      });
       if (frame.self) this.self = frame.viewer.id;
     } else if (frame.t === "bye") {
       this.roster.delete(frame.viewer);
@@ -138,7 +159,9 @@ export class Presence {
   }
 
   private marks(): FocusMark[] {
-    return this.others().flatMap((p) => (p.focus ? [{ statement: p.focus, name: p.viewer.name, colour: p.viewer.colour }] : []));
+    return this.others().flatMap((p) =>
+      p.focus ? [{ statement: p.focus, name: p.viewer.name, colour: p.viewer.colour }] : [],
+    );
   }
 
   /** The chip of this viewer: first, ringed, no status, nothing to scroll to. */
@@ -158,7 +181,10 @@ export class Presence {
   private render(): void {
     // Chips are rebuilt on every change: keep the keyboard on the same viewer's chip.
     const active = document.activeElement;
-    const focusedId = active instanceof HTMLElement && this.host.chips.contains(active) ? active.dataset.viewer : undefined;
+    const focusedId =
+      active instanceof HTMLElement && this.host.chips.contains(active)
+        ? active.dataset.viewer
+        : undefined;
     const chips = this.others().map((p) => {
       const chip = document.createElement("button");
       chip.dataset.viewer = p.viewer.id;

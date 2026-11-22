@@ -77,7 +77,9 @@ export interface AustereComponent<Props = unknown> {
   definition: ComponentDefinition<Props>;
 }
 
-export declare function austereComponent<Shape extends ZodRawShape>(spec: ComponentSpec<Shape>): AustereComponent<ZodInfer<ZodObject<Shape>>>;
+export declare function austereComponent<Shape extends ZodRawShape>(
+  spec: ComponentSpec<Shape>,
+): AustereComponent<ZodInfer<ZodObject<Shape>>>;
 
 /** What a pack's entry module default-exports. */
 export interface PackModule {

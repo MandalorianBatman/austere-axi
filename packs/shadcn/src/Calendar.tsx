@@ -11,7 +11,8 @@ function marksFor(year: number, month: number, entries: unknown): Map<number, st
   const marks = new Map<number, string>();
   for (const raw of Array.isArray(entries) ? entries : []) {
     const m = DAY.exec(String(raw).trim());
-    if (m && Number(m[1]) === year && Number(m[2]) === month) marks.set(Number(m[3]), (m[4] || "").trim());
+    if (m && Number(m[1]) === year && Number(m[2]) === month)
+      marks.set(Number(m[3]), (m[4] || "").trim());
   }
   return marks;
 }
@@ -25,7 +26,8 @@ function CalendarView({ props }: RendererArgs<CalendarProps>) {
   const m = /^(\d{4})-(\d{2})/.exec(String(props.month ?? ""));
   const year = m ? Number(m[1]) : NaN;
   const month = m ? Number(m[2]) : NaN;
-  if (!(month >= 1 && month <= 12)) return <div className="austere-render-error">Calendar needs a month like "2026-11".</div>;
+  if (!(month >= 1 && month <= 12))
+    return <div className="austere-render-error">Calendar needs a month like "2026-11".</div>;
   const first = new Date(Date.UTC(year, month - 1, 1));
   const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const lead = (first.getUTCDay() + 6) % 7;
@@ -50,7 +52,9 @@ function CalendarView({ props }: RendererArgs<CalendarProps>) {
               key={d}
               className={`sh-calendar-day${marked ? " is-marked" : ""}`}
               title={note || undefined}
-              data-austere-part={marked ? `${title.split(" ")[0]} ${d}${note ? `: ${note}` : ""}` : undefined}
+              data-austere-part={
+                marked ? `${title.split(" ")[0]} ${d}${note ? `: ${note}` : ""}` : undefined
+              }
             >
               {d}
             </span>

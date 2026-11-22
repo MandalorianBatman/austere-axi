@@ -8,7 +8,9 @@ import { ROOT, examplePage, htmlPage, loadLibrary } from "./lib/plugins.ts";
 
 const wanted = process.argv.slice(2);
 const lib = await loadLibrary();
-const picked = wanted.length ? lib.CUSTOM_COMPONENTS.filter((c) => wanted.includes(c.name)) : lib.CUSTOM_COMPONENTS;
+const picked = wanted.length
+  ? lib.CUSTOM_COMPONENTS.filter((c) => wanted.includes(c.name))
+  : lib.CUSTOM_COMPONENTS;
 const unknown = wanted.filter((n) => !lib.CUSTOM_COMPONENTS.some((c) => c.name === n));
 if (unknown.length) {
   console.error(`not a custom component: ${unknown.join(", ")}`);

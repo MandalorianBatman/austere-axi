@@ -33,7 +33,10 @@ try {
   const SCALE = PANEL_W / SHOT_W;
   const PANEL_H = 410;
   const WIN_TOP = Math.round((630 - (PANEL_H + 38)) / 2);
-  const shot = await browser.newPage({ viewport: { width: SHOT_W, height: Math.round(PANEL_H / SCALE) }, deviceScaleFactor: 1.5 });
+  const shot = await browser.newPage({
+    viewport: { width: SHOT_W, height: Math.round(PANEL_H / SCALE) },
+    deviceScaleFactor: 1.5,
+  });
   await shot.route(/\/(austere\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/, (route) => {
     const name = /\/(austere\.js|packs\/[\w-]+\/pack\.js)(\?.*)?$/.exec(route.request().url())![1];
     route.fulfill({ path: path.join(ROOT, "dist", name), contentType: "text/javascript" });
@@ -50,7 +53,10 @@ try {
 
   // 2. The card.
   const BUBBLE_W = 300;
-  const bubbleX = Math.min(Math.round((pg.x + pg.width * 0.5) * SCALE - 40), PANEL_W - BUBBLE_W - 20);
+  const bubbleX = Math.min(
+    Math.round((pg.x + pg.width * 0.5) * SCALE - 40),
+    PANEL_W - BUBBLE_W - 20,
+  );
   const bubbleY = Math.round((pg.y + pg.height) * SCALE + 12);
   const html = `<!doctype html><meta charset="utf-8"><style>
 *{box-sizing:border-box}html,body{margin:0}
@@ -73,12 +79,17 @@ p b{color:#f2f2f5;font-weight:600}
 <div class="left"><div class="tag">Agent review pages</div><h1>austere-axi</h1><p>The agent writes a few lines. <b>You click any part, leave a note,</b> and the page patches in place.</p><div class="cmd"><i>$</i> npx -y austere-axi --help</div></div>
 <div class="win"><div class="bar"><i></i><i></i><i></i><span style="margin-left:8px">plan.html</span></div><img src="data:image/png;base64,${png.toString("base64")}"></div>
 <div class="note"><small>pg · Node</small>Add a read replica for failover</div>`;
-  const card = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
+  const card = await browser.newPage({
+    viewport: { width: 1200, height: 630 },
+    deviceScaleFactor: 1,
+  });
   await card.setContent(html);
   await card.waitForTimeout(200);
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   await card.screenshot({ path: OUT });
-  console.log(`${path.relative(ROOT, OUT)}  ${(fs.statSync(OUT).size / 1024).toFixed(0)} KB (1200x630)`);
+  console.log(
+    `${path.relative(ROOT, OUT)}  ${(fs.statSync(OUT).size / 1024).toFixed(0)} KB (1200x630)`,
+  );
 } finally {
   await browser.close();
 }

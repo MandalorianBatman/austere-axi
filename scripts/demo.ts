@@ -56,7 +56,11 @@ const GIF_WIDTH = 1080;
 const MAX_GIF_BYTES = 5 * 1024 * 1024;
 
 const CLI = path.join(ROOT, "dist", "cli.mjs");
-for (const f of [CLI, path.join(ROOT, "dist", "austere.js"), path.join(ROOT, "dist", "chrome", "chrome.js")]) {
+for (const f of [
+  CLI,
+  path.join(ROOT, "dist", "austere.js"),
+  path.join(ROOT, "dist", "chrome", "chrome.js"),
+]) {
   if (!fs.existsSync(f)) {
     console.error(`${path.relative(ROOT, f)} is missing: run npm run build first`);
     process.exit(2);
@@ -96,9 +100,14 @@ const ENV = {
   AUSTERE_AXI_NO_OPEN: "1",
   OPENUI_TELEMETRY_DISABLED: "1",
 };
-const cli = (cliArgs: string[], input?: string) => spawnSync(process.execPath, [CLI, ...cliArgs], { cwd: WORK, env: ENV, encoding: "utf8", input });
+const cli = (cliArgs: string[], input?: string) =>
+  spawnSync(process.execPath, [CLI, ...cliArgs], { cwd: WORK, env: ENV, encoding: "utf8", input });
 const startPoll = (extra: string[] = []) => {
-  const child = spawn(process.execPath, [CLI, "poll", "plan.html", ...extra], { cwd: WORK, env: ENV, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [CLI, "poll", "plan.html", ...extra], {
+    cwd: WORK,
+    env: ENV,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   const done = new Promise<string>((resolve) => {
     let out = "";
     child.stdout.on("data", (c) => (out += c));
@@ -169,7 +178,13 @@ async function startRecording(page: Page): Promise<() => Promise<void>> {
     frames.push({ t: f.metadata.timestamp!, data: Buffer.from(f.data, "base64") });
     cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => {});
   });
-  await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, maxWidth: W, maxHeight: H, everyNthFrame: 1 });
+  await cdp.send("Page.startScreencast", {
+    format: "jpeg",
+    quality: 92,
+    maxWidth: W,
+    maxHeight: H,
+    everyNthFrame: 1,
+  });
   return async () => {
     await cdp.send("Page.stopScreencast").catch(() => {});
   };
@@ -187,16 +202,54 @@ function encode(dir: string): void {
   list.push(`file 'f${String(frames.length - 1).padStart(5, "0")}.jpg'`); // concat needs the last file twice
   fs.writeFileSync(path.join(dir, "frames.txt"), list.join("\n") + "\n");
   const ff = (extra: string[], out: string) => {
-    const r = spawnSync("ffmpeg", ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", path.join(dir, "frames.txt"), ...extra, out], { encoding: "utf8" });
+    const r = spawnSync(
+      "ffmpeg",
+      [
+        "-y",
+        "-v",
+        "error",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        path.join(dir, "frames.txt"),
+        ...extra,
+        out,
+      ],
+      { encoding: "utf8" },
+    );
     if (r.status !== 0) throw new Error(`ffmpeg failed for ${path.basename(out)}: ${r.stderr}`);
   };
   fs.mkdirSync(OUT, { recursive: true });
   const base = `fps=${FPS},scale=${W}:${H}:flags=lanczos,format=yuv420p`;
-  ff(["-vf", base, "-c:v", "libx264", "-preset", "slow", "-crf", "23", "-movflags", "+faststart", "-an"], path.join(OUT, "demo.mp4"));
-  ff(["-vf", base, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "34", "-row-mt", "1", "-an"], path.join(OUT, "demo.webm"));
+  ff(
+    [
+      "-vf",
+      base,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "slow",
+      "-crf",
+      "23",
+      "-movflags",
+      "+faststart",
+      "-an",
+    ],
+    path.join(OUT, "demo.mp4"),
+  );
+  ff(
+    ["-vf", base, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "34", "-row-mt", "1", "-an"],
+    path.join(OUT, "demo.webm"),
+  );
   // GIF: shared palette, bayer dither. Drop the frame rate / colours until it is under budget.
   const gif = path.join(OUT, "demo.gif");
-  for (const [fps, colors] of [[GIF_FPS, 128], [10, 96], [8, 64]]) {
+  for (const [fps, colors] of [
+    [GIF_FPS, 128],
+    [10, 96],
+    [8, 64],
+  ]) {
     const vf = `fps=${fps},scale=${GIF_WIDTH}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=${colors}:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`;
     ff(["-filter_complex", vf, "-loop", "0"], gif);
     if (fs.statSync(gif).size < MAX_GIF_BYTES) return;
@@ -213,7 +266,10 @@ if (!browser) {
 let exit = 0;
 let poll: ReturnType<typeof startPoll> | undefined;
 try {
-  const context = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({
+    viewport: { width: W, height: H },
+    deviceScaleFactor: 1,
+  });
   // Reviews are owner-only (SameSite=Lax cookie). Sign this browser in with the single-use
   // link `austere-axi login` prints, as a reviewer's browser is, and serve the stage from the
   // server's own origin so the review iframe is same-site and carries the cookie.
@@ -221,7 +277,10 @@ try {
   const prep = cli(["plan.html", "--no-open"]);
   const login = cli(["login", "plan.html"]);
   const loginUrl = /(https?:\/\/\S+)/.exec(login.stdout)?.[1];
-  if (prep.status !== 0 || login.status !== 0 || !loginUrl) throw new Error(`could not sign in: ${prep.stdout}${prep.stderr}${login.stdout}${login.stderr}`);
+  if (prep.status !== 0 || login.status !== 0 || !loginUrl)
+    throw new Error(
+      `could not sign in: ${prep.stdout}${prep.stderr}${login.stdout}${login.stderr}`,
+    );
   const auth = await context.newPage();
   await auth.goto(loginUrl);
   await auth.close();
@@ -250,7 +309,13 @@ try {
   const statements = PAGE.split("\n").filter((l) => /^\w+ = /.test(l));
   for (const l of statements) {
     const shown = l.length > 46 ? `${l.slice(0, 45)}…` : l;
-    await T.raw(`<span class="key">${shown.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/^(\w+)/, "$1</span>")}`, "dim");
+    await T.raw(
+      `<span class="key">${shown
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/^(\w+)/, "$1</span>")}`,
+      "dim",
+    );
     await pause(110);
   }
   await pause(900);
@@ -259,7 +324,8 @@ try {
   await T.type("austere-axi plan.html");
   await pause(350);
   const opened = cli(["plan.html", "--no-open"]);
-  if (opened.status !== 0) throw new Error(`austere-axi plan.html failed: ${opened.stdout}${opened.stderr}`);
+  if (opened.status !== 0)
+    throw new Error(`austere-axi plan.html failed: ${opened.stdout}${opened.stderr}`);
   await T.out(tidy(opened.stdout));
   const url = /^url: (\S+)/m.exec(opened.stdout)?.[1];
   if (!url) throw new Error(`no url in: ${opened.stdout}`);
@@ -277,7 +343,10 @@ try {
   await pause(1000);
 
   // 4. The reviewer annotates a table cell and a diagram node, then sends.
-  const moveTo = async (loc: Locator, { click = false, dy = 0 }: { click?: boolean; dy?: number } = {}) => {
+  const moveTo = async (
+    loc: Locator,
+    { click = false, dy = 0 }: { click?: boolean; dy?: number } = {},
+  ) => {
     await loc.scrollIntoViewIfNeeded();
     const b = (await loc.boundingBox())!;
     const x = b.x + b.width / 2;
@@ -289,7 +358,13 @@ try {
       const px = from.x + (x - from.x) * e;
       const py = from.y + (y - from.y) * e;
       await page.mouse.move(px, py);
-      await page.evaluate(([a, b]) => { window.__mouse = { x: a, y: b }; cursor(a, b); }, [px, py]);
+      await page.evaluate(
+        ([a, b]) => {
+          window.__mouse = { x: a, y: b };
+          cursor(a, b);
+        },
+        [px, py],
+      );
       await pause(16);
     }
     await pause(250);
@@ -298,8 +373,10 @@ try {
       await page.mouse.click(x, y);
     }
   };
-    for (const note of NOTES) {
-    const target = note.target.cell ? artifact.locator("td.openui-table-cell").filter({ hasText: note.target.cell }).first() : artifact.locator(`[data-oui-id="${note.target.node}"]`).first();
+  for (const note of NOTES) {
+    const target = note.target.cell
+      ? artifact.locator("td.openui-table-cell").filter({ hasText: note.target.cell }).first()
+      : artifact.locator(`[data-oui-id="${note.target.node}"]`).first();
     await moveTo(target, { click: true });
     const box = artifact.locator(".austere-pop textarea");
     await box.waitFor({ timeout: 5000 });
@@ -313,11 +390,16 @@ try {
   await moveTo(send);
   // The runtime hides its hover box on a document mouseleave, which a scripted pointer
   // does not always produce when it leaves the artifact frame.
-  await artifact.locator("body").evaluate(() => document.dispatchEvent(new MouseEvent("mouseleave")));
+  await artifact
+    .locator("body")
+    .evaluate(() => document.dispatchEvent(new MouseEvent("mouseleave")));
   await moveTo(send, { click: true });
   const feedback = await poll.done;
-  if (!/^status: feedback/m.test(feedback)) throw new Error(`poll did not return feedback:\n${feedback}`);
-  for (const n of NOTES) if (!feedback.includes(n.text)) throw new Error(`poll is missing the note "${n.text}":\n${feedback}`);
+  if (!/^status: feedback/m.test(feedback))
+    throw new Error(`poll did not return feedback:\n${feedback}`);
+  for (const n of NOTES)
+    if (!feedback.includes(n.text))
+      throw new Error(`poll is missing the note "${n.text}":\n${feedback}`);
   await pause(500);
 
   // 5. The agent reads the notes (the real poll output) and patches the two statements they name.
@@ -327,13 +409,20 @@ try {
   await T.type("austere-axi patch plan.html <<'EOF'", 45);
   for (const l of PATCH.trimEnd().split("\n")) {
     const shown = l.length > 46 ? `${l.slice(0, 45)}…` : l;
-    await T.raw(`<span class="key">${shown.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/^(\w+)/, "$1</span>")}`, "dim");
+    await T.raw(
+      `<span class="key">${shown
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/^(\w+)/, "$1</span>")}`,
+      "dim",
+    );
     await pause(350);
   }
   await T.raw("EOF", "cmd");
   await pause(500);
   const patched = cli(["patch", "plan.html"], PATCH);
-  if (!/^status: patched/m.test(patched.stdout)) throw new Error(`patch failed: ${patched.stdout}${patched.stderr}`);
+  if (!/^status: patched/m.test(patched.stdout))
+    throw new Error(`patch failed: ${patched.stdout}${patched.stderr}`);
   await T.out(tidy(patched.stdout));
   // The page updates in place; the changed statements flash for ~2.4 s.
   await artifact.locator(".austere-flash").first().waitFor({ timeout: 10_000 });
@@ -346,15 +435,24 @@ try {
   if (!pollCursor) throw new Error(`poll printed no cursor:\n${feedback}`);
   await T.type(`austere-axi poll plan.html --cursor ${pollCursor} --agent-reply "${REPLY}"`, 60);
   poll = startPoll(["--cursor", pollCursor, "--agent-reply", REPLY]);
-  await review.locator(".msg, .bubble, .reply").filter({ hasText: REPLY }).first().waitFor({ timeout: 10_000 }).catch(() => {});
+  await review
+    .locator(".msg, .bubble, .reply")
+    .filter({ hasText: REPLY })
+    .first()
+    .waitFor({ timeout: 10_000 })
+    .catch(() => {});
   await pause(3200);
 
   await stop();
   if (problems.length) console.warn(`page errors:\n${problems.join("\n")}`);
-  console.log(`captured ${frames.length} frames over ${(frames.at(-1)!.t - frames[0].t).toFixed(1)} s`);
+  console.log(
+    `captured ${frames.length} frames over ${(frames.at(-1)!.t - frames[0].t).toFixed(1)} s`,
+  );
   encode(path.join(TMP, "frames"));
   for (const f of ["demo.gif", "demo.mp4", "demo.webm"]) {
-    console.log(`${path.relative(ROOT, path.join(OUT, f))}  ${(fs.statSync(path.join(OUT, f)).size / 1024).toFixed(0)} KB`);
+    console.log(
+      `${path.relative(ROOT, path.join(OUT, f))}  ${(fs.statSync(path.join(OUT, f)).size / 1024).toFixed(0)} KB`,
+    );
   }
 } catch (err) {
   console.error((err as Error).stack || err);

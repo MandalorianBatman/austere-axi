@@ -440,7 +440,10 @@ ul.set-asks {
 .set-dev-head,
 .set-dev {
   display: grid;
-  grid-template-columns: minmax(120px, 1.3fr) minmax(96px, 0.9fr) minmax(100px, 1fr) minmax(96px, 0.8fr) minmax(96px, 0.9fr) minmax(170px, 1.3fr);
+  grid-template-columns: minmax(120px, 1.3fr) minmax(96px, 0.9fr) minmax(100px, 1fr) minmax(
+      96px,
+      0.8fr
+    ) minmax(96px, 0.9fr) minmax(170px, 1.3fr);
   gap: 14px;
 }
 .set-dev-head {

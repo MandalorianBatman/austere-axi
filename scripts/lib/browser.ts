@@ -11,7 +11,10 @@ export async function launchBrowser(): Promise<{ browser: Browser | null; reason
   try {
     return { browser: await chromium.launch({ headless: true, ...opts }) };
   } catch (err) {
-    return { browser: null, reason: `no browser (${String((err as Error).message).split("\n")[0]}); install Chrome or set CHROME_PATH` };
+    return {
+      browser: null,
+      reason: `no browser (${String((err as Error).message).split("\n")[0]}); install Chrome or set CHROME_PATH`,
+    };
   }
 }
 
@@ -24,6 +27,9 @@ export async function launchFirefox(): Promise<{ browser: Browser | null; reason
   try {
     return { browser: await firefox.launch({ headless: true, ...opts }) };
   } catch (err) {
-    return { browser: null, reason: `no Firefox (${String((err as Error).message).split("\n")[0]}); run npx playwright-core install firefox or set FIREFOX_PATH` };
+    return {
+      browser: null,
+      reason: `no Firefox (${String((err as Error).message).split("\n")[0]}); run npx playwright-core install firefox or set FIREFOX_PATH`,
+    };
   }
 }

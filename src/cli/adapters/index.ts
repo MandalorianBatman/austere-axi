@@ -33,18 +33,30 @@ function isExecutable(file: string, windows: boolean): boolean {
  * only names with a `PATHEXT` extension count: npm puts an extensionless sh script beside each
  * `.cmd` shim, which Windows cannot run. Null when not found.
  */
-export function findOnPath(bin: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, cwd = process.cwd()): string | null {
+export function findOnPath(
+  bin: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  cwd = process.cwd(),
+): string | null {
   const windows = platform === "win32";
   const p = windows ? path.win32 : path.posix;
   // Windows environments name it Path; look the variable up without regard to case there.
-  const get = (name: string) => (windows ? Object.entries(env).find(([k]) => k.toUpperCase() === name)?.[1] : env[name]);
+  const get = (name: string) =>
+    windows ? Object.entries(env).find(([k]) => k.toUpperCase() === name)?.[1] : env[name];
   let exts = [""];
   if (windows) {
     const pathext = (get("PATHEXT") || ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean);
     // A name that already has one (`omp.cmd`) is taken as written.
     exts = pathext.some((e) => bin.toLowerCase().endsWith(e.toLowerCase())) ? [""] : pathext;
   }
-  const bases = bin.includes("/") || (windows && bin.includes("\\")) ? [p.resolve(cwd, bin)] : (get("PATH") || "").split(windows ? ";" : ":").filter(Boolean).map((dir) => p.resolve(cwd, dir, bin));
+  const bases =
+    bin.includes("/") || (windows && bin.includes("\\"))
+      ? [p.resolve(cwd, bin)]
+      : (get("PATH") || "")
+          .split(windows ? ";" : ":")
+          .filter(Boolean)
+          .map((dir) => p.resolve(cwd, dir, bin));
   for (const base of bases) {
     const hit = exts.map((e) => base + e).find((f) => isExecutable(f, windows));
     if (hit) return hit;
@@ -77,16 +89,26 @@ export interface SpawnSpec {
  * refuses to spawn without a shell. That goes through `cmd.exe /d /s /c` with a command line
  * quoted by `cmdQuoteArg`; stdin (the prompt) passes through cmd.exe to the batch file.
  */
-export function spawnSpec(bin: string, args: readonly string[], platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): SpawnSpec {
-  if (platform !== "win32" || !/\.(cmd|bat)$/i.test(bin)) return { file: bin, args: [...args], windowsVerbatimArguments: false };
-  const comspec = Object.entries(env).find(([k]) => k.toUpperCase() === "COMSPEC")?.[1] || "cmd.exe";
+export function spawnSpec(
+  bin: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): SpawnSpec {
+  if (platform !== "win32" || !/\.(cmd|bat)$/i.test(bin))
+    return { file: bin, args: [...args], windowsVerbatimArguments: false };
+  const comspec =
+    Object.entries(env).find(([k]) => k.toUpperCase() === "COMSPEC")?.[1] || "cmd.exe";
   // The batch file's own path is caret-escaped, not quoted.
   const line = [bin.replace(CMD_META, "^$1"), ...args.map(cmdQuoteArg)].join(" ");
   return { file: comspec, args: ["/d", "/s", "/c", `"${line}"`], windowsVerbatimArguments: true };
 }
 
 /** The adapter's capabilities here: all off, naming the binary, when it is not on PATH. */
-export function capabilitiesOf(adapter: Adapter, env: NodeJS.ProcessEnv = process.env): Capabilities {
+export function capabilitiesOf(
+  adapter: Adapter,
+  env: NodeJS.ProcessEnv = process.env,
+): Capabilities {
   if (findOnPath(adapter.bin, env)) return adapter.capabilities;
   const missing: Capability = { ok: false, reason: `${adapter.bin} not found on PATH` };
   return { same: missing, fork: missing, new: missing, model: missing, maxCost: missing };
