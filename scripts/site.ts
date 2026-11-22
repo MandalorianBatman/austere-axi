@@ -115,6 +115,15 @@ const plainText = (html: string): string => decode(html.replace(/<[^>]*>/g, ""))
 /** GitHub's heading id: lower case, punctuation dropped, spaces to hyphens. Docs link to these. */
 const slug = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}\p{M} _-]/gu, "").replace(/ /g, "-");
 
+/** A #fragment as the browser matches it against ids: percent-decoded, or as written when that is not valid encoding. */
+const decodeFragment = (hash: string): string => {
+  try {
+    return decodeURIComponent(hash);
+  } catch {
+    return hash;
+  }
+};
+
 interface DocPage {
   name: string; // "install" for docs/install.md
   out: string; // path inside _site/, "docs/install.html"
@@ -160,6 +169,7 @@ function buildDocs(): DocPage[] {
       if (target.startsWith("docs/") && kind === "image") {
         if (!copied.has(target)) {
           copied.add(target);
+          fs.mkdirSync(path.dirname(path.join(OUT, target)), { recursive: true });
           fs.copyFileSync(path.join(ROOT, target), path.join(OUT, target));
         }
         return `../${target}`;
@@ -177,9 +187,11 @@ function buildDocs(): DocPage[] {
           const text = plainText(inner);
           if (depth === 1 && !title) title = text;
           const base = slug(text);
-          const n = seen.get(base) ?? 0;
-          seen.set(base, n + 1);
-          const id = n ? `${base}-${n}` : base;
+          // GitHub's rule: a taken id gets -1, -2, ... until it is free, so "Foo", "Foo", "Foo-1" are foo, foo-1, foo-1-1.
+          let n = seen.get(base) ?? 0;
+          let id = base;
+          while (ids.has(id)) id = `${base}-${++n}`;
+          seen.set(base, n);
           ids.add(id);
           return `<h${depth} id="${escapeHtml(id)}">${inner}</h${depth}>\n`;
         },
@@ -246,7 +258,7 @@ function buildDocs(): DocPage[] {
       const [file, hash] = link.href.split("#");
       const dest = file === "" ? page : byOut.get(file);
       if (!dest) bad.push(`${page.out}: ${link.text} -> ${file} is not a built page`);
-      else if (hash && !dest.ids.has(hash)) bad.push(`${page.out}: ${link.text} -> no heading #${hash} on ${dest.out}`);
+      else if (hash && !dest.ids.has(decodeFragment(hash))) bad.push(`${page.out}: ${link.text} -> no heading #${hash} on ${dest.out}`);
     }
   }
   if (bad.length) {
