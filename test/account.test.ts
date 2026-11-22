@@ -270,17 +270,24 @@ test("device flow refusals: access_denied and expired_token are errors, nothing 
   }
 });
 
-test("first login claims the machine's anonymous owner token: pages published before are the account's", async () => {
-  const file = path.join(WORK, "before.html");
-  fs.writeFileSync(file, PAGE);
-  const p = await cli(["publish", file]);
-  assert.equal(p.code, 0, p.out);
-  assert.deepEqual(stub.wsAuth, ["subprotocol"]);
+test("first login claims a pre-0.17 anonymous owner token: its pages are the account's, and the token is dropped", async () => {
+  // An older version published one page anonymously from this machine.
+  const token = crypto.randomBytes(32).toString("base64url");
+  stub.owners.add(token);
+  const id = crypto.randomBytes(16).toString("base64url");
+  const now = Date.now();
+  const row: PageRow = { v: SYNC_VERSION, type: "page", id, seq: 1, title: "Plan", cliVersion: "0.16.0", html: "0".repeat(64), packs: [], auto: false, unlisted: false, presence: true, publishedAt: now, expiresAt: now + 86400000, deleted: false };
+  stub.pages.set(id, { owner: token, row, html: PAGE });
+  fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: BASE, token, account: null, pages: {} }), { mode: 0o600 });
+
   const r = await cli(["cloud", "login"]);
   assert.equal(r.code, 0, r.out);
   assert.match(field(r.out, "claimed") ?? "", /^1 page /);
+  assert.equal(cloudJson().token, "", "the claimed token is dropped");
+  assert.equal(cloudJson().account.user.email, USER.email);
   const list = await cli(["clone"]);
   assert.match(list.out, /title: Plan/);
+  assert.equal((await cli(["cloud", "login"])).out.includes("claimed"), false, "a second login has nothing to claim");
 });
 
 test("the access token is refreshed before it expires; the refresh token rotates; invalid_grant signs out", async () => {

@@ -44,7 +44,7 @@ austere-axi publish invites|revoke <file> [name]   see a page's invites, cut one
 austere-axi publish login <file>   single-use link that signs your browser in to your hosted page
 austere-axi publish list|rm <file|id>   your hosted pages; delete one now
 austere-axi cloud on|off|status   cloud features: publish, clone, cloud login and hosted-page sync (off by default; the hub's Settings → Cloud too)
-austere-axi cloud login|logout|whoami   your account on the hosted service: owner of all your hosted pages (see Hosted pages)
+austere-axi cloud login|logout|whoami   your account on the hosted service: owner of all your hosted pages (see Hosted pages). publish and clone need it: until this machine is signed in they fail with login_required, and help leaves them out
 austere-axi clone [<id> [<file>]]   your hosted pages from any machine; one as a local, attached file
 austere-axi stop                 stop the background server
 austere-axi server --persist     run the server in the foreground and never idle out

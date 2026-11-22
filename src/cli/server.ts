@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { readArtifact, replaceProgram, rewriteRuntime, escapeHtml } from "./artifact.ts";
 import { agentPrompt } from "./agent-prompt.ts";
-import { cloudEnabled, cloudUrl, hasOwner, readCloud, setCloudEnabled } from "./cloud.ts";
+import { cloudEnabled, cloudUrl, readCloud, setCloudEnabled, signedIn } from "./cloud.ts";
 import { exportHtml } from "./export.ts";
 import { addressSettings, allowedHosts, detectTailscale, hostOnly, isLoopback, lanAddresses, linkUrl, whoIs } from "./net.ts";
 import type { AddressSettings, Tailnet, TailscalePerson } from "./net.ts";
@@ -3131,7 +3131,7 @@ export async function runServer({
       // The owner's only (reviewers are refused above). cloud.json is read again: `publish` may have run since the page opened.
       // With cloud features off the page counts as not published: nothing of it reaches the service.
       const state = readCloud();
-      const entry = cloudEnabled() && hasOwner(state) ? state.pages[s.file] : undefined;
+      const entry = cloudEnabled() && signedIn(state) ? state.pages[s.file] : undefined;
       const hosted = entry ? { url: `${state.url || cloudUrl()}/p/${entry.id}`, auto: peer.liveAuto(entry.id, entry.auto) } : undefined;
       const p = projectOfPage(s);
       // An agent already polls this project (a second project poll would replace it) or this page's checkout (it would keep

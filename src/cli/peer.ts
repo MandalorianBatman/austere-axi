@@ -20,7 +20,7 @@
 // and the local page's status and focus go on to the page object. Nothing of it is stored.
 import crypto from "node:crypto";
 import WebSocket from "ws";
-import { cloudEnabled, cloudUrl, credential, hasOwner, onRefusal, ownerSocket, readCloud } from "./cloud.ts";
+import { LOGIN_REQUIRED, cloudEnabled, cloudUrl, credential, onRefusal, ownerSocket, readCloud, signedIn } from "./cloud.ts";
 import type { CloudError } from "./cloud.ts";
 import { reviewerItem } from "./items.ts";
 import { msEnv } from "./paths.ts";
@@ -127,7 +127,7 @@ export class Peer {
   start(): void {
     if (!cloudEnabled()) return;
     const state = readCloud();
-    if (!hasOwner(state)) return;
+    if (!signedIn(state)) return;
     for (const [file, e] of Object.entries(state.pages)) this.kick(this.link(e.id, file), { pull: true });
     for (const q of this.queued()) this.kick(this.link(q.page_id, q.file));
   }
@@ -273,7 +273,7 @@ export class Peer {
   private linkFor(file: string): Link | null {
     if (!cloudEnabled()) return null;
     const state = readCloud();
-    const e = hasOwner(state) ? state.pages[file] : undefined;
+    const e = signedIn(state) ? state.pages[file] : undefined;
     return e ? this.link(e.id, file) : null;
   }
 
@@ -323,7 +323,7 @@ export class Peer {
   /** Reads the credential (refreshing an account's access token when due), then opens the socket. */
   private connect(link: Link): void {
     const state = readCloud();
-    if (!hasOwner(state)) return this.stop(link, "cloud.json holds no owner credential");
+    if (!signedIn(state)) return this.stop(link, "not signed in to the hosted service: run austere-axi cloud login");
     if (link.connecting) return;
     const base = state.url || cloudUrl();
     link.connecting = true;
@@ -335,8 +335,8 @@ export class Peer {
       (err: CloudError) => {
         link.connecting = false;
         link.lastError = err.message;
-        // A session that ended needs `cloud login`; anything else (WorkOS unreachable) is retried.
-        if (err.code === "invalid_grant") this.stop(link, err.message);
+        // Signed out, or a session that ended, needs `cloud login`; anything else (WorkOS unreachable) is retried.
+        if (err.code === "invalid_grant" || err.code === LOGIN_REQUIRED) this.stop(link, err.message);
         else this.down(link);
       },
     );

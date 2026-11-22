@@ -35,6 +35,13 @@ const RUNTIME_TAG = '<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dis
 const page = (program: string, head = "") =>
   `<!doctype html><html><head><meta charset="utf-8"><title>Plan</title>\n${head}${RUNTIME_TAG}</head>\n<body><script type="text/openui">\n${program}\n</script></body></html>\n`;
 const sha256 = (data: string | Buffer) => crypto.createHash("sha256").update(data).digest("hex");
+const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64url");
+/** The signed-in account's access token: the CLI reads only `exp` (no refresh within the test run); the stub takes it as the owner. */
+const ACCESS = `${b64({ alg: "RS256", kid: "k" })}.${b64({ sub: "user_ana", exp: Math.floor(Date.now() / 1000) + 86400 })}.sig`;
+const ACCOUNT = { clientId: "client_test", apiBase: "http://127.0.0.1:9", accessToken: ACCESS, refreshToken: "rt_unused", user: { id: "user_ana", email: "ana@example.com", name: "Ana" } };
+/** Sign a state dir in, as `cloud login` leaves cloud.json (RLM-432: every owner command needs the account). */
+const signIn = (state: string, extra: Record<string, unknown> = {}) =>
+  fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: CLOUD, account: ACCOUNT, pages: {}, ...extra }), { mode: 0o600 });
 
 // ── stub service ──
 
@@ -49,7 +56,8 @@ interface StubPage {
 const stub = {
   /** "METHOD /path" for HTTP, "ws <frame or mutation name>" for socket frames. */
   requests: [] as string[],
-  owners: new Set<string>(),
+  /** Bearer credentials the service takes as an owner: the account's access token. */
+  owners: new Set<string>([ACCESS]),
   objects: new Map<string, { type: string; data: Buffer }>(),
   pages: new Map<string, StubPage>(),
   publishes: [] as MutationArgs["publish"][],
@@ -197,11 +205,6 @@ before(async () => {
         stub.fail = null;
         return json(res, status, { error });
       }
-      if (req.method === "POST" && url === "/api/owners") {
-        const token = crypto.randomBytes(32).toString("base64url");
-        stub.owners.add(token);
-        return json(res, 201, { token });
-      }
       const auth = /^Bearer (\S+)$/.exec(req.headers.authorization || "")?.[1] ?? "";
       if (!stub.owners.has(auth)) return json(res, 401, { error: "invalid token" });
       const obj = /^\/api\/objects\/([0-9a-f]{64})$/.exec(url);
@@ -247,13 +250,15 @@ before(async () => {
     }
     if (!m || !creds.sync || u.searchParams.get("cli") !== VERSION) return refuse(socket, 426, "upgrade_required", "offer austere-sync.1 and ?cli=");
     const p = stub.pages.get(m[1]);
-    if (!creds.owner || !stub.owners.has(creds.owner)) return refuse(socket, 403, "forbidden", "owner token required");
-    if (!p || p.owner !== creds.owner) return refuse(socket, 404, "invalid", "page not found");
+    const owner = /^Bearer (\S+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "";
+    if (!stub.owners.has(owner)) return refuse(socket, 403, "forbidden", "owner credential required");
+    if (!p || p.owner !== owner) return refuse(socket, 404, "invalid", "page not found");
     wss.handleUpgrade(req, socket, head, (ws) => ownerSocket(ws, m[1]));
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const address: AddressInfo = server.address() as AddressInfo; // listening on TCP, not a pipe
   CLOUD = `http://127.0.0.1:${address.port}`;
+  signIn(STATE);
 });
 
 after(() => {
@@ -291,7 +296,8 @@ function cli(args: string[], env: Record<string, string> = {}): Promise<{ code: 
 
 interface CloudJson {
   url: string;
-  token: string;
+  token?: string;
+  account: { accessToken: string } | null;
   pages: Record<string, { id: string; auto: boolean; unlisted: boolean; presence: boolean; invites: Record<string, { token: string; expiresAt: number | null }> }>;
 }
 const cloudState = (): CloudJson => JSON.parse(fs.readFileSync(path.join(STATE, "cloud.json"), "utf8"));
@@ -319,7 +325,6 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   const first = cloudState();
   const id = first.pages[abs].id;
   assert.deepEqual(stub.requests, [
-    "POST /api/owners",
     `PUT /api/objects/${sha256(html)}`,
     "POST /api/pages",
     `WS /api/pages/${id}/sync`,
@@ -334,11 +339,11 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
   assert.equal(field(r.out, "access"), "invite-only");
   assert.match(r.out, /Nobody can open this page yet: add --invite <name>, or --unlisted/);
   assert.equal(first.url, CLOUD);
-  assert.ok(first.token.length >= 43);
+  assert.equal(first.account?.accessToken, ACCESS, "the account stays as login left it");
   assert.deepEqual(first.pages[abs], { id, auto: false, unlisted: false, presence: true, invites: {} });
   if (process.platform !== "win32") assert.equal(fs.statSync(path.join(STATE, "cloud.json")).mode & 0o777, 0o600);
 
-  // Republish: same id, no new page, the same token on the socket.
+  // Republish: same id, no new page, the same credential on the socket.
   stub.requests.length = 0;
   r = await cli(["publish", file, "--auto", "--no-presence"]);
   assert.equal(r.code, 0, r.out);
@@ -434,14 +439,14 @@ test("a socket lost after the publish ack still records the page, without an exp
   assert.equal(field(r.out, "id"), id);
 });
 
-test("a token for another service URL is not sent there", async () => {
+test("an account for another service URL is not sent there", async () => {
   const state = tmp("austere-publish-other-");
-  fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: "https://elsewhere.test", token: "t".repeat(43), pages: {} }));
+  fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: "https://elsewhere.test", account: ACCOUNT, pages: {} }));
   cloudOn(state);
   try {
     const r = await cli(["publish", "list"], { AUSTERE_AXI_STATE_DIR: state });
     assert.equal(r.code, 1);
-    assert.match(r.out, /holds an owner token for https:\/\/elsewhere\.test/);
+    assert.match(r.out, /holds an account for https:\/\/elsewhere\.test/);
     assert.deepEqual(stub.requests, []);
   } finally {
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -857,6 +862,8 @@ test("cloud off (the default): publish and clone refuse before any request, and 
     let r = await run("cloud", "on");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /cloud: on/);
+    assert.match(r.out, /^next: austere-axi cloud login$/m, "on but not signed in: cloud on names the next step");
+    signIn(state);
     r = await run("publish", file);
     assert.equal(r.code, 0, r.out);
     r = await run("cloud", "off");
@@ -879,6 +886,58 @@ test("cloud off (the default): publish and clone refuse before any request, and 
     assert.ok((stub.requests as string[]).some((q) => q.startsWith("ws pull")), stub.requests.join("\n"));
   } finally {
     await run("stop");
+    fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  }
+});
+
+test("not signed in: every owner command refuses before any request, a pre-0.17 owner token too; help leaves publish and clone out until cloud login (RLM-432)", async () => {
+  const state = tmp("austere-publish-anon-");
+  const file = path.join(WORK, "anon.html");
+  fs.writeFileSync(file, page('root = TextContent("x")'));
+  const abs = fs.realpathSync(file);
+  const run = (...args: string[]) => cli(args, { AUSTERE_AXI_STATE_DIR: state });
+  try {
+    // Cloud off: help shows the sign-in line; `cloud login` itself then says to turn cloud on.
+    let r = await run("--help");
+    assert.doesNotMatch(r.out, /austere-axi publish/);
+    assert.match(r.out, /austere-axi cloud login +sign in to share pages, only when the user asks$/m);
+
+    // Cloud on, with only an owner token from an older version: still not signed in.
+    cloudOn(state);
+    const entry = { id: "p".repeat(22), auto: false, unlisted: false, presence: true, invites: {} };
+    fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: CLOUD, token: "t".repeat(43), pages: { [abs]: entry } }), { mode: 0o600 });
+    r = await run("--help");
+    assert.doesNotMatch(r.out, /austere-axi publish/);
+    assert.match(r.out, /austere-axi cloud login +sign in to share pages, only when the user asks$/m);
+    r = await run("help", "all");
+    assert.doesNotMatch(r.out, /^ {2}austere-axi (publish|clone)\b/m);
+    assert.match(r.out, /^ {2}austere-axi cloud on/m);
+    r = await run("publish", "--help");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /NOT SIGNED IN\n {2}publish needs the hosted service's account on this machine: austere-axi cloud login/);
+
+    const owner = [["publish", file], ["publish", file, "--invite", "Ana"], ["publish", "list"], ["publish", "invites", file], ["publish", "revoke", file, "Ana"], ["publish", "login", file], ["publish", "rm", file], ["publish", "rm", entry.id], ["clone"], ["clone", entry.id, path.join(WORK, "anon-clone.html")]];
+    for (const args of owner) {
+      r = await run(...args);
+      assert.equal(r.code, 1, `${args.join(" ")}: ${r.out}`);
+      assert.match(r.out, /not signed in to the hosted service: run `austere-axi cloud login` first/, args.join(" "));
+      assert.match(r.out, /^code: login_required$/m, args.join(" "));
+      assert.match(r.out, /^next: austere-axi cloud login$/m, args.join(" "));
+    }
+    assert.deepEqual(stub.requests, [], "nothing reaches the service, not even POST /api/owners");
+    assert.equal(fs.existsSync(path.join(WORK, "anon-clone.html")), false);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(state, "cloud.json"), "utf8")), { url: CLOUD, token: "t".repeat(43), pages: { [abs]: entry } }, "cloud.json is left alone");
+
+    // Signed in: publish and clone are back in help.
+    signIn(state, { pages: { [abs]: entry } });
+    r = await run("--help");
+    assert.match(r.out, /^ {2}austere-axi publish <file> +hosted share link/m);
+    assert.doesNotMatch(r.out, /sign in to share pages/);
+    r = await run("help", "all");
+    assert.match(r.out, /^ {2}austere-axi clone /m);
+    r = await run("publish", "--help");
+    assert.doesNotMatch(r.out, /NOT SIGNED IN/);
+  } finally {
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });

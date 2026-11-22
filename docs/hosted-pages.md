@@ -1,6 +1,6 @@
 # Hosted pages
 
-`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. Nothing is sent until you run it; after that, the local server keeps your published pages in sync (below). Cloud features are off by default: turn them on first (below).
+`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. Nothing is sent until you run it; after that, the local server keeps your published pages in sync (below). Cloud features are off by default, and publishing needs an account: turn cloud on and sign in first (`cloud on`, then `cloud login`; see [Accounts](#accounts)).
 
 ## Cloud switch
 
@@ -34,7 +34,7 @@ austere-axi publish rm plan.html                 # or the page id; every link st
 - **The ⋯ menu on a hosted page:** "Download standalone HTML" saves the published page with its runtime and packs inlined, the same file `export` writes. On an `--unlisted` page, "Copy page link" copies the open link for every viewer, invited or not. On an invite-only page each link is one reviewer's alone, so the menu says how the owner invites someone instead.
 - **Presence:** everyone on the page sees who is there: your own chip first, ringed, with the name you post under, then a chip per other viewer (viewing, away or writing) and the part each one last clicked in Annotate mode, outlined with their name. You are on the page too while your local review page is open: hosted viewers show as chips there, and your clicks show as an outline for them. Nothing about it is stored. `--no-presence` on a publish turns it off for that page.
 - **Expiry:** 30 days after the last publish.
-- **Owner token:** without an account, created on the first `publish` and stored in `~/.austere-axi/cloud.json` (mode 0600). It only controls your pages. Copying the file to another machine makes that machine a peer: it gets the same notes, and a note you send on one machine arrives sent on the other. `cloud.json` maps pages by absolute path, so the file must sit at the same path on both machines. With an account (below) you need none of that.
+- **Signed in first:** `publish`, `publish list|invites|revoke|login|rm` and `clone` need this machine signed in (`cloud login`). Without it they fail with `code: login_required` and `next: austere-axi cloud login` before any request, and `--help` and `help all` leave `publish` and `clone` out (`publish --help` still prints its flags, with a note). The local server does not sync hosted pages either until you sign in. The CLI never signs in by itself: `cloud login` is always run by a person. Since 0.17 there is no anonymous owner token.
 
 ## Accounts
 
@@ -49,7 +49,7 @@ austere-axi cloud logout     # this machine forgets the account
 ```
 
 - **You are the owner of all your pages.** Once logged in, `publish`, `publish list|invites|revoke|rm` and the local server's sync use the account. Sign in on the service's page in the browser with the same account and you are the owner on every one of your hosted pages: no `publish login`, no invite. Your notes there carry the name Owner.
-- **Pages from before** are not lost: the first `cloud login` on a machine hands its owner token to the account, so what it published anonymously is the account's. The token keeps working.
+- **Pages from before** are not lost: a machine that published without an account (before 0.17) kept an owner token in `cloud.json`. The first `cloud login` there hands that token to the account, so what it published is the account's, and then drops the token from `cloud.json`. If the hand-over fails, `cloud login` warns and keeps the token; run it again to retry.
 - **Reviewers with an account:** on the service's dashboard (its home page, signed in), grant a page to an email, as you would add a reviewer to a pull request. That person signs in with that email and comments under their account name. Removing the grant cuts them off at once. Nobody can take the name Owner. A signed-in account without a grant gets the same 403 as a visitor without an invite.
 - **Invite links** (`--invite`) and the open link (`--unlisted`) keep working for people without an account, until a later release decides otherwise.
 - **The tokens:** `cloud.json` (mode 0600) keeps the account's access token and refresh token. The CLI refreshes the access token before it expires and stores the new refresh token each time; if the service ends the session, the CLI says so and `cloud login` starts again. The CLI holds no secret of its own: it signs in with the service's public WorkOS client id.

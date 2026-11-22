@@ -24,7 +24,10 @@ import type { AckFrame, ClientPresence, MutationArgs, NoteItem, NoteRow, PageRow
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const WORK = tmp("austere-peer-work-");
 const BASE_ENV = { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1", AUSTERE_AXI_SYNC_RETRY_MS: "200" };
-const TOKEN = crypto.randomBytes(32).toString("base64url");
+const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64url");
+/** The account's access token: the CLI reads only `exp`, so it never refreshes within the run; the stub takes it as the owner. */
+const TOKEN = `${b64({ alg: "RS256", kid: "k" })}.${b64({ sub: "user_ana", exp: Math.floor(Date.now() / 1000) + 86400, n: crypto.randomUUID() })}.sig`;
+const ACCOUNT = { clientId: "client_test", apiBase: "http://127.0.0.1:9", accessToken: TOKEN, refreshToken: "rt_unused", user: { id: "user_ana", email: "ana@example.com", name: "Ana" } };
 const page = (title: string) =>
   `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>\n<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>\n<body><script type="text/openui">\nroot = TextContent("hello")\n</script></body></html>\n`;
 
@@ -186,7 +189,7 @@ before(async () => {
     const u = new URL(req.url ?? "", "http://stub");
     const m = /^\/api\/pages\/([^/]+)\/sync$/.exec(u.pathname);
     const creds = readProtocols(req.headers["sec-websocket-protocol"]);
-    if (!m || !creds.sync || creds.owner !== TOKEN) return socket.destroy();
+    if (!m || !creds.sync || req.headers.authorization !== `Bearer ${TOKEN}`) return socket.destroy();
     if (!stub.pages.has(m[1])) {
       // An expired or deleted page: a plain HTTP refusal.
       const body = JSON.stringify({ error: { code: "invalid", message: "page not found" } });
@@ -221,7 +224,7 @@ interface Machine {
 
 async function machine(pages: Record<string, { id: string; auto: boolean }>): Promise<Machine> {
   const state = tmp("austere-peer-state-");
-  fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: CLOUD, token: TOKEN, pages }), { mode: 0o600 });
+  fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: CLOUD, account: ACCOUNT, pages }), { mode: 0o600 });
   cloudOn(state);
   const port = await freePort();
   const env = { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };

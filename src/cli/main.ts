@@ -82,7 +82,9 @@ function messageOf(err: unknown): string {
 
 const BIN = "austere-axi";
 
-const HELP = `${BIN} ${VERSION} — review artifacts written in OpenUI Lang. You write a short
+/** `--help`: the workflow, the file skeleton and the main commands. */
+function help(): string {
+  return `${BIN} ${VERSION} — review artifacts written in OpenUI Lang. You write a short
 program instead of a whole HTML page; the reviewer annotates it in the browser;
 their feedback comes back to you addressed by statement name.
 
@@ -138,14 +140,35 @@ COMMANDS
   ${BIN} login [file]            single-use sign-in link for a browser the CLI did not open
   ${BIN} components search <words> | show <Name...>   components spec leaves out, and packs on npm
   ${BIN} attach status [file]    is an agent attached to the page (the user turns it on); run list, sessions list
-  ${BIN} publish <file>          hosted share link, only when the user asks
+${shareLine()}
   ${BIN} <command> --help        one command's flags and an example
   ${BIN} help all                every command (owner-only ones too), notes and environment
 `;
+}
+
+/** Commands that need the hosted service's account (RLM-432): help leaves them out until this machine can share. */
+const ACCOUNT_COMMANDS: Record<string, true> = { publish: true, clone: true };
+
+/** Whether `publish` and `clone` can work here: cloud features on and this machine signed in. Reads files only. */
+function canShare(): boolean {
+  return cloud.cloudEnabled() && cloud.signedIn(cloud.readCloud());
+}
+
+/** The main help's line for hosted share links: `publish` once signed in, else how to sign in (with cloud off, `cloud login` says to run `cloud on`). */
+function shareLine(): string {
+  if (canShare()) return `  ${BIN} publish <file>          hosted share link, only when the user asks`;
+  return `  ${BIN} cloud login             sign in to share pages, only when the user asks`;
+}
+
+/** COMMANDS as help lists them: without the account's commands until this machine can share. */
+function shownCommands(): [string, CommandSpec][] {
+  const share = canShare();
+  return Object.entries(COMMANDS).filter(([name]) => share || !Object.hasOwn(ACCOUNT_COMMANDS, name));
+}
 
 /** `help all`: every command from COMMANDS (generated, so it cannot drift), then notes and the environment. */
 function helpAll() {
-  const rows = Object.entries(COMMANDS).map(([, c]) => `  ${BIN} ${c.usage}\n      ${c.summary}`);
+  const rows = shownCommands().map(([, c]) => `  ${BIN} ${c.usage}\n      ${c.summary}`);
   return `
 ALL COMMANDS
 ${rows.join("\n")}
@@ -176,7 +199,7 @@ const SESSION_FLAG = "the agent session this runs in, as <harness>:<id> (omp, co
 /**
  * Every command: usage line, one-line summary, the flags it accepts (name → help) and an example.
  * main() rejects any flag a command does not list, and `<command> --help` prints its entry.
- * Keep in step with HELP above and docs/cli.md.
+ * Keep in step with help() above and docs/cli.md.
  */
 const COMMANDS: Record<string, CommandSpec> = {
   open: {
@@ -448,7 +471,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   cloud: {
     usage: "cloud on | cloud off | cloud status | cloud login | cloud logout | cloud whoami",
     summary:
-      "cloud features: publish, clone, cloud login|whoami and the sync of hosted pages. Off by default: only local features work and nothing reaches the hosted service. `cloud on` and `cloud off` flip the switch (Settings → Cloud does the same), `cloud status` prints it. Your account on the hosted service (WorkOS sign-in: email code, Google, GitHub, passkey): `cloud login` prints a sign-in link with its code on stderr and opens the browser at it (not with AUSTERE_AXI_NO_OPEN=1); approve it there or on any other device, once per machine; you are then the owner of all your hosted pages, from every machine you log in on and in the browser with the same account, and pages this machine published before become the account's. `cloud whoami` prints the account, `cloud logout` forgets it here. Only for hosted pages: the local server needs no account",
+      "cloud features: publish, clone, cloud login|whoami and the sync of hosted pages. Off by default: only local features work and nothing reaches the hosted service. `cloud on` and `cloud off` flip the switch (Settings → Cloud does the same), `cloud status` prints it. Your account on the hosted service (WorkOS sign-in: email code, Google, GitHub, passkey): `cloud login` prints a sign-in link with its code on stderr and opens the browser at it (not with AUSTERE_AXI_NO_OPEN=1); approve it there or on any other device, once per machine. publish, clone and the sync of hosted pages need it: until then they refuse before any request, and help leaves publish and clone out. You are then the owner of all your hosted pages, from every machine you log in on and in the browser with the same account, and pages this machine published anonymously before 0.17 become the account's. `cloud whoami` prints the account, `cloud logout` forgets it here. Only for hosted pages: the local server needs no account",
     flags: {},
     example: "cloud on   |   cloud login",
   },
@@ -564,6 +587,9 @@ function commandHelp(cmd: string): void {
     const width = Math.max(...flags.map(([k]) => k.length + (VALUE_FLAGS.has(k) ? 6 : 0)));
     for (const [k, text] of flags) lines.push(`  ${(`--${k}` + (VALUE_FLAGS.has(k) ? " <val>" : "")).padEnd(width + 4)}${text}`);
   }
+  if (Object.hasOwn(ACCOUNT_COMMANDS, cmd) && !canShare()) {
+    lines.push("", "NOT SIGNED IN", `  ${cmd} needs the hosted service's account on this machine: ${cloud.cloudEnabled() ? "" : `${BIN} cloud on, then `}${BIN} cloud login (only when the user asks to share a page)`);
+  }
   lines.push("", "EXAMPLE", `  ${BIN} ${spec.example}`, "", `Full workflow and file skeleton: ${BIN} --help`);
   process.stdout.write(lines.join("\n") + "\n");
 }
@@ -635,7 +661,7 @@ async function cmdHome() {
     server: h ? `running on ${commandPort()} (v${h.version})` : "not running",
     pages: shown.length ? shown : 0,
     more: sessions.length > shown.length ? `${shown.length} of ${sessions.length} pages shown` : undefined,
-    commands: Object.fromEntries(Object.entries(COMMANDS).map(([name, c]) => [name === "open" ? "<file>" : name, c.summary])),
+    commands: Object.fromEntries(shownCommands().map(([name, c]) => [name === "open" ? "<file>" : name, c.summary])),
     next: shown.length
       ? `${BIN} poll waits for feedback on every page of this checkout (${BIN} poll <file> for one page). ${BIN} --help: workflow and file skeleton.`
       : `${BIN} --help: workflow and file skeleton. ${BIN} spec: component reference. ${BIN} <command> --help: one command.`,
@@ -2730,6 +2756,12 @@ async function shareRequests(args: string[], flags: Flags): Promise<void> {
 
 // ── publish (hosted share links) ──
 
+/** A cloud command's failure: the service's status and code, and `cloud login` as the next step when this machine is not signed in. */
+function cloudFail(caught: unknown): void {
+  const err = caught as { message: string; status?: number; code?: string };
+  fail(err.message, { http: err.status, code: err.code, next: err.code === cloud.LOGIN_REQUIRED ? `${BIN} cloud login` : undefined });
+}
+
 /** `publish`: the one command that talks to the hosted service. */
 async function cmdPublish(args: string[], flags: Flags): Promise<void> {
   const [sub, ...more] = args;
@@ -2851,8 +2883,7 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
       next: `${again} again updates this link (earlier invites keep working); ${BIN} publish invites ${quote(sub)} lists invites; ${BIN} publish revoke ${quote(sub)} <name> revokes one; ${BIN} publish rm ${quote(sub)} deletes the page.`,
     });
   } catch (caught) {
-    const err = caught as { message: string; status?: number; code?: string };
-    fail(err.message, { http: err.status, code: err.code });
+    cloudFail(caught);
   }
 }
 
@@ -2892,13 +2923,12 @@ async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> 
       email: r.email,
       name: r.name || undefined,
       claimed: r.claimed === null ? undefined : `${r.claimed} page${r.claimed === 1 ? "" : "s"} this machine published before are now the account's`,
-      warning: r.claimError ? `This machine's earlier pages stay with its owner token: ${r.claimError}` : undefined,
+      warning: r.claimError ? `This machine's earlier pages are not the account's yet (${r.claimError}): run ${BIN} cloud login again to retry` : undefined,
       note: "You are the owner of all your hosted pages now, here and in the browser with the same account. Grant a page to someone by email on the service's dashboard.",
-      next: `${BIN} cloud whoami; ${BIN} clone lists your pages`,
+      next: `${BIN} publish <file> shares a page; ${BIN} clone lists your pages`,
     });
   } catch (caught) {
-    const err = caught as { message: string; status?: number; code?: string };
-    fail(err.message, { http: err.status, code: err.code });
+    cloudFail(caught);
   }
 }
 
@@ -2917,9 +2947,11 @@ async function cloudSwitch(sub: "on" | "off" | "status"): Promise<void> {
     account: c.account ?? undefined,
     published: c.published || undefined,
     note: c.on
-      ? "publish, clone and the sync of hosted pages talk to the service."
+      ? c.account
+        ? "publish, clone and the sync of hosted pages talk to the service."
+        : "publish, clone and the sync of hosted pages need this machine signed in to the service."
       : `Only local features work; nothing reaches the hosted service.${c.published ? " Published pages stay up there but do not sync, and publish rm needs cloud on." : ""}`,
-    next: c.on ? undefined : `${BIN} cloud on`,
+    next: c.on ? (c.account ? undefined : `${BIN} cloud login`) : `${BIN} cloud on`,
   });
 }
 
@@ -2930,7 +2962,7 @@ async function cmdClone(args: string[]): Promise<void> {
   try {
     if (!id) {
       const pages = await cloud.listPages();
-      if (!pages.length) return print({ pages: "none", next: `${BIN} cloud login, then ${BIN} publish <file>` });
+      if (!pages.length) return print({ pages: "none", next: `${BIN} publish <file>` });
       return print({
         pages: pages.map((p) => ({ id: p.id, title: p.title, file: p.file, url: p.url, expires: shortDate(p.expiresAt), notes: p.notes })),
         next: `${BIN} clone <id> [<file>] brings a page without a file here down to this machine.`,
@@ -2947,8 +2979,7 @@ async function cmdClone(args: string[]): Promise<void> {
       next: `${BIN} ${quote(r.file)} opens it for review; ${BIN} publish ${quote(r.file)} updates the hosted page.`,
     });
   } catch (caught) {
-    const err = caught as { message: string; status?: number; code?: string };
-    fail(err.message, { http: err.status, code: err.code });
+    cloudFail(caught);
   }
 }
 
@@ -3085,15 +3116,18 @@ async function main(): Promise<unknown> {
   if (cmd !== undefined && Object.hasOwn(REMOVED_COMMANDS, cmd)) return removed(`${BIN} ${cmd}`, REMOVED_COMMANDS[cmd]);
   const gone = Object.keys(flags).find((k) => Object.hasOwn(REMOVED_FLAGS, k));
   if (gone) return removed(`--${gone}`, REMOVED_FLAGS[gone]);
+  // The state dir decides what help shows (publish and clone only when signed in), so it is set first.
+  const dev = applyDevDefaults();
+  if (dev) process.stderr.write(`[${BIN}] ${dev}\n`);
   // Which COMMANDS entry this is: none for the home view, "open" for a bare file.
   let name: string | null = null;
   if (cmd !== undefined) {
     if (Object.hasOwn(COMMANDS, cmd)) name = cmd;
     else if (/\.html?$/i.test(cmd) || fs.existsSync(cmd)) name = "open";
-    else if (flags.help) return process.stdout.write(HELP);
-    else return usage(`unknown command: ${cmd}. One of: ${Object.keys(COMMANDS).join(" ")}, or a page file`);
+    else if (flags.help) return process.stdout.write(help());
+    else return usage(`unknown command: ${cmd}. One of: ${shownCommands().map(([n]) => n).join(" ")}, or a page file`);
   }
-  if (flags.help) return name && name !== "help" ? commandHelp(name) : process.stdout.write(HELP);
+  if (flags.help) return name && name !== "help" ? commandHelp(name) : process.stdout.write(help());
   if (error) return usage(error, name);
   const allowed = name ? Object.keys(COMMANDS[name].flags) : [];
   const unknown = Object.keys(flags).filter((k) => !allowed.includes(k));
@@ -3111,8 +3145,6 @@ async function main(): Promise<unknown> {
       return usage(messageOf(err), name);
     }
   }
-  const dev = applyDevDefaults();
-  if (dev) process.stderr.write(`[${BIN}] ${dev}\n`);
   stateDir();
   switch (cmd) {
     case undefined:
@@ -3189,9 +3221,9 @@ async function main(): Promise<unknown> {
     case "open":
       return cmdOpen(rest[0], flags);
     case "help":
-      if (!rest[0]) return process.stdout.write(HELP);
-      if (rest[0] === "all") return process.stdout.write(HELP + helpAll());
-      if (!Object.hasOwn(COMMANDS, rest[0])) return usage(`no command named ${rest[0]}. One of: all ${Object.keys(COMMANDS).join(" ")}`, "help");
+      if (!rest[0]) return process.stdout.write(help());
+      if (rest[0] === "all") return process.stdout.write(help() + helpAll());
+      if (!Object.hasOwn(COMMANDS, rest[0])) return usage(`no command named ${rest[0]}. One of: all ${shownCommands().map(([n]) => n).join(" ")}`, "help");
       return commandHelp(rest[0]);
     default:
       return cmdOpen(cmd, flags);
