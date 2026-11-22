@@ -6,8 +6,10 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ### Changed
 
-- The `austere-setup` skill's description now lists when to use it (install, update, a missing `/austere` command, a failing `npx`, old Node, pages that do not open, phone review, an always-on server) instead of what it does, like the `austere` skill's in 0.17.0. An update request now updates a global install and restarts a running server. (RLM-425)
+- The `austere-setup` skill's description now lists when to use it (setup, a missing `austere-axi` or `/austere` command, old Node, pages that do not open, a server still on the old version after an update, phone review, an always-on server) instead of what it does, like the `austere` skill's in 0.17.0. After an update it restarts a running server. (RLM-425)
 - The guides in `docs/` are pages on the website (`/austere-axi/docs/`), with a Docs item in the nav. They are rebuilt on every push to `main`; the site build fails on a broken link or `#fragment` between them. (RLM-428)
+- **The skills no longer install anything.** The `austere` skill runs the `austere-axi` command the user installed (`npm install -g austere-axi`), not `npx -y austere-axi`; without it, it uses the austere MCP tools if the agent has them, or tells the user and stops. The `austere-setup` skill checks the installed CLI, offers phone review and an always-on server, and runs the test page; it no longer installs or updates the `austere` skill or the CLI. Install both from the README or `docs/install.md`: `npm install -g austere-axi`, then `npx skills add MandalorianBatman/austere-axi --skill austere --skill austere-setup`.
+- The `austere` skill runs the CLI's own subcommands from its output and asks the user before running anything else it suggests, and before acting beyond the page on a note marked `from:` (another reviewer's). With the above, this answers the skills.sh audits of the `austere` skill (Snyk E004, Gen Agent Trust Hub).
 
 ## 0.17.0 (2026-11-22)
 

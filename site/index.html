@@ -79,16 +79,15 @@ strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big ba
       <p>You need Node.js 22.18 or later.</p>
       <div class="installs">
         <div class="install">
-          <h3>Let your agent do it</h3>
-          <p>Install the setup skill, then ask your agent to “set up austere-axi”.</p>
-          <div class="cmd"><code>npx skills add MandalorianBatman/austere-axi --skill austere-setup</code><button type="button" data-copy="npx skills add MandalorianBatman/austere-axi --skill austere-setup">Copy</button></div>
+          <h3>Install</h3>
+          <p>Install the CLI and the skills, then ask your agent to “set up austere-axi”.</p>
+          <div class="cmd"><code>npm install -g austere-axi</code><button type="button" data-copy="npm install -g austere-axi">Copy</button></div>
+          <div class="cmd"><code>npx skills add MandalorianBatman/austere-axi --skill austere --skill austere-setup</code><button type="button" data-copy="npx skills add MandalorianBatman/austere-axi --skill austere --skill austere-setup">Copy</button></div>
         </div>
         <div class="install">
-          <h3>Or do it yourself</h3>
-          <p>Agents can run the CLI with no install. Optionally add a global command and the skill that tells agents when to make a page.</p>
+          <h3>Without a global install</h3>
+          <p>Point your agent at the CLI through npx. The skills need the installed command.</p>
           <div class="cmd"><code>npx -y austere-axi --help</code><button type="button" data-copy="npx -y austere-axi --help">Copy</button></div>
-          <div class="cmd"><code>npm install -g austere-axi</code><button type="button" data-copy="npm install -g austere-axi">Copy</button></div>
-          <div class="cmd"><code>npx skills add MandalorianBatman/austere-axi --skill austere</code><button type="button" data-copy="npx skills add MandalorianBatman/austere-axi --skill austere">Copy</button></div>
         </div>
         <div class="install wide">
           <h3>Claude Code plugin or any MCP client</h3>
