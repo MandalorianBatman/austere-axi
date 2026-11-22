@@ -9,7 +9,8 @@
 // The prompt names files and commands only, never note text (teammates' notes are untrusted).
 import crypto from "node:crypto";
 import type sqlite from "node:sqlite";
-import type { Caller } from "./caller.ts";
+import { liveness } from "./agent-sessions.ts";
+import type { Caller, CallerHarness } from "./caller.ts";
 import { wakePrompt } from "./agent-prompt.ts";
 import type { QueuedEntry, Session, SessionStore } from "./sessions.ts";
 
@@ -18,6 +19,21 @@ export const WAKE_CLAIM_MS = 60_000;
 
 /** The longest a wake-poll waits; a client asks again after. */
 export const WAKE_POLL_MAX_MS = 55_000;
+
+/**
+ * How long a session whose client stopped waiting counts as busy (in a turn) when its process
+ * cannot be checked. A session whose harness process is known to run stays busy until it exits.
+ */
+export const WAKE_BUSY_MS = 15 * 60_000;
+
+/**
+ * What the review page hears about a woken session (RLM-447): `idle`, a client waits and Send wakes
+ * it now; `busy`, its session is in a turn, and the notes go to it when the turn ends.
+ */
+export interface WakeStatus {
+  harness: CallerHarness;
+  state: "idle" | "busy";
+}
 
 /** One page a wake points at: its file, how many notes wait and the newest one's seq (the reply's cursor). */
 export interface WakePage {
@@ -59,6 +75,15 @@ interface Waiter {
   timer?: NodeJS.Timeout;
 }
 
+/** A session whose client asked for a wake since the server started. */
+interface Seen {
+  harness: CallerHarness;
+  sessionId: string;
+  pages: Set<string>;
+  /** When its client last waited (or stopped waiting). */
+  at: number;
+}
+
 export interface WakeOptions {
   db: sqlite.DatabaseSync;
   store: SessionStore;
@@ -66,8 +91,10 @@ export interface WakeOptions {
   listening: (s: Session) => boolean;
   /** Why the page takes notes no owner sent (Q3, A17), or null. Such a page wakes nobody, as it starts no run. */
   autoConflict: (s: Session) => string | null;
-  /** A woken session got these notes: mark them delivered, tell the page, cancel a queued run. */
-  delivered: (s: Session, entries: QueuedEntry[]) => void;
+  /** A woken session of `harness` got these notes: mark them delivered, tell the page, cancel a queued run. */
+  delivered: (s: Session, entries: QueuedEntry[], harness: CallerHarness) => void;
+  /** What `status` says about these pages may have changed: tell their open pages. */
+  changed: (pageIds: Iterable<string>) => void;
   log: (...a: unknown[]) => void;
 }
 
@@ -89,9 +116,41 @@ export class Wake {
   /** Page id → the claim that holds it. */
   private claimed = new Map<string, Claim>();
   private claims = new Map<string, Claim>();
+  /** Session key → the session, while its client keeps asking. */
+  private seen = new Map<string, Seen>();
 
   constructor(o: WakeOptions) {
     this.o = o;
+  }
+
+  /**
+   * Who would take a note on the page: a session whose client waits now (`idle`), else one in a
+   * turn (`busy`: its client stopped waiting and its process still runs). Null when no session's
+   * client knows the page, or the page wakes nobody (archived, `--auto`).
+   */
+  status(s: Session): WakeStatus | null {
+    if (s.archivedAt || this.o.autoConflict(s)) return null;
+    let busy: WakeStatus | null = null;
+    for (const seen of this.seen.values()) {
+      if (!seen.pages.has(s.id)) continue;
+      const key = sessionKey(seen);
+      const waiting = [...this.waiters].some((w) => w.key === key && w.pages.has(s.id));
+      if (waiting || this.claimed.get(s.id)?.key === key)
+        return { harness: seen.harness, state: "idle" };
+      if (!busy && this.inTurn(seen)) busy = { harness: seen.harness, state: "busy" };
+    }
+    return busy;
+  }
+
+  /** A session not waiting is in a turn while its process runs, or for WAKE_BUSY_MS when that cannot be told. */
+  private inTurn(seen: Seen): boolean {
+    const row = this.o.db
+      .prepare("SELECT pid, pid_start FROM agent_sessions WHERE harness = ? AND session_id = ?")
+      .get(seen.harness, seen.sessionId) as
+      | { pid: number | null; pid_start: string | null }
+      | undefined;
+    const live = row ? liveness(row) : "unknown";
+    return live === "alive" || (live === "unknown" && Date.now() - seen.at < WAKE_BUSY_MS);
   }
 
   /** The pages this session has a role on (author, editor, listener). */
@@ -161,6 +220,7 @@ export class Wake {
     this.claims.delete(claim.token);
     for (const id of claim.pages.keys())
       if (this.claimed.get(id) === claim) this.claimed.delete(id);
+    this.o.changed(claim.pages.keys());
   }
 
   /**
@@ -178,6 +238,12 @@ export class Wake {
     const pages = this.roles(caller);
     if (!pages.length) return answer({ status: "no_role" });
     const key = sessionKey(caller);
+    this.seen.set(key, {
+      harness: caller.harness,
+      sessionId: caller.sessionId,
+      pages: new Set(pages),
+      at: Date.now(),
+    });
     const now = this.take(key, client, pages);
     if (now) return answer(now);
     if (!(timeoutMs > 0)) return answer({ status: "idle" });
@@ -189,9 +255,15 @@ export class Wake {
       Math.min(timeoutMs, WAKE_POLL_MAX_MS),
     );
     this.waiters.add(waiter);
+    this.o.changed(pages);
     onClose(() => {
       clearTimeout(waiter.timer);
-      this.waiters.delete(waiter);
+      if (!this.waiters.delete(waiter)) return;
+      // A turn started, or the process went: the page reads busy, or nothing once the process is gone.
+      const seen = this.seen.get(key);
+      if (seen) seen.at = Date.now();
+      this.o.changed(pages);
+      setTimeout(() => this.o.changed(pages), 2000).unref();
     });
   }
 
@@ -229,6 +301,8 @@ export class Wake {
       return { ok: true, delivered: 0 };
     }
     let delivered = 0;
+    // Set before any claim is made (poll), so it names the claim's session.
+    const harness = this.seen.get(claim.key)?.harness ?? "omp";
     for (const [id, cursor] of claim.pages) {
       const s = this.o.store.get(id);
       if (!s) continue;
@@ -236,7 +310,7 @@ export class Wake {
         .after(s, s.deliveredSeq)
         .filter((e) => e.seq <= cursor && (e.items || []).length > 0);
       if (!entries.length) continue;
-      this.o.delivered(s, entries);
+      this.o.delivered(s, entries, harness);
       delivered++;
     }
     this.o.log("wake-delivered", claim.key, delivered);

@@ -69,6 +69,8 @@ interface Entry {
   held?: boolean;
   end?: boolean;
   seenAt?: number;
+  /** The harness of the agent session a wake handed the note to (RLM-447). */
+  seenBy?: string;
   workAt?: number;
   doneAt?: number;
   discarded?: boolean;
@@ -143,12 +145,20 @@ interface SnapshotEvent {
   thirdPartyPacks?: string[];
   program: string;
   revision: number;
+  wake?: WakeInfo;
 }
 
 interface PresenceEvent extends SessionInfo {
   presence: string;
   since?: number;
   now: number;
+  wake?: WakeInfo;
+}
+
+/** An agent session a note would wake (RLM-447): now (`idle`), or once its turn ends (`busy`). WakeStatus in src/cli/wake.ts. */
+interface WakeInfo {
+  harness: string;
+  state: "idle" | "busy";
 }
 
 interface ChangedEvent {
@@ -407,6 +417,8 @@ const state: {
   presence: string;
   /** When the agent took the notes it works on, by this browser's clock; null when no agent has them. */
   since: number | null;
+  /** An agent session a note would wake; null when none would. */
+  wake: WakeInfo | null;
   archived: boolean;
   unread: number;
   more: boolean;
@@ -436,6 +448,7 @@ const state: {
   transcript: [],
   presence: "idle",
   since: null,
+  wake: null,
   archived: false,
   unread: 0,
   more: false,
@@ -1222,15 +1235,19 @@ function receipt(entry: Entry): HTMLElement | null {
       }),
     );
   }
-  if (!entry.seenAt) {
+  if (entry.seenAt && entry.seenBy)
+    row.append(h("em", { text: `Delivered to ${entry.seenBy} ${fmtTime(entry.seenAt)}` }));
+  else if (!entry.seenAt) {
     row.append(
       h("em", {
         text:
-          state.presence === "listening"
+          state.presence === "listening" || state.wake?.state === "idle"
             ? ""
-            : state.unread
-              ? `waiting for the agent (${state.unread} not answered yet)`
-              : "waiting for the agent",
+            : state.wake?.state === "busy"
+              ? "Queued · agent busy"
+              : state.unread
+                ? `waiting for the agent (${state.unread} not answered yet)`
+                : "waiting for the agent",
       }),
     );
   }
@@ -1704,6 +1721,10 @@ function renderPresence() {
       took ? `Took your notes ${took} ago, no reply yet` : "Took your notes, no reply yet",
       "stale",
     ];
+  else if (state.wake?.state === "idle")
+    [label, cls] = [`Agent idle in ${state.wake.harness} · Send wakes it`, "listening"];
+  else if (state.wake?.state === "busy")
+    [label, cls] = [`Agent busy in ${state.wake.harness} · notes wait for its turn`, "busy"];
   else [label, cls] = ["Agent not listening", "idle"];
   if (cls === "idle" && state.unread) label += ` · ${state.unread} not answered yet`;
   // With an agent attached, "not listening" says nothing: the Agent pill tells what runs.
@@ -1726,7 +1747,11 @@ function renderPresence() {
           ? "The agent took your last notes. It has not replied or changed the page for a while."
           : cls === "hosted"
             ? "Notes go to the page owner. Replies show up here as they are posted."
-            : "";
+            : cls === "busy"
+              ? "The agent session that worked on this page is in a turn. Your notes start its next turn when this one ends."
+              : state.wake
+                ? "The agent session that worked on this page is idle. Send starts a turn in it."
+                : "";
   // Nobody listens: what Send does now, and for the owner the way to start an agent.
   const line = $(".composer-presence");
   const show = cls === "idle" && !attached && (OWNER || VIEWER.auto === true);
@@ -3352,6 +3377,7 @@ function connect() {
     state.transcript = (d.transcript || []).filter((e) => !e.discarded);
     state.presence = d.presence;
     state.since = d.since == null ? null : d.since + (Date.now() - d.now);
+    state.wake = d.wake ?? null;
     state.archived = !!d.session.archived;
     state.unread = d.session.unread || 0;
     state.more = !!d.more;
@@ -3400,6 +3426,7 @@ function connect() {
     const d: PresenceEvent = JSON.parse(e.data);
     state.presence = d.presence;
     state.since = d.since == null ? null : d.since + (Date.now() - d.now);
+    state.wake = d.wake ?? null;
     state.archived = !!d.archived;
     state.unread = d.unread || 0;
     setMode(state.mode);

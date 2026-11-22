@@ -34,6 +34,8 @@ export interface UserEntry {
   items: NoteItem[];
   end?: boolean;
   seenAt: number | null;
+  /** The harness of the agent session a wake handed the note to (RLM-447); none when a poll or `feedback` took it. */
+  seenBy?: string;
   doneAt: number | null;
   seq: number | null;
   author?: string;
@@ -116,6 +118,7 @@ interface NoteRow {
   done_at: number | null;
   remote_id: string | null;
   device_id: string | null;
+  seen_by: string | null;
 }
 
 /** A row of `replies`. */
@@ -226,10 +229,10 @@ export class SessionStore {
       note: db.prepare(`SELECT 1 FROM notes WHERE id = ?`),
       hasNotes: db.prepare(`SELECT 1 FROM notes WHERE artifact_id = ? LIMIT 1`),
       saveNote: db.prepare(`
-        INSERT INTO notes (id, artifact_id, seq, state, author, items, ends, at, released_at, seen_at, work_at, done_at, remote_id, device_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO notes (id, artifact_id, seq, state, author, items, ends, at, released_at, seen_at, work_at, done_at, remote_id, device_id, seen_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET seq = excluded.seq, state = excluded.state, released_at = excluded.released_at,
-          seen_at = excluded.seen_at, work_at = excluded.work_at, done_at = excluded.done_at`),
+          seen_at = excluded.seen_at, work_at = excluded.work_at, done_at = excluded.done_at, seen_by = excluded.seen_by`),
       maxSeq: db.prepare(`SELECT COALESCE(MAX(seq), 0) AS n FROM notes`),
       replies: db.prepare(`SELECT * FROM replies ORDER BY at, rowid`),
       saveReply: db.prepare(
@@ -361,6 +364,7 @@ export class SessionStore {
       e.doneAt ?? null,
       e.remoteId ?? null,
       e.deviceId ?? null,
+      e.seenBy ?? null,
     );
   }
 
@@ -557,12 +561,14 @@ export class SessionStore {
     return this.after(s, s.ackedSeq).filter((e) => (e.items || []).length > 0);
   }
 
-  /** A poll answer with these notes went out. They stay unread until the agent acknowledges them. */
-  markDelivered(s: Session, entries: UserEntry[]): void {
+  /** A poll answer with these notes went out, or a wake handed them to a session of harness `by`. They stay unread until the agent acknowledges them. */
+  markDelivered(s: Session, entries: UserEntry[], by?: string): void {
     const now = Date.now();
     this.updateNotes(
       s,
-      entries.filter((e) => !e.seenAt).map((e): NoteChange => [e, { seenAt: now }]),
+      entries
+        .filter((e) => !e.seenAt)
+        .map((e): NoteChange => [e, by ? { seenAt: now, seenBy: by } : { seenAt: now }]),
     );
     s.deliveredSeq = Math.max(s.deliveredSeq, ...entries.map((e) => Number(e.seq)));
   }
@@ -756,6 +762,7 @@ function noteEntry(row: NoteRow): UserEntry {
   if (row.ends) e.end = true;
   if (row.author) e.author = row.author;
   if (row.device_id) e.deviceId = row.device_id;
+  if (row.seen_by) e.seenBy = row.seen_by;
   if (row.work_at != null) e.workAt = row.work_at;
   if (row.released_at != null) e.releasedAt = row.released_at;
   if (row.remote_id) Object.assign(e, { remote: true, remoteId: row.remote_id });
