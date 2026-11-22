@@ -81,7 +81,7 @@ Limits are in `<state>/attach.json`, which only you edit: at most 15 minutes per
 When you press Send, the first of these that can take the note gets it:
 
 1. **A poll.** An agent that polls the page (or its checkout or project) gets the note at once. No run starts.
-2. **An idle agent session.** With the omp extension loaded (see [Wake an idle session](cli.md#wake-an-idle-session)), the open omp session that wrote, edited or listened to the page starts a turn with your note. If that session is in the middle of a turn, the note waits for the turn to end ("Queued · agent busy"). A delivered wake stops an attached run that has not started yet.
+2. **An idle agent session.** With the omp or Copilot CLI extension loaded (see [Wake an idle session](cli.md#wake-an-idle-session)), the open session that wrote, edited or listened to the page starts a turn with your note. If that session is in the middle of a turn, the note waits for the turn to end ("Queued · agent busy"). A delivered wake stops an attached run that has not started yet.
 3. **An attached run.** With attach on, a run starts after the 5 second wait, if nothing above took the note first. While the session is busy, a `fork` or `new` run can start before its turn ends; a `same` run waits for the session ("Waiting for session"), so the session gets the note when its turn ends.
 4. **The next agent that asks.** Otherwise the note waits for a `poll` or `feedback`. Only then does the page say "Agent not listening".
 

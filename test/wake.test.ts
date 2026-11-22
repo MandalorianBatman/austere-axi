@@ -1,5 +1,5 @@
-// Push delivery (RLM-447): the server's wake-poll and wake-ack routes, and the omp extension's
-// client against a real server with a fake harness (idle or busy, and what it was sent).
+// Push delivery (RLM-447, RLM-452): the server's wake-poll and wake-ack routes, and the omp and
+// Copilot extensions' client against a real server with a fake harness (idle or busy, and what it was sent).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -8,7 +8,9 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import { WakeClient } from "../src/harness/omp.ts";
+import { copilotWake } from "../src/harness/copilot.ts";
+import type { CopilotEvent } from "../src/harness/copilot.ts";
+import { ompWake } from "../src/harness/omp.ts";
 import type { HostApi, HostContext } from "../src/harness/omp.ts";
 import { quote } from "../src/cli/paths.ts";
 import { ownerHeaders } from "./owner.ts";
@@ -70,9 +72,9 @@ intro = TextContent("hello")
   return file;
 }
 
-/** `open` from an omp session: the session becomes the page's author. */
-async function openAs(file: string, sessionId: string): Promise<string> {
-  const r = await req("/api/open", { file, session: { harness: "omp", sessionId } });
+/** `open` from an agent session: the session becomes the page's author. */
+async function openAs(file: string, sessionId: string, harness = "omp"): Promise<string> {
+  const r = await req("/api/open", { file, session: { harness, sessionId } });
   return r.session?.id ?? "";
 }
 
@@ -255,19 +257,21 @@ function fakeHarness(sessionId: string) {
     sessionManager: { getSessionId: () => sessionId },
   };
   const api: HostApi = { on: () => {}, sendUserMessage: (t) => sent.push(t) };
-  return { sent, host, ctx, client: new WakeClient(api, ENV) };
+  const { client, context } = ompWake(api, ENV);
+  context(ctx);
+  return { sent, host, client };
 }
 
 test("the omp extension stays inert without a role, and wakes its idle session once a page has it", async () => {
   const h = fakeHarness("ext-1");
-  await h.client.check(h.ctx);
+  await h.client.check();
   assert.equal(h.client.active, false, "no role: inert after one check");
 
   const file = page("ext.html");
   const id = await openAs(file, "ext-1");
   // A turn that ran austere-axi makes the next turn end check again.
-  h.client.toolResult({ toolName: "bash", input: { command: `austere-axi ${file}` } });
-  h.client.agentEnd(h.ctx);
+  h.client.toolRan("bash", { command: `austere-axi ${file}` });
+  h.client.turnEnd();
   await until("the client to activate", () => h.client.active);
 
   try {
@@ -288,6 +292,58 @@ test("the omp extension stays inert without a role, and wakes its idle session o
     assert.equal(h.sent.length, 1, "delivered once");
     const fb = await req("/api/feedback", { file, peek: true });
     assert.equal(fb.entries?.[0].status, "open", "delivered, not yet read by the agent");
+  } finally {
+    h.client.stop();
+  }
+});
+
+/** A fake Copilot session: the events the extension hears, and the messages it sent. */
+function fakeCopilot(sessionId: string) {
+  const sent: { prompt: string; source?: string }[] = [];
+  let handler: (e: CopilotEvent) => void = () => {};
+  const client = copilotWake(
+    {
+      sessionId,
+      on: (h) => (handler = h),
+      send: async (m) => (sent.push(m), "msg"),
+    },
+    ENV,
+  );
+  return { sent, client, emit: (e: CopilotEvent) => handler(e) };
+}
+
+test("the Copilot extension is busy from a turn's start to session.idle, and wakes its idle session once", async () => {
+  const h = fakeCopilot("cop-1");
+  const file = page("copilot.html");
+  try {
+    // A turn runs `austere-axi open` from Copilot's shell tool; the session ends it idle.
+    h.emit({ type: "user.message" });
+    h.emit({ type: "assistant.turn_start" });
+    const id = await openAs(file, "cop-1", "copilot");
+    h.emit({
+      type: "tool.execution_start",
+      data: { toolName: "bash", arguments: { command: `austere-axi open ${file}` } },
+    });
+    h.emit({ type: "session.idle" });
+    await until("the client to activate", () => h.client.active);
+
+    // A new turn; a sub-agent's idle is not the session's.
+    h.emit({ type: "user.message" });
+    h.emit({ type: "assistant.turn_start" });
+    h.emit({ type: "assistant.idle", agentId: "sub-1" });
+    await send(id, "busy note");
+    // Real time, as above: the absence of a turn is the point, over more than two 1 s ticks.
+    await new Promise((r) => setTimeout(r, 2500));
+    assert.equal(h.sent.length, 0, "never folds into a running turn");
+
+    const idleAt = Date.now();
+    h.emit({ type: "session.idle" });
+    await until("the wake", () => h.sent.length > 0, 8_000);
+    assert.ok(Date.now() - idleAt < 4000, `woken ${Date.now() - idleAt} ms after idle`);
+    assert.ok(h.sent[0].prompt.includes(`austere-axi feedback ${quote(file)}`), h.sent[0].prompt);
+    assert.equal(h.sent[0].source, "automation-austere-axi");
+    await new Promise((r) => setTimeout(r, 2500));
+    assert.equal(h.sent.length, 1, "delivered once");
   } finally {
     h.client.stop();
   }
