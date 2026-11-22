@@ -66,13 +66,14 @@ You need two things:
 
 Then:
 
-1. Run this once in a terminal:
+1. Run these once in a terminal:
 
    ```sh
-   npx skills add MandalorianBatman/austere-axi --skill austere-setup
+   npm install -g austere-axi
+   npx skills add MandalorianBatman/austere-axi --skill austere --skill austere-setup
    ```
 
-2. Tell your agent: **"set up austere-axi"**. It checks your computer, installs the rest, and opens a test page so you can see it work.
+2. Tell your agent: **"set up austere-axi"**. It checks the install, offers phone review and an always-on server, and opens a test page so you can see it work.
 
 After that, ask for a page whenever an answer would be easier to review as one.
 
