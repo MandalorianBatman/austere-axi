@@ -10,7 +10,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import type { Browser, BrowserContext, Page } from "playwright-core";
+import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import { launchBrowser } from "../../scripts/lib/browser.ts";
 import { ownerKey } from "../../src/cli/invites.ts";
 import { claimLink, ownerHeaders } from "../owner.ts";
@@ -83,10 +83,9 @@ async function shot(page: Page, name: string) {
     });
 }
 
-/** A signed-in owner tab on Settings at `width`, collecting page errors; dialogs (confirm, prompt) answer `answer`. */
+/** A signed-in owner tab on Settings at `width`, collecting page errors; . */
 async function ownerTab(
   width = 1280,
-  answer = "",
 ): Promise<{ page: Page; context: BrowserContext; problems: string[] }> {
   const context = await browser.newContext({
     viewport: { width, height: width > 500 ? 900 : 844 },
@@ -97,7 +96,6 @@ async function ownerTab(
   page.on("console", (m) => {
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
   });
-  page.on("dialog", (d) => void d.accept(answer || undefined));
   const { data } = await call<{ code: string }>("POST", "/api/login", {});
   await page.goto(`http://127.0.0.1:${port}/?view=settings&login=${data.code}`);
   await page.locator("h1", { hasText: "Settings" }).waitFor();
@@ -105,6 +103,20 @@ async function ownerTab(
 }
 
 const part = (page: Page, id: string) => page.locator(`#set-${id}`);
+
+/** Choose an option of a shadcn select by the label of its trigger. */
+async function choose(scope: Locator | Page, trigger: string, option: string | RegExp) {
+  await scope.getByRole("combobox", { name: trigger }).click();
+  const page = "page" in scope ? scope.page() : scope;
+  await page.getByRole("option", { name: option }).click();
+}
+
+/** The in-page dialog that replaced confirm() and prompt(): fill the box when there is one, then take the default button. */
+async function answer(page: Page, text?: string) {
+  const dialog = page.getByRole("dialog");
+  if (text !== undefined) await dialog.getByRole("textbox").fill(text);
+  await dialog.getByRole("button", { name: /^(Continue|Save)$/ }).click();
+}
 
 before(async () => {
   for (const f of ["austere.js", "chrome/chrome.js", "chrome/shell.js"]) {
@@ -210,7 +222,12 @@ test("settings: every section loads; a request is approved; a link is made; the 
     for (const id of ["people", "network", "review", "cloud", "projects", "about"])
       assert.ok(await part(page, id).isVisible(), id);
     assert.equal(
-      (await page.locator('.views a[data-view="settings"] .count').innerText()).trim(),
+      (
+        await page
+          .locator(".views li", { has: page.locator('a[data-view="settings"]') })
+          .locator(".count")
+          .innerText()
+      ).trim(),
       "1",
       "one person waits",
     );
@@ -235,7 +252,7 @@ test("settings: every section loads; a request is approved; a link is made; the 
     );
     const lan = net.locator('[data-slot="local-network"]');
     assert.equal(
-      await lan.locator("input[type=checkbox]").isChecked(),
+      await lan.getByRole("switch").isChecked(),
       false,
       "the local network is off by default",
     );
@@ -251,26 +268,29 @@ test("settings: every section loads; a request is approved; a link is made; the 
 
     // People: Bo waits; approve for the project.
     const bo = page.locator("[data-request]", { hasText: "Bo" });
-    await bo.locator('select[name="scope"]').selectOption({ label: "Every page in shop" });
+    await choose(bo, "What Bo can review", "Every page in shop");
     await bo.getByRole("button", { name: "Approve" }).click();
-    await page.locator(".status", { hasText: "Bo is in: project shop" }).waitFor();
+    await page.locator("[data-sonner-toast]", { hasText: "Bo is in: project shop" }).waitFor();
     await page.locator("[data-device]", { hasText: "Bo" }).waitFor();
     assert.equal(
-      await page.locator('.views a[data-view="settings"] .count').count(),
+      await page
+        .locator(".views li", { has: page.locator('a[data-view="settings"]') })
+        .locator(".count")
+        .count(),
       0,
       "nobody waits now",
     );
 
     // A new link from Settings: listed under the links nobody has opened.
     await page.locator(".new-link input[name=name]").fill("Cy");
-    await page.locator(".new-link select[name=page]").selectOption(ids.plan);
+    await choose(page.locator(".new-link"), "Page", /Checkout plan/);
     await page.locator(".new-link").getByRole("button", { name: "Create link" }).click();
-    await page.locator(".status", { hasText: "Link for Cy" }).waitFor();
+    await page.locator("[data-sonner-toast]", { hasText: "Link for Cy" }).waitFor();
     await page.locator("[data-link]", { hasText: "Cy" }).waitFor();
 
     // Review defaults: straight to the agent, then a share that does not say takes it.
     await part(page, "review").getByLabel("Send them straight to the agent").check();
-    await page.locator(".status", { hasText: "go straight to the agent" }).waitFor();
+    await page.locator("[data-sonner-toast]", { hasText: "go straight to the agent" }).waitFor();
     const made = await call<{ auto: boolean }>("POST", "/api/share", {
       file: path.join(SHOP, "docs", "plan.html"),
       name: "Di",
@@ -284,16 +304,16 @@ test("settings: every section loads; a request is approved; a link is made; the 
     assert.equal(held.data.auto, false, "a share that says keeps its own");
 
     // Cloud: off by default; the switch turns it on and off, and settings.json follows.
-    const cloudSwitch = part(page, "cloud").locator('[data-slot="cloud"] input[type=checkbox]');
+    const cloudSwitch = part(page, "cloud").locator('[data-slot="cloud"]').getByRole("switch");
     assert.equal(await cloudSwitch.isChecked(), false, "cloud features are off by default");
     assert.match(await part(page, "cloud").innerText(), /Off: only local features work/);
     await cloudSwitch.check();
-    await page.locator(".status", { hasText: "Cloud features are on" }).waitFor();
+    await page.locator("[data-sonner-toast]", { hasText: "Cloud features are on" }).waitFor();
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(STATE, "settings.json"), "utf8")), {
       cloud: true,
     });
-    await part(page, "cloud").locator('[data-slot="cloud"] input[type=checkbox]').uncheck();
-    await page.locator(".status", { hasText: "Cloud features are off" }).waitFor();
+    await part(page, "cloud").locator('[data-slot="cloud"]').getByRole("switch").uncheck();
+    await page.locator("[data-sonner-toast]", { hasText: "Cloud features are off" }).waitFor();
     assert.equal((await call<{ on: boolean }>("GET", "/api/settings/cloud")).data.on, false);
     assert.deepEqual(problems, []);
   } finally {
@@ -303,11 +323,12 @@ test("settings: every section loads; a request is approved; a link is made; the 
 
 test("settings: revoke a device, rename a project; a reviewer gets 403; another site's POST is refused", async (t) => {
   if (skipReason) return t.skip(skipReason);
-  const { page, context, problems } = await ownerTab(1280, "storefront");
+  const { page, context, problems } = await ownerTab(1280);
   try {
     const ana = page.locator("[data-device]", { hasText: "Ana" });
     await ana.getByRole("button", { name: "Revoke Ana" }).click();
-    await page.locator(".status", { hasText: "Revoked Ana" }).waitFor();
+    await answer(page);
+    await page.locator("[data-sonner-toast]", { hasText: "Revoked Ana" }).waitFor();
     await page.locator("[data-device]", { hasText: "Ana" }).waitFor({ state: "detached" });
     assert.equal(
       (await call("GET", `/s/${ids.plan}`, undefined, { cookie: ids.anaCookie })).status,
@@ -316,7 +337,8 @@ test("settings: revoke a device, rename a project; a reviewer gets 403; another 
     );
 
     await part(page, "projects").getByRole("button", { name: "Rename shop" }).click();
-    await page.locator(".status", { hasText: "Renamed shop to storefront." }).waitFor();
+    await answer(page, "storefront");
+    await page.locator("[data-sonner-toast]", { hasText: "Renamed shop to storefront." }).waitFor();
     await page.locator(".proj-link", { hasText: "storefront" }).waitFor();
     assert.deepEqual(problems, []);
   } finally {
@@ -432,5 +454,35 @@ test("the page's Share with the default auto and attach on: untouched it holds t
   } finally {
     await context.close();
     await call("POST", "/api/share/default", { auto: false });
+  }
+});
+
+test("settings forms: a bad entry says why beside the field, Enter submits, the button waits for the answer", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab();
+  try {
+    const form = page.locator(".new-link");
+    // Empty name: no request, a message under the field.
+    let asked = 0;
+    await page.route("**/hub/api/people/share", async (route) => {
+      asked++;
+      await new Promise((r) => setTimeout(r, 400));
+      await route.continue();
+    });
+    await form.getByRole("button", { name: "Create link" }).click();
+    await form.getByText("Enter their name.").waitFor();
+    assert.equal(asked, 0, "nothing sent while the form is invalid");
+    // Keyboard: type a name, Enter. The button is off and says so until the server answers.
+    await form.getByLabel("Their name").fill("Gus");
+    await form.getByLabel("Their name").press("Enter");
+    await form.getByRole("button", { name: "Creating…" }).waitFor();
+    assert.ok(await form.getByRole("button", { name: "Creating…" }).isDisabled());
+    await page.locator("[data-sonner-toast]", { hasText: "Link for Gus" }).waitFor();
+    await page.locator("[data-link]", { hasText: "Gus" }).waitFor();
+    assert.equal(asked, 1);
+    assert.equal(await form.getByLabel("Their name").inputValue(), "", "the form starts over");
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
   }
 });

@@ -4,8 +4,12 @@
 // terminal. Every setting here has a CLI form too; the hints name it.
 // Drawn from the Hub-Settings artboard: each part is a card, People across the top, Network beside Review
 // defaults, Cloud and About, Projects below.
-import { Fragment, useRef, useState } from "react";
-import type { ReactElement, ReactNode, RefObject } from "react";
+import { Fragment, useEffect, useState } from "react";
+import type { ReactElement, ReactNode } from "react";
+import { useForm, useWatch } from "react-hook-form";
+import type { Control, FieldValues, Path } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import type {
   LocalNetwork,
   PagesResponse,
@@ -27,9 +31,17 @@ import { tilde } from "./hub-env.ts";
 import { get, send } from "./hub-http.ts";
 import { useLoad } from "./hub-load.ts";
 import { Empty, ViewLink } from "./hub-parts.tsx";
-import { reload, say } from "./hub-store.ts";
+import { reload } from "./hub-store.ts";
+import { say } from "./hub-toast.ts";
+import { confirmDialog, promptDialog } from "./hub-dialog.tsx";
 import { Icon, ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
+import { Button as UiButton } from "@/chrome/ui/button";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/chrome/ui/form";
+import { Input } from "@/chrome/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/chrome/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/chrome/ui/select";
+import { Switch } from "@/chrome/ui/switch";
 
 /** The parts of the page, in order: the anchors of its own small menu. */
 const PARTS = [
@@ -56,56 +68,80 @@ function Words({ text }: { text: string }): ReactElement {
   return <>{text.split("`").map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part))}</>;
 }
 
-/** A labelled control in a row. */
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
+type Option = [value: string, text: string];
 
-/**
- * A select that remembers the owner touched it (`data-touched`): an untouched notes choice is not sent, so the
- * server applies the saved default itself (and holds the notes where an attached agent rules auto out).
- */
-function Select({
-  ref,
+/** A shadcn select as a form field: label, the choices, and an inline error. */
+function SelectField<T extends FieldValues>({
+  control,
   name,
-  options,
-  value,
   label,
-  onChange,
+  options,
+  ariaLabel,
 }: {
-  ref?: RefObject<HTMLSelectElement | null>;
-  name: string;
-  options: [string, string][];
-  value: string;
-  label: string;
-  onChange?: (value: string) => void;
+  control: Control<T>;
+  name: Path<T>;
+  label?: string;
+  options: Option[];
+  /** What a screen reader hears when there is no visible label. */
+  ariaLabel?: string;
 }) {
   return (
-    <select
-      ref={ref}
+    <FormField
+      control={control}
       name={name}
-      aria-label={label}
-      defaultValue={value}
-      onChange={(e) => {
-        e.currentTarget.dataset.touched = "1";
-        onChange?.(e.currentTarget.value);
-      }}
-    >
-      {options.map(([v, text]) => (
-        <option key={v} value={v}>
-          {text}
-        </option>
-      ))}
-    </select>
+      render={({ field }) => (
+        <FormItem className="field">
+          {label ? <FormLabel>{label}</FormLabel> : null}
+          <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+            <FormControl>
+              <SelectTrigger aria-label={ariaLabel ?? label} className="w-full min-w-0">
+                <SelectValue />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              {options.map(([v, text]) => (
+                <SelectItem key={v} value={v}>
+                  {text}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
   );
 }
 
-/** A checkbox drawn as a switch (settings.css `input.toggle`); it stays a checkbox for forms and tests. */
+/** A text input as a form field: label, inline error. */
+function TextField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  ...input
+}: {
+  control: Control<T>;
+  name: Path<T>;
+  label: string;
+} & Omit<React.ComponentProps<typeof Input>, "name" | "value" | "onChange" | "onBlur" | "ref">) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className="field">
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <Input {...input} {...field} aria-label={input["aria-label"] ?? label} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/** A switch the server decides: its answer shows, and a read that changes it redraws the switch. */
 function Toggle({
   on,
   disabled,
@@ -115,22 +151,23 @@ function Toggle({
   on: boolean;
   disabled?: boolean;
   describedBy?: string;
-  /** Called with the new state; `undo` puts the box back (a confirmation said no). */
-  onChange: (checked: boolean, undo: () => void) => void;
+  /** Called with the new state; `undo` puts the switch back (a confirmation said no). */
+  onChange: (checked: boolean, undo: () => void) => unknown;
 }) {
+  const [shown, setShown] = useState(on);
+  const [seen, setSeen] = useState(on);
+  if (seen !== on) {
+    setSeen(on);
+    setShown(on);
+  }
   return (
-    <input
-      // The server's answer decides what shows: a read that changes it remounts the box.
-      key={String(on)}
-      type="checkbox"
-      role="switch"
-      className="toggle"
-      defaultChecked={on}
+    <Switch
+      checked={shown}
       disabled={disabled}
       aria-describedby={describedBy}
-      onChange={(e) => {
-        const box = e.currentTarget;
-        onChange(box.checked, () => (box.checked = !box.checked));
+      onCheckedChange={(checked) => {
+        setShown(checked);
+        void onChange(checked, () => setShown(!checked));
       }}
     />
   );
@@ -209,19 +246,20 @@ function Command({ cmd }: { cmd: string }) {
   return (
     <div className="set-cmd">
       <code>{cmd}</code>
-      <button
+      <UiButton
         type="button"
-        className="btn"
+        variant="outline"
+        size="sm"
         aria-label={`Copy ${cmd}`}
         onClick={() => copy(cmd, "The command")}
       >
         Copy
-      </button>
+      </UiButton>
     </div>
   );
 }
 
-/** A button: `btn ghost` unless `cls` says `btn`, `btn primary`, `btn text` (a link-like word), plus `danger` for red. */
+/** A button: `cls` says how it looks (`btn` outline, `btn ghost`, `btn primary`, `btn text` a link-like word, `danger` red). */
 function Button({
   onClick,
   cls = "btn ghost",
@@ -233,16 +271,33 @@ function Button({
   label?: string;
   children: ReactNode;
 }) {
+  const danger = cls.includes("danger");
+  const variant = cls.includes("text")
+    ? "link"
+    : danger
+      ? "destructive"
+      : cls.includes("primary")
+        ? "default"
+        : cls.includes("ghost")
+          ? "ghost"
+          : "outline";
   return (
-    <button type="button" className={cls} aria-label={label} onClick={() => void onClick()}>
+    <UiButton
+      type="button"
+      variant={variant}
+      size="sm"
+      className={danger && variant === "link" ? "text-destructive" : undefined}
+      aria-label={label}
+      onClick={() => void onClick()}
+    >
       {children}
-    </button>
+    </UiButton>
   );
 }
 
-/** The notes mode to send: the owner's choice when they changed the selector, else nothing. */
-function chosenAuto(mode: HTMLSelectElement | null): boolean | undefined {
-  return mode?.dataset.touched ? mode.value === "auto" : undefined;
+/** The notes mode to send: the owner's choice when they changed it, else nothing, so the server applies the saved default itself (and holds the notes where an attached agent rules auto out). */
+function chosenAuto(dirty: boolean, mode: string): boolean | undefined {
+  return dirty ? mode === "auto" : undefined;
 }
 
 /** Who a scope reaches, as a select: this page (when there is one), a project, or every page. */
@@ -281,7 +336,7 @@ const act: Act = async (route, body, ok) => {
   return r.ok;
 };
 
-// ── People and access ──
+const askSchema = z.object({ scope: z.string(), mode: z.string() });
 
 function RequestRow({
   q,
@@ -292,8 +347,10 @@ function RequestRow({
   projects: ProjectSummary[];
   defaultMode: string;
 }) {
-  const scope = useRef<HTMLSelectElement>(null);
-  const mode = useRef<HTMLSelectElement>(null);
+  const form = useForm({
+    resolver: zodResolver(askSchema),
+    defaultValues: { scope: "page", mode: defaultMode },
+  });
   const page = q.file ? tilde(q.file) : "a page no longer in the hub";
   const from = [
     q.verifiedLogin
@@ -305,6 +362,7 @@ function RequestRow({
   ]
     .filter(Boolean)
     .join(" · ");
+  const { isSubmitting, dirtyFields } = form.formState;
   return (
     <li className="set-ask" data-request={q.id}>
       <Avatar name={q.name} />
@@ -313,59 +371,58 @@ function RequestRow({
         <span className="meta">{`Asks for ${page} · ${when(q.createdAt)}`}</span>
         {from ? <span className="meta">{from}</span> : null}
       </div>
-      <div className="set-actions">
-        <Select
-          ref={scope}
-          name="scope"
-          options={scopeOptions(projects, Boolean(q.file), q.project)}
-          value="page"
-          label={`What ${q.name} can review`}
-        />
-        <Select
-          ref={mode}
-          key={defaultMode}
-          name="mode"
-          options={NOTES}
-          value={defaultMode}
-          label={`Where ${q.name}'s notes go`}
-        />
-        <Button
-          cls="btn primary"
-          onClick={() =>
-            act<{ device?: AccessSummary }>(
+      <Form {...form}>
+        <form
+          className="set-actions"
+          onSubmit={form.handleSubmit(async (v) => {
+            await act<{ device?: AccessSummary }>(
               `/hub/api/people/requests/${q.id}/approve`,
-              { ...scopeBody(scope.current?.value ?? "page"), auto: chosenAuto(mode.current) },
+              { ...scopeBody(v.scope), auto: chosenAuto(Boolean(dirtyFields.mode), v.mode) },
               (d) =>
                 `${q.name} is in: ${d.device?.reaches ?? "approved"}. The browser that asked opens the page by itself.`,
-            )
-          }
+            );
+          })}
         >
-          Approve
-        </Button>
-        <Button
-          onClick={() =>
-            act(
-              `/hub/api/people/requests/${q.id}/deny`,
-              {},
-              () => `Denied ${q.name}. That browser may ask again.`,
-            )
-          }
-        >
-          Deny
-        </Button>
-        <Button
-          cls="btn ghost danger"
-          onClick={() =>
-            act(
-              `/hub/api/people/requests/${q.id}/block`,
-              {},
-              () => `Blocked ${q.name}'s browser: it can no longer ask.`,
-            )
-          }
-        >
-          Block
-        </Button>
-      </div>
+          <SelectField
+            control={form.control}
+            name="scope"
+            ariaLabel={`What ${q.name} can review`}
+            options={scopeOptions(projects, Boolean(q.file), q.project)}
+          />
+          <SelectField
+            control={form.control}
+            name="mode"
+            ariaLabel={`Where ${q.name}'s notes go`}
+            options={NOTES}
+          />
+          <UiButton type="submit" size="sm" disabled={isSubmitting}>
+            {isSubmitting ? "Approving…" : "Approve"}
+          </UiButton>
+          <Button
+            onClick={() =>
+              act(
+                `/hub/api/people/requests/${q.id}/deny`,
+                {},
+                () => `Denied ${q.name}. That browser may ask again.`,
+              )
+            }
+          >
+            Deny
+          </Button>
+          <Button
+            cls="btn ghost danger"
+            onClick={() =>
+              act(
+                `/hub/api/people/requests/${q.id}/block`,
+                {},
+                () => `Blocked ${q.name}'s browser: it can no longer ask.`,
+              )
+            }
+          >
+            Block
+          </Button>
+        </form>
+      </Form>
     </li>
   );
 }
@@ -451,10 +508,10 @@ function Cell({
 }
 
 function DeviceRow({ d, projects }: { d: AccessSummary; projects: ProjectSummary[] }) {
-  const rename = (): void => {
-    const name = prompt(`New name for ${d.name}`, d.name);
+  const rename = async (): Promise<void> => {
+    const name = await promptDialog(`New name for ${d.name}`, d.name);
     if (name && name.trim() && name.trim() !== d.name)
-      void act<AccessSummary>(
+      await act<AccessSummary>(
         `/hub/api/people/${d.id}/rename`,
         { name: name.trim() },
         (s) => `Renamed ${d.name} to ${s.name}.`,
@@ -489,8 +546,8 @@ function DeviceRow({ d, projects }: { d: AccessSummary; projects: ProjectSummary
         <Button
           cls="btn text danger"
           label={`Revoke ${d.name}`}
-          onClick={() =>
-            confirm(`Revoke ${d.name}? Their open pages stop at once.`) &&
+          onClick={async () =>
+            (await confirmDialog(`Revoke ${d.name}? Their open pages stop at once.`, true)) &&
             act(
               `/hub/api/people/${d.id}/revoke`,
               {},
@@ -500,24 +557,39 @@ function DeviceRow({ d, projects }: { d: AccessSummary; projects: ProjectSummary
         >
           Revoke
         </Button>
+        {/* One choice, applied at once: no submit. The placeholder comes back with the next read. */}
         <Select
-          name="scope"
-          options={[["", "Change what they reach…"], ...scopeOptions(projects, false, null)]}
-          value=""
-          label={`What ${d.name} can review`}
-          onChange={(v) => {
-            if (v)
-              void act<AccessSummary>(
-                `/hub/api/people/${d.id}/scope`,
-                scopeBody(v),
-                (s) => `${d.name} now reaches ${s.reaches}.`,
-              );
-          }}
-        />
+          key={d.reaches}
+          onValueChange={(v) =>
+            void act<AccessSummary>(
+              `/hub/api/people/${d.id}/scope`,
+              scopeBody(v),
+              (s) => `${d.name} now reaches ${s.reaches}.`,
+            )
+          }
+        >
+          <SelectTrigger size="sm" aria-label={`What ${d.name} can review`}>
+            <SelectValue placeholder="Change what they reach…" />
+          </SelectTrigger>
+          <SelectContent>
+            {scopeOptions(projects, false, null).map(([v, text]) => (
+              <SelectItem key={v} value={v}>
+                {text}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </li>
   );
 }
+
+const linkSchema = z.object({
+  name: z.string().trim().min(1, "Enter their name.").max(40, "At most 40 characters."),
+  page: z.string().min(1, "Choose a page."),
+  scope: z.string(),
+  mode: z.string(),
+});
 
 /** Settings → People → New link: a named link for a page, its project or every page, as the review page's Share makes it. */
 function NewLinkForm({
@@ -531,9 +603,24 @@ function NewLinkForm({
   defaultMode: string;
   reachable: boolean;
 }) {
-  const [pageId, setPageId] = useState(pages[0]?.open_id ?? "");
-  const [error, setError] = useState<string | null>(null);
-  const mode = useRef<HTMLSelectElement>(null);
+  const form = useForm({
+    resolver: zodResolver(linkSchema),
+    defaultValues: { name: "", page: pages[0]?.open_id ?? "", scope: "", mode: defaultMode },
+  });
+  const pageId = useWatch({ control: form.control, name: "page" });
+  const scope = useWatch({ control: form.control, name: "scope" });
+  const chosen = pages.find((x) => x.open_id === pageId);
+  const options = scopeOptions(
+    projects,
+    true,
+    chosen ? { id: chosen.project_id, name: chosen.project } : null,
+  );
+  // The scope choices follow the page: when the chosen one is gone, the first one stands.
+  const valid = options.some(([v]) => v === scope);
+  const first = options[0][0];
+  useEffect(() => {
+    if (!valid) form.setValue("scope", first);
+  }, [valid, first, form]);
   if (!reachable)
     return (
       <Empty>
@@ -545,87 +632,65 @@ function NewLinkForm({
     return (
       <Empty>No page is open for review yet. Open one, then share it here or from its menu.</Empty>
     );
-  const chosen = pages.find((x) => x.open_id === pageId);
-  const pageProject = chosen ? { id: chosen.project_id, name: chosen.project } : null;
+  const { isSubmitting, dirtyFields } = form.formState;
   return (
     <div className="set-form">
-      <form
-        className="new-link"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const form = e.currentTarget;
-          const f = new FormData(form);
-          const r = await send<ShareResponse>("/hub/api/people/share", {
-            page: String(f.get("page")),
-            name: String(f.get("name")),
-            ...scopeBody(String(f.get("scope"))),
-            auto: chosenAuto(mode.current),
-          });
-          if (!r.ok) return setError(r.error);
-          setError(null);
-          form.reset();
-          setPageId(pages[0]?.open_id ?? "");
-          const made = r.data;
-          // The new link is listed under "Links nobody has opened yet" once Settings reads again; the status line keeps it at hand.
-          say(
-            `Link for ${made.name}, reaching ${made.reaches}: ${made.link} — works once, until ${new Date(made.expiresAt).toLocaleString()} if nobody opens it. Send it only to ${made.name}.`,
-            { label: "Copy link", onClick: () => copy(made.link, "The link") },
-          );
-          reload();
-        }}
-      >
-        <Field label="Name">
-          <input
-            type="text"
+      <Form {...form}>
+        <form
+          className="new-link"
+          onSubmit={form.handleSubmit(async (v) => {
+            const r = await send<ShareResponse>("/hub/api/people/share", {
+              page: v.page,
+              name: v.name,
+              ...scopeBody(valid ? v.scope : first),
+              auto: chosenAuto(Boolean(dirtyFields.mode), v.mode),
+            });
+            if (!r.ok) return form.setError("root", { message: r.error });
+            const made = r.data;
+            form.reset({ name: "", page: v.page, scope: "", mode: defaultMode });
+            // The new link is listed under "Links nobody has opened yet" once Settings reads again; the toast keeps it at hand.
+            say(
+              `Link for ${made.name}, reaching ${made.reaches}: ${made.link} — works once, until ${new Date(made.expiresAt).toLocaleString()} if nobody opens it. Send it only to ${made.name}.`,
+              {
+                action: { label: "Copy link", onClick: () => copy(made.link, "The link") },
+                duration: 30_000,
+              },
+            );
+            reload();
+          })}
+        >
+          <TextField
+            control={form.control}
             name="name"
+            label="Name"
             maxLength={40}
-            required
             placeholder="Their name"
             aria-label="Their name"
             autoComplete="off"
           />
-        </Field>
-        <Field label="Page">
-          <select
+          <SelectField
+            control={form.control}
             name="page"
-            aria-label="Page"
-            value={pageId}
-            onChange={(e) => setPageId(e.target.value)}
-          >
-            {pages.map((p) => (
-              <option key={p.open_id} value={p.open_id}>
-                {`${p.title || p.rel_path} · ${p.project}`}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="They can review">
-          {/* New options per page: the choice starts again at the first. */}
-          <select key={pageId} name="scope" aria-label="They can review">
-            {scopeOptions(projects, true, pageProject).map(([v, text]) => (
-              <option key={v} value={v}>
-                {text}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Their notes">
-          <Select
-            ref={mode}
-            key={defaultMode}
-            name="mode"
-            options={NOTES}
-            value={defaultMode}
-            label="Their notes"
+            label="Page"
+            options={pages.map((p) => [p.open_id, `${p.title || p.rel_path} · ${p.project}`])}
           />
-        </Field>
-        <button type="submit" className="btn primary">
-          Create link
-        </button>
-      </form>
-      <p className="error" role="alert" hidden={error == null}>
-        {error}
-      </p>
+          <SelectField
+            control={form.control}
+            name="scope"
+            label="They can review"
+            options={options}
+          />
+          <SelectField control={form.control} name="mode" label="Their notes" options={NOTES} />
+          <UiButton type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Creating…" : "Create link"}
+          </UiButton>
+        </form>
+      </Form>
+      {form.formState.errors.root ? (
+        <p className="error" role="alert">
+          {form.formState.errors.root.message}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -646,6 +711,13 @@ const FROM: Record<string, string> = {
   lan: "the local-network address you switched on",
 };
 
+const tailscaleSchema = z.object({
+  login: z.string().trim().min(1, "Enter a Tailscale login.").max(200),
+  name: z.string().trim().max(40, "At most 40 characters."),
+  scope: z.string(),
+  mode: z.string(),
+});
+
 /**
  * Settings → Network → Names from Tailscale (RLM-399): what Tailscale tells about reviewers here, and a
  * form that lets a Tailscale login in without a link (`share tailscale <login>`).
@@ -659,11 +731,15 @@ function TailscaleNames({
   projects: ProjectSummary[];
   defaultMode: string;
 }) {
-  const mode = useRef<HTMLSelectElement>(null);
   const reach = scopeOptions(projects, false, null);
+  const form = useForm({
+    resolver: zodResolver(tailscaleSchema),
+    defaultValues: { login: "", name: "", scope: reach[0][0], mode: defaultMode },
+  });
   const status = on
     ? "On: a reviewer who comes in over Tailscale is named by Tailscale (login and device, shown as verified). Asked only for connections to this server's Tailscale address, never from a header."
     : "Off: the server does not listen on Tailscale here, so nobody is named by it. A reviewer is known by the device you let in.";
+  const { isSubmitting, dirtyFields } = form.formState;
   return (
     <>
       <span className="set-title">Names from Tailscale</span>
@@ -671,65 +747,54 @@ function TailscaleNames({
       <p className="meta">
         <Words text="A Tailscale login gets in without a link or a request: any device signed in to Tailscale as that login opens what it reaches, over Tailscale only. At a terminal: `austere-axi share tailscale <login> --all`." />
       </p>
-      <form
-        className="login-form"
-        data-form="tailscale-login"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const form = e.currentTarget;
-          const f = new FormData(form);
-          const ok = await act<AccessSummary>(
-            "/hub/api/people/tailscale",
-            {
-              login: String(f.get("login")).trim(),
-              name: String(f.get("name")).trim() || undefined,
-              ...scopeBody(String(f.get("scope"))),
-              auto: chosenAuto(mode.current),
-            },
-            (d) =>
-              `${d.verifiedLogin ?? d.name} is in on any of their Tailscale devices: ${d.reaches}. Listed under Devices; Revoke there.`,
-          );
-          if (ok) form.reset();
-        }}
-      >
-        <Field label="Tailscale login">
-          <input
-            type="text"
+      <Form {...form}>
+        <form
+          className="login-form"
+          data-form="tailscale-login"
+          onSubmit={form.handleSubmit(async (v) => {
+            const ok = await act<AccessSummary>(
+              "/hub/api/people/tailscale",
+              {
+                login: v.login,
+                name: v.name || undefined,
+                ...scopeBody(v.scope),
+                auto: chosenAuto(Boolean(dirtyFields.mode), v.mode),
+              },
+              (d) =>
+                `${d.verifiedLogin ?? d.name} is in on any of their Tailscale devices: ${d.reaches}. Listed under Devices; Revoke there.`,
+            );
+            if (ok) form.reset({ login: "", name: "", scope: v.scope, mode: defaultMode });
+          })}
+        >
+          <TextField
+            control={form.control}
             name="login"
+            label="Tailscale login"
             maxLength={200}
-            required
             placeholder="ana@example.com"
-            aria-label="Tailscale login"
             autoComplete="off"
           />
-        </Field>
-        <Field label="Name">
-          <input
-            type="text"
+          <TextField
+            control={form.control}
             name="name"
+            label="Name"
             maxLength={40}
             placeholder="Name to show (default: the login)"
             aria-label="Name to show"
             autoComplete="off"
           />
-        </Field>
-        <Field label="They can review">
-          <Select name="scope" options={reach} value={reach[0][0]} label="They can review" />
-        </Field>
-        <Field label="Their notes">
-          <Select
-            ref={mode}
-            key={defaultMode}
-            name="mode"
-            options={NOTES}
-            value={defaultMode}
-            label="Their notes"
+          <SelectField
+            control={form.control}
+            name="scope"
+            label="They can review"
+            options={reach}
           />
-        </Field>
-        <button type="submit" className="btn">
-          Let in
-        </button>
-      </form>
+          <SelectField control={form.control} name="mode" label="Their notes" options={NOTES} />
+          <UiButton type="submit" variant="outline" disabled={isSubmitting}>
+            {isSubmitting ? "Letting in…" : "Let in"}
+          </UiButton>
+        </form>
+      </Form>
     </>
   );
 }
@@ -740,7 +805,6 @@ const LAN_WARNING =
 
 /** Settings → Network → Local network (P6): off by default; on, the server also listens on the chosen address, for reviewers only. */
 function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
-  const address = useRef<HTMLSelectElement>(null);
   const on = lan.address != null;
   // The address switched on stays listed when this computer no longer has it, so the owner can switch it off.
   const options: [string, string][] = lan.choices.map((c) => [
@@ -749,6 +813,8 @@ function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
   ]);
   if (lan.address && !options.some(([a]) => a === lan.address))
     options.unshift([lan.address, `${lan.address} (not on this computer now)`]);
+  const [picked, setPicked] = useState(lan.address ?? options[0]?.[0] ?? "");
+  const chosen = on ? (lan.address ?? "") : picked;
   const state = !on
     ? "off"
     : lan.listening
@@ -765,10 +831,10 @@ function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
           on={on}
           disabled={!options.length}
           describedBy="lan-warn"
-          onChange={(checked, undo) => {
-            const chosen = address.current?.value ?? "";
-            if (checked && !confirm(`Listen on ${chosen}? ${LAN_WARNING}`)) return undo();
-            void act<ProjectActionResult>(
+          onChange={async (checked, undo) => {
+            if (checked && !(await confirmDialog(`Listen on ${chosen}? ${LAN_WARNING}`)))
+              return undo();
+            await act<ProjectActionResult>(
               "/hub/api/settings/network",
               { lan: checked ? chosen : null },
               (d) => d.message,
@@ -780,20 +846,18 @@ function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
         <div className="login-form">
           <label className="field">
             <span>Address</span>
-            <select
-              ref={address}
-              key={lan.address ?? ""}
-              name="lan-address"
-              aria-label="Address on the local network"
-              defaultValue={lan.address ?? options[0]?.[0] ?? ""}
-              disabled={on || !options.length}
-            >
-              {options.map(([v, text]) => (
-                <option key={v} value={v}>
-                  {text}
-                </option>
-              ))}
-            </select>
+            <Select name="lan-address" value={chosen} onValueChange={setPicked} disabled={on}>
+              <SelectTrigger aria-label="Address on the local network" className="w-full min-w-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map(([v, text]) => (
+                  <SelectItem key={v} value={v}>
+                    {text}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
         </div>
       ) : (
@@ -808,38 +872,37 @@ function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
   );
 }
 
-// ── Review defaults ──
+/** The radio group of the notes default: it shows the choice at once, and the server's answer settles it. */
+function DefaultMode({ value, children }: { value: string; children: ReactNode }) {
+  const [shown, setShown] = useState(value);
+  const [seen, setSeen] = useState(value);
+  if (seen !== value) {
+    setSeen(value);
+    setShown(value);
+  }
+  return (
+    <RadioGroup
+      asChild
+      value={shown}
+      onValueChange={(v) => {
+        setShown(v);
+        void act<ProjectActionResult>(
+          "/hub/api/settings/review",
+          { auto: v === "auto" },
+          (d) => d.message,
+        );
+      }}
+    >
+      {children}
+    </RadioGroup>
+  );
+}
 
-function ModeOption({
-  value,
-  text,
-  about,
-  defaultMode,
-}: {
-  value: string;
-  text: string;
-  about: string;
-  defaultMode: string;
-}) {
+function ModeOption({ value, text, about }: { value: string; text: string; about: string }) {
   const id = `set-mode-${value}`;
   return (
     <div className="set-opt">
-      <input
-        key={defaultMode}
-        type="radio"
-        id={id}
-        name="default-mode"
-        value={value}
-        defaultChecked={value === defaultMode}
-        aria-describedby={`${id}-d`}
-        onChange={() =>
-          void act<ProjectActionResult>(
-            "/hub/api/settings/review",
-            { auto: value === "auto" },
-            (d) => d.message,
-          )
-        }
-      />
+      <RadioGroupItem value={value} id={id} aria-describedby={`${id}-d`} />
       <label htmlFor={id}>{text}</label>
       <span className="meta" id={`${id}-d`}>
         {about}
@@ -848,13 +911,11 @@ function ModeOption({
   );
 }
 
-// ── Projects ──
-
 function ProjectRow({ p, gone }: { p: ProjectSummary; gone: Set<string> }) {
-  const rename = (): void => {
-    const name = prompt(`New name for ${p.name}`, p.name);
+  const rename = async (): Promise<void> => {
+    const name = await promptDialog(`New name for ${p.name}`, p.name);
     if (name && name.trim() && name.trim() !== p.name)
-      void act<ProjectActionResult>(
+      await act<ProjectActionResult>(
         `/hub/api/projects/${p.id}/rename`,
         { name: name.trim() },
         (d) => d.message,
@@ -878,11 +939,12 @@ function ProjectRow({ p, gone }: { p: ProjectSummary; gone: Set<string> }) {
                   <Button
                     cls={missing ? "btn" : "btn text"}
                     label={`Forget the folder ${root}`}
-                    onClick={() =>
+                    onClick={async () =>
                       (!missing ||
-                        confirm(
+                        (await confirmDialog(
                           `${root} is gone. Forget it and archive its pages? Their notes are kept.`,
-                        )) &&
+                          true,
+                        ))) &&
                       act<ProjectActionResult>(
                         `/hub/api/projects/${p.id}/forget-root`,
                         { root, drop: missing },
@@ -901,10 +963,11 @@ function ProjectRow({ p, gone }: { p: ProjectSummary; gone: Set<string> }) {
           <p className="same">
             {`Same repository as ${p.same_as.name}. `}
             <Button
-              onClick={() =>
-                confirm(
+              onClick={async () =>
+                (await confirmDialog(
                   `Move the folders and pages of ${p.name} into ${p.same_as!.name}? ${p.name} goes away.`,
-                ) &&
+                  true,
+                )) &&
                 act<ProjectActionResult>(
                   `/hub/api/projects/${p.same_as!.id}/merge`,
                   { from: p.id },
@@ -1014,10 +1077,10 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
             <Words text="Who may open your pages from another device, and what they reach. A link works for one browser: the first one that opens it. At a terminal: `austere-axi share`." />
           }
           action={
-            <button type="button" className="btn" onClick={toNewLink}>
+            <UiButton type="button" variant="outline" size="sm" onClick={toNewLink}>
               <ShapeIcon shapes={PLUS} size={14} width={2} />
               New link
-            </button>
+            </UiButton>
           }
         />
         <Part
@@ -1192,21 +1255,21 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
                 <Words text="For reviewers you let in from now on, unless you say otherwise when you share or approve. Those already in keep their own. At a terminal: `austere-axi share default hold|auto`." />
               }
             />
-            <fieldset className="modes">
-              <legend>A new reviewer's notes</legend>
-              <ModeOption
-                value="hold"
-                text="Hold them for me"
-                about="You read each note and decide which ones the agent gets"
-                defaultMode={defaultMode}
-              />
-              <ModeOption
-                value="auto"
-                text="Send them straight to the agent"
-                about="Not available on pages an agent is attached to"
-                defaultMode={defaultMode}
-              />
-            </fieldset>
+            <DefaultMode value={defaultMode}>
+              <fieldset className="modes">
+                <legend>A new reviewer's notes</legend>
+                <ModeOption
+                  value="hold"
+                  text="Hold them for me"
+                  about="You read each note and decide which ones the agent gets"
+                />
+                <ModeOption
+                  value="auto"
+                  text="Send them straight to the agent"
+                  about="Not available on pages an agent is attached to"
+                />
+              </fieldset>
+            </DefaultMode>
             <Part id="viewing" title="On pages now" count={viewing.length}>
               {viewing.length ? (
                 <ul className="set-viewing">
@@ -1246,16 +1309,17 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
                 <Toggle
                   on={c.on}
                   describedBy="set-cloud-state"
-                  onChange={(checked, undo) => {
+                  onChange={async (checked, undo) => {
                     if (
                       !checked &&
                       c.published &&
-                      !confirm(
+                      !(await confirmDialog(
                         `Turn cloud features off? Pages published from this machine (${c.published}) stay up on the service, but their notes stop reaching you here until you turn cloud back on.`,
-                      )
+                        true,
+                      ))
                     )
                       return undo();
-                    void act<ProjectActionResult>(
+                    await act<ProjectActionResult>(
                       "/hub/api/settings/cloud",
                       { on: checked },
                       (d) => d.message,
