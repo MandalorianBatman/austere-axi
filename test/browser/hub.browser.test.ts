@@ -649,3 +649,58 @@ test("the hub under the hosted chrome's CSP: toast, select, tabs and tooltips dr
     await context.close();
   }
 });
+
+test("phone: Pages does not scroll sideways, the drawer closes after a pick, a dialog returns focus", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab(390);
+  try {
+    await page.goto(`http://127.0.0.1:${port}/?view=pages`);
+    await page.getByRole("tablist", { name: "Which pages" }).waitFor();
+    const wide = () =>
+      page.evaluate(() => {
+        const w = document.documentElement.clientWidth;
+        const el = [...document.querySelectorAll("body *")].find(
+          (e) =>
+            e.getBoundingClientRect().right > w + 1 && getComputedStyle(e).position !== "fixed",
+        );
+        return {
+          over: document.documentElement.scrollWidth - w,
+          el: el ? `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)}` : "",
+        };
+      });
+    const w = await wide();
+    assert.ok(w.over <= 0, `no sideways scroll on Pages (${w.over}px): ${w.el}`);
+    // The tabs control a panel that exists.
+    const panel = await page.getByRole("tab", { selected: true }).getAttribute("aria-controls");
+    assert.equal(
+      await page.locator(`[id="${panel}"]`).count(),
+      1,
+      "aria-controls points at a panel",
+    );
+
+    // Drawer: open it, pick Notes; the URL moves and the sheet closes.
+    await page.click(".side-toggle");
+    const drawer = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
+    await drawer.waitFor();
+    await drawer.locator('a[data-view="notes"]').click();
+    await page.waitForURL(/view=notes/);
+    await drawer.waitFor({ state: "detached" });
+
+    // Dialog: Esc gives focus back to the button that asked.
+    await page.goto(`http://127.0.0.1:${port}/?view=settings`);
+    const rename = page.getByRole("button", { name: "Rename shop" });
+    await rename.waitFor();
+    await rename.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog").waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "detached" });
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute("aria-label")),
+      "Rename shop",
+    );
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
+  }
+});

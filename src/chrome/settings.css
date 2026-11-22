@@ -549,7 +549,7 @@ ul.folders code {
 }
 
 /* ── narrow screens: tighter cards, 44px touch targets ── */
-@media (max-width: 860px) {
+@media (max-width: 767px) {
   .set-page {
     gap: 16px;
   }

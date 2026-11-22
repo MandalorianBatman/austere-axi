@@ -14,21 +14,38 @@ import {
 } from "@/chrome/ui/dialog";
 import { Input } from "@/chrome/ui/input";
 
+/** `opener`: what had focus when the question was asked; it gets focus back when the dialog closes. */
 type Ask =
-  | { kind: "confirm"; text: string; danger: boolean; done: (ok: boolean) => void }
-  | { kind: "prompt"; text: string; value: string; done: (value: string | null) => void };
+  | {
+      kind: "confirm";
+      text: string;
+      danger: boolean;
+      opener: Element | null;
+      done: (ok: boolean) => void;
+    }
+  | {
+      kind: "prompt";
+      text: string;
+      value: string;
+      opener: Element | null;
+      done: (value: string | null) => void;
+    };
 
 const useAsk = create<{ ask: Ask | null }>(() => ({ ask: null }));
 
 export function confirmDialog(text: string, danger = false): Promise<boolean> {
   return new Promise((resolve) =>
-    useAsk.setState({ ask: { kind: "confirm", text, danger, done: resolve } }),
+    useAsk.setState({
+      ask: { kind: "confirm", text, danger, opener: document.activeElement, done: resolve },
+    }),
   );
 }
 
 export function promptDialog(text: string, value: string): Promise<string | null> {
   return new Promise((resolve) =>
-    useAsk.setState({ ask: { kind: "prompt", text, value, done: resolve } }),
+    useAsk.setState({
+      ask: { kind: "prompt", text, value, opener: document.activeElement, done: resolve },
+    }),
   );
 }
 
@@ -53,7 +70,14 @@ export function HubDialogs(): ReactElement | null {
   };
   return (
     <Dialog open onOpenChange={(open) => open || close()}>
-      <DialogContent showCloseButton={false}>
+      <DialogContent
+        showCloseButton={false}
+        // Radix returns focus to a trigger; there is none here, so it goes back to what asked.
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          if (ask.opener instanceof HTMLElement && ask.opener.isConnected) ask.opener.focus();
+        }}
+      >
         <form
           className="grid gap-4"
           onSubmit={(e) => {

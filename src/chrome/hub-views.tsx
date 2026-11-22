@@ -35,7 +35,7 @@ import { Icon } from "./icon.tsx";
 import { Button } from "@/chrome/ui/button";
 import { Input } from "@/chrome/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/chrome/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/chrome/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/chrome/ui/tabs";
 import { go, useHub } from "./hub-store.ts";
 
 /** The loaded answer, or its error; nothing while the first read is on its way. */
@@ -284,21 +284,29 @@ export function PagesView(): ReactElement {
                   ])}
                 </p>
               </div>
-              <Tabs
-                value={a.pagesView}
-                onValueChange={(id) => go(null, { pagesView: id as PagesView })}
-              >
-                <TabsList aria-label="Which pages">
-                  {PAGE_VIEWS.map((v) => (
-                    <TabsTrigger key={v.id} value={v.id}>
-                      {v.label} <span className="n">{counts[v.count]}</span>
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+              <TabsList aria-label="Which pages">
+                {PAGE_VIEWS.map((v) => (
+                  <TabsTrigger key={v.id} value={v.id}>
+                    {v.label} <span className="n">{counts[v.count]}</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
             </header>
             <ProjectFilter project={data.project} />
           </>
+        );
+        // Manual activation: arrow keys move focus, Enter or Space picks (one history entry per choice).
+        // The tab panel is what the tabs control: the list under the header.
+        const wrap = (body: ReactNode) => (
+          <Tabs
+            value={a.pagesView}
+            activationMode="manual"
+            className="block"
+            onValueChange={(id) => go(null, { pagesView: id as PagesView })}
+          >
+            {head}
+            <TabsContent value={a.pagesView}>{body}</TabsContent>
+          </Tabs>
         );
         if (!data.pages.length) {
           const others = PAGE_VIEWS.filter((v) => v.id !== a.pagesView && counts[v.count] > 0).map(
@@ -338,12 +346,7 @@ export function PagesView(): ReactElement {
                 ) : null}
               </>
             );
-          return (
-            <>
-              {head}
-              <Empty>{body}</Empty>
-            </>
-          );
+          return wrap(<Empty>{body}</Empty>);
         }
         const byProject = new Map<string, ShellPage[]>();
         for (const p of data.pages) {
@@ -353,9 +356,8 @@ export function PagesView(): ReactElement {
         }
         const info = new Map(projects.map((p) => [p.id, p]));
         const archivedView = a.pagesView === "archived";
-        return (
+        return wrap(
           <>
-            {head}
             <div className={`table card pages-table${archivedView ? " archived" : ""}`}>
               <div className="thead" aria-hidden="true">
                 {["Page", "Copies", "Notes", "Last activity", ""].map((t, i) => (
@@ -409,7 +411,7 @@ export function PagesView(): ReactElement {
                 opened for review. <ViewLink next={{ pagesView: "all" }}>Show them</ViewLink>
               </p>
             ) : null}
-          </>
+          </>,
         );
       }}
     </Loaded>

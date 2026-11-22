@@ -131,6 +131,9 @@ em.gone {
   display: none;
 }
 .content {
+  /* A flex item of the inset: without min-width 0 it grows to its widest table row instead of scrolling or stacking. */
+  width: 100%;
+  min-width: 0;
   max-width: var(--content-w);
   margin: 0 auto;
   padding: 32px 32px 56px;
@@ -485,6 +488,8 @@ details.more > .chips {
 
 /* ── tables: Pages and Runs ── */
 .table {
+  /* Tailwind has a `.table` utility (display: table) that is generated from this class name: say block. */
+  display: block;
   margin-top: 24px;
   container-type: inline-size;
 }

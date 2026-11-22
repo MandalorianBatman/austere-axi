@@ -1,5 +1,5 @@
-/* ── narrow screens: the sidebar is a drawer ── */
-@media (max-width: 860px) {
+/* ── narrow screens (under 768px, the shadcn Sidebar's breakpoint): the sidebar is a drawer (a Sheet) ── */
+@media (max-width: 767px) {
   .top-search:hover {
     background: var(--surface);
   }

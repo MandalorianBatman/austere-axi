@@ -1,5 +1,5 @@
 import * as React from "react"
-import { cn } from "@/chrome/lib/utils"
+import { cn } from "cn"
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 
 function ScrollArea({

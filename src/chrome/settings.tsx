@@ -9,7 +9,8 @@ import type { ReactElement, ReactNode } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import type { Control, FieldValues, Path } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+// zod/mini: the same schemas at a tenth of the size of classic zod (this bundle ships to the browser).
+import * as z from "zod/mini";
 import type {
   LocalNetwork,
   PagesResponse,
@@ -585,8 +586,14 @@ function DeviceRow({ d, projects }: { d: AccessSummary; projects: ProjectSummary
 }
 
 const linkSchema = z.object({
-  name: z.string().trim().min(1, "Enter their name.").max(40, "At most 40 characters."),
-  page: z.string().min(1, "Choose a page."),
+  name: z
+    .string()
+    .check(
+      z.trim(),
+      z.minLength(1, "Enter their name."),
+      z.maxLength(40, "At most 40 characters."),
+    ),
+  page: z.string().check(z.minLength(1, "Choose a page.")),
   scope: z.string(),
   mode: z.string(),
 });
@@ -712,8 +719,8 @@ const FROM: Record<string, string> = {
 };
 
 const tailscaleSchema = z.object({
-  login: z.string().trim().min(1, "Enter a Tailscale login.").max(200),
-  name: z.string().trim().max(40, "At most 40 characters."),
+  login: z.string().check(z.trim(), z.minLength(1, "Enter a Tailscale login."), z.maxLength(200)),
+  name: z.string().check(z.trim(), z.maxLength(40, "At most 40 characters.")),
   scope: z.string(),
   mode: z.string(),
 });

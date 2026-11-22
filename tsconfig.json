@@ -17,9 +17,7 @@
     "types": ["node"],
     "paths": {
       "austere-axi/*": ["./types/*.d.ts"],
-      "@/chrome/ui/*": ["./src/chrome/ui/*.tsx"],
-      "@/chrome/lib/*": ["./src/chrome/lib/*.ts"],
-      "@/chrome/hooks/*": ["./src/chrome/hooks/*.ts"]
+      "@/*": ["./src/*", "./src/*.tsx", "./src/*.ts"]
     }
   },
   "include": [

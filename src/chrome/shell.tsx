@@ -166,7 +166,7 @@ function SearchBox(): ReactElement {
           name="q"
           className="pl-8"
           value={text}
-          placeholder="Search pages and parts"
+          placeholder="Search pages, parts"
           aria-label="Search pages and parts"
           autoComplete="off"
           onChange={(e) => {
@@ -201,6 +201,32 @@ function Content(): ReactElement | null {
     case "search":
       return <SearchView />;
   }
+}
+
+/**
+ * The drawer follows navigation: it closes when the view or filter changes, and focus goes back to the toggle
+ * (Radix has no trigger to return it to).
+ */
+function DrawerWatch(): null {
+  const { openMobile, setOpenMobile } = useSidebar();
+  const state = useHub((s) => s.state);
+  const seen = useRef(state);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (state === seen.current) return;
+    seen.current = state;
+    setOpenMobile(false);
+  }, [state, setOpenMobile]);
+  useEffect(() => {
+    if (
+      wasOpen.current &&
+      !openMobile &&
+      (!document.activeElement || document.activeElement === document.body)
+    )
+      document.querySelector<HTMLElement>(".side-toggle")?.focus();
+    wasOpen.current = openMobile;
+  }, [openMobile]);
+  return null;
 }
 
 /** The top bar: the sidebar's toggle (Ctrl+B too), and on a narrow screen a way to its search. */
@@ -271,6 +297,7 @@ function Hub(): ReactElement {
           />
         </SidebarContent>
       </Sidebar>
+      <DrawerWatch />
       <SidebarInset className="main min-w-0">
         <TopBar />
         <main className="content" id="content" tabIndex={-1}>
