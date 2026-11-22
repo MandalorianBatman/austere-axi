@@ -7,6 +7,7 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 ### Changed
 
 - The `austere-setup` skill's description now lists when to use it (install, update, a missing `/austere` command, a failing `npx`, old Node, pages that do not open, phone review, an always-on server) instead of what it does, like the `austere` skill's in 0.17.0. An update request now updates a global install and restarts a running server. (RLM-425)
+- The guides in `docs/` are pages on the website (`/austere-axi/docs/`), with a Docs item in the nav. They are rebuilt on every push to `main`; the site build fails on a broken link or `#fragment` between them. (RLM-428)
 
 ## 0.17.0 (2026-11-22)
 
