@@ -10,6 +10,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { WakeClient } from "../src/harness/omp.ts";
 import type { HostApi, HostContext } from "../src/harness/omp.ts";
+import { quote } from "../src/cli/paths.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
 
@@ -211,7 +212,7 @@ test("the omp extension stays inert without a role, and wakes its idle session o
     h.host.busy = false;
     await until("the wake", () => h.sent.length > 0, 8_000);
     assert.ok(Date.now() - idleAt < 4000, `woken ${Date.now() - idleAt} ms after idle`);
-    assert.match(h.sent[0], new RegExp(`austere-axi feedback ${file.replace(/[/.]/g, "\\$&")}`));
+    assert.ok(h.sent[0].includes(`austere-axi feedback ${quote(file)}`), h.sent[0]);
     // As above: a second turn would come within two ticks.
     await new Promise((r) => setTimeout(r, 2500));
     assert.equal(h.sent.length, 1, "delivered once");
