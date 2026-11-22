@@ -40,6 +40,8 @@ Before you open the PR:
 npm run build
 npm test
 npm run typecheck
+npm run lint
+npm run format:check   # npm run format fixes it
 ```
 
 If you use a coding agent, `.agents/skills/review-change/SKILL.md` runs these checks and the review agents in `.agents/agents/`.

@@ -48,7 +48,10 @@
     "prepublishOnly": "npm run build && npm test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "bench": "node scripts/build.ts && npm --prefix bench ci --no-audit --no-fund && node bench/run.ts",
-    "bench:report": "node bench/report.ts"
+    "bench:report": "node bench/report.ts",
+    "lint": "oxlint",
+    "format": "oxfmt --write",
+    "format:check": "oxfmt --check"
   },
   "keywords": [
     "axi",
@@ -78,6 +81,8 @@
     "esbuild": "^0.28.2",
     "lucide-react": "^0.575.0",
     "marked": "^18.2.1",
+    "oxfmt": "^0.79.0",
+    "oxlint": "^1.94.0",
     "playwright-core": "^1.64.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

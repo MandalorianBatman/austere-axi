@@ -18,6 +18,8 @@ austere-axi is a CLI, a local review server, and a browser runtime for agent rev
 npm run build        # dist/: runtime, packs, pack-kit, spec.json, prompt.md, catalog.json, chrome, cli.mjs
 npm test             # rebuilds spec first; unit, server loop, and library guards
 npm run typecheck    # tsc over every source, script and test (strict)
+npm run lint         # Oxlint (React and react-hooks rules on); config in .oxlintrc.json
+npm run format       # Oxfmt, in place; `npm run format:check` only checks (CI runs it); config in .oxfmtrc.json
 npm run test:browser # real review loop in headless Chrome (one hover check also in Firefox): render checks + every part annotatable
 npm run signatures   # record new component signatures (refuses breaking changes)
 npm run gallery      # .dev/gallery.html with every custom component's example
