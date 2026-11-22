@@ -226,8 +226,9 @@ test("cloud login on a clean machine: device code, approve, tokens in cloud.json
   stub.polls.push("authorization_pending", "slow_down", "authorization_pending");
   const r = await cli(["cloud", "login"]);
   assert.equal(r.code, 0, r.out + r.err);
-  assert.match(r.err, /ABCD-EFGH/, "the user code is shown");
-  assert.match(r.err, new RegExp(`Open ${BASE}/device `));
+  assert.match(r.err, new RegExp(`Sign in at ${BASE}/device\\?user_code=ABCD-EFGH \\(code ABCD-EFGH, works for 5 minutes\\)`), "the full link with the code is shown");
+  assert.match(r.err, new RegExp(`Or open ${BASE}/device and enter the code ABCD-EFGH\\.`), "the bare link is the fallback");
+  assert.match(r.err, /AUSTERE_AXI_NO_OPEN is set: no browser was started\./);
   assert.equal(field(r.out, "status"), "signed in");
   assert.equal(field(r.out, "email"), "ana@example.com");
   assert.equal(field(r.out, "claimed"), undefined, "nothing to claim on a clean machine");
@@ -244,6 +245,19 @@ test("cloud login on a clean machine: device code, approve, tokens in cloud.json
   assert.equal(w.code, 0, w.out);
   assert.equal(field(w.out, "email"), "ana@example.com");
   assert.equal(field(w.out, "pages"), "0");
+});
+
+test("cloud login that opens the browser still prints the sign-in link for another device", { skip: process.platform === "win32" }, async () => {
+  // A stand-in for the platform's opener that records the url it was given.
+  const bin = fs.mkdtempSync(path.join(STATE, "bin-"));
+  const mark = path.join(bin, "launched");
+  for (const name of ["xdg-open", "open"]) fs.writeFileSync(path.join(bin, name), `#!/bin/sh\necho "$1" > "${mark}"\n`, { mode: 0o755 });
+  const r = await cli(["cloud", "login"], { AUSTERE_AXI_NO_OPEN: "", PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.match(r.err, new RegExp(`Sign in at ${BASE}/device\\?user_code=ABCD-EFGH `));
+  assert.match(r.err, /Opened your browser\. Check that the page shows the code ABCD-EFGH\./);
+  for (let i = 0; i < 40 && !fs.existsSync(mark); i++) await new Promise((res) => setTimeout(res, 50));
+  assert.equal(fs.readFileSync(mark, "utf8").trim(), `${BASE}/device?user_code=ABCD-EFGH`, "the browser opened the full link");
 });
 
 test("device flow refusals: access_denied and expired_token are errors, nothing is stored", async () => {

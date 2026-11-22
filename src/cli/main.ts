@@ -448,7 +448,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   cloud: {
     usage: "cloud on | cloud off | cloud status | cloud login | cloud logout | cloud whoami",
     summary:
-      "cloud features: publish, clone, cloud login|whoami and the sync of hosted pages. Off by default: only local features work and nothing reaches the hosted service. `cloud on` and `cloud off` flip the switch (Settings → Cloud does the same), `cloud status` prints it. Your account on the hosted service (WorkOS sign-in: email code, Google, GitHub, passkey): `cloud login` prints a code and opens the browser to approve it, once per machine; you are then the owner of all your hosted pages, from every machine you log in on and in the browser with the same account, and pages this machine published before become the account's. `cloud whoami` prints the account, `cloud logout` forgets it here. Only for hosted pages: the local server needs no account",
+      "cloud features: publish, clone, cloud login|whoami and the sync of hosted pages. Off by default: only local features work and nothing reaches the hosted service. `cloud on` and `cloud off` flip the switch (Settings → Cloud does the same), `cloud status` prints it. Your account on the hosted service (WorkOS sign-in: email code, Google, GitHub, passkey): `cloud login` prints a sign-in link with its code on stderr and opens the browser at it (not with AUSTERE_AXI_NO_OPEN=1); approve it there or on any other device, once per machine; you are then the owner of all your hosted pages, from every machine you log in on and in the browser with the same account, and pages this machine published before become the account's. `cloud whoami` prints the account, `cloud logout` forgets it here. Only for hosted pages: the local server needs no account",
     flags: {},
     example: "cloud on   |   cloud login",
   },
@@ -2879,10 +2879,13 @@ async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> 
       return print({ status: "signed in", email: me.email, name: me.name || undefined, pages: me.pages, service: cloud.cloudUrl() });
     }
     const r = await cloud.login(async (p) => {
-      const opened = !browserDisabled() && openUrl(p.verificationUriComplete);
-      process.stderr.write(
-        `[${BIN}] ${opened ? "Opened your browser" : `Open ${p.verificationUri}`} to sign in, and check that it shows the code ${p.userCode}. It works for ${Math.round(p.expiresIn / 60)} minutes.\n`,
-      );
+      // Always print the link: on a headless or remote machine the browser opens nowhere useful (RLM-431).
+      const minutes = Math.round(p.expiresIn / 60);
+      const lines = [`Sign in at ${p.verificationUriComplete} (code ${p.userCode}, works for ${minutes} minute${minutes === 1 ? "" : "s"}); any device works.`];
+      if (p.verificationUriComplete !== p.verificationUri) lines.push(`Or open ${p.verificationUri} and enter the code ${p.userCode}.`);
+      const browser = browserDisabled() ? "AUSTERE_AXI_NO_OPEN is set: no browser was started." : openUrl(p.verificationUriComplete) ? "Opened your browser." : "Could not start a browser.";
+      lines.push(`${browser} Check that the page shows the code ${p.userCode}.`);
+      process.stderr.write(lines.map((l) => `[${BIN}] ${l}\n`).join(""));
     });
     print({
       status: "signed in",
