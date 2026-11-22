@@ -41,7 +41,7 @@ austere-axi publish rm plan.html                 # or the page id; every link st
 Local review needs no account. Hosted review does: the owner signs in once per machine, reviewers sign in in the browser.
 
 ```sh
-austere-axi cloud login      # prints a code and opens the browser; approve it there (email code, Google, GitHub or passkey)
+austere-axi cloud login      # prints the sign-in link with its code and opens the browser; approve it there or on any other device (email code, Google, GitHub or passkey)
 austere-axi cloud whoami     # the account this machine is signed in as
 austere-axi clone            # your hosted pages, from every machine you published them on
 austere-axi clone <id> plan.html   # one of them as a local file, attached: notes sync here, publish updates the same link

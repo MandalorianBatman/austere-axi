@@ -7,6 +7,7 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 ### Changed
 
 - The `austere` skill's description now lists when to use it (plans, option comparisons, decisions, code reviews, design proposals, system walkthroughs, reports) instead of what it does, so agents pick it up for those answers without being asked. Short answers and plain code edits stay out. (RLM-425)
+- `cloud login` always prints the sign-in link with the code in it, whether or not it opened a browser, so a headless or remote machine can be signed in from a phone or another computer. It also prints the bare link and the code to type in, and says when no browser was started. (RLM-431)
 
 ## 0.16.0 (2026-11-20)
 
