@@ -21,7 +21,7 @@ Status: Approved 2026-11-16. Built: stage 1 (shipped in 0.11.0), stages 2 and 3 
 | L2 | Notes stay in an inbox unless the owner turns an agent on for the page. |
 | L3 | Attach modes: same session, fork, new. All three are offered where the harness supports them. |
 | L4 | No session discovery. The agent registers its own session. |
-| L5 | No hooks. Nothing may fire in a session that does not use austere-axi. |
+| L5 | A client may run in every session, but it does nothing until the server reports a role for its session id. Amended by Sid on 2026-11-22 (RLM-447); was "No hooks. Nothing may fire in a session that does not use austere-axi." |
 | L6 | Attach is set per page, with a project default. |
 | L7 | A dispatched run has the session's full permissions: what the harness configuration already allows. |
 | L8 | First harness adapters: omp and Copilot CLI. Others later (RLM-347). |
