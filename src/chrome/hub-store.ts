@@ -93,12 +93,6 @@ export function toUrl(s: State): string {
   return `/?${p}`;
 }
 
-/** Text above the view, with an optional button (Undo, Copy link). */
-export interface Status {
-  text: string;
-  action?: { label: string; onClick: () => unknown };
-}
-
 interface Hub {
   state: State;
   /** The view search returns to when its box is emptied. */
@@ -109,9 +103,6 @@ interface Hub {
   waitingPeople: number;
   /** Projects the owner folded: they show their pages until then. */
   closedProjects: string[];
-  status: Status | null;
-  /** The narrow screen's drawer. */
-  sideOpen: boolean;
   /** Moves when every view should read again. */
   version: number;
 }
@@ -125,8 +116,6 @@ export const useHub = create<Hub>(() => ({
   sidePages: [],
   waitingPeople: 0,
   closedProjects: stored<string[]>(CLOSED_PROJECTS, []),
-  status: null,
-  sideOpen: false,
   version: 0,
 }));
 
@@ -155,16 +144,7 @@ export function go(e: ClickLike | null, next: Partial<State>, push = true): void
   set({
     state,
     previous: now.state.view === "search" ? now.previous : now.state.view,
-    sideOpen: false,
   });
-}
-
-export function say(text: string, action?: Status["action"]): void {
-  set({ status: text ? { text, action } : null });
-}
-
-export function setSide(sideOpen: boolean): void {
-  set({ sideOpen });
 }
 
 export function toggleProject(id: string): void {

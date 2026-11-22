@@ -1,8 +1,9 @@
 // The hub shell (RLM-357): the owner's home page, a small client app over /hub/api (src/cli/hub-api.ts).
 // A sidebar of projects and their pages; the views Inbox (default) · Pages · Notes · Runs · Settings (settings.tsx);
-// search over pages and parts. React over one store (hub-store.ts); every text is a React text node. The
-// server answers only the owner (the cookie); this page holds no secret of its own.
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+// search over pages and parts. React over one store (hub-store.ts), shadcn's Sidebar for the frame, toasts
+// for what a change says. The server answers only the owner (the cookie); this page holds no secret of its own.
+import "./zod-jitless.ts";
+import { useEffect, useRef, useState } from "react";
 import type { ReactElement, RefObject } from "react";
 import { createRoot } from "react-dom/client";
 import { plural } from "./format.ts";
@@ -11,8 +12,24 @@ import { InboxView, NotesView, PagesView, RunsView, SearchView } from "./hub-vie
 import { Icon } from "./icon.tsx";
 import { ProjectsSidebar } from "./projects-sidebar.tsx";
 import { SettingsView } from "./settings.tsx";
-import { VIEWS, go, setSide, start, toUrl, toggleProject, useHub } from "./hub-store.ts";
-import type { Status } from "./hub-store.ts";
+import { VIEWS, go, start, toUrl, toggleProject, useHub } from "./hub-store.ts";
+import { Toaster } from "@/chrome/ui/sonner";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarInput,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/chrome/ui/sidebar";
+import { HubDialogs } from "./hub-dialog.tsx";
+import { Button } from "@/chrome/ui/button";
 
 /** The austere-axi mark beside the name: decorative, the name beside it is the link's text. */
 function LogoMark(): ReactElement {
@@ -25,54 +42,89 @@ function LogoMark(): ReactElement {
   );
 }
 
-const narrowQuery = window.matchMedia("(max-width: 860px)");
-const subscribeNarrow = (cb: () => void): (() => void) => {
-  narrowQuery.addEventListener("change", cb);
-  return () => narrowQuery.removeEventListener("change", cb);
-};
-const isNarrow = (): boolean => narrowQuery.matches;
-
-/** The views, for the sidebar (`tab` false) or the phone tab bar. */
-function ViewLinks({ tab }: { tab: boolean }): ReactElement {
-  const state = useHub((s) => s.state);
+function useCounts(): { needsYou: number; waiting: number } {
   const needsYou = useHub((s) => s.projects.reduce((n, p) => n + p.needs_you, 0));
   const waiting = useHub((s) => s.waitingPeople);
+  return { needsYou, waiting };
+}
+
+const needsTitle = (n: number): string => `${plural(n, "page needs", "pages need")} you`;
+const waitingTitle = (n: number): string => `${plural(n, "person asks", "people ask")} for access`;
+
+/** The views in the sidebar (hidden on a phone, where the tab bar has them). */
+function ViewMenu(): ReactElement {
+  const state = useHub((s) => s.state);
+  const { needsYou, waiting } = useCounts();
   return (
-    <>
-      {VIEWS.map((v) => (
-        <a
-          key={v.id}
-          href={toUrl({ ...state, view: v.id })}
-          data-view={v.id}
-          aria-current={state.view === v.id ? "page" : undefined}
-          onClick={(e) => go(e, { view: v.id })}
-        >
-          <Icon name={v.icon} {...(tab ? { size: 20, width: 1.8 } : {})} />
-          <span className="label">{v.label}</span>
-          {v.id === "inbox" && needsYou ? (
-            <span
-              className="count need"
-              title={`${plural(needsYou, "page needs", "pages need")} you`}
-            >
-              {needsYou}
-            </span>
-          ) : null}
-          {v.id === "settings" && waiting ? (
-            <span
-              className="count need"
-              title={`${plural(waiting, "person asks", "people ask")} for access`}
-            >
-              {waiting}
-            </span>
-          ) : null}
-        </a>
-      ))}
-    </>
+    <SidebarMenu className="views" aria-label="Views">
+      {VIEWS.map((v) => {
+        const n = v.id === "inbox" ? needsYou : v.id === "settings" ? waiting : 0;
+        return (
+          <SidebarMenuItem key={v.id}>
+            <SidebarMenuButton asChild isActive={state.view === v.id}>
+              <a
+                href={toUrl({ ...state, view: v.id })}
+                data-view={v.id}
+                aria-current={state.view === v.id ? "page" : undefined}
+                onClick={(e) => go(e, { view: v.id })}
+              >
+                <Icon name={v.icon} />
+                <span className="label">{v.label}</span>
+              </a>
+            </SidebarMenuButton>
+            {n ? (
+              <SidebarMenuBadge
+                className="count need rounded-full bg-[var(--amber-pill)] px-2 text-[var(--amber)]"
+                title={v.id === "inbox" ? needsTitle(n) : waitingTitle(n)}
+              >
+                {n}
+              </SidebarMenuBadge>
+            ) : null}
+          </SidebarMenuItem>
+        );
+      })}
+    </SidebarMenu>
   );
 }
 
+/** Phones: the views as a tab bar along the bottom; the drawer keeps search and projects. */
+function TabBar(): ReactElement {
+  const state = useHub((s) => s.state);
+  const { needsYou, waiting } = useCounts();
+  return (
+    <nav className="tabbar" aria-label="Views">
+      {VIEWS.map((v) => {
+        const n = v.id === "inbox" ? needsYou : v.id === "settings" ? waiting : 0;
+        return (
+          <a
+            key={v.id}
+            href={toUrl({ ...state, view: v.id })}
+            data-view={v.id}
+            aria-current={state.view === v.id ? "page" : undefined}
+            onClick={(e) => go(e, { view: v.id })}
+          >
+            <Icon name={v.icon} size={20} width={1.8} />
+            <span className="label">{v.label}</span>
+            {n ? (
+              <span
+                className="count need"
+                title={v.id === "inbox" ? needsTitle(n) : waitingTitle(n)}
+              >
+                {n}
+              </span>
+            ) : null}
+          </a>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Set by the top bar's search button: the search box takes focus once the drawer has drawn it. */
+let focusSearchNext = false;
+
 /** The sidebar's search: a pause in typing searches; emptying the box goes back to the view before it. */
-function SearchBox({ inputRef }: { inputRef: RefObject<HTMLInputElement | null> }): ReactElement {
+function SearchBox(): ReactElement {
   const searching = useHub((s) => s.state.view === "search");
   const q = useHub((s) => s.state.q);
   const shown = searching ? q : "";
@@ -96,12 +148,23 @@ function SearchBox({ inputRef }: { inputRef: RefObject<HTMLInputElement | null> 
         if (asked) go(null, { view: "search", q: asked }, !searching);
       }}
     >
-      <label className="search-box">
-        <Icon name="search" size={15} width={1.8} />
-        <input
-          ref={inputRef}
+      <div className="relative">
+        <Icon
+          name="search"
+          size={15}
+          width={1.8}
+          cls="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
+        />
+        <SidebarInput
+          ref={(el: HTMLInputElement | null) => {
+            if (el && focusSearchNext) {
+              focusSearchNext = false;
+              el.focus();
+            }
+          }}
           type="search"
           name="q"
+          className="pl-8"
           value={text}
           placeholder="Search pages and parts"
           aria-label="Search pages and parts"
@@ -117,45 +180,8 @@ function SearchBox({ inputRef }: { inputRef: RefObject<HTMLInputElement | null> 
             }, 200);
           }}
         />
-      </label>
+      </div>
     </form>
-  );
-}
-
-/** A button of the status line: off while its request runs. */
-function StatusAction({ action }: { action: NonNullable<Status["action"]> }): ReactElement {
-  const [busy, setBusy] = useState(false);
-  return (
-    <button
-      type="button"
-      className="btn tiny"
-      disabled={busy}
-      onClick={async () => {
-        if (busy) return;
-        setBusy(true);
-        try {
-          await action.onClick();
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {action.label}
-    </button>
-  );
-}
-
-function StatusLine(): ReactElement {
-  const status = useHub((s) => s.status);
-  return (
-    <div className="status" role="status" aria-live="polite">
-      {status ? (
-        <>
-          <span>{status.text}</span>
-          {status.action ? <StatusAction action={status.action} /> : null}
-        </>
-      ) : null}
-    </div>
   );
 }
 
@@ -177,17 +203,40 @@ function Content(): ReactElement | null {
   }
 }
 
+/** The top bar: the sidebar's toggle (Ctrl+B too), and on a narrow screen a way to its search. */
+function TopBar(): ReactElement {
+  const { isMobile, setOpenMobile, openMobile } = useSidebar();
+  return (
+    <header className="top sticky top-0 z-5 flex items-center justify-between gap-2 border-b bg-background px-3 py-1.5 md:border-b-0">
+      <SidebarTrigger
+        className="side-toggle"
+        aria-controls="side"
+        aria-label="Toggle the sidebar"
+      />
+      {isMobile ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="top-search"
+          aria-label="Search pages and parts"
+          onClick={() => {
+            focusSearchNext = !openMobile;
+            setOpenMobile(true);
+          }}
+        >
+          <Icon name="search" size={20} width={1.8} />
+        </Button>
+      ) : null}
+    </header>
+  );
+}
+
 function Hub(): ReactElement {
   const state = useHub((s) => s.state);
   const projects = useHub((s) => s.projects);
   const sidePages = useHub((s) => s.sidePages);
   const closedProjects = useHub((s) => s.closedProjects);
-  const sideOpen = useHub((s) => s.sideOpen);
-  const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
-  const searchInput = useRef<HTMLInputElement>(null);
-  const toggleButton = useRef<HTMLButtonElement>(null);
-  const aside = useRef<HTMLElement>(null);
-  const wantSearch = useRef(false);
 
   useEffect(() => {
     const label =
@@ -195,101 +244,43 @@ function Hub(): ReactElement {
     document.title = `${label} · austere-axi hub`;
   }, [state.view]);
 
-  // The drawer: `html.side-open` is what hub-narrow.css reads; closed on a narrow screen it is out of Tab order too.
-  useEffect(() => {
-    document.documentElement.classList.toggle("side-open", sideOpen);
-    if (!sideOpen) return;
-    if (wantSearch.current) searchInput.current?.focus();
-    else {
-      // On a phone the views live in the tab bar, not the drawer: then focus starts at the top of the drawer.
-      const view = aside.current?.querySelector<HTMLElement>(".views a");
-      (view && view.getClientRects().length
-        ? view
-        : aside.current?.querySelector<HTMLElement>(".brand a")
-      )?.focus();
-    }
-    wantSearch.current = false;
-  }, [sideOpen]);
-  useEffect(() => {
-    if (!sideOpen) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape") return;
-      setSide(false);
-      toggleButton.current?.focus();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [sideOpen]);
-
   return (
-    <div className="hub">
-      <aside
-        ref={aside}
-        className="side"
-        id="side"
-        aria-label="Projects and views"
-        inert={narrow && !sideOpen}
-      >
-        <div className="brand">
-          <LogoMark />
-          <a href="/?view=inbox">austere-axi</a>
-          <small>{BOOT.version}</small>
-        </div>
-        <SearchBox inputRef={searchInput} />
-        <nav className="views" aria-label="Views">
-          <ViewLinks tab={false} />
-        </nav>
-        <ProjectsSidebar
-          projects={projects}
-          pages={sidePages}
-          selected={state.project}
-          collapsed={closedProjects}
-          projectHref={(id) => toUrl({ ...state, project: id })}
-          allHref={toUrl({ ...state, project: "" })}
-          onSelect={(e, id) => go(e, { project: id })}
-          onToggle={toggleProject}
-        />
-      </aside>
-      <div className="scrim" onClick={() => setSide(false)} />
-      <div className="main">
-        {/* Narrow screens only: the drawer's toggle, and a way to its search. */}
-        <header className="top">
-          <button
-            ref={toggleButton}
-            type="button"
-            className="side-toggle"
-            aria-controls="side"
-            aria-expanded={sideOpen}
-            onClick={() => setSide(!sideOpen)}
-          >
-            <Icon name="menu" size={18} />
-            <span className="side-toggle-text">Projects</span>
-          </button>
-          <button
-            type="button"
-            className="top-search"
-            aria-label="Search pages and parts"
-            onClick={() => {
-              wantSearch.current = true;
-              if (sideOpen) {
-                searchInput.current?.focus();
-                wantSearch.current = false;
-              } else setSide(true);
-            }}
-          >
-            <Icon name="search" size={20} width={1.8} />
-          </button>
-        </header>
-        <StatusLine />
+    <SidebarProvider className="hub">
+      <Sidebar id="side" aria-label="Projects and views" className="side">
+        <SidebarHeader className="gap-3 p-3">
+          <div className="brand flex items-center gap-2.5 px-2">
+            <LogoMark />
+            <a href="/?view=inbox" className="flex-1 text-sm font-semibold text-foreground">
+              austere-axi
+            </a>
+            <small className="font-mono text-[11px] text-[var(--faint)]">{BOOT.version}</small>
+          </div>
+          <SearchBox />
+        </SidebarHeader>
+        <SidebarContent className="px-1">
+          <ViewMenu />
+          <ProjectsSidebar
+            projects={projects}
+            pages={sidePages}
+            selected={state.project}
+            collapsed={closedProjects}
+            projectHref={(id) => toUrl({ ...state, project: id })}
+            allHref={toUrl({ ...state, project: "" })}
+            onSelect={(e, id) => go(e, { project: id })}
+            onToggle={toggleProject}
+          />
+        </SidebarContent>
+      </Sidebar>
+      <SidebarInset className="main min-w-0">
+        <TopBar />
         <main className="content" id="content" tabIndex={-1}>
           <Content />
         </main>
-        {/* Phones: the views as a tab bar along the bottom; the drawer keeps search and projects. */}
-        <nav className="tabbar" aria-label="Views">
-          <ViewLinks tab />
-        </nav>
-      </div>
-    </div>
+        <TabBar />
+      </SidebarInset>
+      <Toaster theme="dark" position="bottom-right" />
+      <HubDialogs />
+    </SidebarProvider>
   );
 }
 

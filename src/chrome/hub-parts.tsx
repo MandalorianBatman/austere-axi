@@ -7,7 +7,12 @@ import { Icon } from "./icon.tsx";
 import { tilde } from "./hub-env.ts";
 import type { IconName } from "./icons.ts";
 import { UNREACHABLE, openLink, post } from "./hub-http.ts";
-import { go, reload, say, toUrl, useHub } from "./hub-store.ts";
+import { go, reload, toUrl, useHub } from "./hub-store.ts";
+import { fail, say } from "./hub-toast.ts";
+import { Badge } from "@/chrome/ui/badge";
+import { Button } from "@/chrome/ui/button";
+import { Skeleton } from "@/chrome/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/chrome/ui/tooltip";
 import type { State } from "./hub-store.ts";
 
 /** A link to another view or filter: a real URL, and a click moves inside the hub. */
@@ -105,16 +110,17 @@ function Chip({ c }: { c: ShellCopy }): ReactElement {
     c.archived ? "archived" : "",
   ]);
   return (
-    <a
-      className={`chip${c.unanswered ? " waiting" : ""}${c.missing ? " gone" : ""}`}
-      href={openLink(c.id)}
-      title={`${c.label} · ${c.file}`}
-      data-copy={c.id}
+    <Badge
+      asChild
+      variant="outline"
+      className={`chip min-h-[26px] max-w-full gap-1.5 px-2.5 text-[var(--text-2)]${c.unanswered ? " waiting" : ""}${c.missing ? " gone border-dashed" : ""}`}
     >
-      <Icon name="branch" size={12} width={2} />
-      <span className="chip-label">{middle(c.label, 28)}</span>
-      {extra ? <span className="chip-note">{extra}</span> : null}
-    </a>
+      <a href={openLink(c.id)} title={`${c.label} · ${c.file}`} data-copy={c.id}>
+        <Icon name="branch" size={12} width={2} />
+        <span className="chip-label">{middle(c.label, 28)}</span>
+        {extra ? <span className="chip-note">{extra}</span> : null}
+      </a>
+    </Badge>
   );
 }
 
@@ -243,22 +249,22 @@ function tileOf(p: ShellPage): [IconName, Tone] {
 function NextStep({ p }: { p: ShellPage }) {
   if (p.taker === "nobody")
     return (
-      <a className="btn fill" href={openLink(p.open_id, { attach: "1" })}>
-        Turn agent on
-      </a>
+      <Button asChild variant="secondary" size="sm">
+        <a href={openLink(p.open_id, { attach: "1" })}>Turn agent on</a>
+      </Button>
     );
   if (p.group !== "needs_you") return null;
   if (p.changed)
     return (
-      <a className="btn fill" href={openLink(p.open_id)}>
-        Review changes
-      </a>
+      <Button asChild variant="secondary" size="sm">
+        <a href={openLink(p.open_id)}>Review changes</a>
+      </Button>
     );
   if (p.held)
     return (
-      <a className="btn fill" href={openLink(p.open_id)}>
-        Open held notes
-      </a>
+      <Button asChild variant="secondary" size="sm">
+        <a href={openLink(p.open_id)}>Open held notes</a>
+      </Button>
     );
   return null;
 }
@@ -287,27 +293,33 @@ export function ArchiveButton({
     if (!ok) setBusyFor(null);
   };
   return archivedView ? (
-    <button
+    <Button
       type="button"
-      className="btn ghost"
+      variant="ghost"
+      size="sm"
       title={title}
       aria-label={label}
       disabled={busy}
       onClick={() => void flipIt()}
     >
       Unarchive
-    </button>
+    </Button>
   ) : (
-    <button
-      type="button"
-      className="icon-btn"
-      title={title}
-      aria-label={label}
-      disabled={busy}
-      onClick={() => void flipIt()}
-    >
-      <Icon name="archive" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          disabled={busy}
+          onClick={() => void flipIt()}
+        >
+          <Icon name="archive" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -315,7 +327,7 @@ export function ArchiveButton({
 async function flip(p: ShellPage, action: "archive" | "unarchive"): Promise<boolean> {
   const done = await post(`/hub/api/page/${p.open_id}/${action}`);
   if (!done) {
-    say(`Could not ${action} ${titleOf(p)}. ${UNREACHABLE}`);
+    fail(`Could not ${action} ${titleOf(p)}. ${UNREACHABLE}`);
     return false;
   }
   const undo = action === "archive" ? "unarchive" : "archive";
@@ -325,14 +337,16 @@ async function flip(p: ShellPage, action: "archive" | "unarchive"): Promise<bool
     onClick: async (): Promise<void> => {
       if (!(await post(`/hub/api/page/${p.open_id}/${undo}`, { ids: done.ids }))) {
         // Keep the way back: the owner can try again once austere-axi answers.
-        say(`Could not undo. ${UNREACHABLE}`, undoAction);
+        fail(`Could not undo. ${UNREACHABLE}`, { action: undoAction });
         return;
       }
       say("");
       reload();
     },
   };
-  say(`${action === "archive" ? "Archived" : "Unarchived"} ${titleOf(p)}.`, undoAction);
+  say(`${action === "archive" ? "Archived" : "Unarchived"} ${titleOf(p)}.`, {
+    action: undoAction,
+  });
   // Counts, groups and empty states change with the row: read the views again (the status line stays).
   reload();
   return true;
@@ -374,5 +388,20 @@ export function PageRow({
         <ArchiveButton p={p} archivedView={archivedView} />
       </div>
     </li>
+  );
+}
+
+/** What a view shows while its first read is on its way. */
+export function ViewSkeleton(): ReactElement {
+  return (
+    <div role="status" aria-busy="true" aria-label="Loading" className="flex flex-col gap-4">
+      <Skeleton className="h-7 w-40" />
+      <Skeleton className="h-4 w-72" />
+      <div className="flex flex-col gap-2 pt-2">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-16 w-full" />
+        ))}
+      </div>
+    </div>
   );
 }

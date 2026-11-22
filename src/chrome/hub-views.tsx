@@ -26,11 +26,16 @@ import {
   ProjectFilter,
   Section,
   ViewLink,
+  ViewSkeleton,
   counts as countParts,
   joined,
   stateWords,
 } from "./hub-parts.tsx";
 import { Icon } from "./icon.tsx";
+import { Button } from "@/chrome/ui/button";
+import { Input } from "@/chrome/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/chrome/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/chrome/ui/tabs";
 import { go, useHub } from "./hub-store.ts";
 
 /** The loaded answer, or its error; nothing while the first read is on its way. */
@@ -42,7 +47,7 @@ function Loaded<A, T>({
   children: (args: A, data: T) => ReactNode;
 }): ReactElement | null {
   if (result.error) return <p className="error">{result.error}</p>;
-  if (!result.loaded) return null;
+  if (!result.loaded) return <ViewSkeleton />;
   return <>{children(result.loaded.args, result.loaded.data)}</>;
 }
 
@@ -279,13 +284,18 @@ export function PagesView(): ReactElement {
                   ])}
                 </p>
               </div>
-              <nav className="seg" aria-label="Which pages">
-                {PAGE_VIEWS.map((v) => (
-                  <ViewLink key={v.id} next={{ pagesView: v.id }} current={v.id === a.pagesView}>
-                    {v.label} <span className="n">{counts[v.count]}</span>
-                  </ViewLink>
-                ))}
-              </nav>
+              <Tabs
+                value={a.pagesView}
+                onValueChange={(id) => go(null, { pagesView: id as PagesView })}
+              >
+                <TabsList aria-label="Which pages">
+                  {PAGE_VIEWS.map((v) => (
+                    <TabsTrigger key={v.id} value={v.id}>
+                      {v.label} <span className="n">{counts[v.count]}</span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
             </header>
             <ProjectFilter project={data.project} />
           </>
@@ -410,6 +420,9 @@ const ProjectRows = ({ children }: { children: ReactNode }) => <>{children}</>;
 
 // ── Notes ──
 
+/** Radix Select has no empty item value: "no filter" is this. */
+const ALL = "all";
+
 const NOTE_STATE: Record<string, string> = {
   open: "Unanswered",
   received: "Unanswered",
@@ -442,46 +455,64 @@ export function NotesView(): ReactElement {
             <form
               // The filters the URL names; typing is the form's own until it is submitted.
               key={JSON.stringify([a.q, a.status, a.author])}
-              className="filters"
+              className="filters flex flex-wrap items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 const f = new FormData(e.currentTarget);
+                const pick = (name: string): string => {
+                  const x = String(f.get(name) ?? "");
+                  return x === ALL ? "" : x;
+                };
                 go(null, {
                   q: String(f.get("q") ?? ""),
-                  status: String(f.get("status") ?? ""),
-                  author: String(f.get("author") ?? ""),
+                  status: pick("status"),
+                  author: pick("author"),
                 });
               }}
             >
-              <label className="search-box">
-                <Icon name="search" size={15} width={1.8} />
-                <input
+              <div className="relative min-w-0 flex-1 basis-64">
+                <Icon
+                  name="search"
+                  size={15}
+                  width={1.8}
+                  cls="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
                   type="search"
                   name="q"
+                  className="pl-8"
                   defaultValue={a.q}
                   placeholder="Search notes, targets, page titles"
                   aria-label="Search notes"
                 />
-              </label>
-              <select name="status" aria-label="Status" defaultValue={a.status}>
-                <option value="">All</option>
-                <option value="unanswered">Unanswered</option>
-                <option value="answered">Answered</option>
-              </select>
+              </div>
+              <Select name="status" defaultValue={a.status || ALL}>
+                <SelectTrigger aria-label="Status" className="min-w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>All</SelectItem>
+                  <SelectItem value="unanswered">Unanswered</SelectItem>
+                  <SelectItem value="answered">Answered</SelectItem>
+                </SelectContent>
+              </Select>
               {data.authors.length ? (
-                <select name="author" aria-label="Author" defaultValue={a.author}>
-                  <option value="">Everyone</option>
-                  <option value="owner">Owner</option>
-                  {data.authors.map((x) => (
-                    <option key={x} value={x}>
-                      {x}
-                    </option>
-                  ))}
-                </select>
+                <Select name="author" defaultValue={a.author || ALL}>
+                  <SelectTrigger aria-label="Author" className="min-w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>Everyone</SelectItem>
+                    <SelectItem value="owner">Owner</SelectItem>
+                    {data.authors.map((x) => (
+                      <SelectItem key={x} value={x}>
+                        {x}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : null}
-              <button type="submit" className="btn">
-                Filter
-              </button>
+              <Button type="submit">Filter</Button>
             </form>
             <ProjectFilter project={data.project} />
             {data.device ? (
