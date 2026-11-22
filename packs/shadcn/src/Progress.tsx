@@ -19,7 +19,13 @@ function ProgressView({ props }: RendererArgs<ProgressProps>) {
         <span>{props.label}</span>
         <span className="sh-muted">{pct}%</span>
       </div>
-      <div className="sh-progress-bar" role="progressbar" aria-valuemin={0} aria-valuemax={max} aria-valuenow={value}>
+      <div
+        className="sh-progress-bar"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={max}
+        aria-valuenow={value}
+      >
         <div className="sh-progress-fill" style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -31,7 +37,8 @@ export default austereComponent({
   group: "Data",
   tier: "extended",
   props: z.object({ value: z.number(), label: z.string().optional(), max: z.number().optional() }),
-  description: "Progress bar. value counts toward max (default 100); label names what is progressing. Shows a percentage.",
+  description:
+    "Progress bar. value counts toward max (default 100); label names what is progressing. Shows a percentage.",
   renderer: ProgressView,
   example: `migration = Progress(64, "Rows migrated")`,
 });

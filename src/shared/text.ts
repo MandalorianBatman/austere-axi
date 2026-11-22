@@ -35,7 +35,11 @@ export interface StatementText {
   text: string;
 }
 
-const isElement = (v: unknown): v is ElementLike => !!v && typeof v === "object" && (v as { type?: unknown }).type === "element" && typeof (v as { typeName?: unknown }).typeName === "string";
+const isElement = (v: unknown): v is ElementLike =>
+  !!v &&
+  typeof v === "object" &&
+  (v as { type?: unknown }).type === "element" &&
+  typeof (v as { typeName?: unknown }).typeName === "string";
 
 /** Components read together with what they hold, references included. */
 const DEEP = new Set(["Form"]);
@@ -47,7 +51,20 @@ const DEEP_PROPS = new Set(["series"]);
 const IDS = new Set(["id"]);
 
 /** Components whose `name` is a field's identifier, not text (an Avatar's name is text). */
-const FIELDS = new Set(["Form", "Input", "TextArea", "Select", "Slider", "CheckBoxGroup", "CheckBoxItem", "RadioGroup", "RadioItem", "SwitchGroup", "SwitchItem", "FormControl"]);
+const FIELDS = new Set([
+  "Form",
+  "Input",
+  "TextArea",
+  "Select",
+  "Slider",
+  "CheckBoxGroup",
+  "CheckBoxItem",
+  "RadioGroup",
+  "RadioItem",
+  "SwitchGroup",
+  "SwitchItem",
+  "FormControl",
+]);
 
 /** Every element of the tree that is a statement, by its name; the first one found when a statement is shown twice. */
 export function elementsByStatement(root: unknown): Map<string, ElementLike> {
@@ -69,7 +86,12 @@ export function elementsByStatement(root: unknown): Map<string, ElementLike> {
 }
 
 /** The text of one statement's element. */
-function textOf(el: ElementLike, spec: TextSpec | undefined, follow: boolean, top: ElementLike): string[] {
+function textOf(
+  el: ElementLike,
+  spec: TextSpec | undefined,
+  follow: boolean,
+  top: ElementLike,
+): string[] {
   switch (el.typeName) {
     case "Table":
       return [tableText(el, spec)];
@@ -78,8 +100,13 @@ function textOf(el: ElementLike, spec: TextSpec | undefined, follow: boolean, to
     case "Edge":
       return [edgeText(el)];
     case "Group": {
-      const members = (Array.isArray(el.props.members) ? el.props.members : []).map(labelOf).filter(Boolean);
-      return [String(el.props.label ?? ""), ...(members.length ? [`members: ${members.join(", ")}`] : [])].filter(Boolean);
+      const members = (Array.isArray(el.props.members) ? el.props.members : [])
+        .map(labelOf)
+        .filter(Boolean);
+      return [
+        String(el.props.label ?? ""),
+        ...(members.length ? [`members: ${members.join(", ")}`] : []),
+      ].filter(Boolean);
     }
     case "Diff":
       return diffText(el);
@@ -89,14 +116,18 @@ function textOf(el: ElementLike, spec: TextSpec | undefined, follow: boolean, to
   const deep = follow || (el === top && DEEP.has(el.typeName));
   // `schema` is the library's description of the value: an enumeration is not text, wherever it sits.
   const walk = (v: unknown, node: SchemaLike | undefined, deepHere: boolean): void => {
-    const ref = typeof node?.$ref === "string" ? spec?.$defs?.[node.$ref.replace(/^#\/\$defs\//, "")] : undefined;
+    const ref =
+      typeof node?.$ref === "string"
+        ? spec?.$defs?.[node.$ref.replace(/^#\/\$defs\//, "")]
+        : undefined;
     const schema = ref ?? node;
     if (schema?.enum) return;
     if (typeof v === "string") {
       if (v.trim()) lines.push(v);
     } else if (Array.isArray(v)) {
       const items = schema?.items;
-      for (const x of v) walk(x, items && typeof items === "object" ? (items as SchemaLike) : undefined, deepHere);
+      for (const x of v)
+        walk(x, items && typeof items === "object" ? (items as SchemaLike) : undefined, deepHere);
     } else if (isElement(v)) {
       // A reference has its own row; an element written in place is part of this statement.
       if (v.statementId && !deepHere) return;
@@ -121,7 +152,11 @@ function cellText(v: unknown, spec: TextSpec | undefined): string {
   return Array.isArray(v) ? v.map((x) => cellText(x, spec)).join(" ") : "";
 }
 
-const cell = (s: string): string => s.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim();
+const cell = (s: string): string =>
+  s
+    .replace(/\|/g, "\\|")
+    .replace(/\s*\n\s*/g, " ")
+    .trim();
 
 /** A table as a Markdown table, from its columns. */
 function tableText(el: ElementLike, spec: TextSpec | undefined): string {
@@ -131,17 +166,20 @@ function tableText(el: ElementLike, spec: TextSpec | undefined): string {
   const rows = Math.max(0, ...data.map((d) => d.length));
   const head = cols.map((c) => cell(String(c.props.label ?? "")));
   const lines = [`| ${head.join(" | ")} |`, `| ${head.map(() => "---").join(" | ")} |`];
-  for (let r = 0; r < rows; r++) lines.push(`| ${data.map((d) => cell(cellText(d[r], spec))).join(" | ")} |`);
+  for (let r = 0; r < rows; r++)
+    lines.push(`| ${data.map((d) => cell(cellText(d[r], spec))).join(" | ")} |`);
   return lines.join("\n");
 }
 
-const labelOf = (v: unknown): string => (isElement(v) ? String(v.props.label ?? v.statementId ?? "") : typeof v === "string" ? v : "");
+const labelOf = (v: unknown): string =>
+  isElement(v) ? String(v.props.label ?? v.statementId ?? "") : typeof v === "string" ? v : "";
 
 /** A diagram as its nodes, then one `a → b (label)` line per edge. */
 function architectureText(el: ElementLike): string[] {
   const nodes = (Array.isArray(el.props.nodes) ? el.props.nodes : []).map(labelOf).filter(Boolean);
   const lines = nodes.length ? [`nodes: ${nodes.join(", ")}`] : [];
-  for (const e of Array.isArray(el.props.edges) ? el.props.edges : []) if (isElement(e)) lines.push(edgeText(e));
+  for (const e of Array.isArray(el.props.edges) ? el.props.edges : [])
+    if (isElement(e)) lines.push(edgeText(e));
   return lines;
 }
 
@@ -162,7 +200,7 @@ function diffText(el: ElementLike): string[] {
     if (head) files.push((current = { name: head[2], add: 0, del: 0 }));
     else if (/^\+\+\+ /.test(line)) {
       const name = line.slice(4).replace(/^b\//, "").trim();
-      if (!current || (current.add || current.del)) files.push((current = { name, add: 0, del: 0 }));
+      if (!current || current.add || current.del) files.push((current = { name, add: 0, del: 0 }));
       else if (name !== "/dev/null") current.name = name;
     } else if (/^--- /.test(line)) continue;
     else if (current && line.startsWith("+")) current.add++;
@@ -188,7 +226,13 @@ function literalsOf(source: string): string[] {
  * parse), `source` the statement's own source, the fallback for a statement the tree does not
  * hold (not reachable from root, or not a component).
  */
-export function statementText(root: unknown, name: string, source: string, spec?: TextSpec, elements: Map<string, ElementLike> = elementsByStatement(root)): StatementText {
+export function statementText(
+  root: unknown,
+  name: string,
+  source: string,
+  spec?: TextSpec,
+  elements: Map<string, ElementLike> = elementsByStatement(root),
+): StatementText {
   const el = elements.get(name);
   if (el) return { name, component: el.typeName, text: textOf(el, spec, false, el).join("\n") };
   const head = /^\s*[A-Za-z_$][\w$]*\s*=\s*([A-Z][\w$]*)\s*\(/.exec(source);
@@ -230,7 +274,11 @@ const FOLDED = new Set(["Architecture", "Table", "Form"]);
  * is used), with its first 8 words; the parts of a diagram, a table or a form are counted in
  * its row, not listed. A statement nothing refers to, that root does not reach, is listed in `unreached`.
  */
-export function outlineOf(program: string, root: unknown, spec?: TextSpec): { rows: OutlineRow[]; unreached: string[] } {
+export function outlineOf(
+  program: string,
+  root: unknown,
+  spec?: TextSpec,
+): { rows: OutlineRow[]; unreached: string[] } {
   const elements = elementsByStatement(root);
   const rows: OutlineRow[] = [];
   const seen = new Set<string>();
@@ -246,7 +294,13 @@ export function outlineOf(program: string, root: unknown, spec?: TextSpec): { ro
       if (parent) parent.children++;
       if (!folded) {
         const t = statementText(root, v.statementId, "", spec, elements);
-        row = { name: v.statementId, component: v.typeName, depth, children: 0, words: words(t.text, 8) };
+        row = {
+          name: v.statementId,
+          component: v.typeName,
+          depth,
+          children: 0,
+          words: words(t.text, 8),
+        };
         rows.push(row);
         next = depth + 1;
         inside = FOLDED.has(v.typeName);
@@ -258,8 +312,20 @@ export function outlineOf(program: string, root: unknown, spec?: TextSpec): { ro
   const map = new Map(splitStatements(program).map((s) => [s.id, s.text]));
   const referenced = new Set<string>();
   for (const [id, text] of map) {
-    const body = text.slice(text.indexOf("=") + 1).replace(/"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'/g, '""');
-    for (const other of map.keys()) if (other !== id && new RegExp(`(^|[^\\w$])${other.replace(/\$/g, "\\$")}(?![\\w$])`).test(body)) referenced.add(other);
+    const body = text
+      .slice(text.indexOf("=") + 1)
+      .replace(/"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'/g, '""');
+    for (const other of map.keys())
+      if (
+        other !== id &&
+        new RegExp(`(^|[^\\w$])${other.replace(/\$/g, "\\$")}(?![\\w$])`).test(body)
+      )
+        referenced.add(other);
   }
-  return { rows, unreached: [...map.keys()].filter((id) => !seen.has(id) && !referenced.has(id) && id !== "root") };
+  return {
+    rows,
+    unreached: [...map.keys()].filter(
+      (id) => !seen.has(id) && !referenced.has(id) && id !== "root",
+    ),
+  };
 }

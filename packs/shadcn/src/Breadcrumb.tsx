@@ -5,7 +5,8 @@ import type { RendererArgs } from "austere-axi/pack";
 import { isElement } from "./element.ts";
 
 const nothing = () => null;
-const safeHref = (h: unknown): string => (typeof h === "string" && /^(https?:\/\/|\/|#)/i.test(h) ? h : "");
+const safeHref = (h: unknown): string =>
+  typeof h === "string" && /^(https?:\/\/|\/|#)/i.test(h) ? h : "";
 
 interface BreadcrumbItemProps {
   label: string;
@@ -17,7 +18,9 @@ interface BreadcrumbProps {
 }
 
 function BreadcrumbView({ props }: RendererArgs<BreadcrumbProps>) {
-  const items = (Array.isArray(props.items) ? props.items : []).filter(isElement<BreadcrumbItemProps>);
+  const items = (Array.isArray(props.items) ? props.items : []).filter(
+    isElement<BreadcrumbItemProps>,
+  );
   return (
     <nav className="sh-breadcrumb" aria-label="Breadcrumb">
       <ol>
@@ -26,7 +29,11 @@ function BreadcrumbView({ props }: RendererArgs<BreadcrumbProps>) {
           const href = safeHref(el.props.href);
           return (
             <li key={i} data-austere-part={el.props.label}>
-              {href && !last ? <a href={href}>{el.props.label}</a> : <span aria-current={last ? "page" : undefined}>{el.props.label}</span>}
+              {href && !last ? (
+                <a href={href}>{el.props.label}</a>
+              ) : (
+                <span aria-current={last ? "page" : undefined}>{el.props.label}</span>
+              )}
               {last ? null : (
                 <span className="sh-crumb-sep" aria-hidden="true">
                   /
@@ -56,7 +63,8 @@ export const Breadcrumb = austereComponent({
   group: "Content",
   tier: "extended",
   props: z.object({ items: z.array(BreadcrumbItem.definition.ref) }),
-  description: "Path trail such as Repo / Package / File, from BreadcrumbItems. Each item is a click target.",
+  description:
+    "Path trail such as Repo / Package / File, from BreadcrumbItems. Each item is a click target.",
   renderer: BreadcrumbView,
   example: `trail = Breadcrumb([repo, pkg, file])
 repo = BreadcrumbItem("austere-axi")

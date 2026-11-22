@@ -18,7 +18,14 @@ import { ROOT } from "../../scripts/lib/plugins.ts";
 import { readArtifact } from "../../src/cli/artifact.ts";
 
 const SITE = path.join(ROOT, "_site");
-const TYPES: Record<string, string | undefined> = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml" };
+const TYPES: Record<string, string | undefined> = {
+  ".html": "text/html",
+  ".js": "text/javascript",
+  ".json": "application/json",
+  ".css": "text/css",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+};
 const PROGRAM = `root = Stack([intro, plan], "column", "l")
 intro = Card([CardHeader("Hello playground", "first version")])
 plan = Card([CardHeader("Plan"), steps])
@@ -40,7 +47,11 @@ before(async () => {
     return;
   }
   browser = launched.browser;
-  const built = spawnSync(process.execPath, [path.join(ROOT, "scripts/site.ts")], { cwd: ROOT, env: process.env, encoding: "utf8" });
+  const built = spawnSync(process.execPath, [path.join(ROOT, "scripts/site.ts")], {
+    cwd: ROOT,
+    env: process.env,
+    encoding: "utf8",
+  });
   assert.equal(built.status, 0, `npm run site failed:\n${built.stdout}\n${built.stderr}`);
   const srv = http.createServer((req, res) => {
     let p = decodeURIComponent(new URL(req.url ?? "", "http://x").pathname);
@@ -72,7 +83,14 @@ interface PlayPage {
 }
 
 /** Open /play/ (optionally with a hash) and wait for the first render. */
-async function open(t: TestContext, { hash = "", viewport = { width: 1360, height: 900 }, context }: { hash?: string; viewport?: { width: number; height: number }; context?: BrowserContext } = {}): Promise<PlayPage | void> {
+async function open(
+  t: TestContext,
+  {
+    hash = "",
+    viewport = { width: 1360, height: 900 },
+    context,
+  }: { hash?: string; viewport?: { width: number; height: number }; context?: BrowserContext } = {},
+): Promise<PlayPage | void> {
   if (skipReason) return t.skip(skipReason);
   const ctx = context || (await browser.newContext({ viewport }));
   const page = await ctx.newPage();
@@ -82,7 +100,9 @@ async function open(t: TestContext, { hash = "", viewport = { width: 1360, heigh
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
   });
   await page.goto(`${base}/play/${hash}`);
-  const frame = (await (await page.waitForSelector("#frame", { state: "attached" })).contentFrame()) as Frame;
+  const frame = (await (
+    await page.waitForSelector("#frame", { state: "attached" })
+  ).contentFrame()) as Frame;
   await frame.waitForSelector("[data-oui-id]", { timeout: 15_000 });
   return { ctx, page, frame, problems };
 }
@@ -96,8 +116,15 @@ describe("playground", () => {
     const s = await open(t);
     if (!s) return;
     try {
-      await s.page.waitForFunction(() => /Passes austere-axi check/.test((document.querySelector("#status") as HTMLElement).textContent as string));
-      assert.match((await s.page.textContent("#status")) as string, /\d+ statements · ~[\d,]+ tokens/);
+      await s.page.waitForFunction(() =>
+        /Passes austere-axi check/.test(
+          (document.querySelector("#status") as HTMLElement).textContent as string,
+        ),
+      );
+      assert.match(
+        (await s.page.textContent("#status")) as string,
+        /\d+ statements · ~[\d,]+ tokens/,
+      );
       assert.deepEqual(s.problems, []);
     } finally {
       await s.ctx.close();
@@ -132,9 +159,20 @@ describe("playground", () => {
       assert.match((await s.page.textContent("#status")) as string, /1 error/);
       assert.equal(await s.page.locator("#editor .marks i.error").count(), 1);
       await item.locator("button").click(); // selects the statement in the editor
-      assert.match(await s.page.locator("#source").evaluate((el: HTMLTextAreaElement) => el.value.slice(el.selectionStart, el.selectionEnd)), /^steps = NoSuchThing/);
+      assert.match(
+        await s.page
+          .locator("#source")
+          .evaluate((el: HTMLTextAreaElement) =>
+            el.value.slice(el.selectionStart, el.selectionEnd),
+          ),
+        /^steps = NoSuchThing/,
+      );
       await type(s.page, PROGRAM);
-      await s.page.waitForFunction(() => /Passes austere-axi check/.test((document.querySelector("#status") as HTMLElement).textContent as string));
+      await s.page.waitForFunction(() =>
+        /Passes austere-axi check/.test(
+          (document.querySelector("#status") as HTMLElement).textContent as string,
+        ),
+      );
       assert.equal(await s.page.locator("#diag li").count(), 0);
     } finally {
       await s.ctx.close();
@@ -183,14 +221,20 @@ describe("playground", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "austere-play-"));
     try {
       await type(s.page, PROGRAM);
-      const [download] = await Promise.all([s.page.waitForEvent("download"), s.page.click("#download")]);
+      const [download] = await Promise.all([
+        s.page.waitForEvent("download"),
+        s.page.click("#download"),
+      ]);
       const file = path.join(dir, download.suggestedFilename());
       await download.saveAs(file);
       assert.equal(download.suggestedFilename(), "hello-playground.html");
       const html = fs.readFileSync(file, "utf8");
       assert.equal((readArtifact(html).program as string).trim(), PROGRAM.trim());
       const cli = path.join(ROOT, "src/cli/main.ts");
-      const check = spawnSync(process.execPath, [cli, "check", file], { encoding: "utf8", env: { ...process.env, AUSTERE_AXI_STATE_DIR: dir } });
+      const check = spawnSync(process.execPath, [cli, "check", file], {
+        encoding: "utf8",
+        env: { ...process.env, AUSTERE_AXI_STATE_DIR: dir },
+      });
       assert.equal(check.status, 0, check.stdout + check.stderr);
       assert.match(check.stdout, /status: ok/);
     } finally {
@@ -219,7 +263,14 @@ describe("playground", () => {
       assert.match(text, /line: 4/);
       assert.match(text, /note: Mention the date/);
       await s.page.locator("#fb-jump .chip", { hasText: "steps" }).click();
-      assert.match(await s.page.locator("#source").evaluate((el: HTMLTextAreaElement) => el.value.slice(el.selectionStart, el.selectionEnd)), /^steps = /);
+      assert.match(
+        await s.page
+          .locator("#source")
+          .evaluate((el: HTMLTextAreaElement) =>
+            el.value.slice(el.selectionStart, el.selectionEnd),
+          ),
+        /^steps = /,
+      );
     } finally {
       await s.ctx.close();
     }
@@ -251,7 +302,9 @@ describe("playground", () => {
       await s.page.click("#tab-preview");
       assert.equal(await s.page.locator("#pane-preview").isVisible(), true);
       assert.equal(await s.page.locator("#pane-source").isVisible(), false);
-      const overflow = await s.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      const overflow = await s.page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
       assert.ok(overflow <= 0, `page scrolls ${overflow}px sideways`);
       await s.page.click("#tab-source");
       await type(s.page, PROGRAM);

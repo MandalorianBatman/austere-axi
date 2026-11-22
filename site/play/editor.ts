@@ -3,7 +3,8 @@
 // scrolled along. No dependency; works with the platform's own caret, selection,
 // undo and mobile keyboard.
 
-const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const esc = (s: string): string =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const IDENT = /[A-Za-z_$][\w$]*/y;
 const NUMBER = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
 const KEYWORDS = new Set(["true", "false", "null"]);
@@ -146,7 +147,10 @@ export function createEditor({ root, onInput }: EditorOptions): Editor {
     mark(list) {
       const sev = new Map();
       for (const m of list) if (m.line && sev.get(m.line) !== "error") sev.set(m.line, m.severity);
-      const html = Array.from({ length: lines }, (_, k) => `<i class="${sev.get(k + 1) || ""}"></i>`).join("");
+      const html = Array.from(
+        { length: lines },
+        (_, k) => `<i class="${sev.get(k + 1) || ""}"></i>`,
+      ).join("");
       if (html === marked) return;
       marked = html;
       marks.innerHTML = html;
@@ -160,7 +164,8 @@ export function createEditor({ root, onInput }: EditorOptions): Editor {
       let from = 0;
       for (let k = 0; k < line - 1; k++) from += text[k].length + 1;
       let to = from;
-      for (let k = line - 1; k < Math.min(endLine, text.length); k++) to += text[k].length + (k < endLine - 1 ? 1 : 0);
+      for (let k = line - 1; k < Math.min(endLine, text.length); k++)
+        to += text[k].length + (k < endLine - 1 ? 1 : 0);
       area.setSelectionRange(from, to);
       const top = (line - 1) * lineHeight();
       if (top < area.scrollTop || top > area.scrollTop + area.clientHeight - lineHeight() * 2) {

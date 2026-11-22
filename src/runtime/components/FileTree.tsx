@@ -39,7 +39,11 @@ function Row({ node, depth, collapsed, toggle }: RowProps) {
             aria-expanded={isOpen}
             onClick={() => toggle(node.path)}
           >
-            {isOpen ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+            {isOpen ? (
+              <ChevronDown size={14} aria-hidden="true" />
+            ) : (
+              <ChevronRight size={14} aria-hidden="true" />
+            )}
           </button>
         ) : (
           <span className="austere-filetree-toggle" aria-hidden="true" />
@@ -55,7 +59,11 @@ function Row({ node, depth, collapsed, toggle }: RowProps) {
           {node.note ? <span className="austere-filetree-note">{node.note}</span> : null}
         </span>
         {status ? (
-          <span className={`austere-filetree-status is-${status.key}`} title={status.title} data-s={status.label} />
+          <span
+            className={`austere-filetree-status is-${status.key}`}
+            title={status.title}
+            data-s={status.label}
+          />
         ) : null}
       </div>
       {isOpen

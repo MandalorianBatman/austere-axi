@@ -1,9 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "typescript",
-    "react"
-  ],
+  "plugins": ["typescript", "react"],
   "categories": {
     "correctness": "error"
   },
@@ -16,12 +13,5 @@
     "no-unused-vars": "off",
     "react/refs": "off"
   },
-  "ignorePatterns": [
-    "dist",
-    "_site",
-    "scratch",
-    ".dev",
-    "test/fixtures",
-    "docs/*.gif"
-  ]
+  "ignorePatterns": ["dist", "_site", "scratch", ".dev", "test/fixtures", "docs/*.gif"]
 }

@@ -61,7 +61,15 @@ const PARALLEL_FETCHES = 4;
 
 /** Keyed by registry and token variable: catalogs read with a token stop showing once the mapping drops or changes it. */
 function cacheDir(registry: Registry): string {
-  return path.join(stateDir(), "npm-packs", crypto.createHash("sha256").update(`${registry.url}\0${registry.tokenEnv ?? ""}`).digest("hex").slice(0, 12));
+  return path.join(
+    stateDir(),
+    "npm-packs",
+    crypto
+      .createHash("sha256")
+      .update(`${registry.url}\0${registry.tokenEnv ?? ""}`)
+      .digest("hex")
+      .slice(0, 12),
+  );
 }
 
 function readCache<T>(file: string): T | null {
@@ -82,20 +90,38 @@ function writeCache(file: string, value: unknown): void {
   } catch {}
 }
 
-async function listPacks(registry: Registry, signal: AbortSignal, reason: (err: unknown) => string): Promise<PackList> {
+async function listPacks(
+  registry: Registry,
+  signal: AbortSignal,
+  reason: (err: unknown) => string,
+): Promise<PackList> {
   const file = path.join(cacheDir(registry), "list.json");
   const cached = readCache<PackList>(file);
-  if (cached && Date.now() - cached.at < ("error" in cached ? LIST_FAILED_TTL_MS : LIST_TTL_MS)) return cached;
+  if (cached && Date.now() - cached.at < ("error" in cached ? LIST_FAILED_TTL_MS : LIST_TTL_MS))
+    return cached;
   let list: PackList;
   try {
     const url = `${registry.url}-/v1/search?text=keywords:${KEYWORD}&size=${LIST_SIZE}`;
-    const body: { total?: unknown; objects?: { package?: { name?: unknown; version?: unknown } }[] } = JSON.parse((await fetchBuffer(url, { signal, registry })).toString("utf8"));
+    const body: {
+      total?: unknown;
+      objects?: { package?: { name?: unknown; version?: unknown } }[];
+    } = JSON.parse((await fetchBuffer(url, { signal, registry })).toString("utf8"));
     const packs: Listed[] = [];
     for (const o of body.objects || []) {
       const { name, version } = o.package || {};
-      if (typeof name === "string" && typeof version === "string" && isValidPackName(name) && isValidVersion(version)) packs.push({ name, version });
+      if (
+        typeof name === "string" &&
+        typeof version === "string" &&
+        isValidPackName(name) &&
+        isValidVersion(version)
+      )
+        packs.push({ name, version });
     }
-    list = { at: Date.now(), packs, total: typeof body.total === "number" ? body.total : packs.length };
+    list = {
+      at: Date.now(),
+      packs,
+      total: typeof body.total === "number" ? body.total : packs.length,
+    };
   } catch (err) {
     list = { at: Date.now(), error: reason(err) };
   }
@@ -109,7 +135,11 @@ async function listPacks(registry: Registry, signal: AbortSignal, reason: (err: 
  * other failure (no answer, a timeout, any other HTTP status), so the next search tries again.
  * Trust is the reader's, so it is not cached.
  */
-async function readPack(registry: Registry, { name, version }: Listed, signal: AbortSignal): Promise<PackRead> {
+async function readPack(
+  registry: Registry,
+  { name, version }: Listed,
+  signal: AbortSignal,
+): Promise<PackRead> {
   const file = path.join(cacheDir(registry), `${packDirName(name, version)}.json`);
   const cached = readCache<PackRead>(file);
   if (cached) return cached;
@@ -119,7 +149,8 @@ async function readPack(registry: Registry, { name, version }: Listed, signal: A
     read = { name, version, integrity, catalog };
   } catch (caught) {
     const err = caught as InstallError;
-    const lasting = !err.network && (err.status === undefined || err.status === 404 || err.status === 410);
+    const lasting =
+      !err.network && (err.status === undefined || err.status === 404 || err.status === 410);
     if (signal.aborted || !lasting) throw err;
     read = { name, version, error: err.message };
   }
@@ -184,13 +215,26 @@ export async function remotePacks(): Promise<RemotePacks> {
     sources.map(async (registry) => {
       const label = registry.scope ? `${registry.scope} registry` : "registry";
       const list = await listPacks(registry, signal, (err) =>
-        signal.aborted ? `no answer from ${registry.url} within ${BUDGET_MS / 1000}s` : err instanceof Error ? err.message : String(err),
+        signal.aborted
+          ? `no answer from ${registry.url} within ${BUDGET_MS / 1000}s`
+          : err instanceof Error
+            ? err.message
+            : String(err),
       );
-      if ("error" in list) return { registry, notes: [`${label} unavailable (${list.error})`], reads: [] };
-      const notes = list.total > LIST_SIZE ? [`only the first ${LIST_SIZE} of ${list.total} packs on the ${label} were searched`] : [];
-      const todo = list.packs.filter((pack) => !installed.has(pack.name) && registryFor(regs, pack.name).scope === registry.scope);
+      if ("error" in list)
+        return { registry, notes: [`${label} unavailable (${list.error})`], reads: [] };
+      const notes =
+        list.total > LIST_SIZE
+          ? [`only the first ${LIST_SIZE} of ${list.total} packs on the ${label} were searched`]
+          : [];
+      const todo = list.packs.filter(
+        (pack) =>
+          !installed.has(pack.name) && registryFor(regs, pack.name).scope === registry.scope,
+      );
       const fetchSlot = limiter(PARALLEL_FETCHES);
-      const reads = await Promise.all(todo.map((pack) => fetchSlot(() => readPack(registry, pack, signal)).catch(() => null)));
+      const reads = await Promise.all(
+        todo.map((pack) => fetchSlot(() => readPack(registry, pack, signal)).catch(() => null)),
+      );
       return { registry, notes, reads };
     }),
   );
@@ -202,7 +246,11 @@ export async function remotePacks(): Promise<RemotePacks> {
       if (!r) unread++;
       else if (!("error" in r)) {
         const by = trustOf(trusted, r, registry.url);
-        packs.push({ ...r, registry, trust: by === "first-party" ? "first-party" : by ? "trusted" : "third-party" });
+        packs.push({
+          ...r,
+          registry,
+          trust: by === "first-party" ? "first-party" : by ? "trusted" : "third-party",
+        });
       }
     }
   }

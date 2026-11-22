@@ -5,11 +5,15 @@ import { INLINE_ATTR } from "../shared/standalone.ts";
 
 export const CDN_RUNTIME_URL = "https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js";
 
-const PROGRAM_RE = /(<script\b[^>]*\btype\s*=\s*["']text\/openui(?:-lang)?["'][^>]*>)([\s\S]*?)(<\/script\s*>)/i;
-const RUNTIME_RE = /<script\b[^>]*\bsrc\s*=\s*["']([^"']*\/austere(?:\.min)?\.js(?:\?[^"']*)?|austere(?:\.min)?\.js)["'][^>]*>\s*<\/script\s*>/i;
+const PROGRAM_RE =
+  /(<script\b[^>]*\btype\s*=\s*["']text\/openui(?:-lang)?["'][^>]*>)([\s\S]*?)(<\/script\s*>)/i;
+const RUNTIME_RE =
+  /<script\b[^>]*\bsrc\s*=\s*["']([^"']*\/austere(?:\.min)?\.js(?:\?[^"']*)?|austere(?:\.min)?\.js)["'][^>]*>\s*<\/script\s*>/i;
 const TITLE_RE = /<title[^>]*>([\s\S]*?)<\/title\s*>/i;
 // Exports from before INLINE_ATTR carry the runtime as a plain inline script, which ends by setting `window.__austere`.
-const INLINE_RUNTIME_RE = new RegExp(`<script\\b[^>]*\\b${INLINE_ATTR}\\b|window\\.__austere\\s*=\\s*\\{`);
+const INLINE_RUNTIME_RE = new RegExp(
+  `<script\\b[^>]*\\b${INLINE_ATTR}\\b|window\\.__austere\\s*=\\s*\\{`,
+);
 
 export function skeleton(title = "Artifact"): string {
   return `<!doctype html>
@@ -105,7 +109,13 @@ export function rewriteRuntime(html: string, replacement: string | (() => string
   return rep + "\n" + text;
 }
 
-const ENTITIES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const ENTITIES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
 
 export function escapeHtml(s: unknown): string {
   return String(s).replace(/[&<>"']/g, (c) => ENTITIES[c]);

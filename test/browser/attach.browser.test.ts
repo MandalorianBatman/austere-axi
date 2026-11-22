@@ -14,8 +14,12 @@ import { launchBrowser } from "../../scripts/lib/browser.ts";
 import { ownerKey } from "../../src/cli/invites.ts";
 import { freePort } from "../port.ts";
 
-const STATE = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-attach-browser-state-")));
-const WORK = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-attach-browser-work-")));
+const STATE = fs.realpathSync(
+  fs.mkdtempSync(path.join(os.tmpdir(), "austere-attach-browser-state-")),
+);
+const WORK = fs.realpathSync(
+  fs.mkdtempSync(path.join(os.tmpdir(), "austere-attach-browser-work-")),
+);
 const BIN = path.join(WORK, "bin");
 const CTL = path.join(WORK, "ctl");
 const PROJECT = path.join(WORK, "site");
@@ -59,11 +63,20 @@ else {
 
 function api<T>(route: string, body: unknown): Promise<T> {
   const { promise, resolve, reject } = Promise.withResolvers<T>();
-  const r = http.request({ host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } }, (res) => {
-    let data = "";
-    res.on("data", (c) => (data += c));
-    res.on("end", () => resolve(JSON.parse(data) as T));
-  });
+  const r = http.request(
+    {
+      host: "127.0.0.1",
+      port,
+      method: "POST",
+      path: route,
+      headers: { "content-type": "application/json", "x-austere-key": KEY },
+    },
+    (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => resolve(JSON.parse(data) as T));
+    },
+  );
   r.on("error", reject);
   r.end(JSON.stringify(body));
   return promise;
@@ -83,12 +96,18 @@ more = TextContent("unchanged")
   return file;
 }
 
-const fakeMode = (name: string, mode: string) => fs.writeFileSync(path.join(CTL, `${name}.mode`), mode);
+const fakeMode = (name: string, mode: string) =>
+  fs.writeFileSync(path.join(CTL, `${name}.mode`), mode);
 
 /** The page opened for review and the owner signed in, at desktop or phone width. */
-async function ownerPage(file: string, width = 1280): Promise<{ page: Page; id: string; problems: string[]; close: () => Promise<void> }> {
+async function ownerPage(
+  file: string,
+  width = 1280,
+): Promise<{ page: Page; id: string; problems: string[]; close: () => Promise<void> }> {
   const { session } = await api<{ session: { id: string } }>("/api/open", { file });
-  const context = await browser.newContext({ viewport: { width, height: width > 500 ? 900 : 844 } });
+  const context = await browser.newContext({
+    viewport: { width, height: width > 500 ? 900 : 844 },
+  });
   const page = await context.newPage();
   const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
@@ -104,7 +123,9 @@ async function ownerPage(file: string, width = 1280): Promise<{ page: Page; id: 
 /** Open the popover and press one of On / Off / Use project default; resolves once the server answered. */
 async function setState(page: Page, state: "on" | "off" | "inherit") {
   if (await page.locator(".attach-pop").isHidden()) await page.click(".attach-pill");
-  const answered = page.waitForResponse((r) => r.url().endsWith("/attach") && r.request().method() === "POST");
+  const answered = page.waitForResponse(
+    (r) => r.url().endsWith("/attach") && r.request().method() === "POST",
+  );
   await page.click(`.attach-state [data-state="${state}"]`);
   assert.equal((await answered).status(), 200);
 }
@@ -136,11 +157,22 @@ before(async () => {
     const script = path.join(WORK, "fakes", harness, "fake.mjs");
     fs.mkdirSync(path.dirname(script), { recursive: true });
     fs.writeFileSync(script, FAKE);
-    fs.writeFileSync(path.join(BIN, harness), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, { mode: 0o755 });
+    fs.writeFileSync(
+      path.join(BIN, harness),
+      `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`,
+      { mode: 0o755 },
+    );
   }
   // Fast runs; the owner granted omp the right to write.
-  fs.writeFileSync(path.join(STATE, "attach.json"), JSON.stringify({ debounceMs: 200, recheckMs: 200, maxMinutes: 1 }));
-  fs.writeFileSync(path.join(STATE, "adapters.json"), JSON.stringify({ format: 1, extraArgs: { omp: ["--approval-mode", "yolo"] } }), { mode: 0o600 });
+  fs.writeFileSync(
+    path.join(STATE, "attach.json"),
+    JSON.stringify({ debounceMs: 200, recheckMs: 200, maxMinutes: 1 }),
+  );
+  fs.writeFileSync(
+    path.join(STATE, "adapters.json"),
+    JSON.stringify({ format: 1, extraArgs: { omp: ["--approval-mode", "yolo"] } }),
+    { mode: 0o600 },
+  );
   port = await freePort();
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -155,8 +187,17 @@ before(async () => {
     FAKE_CLI: CLI,
   };
   // The test may itself run inside a harness: its session must not become a page's author.
-  for (const name of ["PI_SESSION_ID", "PI_SESSION_FILE", "COPILOT_AGENT_SESSION_ID", "DSH_SESSION_ID"]) delete env[name];
-  server = spawn(process.execPath, [CLI, "server", "--port", String(port)], { env, stdio: "ignore" });
+  for (const name of [
+    "PI_SESSION_ID",
+    "PI_SESSION_FILE",
+    "COPILOT_AGENT_SESSION_ID",
+    "DSH_SESSION_ID",
+  ])
+    delete env[name];
+  server = spawn(process.execPath, [CLI, "server", "--port", String(port)], {
+    env,
+    stdio: "ignore",
+  });
   for (let i = 0; i < 100; i++) {
     try {
       if ((await fetch(`http://127.0.0.1:${port}/api/health`)).ok) return;
@@ -177,35 +218,48 @@ after(async () => {
   fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
-test("the owner turns the agent on from the pill; a note runs it: the page patches and flashes, the reply shows", { skip: posixOnly }, async (t) => {
-  if (skipReason) return t.skip(skipReason);
-  const file = writePage("alpha");
-  const { page, problems, close } = await ownerPage(file);
-  try {
-    const pill = page.locator(".attach-pill");
-    assert.equal((await pill.innerText()).trim(), "Agent: Off");
-    await setState(page, "on");
-    await page.waitForSelector(".attach-pill.on");
-    assert.match(await pill.innerText(), /Agent: omp · same/);
-    // The model list comes from `omp models`; omp has the grant, so no warning.
-    assert.equal(await page.locator("#attach-models option").count(), 2);
-    assert.equal(await page.locator(".attach-grant").count(), 0);
-    await page.fill(".attach-input", "anthropic/claude-haiku-4-5");
-    await page.press(".attach-input", "Enter");
-    await page.waitForFunction(() => document.querySelector(".attach-pill")?.textContent?.includes("claude-haiku"));
+test(
+  "the owner turns the agent on from the pill; a note runs it: the page patches and flashes, the reply shows",
+  { skip: posixOnly },
+  async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const file = writePage("alpha");
+    const { page, problems, close } = await ownerPage(file);
+    try {
+      const pill = page.locator(".attach-pill");
+      assert.equal((await pill.innerText()).trim(), "Agent: Off");
+      await setState(page, "on");
+      await page.waitForSelector(".attach-pill.on");
+      assert.match(await pill.innerText(), /Agent: omp · same/);
+      // The model list comes from `omp models`; omp has the grant, so no warning.
+      assert.equal(await page.locator("#attach-models option").count(), 2);
+      assert.equal(await page.locator(".attach-grant").count(), 0);
+      await page.fill(".attach-input", "anthropic/claude-haiku-4-5");
+      await page.press(".attach-input", "Enter");
+      await page.waitForFunction(() =>
+        document.querySelector(".attach-pill")?.textContent?.includes("claude-haiku"),
+      );
 
-    await send(page, "make it shorter");
-    await page.locator(".run-mark.start").waitFor({ timeout: 15_000 });
-    await page.frameLocator(".frame").locator(".austere-flash").first().waitFor({ state: "attached", timeout: 15_000 });
-    await page.frameLocator(".frame").getByText("patched by the agent").waitFor();
-    await page.locator(".msg.agent", { hasText: "Patched it." }).waitFor();
-    await page.locator(".run-mark.done").waitFor();
-    assert.ok(await page.locator(".run-state").isHidden(), "nothing to show beside the pill once the run is done");
-    assert.deepEqual(problems, []);
-  } finally {
-    await close();
-  }
-});
+      await send(page, "make it shorter");
+      await page.locator(".run-mark.start").waitFor({ timeout: 15_000 });
+      await page
+        .frameLocator(".frame")
+        .locator(".austere-flash")
+        .first()
+        .waitFor({ state: "attached", timeout: 15_000 });
+      await page.frameLocator(".frame").getByText("patched by the agent").waitFor();
+      await page.locator(".msg.agent", { hasText: "Patched it." }).waitFor();
+      await page.locator(".run-mark.done").waitFor();
+      assert.ok(
+        await page.locator(".run-state").isHidden(),
+        "nothing to show beside the pill once the run is done",
+      );
+      assert.deepEqual(problems, []);
+    } finally {
+      await close();
+    }
+  },
+);
 
 test("Stop ends a running run and everything it started", { skip: posixOnly }, async (t) => {
   if (skipReason) return t.skip(skipReason);
@@ -225,29 +279,36 @@ test("Stop ends a running run and everything it started", { skip: posixOnly }, a
   }
 });
 
-test("a failed run shows its state with View log and Retry; Retry runs the notes again", { skip: posixOnly }, async (t) => {
-  if (skipReason) return t.skip(skipReason);
-  const file = writePage("charlie");
-  fakeMode("charlie", "exit1");
-  const { page, problems, close } = await ownerPage(file);
-  try {
-    await setState(page, "on");
-    await send(page, "this will fail");
-    await page.locator(".run-state.failed").waitFor({ timeout: 15_000 });
-    assert.match(await page.locator(".run-mark.failed").innerText(), /failed: The harness exited with 1/);
-    await page.click(".run-state .run-log");
-    await page.locator(".attach-log", { hasText: "boom: failing on purpose" }).waitFor();
+test(
+  "a failed run shows its state with View log and Retry; Retry runs the notes again",
+  { skip: posixOnly },
+  async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const file = writePage("charlie");
+    fakeMode("charlie", "exit1");
+    const { page, problems, close } = await ownerPage(file);
+    try {
+      await setState(page, "on");
+      await send(page, "this will fail");
+      await page.locator(".run-state.failed").waitFor({ timeout: 15_000 });
+      assert.match(
+        await page.locator(".run-mark.failed").innerText(),
+        /failed: The harness exited with 1/,
+      );
+      await page.click(".run-state .run-log");
+      await page.locator(".attach-log", { hasText: "boom: failing on purpose" }).waitFor();
 
-    fakeMode("charlie", "ok");
-    await page.click(".attach-run .run-retry");
-    await page.locator(".msg.agent", { hasText: "Patched it." }).waitFor({ timeout: 15_000 });
-    await page.locator(".run-mark.done").waitFor();
-    assert.equal(await page.locator(".run-mark.start").count(), 2);
-    assert.deepEqual(problems, []);
-  } finally {
-    await close();
-  }
-});
+      fakeMode("charlie", "ok");
+      await page.click(".attach-run .run-retry");
+      await page.locator(".msg.agent", { hasText: "Patched it." }).waitFor({ timeout: 15_000 });
+      await page.locator(".run-mark.done").waitFor();
+      assert.equal(await page.locator(".run-mark.start").count(), 2);
+      assert.deepEqual(problems, []);
+    } finally {
+      await close();
+    }
+  },
+);
 
 test("a reviewer's link shows no pill and no run state", { skip: posixOnly }, async (t) => {
   if (skipReason) return t.skip(skipReason);
@@ -259,7 +320,10 @@ test("a reviewer's link shows no pill and no run state", { skip: posixOnly }, as
     const guest = await context.newPage();
     await guest.goto(invite.link);
     await guest.click("form[action$='/join'] button");
-    await guest.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor({ timeout: 15_000 });
+    await guest
+      .frameLocator(".frame")
+      .locator('[data-oui-id="intro"]')
+      .waitFor({ timeout: 15_000 });
     assert.equal(await guest.locator(".attach, .attach-pill, .run-state").count(), 0);
     const r = await guest.evaluate(async () => (await fetch(`${location.pathname}/attach`)).status);
     assert.equal(r, 403);
@@ -275,38 +339,62 @@ test("a Copilot page shows fork disabled with its reason", { skip: posixOnly }, 
   const { page, problems, close } = await ownerPage(file);
   try {
     await setState(page, "off");
-    const answered = page.waitForResponse((r) => r.url().endsWith("/attach") && r.request().method() === "POST");
+    const answered = page.waitForResponse(
+      (r) => r.url().endsWith("/attach") && r.request().method() === "POST",
+    );
     await page.selectOption(".attach-select", "copilot");
     assert.equal((await answered).status(), 200);
     const fork = page.locator('input[name="attach-mode"][value="fork"]');
     assert.ok(await fork.isDisabled(), "fork is disabled");
-    assert.match((await fork.locator("xpath=..").getAttribute("title")) ?? "", /Copilot CLI has no fork/);
+    assert.match(
+      (await fork.locator("xpath=..").getAttribute("title")) ?? "",
+      /Copilot CLI has no fork/,
+    );
     assert.match(await page.locator(".attach-reason").innerText(), /Fork: Copilot CLI has no fork/);
     assert.ok(await page.locator('input[name="attach-mode"][value="same"]').isEnabled());
     // Copilot has no grant here: the popover names the command that gives it.
-    assert.match(await page.locator(".attach-grant code").innerText(), /austere-axi adapter set copilot --extra-args "--allow-all"/);
+    assert.match(
+      await page.locator(".attach-grant code").innerText(),
+      /austere-axi adapter set copilot --extra-args "--allow-all"/,
+    );
     assert.deepEqual(problems, []);
   } finally {
     await close();
   }
 });
 
-test("at phone width the pill fits the header and the popover spans the screen", { skip: posixOnly }, async (t) => {
-  if (skipReason) return t.skip(skipReason);
-  const file = writePage("foxtrot");
-  const { page, problems, close } = await ownerPage(file, 390);
-  try {
-    await setState(page, "on");
-    const pop = await page.locator(".attach-pop").boundingBox();
-    assert.ok(pop && pop.x >= 0 && pop.x + pop.width <= 390 && pop.width >= 360, `popover ${JSON.stringify(pop)}`);
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    assert.ok(overflow <= 1, `the page scrolls sideways by ${overflow}px`);
-    const bar = await page.locator(".bar").boundingBox();
-    const pill = await page.locator(".attach-pill").boundingBox();
-    assert.ok(bar && pill && pill.y >= bar.y && pill.y + pill.height <= bar.y + bar.height && pill.x + pill.width <= 390, `pill ${JSON.stringify(pill)} in bar ${JSON.stringify(bar)}`);
-    assert.equal((await page.locator(".attach-pill").innerText()).trim(), "Agent: On");
-    assert.deepEqual(problems, []);
-  } finally {
-    await close();
-  }
-});
+test(
+  "at phone width the pill fits the header and the popover spans the screen",
+  { skip: posixOnly },
+  async (t) => {
+    if (skipReason) return t.skip(skipReason);
+    const file = writePage("foxtrot");
+    const { page, problems, close } = await ownerPage(file, 390);
+    try {
+      await setState(page, "on");
+      const pop = await page.locator(".attach-pop").boundingBox();
+      assert.ok(
+        pop && pop.x >= 0 && pop.x + pop.width <= 390 && pop.width >= 360,
+        `popover ${JSON.stringify(pop)}`,
+      );
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      );
+      assert.ok(overflow <= 1, `the page scrolls sideways by ${overflow}px`);
+      const bar = await page.locator(".bar").boundingBox();
+      const pill = await page.locator(".attach-pill").boundingBox();
+      assert.ok(
+        bar &&
+          pill &&
+          pill.y >= bar.y &&
+          pill.y + pill.height <= bar.y + bar.height &&
+          pill.x + pill.width <= 390,
+        `pill ${JSON.stringify(pill)} in bar ${JSON.stringify(bar)}`,
+      );
+      assert.equal((await page.locator(".attach-pill").innerText()).trim(), "Agent: On");
+      assert.deepEqual(problems, []);
+    } finally {
+      await close();
+    }
+  },
+);

@@ -65,10 +65,16 @@ export interface CatalogFromSpecOptions {
   only?: string[] | null;
 }
 
-export declare function catalogFromSpec(spec: LibrarySpec, options?: CatalogFromSpecOptions): Catalog;
+export declare function catalogFromSpec(
+  spec: LibrarySpec,
+  options?: CatalogFromSpecOptions,
+): Catalog;
 
 /** The spec the prompt is generated from: extended-tier components leave it. */
-export declare function promptSpec<S extends LibrarySpec>(spec: S, tiers?: Record<string, string>): S;
+export declare function promptSpec<S extends LibrarySpec>(
+  spec: S,
+  tiers?: Record<string, string>,
+): S;
 
 export interface SearchOptions {
   notesOf?: (entry: CatalogEntry) => string[];

@@ -138,7 +138,8 @@ const median = (xs: (number | null | undefined)[]) => {
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 const int = (n: number) => (Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "–");
 const secs = (ms: number) => (Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)} s` : "–");
-const usd = (n: number) => (Number.isFinite(n) ? `$${n < 0.01 ? n.toFixed(4) : n.toFixed(3)}` : "–");
+const usd = (n: number) =>
+  Number.isFinite(n) ? `$${n < 0.01 ? n.toFixed(4) : n.toFixed(3)}` : "–";
 const pct = (a: number, b: number) => (b ? `${a}/${b} (${Math.round((100 * a) / b)}%)` : "–");
 const times = (r: number) => (Number.isFinite(r) ? `${r.toFixed(1)}×` : "–");
 
@@ -169,7 +170,10 @@ export function summarize(results: Results) {
         wallMs: median(ts.map(pageWall)),
         cost: mean(ts.map(pageCost)),
         render: ts.filter((t) => t.first.render.ok).length,
-        facts: [ts.reduce((a, t) => a + t.first.facts.found, 0), ts.reduce((a, t) => a + t.first.facts.of, 0)],
+        facts: [
+          ts.reduce((a, t) => a + t.first.facts.found, 0),
+          ts.reduce((a, t) => a + t.first.facts.of, 0),
+        ],
         truncated: ts.filter((t) => t.first.stopReason === "max_tokens").length,
         revOutTok: median(ts.map((t) => t.revision.usage.output)),
         revWallMs: median(ts.map((t) => t.revision.wallMs)),
@@ -180,7 +184,9 @@ export function summarize(results: Results) {
   // Paired ratios: the same model, task and repetition, lavish over austere.
   const pairs: Pair[] = [];
   for (const a of trials.filter((t) => t.tool === "austere")) {
-    const l = trials.find((t) => t.tool === "lavish" && t.model === a.model && t.task === a.task && t.rep === a.rep);
+    const l = trials.find(
+      (t) => t.tool === "lavish" && t.model === a.model && t.task === a.task && t.rep === a.rep,
+    );
     if (l) pairs.push({ model: a.model, task: a.task, a, l });
   }
   const ratio = (ps: Pair[], f: (t: Trial) => number) => median(ps.map((p) => f(p.l) / f(p.a)));
@@ -194,8 +200,13 @@ export function summarize(results: Results) {
     revWallMs: ratio(ps, (t) => t.revision.wallMs),
     revCost: ratio(ps, (t) => t.revision.costUsd),
   });
-  const byModel = Object.fromEntries(models.map((m) => [m, ratios(pairs.filter((p) => p.model === m))]));
-  const byTask: Record<string, { austere: number; lavish: number; outTok: number; wallMs: number; revOutTok: number }> = {};
+  const byModel = Object.fromEntries(
+    models.map((m) => [m, ratios(pairs.filter((p) => p.model === m))]),
+  );
+  const byTask: Record<
+    string,
+    { austere: number; lavish: number; outTok: number; wallMs: number; revOutTok: number }
+  > = {};
   for (const task of TASKS)
     for (const model of models) {
       const ps = pairs.filter((p) => p.task === task.id && p.model === model);
@@ -208,7 +219,15 @@ export function summarize(results: Results) {
         revOutTok: ratio(ps, (t) => t.revision.usage.output),
       };
     }
-  return { models, tasks: new Set(trials.map((t) => t.task)).size, cells, overall: ratios(pairs), byModel, byTask, trials: trials.length };
+  return {
+    models,
+    tasks: new Set(trials.map((t) => t.task)).size,
+    cells,
+    overall: ratios(pairs),
+    byModel,
+    byTask,
+    trials: trials.length,
+  };
 }
 
 export function headline(s: Summary): string {
@@ -221,13 +240,18 @@ export function tables(results: Results, s: Summary): string {
   const meta = results.meta;
   const out: string[] = [];
   const modelLabel = (m: string) => `${m} (${meta.models[m]?.model ?? "?"})`;
-  out.push(`Versions: austere-axi ${meta.versions.austere}, lavish-axi ${meta.versions.lavish}. ${s.trials} trials, last run ${meta.updated.slice(0, 10)}.`, "");
+  out.push(
+    `Versions: austere-axi ${meta.versions.austere}, lavish-axi ${meta.versions.lavish}. ${s.trials} trials, last run ${meta.updated.slice(0, 10)}.`,
+    "",
+  );
   out.push("### The page", "");
   out.push(
     "Medians, except cost (mean per page). *First try*: the tool's own validator passed on the model's first answer. *Fix turns*: opening the page told the agent to fix something, so it got one more turn (median output tokens of that turn in brackets). *Tokens*, *time* and *cost* include the fix turn. *Clean render*: no page errors and no sideways scrolling at 1440 and 390 px. *Facts kept*: the task's facts that appear on the page.",
     "",
   );
-  out.push("| Model | Tool | Runs | Valid first try | Fix turns (tokens) | Fixed | Output tokens | Time | Cost | Clean render | Facts kept |");
+  out.push(
+    "| Model | Tool | Runs | Valid first try | Fix turns (tokens) | Fixed | Output tokens | Time | Cost | Clean render | Facts kept |",
+  );
   out.push("|---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|");
   for (const m of s.models)
     for (const tool of TOOLS) {
@@ -238,17 +262,28 @@ export function tables(results: Results, s: Summary): string {
       );
     }
   out.push("", "### One revision round", "");
-  out.push("The reviewer leaves one note; the agent answers with the tool's cheapest edit (statements for `austere-axi patch`, SEARCH/REPLACE edits for the lavish-axi HTML). An edit that does not apply gets its error back once; both attempts count. *Ok*: applied, contains what the note asked for, and did not make a valid page invalid.", "");
+  out.push(
+    "The reviewer leaves one note; the agent answers with the tool's cheapest edit (statements for `austere-axi patch`, SEARCH/REPLACE edits for the lavish-axi HTML). An edit that does not apply gets its error back once; both attempts count. *Ok*: applied, contains what the note asked for, and did not make a valid page invalid.",
+    "",
+  );
   out.push("| Model | Tool | Output tokens | Time | Cost | Ok |");
   out.push("|---|---|--:|--:|--:|--:|");
   for (const m of s.models)
     for (const tool of TOOLS) {
       const c = s.cells[`${m}/${tool}`];
-      if (c) out.push(`| ${modelLabel(m)} | ${TOOL_NAME[tool]} | ${int(c.revOutTok)} | ${secs(c.revWallMs)} | ${usd(c.revCost)} | ${pct(c.revOk, c.n)} |`);
+      if (c)
+        out.push(
+          `| ${modelLabel(m)} | ${TOOL_NAME[tool]} | ${int(c.revOutTok)} | ${secs(c.revWallMs)} | ${usd(c.revCost)} | ${pct(c.revOk, c.n)} |`,
+        );
     }
   out.push("", "### lavish-axi ÷ austere-axi (median of paired ratios)", "");
-  out.push("Each pair is the same model, task and repetition. Above 1× means lavish-axi used more.", "");
-  out.push("| Model | Pairs | Output tokens, first try | Output tokens, page | Time, page | Cost, page | Revision tokens | Revision time | Revision cost |");
+  out.push(
+    "Each pair is the same model, task and repetition. Above 1× means lavish-axi used more.",
+    "",
+  );
+  out.push(
+    "| Model | Pairs | Output tokens, first try | Output tokens, page | Time, page | Cost, page | Revision tokens | Revision time | Revision cost |",
+  );
   out.push("|---|--:|--:|--:|--:|--:|--:|--:|--:|");
   for (const [m, r] of [...Object.entries(s.byModel), ["all", s.overall] as const])
     out.push(
@@ -260,14 +295,21 @@ export function tables(results: Results, s: Summary): string {
   for (const task of TASKS)
     for (const m of s.models) {
       const r = s.byTask[`${m}/${task.id}`];
-      if (r) out.push(`| ${task.title} | ${m} | ${int(r.austere)} | ${int(r.lavish)} | ${times(r.outTok)} | ${times(r.wallMs)} | ${times(r.revOutTok)} |`);
+      if (r)
+        out.push(
+          `| ${task.title} | ${m} | ${int(r.austere)} | ${int(r.lavish)} | ${times(r.outTok)} | ${times(r.wallMs)} | ${times(r.revOutTok)} |`,
+        );
     }
   return out.join("\n");
 }
 
 /** Grouped bars: one panel per metric, one group per model, austere vs lavish. */
 export function chart(s: Summary): string {
-  const panels: { title: string; key: "outTok" | "wallMs" | "revOutTok"; fmt: (v: number) => string }[] = [
+  const panels: {
+    title: string;
+    key: "outTok" | "wallMs" | "revOutTok";
+    fmt: (v: number) => string;
+  }[] = [
     { title: "Output tokens per page", key: "outTok", fmt: int },
     { title: "Seconds per page", key: "wallMs", fmt: (v) => (v / 1000).toFixed(0) },
     { title: "Output tokens per revision", key: "revOutTok", fmt: int },
@@ -281,16 +323,26 @@ export function chart(s: Summary): string {
   const H = top + ph + 64;
   const esc = (t: string) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
   const parts: string[] = [];
-  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">`);
+  parts.push(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12">`,
+  );
   parts.push(`<rect width="${W}" height="${H}" fill="#ffffff"/>`);
-  parts.push(`<text x="16" y="24" font-size="15" font-weight="600" fill="#111827">austere-axi vs lavish-axi: medians, lower is better</text>`);
-  parts.push(`<rect x="16" y="34" width="10" height="10" fill="${color.austere}"/><text x="30" y="43" fill="#374151">austere-axi</text>`);
-  parts.push(`<rect x="110" y="34" width="10" height="10" fill="${color.lavish}"/><text x="124" y="43" fill="#374151">lavish-axi</text>`);
+  parts.push(
+    `<text x="16" y="24" font-size="15" font-weight="600" fill="#111827">austere-axi vs lavish-axi: medians, lower is better</text>`,
+  );
+  parts.push(
+    `<rect x="16" y="34" width="10" height="10" fill="${color.austere}"/><text x="30" y="43" fill="#374151">austere-axi</text>`,
+  );
+  parts.push(
+    `<rect x="110" y="34" width="10" height="10" fill="${color.lavish}"/><text x="124" y="43" fill="#374151">lavish-axi</text>`,
+  );
   panels.forEach((p, i) => {
     const x0 = 16 + i * (pw + gap);
     const vals = s.models.flatMap((m) => TOOLS.map((t) => s.cells[`${m}/${t}`]?.[p.key] ?? 0));
     const max = Math.max(1, ...vals);
-    parts.push(`<text x="${x0}" y="${top + 6}" font-weight="600" fill="#111827">${esc(p.title)}</text>`);
+    parts.push(
+      `<text x="${x0}" y="${top + 6}" font-weight="600" fill="#111827">${esc(p.title)}</text>`,
+    );
     const base = top + ph;
     parts.push(`<line x1="${x0}" y1="${base}" x2="${x0 + pw}" y2="${base}" stroke="#d1d5db"/>`);
     const groupW = pw / Math.max(1, s.models.length);
@@ -302,13 +354,21 @@ export function chart(s: Summary): string {
         if (v == null || !Number.isFinite(v)) return;
         const h = ((ph - 40) * v) / max;
         const bx = gx + groupW / 2 - bw - 2 + ti * (bw + 4);
-        parts.push(`<rect x="${bx.toFixed(1)}" y="${(base - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${color[tool]}" rx="2"/>`);
-        parts.push(`<text x="${(bx + bw / 2).toFixed(1)}" y="${(base - h - 4).toFixed(1)}" text-anchor="middle" fill="#374151" font-size="11">${esc(p.fmt(v))}</text>`);
+        parts.push(
+          `<rect x="${bx.toFixed(1)}" y="${(base - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${color[tool]}" rx="2"/>`,
+        );
+        parts.push(
+          `<text x="${(bx + bw / 2).toFixed(1)}" y="${(base - h - 4).toFixed(1)}" text-anchor="middle" fill="#374151" font-size="11">${esc(p.fmt(v))}</text>`,
+        );
       });
-      parts.push(`<text x="${(gx + groupW / 2).toFixed(1)}" y="${base + 16}" text-anchor="middle" fill="#374151">${esc(m)}</text>`);
+      parts.push(
+        `<text x="${(gx + groupW / 2).toFixed(1)}" y="${base + 16}" text-anchor="middle" fill="#374151">${esc(m)}</text>`,
+      );
     });
   });
-  parts.push(`<text x="16" y="${H - 12}" fill="#6b7280" font-size="11">Source: bench/results/results.json. Bars are medians over every task and repetition per model.</text>`);
+  parts.push(
+    `<text x="16" y="${H - 12}" fill="#6b7280" font-size="11">Source: bench/results/results.json. Bars are medians over every task and repetition per model.</text>`,
+  );
   parts.push("</svg>");
   return `${parts.join("\n")}\n`;
 }
@@ -327,11 +387,24 @@ export function writeReport(): void {
   const s = summarize(results);
   if (!s.trials) return;
   const body = `${headline(s)}\n\n${tables(results, s)}`;
-  fs.writeFileSync(path.join(BENCH, "results", "summary.md"), `# Benchmark summary\n\nGenerated by \`npm run bench:report\` from \`results.json\`.\n\n${body}\n`);
+  fs.writeFileSync(
+    path.join(BENCH, "results", "summary.md"),
+    `# Benchmark summary\n\nGenerated by \`npm run bench:report\` from \`results.json\`.\n\n${body}\n`,
+  );
   fs.mkdirSync(path.join(ROOT, "docs"), { recursive: true });
   fs.writeFileSync(path.join(ROOT, "docs", "benchmark.svg"), chart(s));
-  replaceBetween(path.join(ROOT, "docs", "benchmark.md"), "<!-- results:start -->", "<!-- results:end -->", body);
-  replaceBetween(path.join(ROOT, "docs", "how-it-works.md"), "<!-- bench:start -->", "<!-- bench:end -->", headline(s));
+  replaceBetween(
+    path.join(ROOT, "docs", "benchmark.md"),
+    "<!-- results:start -->",
+    "<!-- results:end -->",
+    body,
+  );
+  replaceBetween(
+    path.join(ROOT, "docs", "how-it-works.md"),
+    "<!-- bench:start -->",
+    "<!-- bench:end -->",
+    headline(s),
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

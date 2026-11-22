@@ -20,14 +20,34 @@
 // and the local page's status and focus go on to the page object. Nothing of it is stored.
 import crypto from "node:crypto";
 import WebSocket from "ws";
-import { LOGIN_REQUIRED, cloudEnabled, cloudUrl, credential, onRefusal, ownerSocket, readCloud, signedIn } from "./cloud.ts";
+import {
+  LOGIN_REQUIRED,
+  cloudEnabled,
+  cloudUrl,
+  credential,
+  onRefusal,
+  ownerSocket,
+  readCloud,
+  signedIn,
+} from "./cloud.ts";
 import type { CloudError } from "./cloud.ts";
 import { reviewerItem } from "./items.ts";
 import { msEnv } from "./paths.ts";
 import { newId } from "./sessions.ts";
 import type { NoteItem, Session, SessionStore, UserEntry } from "./sessions.ts";
 import { SYNC_VERSION, mutation, parseServerFrame } from "../shared/sync.ts";
-import type { AckFrame, ClientPresence, MutationArgs, MutationName, NoteRow, PresenceStatus, PullFrame, ReceivedChanges, ServerPresence, ViewerHello } from "../shared/sync.ts";
+import type {
+  AckFrame,
+  ClientPresence,
+  MutationArgs,
+  MutationName,
+  NoteRow,
+  PresenceStatus,
+  PullFrame,
+  ReceivedChanges,
+  ServerPresence,
+  ViewerHello,
+} from "../shared/sync.ts";
 
 /** How long a new socket may take to open and finish its pull. */
 const PULL_TIMEOUT_MS = 30_000;
@@ -128,7 +148,8 @@ export class Peer {
     if (!cloudEnabled()) return;
     const state = readCloud();
     if (!signedIn(state)) return;
-    for (const [file, e] of Object.entries(state.pages)) this.kick(this.link(e.id, file), { pull: true });
+    for (const [file, e] of Object.entries(state.pages))
+      this.kick(this.link(e.id, file), { pull: true });
     for (const q of this.queued()) this.kick(this.link(q.page_id, q.file));
   }
 
@@ -214,7 +235,11 @@ export class Peer {
    * The agent replied on `s`: send `addReply` to the file's hosted page. With `wait`, resolves with
    * a warning when the service has not applied it within REPLY_WAIT_MS (it stays queued) or refused it.
    */
-  async reply(s: Session, text: string, { wait = false }: { wait?: boolean } = {}): Promise<string | undefined> {
+  async reply(
+    s: Session,
+    text: string,
+    { wait = false }: { wait?: boolean } = {},
+  ): Promise<string | undefined> {
     const link = this.linkFor(s.file);
     if (!link) return undefined;
     if (link.stopped) return `the hosted page did not get the reply: ${link.stopped}`;
@@ -323,20 +348,23 @@ export class Peer {
   /** Reads the credential (refreshing an account's access token when due), then opens the socket. */
   private connect(link: Link): void {
     const state = readCloud();
-    if (!signedIn(state)) return this.stop(link, "not signed in to the hosted service: run austere-axi cloud login");
+    if (!signedIn(state))
+      return this.stop(link, "not signed in to the hosted service: run austere-axi cloud login");
     if (link.connecting) return;
     const base = state.url || cloudUrl();
     link.connecting = true;
     credential(state).then(
       (cred) => {
         link.connecting = false;
-        if (!link.ws && !link.stopped && !this.closed && cloudEnabled()) this.open(link, base, cred);
+        if (!link.ws && !link.stopped && !this.closed && cloudEnabled())
+          this.open(link, base, cred);
       },
       (err: CloudError) => {
         link.connecting = false;
         link.lastError = err.message;
         // Signed out, or a session that ended, needs `cloud login`; anything else (WorkOS unreachable) is retried.
-        if (err.code === "invalid_grant" || err.code === LOGIN_REQUIRED) this.stop(link, err.message);
+        if (err.code === "invalid_grant" || err.code === LOGIN_REQUIRED)
+          this.stop(link, err.message);
         else this.down(link);
       },
     );
@@ -385,7 +413,10 @@ export class Peer {
 
   private send(link: Link, q: QueueRow): void {
     if (!link.ws || link.ws.readyState !== WebSocket.OPEN) return;
-    const frame = mutation(q.name, JSON.parse(q.args) as MutationArgs[MutationName], { clientId: this.clientId, n: q.n });
+    const frame = mutation(q.name, JSON.parse(q.args) as MutationArgs[MutationName], {
+      clientId: this.clientId,
+      n: q.n,
+    });
     link.sent.add(q.n);
     link.ws.send(JSON.stringify(frame));
   }
@@ -424,7 +455,8 @@ export class Peer {
     link.lastError = err.message;
     // 429 waits for Retry-After; 403, 404, 410 and 426 are not retried on our own (docs: WebSocket endpoints).
     if (err.status === 429) return this.down(link, (retryAfter ?? 60) * 1000);
-    if (err.status === 403 || err.status === 404 || err.status === 410 || err.status === 426) return this.stop(link, err.message, err.status === 404 || err.status === 410);
+    if (err.status === 403 || err.status === 404 || err.status === 410 || err.status === 426)
+      return this.stop(link, err.message, err.status === 404 || err.status === 410);
     this.down(link);
   }
 
@@ -435,8 +467,13 @@ export class Peer {
     link.sent.clear();
     this.forget(link);
     // After a 1008 close a client does not reconnect on its own.
-    if (code === 1008) return this.stop(link, `the service closed the page's socket: ${reason || "policy violation"}`);
-    if (code !== 1000 && code !== 1005) link.lastError ||= `the connection closed (${code}${reason ? `: ${reason}` : ""})`;
+    if (code === 1008)
+      return this.stop(
+        link,
+        `the service closed the page's socket: ${reason || "policy violation"}`,
+      );
+    if (code !== 1000 && code !== 1005)
+      link.lastError ||= `the connection closed (${code}${reason ? `: ${reason}` : ""})`;
     this.down(link);
   }
 
@@ -497,13 +534,16 @@ export class Peer {
   private forget(link: Link): void {
     link.joined = false;
     const s = this.host.store.byFile(link.file);
-    for (const id of link.roster.keys()) if (s) this.host.relay(s, { v: SYNC_VERSION, t: "bye", viewer: id });
+    for (const id of link.roster.keys())
+      if (s) this.host.relay(s, { v: SYNC_VERSION, t: "bye", viewer: id });
     link.roster.clear();
   }
 
   /** The cached page row's `presence` (true when there is none yet). */
   private cachedPresence(page: string): boolean {
-    const row = this.host.store.db.prepare("SELECT body FROM cloud_rows WHERE page_id = ? AND type = 'page' AND id = ?").get(page, page) as { body: string } | undefined;
+    const row = this.host.store.db
+      .prepare("SELECT body FROM cloud_rows WHERE page_id = ? AND type = 'page' AND id = ?")
+      .get(page, page) as { body: string } | undefined;
     if (!row) return true;
     const parsed = JSON.parse(row.body) as { presence?: unknown };
     return parsed.presence !== false;
@@ -514,7 +554,9 @@ export class Peer {
    * copy, from the last publish on this machine) until the first pull has cached one.
    */
   liveAuto(page: string, fallback: boolean): boolean {
-    const row = this.host.store.db.prepare("SELECT body FROM cloud_rows WHERE page_id = ? AND type = 'page' AND id = ?").get(page, page) as { body: string } | undefined;
+    const row = this.host.store.db
+      .prepare("SELECT body FROM cloud_rows WHERE page_id = ? AND type = 'page' AND id = ?")
+      .get(page, page) as { body: string } | undefined;
     if (!row) return fallback;
     const parsed = JSON.parse(row.body) as { auto?: unknown };
     return typeof parsed.auto === "boolean" ? parsed.auto : fallback;
@@ -537,7 +579,8 @@ export class Peer {
       link.lastError = `${f.code}: ${f.message}`;
       this.host.log("sync-error", link.page, f.code, f.message);
     }
-    if (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye") this.presenceTo(link, f);
+    if (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye")
+      this.presenceTo(link, f);
   }
 
   private changes(link: Link, f: ReceivedChanges): void {
@@ -556,8 +599,13 @@ export class Peer {
       const put = store.db.prepare(
         "INSERT INTO cloud_rows (page_id, type, id, seq, body) VALUES (?, ?, ?, ?, ?) ON CONFLICT (page_id, type, id) DO UPDATE SET seq = excluded.seq, body = excluded.body",
       );
-      for (const row of [...f.rows, ...f.skipped]) put.run(link.page, row.type, row.id, row.seq, JSON.stringify(row));
-      store.db.prepare("INSERT INTO cloud_pages (page_id, cursor) VALUES (?, ?) ON CONFLICT (page_id) DO UPDATE SET cursor = excluded.cursor").run(link.page, f.cursor);
+      for (const row of [...f.rows, ...f.skipped])
+        put.run(link.page, row.type, row.id, row.seq, JSON.stringify(row));
+      store.db
+        .prepare(
+          "INSERT INTO cloud_pages (page_id, cursor) VALUES (?, ?) ON CONFLICT (page_id) DO UPDATE SET cursor = excluded.cursor",
+        )
+        .run(link.page, f.cursor);
     });
     link.lastError = "";
     const deleted = f.rows.some((r) => r.type === "page" && r.id === link.page && r.deleted);
@@ -591,10 +639,18 @@ export class Peer {
       return store.discard(s, [known.id]);
     }
     // Untrusted: rebuilt like a tailnet reviewer's note, with ids of our own.
-    const items: NoteItem[] = row.items.map((it) => ({ ...reviewerItem({ ...it }), id: newId("i") }));
+    const items: NoteItem[] = row.items.map((it) => ({
+      ...reviewerItem({ ...it }),
+      id: newId("i"),
+    }));
     // An archived page takes no notes straight to the agent, as /send refuses a tailnet reviewer's: it holds them for the owner.
     const hold = row.state !== "released" || !!s.archivedAt;
-    const entry = store.addUserBatch(s, items, { author: row.author || "Reviewer", hold, remote: key, at: Math.min(row.at, Date.now()) });
+    const entry = store.addUserBatch(s, items, {
+      author: row.author || "Reviewer",
+      hold,
+      remote: key,
+      at: Math.min(row.at, Date.now()),
+    });
     if (row.state === "discarded") store.discard(s, [entry.id]);
     return [entry];
   }
@@ -605,9 +661,13 @@ export class Peer {
     if (f.error?.code === "rate_limited") {
       // Not stored by the service: send the same mutation again after retryAfter.
       const ws = link.ws;
-      setTimeout(() => {
-        if (q && link.ws === ws && this.queued(link.page).some((x) => x.n === q.n)) this.send(link, q);
-      }, (f.error.retryAfter ?? 60) * 1000).unref();
+      setTimeout(
+        () => {
+          if (q && link.ws === ws && this.queued(link.page).some((x) => x.n === q.n))
+            this.send(link, q);
+        },
+        (f.error.retryAfter ?? 60) * 1000,
+      ).unref();
       return;
     }
     this.host.store.db.prepare("DELETE FROM cloud_queue WHERE n = ?").run(f.n);
@@ -632,32 +692,52 @@ export class Peer {
   // ── hub.db: cursor, queue, meta ──
 
   private meta(key: string): string | undefined {
-    const row = this.host.store.db.prepare("SELECT value FROM cloud_meta WHERE key = ?").get(key) as { value: string } | undefined;
+    const row = this.host.store.db
+      .prepare("SELECT value FROM cloud_meta WHERE key = ?")
+      .get(key) as { value: string } | undefined;
     return row?.value;
   }
 
   private setMeta(key: string, value: string): void {
-    this.host.store.db.prepare("INSERT INTO cloud_meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(key, value);
+    this.host.store.db
+      .prepare(
+        "INSERT INTO cloud_meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+      )
+      .run(key, value);
   }
 
   private cursor(page: string): number {
-    const row = this.host.store.db.prepare("SELECT cursor FROM cloud_pages WHERE page_id = ?").get(page) as { cursor: number } | undefined;
+    const row = this.host.store.db
+      .prepare("SELECT cursor FROM cloud_pages WHERE page_id = ?")
+      .get(page) as { cursor: number } | undefined;
     return Number(row?.cursor ?? 0);
   }
 
   private queued(page?: string): QueueRow[] {
     const db = this.host.store.db;
-    const rows = page === undefined ? db.prepare("SELECT * FROM cloud_queue ORDER BY n").all() : db.prepare("SELECT * FROM cloud_queue WHERE page_id = ? ORDER BY n").all(page);
+    const rows =
+      page === undefined
+        ? db.prepare("SELECT * FROM cloud_queue ORDER BY n").all()
+        : db.prepare("SELECT * FROM cloud_queue WHERE page_id = ? ORDER BY n").all(page);
     return rows as unknown as QueueRow[];
   }
 
   /** Queue a mutation under the next n. Throws when it could never be sent (over the frame limit). */
-  private enqueue<N extends MutationName>(page: string, file: string, name: N, args: MutationArgs[N]): QueueRow {
+  private enqueue<N extends MutationName>(
+    page: string,
+    file: string,
+    name: N,
+    args: MutationArgs[N],
+  ): QueueRow {
     const { store } = this.host;
     return store.tx(() => {
       const n = Number(this.meta("next_n") ?? 1);
       mutation(name, args, { clientId: this.clientId, n });
-      store.db.prepare("INSERT INTO cloud_queue (n, page_id, file, name, args, at) VALUES (?, ?, ?, ?, ?, ?)").run(n, page, file, name, JSON.stringify(args), Date.now());
+      store.db
+        .prepare(
+          "INSERT INTO cloud_queue (n, page_id, file, name, args, at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(n, page, file, name, JSON.stringify(args), Date.now());
       this.setMeta("next_n", String(n + 1));
       return { n, page_id: page, file, name, args: JSON.stringify(args) };
     });

@@ -6,7 +6,15 @@ import type { EdgeLabel, NodeLabel } from "@dagrejs/dagre";
 import { lanesPlanWidth, runLanes, runStackedLanes } from "./_architecture-lanes.ts";
 
 // Vocabulary borrowed from archify's JSON IR, so agents that know it feel at home.
-export const NODE_KINDS = ["frontend", "backend", "database", "messagebus", "cloud", "security", "external"] as const;
+export const NODE_KINDS = [
+  "frontend",
+  "backend",
+  "database",
+  "messagebus",
+  "cloud",
+  "security",
+  "external",
+] as const;
 export const EDGE_STYLES = ["solid", "dashed", "emphasis", "security"] as const;
 export const GROUP_KINDS = ["region", "security", "plain"] as const;
 export const DIRECTIONS = ["auto", "right", "down", "lanes"] as const;
@@ -178,10 +186,20 @@ function charUnits(ch: string, mono: boolean): number {
  * Break text into at most `maxLines` lines no wider than `maxWidth`, preferring
  * breaks after spaces, "/", "-", "_" and "."; the last line ends in "…" when cut.
  */
-export function wrapText(text: unknown, size: number, maxWidth: number, maxLines = 2, mono = false): string[] {
+export function wrapText(
+  text: unknown,
+  size: number,
+  maxWidth: number,
+  maxLines = 2,
+  mono = false,
+): string[] {
   // Words keep their trailing break character ("src/", "read-"); no lookbehind,
   // which Safari before 16.4 cannot parse at all.
-  const words = (String(text ?? "").trim().match(/[^\s/\-_.:]*[\s/\-_.:]?/g) || []).filter(Boolean);
+  const words = (
+    String(text ?? "")
+      .trim()
+      .match(/[^\s/\-_.:]*[\s/\-_.:]?/g) || []
+  ).filter(Boolean);
   const lines: string[] = [];
   let line = "";
   const push = (s: string) => lines.push(s.trimEnd());
@@ -230,7 +248,8 @@ interface ElementLike {
 const isElement = (v: unknown): v is ElementLike =>
   !!v && typeof v === "object" && "props" in v && !!v.props && typeof v.props === "object";
 const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
-const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T => (list as readonly unknown[]).includes(v);
+const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T =>
+  (list as readonly unknown[]).includes(v);
 
 /**
  * Parsed props of Architecture(nodes, edges, groups?, direction?) → model.
@@ -259,7 +278,10 @@ export function buildModel(props: ArchitectureInput | null | undefined): Model {
         detail: str(p.detail).trim(),
         tag: str(p.tag).trim(),
         tone: oneOf(NODE_TONES, p.tone) ? p.tone : "",
-        row: typeof p.row === "number" && Number.isInteger(p.row) && p.row > 0 ? Math.min(p.row, 200) : null,
+        row:
+          typeof p.row === "number" && Number.isInteger(p.row) && p.row > 0
+            ? Math.min(p.row, 200)
+            : null,
       });
     }
     seenEls.set(el, id);
@@ -295,7 +317,13 @@ export function buildModel(props: ArchitectureInput | null | undefined): Model {
     if (!isElement(el)) continue;
     const id = el.statementId || `_group${anon++}`;
     if (groupIds.has(id)) continue;
-    const members = [...new Set((Array.isArray(el.props.members) ? el.props.members : []).map(addNode).filter((m): m is string => !!m))];
+    const members = [
+      ...new Set(
+        (Array.isArray(el.props.members) ? el.props.members : [])
+          .map(addNode)
+          .filter((m): m is string => !!m),
+      ),
+    ];
     if (!members.length) continue;
     groupIds.add(id);
     groups.push({
@@ -322,8 +350,13 @@ function nestGroups(groups: ModelGroup[], problems: string[]): void {
   for (const g of bySize) {
     const set = new Set(g.members);
     g.parent =
-      bySize.find((o) => o !== g && o.members.length >= g.members.length && bySize.indexOf(o) > bySize.indexOf(g) && g.members.every((m) => o.members.includes(m)))
-        ?.id ?? null;
+      bySize.find(
+        (o) =>
+          o !== g &&
+          o.members.length >= g.members.length &&
+          bySize.indexOf(o) > bySize.indexOf(g) &&
+          g.members.every((m) => o.members.includes(m)),
+      )?.id ?? null;
     g.memberSet = set;
   }
   const owner = new Map<string, string>();
@@ -335,7 +368,11 @@ function nestGroups(groups: ModelGroup[], problems: string[]): void {
         if (!isAncestor(groups, g.id, first.id)) {
           // Name the outermost group around the first that does not contain g:
           // that is the one g really crosses.
-          for (let up = groups.find((x) => x.id === first.parent); up; up = groups.find((x) => x.id === up?.parent)) {
+          for (
+            let up = groups.find((x) => x.id === first.parent);
+            up;
+            up = groups.find((x) => x.id === up?.parent)
+          ) {
             const set = up.memberSet as Set<string>;
             if (g.members.every((x) => set.has(x))) break;
             first = up;
@@ -363,7 +400,10 @@ function isAncestor(groups: ModelGroup[], ancestorId: string, id: string): boole
 /** Detail text: up to two monospace lines; "\n" forces a break. */
 function detailLinesFor(detail: string, width: number): string[] {
   if (!detail) return [];
-  const parts = detail.split("\n").map((t) => t.trim()).filter(Boolean);
+  const parts = detail
+    .split("\n")
+    .map((t) => t.trim())
+    .filter(Boolean);
   const lines: string[] = [];
   for (let i = 0; i < parts.length; i++) {
     if (lines.length === 2) {
@@ -399,7 +439,13 @@ export function sizeNode(node: ModelNode, forceWidth = 0): NodeSize {
   const detailLines = detailLinesFor(node.detail, width - padX * 2);
   const tagLine = node.tag ? wrapText(node.tag, tag, width - padX * 2 - 14, 1)[0] : "";
   const tagRow = tagLine ? SIZES.tagRow : 0;
-  const height = 16 + tagRow + labelLines.length * 17 + detailLines.length * 15 + (detailLines.length ? 1 : 0) + 8;
+  const height =
+    16 +
+    tagRow +
+    labelLines.length * 17 +
+    detailLines.length * 15 +
+    (detailLines.length ? 1 : 0) +
+    8;
   return { width, height, labelLines, detailLines, tagLine, tagRow };
 }
 
@@ -413,7 +459,14 @@ export function sizeEdgeLabel(label: string): EdgeLabelSize | null {
 
 function runLayout(model: Model, rankdir: "LR" | "TB"): Layout {
   const g = new dagre.graphlib.Graph({ compound: true, multigraph: true });
-  g.setGraph({ rankdir, nodesep: rankdir === "LR" ? 26 : 34, ranksep: rankdir === "LR" ? 46 : 42, edgesep: 14, marginx: 18, marginy: 14 });
+  g.setGraph({
+    rankdir,
+    nodesep: rankdir === "LR" ? 26 : 34,
+    ranksep: rankdir === "LR" ? 46 : 42,
+    edgesep: 14,
+    marginx: 18,
+    marginy: 14,
+  });
   g.setDefaultEdgeLabel(() => ({}));
   const boxes = new Map<string, NodeSize>();
   for (const n of model.nodes) {
@@ -444,15 +497,32 @@ function runLayout(model: Model, rankdir: "LR" | "TB"): Layout {
     return {
       ...e,
       points: (d.points || []).map((pt: Point) => ({ x: pt.x, y: pt.y })),
-      labelBox: lb ? { cx: d.x as number, cy: d.y as number, width: lb.width, height: lb.height, lines: lb.lines } : null,
+      labelBox: lb
+        ? {
+            cx: d.x as number,
+            cy: d.y as number,
+            width: lb.width,
+            height: lb.height,
+            lines: lb.lines,
+          }
+        : null,
     };
   });
   const groups: LaidOutGroup[] = model.groups.map((grp) => {
     const p: Partial<NodeLabel> = g.node(`group:${grp.id}`) || {};
     const width = p.width ?? 0;
     // The label chip sits on the frame's top edge; it never runs past the frame.
-    const labelLine = grp.label ? wrapText(grp.label, SIZES.group, Math.max(24, width - 24 - 14), 1)[0] : "";
-    return { ...grp, labelLine, x: (p.x ?? 0) - width / 2, y: (p.y ?? 0) - (p.height ?? 0) / 2, width, height: p.height ?? 0 };
+    const labelLine = grp.label
+      ? wrapText(grp.label, SIZES.group, Math.max(24, width - 24 - 14), 1)[0]
+      : "";
+    return {
+      ...grp,
+      labelLine,
+      x: (p.x ?? 0) - width / 2,
+      y: (p.y ?? 0) - (p.height ?? 0) / 2,
+      width,
+      height: p.height ?? 0,
+    };
   });
   const gr = g.graph();
   let width = Math.ceil(gr.width || 0);
@@ -482,7 +552,8 @@ function runLayout(model: Model, rankdir: "LR" | "TB"): Layout {
         { x: reach, y: y2 + 8 },
         { x: r, y: y2 },
       ];
-      if (e.labelBox) e.labelBox = { ...e.labelBox, cx: Math.max(lx, reach + 3 + e.labelBox.width / 2), cy };
+      if (e.labelBox)
+        e.labelBox = { ...e.labelBox, cx: Math.max(lx, reach + 3 + e.labelBox.width / 2), cy };
     } else {
       const ly = placed ? dy : b + 30 + (e.labelBox ? e.labelBox.height / 2 : 0);
       const reach = Math.max(b + 16, e.labelBox ? ly - e.labelBox.height / 2 - 3 : ly);
@@ -493,7 +564,8 @@ function runLayout(model: Model, rankdir: "LR" | "TB"): Layout {
         { x: cx + spread + 8, y: reach },
         { x: cx + spread, y: b },
       ];
-      if (e.labelBox) e.labelBox = { ...e.labelBox, cx, cy: Math.max(ly, reach + 3 + e.labelBox.height / 2) };
+      if (e.labelBox)
+        e.labelBox = { ...e.labelBox, cx, cy: Math.max(ly, reach + 3 + e.labelBox.height / 2) };
     }
     const xs = e.points.map((p) => p.x);
     const ys = e.points.map((p) => p.y);
@@ -512,7 +584,9 @@ export const LEGIBLE_SCALE = 0.85;
 
 /** A lanes diagram too wide for the usual page column: the page widens for it. */
 export function wantsWidePage(model: Model): boolean {
-  return model.direction === "lanes" && lanesPlanWidth(model) * LEGIBLE_SCALE > DEFAULT_TARGET_WIDTH;
+  return (
+    model.direction === "lanes" && lanesPlanWidth(model) * LEGIBLE_SCALE > DEFAULT_TARGET_WIDTH
+  );
 }
 
 /** Fraction of natural size a layout is drawn at in `targetWidth`. */
@@ -536,7 +610,8 @@ export function layoutModel(model: Model, targetWidth = DEFAULT_TARGET_WIDTH): L
   // Decided from the unrouted width, so a phone never routes the columns.
   const planned = model.direction === "lanes" ? lanesPlanWidth(model) : 0;
   if (planned) {
-    if (planned * LEGIBLE_SCALE <= targetWidth || targetWidth >= LANES_SCROLL_WIDTH) return runLanes(model);
+    if (planned * LEGIBLE_SCALE <= targetWidth || targetWidth >= LANES_SCROLL_WIDTH)
+      return runLanes(model);
     return runStackedLanes(model, targetWidth);
   }
   const lr = runLayout(model, "LR");
@@ -555,12 +630,18 @@ export function layoutModel(model: Model, targetWidth = DEFAULT_TARGET_WIDTH): L
  */
 export function architectureNotes(props: ArchitectureInput | null | undefined): ArchitectureNote[] {
   const model = buildModel(props);
-  const notes: ArchitectureNote[] = model.problems.map((message) => ({ code: "architecture", message }));
+  const notes: ArchitectureNote[] = model.problems.map((message) => ({
+    code: "architecture",
+    message,
+  }));
   if (!model.nodes.length) return notes;
   const layoutNote = (message: string) => notes.push({ code: "architecture-layout", message });
   if (model.direction === "lanes") {
     const lanes = runLanes(model);
-    if (!lanes) layoutNote('direction "lanes" needs Groups (each top-level Group is a column); without any it lays out as auto.');
+    if (!lanes)
+      layoutNote(
+        'direction "lanes" needs Groups (each top-level Group is a column); without any it lays out as auto.',
+      );
     else if (scaleAt(lanes, LANES_TARGET_WIDTH) < LEGIBLE_SCALE)
       layoutNote(
         `These lanes need about ${lanes.width}px; a laptop page gives about ${LANES_TARGET_WIDTH}px, so they scroll sideways there (narrow screens stack them as bands). To fit: fewer lanes, fewer boxes side by side, shorter edge labels.`,
@@ -570,7 +651,9 @@ export function architectureNotes(props: ArchitectureInput | null | undefined): 
     const l = layoutModel(model, DEFAULT_TARGET_WIDTH) as Layout;
     if (scaleAt(l, DEFAULT_TARGET_WIDTH) < LEGIBLE_SCALE) {
       const forced = model.direction === "right" || model.direction === "down";
-      const auto = forced ? (layoutModel({ ...model, direction: "auto" }, DEFAULT_TARGET_WIDTH) as Layout) : l;
+      const auto = forced
+        ? (layoutModel({ ...model, direction: "auto" }, DEFAULT_TARGET_WIDTH) as Layout)
+        : l;
       const advice =
         forced && scaleAt(auto, DEFAULT_TARGET_WIDTH) >= LEGIBLE_SCALE
           ? "Leave direction out (auto) to fit the page."
@@ -587,7 +670,8 @@ export function architectureNotes(props: ArchitectureInput | null | undefined): 
 export function edgePath(points: Point[]): string {
   if (!points.length) return "";
   const f = (n: number) => Math.round(n * 10) / 10;
-  if (points.length < 3) return `M${f(points[0].x)},${f(points[0].y)}L${f(points[points.length - 1].x)},${f(points[points.length - 1].y)}`;
+  if (points.length < 3)
+    return `M${f(points[0].x)},${f(points[0].y)}L${f(points[points.length - 1].x)},${f(points[points.length - 1].y)}`;
   let [x0, y0] = [points[0].x, points[0].y];
   let [x1, y1] = [points[1].x, points[1].y];
   let d = `M${f(x0)},${f(y0)}L${f((5 * x0 + x1) / 6)},${f((5 * y0 + y1) / 6)}`;

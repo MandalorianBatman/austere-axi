@@ -137,7 +137,9 @@ const INTERACTIVE = [
 const UI_ATTR = "data-austere-ui";
 
 function clip(text: string | null | undefined, max: number): string {
-  const t = String(text ?? "").replace(/\s+/g, " ").trim();
+  const t = String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   return t.length > max ? t.slice(0, max - 1) + "…" : t;
 }
 
@@ -182,12 +184,19 @@ export function boxOf(node: Element): DOMRect {
 
 /** A statement element's name and component: every [data-oui-id] element carries both attributes. */
 function statementOf(el: Element): PathEntry {
-  return { id: el.getAttribute("data-oui-id") as string, component: el.getAttribute("data-oui-c") as string };
+  return {
+    id: el.getAttribute("data-oui-id") as string,
+    component: el.getAttribute("data-oui-c") as string,
+  };
 }
 
 function pathOf(target: Element): PathEntry[] {
   const path: PathEntry[] = [];
-  for (let n: Element | null | undefined = target; n; n = n.parentElement?.closest("[data-oui-id]")) {
+  for (
+    let n: Element | null | undefined = target;
+    n;
+    n = n.parentElement?.closest("[data-oui-id]")
+  ) {
     path.unshift(statementOf(n));
   }
   return path;
@@ -207,7 +216,9 @@ function partOf(target: Element, el: Element): Element | null {
 /** A table row's 1-based place in its tbody; undefined for header and footer rows. */
 function rowIndexOf(row: Element): number | undefined {
   const body = row.parentElement;
-  return body?.tagName === "TBODY" ? Array.prototype.indexOf.call(body.children, row) + 1 : undefined;
+  return body?.tagName === "TBODY"
+    ? Array.prototype.indexOf.call(body.children, row) + 1
+    : undefined;
 }
 
 function detailOf(target: Element, el: Element): AnnotationDetail | undefined {
@@ -316,7 +327,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   let lastHoverEl: EventTarget | null = null;
 
   const isOurs = (el: EventTarget | null) => el instanceof Element && !!el.closest(`[${UI_ATTR}]`);
-  const targetOf = (el: EventTarget | null) => (el instanceof Element && el.closest("[data-oui-id]")) || null;
+  const targetOf = (el: EventTarget | null) =>
+    (el instanceof Element && el.closest("[data-oui-id]")) || null;
 
   function placeBox(box: HTMLElement, rect: Box, pad = 4) {
     box.style.left = `${rect.left - pad}px`;
@@ -342,7 +354,9 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   function showHover(
     target: Element | null,
     piece: Element | null = null,
-    locator: ((target: Element) => Element | null) | null = target && piece ? relocatorOf(target, piece) : null,
+    locator: ((target: Element) => Element | null) | null = target && piece
+      ? relocatorOf(target, piece)
+      : null,
     label = pieceLabel(piece),
   ) {
     hovered = target;
@@ -413,7 +427,12 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       return;
     }
     const rect = range.getBoundingClientRect();
-    pendingSelection = { target, el, selection: clip(text, 600), point: { x: rect.left, y: rect.bottom } };
+    pendingSelection = {
+      target,
+      el,
+      selection: clip(text, 600),
+      point: { x: rect.left, y: rect.bottom },
+    };
     selBtn.hidden = false;
     const w = selBtn.offsetWidth || 140;
     selBtn.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, rect.left + rect.width / 2 - w / 2))}px`;
@@ -455,7 +474,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
         const innermost = i === current.path.length - 1;
         if (!current.target.isConnected) {
           const id = current.path[current.path.length - 1].id;
-          current.target = document.querySelector(`[data-oui-id="${CSS.escape(id)}"]`) ?? current.target;
+          current.target =
+            document.querySelector(`[data-oui-id="${CSS.escape(id)}"]`) ?? current.target;
         }
         const sel = `[data-oui-id="${CSS.escape(p.id)}"]`;
         showHover(
@@ -487,7 +507,9 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     if (!selection) {
       const node = part || el;
       // SVG elements have no innerText.
-      excerpt = clip((node instanceof HTMLElement ? node.innerText : undefined) || node.textContent, 200) || undefined;
+      excerpt =
+        clip((node instanceof HTMLElement ? node.innerText : undefined) || node.textContent, 200) ||
+        undefined;
       if (part && excerpt === detail?.part) excerpt = undefined;
     }
     const statement = statementOf(target);
@@ -563,7 +585,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     };
     if (draft.selection) item.selection = draft.selection;
     if (draft.excerpt && !draft.selection) item.excerpt = draft.excerpt;
-    if (draft.detail && draft.targetId === draft.path[draft.path.length - 1].id) item.detail = draft.detail;
+    if (draft.detail && draft.targetId === draft.path[draft.path.length - 1].id)
+      item.detail = draft.detail;
     post({ type: "annotate", item });
     const id = draft.targetId;
     // A note on a piece (a row, a node) flashes that piece, as the box outlined it.
@@ -575,7 +598,10 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   }
 
   pop.addEventListener("click", (e) => {
-    const act = e.target instanceof Element ? e.target.closest("[data-act]")?.getAttribute("data-act") : undefined;
+    const act =
+      e.target instanceof Element
+        ? e.target.closest("[data-act]")?.getAttribute("data-act")
+        : undefined;
     if (act === "cancel") close();
     if (act === "queue") queue();
     if (act === "history" && draft) {
@@ -606,22 +632,36 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     if ((e.metaKey || e.ctrlKey) && (e.key === "i" || e.key === "I")) {
       e.preventDefault();
       post({ type: "toggle-mode" });
-    } else if (quickSwitch && (e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "k" || e.key === "K")) {
+    } else if (
+      quickSwitch &&
+      (e.metaKey || e.ctrlKey) &&
+      !e.altKey &&
+      (e.key === "k" || e.key === "K")
+    ) {
       e.preventDefault();
       post({ type: "quick-switch" });
     }
   });
-  window.addEventListener("scroll", () => {
-    // The box is position: fixed, so a locked one has to follow the page.
-    if (!pop.hidden) return scheduleLayout();
-    hover.hidden = true;
-    selBtn.hidden = true;
-  }, { passive: true });
+  window.addEventListener(
+    "scroll",
+    () => {
+      // The box is position: fixed, so a locked one has to follow the page.
+      if (!pop.hidden) return scheduleLayout();
+      hover.hidden = true;
+      selBtn.hidden = true;
+    },
+    { passive: true },
+  );
   document.addEventListener("mouseleave", () => {
     if (pop.hidden) hover.hidden = true;
   });
 
-  function elementsFor(id: string, map: StatementMap | undefined, refsTo: RefsTo | undefined, seen = new Set<string>()): Element[] {
+  function elementsFor(
+    id: string,
+    map: StatementMap | undefined,
+    refsTo: RefsTo | undefined,
+    seen = new Set<string>(),
+  ): Element[] {
     if (seen.has(id)) return [];
     seen.add(id);
     const direct = document.querySelectorAll(`[data-oui-id="${CSS.escape(id)}"]`);
@@ -631,7 +671,11 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   }
 
   /** The outermost elements rendering any of ids (nested ones are covered by their ancestor). */
-  function outermost(ids: string[], map: StatementMap | undefined, refsTo: RefsTo | undefined): Element[] {
+  function outermost(
+    ids: string[],
+    map: StatementMap | undefined,
+    refsTo: RefsTo | undefined,
+  ): Element[] {
     const els = new Set<Element>();
     for (const id of ids) for (const el of elementsFor(id, map, refsTo)) els.add(el);
     return Array.from(els).filter((el) => !Array.from(els).some((o) => o !== el && o.contains(el)));
@@ -658,7 +702,12 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
     const add = (r: DOMRect) => {
       if (!r.width && !r.height) return;
-      [left, top, right, bottom] = [Math.min(left, r.left), Math.min(top, r.top), Math.max(right, r.right), Math.max(bottom, r.bottom)];
+      [left, top, right, bottom] = [
+        Math.min(left, r.left),
+        Math.min(top, r.top),
+        Math.max(right, r.right),
+        Math.max(bottom, r.bottom),
+      ];
     };
     const walk = (node: Node) => {
       for (const c of node.childNodes) {
@@ -678,7 +727,11 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
 
   /** el, or the card that holds it when it sits in a folded card (hidden="until-found"). */
   function shown(el: Element): Element {
-    for (let fold = el.closest("[hidden='until-found']"); fold?.parentElement; fold = el.closest("[hidden='until-found']")) {
+    for (
+      let fold = el.closest("[hidden='until-found']");
+      fold?.parentElement;
+      fold = el.closest("[hidden='until-found']")
+    ) {
       el = fold.parentElement;
     }
     return el;
@@ -725,7 +778,11 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     const els = elementsFor(id, map, refsTo);
     if (!els.length) return false;
     // Unfold what hides it, as find-in-page does: drop hidden, then fire beforematch.
-    for (let fold = els[0].closest("[hidden='until-found']"); fold; fold = els[0].closest("[hidden='until-found']")) {
+    for (
+      let fold = els[0].closest("[hidden='until-found']");
+      fold;
+      fold = els[0].closest("[hidden='until-found']")
+    ) {
       fold.removeAttribute("hidden");
       fold.dispatchEvent(new Event("beforematch"));
     }
@@ -780,7 +837,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
       hovered = document.querySelector(`[data-oui-id="${CSS.escape(id)}"]`);
     }
     // A piece missing for a frame stays detached (no box) and is looked for again on the next update.
-    if (hovered && hoveredPiece && !hoveredPiece.isConnected) hoveredPiece = relocate?.(hovered) ?? hoveredPiece;
+    if (hovered && hoveredPiece && !hoveredPiece.isConnected)
+      hoveredPiece = relocate?.(hovered) ?? hoveredPiece;
     if (hovered) placeHoverOn(hovered, hoveredPiece);
     else hover.hidden = true;
   }
@@ -799,13 +857,26 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   // Our own overlays mutate too; redrawing for them would loop every frame.
   // SVG geometry attributes count: a live update can move a diagram box without other changes.
   new MutationObserver((records) => {
-    if (records.some((r) => !isOurs(r.target.nodeType === 1 ? r.target : r.target.parentElement))) scheduleLayout();
+    if (records.some((r) => !isOurs(r.target.nodeType === 1 ? r.target : r.target.parentElement)))
+      scheduleLayout();
   }).observe(document.body, {
     childList: true,
     subtree: true,
     characterData: true,
     attributes: true,
-    attributeFilter: ["class", "style", "hidden", "open", "x", "y", "width", "height", "d", "transform", "viewBox"],
+    attributeFilter: [
+      "class",
+      "style",
+      "hidden",
+      "open",
+      "x",
+      "y",
+      "width",
+      "height",
+      "d",
+      "transform",
+      "viewBox",
+    ],
   });
   document.addEventListener(
     "scroll",
@@ -833,7 +904,8 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
   function drawFocus() {
     const [map, refsTo]: [StatementMap?, RefsTo?] = focused.length && lookup ? lookup() : [];
     const byStatement = new Map<string, FocusMark[]>();
-    for (const m of focused) byStatement.set(m.statement, [...(byStatement.get(m.statement) ?? []), m]);
+    for (const m of focused)
+      byStatement.set(m.statement, [...(byStatement.get(m.statement) ?? []), m]);
     const outlines: HTMLDivElement[] = [];
     for (const [statement, viewers] of byStatement) {
       // Every visible element of the statement is outlined (an edge's line and label, a reused

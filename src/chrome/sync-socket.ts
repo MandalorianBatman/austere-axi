@@ -76,7 +76,11 @@ export function openSyncSocket(options: SyncSocketOptions): SyncSocket {
       const close: SyncClose = { code: e.code, opened, error };
       // Close 1000 (the page was deleted) and 1008 (after `error` `forbidden` or `upgrade_required`)
       // are final: the server would refuse the same credential again.
-      const final = e.code === 1000 || e.code === 1008 || error?.code === "forbidden" || error?.code === "upgrade_required";
+      const final =
+        e.code === 1000 ||
+        e.code === 1008 ||
+        error?.code === "forbidden" ||
+        error?.code === "upgrade_required";
       let retrying = !stopped && !final;
       if (retrying && options.mayRetry) retrying = (await options.mayRetry(close)) && !stopped;
       if (retrying) {

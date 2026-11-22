@@ -49,17 +49,31 @@ export function programSha(program: string): string {
 
 /** The newest revision of a copy (its program included), or null before the first. */
 export function headRevision(db: sqlite.DatabaseSync, artifactId: string): RevisionRow | null {
-  return (db.prepare("SELECT * FROM revisions WHERE artifact_id = ? ORDER BY rev DESC LIMIT 1").get(artifactId) as unknown as RevisionRow | undefined) ?? null;
+  return (
+    (db
+      .prepare("SELECT * FROM revisions WHERE artifact_id = ? ORDER BY rev DESC LIMIT 1")
+      .get(artifactId) as unknown as RevisionRow | undefined) ?? null
+  );
 }
 
 /** The newest `rev` of every copy: what a session's in-memory revision counter starts from. */
 export function headRevisions(db: sqlite.DatabaseSync): Map<string, number> {
-  const rows = db.prepare("SELECT artifact_id, MAX(rev) AS rev FROM revisions GROUP BY artifact_id").all() as unknown as { artifact_id: string; rev: number }[];
+  const rows = db
+    .prepare("SELECT artifact_id, MAX(rev) AS rev FROM revisions GROUP BY artifact_id")
+    .all() as unknown as { artifact_id: string; rev: number }[];
   return new Map(rows.map((r) => [r.artifact_id, r.rev]));
 }
 
-export function revisionAt(db: sqlite.DatabaseSync, artifactId: string, rev: number): RevisionRow | null {
-  return (db.prepare("SELECT * FROM revisions WHERE artifact_id = ? AND rev = ?").get(artifactId, rev) as unknown as RevisionRow | undefined) ?? null;
+export function revisionAt(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  rev: number,
+): RevisionRow | null {
+  return (
+    (db
+      .prepare("SELECT * FROM revisions WHERE artifact_id = ? AND rev = ?")
+      .get(artifactId, rev) as unknown as RevisionRow | undefined) ?? null
+  );
 }
 
 /** Whether the full-text index can be used on this connection: its table exists and SQLite has FTS5. Checked once per connection. */
@@ -83,13 +97,21 @@ export function hasFts(db: sqlite.DatabaseSync): boolean {
  * else the notes of this copy that were delivered and not answered yet (what `markWorking`
  * marks, but read again for each change, so a second patch for the same notes has the cause too).
  */
-function causeOf(db: sqlite.DatabaseSync, artifactId: string, runId: string | null): { from: number; to: number } | null {
+function causeOf(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  runId: string | null,
+): { from: number; to: number } | null {
   if (runId) {
-    const run = db.prepare("SELECT seq_from, seq_to FROM runs WHERE id = ?").get(runId) as unknown as { seq_from: number | null; seq_to: number | null } | undefined;
+    const run = db
+      .prepare("SELECT seq_from, seq_to FROM runs WHERE id = ?")
+      .get(runId) as unknown as { seq_from: number | null; seq_to: number | null } | undefined;
     if (run?.seq_from != null && run.seq_to != null) return { from: run.seq_from, to: run.seq_to };
   }
   const r = db
-    .prepare("SELECT MIN(seq) AS lo, MAX(seq) AS hi FROM notes WHERE artifact_id = ? AND seq IS NOT NULL AND state != 'discarded' AND seen_at IS NOT NULL AND done_at IS NULL")
+    .prepare(
+      "SELECT MIN(seq) AS lo, MAX(seq) AS hi FROM notes WHERE artifact_id = ? AND seq IS NOT NULL AND state != 'discarded' AND seen_at IS NOT NULL AND done_at IS NULL",
+    )
     .get(artifactId) as unknown as { lo: number | null; hi: number | null };
   return r.lo == null || r.hi == null ? null : { from: r.lo, to: r.hi };
 }
@@ -99,7 +121,12 @@ function causeOf(db: sqlite.DatabaseSync, artifactId: string, runId: string | nu
  * Nothing happens (null) when the program is the head's: a patch that changes nothing, the
  * server seeing a patch the CLI already recorded. The page must be in `artifacts` already.
  */
-export function recordRevision(db: sqlite.DatabaseSync, artifactId: string, html: string, ctx: RevisionContext): RevisionRow | null {
+export function recordRevision(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  html: string,
+  ctx: RevisionContext,
+): RevisionRow | null {
   const art = readArtifact(html);
   if (art.program == null) return null;
   const program = art.program;
@@ -113,32 +140,90 @@ export function recordRevision(db: sqlite.DatabaseSync, artifactId: string, html
     // Another process may have recorded it since: the head is read again under the lock.
     const head = headRevision(db, artifactId);
     if (head?.program_sha === sha) return null;
-    const runId = ctx.runId ?? (db.prepare("SELECT id FROM runs WHERE artifact_id = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1").get(artifactId) as unknown as { id: string } | undefined)?.id ?? null;
+    const runId =
+      ctx.runId ??
+      (
+        db
+          .prepare(
+            "SELECT id FROM runs WHERE artifact_id = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1",
+          )
+          .get(artifactId) as unknown as { id: string } | undefined
+      )?.id ??
+      null;
     // An agent's change answers notes. A restore is the owner's act, and what `open` finds is a hand edit or a baseline.
-    const cause = ctx.source === "patch" || ctx.source === "file" ? causeOf(db, artifactId, runId) : null;
+    const cause =
+      ctx.source === "patch" || ctx.source === "file" ? causeOf(db, artifactId, runId) : null;
     const rev = (head?.rev ?? 0) + 1;
     const at = ctx.at ?? Date.now();
     const info = db
-      .prepare("INSERT INTO revisions (artifact_id, rev, at, source, program, program_sha, run_id, agent_session_id, seq_from, seq_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(artifactId, rev, at, ctx.source, program, sha, runId, ctx.agentSessionId ?? null, cause?.from ?? null, cause?.to ?? null);
-    writeIndex(db, artifactId, art.title, rev, texts.map((t) => ({ ...t, source: sources.get(t.name)?.text ?? "" })));
-    return { id: Number(info.lastInsertRowid), artifact_id: artifactId, rev, at, source: ctx.source, program, program_sha: sha, run_id: runId, agent_session_id: ctx.agentSessionId ?? null, seq_from: cause?.from ?? null, seq_to: cause?.to ?? null };
+      .prepare(
+        "INSERT INTO revisions (artifact_id, rev, at, source, program, program_sha, run_id, agent_session_id, seq_from, seq_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        artifactId,
+        rev,
+        at,
+        ctx.source,
+        program,
+        sha,
+        runId,
+        ctx.agentSessionId ?? null,
+        cause?.from ?? null,
+        cause?.to ?? null,
+      );
+    writeIndex(
+      db,
+      artifactId,
+      art.title,
+      rev,
+      texts.map((t) => ({ ...t, source: sources.get(t.name)?.text ?? "" })),
+    );
+    return {
+      id: Number(info.lastInsertRowid),
+      artifact_id: artifactId,
+      rev,
+      at,
+      source: ctx.source,
+      program,
+      program_sha: sha,
+      run_id: runId,
+      agent_session_id: ctx.agentSessionId ?? null,
+      seq_from: cause?.from ?? null,
+      seq_to: cause?.to ?? null,
+    };
   });
 }
 
 /** Replace a copy's rows in `statements` and `statements_fts` with the head revision's. */
-function writeIndex(db: sqlite.DatabaseSync, artifactId: string, title: string, rev: number, rows: { name: string; component: string; text: string; source: string }[]): void {
+function writeIndex(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  title: string,
+  rev: number,
+  rows: { name: string; component: string; text: string; source: string }[],
+): void {
   const fts = hasFts(db);
-  if (fts) db.prepare("DELETE FROM statements_fts WHERE rowid IN (SELECT id FROM statements WHERE artifact_id = ?)").run(artifactId);
+  if (fts)
+    db.prepare(
+      "DELETE FROM statements_fts WHERE rowid IN (SELECT id FROM statements WHERE artifact_id = ?)",
+    ).run(artifactId);
   db.prepare("DELETE FROM statements WHERE artifact_id = ?").run(artifactId);
-  const insert = db.prepare("INSERT INTO statements (artifact_id, name, component, text, source, rev) VALUES (?, ?, ?, ?, ?, ?)");
-  const index = fts ? db.prepare("INSERT INTO statements_fts (rowid, title, name, component, text) VALUES (?, ?, ?, ?, ?)") : null;
+  const insert = db.prepare(
+    "INSERT INTO statements (artifact_id, name, component, text, source, rev) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  const index = fts
+    ? db.prepare(
+        "INSERT INTO statements_fts (rowid, title, name, component, text) VALUES (?, ?, ?, ?, ?)",
+      )
+    : null;
   for (const r of rows) {
     const info = insert.run(artifactId, r.name, r.component, r.text, r.source, rev);
     index?.run(info.lastInsertRowid, title, r.name, r.component, r.text);
   }
   // A statement that is gone has no origin to show.
-  db.prepare("DELETE FROM statement_origins WHERE artifact_id = ? AND name NOT IN (SELECT value FROM json_each(?))").run(artifactId, JSON.stringify(rows.map((r) => r.name)));
+  db.prepare(
+    "DELETE FROM statement_origins WHERE artifact_id = ? AND name NOT IN (SELECT value FROM json_each(?))",
+  ).run(artifactId, JSON.stringify(rows.map((r) => r.name)));
 }
 
 /**
@@ -147,12 +232,26 @@ function writeIndex(db: sqlite.DatabaseSync, artifactId: string, title: string, 
  * registered. Never fails the command: history is a convenience, and a state dir another version
  * holds is left as it is.
  */
-export async function recordWithHub(artifactId: string, html: string, source: RevisionSource, caller: CallerReport | null, after?: (db: sqlite.DatabaseSync, rev: RevisionRow | null) => void): Promise<RevisionRow | null> {
+export async function recordWithHub(
+  artifactId: string,
+  html: string,
+  source: RevisionSource,
+  caller: CallerReport | null,
+  after?: (db: sqlite.DatabaseSync, rev: RevisionRow | null) => void,
+): Promise<RevisionRow | null> {
   try {
     const hub = await openHubDirect({ write: true });
     try {
-      const agent = caller ? (hub.db.prepare("SELECT id FROM agent_sessions WHERE harness = ? AND session_id = ?").get(caller.harness, caller.sessionId) as unknown as { id: string } | undefined) : undefined;
-      const rev = recordRevision(hub.db, artifactId, html, { source, runId: process.env.AUSTERE_AXI_RUN_ID || null, agentSessionId: agent?.id ?? null });
+      const agent = caller
+        ? (hub.db
+            .prepare("SELECT id FROM agent_sessions WHERE harness = ? AND session_id = ?")
+            .get(caller.harness, caller.sessionId) as unknown as { id: string } | undefined)
+        : undefined;
+      const rev = recordRevision(hub.db, artifactId, html, {
+        source,
+        runId: process.env.AUSTERE_AXI_RUN_ID || null,
+        agentSessionId: agent?.id ?? null,
+      });
       after?.(hub.db, rev);
       return rev;
     } finally {
@@ -187,8 +286,15 @@ export async function keepPage(file: string, id: string, html: string): Promise<
  * program becomes a revision when it differs from the head, and its statements are indexed again.
  * Copies whose file is gone lose their index rows (their revisions stay).
  */
-export function reindex(db: sqlite.DatabaseSync): { copies: number; statements: number; missing: number } {
-  const copies = db.prepare("SELECT id, file FROM artifacts").all() as unknown as { id: string; file: string }[];
+export function reindex(db: sqlite.DatabaseSync): {
+  copies: number;
+  statements: number;
+  missing: number;
+} {
+  const copies = db.prepare("SELECT id, file FROM artifacts").all() as unknown as {
+    id: string;
+    file: string;
+  }[];
   inTransaction(db, () => {
     if (hasFts(db)) db.exec("DELETE FROM statements_fts");
     db.exec("DELETE FROM statements");
@@ -213,14 +319,23 @@ export function reindex(db: sqlite.DatabaseSync): { copies: number; statements: 
       const texts = programText(art.program, parsed?.root ?? null, parsed?.spec);
       // Another process may have recorded a newer revision since: its index is not replaced by this snapshot.
       inTransaction(db, () => {
-        if (headRevision(db, c.id)?.rev === head.rev) writeIndex(db, c.id, art.title, head.rev, texts.map((t) => ({ ...t, source: sources.get(t.name)?.text ?? "" })));
+        if (headRevision(db, c.id)?.rev === head.rev)
+          writeIndex(
+            db,
+            c.id,
+            art.title,
+            head.rev,
+            texts.map((t) => ({ ...t, source: sources.get(t.name)?.text ?? "" })),
+          );
       });
     } else {
       recordRevision(db, c.id, html, { source: "open" });
     }
     done++;
   }
-  const statements = Number((db.prepare("SELECT COUNT(*) AS n FROM statements").get() as unknown as { n: number }).n);
+  const statements = Number(
+    (db.prepare("SELECT COUNT(*) AS n FROM statements").get() as unknown as { n: number }).n,
+  );
   return { copies: done, statements, missing };
 }
 
@@ -236,7 +351,12 @@ export interface CauseNote {
 }
 
 /** The notes of a copy in a seq range: annotations, messages and form answers, oldest first. */
-export function causeNotes(db: sqlite.DatabaseSync, artifactId: string, from: number | null, to: number | null): CauseNote[] {
+export function causeNotes(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  from: number | null,
+  to: number | null,
+): CauseNote[] {
   if (from == null || to == null) return [];
   const rows = db
     .prepare(
@@ -245,8 +365,20 @@ export function causeNotes(db: sqlite.DatabaseSync, artifactId: string, from: nu
        WHERE n.artifact_id = ? AND n.seq BETWEEN ? AND ? AND i.kind IN ('annotation', 'message', 'action') AND i.status != 'discarded'
        ORDER BY n.seq, i.at, i.id`,
     )
-    .all(artifactId, from, to) as unknown as { seq: number; at: number; author: string; target: string | null; text: string | null }[];
-  return rows.map((r) => ({ seq: r.seq, at: r.at, author: r.author || "owner", target: r.target, text: r.text ?? "" }));
+    .all(artifactId, from, to) as unknown as {
+    seq: number;
+    at: number;
+    author: string;
+    target: string | null;
+    text: string | null;
+  }[];
+  return rows.map((r) => ({
+    seq: r.seq,
+    at: r.at,
+    author: r.author || "owner",
+    target: r.target,
+    text: r.text ?? "",
+  }));
 }
 
 /** A statement with its whitespace collapsed outside string literals: a value's own spaces are part of it. */
@@ -278,7 +410,10 @@ function squash(text: string): string {
 }
 
 /** What a revision changed against the one before it (none before it: every statement is new). */
-export function diffStatements(prev: string | null, next: string): { changed: string[]; removed: string[] } {
+export function diffStatements(
+  prev: string | null,
+  next: string,
+): { changed: string[]; removed: string[] } {
   const before = statementMap(prev);
   const after = statementMap(next);
   const changed: string[] = [];
@@ -309,14 +444,28 @@ export interface RevisionSummary {
  * The revisions of a copy, newest first: what each changed and the notes behind it.
  * `statement`: only those that changed it. `since`: only after that `rev`. `limit`: the newest n.
  */
-export function revisionLog(db: sqlite.DatabaseSync, artifactId: string, { statement, since = 0, limit = 200 }: { statement?: string; since?: number; limit?: number } = {}): RevisionSummary[] {
+export function revisionLog(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  {
+    statement,
+    since = 0,
+    limit = 200,
+  }: { statement?: string; since?: number; limit?: number } = {},
+): RevisionSummary[] {
   // Without a statement, only the newest `limit` revisions (and the one before them, to diff against) are read. A statement's
   // history needs every revision, to know which ones changed it.
-  const rows = (
-    statement
-      ? (db.prepare("SELECT * FROM revisions WHERE artifact_id = ? ORDER BY rev").all(artifactId) as unknown as RevisionRow[])
-      : (db.prepare("SELECT * FROM revisions WHERE artifact_id = ? AND rev >= ? ORDER BY rev DESC LIMIT ?").all(artifactId, since, limit + 1) as unknown as RevisionRow[]).reverse()
-  );
+  const rows = statement
+    ? (db
+        .prepare("SELECT * FROM revisions WHERE artifact_id = ? ORDER BY rev")
+        .all(artifactId) as unknown as RevisionRow[])
+    : (
+        db
+          .prepare(
+            "SELECT * FROM revisions WHERE artifact_id = ? AND rev >= ? ORDER BY rev DESC LIMIT ?",
+          )
+          .all(artifactId, since, limit + 1) as unknown as RevisionRow[]
+      ).reverse();
   const kept: { row: RevisionRow; changed: string[]; removed: string[] }[] = [];
   let prev: string | null = null;
   rows.forEach((r, i) => {
@@ -324,7 +473,11 @@ export function revisionLog(db: sqlite.DatabaseSync, artifactId: string, { state
     const context = !statement && i === 0 && (rows.length > limit || r.rev <= since) && r.rev > 1;
     if (!context) {
       const { changed, removed } = diffStatements(prev, r.program);
-      if (r.rev > since && (!statement || changed.includes(statement) || removed.includes(statement))) kept.push({ row: r, changed, removed });
+      if (
+        r.rev > since &&
+        (!statement || changed.includes(statement) || removed.includes(statement))
+      )
+        kept.push({ row: r, changed, removed });
     }
     prev = r.program;
   });
@@ -353,8 +506,17 @@ export function textsOfProgram(program: string, html: string | null): Map<string
 }
 
 /** The reply an agent gave after a revision, before the next one; null when it gave none. */
-function replyAfter(db: sqlite.DatabaseSync, artifactId: string, from: number, until: number): string | null {
-  const r = db.prepare("SELECT text FROM replies WHERE artifact_id = ? AND at >= ? AND at < ? ORDER BY at LIMIT 1").get(artifactId, from, until) as unknown as { text: string } | undefined;
+function replyAfter(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  from: number,
+  until: number,
+): string | null {
+  const r = db
+    .prepare(
+      "SELECT text FROM replies WHERE artifact_id = ? AND at >= ? AND at < ? ORDER BY at LIMIT 1",
+    )
+    .get(artifactId, from, until) as unknown as { text: string } | undefined;
   return r?.text ?? null;
 }
 
@@ -378,18 +540,37 @@ export interface ChangeEntry {
  * The revisions after the global revision id `cursor`, oldest first, up to `limit`.
  * `artifactId`: one copy; `projectId`: every copy of a project; neither: all. `next` is the cursor to ask with next time.
  */
-export function changesSince(db: sqlite.DatabaseSync, { cursor = 0, artifactId, projectId, limit = 20 }: { cursor?: number; artifactId?: string; projectId?: string; limit?: number } = {}): { changes: ChangeEntry[]; next: number } {
+export function changesSince(
+  db: sqlite.DatabaseSync,
+  {
+    cursor = 0,
+    artifactId,
+    projectId,
+    limit = 20,
+  }: { cursor?: number; artifactId?: string; projectId?: string; limit?: number } = {},
+): { changes: ChangeEntry[]; next: number } {
   const rows = db
     .prepare(
       `SELECT r.* FROM revisions r JOIN artifacts a ON a.id = r.artifact_id
        WHERE r.id > ? AND (? = '' OR r.artifact_id = ?) AND (? = '' OR a.project_id = ?)
        ORDER BY r.id LIMIT ?`,
     )
-    .all(cursor, artifactId ?? "", artifactId ?? "", projectId ?? "", projectId ?? "", limit) as unknown as RevisionRow[];
+    .all(
+      cursor,
+      artifactId ?? "",
+      artifactId ?? "",
+      projectId ?? "",
+      projectId ?? "",
+      limit,
+    ) as unknown as RevisionRow[];
   const changes: ChangeEntry[] = [];
   const cache = new Map<string, Map<string, string>>();
   for (const r of rows) {
-    const art = db.prepare("SELECT file, title, root, project FROM artifacts WHERE id = ?").get(r.artifact_id) as unknown as { file: string; title: string | null; root: string | null; project: string } | undefined;
+    const art = db
+      .prepare("SELECT file, title, root, project FROM artifacts WHERE id = ?")
+      .get(r.artifact_id) as unknown as
+      | { file: string; title: string | null; root: string | null; project: string }
+      | undefined;
     if (!art) continue;
     let html: string | null = null;
     try {
@@ -408,7 +589,9 @@ export function changesSince(db: sqlite.DatabaseSync, { cursor = 0, artifactId, 
     const { changed, removed } = diffStatements(prior?.program ?? null, r.program);
     const after = textsFor(r);
     const before = textsFor(prior);
-    const next = db.prepare("SELECT at FROM revisions WHERE artifact_id = ? AND rev = ?").get(r.artifact_id, r.rev + 1) as unknown as { at: number } | undefined;
+    const next = db
+      .prepare("SELECT at FROM revisions WHERE artifact_id = ? AND rev = ?")
+      .get(r.artifact_id, r.rev + 1) as unknown as { at: number } | undefined;
     changes.push({
       id: r.id,
       file: art.file,
@@ -417,10 +600,20 @@ export function changesSince(db: sqlite.DatabaseSync, { cursor = 0, artifactId, 
       rev: r.rev,
       at: r.at,
       source: r.source,
-      statements: r.rev === 1 ? [] : [...changed, ...removed].map((name) => ({ name, before: before.get(name) ?? null, after: removed.includes(name) ? null : (after.get(name) ?? null) })),
+      statements:
+        r.rev === 1
+          ? []
+          : [...changed, ...removed].map((name) => ({
+              name,
+              before: before.get(name) ?? null,
+              after: removed.includes(name) ? null : (after.get(name) ?? null),
+            })),
       ...(r.rev === 1 ? { created: changed.length } : {}),
       cause: causeNotes(db, r.artifact_id, r.seq_from, r.seq_to),
-      reply: r.source === "patch" || r.source === "file" ? replyAfter(db, r.artifact_id, r.at, next?.at ?? Number.MAX_SAFE_INTEGER) : null,
+      reply:
+        r.source === "patch" || r.source === "file"
+          ? replyAfter(db, r.artifact_id, r.at, next?.at ?? Number.MAX_SAFE_INTEGER)
+          : null,
     });
   }
   return { changes, next: rows.length ? rows[rows.length - 1].id : cursor };
@@ -441,7 +634,15 @@ export interface DecisionEntry {
 }
 
 /** Decisions after the note seq `cursor`, oldest first. `next` is the cursor to ask with next time. */
-export function decisionsSince(db: sqlite.DatabaseSync, { cursor = 0, artifactId, projectId, limit = 50 }: { cursor?: number; artifactId?: string; projectId?: string; limit?: number } = {}): { decisions: DecisionEntry[]; next: number } {
+export function decisionsSince(
+  db: sqlite.DatabaseSync,
+  {
+    cursor = 0,
+    artifactId,
+    projectId,
+    limit = 50,
+  }: { cursor?: number; artifactId?: string; projectId?: string; limit?: number } = {},
+): { decisions: DecisionEntry[]; next: number } {
   const rows = db
     .prepare(
       `SELECT n.seq, n.at, n.author, n.ends, n.id AS note_id, a.file, a.title, a.root, a.project
@@ -450,11 +651,37 @@ export function decisionsSince(db: sqlite.DatabaseSync, { cursor = 0, artifactId
          AND (n.ends = 1 OR EXISTS (SELECT 1 FROM items i WHERE i.entry_id = n.id AND i.kind = 'action'))
        ORDER BY n.seq LIMIT ?`,
     )
-    .all(cursor, artifactId ?? "", artifactId ?? "", projectId ?? "", projectId ?? "", limit) as unknown as { seq: number; at: number; author: string; ends: number; note_id: string; file: string; title: string | null; root: string | null; project: string }[];
+    .all(
+      cursor,
+      artifactId ?? "",
+      artifactId ?? "",
+      projectId ?? "",
+      projectId ?? "",
+      limit,
+    ) as unknown as {
+    seq: number;
+    at: number;
+    author: string;
+    ends: number;
+    note_id: string;
+    file: string;
+    title: string | null;
+    root: string | null;
+    project: string;
+  }[];
   const out: DecisionEntry[] = [];
   for (const n of rows) {
-    const base = { seq: n.seq, at: n.at, file: n.file, copy: copyLabel(n.root || n.project), title: n.title, author: n.author || "owner" };
-    const actions = db.prepare("SELECT data FROM items WHERE entry_id = ? AND kind = 'action' ORDER BY at, id").all(n.note_id) as unknown as { data: string }[];
+    const base = {
+      seq: n.seq,
+      at: n.at,
+      file: n.file,
+      copy: copyLabel(n.root || n.project),
+      title: n.title,
+      author: n.author || "owner",
+    };
+    const actions = db
+      .prepare("SELECT data FROM items WHERE entry_id = ? AND kind = 'action' ORDER BY at, id")
+      .all(n.note_id) as unknown as { data: string }[];
     for (const a of actions) {
       let item: { message?: unknown; form?: unknown; context?: unknown } = {};
       try {
@@ -462,11 +689,26 @@ export function decisionsSince(db: sqlite.DatabaseSync, { cursor = 0, artifactId
       } catch {
         // an item that is not JSON has no form to show
       }
-      out.push({ ...base, kind: "action", statement: null, message: String(item.message ?? ""), form: item.form });
+      out.push({
+        ...base,
+        kind: "action",
+        statement: null,
+        message: String(item.message ?? ""),
+        form: item.form,
+      });
     }
     if (n.ends) {
-      const last = db.prepare("SELECT target, text FROM items WHERE entry_id = ? AND kind IN ('annotation', 'message') ORDER BY at DESC, id DESC LIMIT 1").get(n.note_id) as unknown as { target: string | null; text: string | null } | undefined;
-      out.push({ ...base, kind: "final", statement: last?.target ?? null, message: last?.text ?? "" });
+      const last = db
+        .prepare(
+          "SELECT target, text FROM items WHERE entry_id = ? AND kind IN ('annotation', 'message') ORDER BY at DESC, id DESC LIMIT 1",
+        )
+        .get(n.note_id) as unknown as { target: string | null; text: string | null } | undefined;
+      out.push({
+        ...base,
+        kind: "final",
+        statement: last?.target ?? null,
+        message: last?.text ?? "",
+      });
     }
   }
   return { decisions: out, next: rows.length ? rows[rows.length - 1].seq : cursor };
@@ -500,7 +742,10 @@ export function wordsOf(text: string): string[] {
 export function snippetOf(text: string, ws: string[]): string {
   const flat = text.replace(/\s+/g, " ").trim();
   const lower = flat.toLowerCase();
-  const at = Math.max(0, Math.min(...ws.map((w) => lower.indexOf(w)).filter((i) => i >= 0), flat.length));
+  const at = Math.max(
+    0,
+    Math.min(...ws.map((w) => lower.indexOf(w)).filter((i) => i >= 0), flat.length),
+  );
   const from = Math.max(0, at - 30);
   const cut = flat.slice(from, from + 90);
   return `${from > 0 ? "…" : ""}${cut}${from + 90 < flat.length ? "…" : ""}`;
@@ -511,7 +756,16 @@ export function snippetOf(text: string, ws: string[]): string {
  * if no page has all the words, any of them); `LIKE` where FTS5 is missing. A page in several
  * worktrees is one hit (the best copy). Archived pages and copies whose file is gone are left out unless `all`.
  */
-export function findStatements(db: sqlite.DatabaseSync, query: string, { projectId = "", component = "", limit = 8, all = false }: { projectId?: string; component?: string; limit?: number; all?: boolean } = {}): { hits: FindHit[]; fts: boolean } {
+export function findStatements(
+  db: sqlite.DatabaseSync,
+  query: string,
+  {
+    projectId = "",
+    component = "",
+    limit = 8,
+    all = false,
+  }: { projectId?: string; component?: string; limit?: number; all?: boolean } = {},
+): { hits: FindHit[]; fts: boolean } {
   const ws = wordsOf(query);
   if (!ws.length) return { hits: [], fts: hasFts(db) };
   const filter = `AND (? = '' OR a.project_id = ?) AND (? = '' OR s.component = ?) AND (? = 1 OR a.archived_at IS NULL)`;
@@ -540,7 +794,13 @@ export function findStatements(db: sqlite.DatabaseSync, query: string, { project
       }
     }
     const like = (w: string): string => `%${w.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
-    const sql = (joiner: string): string => ws.map(() => "(s.text LIKE ? ESCAPE '\\' OR s.name LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')").join(joiner);
+    const sql = (joiner: string): string =>
+      ws
+        .map(
+          () =>
+            "(s.text LIKE ? ESCAPE '\\' OR s.name LIKE ? ESCAPE '\\' OR a.title LIKE ? ESCAPE '\\')",
+        )
+        .join(joiner);
     for (const joiner of [" AND ", " OR "]) {
       rows = db
         .prepare(
@@ -548,7 +808,11 @@ export function findStatements(db: sqlite.DatabaseSync, query: string, { project
            FROM statements s JOIN artifacts a ON a.id = s.artifact_id
            WHERE (${sql(joiner)}) ${filter} ORDER BY a.updated_at DESC LIMIT ?`,
         )
-        .all(...ws.flatMap((w) => [like(w), like(w), like(w)]), ...args, fetch) as unknown as FindRow[];
+        .all(
+          ...ws.flatMap((w) => [like(w), like(w), like(w)]),
+          ...args,
+          fetch,
+        ) as unknown as FindRow[];
       if (rows.length || ws.length === 1) break;
     }
     return rows;
@@ -567,7 +831,19 @@ export function findStatements(db: sqlite.DatabaseSync, query: string, { project
       if (seen.has(key) || (perPage.get(page) ?? 0) >= 3) continue;
       seen.add(key);
       perPage.set(page, (perPage.get(page) ?? 0) + 1);
-      hits.push({ artifact_id: r.artifact_id, page_id: r.page_id, title: r.title, file: r.file, copy: copyLabel(r.root || r.project), statement: r.name, component: r.component, snippet: snippetOf(r.text || r.name, ws), updated_at: r.updated_at, archived: r.archived_at != null, missing });
+      hits.push({
+        artifact_id: r.artifact_id,
+        page_id: r.page_id,
+        title: r.title,
+        file: r.file,
+        copy: copyLabel(r.root || r.project),
+        statement: r.name,
+        component: r.component,
+        snippet: snippetOf(r.text || r.name, ws),
+        updated_at: r.updated_at,
+        archived: r.archived_at != null,
+        missing,
+      });
       if (hits.length >= limit) break;
     }
     return hits;
@@ -607,11 +883,33 @@ export function ageOf(at: number, now = Date.now()): string {
 
 // ── similar pages (RLM-353) ──
 
-const GENERIC = new Set(["the", "and", "for", "with", "from", "into", "page", "plan", "review", "doc", "docs", "report", "notes", "summary", "draft", "new", "old"]);
+const GENERIC = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "into",
+  "page",
+  "plan",
+  "review",
+  "doc",
+  "docs",
+  "report",
+  "notes",
+  "summary",
+  "draft",
+  "new",
+  "old",
+]);
 
 /** The meaningful words of a heading: lowercase, plural s removed, no filler. */
 function headingWords(text: string): Set<string> {
-  return new Set(wordsOf(text).filter((w) => w.length >= 3 && !GENERIC.has(w)).map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w)));
+  return new Set(
+    wordsOf(text)
+      .filter((w) => w.length >= 3 && !GENERIC.has(w))
+      .map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w)),
+  );
 }
 
 /** Two headings say the same thing: they share two words, or every word of the shorter one. */
@@ -633,18 +931,50 @@ export interface SimilarPage {
  * Pages of the same project, not archived, with a title or a card heading like this page's: at most 3, newest first.
  * `headings` are the new page's title and the first lines of its `CardHeader` statements.
  */
-export function similarPages(db: sqlite.DatabaseSync, { artifactId, projectId, headings }: { artifactId: string; projectId: string | null; headings: string[] }): SimilarPage[] {
+export function similarPages(
+  db: sqlite.DatabaseSync,
+  {
+    artifactId,
+    projectId,
+    headings,
+  }: { artifactId: string; projectId: string | null; headings: string[] },
+): SimilarPage[] {
   const mine = headings.map(headingWords).filter((s) => s.size);
   if (!mine.length || !projectId) return [];
-  const mePage = (db.prepare("SELECT page_id FROM artifacts WHERE id = ?").get(artifactId) as unknown as { page_id: string | null } | undefined)?.page_id ?? null;
+  const mePage =
+    (
+      db.prepare("SELECT page_id FROM artifacts WHERE id = ?").get(artifactId) as unknown as
+        | { page_id: string | null }
+        | undefined
+    )?.page_id ?? null;
   const rows = db
-    .prepare("SELECT id, file, title, page_id, updated_at FROM artifacts WHERE project_id = ? AND id != ? AND archived_at IS NULL ORDER BY updated_at DESC")
-    .all(projectId, artifactId) as unknown as { id: string; file: string; title: string | null; page_id: string | null; updated_at: number }[];
+    .prepare(
+      "SELECT id, file, title, page_id, updated_at FROM artifacts WHERE project_id = ? AND id != ? AND archived_at IS NULL ORDER BY updated_at DESC",
+    )
+    .all(projectId, artifactId) as unknown as {
+    id: string;
+    file: string;
+    title: string | null;
+    page_id: string | null;
+    updated_at: number;
+  }[];
   const out: SimilarPage[] = [];
   const pages = new Set<string>();
   for (const r of rows) {
-    if ((mePage && r.page_id === mePage) || (r.page_id && pages.has(r.page_id)) || !fs.existsSync(r.file)) continue;
-    const theirs = [r.title ?? "", ...(db.prepare("SELECT text FROM statements WHERE artifact_id = ? AND component = 'CardHeader'").all(r.id) as unknown as { text: string }[]).map((h) => h.text.split("\n")[0])].map(headingWords);
+    if (
+      (mePage && r.page_id === mePage) ||
+      (r.page_id && pages.has(r.page_id)) ||
+      !fs.existsSync(r.file)
+    )
+      continue;
+    const theirs = [
+      r.title ?? "",
+      ...(
+        db
+          .prepare("SELECT text FROM statements WHERE artifact_id = ? AND component = 'CardHeader'")
+          .all(r.id) as unknown as { text: string }[]
+      ).map((h) => h.text.split("\n")[0]),
+    ].map(headingWords);
     if (mine.some((a) => theirs.some((b) => sameHeading(a, b)))) {
       out.push({ title: r.title, file: r.file, updated_at: r.updated_at });
       if (r.page_id) pages.add(r.page_id);
@@ -658,7 +988,10 @@ export function similarPages(db: sqlite.DatabaseSync, { artifactId, projectId, h
 export function statementTextOf(program: string, name: string, html: string | null): string | null {
   if (!statementMap(program).has(name)) return null;
   const parsed = html == null ? null : parseArtifact(replaceProgram(html, program));
-  const source = splitStatements(program).filter((s) => s.id === name).pop()?.text ?? "";
+  const source =
+    splitStatements(program)
+      .filter((s) => s.id === name)
+      .pop()?.text ?? "";
   return statementText(parsed?.root ?? null, name, source, parsed?.spec).text;
 }
 
@@ -666,17 +999,32 @@ export function statementTextOf(program: string, name: string, html: string | nu
 
 /** The newest `rev` of a copy, 0 before the first. */
 export function headRev(db: sqlite.DatabaseSync, artifactId: string): number {
-  return Number((db.prepare("SELECT MAX(rev) AS rev FROM revisions WHERE artifact_id = ?").get(artifactId) as unknown as { rev: number | null }).rev ?? 0);
+  return Number(
+    (
+      db
+        .prepare("SELECT MAX(rev) AS rev FROM revisions WHERE artifact_id = ?")
+        .get(artifactId) as unknown as { rev: number | null }
+    ).rev ?? 0,
+  );
 }
 
 /** The newest revision the owner had the page open on. */
 export function viewedRev(db: sqlite.DatabaseSync, artifactId: string): number {
-  return Number((db.prepare("SELECT last_viewed_rev AS v FROM artifacts WHERE id = ?").get(artifactId) as unknown as { v: number } | undefined)?.v ?? 0);
+  return Number(
+    (
+      db
+        .prepare("SELECT last_viewed_rev AS v FROM artifacts WHERE id = ?")
+        .get(artifactId) as unknown as { v: number } | undefined
+    )?.v ?? 0,
+  );
 }
 
 /** The owner had the page open on revision `rev`; it never goes back. */
 export function setViewedRev(db: sqlite.DatabaseSync, artifactId: string, rev: number): void {
-  db.prepare("UPDATE artifacts SET last_viewed_rev = MAX(last_viewed_rev, ?) WHERE id = ?").run(rev, artifactId);
+  db.prepare("UPDATE artifacts SET last_viewed_rev = MAX(last_viewed_rev, ?) WHERE id = ?").run(
+    rev,
+    artifactId,
+  );
 }
 
 /** A statement's earlier texts: each revision that changed it, newest first, with the note behind it. `text` is null where the revision deleted it. */
@@ -688,13 +1036,25 @@ export interface StatementVersion {
   cause: CauseNote[];
 }
 
-export function statementVersions(db: sqlite.DatabaseSync, artifactId: string, name: string, html: string | null, limit = 12): StatementVersion[] {
+export function statementVersions(
+  db: sqlite.DatabaseSync,
+  artifactId: string,
+  name: string,
+  html: string | null,
+  limit = 12,
+): StatementVersion[] {
   const out: StatementVersion[] = [];
   for (const r of revisionLog(db, artifactId, { statement: name })) {
     if (out.length >= limit) break;
     const rev = revisionAt(db, artifactId, r.rev);
     if (!rev) continue;
-    out.push({ rev: r.rev, at: r.at, source: r.source, text: r.removed.includes(name) ? null : statementTextOf(rev.program, name, html), cause: r.cause });
+    out.push({
+      rev: r.rev,
+      at: r.at,
+      source: r.source,
+      text: r.removed.includes(name) ? null : statementTextOf(rev.program, name, html),
+      cause: r.cause,
+    });
   }
   return out;
 }
@@ -717,13 +1077,18 @@ export function restoredProgram(current: string, old: string, names: string[]): 
       )
     : old.trim();
   const dropped = names.filter((n) => !statementMap(merged).has(n));
-  if (dropped.length) throw new Error(`${dropped.join(", ")} would be dropped again: nothing on the page refers to ${dropped.length > 1 ? "them" : "it"} now. Restore the statement that held ${dropped.length > 1 ? "them" : "it"} too`);
+  if (dropped.length)
+    throw new Error(
+      `${dropped.join(", ")} would be dropped again: nothing on the page refers to ${dropped.length > 1 ? "them" : "it"} now. Restore the statement that held ${dropped.length > 1 ? "them" : "it"} too`,
+    );
   return merged.trim() === current.trim() ? null : merged;
 }
 
 /** The harness session behind a revision as `omp 1a2b3c`; undefined when none was known. */
 export function agentLabel(db: sqlite.DatabaseSync, id: string | null): string | undefined {
   if (!id) return undefined;
-  const r = db.prepare("SELECT harness, session_id FROM agent_sessions WHERE id = ?").get(id) as unknown as { harness: string; session_id: string } | undefined;
+  const r = db
+    .prepare("SELECT harness, session_id FROM agent_sessions WHERE id = ?")
+    .get(id) as unknown as { harness: string; session_id: string } | undefined;
   return r ? `${r.harness} ${shortId(r.session_id)}` : undefined;
 }

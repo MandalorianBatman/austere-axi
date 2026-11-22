@@ -6,7 +6,9 @@ import path from "node:path";
 /** The largest sibling file the server streams. */
 export const MAX_ASSET_BYTES = 64 * 1024 * 1024;
 
-export type Sibling = { ok: true; file: string; size: number } | { ok: false; reason: "outside" | "hidden" | "missing" | "too-large" };
+export type Sibling =
+  | { ok: true; file: string; size: number }
+  | { ok: false; reason: "outside" | "hidden" | "missing" | "too-large" };
 
 /**
  * Resolve `rel` against the artifact's directory `dir`, for reading. Refuses a NUL byte, a path
@@ -19,14 +21,21 @@ export function resolveSibling(dir: string, rel: string, maxBytes = MAX_ASSET_BY
   const file = path.resolve(dir, rel);
   if (!file.startsWith(dir + path.sep)) return { ok: false, reason: "outside" };
   // "." is the folder itself ("./logo.png"); ".." and every other leading dot is refused.
-  if (rel.split(/[/\\]/).some((p) => p !== "." && p.startsWith("."))) return { ok: false, reason: "hidden" };
+  if (rel.split(/[/\\]/).some((p) => p !== "." && p.startsWith(".")))
+    return { ok: false, reason: "hidden" };
   try {
     // The check above is lexical; a symlink inside the directory can still lead out of it.
     const realDir = fs.realpathSync(dir);
     const real = fs.realpathSync(file);
     if (!real.startsWith(realDir + path.sep)) return { ok: false, reason: "outside" };
     // A link with an ordinary name can still point at a dotfile in the directory.
-    if (path.relative(realDir, real).split(path.sep).some((p) => p.startsWith("."))) return { ok: false, reason: "hidden" };
+    if (
+      path
+        .relative(realDir, real)
+        .split(path.sep)
+        .some((p) => p.startsWith("."))
+    )
+      return { ok: false, reason: "hidden" };
     const st = fs.statSync(real);
     if (!st.isFile()) return { ok: false, reason: "missing" };
     if (st.size > maxBytes) return { ok: false, reason: "too-large" };

@@ -144,12 +144,22 @@ Publish with \`npm publish\` after \`npm run build\`. Others install it with
 `;
 }
 
-export function newPack(dir: string | undefined, { name }: { name?: string } = {}): { dir: string; name: string; files: string[] } {
-  if (!dir) throw new Error("new needs a folder: austere-axi components new austere-pack-milestones");
+export function newPack(
+  dir: string | undefined,
+  { name }: { name?: string } = {},
+): { dir: string; name: string; files: string[] } {
+  if (!dir)
+    throw new Error("new needs a folder: austere-axi components new austere-pack-milestones");
   const abs = path.resolve(dir);
   if (fs.existsSync(abs) && fs.readdirSync(abs).length) throw new Error(`${abs} is not empty`);
-  const pkgName = name || path.basename(abs).toLowerCase().replace(/[^a-z0-9._-]+/g, "-");
-  if (!isValidPackName(pkgName)) throw new Error(`${JSON.stringify(pkgName)} is not an npm package name; pass --name`);
+  const pkgName =
+    name ||
+    path
+      .basename(abs)
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-");
+  if (!isValidPackName(pkgName))
+    throw new Error(`${JSON.stringify(pkgName)} is not an npm package name; pass --name`);
   const files: Record<string, string> = {
     "package.json": JSON.stringify(packageJson(pkgName), null, 2) + "\n",
     "README.md": readme(pkgName),
@@ -165,7 +175,11 @@ export function newPack(dir: string | undefined, { name }: { name?: string } = {
 
 /** esbuild from the pack's own node_modules, else the current folder's, else ours (development). */
 async function findEsbuild(dir: string): Promise<Esbuild | null> {
-  for (const base of [path.join(dir, "package.json"), path.join(process.cwd(), "package.json"), import.meta.url]) {
+  for (const base of [
+    path.join(dir, "package.json"),
+    path.join(process.cwd(), "package.json"),
+    import.meta.url,
+  ]) {
     try {
       const resolved = createRequire(base).resolve("esbuild");
       const esbuild: Esbuild = await import(pathToFileURL(resolved).href);
@@ -177,11 +191,22 @@ async function findEsbuild(dir: string): Promise<Esbuild | null> {
   return null;
 }
 
-export async function buildPackDir(dir = "."): Promise<{ name: string; version: string; components: string[]; size: number; files: string[]; warnings: string[] }> {
+export async function buildPackDir(dir = "."): Promise<{
+  name: string;
+  version: string;
+  components: string[];
+  size: number;
+  files: string[];
+  warnings: string[];
+}> {
   const abs = path.resolve(dir);
-  if (!fs.existsSync(path.join(abs, "package.json"))) throw new Error(`${abs} has no package.json (\`austere-axi components new <dir>\` makes a pack)`);
+  if (!fs.existsSync(path.join(abs, "package.json")))
+    throw new Error(
+      `${abs} has no package.json (\`austere-axi components new <dir>\` makes a pack)`,
+    );
   const esbuild = await findEsbuild(abs);
-  if (!esbuild) throw new Error(`components build needs esbuild: run \`npm install -D esbuild\` in ${abs}`);
+  if (!esbuild)
+    throw new Error(`components build needs esbuild: run \`npm install -D esbuild\` in ${abs}`);
   process.env.OPENUI_TELEMETRY_DISABLED ||= "1";
   const kit: PackKit = await import(pathToFileURL(packKitPath()).href);
   const { catalog, warnings, packFile, catalogFile } = await kit.buildPack({

@@ -6,9 +6,9 @@ name: Action
 on:
   push:
     branches: [main]
-    paths: ['action/**', 'test/fixtures/action/**', '.github/workflows/action.yml']
+    paths: ["action/**", "test/fixtures/action/**", ".github/workflows/action.yml"]
   pull_request:
-    paths: ['action/**', 'test/fixtures/action/**', '.github/workflows/action.yml']
+    paths: ["action/**", "test/fixtures/action/**", ".github/workflows/action.yml"]
   workflow_dispatch:
 
 permissions:
@@ -74,7 +74,7 @@ jobs:
         with:
           pages: test/fixtures/action/*.html
           cli: node dist/cli.mjs
-          comment: 'false'
+          comment: "false"
           artifact-name: austere-review-failing
       - name: The action step failed and still exported the page that passed
         shell: bash

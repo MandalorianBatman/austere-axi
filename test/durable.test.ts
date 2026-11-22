@@ -74,17 +74,39 @@ const FILE = path.join(WORK, "plan.html");
 const FILE2 = path.join(WORK, "second.html");
 const OTHER_DIR = tmp("austere-durable-other-");
 const OTHER = path.join(OTHER_DIR, "elsewhere.html");
-const BASE_ENV = { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1" };
+const BASE_ENV = {
+  ...process.env,
+  AUSTERE_AXI_NO_TAILSCALE: "1",
+  AUSTERE_AXI_NO_OPEN: "1",
+  OPENUI_TELEMETRY_DISABLED: "1",
+};
 
 // The state dir of the server on each port: requests go as its owner, unless they bring a reviewer's cookie.
 const stateOf = new Map<number, string>();
 
-function request(port: number, method: string, route: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
+function request(
+  port: number,
+  method: string,
+  route: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<Res> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const owner = stateOf.has(port) ? ownerHeaders(stateOf.get(port) as string) : {};
     const r = http.request(
-      { host: "127.0.0.1", port, method, path: route, headers: { host: `127.0.0.1:${port}`, ...(payload ? { "content-type": "application/json" } : {}), ...owner, ...headers } },
+      {
+        host: "127.0.0.1",
+        port,
+        method,
+        path: route,
+        headers: {
+          host: `127.0.0.1:${port}`,
+          ...(payload ? { "content-type": "application/json" } : {}),
+          ...owner,
+          ...headers,
+        },
+      },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -104,12 +126,20 @@ function request(port: number, method: string, route: string, body?: unknown, he
 }
 
 /** Run the server in the foreground; `out` collects what it prints. */
-function startServer(port: number, state: string, extraEnv: Record<string, string> = {}): ServerProc {
+function startServer(
+  port: number,
+  state: string,
+  extraEnv: Record<string, string> = {},
+): ServerProc {
   stateOf.set(port, state);
   const child = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(port)], {
     env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, ...extraEnv },
   });
-  const proc: ServerProc = { child, out: "", exited: new Promise<number | null>((r) => child.once("exit", r)) };
+  const proc: ServerProc = {
+    child,
+    out: "",
+    exited: new Promise<number | null>((r) => child.once("exit", r)),
+  };
   child.stdout.on("data", (c) => (proc.out += c));
   child.stderr.on("data", (c) => (proc.out += c));
   return proc;
@@ -132,7 +162,11 @@ async function kill(proc: ServerProc, signal: NodeJS.Signals = "SIGTERM") {
   }
 }
 
-function cli(port: number, state: string, ...args: string[]): Promise<{ code: number | null; out: string }> {
+function cli(
+  port: number,
+  state: string,
+  ...args: string[]
+): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ["src/cli/main.ts", ...args], {
       env: { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) },
@@ -154,7 +188,17 @@ async function invite(port: number, id: string, name: string): Promise<string> {
   const token = new URL(share.data.link).searchParams.get("invite");
   const set = await new Promise<string[] | undefined>((resolve, reject) => {
     const r = http.request(
-      { host: "127.0.0.1", port, method: "POST", path: `/s/${id}/join`, headers: { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/x-www-form-urlencoded" } },
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: `/s/${id}/join`,
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+      },
       (res) => {
         res.resume();
         res.on("end", () => resolve(res.headers["set-cookie"]));
@@ -180,7 +224,8 @@ intro = TextContent("hello")
 });
 
 after(() => {
-  for (const d of [WORK, OTHER_DIR]) fs.rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  for (const d of [WORK, OTHER_DIR])
+    fs.rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 /** A server of its own for one test, with the plan open. */
@@ -201,7 +246,13 @@ async function withServer(fn: (ctx: Ctx) => Promise<void>, extraEnv?: Record<str
 test("a note sent after a final batch is kept, and the next poll returns it", () =>
   withServer(async ({ port, state, id }) => {
     // The reviewer's Send & finish: the batch is final, the agent stops listening after it.
-    await request(port, "POST", `/s/${id}/send`, { ...message("last words"), end: true }, page(port));
+    await request(
+      port,
+      "POST",
+      `/s/${id}/send`,
+      { ...message("last words"), end: true },
+      page(port),
+    );
     const last = await request(port, "POST", "/api/poll", { file: FILE });
     assert.equal(last.data.status, "feedback");
     assert.equal(last.data.final, true);
@@ -210,19 +261,38 @@ test("a note sent after a final batch is kept, and the next poll returns it", ()
     assert.equal(last.data.items[0].text, "last words");
 
     // The page still takes notes; the next poll gets them, and that batch is not final.
-    const sent = await request(port, "POST", `/s/${id}/send`, message("one more thing"), page(port));
+    const sent = await request(
+      port,
+      "POST",
+      `/s/${id}/send`,
+      message("one more thing"),
+      page(port),
+    );
     assert.equal(sent.status, 200, "a page always takes notes");
-    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.pending, 2, "last words still unacknowledged, one more thing waiting");
+    assert.equal(
+      (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.pending,
+      2,
+      "last words still unacknowledged, one more thing waiting",
+    );
     const poll = await request(port, "POST", "/api/poll", { file: FILE, cursor: last.data.cursor });
     assert.equal(poll.data.status, "feedback");
-    assert.deepEqual(poll.data.items.map((i) => i.text), ["one more thing"]);
+    assert.deepEqual(
+      poll.data.items.map((i) => i.text),
+      ["one more thing"],
+    );
     assert.equal(poll.data.final, undefined, "not handed over as a final batch");
 
     // A plain note that follows an end batch in the same answer means the reviewer carries on.
     await request(port, "POST", `/s/${id}/send`, { ...message("wrap up"), end: true }, page(port));
     await request(port, "POST", `/s/${id}/send`, message("actually, one more"), page(port));
-    const mixed = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
-    assert.deepEqual(mixed.data.items.map((i) => i.text), ["wrap up", "actually, one more"]);
+    const mixed = await request(port, "POST", "/api/poll", {
+      file: FILE,
+      cursor: poll.data.cursor,
+    });
+    assert.deepEqual(
+      mixed.data.items.map((i) => i.text),
+      ["wrap up", "actually, one more"],
+    );
     assert.equal(mixed.data.final, undefined);
   }));
 
@@ -233,7 +303,8 @@ test("Done: the owner's empty final batch tells the agent to stop and is not cou
 
     const done = await request(port, "POST", `/s/${id}/send`, { items: [], end: true }, page(port));
     assert.equal(done.status, 200);
-    const pending = async () => (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.pending;
+    const pending = async () =>
+      (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.pending;
     assert.equal(await pending(), 0, "Done waits for no answer");
     const poll = await request(port, "POST", "/api/poll", { file: FILE });
     assert.equal(poll.data.status, "feedback");
@@ -241,10 +312,16 @@ test("Done: the owner's empty final batch tells the agent to stop and is not cou
     assert.deepEqual(poll.data.items, []);
 
     // The page still takes notes after Done, and the next poll's batch is not final.
-    assert.equal((await request(port, "POST", `/s/${id}/send`, message("one more"), page(port))).status, 200);
+    assert.equal(
+      (await request(port, "POST", `/s/${id}/send`, message("one more"), page(port))).status,
+      200,
+    );
     assert.equal(await pending(), 1);
     const next = await request(port, "POST", "/api/poll", { file: FILE, cursor: poll.data.cursor });
-    assert.deepEqual(next.data.items.map((i) => i.text), ["one more"]);
+    assert.deepEqual(
+      next.data.items.map((i) => i.text),
+      ["one more"],
+    );
     assert.equal(next.data.final, undefined);
   }));
 
@@ -255,7 +332,10 @@ test("a note survives the server being killed between send and poll", async () =
   try {
     await up(port);
     const id = (await request(port, "POST", "/api/open", { file: FILE })).data.session.id;
-    assert.equal((await request(port, "POST", `/s/${id}/send`, message("do not lose me"), page(port))).status, 200);
+    assert.equal(
+      (await request(port, "POST", `/s/${id}/send`, message("do not lose me"), page(port))).status,
+      200,
+    );
     await kill(proc, "SIGKILL"); // no shutdown handler runs
     proc = startServer(port, state); // the dead server's lock is stale
     await up(port);
@@ -274,7 +354,11 @@ test("feedback is unread until acknowledged: a poll without a cursor gets it aga
     let r = await cli(port, state, "poll", FILE);
     assert.match(r.out, /status: feedback/);
     const cursor = Number((/cursor: (\d+)/.exec(r.out) as RegExpExecArray)[1]);
-    assert.match(r.out, new RegExp(`poll \\S+ --cursor ${cursor} --agent-reply`), "the next hint carries the cursor");
+    assert.match(
+      r.out,
+      new RegExp(`poll \\S+ --cursor ${cursor} --agent-reply`),
+      "the next hint carries the cursor",
+    );
 
     // The agent lost that answer (crashed, or its tool call timed out): it comes back.
     r = await cli(port, state, "poll", FILE);
@@ -284,7 +368,10 @@ test("feedback is unread until acknowledged: a poll without a cursor gets it aga
     // Acknowledged with the cursor: gone, and the page shows it seen.
     const ack = await request(port, "POST", "/api/poll", { file: FILE, cursor, timeoutMs: 200 });
     assert.equal(ack.data.status, "timeout");
-    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.pending, 0);
+    assert.equal(
+      (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id)?.pending,
+      0,
+    );
 
     // --after replays what was acknowledged.
     const replay = await request(port, "POST", "/api/poll", { file: FILE, after: cursor - 1 });
@@ -294,61 +381,123 @@ test("feedback is unread until acknowledged: a poll without a cursor gets it aga
     await request(port, "POST", `/s/${id}/send`, message("second"), page(port));
     const second = await request(port, "POST", "/api/poll", { file: FILE });
     assert.equal(second.data.items[0].text, "second");
-    assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status, 200);
-    assert.equal((await request(port, "POST", "/api/poll", { file: FILE, timeoutMs: 200 })).data.status, "timeout");
+    assert.equal(
+      (await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status,
+      200,
+    );
+    assert.equal(
+      (await request(port, "POST", "/api/poll", { file: FILE, timeoutMs: 200 })).data.status,
+      "timeout",
+    );
 
-    assert.equal((await request(port, "POST", "/api/poll", { file: FILE, cursor: "x" })).status, 400);
+    assert.equal(
+      (await request(port, "POST", "/api/poll", { file: FILE, cursor: "x" })).status,
+      400,
+    );
   }));
 
 test("a held note released after the cursor moved past its time still reaches the agent", () =>
-  withServer(async ({ port, id }) => {
-    const invited = await invite(port, id, "Ana");
-    const held = await request(port, "POST", `/s/${id}/send`, message("held by the owner"), { ...page(port), cookie: invited });
-    assert.equal(held.data.entry.held, true);
+  withServer(
+    async ({ port, id }) => {
+      const invited = await invite(port, id, "Ana");
+      const held = await request(port, "POST", `/s/${id}/send`, message("held by the owner"), {
+        ...page(port),
+        cookie: invited,
+      });
+      assert.equal(held.data.entry.held, true);
 
-    // Later notes go through and are acknowledged.
-    await request(port, "POST", `/s/${id}/send`, message("later, from the owner"), page(port));
-    const got = await request(port, "POST", "/api/poll", { file: FILE });
-    assert.deepEqual(got.data.items.map((i) => i.text), ["later, from the owner"]);
-    await request(port, "POST", "/api/reply", { file: FILE, text: "ok", cursor: got.data.cursor });
+      // Later notes go through and are acknowledged.
+      await request(port, "POST", `/s/${id}/send`, message("later, from the owner"), page(port));
+      const got = await request(port, "POST", "/api/poll", { file: FILE });
+      assert.deepEqual(
+        got.data.items.map((i) => i.text),
+        ["later, from the owner"],
+      );
+      await request(port, "POST", "/api/reply", {
+        file: FILE,
+        text: "ok",
+        cursor: got.data.cursor,
+      });
 
-    // Released now: it gets a new seq after the cursor.
-    await request(port, "POST", `/s/${id}/release`, { ids: [held.data.entry.id] }, page(port));
-    const released = await request(port, "POST", "/api/poll", { file: FILE });
-    assert.equal(released.data.status, "feedback");
-    assert.equal(released.data.items[0].text, "held by the owner");
-    assert.equal(released.data.items[0].author, "Ana");
-    assert.ok(released.data.cursor > got.data.cursor);
-  }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
+      // Released now: it gets a new seq after the cursor.
+      await request(port, "POST", `/s/${id}/release`, { ids: [held.data.entry.id] }, page(port));
+      const released = await request(port, "POST", "/api/poll", { file: FILE });
+      assert.equal(released.data.status, "feedback");
+      assert.equal(released.data.items[0].text, "held by the owner");
+      assert.equal(released.data.items[0].author, "Ana");
+      assert.ok(released.data.cursor > got.data.cursor);
+    },
+    { AUSTERE_AXI_LINK_HOST: "127.0.0.1" },
+  ));
 
 test("a held note released after a final batch reaches the next poll", () =>
-  withServer(async ({ port, id }) => {
-    const invited = await invite(port, id, "Ana");
+  withServer(
+    async ({ port, id }) => {
+      const invited = await invite(port, id, "Ana");
 
-    const held = await request(port, "POST", `/s/${id}/send`, message("held before the end"), { ...page(port), cookie: invited });
-    await request(port, "POST", `/s/${id}/send`, { ...message("final words"), end: true }, page(port));
-    const final = await request(port, "POST", "/api/poll", { file: FILE });
-    assert.equal(final.data.final, true);
-    assert.deepEqual(final.data.items.map((i) => i.text), ["final words"]);
+      const held = await request(port, "POST", `/s/${id}/send`, message("held before the end"), {
+        ...page(port),
+        cookie: invited,
+      });
+      await request(
+        port,
+        "POST",
+        `/s/${id}/send`,
+        { ...message("final words"), end: true },
+        page(port),
+      );
+      const final = await request(port, "POST", "/api/poll", { file: FILE });
+      assert.equal(final.data.final, true);
+      assert.deepEqual(
+        final.data.items.map((i) => i.text),
+        ["final words"],
+      );
 
-    await request(port, "POST", `/s/${id}/release`, { ids: [held.data.entry.id] }, page(port));
-    const poll = await request(port, "POST", "/api/poll", { file: FILE, cursor: final.data.cursor });
-    assert.equal(poll.data.status, "feedback");
-    assert.deepEqual(poll.data.items.map((i) => i.text), ["held before the end"]);
-    assert.equal(poll.data.final, undefined);
-  }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
+      await request(port, "POST", `/s/${id}/release`, { ids: [held.data.entry.id] }, page(port));
+      const poll = await request(port, "POST", "/api/poll", {
+        file: FILE,
+        cursor: final.data.cursor,
+      });
+      assert.equal(poll.data.status, "feedback");
+      assert.deepEqual(
+        poll.data.items.map((i) => i.text),
+        ["held before the end"],
+      );
+      assert.equal(poll.data.final, undefined);
+    },
+    { AUSTERE_AXI_LINK_HOST: "127.0.0.1" },
+  ));
 
 test("feedback lists notes in delivery order, so a note released after Send & finish is last and not final", () =>
-  withServer(async ({ port, id }) => {
-    const invited = await invite(port, id, "Ana");
-    const held = await request(port, "POST", `/s/${id}/send`, message("held before the end"), { ...page(port), cookie: invited });
-    await request(port, "POST", `/s/${id}/send`, { ...message("final words"), end: true }, page(port));
-    await request(port, "POST", `/s/${id}/release`, { ids: [held.data.entry.id] }, page(port));
+  withServer(
+    async ({ port, id }) => {
+      const invited = await invite(port, id, "Ana");
+      const held = await request(port, "POST", `/s/${id}/send`, message("held before the end"), {
+        ...page(port),
+        cookie: invited,
+      });
+      await request(
+        port,
+        "POST",
+        `/s/${id}/send`,
+        { ...message("final words"), end: true },
+        page(port),
+      );
+      await request(port, "POST", `/s/${id}/release`, { ids: [held.data.entry.id] }, page(port));
 
-    const r = await request(port, "POST", "/api/feedback", { file: FILE, all: true, peek: true });
-    assert.deepEqual(r.data.entries.map((e) => e.items[0].text), ["final words", "held before the end"]);
-    assert.equal(r.data.entries[1].end, undefined, "the newest note was not sent with Send & finish");
-  }, { AUSTERE_AXI_LINK_HOST: "127.0.0.1" }));
+      const r = await request(port, "POST", "/api/feedback", { file: FILE, all: true, peek: true });
+      assert.deepEqual(
+        r.data.entries.map((e) => e.items[0].text),
+        ["final words", "held before the end"],
+      );
+      assert.equal(
+        r.data.entries[1].end,
+        undefined,
+        "the newest note was not sent with Send & finish",
+      );
+    },
+    { AUSTERE_AXI_LINK_HOST: "127.0.0.1" },
+  ));
 
 test("open and archive meet on one page however the path is spelled", () =>
   withServer(async ({ port, id }) => {
@@ -356,9 +505,15 @@ test("open and archive meet on one page however the path is spelled", () =>
     fs.symlinkSync(WORK, link, "junction");
     try {
       const viaLink = path.join(link, "plan.html");
-      assert.equal((await request(port, "POST", "/api/open", { file: viaLink })).data.session.id, id, "open through a symlinked folder keys on the real path");
+      assert.equal(
+        (await request(port, "POST", "/api/open", { file: viaLink })).data.session.id,
+        id,
+        "open through a symlinked folder keys on the real path",
+      );
       assert.equal((await request(port, "POST", "/api/archive", { file: viaLink })).status, 200);
-      const listed = (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id);
+      const listed = (await request(port, "GET", "/api/sessions")).data.sessions.find(
+        (s) => s.id === id,
+      );
       assert.equal(listed?.archived, true);
     } finally {
       fs.rmSync(path.dirname(link), { recursive: true, force: true });
@@ -367,7 +522,8 @@ test("open and archive meet on one page however the path is spelled", () =>
 
 test("archiving locks the composer for everyone and unarchive restores it; no other state refuses notes", () =>
   withServer(async ({ port, state, id }) => {
-    const listed = async () => (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id);
+    const listed = async () =>
+      (await request(port, "GET", "/api/sessions")).data.sessions.find((s) => s.id === id);
     assert.equal((await listed())?.archived, false);
 
     // Archiving ends a listening poll at once: no note can reach the page, so it would wait for nothing.
@@ -376,22 +532,39 @@ test("archiving locks the composer for everyone and unarchive restores it; no ot
     const archived = await request(port, "POST", "/api/archive", { file: FILE });
     assert.equal(archived.status, 200);
     assert.equal((await listed())?.archived, true);
-    assert.equal((await request(port, "POST", `/s/${id}/send`, message("while archived"), page(port))).status, 409);
+    assert.equal(
+      (await request(port, "POST", `/s/${id}/send`, message("while archived"), page(port))).status,
+      409,
+    );
     assert.equal((await listening).data.status, "archived");
 
     // open leaves an archived page archived.
-    assert.equal((await request(port, "POST", "/api/open", { file: FILE })).data.session.archived, true, "open does not unarchive");
+    assert.equal(
+      (await request(port, "POST", "/api/open", { file: FILE })).data.session.archived,
+      true,
+      "open does not unarchive",
+    );
     const opened = await cli(port, state, FILE, "--no-open");
     assert.match(opened.out, /^status: archived$/m, opened.out);
-    assert.match(opened.out, /austere-axi unarchive \S+plan\.html/, "the hint asks to unarchive before polling");
+    assert.match(
+      opened.out,
+      /austere-axi unarchive \S+plan\.html/,
+      "the hint asks to unarchive before polling",
+    );
     assert.doesNotMatch(opened.out, /leave it running/);
     assert.equal((await request(port, "POST", `/s/${id}/unarchive`, {}, page(port))).status, 200);
     assert.equal((await listed())?.archived, false);
-    assert.equal((await request(port, "POST", `/s/${id}/send`, message("after unarchive"), page(port))).status, 200);
+    assert.equal(
+      (await request(port, "POST", `/s/${id}/send`, message("after unarchive"), page(port))).status,
+      200,
+    );
 
     // From the owner's menu.
     assert.equal((await request(port, "POST", `/s/${id}/archive`, {}, page(port))).status, 200);
-    assert.equal((await request(port, "POST", `/s/${id}/send`, message("archived again"), page(port))).status, 409);
+    assert.equal(
+      (await request(port, "POST", `/s/${id}/send`, message("archived again"), page(port))).status,
+      409,
+    );
     const cliOut = await cli(port, state, "unarchive", FILE);
     assert.match(cliOut.out, /status: unarchived/);
     assert.equal((await listed())?.archived, false, "the CLI went through the running server");
@@ -409,9 +582,31 @@ test("a page archived while no server runs is still archived when the next serve
     await up(port);
     const open = await request(port, "POST", "/api/open", { file: FILE });
     assert.equal(open.data.session.archived, true);
-    assert.equal((await request(port, "POST", `/s/${open.data.session.id}/send`, message("locked"), page(port))).status, 409);
+    assert.equal(
+      (
+        await request(
+          port,
+          "POST",
+          `/s/${open.data.session.id}/send`,
+          message("locked"),
+          page(port),
+        )
+      ).status,
+      409,
+    );
     assert.match((await cli(port, state, "unarchive", FILE)).out, /status: unarchived/);
-    assert.equal((await request(port, "POST", `/s/${open.data.session.id}/send`, message("open again"), page(port))).status, 200);
+    assert.equal(
+      (
+        await request(
+          port,
+          "POST",
+          `/s/${open.data.session.id}/send`,
+          message("open again"),
+          page(port),
+        )
+      ).status,
+      200,
+    );
   } finally {
     if (proc) await kill(proc);
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -436,24 +631,47 @@ test("closing every tab does not end a poll: it waits for a note", () =>
       const listening = request(port, "POST", "/api/poll", { file: FILE });
       let settled = false;
       void listening.then(() => (settled = true));
-      const tab = http.get({ host: "127.0.0.1", port, path: `/s/${id}/events`, headers: { host: `127.0.0.1:${port}`, ...ownerHeaders(stateOf.get(port) as string) } });
-      await new Promise<void>((resolve) => tab.once("response", (res) => res.once("data", () => resolve())));
+      const tab = http.get({
+        host: "127.0.0.1",
+        port,
+        path: `/s/${id}/events`,
+        headers: { host: `127.0.0.1:${port}`, ...ownerHeaders(stateOf.get(port) as string) },
+      });
+      await new Promise<void>((resolve) =>
+        tab.once("response", (res) => res.once("data", () => resolve())),
+      );
       tab.destroy();
       await new Promise((r) => setTimeout(r, 700)); // well past the grace the old server allowed here
       assert.equal(settled, false, "the poll is still listening");
-      await request(port, "POST", `/s/${id}/send`, message("hello after the tabs closed"), page(port));
-      assert.deepEqual((await listening).data.items.map((i) => i.text), ["hello after the tabs closed"]);
+      await request(
+        port,
+        "POST",
+        `/s/${id}/send`,
+        message("hello after the tabs closed"),
+        page(port),
+      );
+      assert.deepEqual(
+        (await listening).data.items.map((i) => i.text),
+        ["hello after the tabs closed"],
+      );
     },
     { AUSTERE_AXI_DISCONNECT_GRACE_MS: "100" },
   ));
 
 // ── the project inbox: one poll for every page of a project ──
 
-const open = async (port: number, file: string) => (await request(port, "POST", "/api/open", { file })).data.session.id;
-const send = (port: number, id: string, text: string) => request(port, "POST", `/s/${id}/send`, message(text), page(port));
+const open = async (port: number, file: string) =>
+  (await request(port, "POST", "/api/open", { file })).data.session.id;
+const send = (port: number, id: string, text: string) =>
+  request(port, "POST", `/s/${id}/send`, message(text), page(port));
 
 /** The CLI with a working directory: a bare `poll` means the project of that folder. */
-function cliIn(cwd: string, port: number, state: string, ...args: string[]): Promise<{ code: number | null; out: string }> {
+function cliIn(
+  cwd: string,
+  port: number,
+  state: string,
+  ...args: string[]
+): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [path.resolve("src/cli/main.ts"), ...args], {
       cwd,
@@ -474,7 +692,10 @@ test("one project poll receives notes from two pages, each batch naming its file
 
     const first = await cliIn(WORK, port, state, "poll"); // no file: the checkout of the working directory
     assert.match(first.out, /^status: feedback$/m, first.out);
-    assert.ok(first.out.includes(format({ file: FILE })) && first.out.includes(format({ file: FILE2 })), "each batch names its file");
+    assert.ok(
+      first.out.includes(format({ file: FILE })) && first.out.includes(format({ file: FILE2 })),
+      "each batch names its file",
+    );
     assert.match(first.out, /message: on the plan/);
     assert.match(first.out, /message: on the second/);
     const cursor = Number((/^cursor: (\d+)$/m.exec(first.out) as RegExpExecArray)[1]);
@@ -485,9 +706,20 @@ test("one project poll receives notes from two pages, each batch naming its file
     assert.match(again.out, /message: on the second/);
 
     // The project cursor acknowledges the notes of both pages.
-    const ack = await cliIn(WORK, port, state, "poll", "--cursor", String(cursor), "--timeout-ms", "300");
+    const ack = await cliIn(
+      WORK,
+      port,
+      state,
+      "poll",
+      "--cursor",
+      String(cursor),
+      "--timeout-ms",
+      "300",
+    );
     assert.match(ack.out, /^status: timeout$/m, ack.out);
-    const pending = (await request(port, "GET", "/api/sessions")).data.sessions.map((s) => s.pending);
+    const pending = (await request(port, "GET", "/api/sessions")).data.sessions.map(
+      (s) => s.pending,
+    );
     assert.deepEqual(pending, [0, 0]);
   }));
 
@@ -508,19 +740,30 @@ test("project poll batches come in the order their notes were sent, not by page 
   withServer(async ({ port, state, id }) => {
     const id2 = await open(port, FILE2);
     // Send on the page whose id sorts last first, so id order and note order differ.
-    const [[firstId, firstFile], [secondId, secondFile]] = ([[id, FILE], [id2, FILE2]] as [string, string][]).sort((a, b) => b[0].localeCompare(a[0]));
+    const [[firstId, firstFile], [secondId, secondFile]] = (
+      [
+        [id, FILE],
+        [id2, FILE2],
+      ] as [string, string][]
+    ).sort((a, b) => b[0].localeCompare(a[0]));
     await send(port, firstId, "sent first");
     await send(port, secondId, "sent second");
     const r = await cliIn(WORK, port, state, "poll", "--timeout-ms", "5000");
     assert.match(r.out, /^status: feedback$/m, r.out);
-    assert.ok(r.out.indexOf(format({ file: firstFile })) < r.out.indexOf(format({ file: secondFile })), r.out);
+    assert.ok(
+      r.out.indexOf(format({ file: firstFile })) < r.out.indexOf(format({ file: secondFile })),
+      r.out,
+    );
   }));
 
 test("--agent-reply on a project poll is a usage error that repeats the cursor given", () =>
   withServer(async ({ port, state }) => {
     const r = await cliIn(WORK, port, state, "poll", "--cursor", "7", "--agent-reply", "x");
     assert.equal(r.code, 2, r.out);
-    assert.ok(r.out.includes("--cursor 7 --agent-reply") && r.out.includes("poll --cursor 7"), r.out);
+    assert.ok(
+      r.out.includes("--cursor 7 --agent-reply") && r.out.includes("poll --cursor 7"),
+      r.out,
+    );
     assert.doesNotMatch(r.out, /<n>/);
   }));
 
@@ -537,12 +780,23 @@ test("a page poll takes its page; the project poll takes the pages without a lis
 
       await send(port, id, "for the page listener");
       const first = await pagePoll;
-      assert.deepEqual(first.data.items.map((i) => i.text), ["for the page listener"]);
+      assert.deepEqual(
+        first.data.items.map((i) => i.text),
+        ["for the page listener"],
+      );
       // The page agent works on its batch without a poll open; the project poll looks again several times meanwhile.
       await settle(1000);
-      assert.equal(projectSettled, false, "an unacknowledged page-poll batch is not handed to the project poll");
+      assert.equal(
+        projectSettled,
+        false,
+        "an unacknowledged page-poll batch is not handed to the project poll",
+      );
       // The page agent acknowledges and listens again, so the plan stays its own.
-      const pageAgain = request(port, "POST", "/api/poll", { file: FILE, cursor: first.data.cursor, timeoutMs: 1500 });
+      const pageAgain = request(port, "POST", "/api/poll", {
+        file: FILE,
+        cursor: first.data.cursor,
+        timeoutMs: 1500,
+      });
       await settle(100);
 
       await send(port, id2, "for the project listener");
@@ -577,12 +831,28 @@ test("reply with a cursor acknowledges only what a poll handed over: a note skip
     await send(port, id, "second");
     await send(port, id, "third");
     const replay = await request(port, "POST", "/api/poll", { file: FILE, after: 1 });
-    assert.deepEqual(replay.data.items.map((i) => i.text), ["second", "third"]);
+    assert.deepEqual(
+      replay.data.items.map((i) => i.text),
+      ["second", "third"],
+    );
     assert.equal(replay.data.cursor, 3);
 
-    assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done", cursor: replay.data.cursor })).status, 200);
+    assert.equal(
+      (
+        await request(port, "POST", "/api/reply", {
+          file: FILE,
+          text: "done",
+          cursor: replay.data.cursor,
+        })
+      ).status,
+      200,
+    );
     const again = await request(port, "POST", "/api/poll", { file: FILE, timeoutMs: 1000 });
-    assert.equal(again.data.status, "feedback", "the skipped note was never shown, so it is not answered");
+    assert.equal(
+      again.data.status,
+      "feedback",
+      "the skipped note was never shown, so it is not answered",
+    );
     assert.equal(again.data.items[0].text, "first, skipped by --after");
   }));
 
@@ -597,11 +867,33 @@ test("after a server restart, reply without a cursor still acknowledges what the
     const restarted = startServer(port, state);
     try {
       await up(port);
-      assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status, 200);
-      assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 0, "the delivered note is acknowledged");
-      const again = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "300");
+      assert.equal(
+        (await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status,
+        200,
+      );
+      assert.equal(
+        (await request(port, "GET", "/api/sessions")).data.sessions.reduce(
+          (n, s) => n + s.pending,
+          0,
+        ),
+        0,
+        "the delivered note is acknowledged",
+      );
+      const again = await cliIn(
+        WORK,
+        port,
+        state,
+        "poll",
+        "--project",
+        WORK,
+        "--timeout-ms",
+        "300",
+      );
       assert.match(again.out, /^status: timeout$/m, "the batch does not come again");
-      assert.ok(got.out.includes(`reply <file> --cursor ${cursor}`), "the project hint passes the cursor to reply");
+      assert.ok(
+        got.out.includes(`reply <file> --cursor ${cursor}`),
+        "the project hint passes the cursor to reply",
+      );
     } finally {
       await kill(restarted);
     }
@@ -623,14 +915,43 @@ test("a project cursor never acknowledges a note no poll delivered, so a --after
     // Fresh database: the notes are seq 1 and 2.
     await send(port, id, "first, skipped by --after");
     await send(port, id, "second");
-    const replay = await cliIn(WORK, port, state, "poll", "--project", WORK, "--after", "1", "--timeout-ms", "2000");
+    const replay = await cliIn(
+      WORK,
+      port,
+      state,
+      "poll",
+      "--project",
+      WORK,
+      "--after",
+      "1",
+      "--timeout-ms",
+      "2000",
+    );
     assert.match(replay.out, /message: second/);
     assert.doesNotMatch(replay.out, /first, skipped/);
     assert.match(replay.out, /^cursor: 2$/m);
 
     // The cursor of that answer must not consume the note nobody was handed.
-    await cliIn(WORK, port, state, "poll", "--project", WORK, "--cursor", "2", "--timeout-ms", "300");
-    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 2, "nothing acknowledged past the skipped note");
+    await cliIn(
+      WORK,
+      port,
+      state,
+      "poll",
+      "--project",
+      WORK,
+      "--cursor",
+      "2",
+      "--timeout-ms",
+      "300",
+    );
+    assert.equal(
+      (await request(port, "GET", "/api/sessions")).data.sessions.reduce(
+        (n, s) => n + s.pending,
+        0,
+      ),
+      2,
+      "nothing acknowledged past the skipped note",
+    );
     const again = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "2000");
     assert.match(again.out, /message: first, skipped by --after/, "the skipped note comes back");
   }));
@@ -651,9 +972,21 @@ test("a page merged into the project while its poll waits is handed over with th
     async ({ port, state, id }) => {
       const otherId = await open(port, OTHER);
       await send(port, otherId, "waiting in elsewhere");
-      const projectPoll = cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "5000");
+      const projectPoll = cliIn(
+        WORK,
+        port,
+        state,
+        "poll",
+        "--project",
+        WORK,
+        "--timeout-ms",
+        "5000",
+      );
       // The plan is covered once the project poll is registered: only then can a merge test the look again, not the poll's first read.
-      const listening = async () => (await request(port, "GET", "/api/sessions")).data.sessions.some((s) => s.id === id && s.presence === "listening");
+      const listening = async () =>
+        (await request(port, "GET", "/api/sessions")).data.sessions.some(
+          (s) => s.id === id && s.presence === "listening",
+        );
       for (let i = 0; i < 50 && !(await listening()); i++) await settle(100);
       assert.ok(await listening(), "the project poll is registered");
       // Another process moves the page into this project: no note is sent, so only the poll's own look again finds it.
@@ -672,10 +1005,24 @@ test("a reply without a cursor after an --after replay leaves the skipped note u
     // Fresh database: the notes are seq 1 and 2.
     await send(port, id, "first, skipped by --after");
     await send(port, id, "second");
-    const replay = await cliIn(WORK, port, state, "poll", "--project", WORK, "--after", "1", "--timeout-ms", "2000");
+    const replay = await cliIn(
+      WORK,
+      port,
+      state,
+      "poll",
+      "--project",
+      WORK,
+      "--after",
+      "1",
+      "--timeout-ms",
+      "2000",
+    );
     assert.match(replay.out, /message: second/);
     // The project loop: reply per page, no cursor. It answers what was handed over, not the note it skipped.
-    assert.equal((await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status, 200);
+    assert.equal(
+      (await request(port, "POST", "/api/reply", { file: FILE, text: "done" })).status,
+      200,
+    );
     const again = await cliIn(WORK, port, state, "poll", "--project", WORK, "--timeout-ms", "2000");
     assert.match(again.out, /message: first, skipped by --after/, again.out);
   }));
@@ -690,12 +1037,29 @@ test("an agent reply on a project poll is a usage error that names reply; feedba
     await send(port, id, "feedback one");
     await send(port, id2, "feedback two");
     const r = await cliIn(WORK, port, state, "feedback", "--peek");
-    assert.ok(r.out.includes(format({ file: FILE })) && r.out.includes(format({ file: FILE2 })), r.out);
+    assert.ok(
+      r.out.includes(format({ file: FILE })) && r.out.includes(format({ file: FILE2 })),
+      r.out,
+    );
     assert.match(r.out, /message: feedback one/);
     assert.match(r.out, /message: feedback two/);
-    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 2, "--peek acknowledges nothing");
+    assert.equal(
+      (await request(port, "GET", "/api/sessions")).data.sessions.reduce(
+        (n, s) => n + s.pending,
+        0,
+      ),
+      2,
+      "--peek acknowledges nothing",
+    );
     await cliIn(WORK, port, state, "feedback");
-    assert.equal((await request(port, "GET", "/api/sessions")).data.sessions.reduce((n, s) => n + s.pending, 0), 0, "reading acknowledges");
+    assert.equal(
+      (await request(port, "GET", "/api/sessions")).data.sessions.reduce(
+        (n, s) => n + s.pending,
+        0,
+      ),
+      0,
+      "reading acknowledges",
+    );
   }));
 
 test("project feedback with no server reads hub.db and labels each copy as the server does", () =>
@@ -715,7 +1079,10 @@ test("project feedback with no server reads hub.db and labels each copy as the s
 
       await kill(proc); // nothing is serving: the CLI reads hub.db itself
       const offline = await cliIn(repo, port, state, "feedback", "--peek");
-      assert.ok(offline.out.includes(format({ file: a })) && offline.out.includes(format({ file: b })), offline.out);
+      assert.ok(
+        offline.out.includes(format({ file: a })) && offline.out.includes(format({ file: b })),
+        offline.out,
+      );
       assert.match(offline.out, /message: waiting one/);
       assert.equal(offline.out.match(label)?.length, 2, "the same label as with a server");
     } finally {
@@ -735,7 +1102,8 @@ function folderWith(prefix: string, ...rels: string[]): string {
   return dir;
 }
 
-const rmDir = (dir: string) => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+const rmDir = (dir: string) =>
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 
 test("without git, pages in two subfolders opened from the parent are one project, and a bare poll there covers both", () =>
   withServer(async ({ port, state }) => {
@@ -743,7 +1111,11 @@ test("without git, pages in two subfolders opened from the parent are one projec
     try {
       const opened = await cliIn(notes, port, state, "a/sprint.html");
       assert.match(opened.out, new RegExp(`^project: ${path.basename(notes)}$`, "m"), opened.out);
-      assert.match(opened.out, /^next: "Run `austere-axi poll`; /m, "the next step works from this folder");
+      assert.match(
+        opened.out,
+        /^next: "Run `austere-axi poll`; /m,
+        "the next step works from this folder",
+      );
       assert.doesNotMatch(opened.out, /--project/);
       await cliIn(notes, port, state, "b/plan.html");
       await send(port, await open(port, path.join(notes, "b", "plan.html")), "on b");
@@ -761,12 +1133,23 @@ test("nested folders opened from each: a poll on the child ends as moved, and fe
     const work = folderWith("austere-durable-nested-", "notes.html", "reviews/plan.html");
     try {
       await cliIn(path.join(work, "reviews"), port, state, "plan.html");
-      const childPoll = cliIn(path.join(work, "reviews"), port, state, "poll", "--timeout-ms", "20000");
+      const childPoll = cliIn(
+        path.join(work, "reviews"),
+        port,
+        state,
+        "poll",
+        "--timeout-ms",
+        "20000",
+      );
       await settle(1500);
       await cliIn(work, port, state, "notes.html");
       const moved = await childPoll;
       assert.match(moved.out, /^status: moved$/m, moved.out);
-      await send(port, await open(port, path.join(work, "reviews", "plan.html")), "unanswered in reviews");
+      await send(
+        port,
+        await open(port, path.join(work, "reviews", "plan.html")),
+        "unanswered in reviews",
+      );
       const r = await cliIn(work, port, state, "feedback", "--peek");
       assert.match(r.out, /message: unanswered in reviews/, r.out);
       assert.match(r.out, /^pages: 2$/m);
@@ -792,14 +1175,23 @@ test("a project with no open page says so instead of waiting; opening another pr
       // The plan's project is WORK; a page of another project opened from WORK.
       const other = await cliIn(WORK, port, state, OTHER);
       assert.match(other.out, new RegExp(`^project: ${path.basename(OTHER_DIR)}$`, "m"), other.out);
-      assert.match(other.out, new RegExp(`^next: "Run \`austere-axi poll --project ${path.basename(OTHER_DIR)}\`; `, "m"));
+      assert.match(
+        other.out,
+        new RegExp(`^next: "Run \`austere-axi poll --project ${path.basename(OTHER_DIR)}\`; `, "m"),
+      );
     } finally {
       rmDir(empty);
     }
   }));
 
 /** A repository `shop` on `main` and its linked worktree `shop-login` on `feature/login`, as git lays them out, each with docs/plan.html. */
-function shopWithWorktree(): { dir: string; shop: string; login: string; mainPlan: string; loginPlan: string } {
+function shopWithWorktree(): {
+  dir: string;
+  shop: string;
+  login: string;
+  mainPlan: string;
+  loginPlan: string;
+} {
   const dir = fs.realpathSync(tmp("austere-durable-shop-"));
   const shop = path.join(dir, "shop");
   const login = path.join(dir, "shop-login");
@@ -842,7 +1234,10 @@ test("two checkouts of one project, two bare polls: each gets only its own check
       const other = await loginPoll;
       assert.match(other.out, /^status: feedback$/m, other.out);
       assert.ok(other.out.includes(format({ file: loginPlan })), other.out);
-      assert.ok(!other.out.includes(format({ file: mainPlan })), "the main checkout's page is not the worktree agent's");
+      assert.ok(
+        !other.out.includes(format({ file: mainPlan })),
+        "the main checkout's page is not the worktree agent's",
+      );
       assert.doesNotMatch(other.out, /for the main checkout/);
       assert.match(other.out, /message: for the login checkout/);
 
@@ -867,7 +1262,16 @@ test("a --project poll beside a checkout's poll: the checkout's poll wins for it
       const loginId = await open(port, loginPlan);
       const rootPoll = cliIn(shop, port, state, "poll", "--timeout-ms", "8000");
       await settle(500);
-      const projectPoll = cliIn(shop, port, state, "poll", "--project", shop, "--timeout-ms", "8000");
+      const projectPoll = cliIn(
+        shop,
+        port,
+        state,
+        "poll",
+        "--project",
+        shop,
+        "--timeout-ms",
+        "8000",
+      );
       await settle(500);
 
       await send(port, mainId, "for the checkout");
@@ -876,7 +1280,16 @@ test("a --project poll beside a checkout's poll: the checkout's poll wins for it
       assert.match(root.out, /message: for the checkout/);
       // The checkout's agent acknowledges and listens again, so its page stays its own.
       const cursor = (/^cursor: (\d+)$/m.exec(root.out) as RegExpExecArray)[1];
-      const rootAgain = cliIn(shop, port, state, "poll", "--cursor", cursor, "--timeout-ms", "3000");
+      const rootAgain = cliIn(
+        shop,
+        port,
+        state,
+        "poll",
+        "--cursor",
+        cursor,
+        "--timeout-ms",
+        "3000",
+      );
       await settle(500);
 
       await send(port, loginId, "for the project");
@@ -903,7 +1316,16 @@ test("a checkout poll's unacknowledged batch is not handed to a --project poll w
       assert.match(root.out, /message: taken by the checkout/, root.out);
 
       // The checkout's agent is patching (no poll waits); a --project poll starts meanwhile.
-      const wide = await cliIn(shop, port, state, "poll", "--project", shop, "--timeout-ms", "1500");
+      const wide = await cliIn(
+        shop,
+        port,
+        state,
+        "poll",
+        "--project",
+        shop,
+        "--timeout-ms",
+        "1500",
+      );
       assert.match(wide.out, /^status: timeout$/m, wide.out);
       assert.doesNotMatch(wide.out, /taken by the checkout/);
 
@@ -920,19 +1342,28 @@ test("a second server on the same state dir refuses to start", () =>
     const other = startServer(await freePort(), state);
     const code = await other.exited;
     assert.notEqual(code, 0);
-    assert.match(other.out, new RegExp(`another austere-axi server \\(pid \\d+, port ${port}\\) is using`));
+    assert.match(
+      other.out,
+      new RegExp(`another austere-axi server \\(pid \\d+, port ${port}\\) is using`),
+    );
   }));
 
 test("a lock left by a dead server does not block a start when its pid now belongs to another process", async () => {
   const port = await freePort();
   const state = tmp("austere-durable-lock-");
   // This test's own pid is alive but serves nothing on the port the lock names.
-  fs.writeFileSync(path.join(state, "server.lock"), JSON.stringify({ pid: process.pid, port: await freePort(), at: Date.now() - 10 * 60_000 }));
+  fs.writeFileSync(
+    path.join(state, "server.lock"),
+    JSON.stringify({ pid: process.pid, port: await freePort(), at: Date.now() - 10 * 60_000 }),
+  );
   const proc = startServer(port, state);
   try {
     await up(port);
     const lock = JSON.parse(fs.readFileSync(path.join(state, "server.lock"), "utf8"));
-    assert.deepEqual([lock.pid, lock.port], [(await request(port, "GET", "/api/health")).data.pid, port]);
+    assert.deepEqual(
+      [lock.pid, lock.port],
+      [(await request(port, "GET", "/api/health")).data.pid, port],
+    );
   } finally {
     await kill(proc);
     fs.rmSync(state, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
@@ -947,8 +1378,22 @@ test("a newer CLI that replaces an older server keeps --persist", async () => {
     res.setHeader("content-type", "application/json");
     const url = new URL(req.url ?? "", "http://x");
     if (url.pathname === "/api/health") {
-      const proof = crypto.createHmac("sha256", ownerKey(state)).update(`${port}:${url.searchParams.get("nonce")}`).digest("base64url");
-      return res.end(JSON.stringify({ name: "austere-axi", version: "0.0.1", pid: 1, port, stateDir: state, proof, listen: ["127.0.0.1"], persist: true }));
+      const proof = crypto
+        .createHmac("sha256", ownerKey(state))
+        .update(`${port}:${url.searchParams.get("nonce")}`)
+        .digest("base64url");
+      return res.end(
+        JSON.stringify({
+          name: "austere-axi",
+          version: "0.0.1",
+          pid: 1,
+          port,
+          stateDir: state,
+          proof,
+          listen: ["127.0.0.1"],
+          persist: true,
+        }),
+      );
     }
     if (url.pathname === "/api/shutdown") {
       res.on("finish", () => {
@@ -995,7 +1440,15 @@ test("session files from before the database are imported once, every state inta
       { id: "u-seen", role: "user", at: 5, items: items("received"), seenAt: 6, doneAt: null },
       { id: "u-pending", role: "user", at: 6, items: items("open"), seenAt: null, doneAt: null },
       { id: "u-held", role: "user", at: 7, items: items("held"), author: "Ana", held: true },
-      { id: "u-gone", role: "user", at: 7, items: items("discarded"), author: "Ana", held: false, discarded: true },
+      {
+        id: "u-gone",
+        role: "user",
+        at: 7,
+        items: items("discarded"),
+        author: "Ana",
+        held: false,
+        discarded: true,
+      },
     ],
   };
   const sessions = path.join(dir, "sessions");
@@ -1005,16 +1458,37 @@ test("session files from before the database are imported once, every state inta
     const check = (store: SessionStore) => {
       const s = store.get(id) as Session;
       assert.equal(s.archivedAt, null);
-      assert.deepEqual(store.heldEntries(s).map((e) => e.id), ["u-held"]);
+      assert.deepEqual(
+        store.heldEntries(s).map((e) => e.id),
+        ["u-held"],
+      );
       assert.deepEqual(
         store.feedback(s, { all: true, peek: true }).entries.map((e) => [e.id, e.status]),
-        [["u-done", "addressed"], ["u-seen", "received"], ["u-pending", "open"]],
+        [
+          ["u-done", "addressed"],
+          ["u-seen", "received"],
+          ["u-pending", "open"],
+        ],
       );
-      assert.deepEqual(s.transcript.map((e) => e.id), ["u-done", "a-1", "u-seen", "u-pending", "u-held", "u-gone"]);
+      assert.deepEqual(
+        s.transcript.map((e) => e.id),
+        ["u-done", "a-1", "u-seen", "u-pending", "u-held", "u-gone"],
+      );
       const hub = new Hub(store.db);
       assert.deepEqual(
-        Object.fromEntries(hub.db.prepare("SELECT entry_id, status FROM items").all().map((r) => [r.entry_id, r.status])),
-        { "u-done": "addressed", "u-seen": "received", "u-pending": "open", "u-held": "held", "u-gone": "discarded" },
+        Object.fromEntries(
+          hub.db
+            .prepare("SELECT entry_id, status FROM items")
+            .all()
+            .map((r) => [r.entry_id, r.status]),
+        ),
+        {
+          "u-done": "addressed",
+          "u-seen": "received",
+          "u-pending": "open",
+          "u-held": "held",
+          "u-gone": "discarded",
+        },
       );
     };
     let store = await SessionStore.open(dir);
@@ -1048,9 +1522,15 @@ test("a project cursor acknowledges only notes a poll handed over: a page with a
 
     assert.deepEqual(store.ackDelivered(b, cursor), [], "nothing on b was handed over");
     assert.equal(b.ackedSeq, 0);
-    assert.deepEqual(store.unread(b).map((e) => e.id), [unseen.id]);
+    assert.deepEqual(
+      store.unread(b).map((e) => e.id),
+      [unseen.id],
+    );
 
-    assert.deepEqual(store.ackDelivered(a, cursor).map((e) => e.id), [first.id, second.id]);
+    assert.deepEqual(
+      store.ackDelivered(a, cursor).map((e) => e.id),
+      [first.id, second.id],
+    );
     assert.equal(a.ackedSeq, cursor);
     assert.deepEqual(store.ackDelivered(a, cursor), [], "acknowledging again changes nothing");
   } finally {

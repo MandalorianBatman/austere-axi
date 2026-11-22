@@ -99,7 +99,19 @@ export function describeAgent(ua: string | null): string {
           : /Safari\//.test(ua)
             ? "Safari"
             : "a browser";
-  const system = /iPhone|iPad|iPod/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /CrOS/.test(ua) ? "ChromeOS" : /Mac OS X|Macintosh/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "";
+  const system = /iPhone|iPad|iPod/.test(ua)
+    ? "iOS"
+    : /Android/.test(ua)
+      ? "Android"
+      : /Windows/.test(ua)
+        ? "Windows"
+        : /CrOS/.test(ua)
+          ? "ChromeOS"
+          : /Mac OS X|Macintosh/.test(ua)
+            ? "macOS"
+            : /Linux/.test(ua)
+              ? "Linux"
+              : "";
   return system ? `${browser} on ${system}` : browser;
 }
 
@@ -113,33 +125,56 @@ export class RequestStore {
   }
 
   get(id: string): AccessRequestRow | null {
-    return (this.db.prepare("SELECT * FROM access_requests WHERE id = ?").get(id) as unknown as AccessRequestRow | undefined) ?? null;
+    return (
+      (this.db.prepare("SELECT * FROM access_requests WHERE id = ?").get(id) as unknown as
+        | AccessRequestRow
+        | undefined) ?? null
+    );
   }
 
   /** The request a browser's pending cookie belongs to, whatever its status, or null. */
   bySecret(secret: unknown): AccessRequestRow | null {
     if (typeof secret !== "string" || !secret || secret.length > 200) return null;
     this.lapse();
-    return (this.db.prepare("SELECT * FROM access_requests WHERE secret_hash = ?").get(hashSecret(secret)) as unknown as AccessRequestRow | undefined) ?? null;
+    return (
+      (this.db
+        .prepare("SELECT * FROM access_requests WHERE secret_hash = ?")
+        .get(hashSecret(secret)) as unknown as AccessRequestRow | undefined) ?? null
+    );
   }
 
   /** The requests with this status, the oldest first. Waiting ones past WAITING_TTL_MS lapse first. */
   list(status: RequestStatus): AccessRequestRow[] {
     this.lapse();
-    return this.db.prepare("SELECT * FROM access_requests WHERE status = ? ORDER BY created_at, rowid").all(status) as unknown as AccessRequestRow[];
+    return this.db
+      .prepare("SELECT * FROM access_requests WHERE status = ? ORDER BY created_at, rowid")
+      .all(status) as unknown as AccessRequestRow[];
   }
 
   /** Whether a browser may ask for a page of project `projectId` (null: a page in no project): the project's own setting, else the one for every page. */
   enabled(projectId: string | null): boolean {
-    const own = projectId == null ? undefined : (this.db.prepare("SELECT requests FROM access_settings WHERE scope = 'project' AND scope_id = ?").get(projectId) as { requests: number } | undefined);
+    const own =
+      projectId == null
+        ? undefined
+        : (this.db
+            .prepare(
+              "SELECT requests FROM access_settings WHERE scope = 'project' AND scope_id = ?",
+            )
+            .get(projectId) as { requests: number } | undefined);
     if (own) return own.requests === 1;
-    const all = this.db.prepare("SELECT requests FROM access_settings WHERE scope = 'all' AND scope_id = ''").get() as { requests: number } | undefined;
+    const all = this.db
+      .prepare("SELECT requests FROM access_settings WHERE scope = 'all' AND scope_id = ''")
+      .get() as { requests: number } | undefined;
     return all?.requests === 1;
   }
 
   switches(): RequestSwitch {
     const all = this.enabled(null);
-    const rows = this.db.prepare("SELECT scope_id, requests FROM access_settings WHERE scope = 'project' ORDER BY scope_id").all() as { scope_id: string; requests: number }[];
+    const rows = this.db
+      .prepare(
+        "SELECT scope_id, requests FROM access_settings WHERE scope = 'project' ORDER BY scope_id",
+      )
+      .all() as { scope_id: string; requests: number }[];
     return { all, projects: rows.map((r) => ({ id: r.scope_id, on: r.requests === 1 })) };
   }
 
@@ -151,11 +186,21 @@ export class RequestStore {
     inTransaction(this.db, () => {
       if (projectId == null) {
         this.db.prepare("DELETE FROM access_settings WHERE scope = 'project'").run();
-        this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('all', '', ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests").run(on ? 1 : 0);
+        this.db
+          .prepare(
+            "INSERT INTO access_settings (scope, scope_id, requests) VALUES ('all', '', ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests",
+          )
+          .run(on ? 1 : 0);
       } else if (on === this.enabled(null)) {
-        this.db.prepare("DELETE FROM access_settings WHERE scope = 'project' AND scope_id = ?").run(projectId);
+        this.db
+          .prepare("DELETE FROM access_settings WHERE scope = 'project' AND scope_id = ?")
+          .run(projectId);
       } else {
-        this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('project', ?, ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests").run(projectId, on ? 1 : 0);
+        this.db
+          .prepare(
+            "INSERT INTO access_settings (scope, scope_id, requests) VALUES ('project', ?, ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests",
+          )
+          .run(projectId, on ? 1 : 0);
       }
     });
   }
@@ -166,12 +211,18 @@ export class RequestStore {
    * as the row (scope 'notes', scope_id ''), `requests` 1 for straight to the agent: no schema change.
    */
   defaultAuto(): boolean {
-    const row = this.db.prepare("SELECT requests FROM access_settings WHERE scope = 'notes' AND scope_id = ''").get() as { requests: number } | undefined;
+    const row = this.db
+      .prepare("SELECT requests FROM access_settings WHERE scope = 'notes' AND scope_id = ''")
+      .get() as { requests: number } | undefined;
     return row?.requests === 1;
   }
 
   setDefaultAuto(auto: boolean): void {
-    this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('notes', '', ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests").run(auto ? 1 : 0);
+    this.db
+      .prepare(
+        "INSERT INTO access_settings (scope, scope_id, requests) VALUES ('notes', '', ?) ON CONFLICT (scope, scope_id) DO UPDATE SET requests = excluded.requests",
+      )
+      .run(auto ? 1 : 0);
   }
 
   /**
@@ -179,21 +230,30 @@ export class RequestStore {
    * default). Kept in access_settings as the row (scope 'lan', scope_id the address): no schema change.
    */
   lanAddress(): string | null {
-    const row = this.db.prepare("SELECT scope_id FROM access_settings WHERE scope = 'lan' AND requests = 1").get() as { scope_id: string } | undefined;
+    const row = this.db
+      .prepare("SELECT scope_id FROM access_settings WHERE scope = 'lan' AND requests = 1")
+      .get() as { scope_id: string } | undefined;
     return row?.scope_id || null;
   }
 
   setLanAddress(address: string | null): void {
     inTransaction(this.db, () => {
       this.db.prepare("DELETE FROM access_settings WHERE scope = 'lan'").run();
-      if (address) this.db.prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('lan', ?, 1)").run(address);
+      if (address)
+        this.db
+          .prepare("INSERT INTO access_settings (scope, scope_id, requests) VALUES ('lan', ?, 1)")
+          .run(address);
     });
   }
 
   /** Waiting requests nobody decided within WAITING_TTL_MS lapse: they leave the queue, and their browsers may ask again. */
   private lapse(): void {
     const now = this.now();
-    this.db.prepare("UPDATE access_requests SET status = 'lapsed', decided_at = ? WHERE status = 'waiting' AND created_at <= ?").run(now, now - WAITING_TTL_MS);
+    this.db
+      .prepare(
+        "UPDATE access_requests SET status = 'lapsed', decided_at = ? WHERE status = 'waiting' AND created_at <= ?",
+      )
+      .run(now, now - WAITING_TTL_MS);
   }
 
   /**
@@ -202,34 +262,70 @@ export class RequestStore {
    * device are kept with it). Throws RequestRefused for a bad name (400) or past the limits (429).
    * Returns the row and the pending secret for the browser's cookie.
    */
-  ask({ name, page, meta, tailscale = null }: { name: unknown; page: string; meta: SeenMeta; tailscale?: { login: string; device: string } | null }): { row: AccessRequestRow; secret: string } {
+  ask({
+    name,
+    page,
+    meta,
+    tailscale = null,
+  }: {
+    name: unknown;
+    page: string;
+    meta: SeenMeta;
+    tailscale?: { login: string; device: string } | null;
+  }): { row: AccessRequestRow; secret: string } {
     let clean: string;
     try {
       clean = cleanName(name);
     } catch (err) {
       const msg = (err as Error).message;
-      throw new RequestRefused(/required/.test(msg) ? "Type your name." : msg.replace(/^the reviewer name/, "The name"), 400);
+      throw new RequestRefused(
+        /required/.test(msg) ? "Type your name." : msg.replace(/^the reviewer name/, "The name"),
+        400,
+      );
     }
     const now = this.now();
     const addr = clip(meta.addr);
     return inTransaction(this.db, () => {
       this.lapse();
-      const recent = this.db.prepare("SELECT COUNT(*) AS n FROM access_requests WHERE addr IS ? AND created_at > ?").get(addr, now - HOUR_MS) as { n: number };
-      if (Number(recent.n) >= REQUESTS_PER_ADDR_HOUR) throw new RequestRefused("Too many requests from this address. Try again in an hour.", 429);
-      const waiting = this.db.prepare("SELECT COUNT(*) AS n FROM access_requests WHERE status = 'waiting'").get() as { n: number };
-      if (Number(waiting.n) >= MAX_WAITING) throw new RequestRefused("Too many requests are waiting for the owner. Try again later.", 429);
+      const recent = this.db
+        .prepare("SELECT COUNT(*) AS n FROM access_requests WHERE addr IS ? AND created_at > ?")
+        .get(addr, now - HOUR_MS) as { n: number };
+      if (Number(recent.n) >= REQUESTS_PER_ADDR_HOUR)
+        throw new RequestRefused("Too many requests from this address. Try again in an hour.", 429);
+      const waiting = this.db
+        .prepare("SELECT COUNT(*) AS n FROM access_requests WHERE status = 'waiting'")
+        .get() as { n: number };
+      if (Number(waiting.n) >= MAX_WAITING)
+        throw new RequestRefused(
+          "Too many requests are waiting for the owner. Try again later.",
+          429,
+        );
       const secret = randomToken();
       const id = "r" + crypto.randomBytes(5).toString("hex");
       this.db
-        .prepare("INSERT INTO access_requests (id, name, page, secret_hash, status, addr, user_agent, verified_login, ts_device, created_at) VALUES (?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?)")
-        .run(id, clean, page, hashSecret(secret), addr, clip(meta.userAgent), tailscale?.login ?? null, clip(tailscale?.device) ?? null, now);
+        .prepare(
+          "INSERT INTO access_requests (id, name, page, secret_hash, status, addr, user_agent, verified_login, ts_device, created_at) VALUES (?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?)",
+        )
+        .run(
+          id,
+          clean,
+          page,
+          hashSecret(secret),
+          addr,
+          clip(meta.userAgent),
+          tailscale?.login ?? null,
+          clip(tailscale?.device) ?? null,
+          now,
+        );
       return { row: this.get(id) as AccessRequestRow, secret };
     });
   }
 
   /** The hostname a reverse lookup found for a request's address. */
   setHost(id: string, host: string): void {
-    this.db.prepare("UPDATE access_requests SET host = ? WHERE id = ? AND host IS NULL").run(clip(host), id);
+    this.db
+      .prepare("UPDATE access_requests SET host = ? WHERE id = ? AND host IS NULL")
+      .run(clip(host), id);
   }
 
   /**
@@ -250,17 +346,43 @@ export class RequestStore {
           throw new RequestRefused((err as Error).message, 400);
         }
       }
-      const same = (this.db.prepare("SELECT * FROM devices WHERE scope_kind = ? AND scope_id IS ?").all(scope.kind, scope.id) as unknown as DeviceRow[]).filter((r) => sameName(r.name, clean) && isLive(r, now));
-      if (same.length) throw new RequestRefused(`"${clean}" already has access with this scope: approve under another name (--as), revoke that one first, or deny this request`, 409);
+      const same = (
+        this.db
+          .prepare("SELECT * FROM devices WHERE scope_kind = ? AND scope_id IS ?")
+          .all(scope.kind, scope.id) as unknown as DeviceRow[]
+      ).filter((r) => sameName(r.name, clean) && isLive(r, now));
+      if (same.length)
+        throw new RequestRefused(
+          `"${clean}" already has access with this scope: approve under another name (--as), revoke that one first, or deny this request`,
+          409,
+        );
       const deviceId = newDeviceId();
       this.db
         .prepare(
           `INSERT INTO devices (id, name, origin, verified_login, scope_kind, scope_id, auto, created_at, claimed_at, last_addr, last_host, user_agent)
            VALUES (?, ?, 'request', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(deviceId, clean, row.verified_login, scope.kind, scope.id, auto ? 1 : 0, now, now, row.addr, row.host, row.user_agent);
-      this.db.prepare("UPDATE access_requests SET status = 'approved', device_id = ?, decided_at = ? WHERE id = ?").run(deviceId, now, id);
-      return this.db.prepare("SELECT * FROM devices WHERE id = ?").get(deviceId) as unknown as DeviceRow;
+        .run(
+          deviceId,
+          clean,
+          row.verified_login,
+          scope.kind,
+          scope.id,
+          auto ? 1 : 0,
+          now,
+          now,
+          row.addr,
+          row.host,
+          row.user_agent,
+        );
+      this.db
+        .prepare(
+          "UPDATE access_requests SET status = 'approved', device_id = ?, decided_at = ? WHERE id = ?",
+        )
+        .run(deviceId, now, id);
+      return this.db
+        .prepare("SELECT * FROM devices WHERE id = ?")
+        .get(deviceId) as unknown as DeviceRow;
     });
   }
 
@@ -268,7 +390,9 @@ export class RequestStore {
   decide(id: string, status: "denied" | "blocked"): AccessRequestRow {
     return inTransaction(this.db, () => {
       this.waiting(id);
-      this.db.prepare("UPDATE access_requests SET status = ?, decided_at = ? WHERE id = ?").run(status, this.now(), id);
+      this.db
+        .prepare("UPDATE access_requests SET status = ?, decided_at = ? WHERE id = ?")
+        .run(status, this.now(), id);
       return this.get(id) as AccessRequestRow;
     });
   }
@@ -281,16 +405,26 @@ export class RequestStore {
     const req = this.bySecret(secret);
     if (!req || req.status !== "approved" || !req.device_id) return null;
     const fresh = randomToken();
-    const done = this.db.prepare("UPDATE devices SET secret_hash = ?, last_seen_at = ? WHERE id = ? AND secret_hash IS NULL AND revoked_at IS NULL").run(hashSecret(fresh), this.now(), req.device_id);
+    const done = this.db
+      .prepare(
+        "UPDATE devices SET secret_hash = ?, last_seen_at = ? WHERE id = ? AND secret_hash IS NULL AND revoked_at IS NULL",
+      )
+      .run(hashSecret(fresh), this.now(), req.device_id);
     if (Number(done.changes) !== 1) return null;
-    return { device: this.db.prepare("SELECT * FROM devices WHERE id = ?").get(req.device_id) as unknown as DeviceRow, secret: fresh };
+    return {
+      device: this.db
+        .prepare("SELECT * FROM devices WHERE id = ?")
+        .get(req.device_id) as unknown as DeviceRow,
+      secret: fresh,
+    };
   }
 
   private waiting(id: string): AccessRequestRow {
     this.lapse();
     const row = this.get(id);
     if (!row) throw new RequestRefused(`no request ${JSON.stringify(id)}`, 404);
-    if (row.status !== "waiting") throw new RequestRefused(`this request was ${row.status} already`, 409);
+    if (row.status !== "waiting")
+      throw new RequestRefused(`this request was ${row.status} already`, 409);
     return row;
   }
 }

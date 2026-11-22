@@ -19,15 +19,39 @@ import { format } from "../src/cli/output.ts";
 import { quote } from "../src/cli/paths.ts";
 import { cloudOn, ownerHeaders } from "./owner.ts";
 import { SUBPROTOCOL, SYNC_VERSION, parseClientFrame, readProtocols } from "../src/shared/sync.ts";
-import type { AckFrame, ClientPresence, MutationArgs, NoteItem, NoteRow, PageRow, PresenceStatus, ReplyRow, Row, ServerPresence, ViewerHello } from "../src/shared/sync.ts";
+import type {
+  AckFrame,
+  ClientPresence,
+  MutationArgs,
+  NoteItem,
+  NoteRow,
+  PageRow,
+  PresenceStatus,
+  ReplyRow,
+  Row,
+  ServerPresence,
+  ViewerHello,
+} from "../src/shared/sync.ts";
 
 const tmp = (p: string) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const WORK = tmp("austere-peer-work-");
-const BASE_ENV = { ...process.env, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_NO_OPEN: "1", OPENUI_TELEMETRY_DISABLED: "1", AUSTERE_AXI_SYNC_RETRY_MS: "200" };
+const BASE_ENV = {
+  ...process.env,
+  AUSTERE_AXI_NO_TAILSCALE: "1",
+  AUSTERE_AXI_NO_OPEN: "1",
+  OPENUI_TELEMETRY_DISABLED: "1",
+  AUSTERE_AXI_SYNC_RETRY_MS: "200",
+};
 const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64url");
 /** The account's access token: the CLI reads only `exp`, so it never refreshes within the run; the stub takes it as the owner. */
 const TOKEN = `${b64({ alg: "RS256", kid: "k" })}.${b64({ sub: "user_ana", exp: Math.floor(Date.now() / 1000) + 86400, n: crypto.randomUUID() })}.sig`;
-const ACCOUNT = { clientId: "client_test", apiBase: "http://127.0.0.1:9", accessToken: TOKEN, refreshToken: "rt_unused", user: { id: "user_ana", email: "ana@example.com", name: "Ana" } };
+const ACCOUNT = {
+  clientId: "client_test",
+  apiBase: "http://127.0.0.1:9",
+  accessToken: TOKEN,
+  refreshToken: "rt_unused",
+  user: { id: "user_ana", email: "ana@example.com", name: "Ana" },
+};
 const page = (title: string) =>
   `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>\n<script src="https://cdn.jsdelivr.net/npm/austere-axi@0/dist/austere.js"></script></head>\n<body><script type="text/openui">\nroot = TextContent("hello")\n</script></body></html>\n`;
 
@@ -59,24 +83,43 @@ const stub = {
 };
 let CLOUD = "";
 let server: http.Server;
-const wss = new WebSocketServer({ noServer: true, handleProtocols: (p) => (p.has(SUBPROTOCOL) ? SUBPROTOCOL : false) });
+const wss = new WebSocketServer({
+  noServer: true,
+  handleProtocols: (p) => (p.has(SUBPROTOCOL) ? SUBPROTOCOL : false),
+});
 
 function newPage(): string {
   const id = crypto.randomBytes(16).toString("base64url");
-  stub.pages.set(id, { seq: 0, rows: new Map(), acks: new Map(), live: new Set(), viewers: new Map(), heard: [] });
+  stub.pages.set(id, {
+    seq: 0,
+    rows: new Map(),
+    acks: new Map(),
+    live: new Set(),
+    viewers: new Map(),
+    heard: [],
+  });
   return id;
 }
 
 /** Writes a row at the page's next seq and sends it to every live socket. */
-function put(id: string, row: Omit<NoteRow, "v" | "seq"> | Omit<ReplyRow, "v" | "seq"> | Omit<PageRow, "v" | "seq">): Row {
+function put(
+  id: string,
+  row: Omit<NoteRow, "v" | "seq"> | Omit<ReplyRow, "v" | "seq"> | Omit<PageRow, "v" | "seq">,
+): Row {
   const p = stub.pages.get(id) as StubPage;
   const full = { ...row, v: SYNC_VERSION, seq: ++p.seq } as Row;
   p.rows.set(`${full.type}:${full.id}`, full);
-  for (const ws of p.live) ws.send(JSON.stringify({ v: SYNC_VERSION, t: "changes", rows: [full], cursor: p.seq }));
+  for (const ws of p.live)
+    ws.send(JSON.stringify({ v: SYNC_VERSION, t: "changes", rows: [full], cursor: p.seq }));
   return full;
 }
 
-function addNote(id: string, author: string, items: NoteItem[], state: NoteRow["state"] = "held"): string {
+function addNote(
+  id: string,
+  author: string,
+  items: NoteItem[],
+  state: NoteRow["state"] = "held",
+): string {
   const note = crypto.randomBytes(9).toString("base64url");
   put(id, { type: "note", id: note, author, items, at: Date.now(), state });
   return note;
@@ -96,7 +139,14 @@ function presenceFrame(p: StubPage, ws: WebSocket, f: ClientPresence) {
   const mine = [...p.viewers.entries()].find(([, v]) => v.ws === ws);
   if (f.t === "hello") {
     const id = mine?.[0] ?? crypto.randomBytes(6).toString("base64url");
-    const hello: ViewerHello = { v: SYNC_VERSION, t: "hello", viewer: { id, name: "Owner", colour: "#334455", role: "owner" }, status: f.status, focus: mine?.[1].hello.focus ?? null, self: false };
+    const hello: ViewerHello = {
+      v: SYNC_VERSION,
+      t: "hello",
+      viewer: { id, name: "Owner", colour: "#334455", role: "owner" },
+      status: f.status,
+      focus: mine?.[1].hello.focus ?? null,
+      self: false,
+    };
     p.viewers.set(id, { ws, hello });
     for (const [other, v] of p.viewers) if (other !== id) ws.send(JSON.stringify(v.hello));
     ws.send(JSON.stringify({ ...hello, self: true }));
@@ -120,7 +170,14 @@ function presenceFrame(p: StubPage, ws: WebSocket, f: ClientPresence) {
 function hostedViewer(id: string, name: string) {
   const p = stub.pages.get(id) as StubPage;
   const vid = crypto.randomBytes(6).toString("base64url");
-  const hello: ViewerHello = { v: SYNC_VERSION, t: "hello", viewer: { id: vid, name, colour: "#aa3366", role: "reviewer" }, status: "viewing", focus: null, self: false };
+  const hello: ViewerHello = {
+    v: SYNC_VERSION,
+    t: "hello",
+    viewer: { id: vid, name, colour: "#aa3366", role: "reviewer" },
+    status: "viewing",
+    focus: null,
+    self: false,
+  };
   p.viewers.set(vid, { ws: null, hello });
   toViewers(p, hello, vid);
   return {
@@ -157,12 +214,15 @@ function pageSocket(ws: WebSocket, id: string) {
     assert.ok(parsed.ok, `the CLI sent a frame the schema rejects: ${data.toString()}`);
     const f = parsed.value;
     if (f.t === "pull") {
-      const rows = [...p.rows.values()].filter((r) => r.seq > f.after).sort((a, b) => a.seq - b.seq);
+      const rows = [...p.rows.values()]
+        .filter((r) => r.seq > f.after)
+        .sort((a, b) => a.seq - b.seq);
       ws.send(JSON.stringify({ v: SYNC_VERSION, t: "changes", rows, cursor: p.seq }));
       p.live.add(ws);
       return;
     }
-    if (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye") return presenceFrame(p, ws, f);
+    if (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye")
+      return presenceFrame(p, ws, f);
     if (f.t !== "mutation") return;
     const key = `${f.clientId}:${f.n}`;
     const known = p.acks.get(key);
@@ -173,9 +233,16 @@ function pageSocket(ws: WebSocket, id: string) {
     ws.send(JSON.stringify(ack));
     if (f.name === "releaseNote" || f.name === "discardNote") {
       const note = p.rows.get(`note:${(f.args as MutationArgs["releaseNote"]).note}`) as NoteRow;
-      if (note.state === "held") put(id, { ...note, state: f.name === "releaseNote" ? "released" : "discarded" });
+      if (note.state === "held")
+        put(id, { ...note, state: f.name === "releaseNote" ? "released" : "discarded" });
     }
-    if (f.name === "addReply") put(id, { type: "reply", id: crypto.randomBytes(9).toString("base64url"), text: (f.args as MutationArgs["addReply"]).text, at: Date.now() });
+    if (f.name === "addReply")
+      put(id, {
+        type: "reply",
+        id: crypto.randomBytes(9).toString("base64url"),
+        text: (f.args as MutationArgs["addReply"]).text,
+        at: Date.now(),
+      });
   });
 }
 
@@ -189,11 +256,14 @@ before(async () => {
     const u = new URL(req.url ?? "", "http://stub");
     const m = /^\/api\/pages\/([^/]+)\/sync$/.exec(u.pathname);
     const creds = readProtocols(req.headers["sec-websocket-protocol"]);
-    if (!m || !creds.sync || req.headers.authorization !== `Bearer ${TOKEN}`) return socket.destroy();
+    if (!m || !creds.sync || req.headers.authorization !== `Bearer ${TOKEN}`)
+      return socket.destroy();
     if (!stub.pages.has(m[1])) {
       // An expired or deleted page: a plain HTTP refusal.
       const body = JSON.stringify({ error: { code: "invalid", message: "page not found" } });
-      return socket.end(`HTTP/1.1 404 Not Found\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\nconnection: close\r\n\r\n${body}`);
+      return socket.end(
+        `HTTP/1.1 404 Not Found\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\nconnection: close\r\n\r\n${body}`,
+      );
     }
     wss.handleUpgrade(req, socket, head, (ws) => pageSocket(ws, m[1]));
   });
@@ -219,12 +289,20 @@ interface Machine {
   state: string;
   port: number;
   run: (...args: string[]) => Promise<{ code: number | null; out: string }>;
-  api: (method: string, route: string, body?: unknown) => Promise<{ status: number; data: Record<string, unknown> }>;
+  api: (
+    method: string,
+    route: string,
+    body?: unknown,
+  ) => Promise<{ status: number; data: Record<string, unknown> }>;
 }
 
 async function machine(pages: Record<string, { id: string; auto: boolean }>): Promise<Machine> {
   const state = tmp("austere-peer-state-");
-  fs.writeFileSync(path.join(state, "cloud.json"), JSON.stringify({ url: CLOUD, account: ACCOUNT, pages }), { mode: 0o600 });
+  fs.writeFileSync(
+    path.join(state, "cloud.json"),
+    JSON.stringify({ url: CLOUD, account: ACCOUNT, pages }),
+    { mode: 0o600 },
+  );
   cloudOn(state);
   const port = await freePort();
   const env = { ...BASE_ENV, AUSTERE_AXI_STATE_DIR: state, AUSTERE_AXI_PORT: String(port) };
@@ -238,7 +316,12 @@ async function machine(pages: Record<string, { id: string; auto: boolean }>): Pr
   const api = async (method: string, route: string, body?: unknown) => {
     const res = await fetch(`http://127.0.0.1:${port}${route}`, {
       method,
-      headers: { ...ownerHeaders(state), host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/json" },
+      headers: {
+        ...ownerHeaders(state),
+        host: `127.0.0.1:${port}`,
+        origin: `http://127.0.0.1:${port}`,
+        "content-type": "application/json",
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
@@ -273,12 +356,21 @@ async function open(m: Machine, f: string): Promise<string> {
 }
 
 /** The session's remote notes, as the owner's review page gets them. */
-async function remoteNotes(m: Machine, sid: string): Promise<{ id: string; held?: boolean; remote?: boolean }[]> {
+async function remoteNotes(
+  m: Machine,
+  sid: string,
+): Promise<{ id: string; held?: boolean; remote?: boolean }[]> {
   const r = await m.api("GET", `/s/${sid}/transcript`);
-  return (r.data.entries as { id: string; held?: boolean; remote?: boolean }[]).filter((e) => e.remote);
+  return (r.data.entries as { id: string; held?: boolean; remote?: boolean }[]).filter(
+    (e) => e.remote,
+  );
 }
 
-async function until<T>(what: string, fn: () => T | Promise<T>, ms = 10_000): Promise<NonNullable<T>> {
+async function until<T>(
+  what: string,
+  fn: () => T | Promise<T>,
+  ms = 10_000,
+): Promise<NonNullable<T>> {
   const deadline = Date.now() + ms;
   for (;;) {
     const v = await fn();
@@ -293,7 +385,10 @@ const field = (out: string, name: string) => new RegExp(`^${name}: (.*)$`, "m").
 /** The owner's review page, as far as presence goes: its event stream's `viewer` events. */
 async function reviewPage(m: Machine, sid: string) {
   const ctrl = new AbortController();
-  const res = await fetch(`http://127.0.0.1:${m.port}/s/${sid}/events`, { headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` }, signal: ctrl.signal });
+  const res = await fetch(`http://127.0.0.1:${m.port}/s/${sid}/events`, {
+    headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` },
+    signal: ctrl.signal,
+  });
   const viewer: ServerPresence[] = [];
   const reader = (res.body as ReadableStream<Uint8Array>).getReader();
   const decoder = new TextDecoder();
@@ -327,9 +422,14 @@ test("a held remote note stays out of poll until Send; an --auto note arrives at
   const auto = file("auto.html");
   const heldPage = newPage();
   const autoPage = newPage();
-  const m = await machine({ [held]: { id: heldPage, auto: false }, [auto]: { id: autoPage, auto: true } });
+  const m = await machine({
+    [held]: { id: heldPage, auto: false },
+    [auto]: { id: autoPage, auto: true },
+  });
   try {
-    const heldNote = addNote(heldPage, "Ana", [{ kind: "annotation", target: "root", note: "Why now?" }]);
+    const heldNote = addNote(heldPage, "Ana", [
+      { kind: "annotation", target: "root", note: "Why now?" },
+    ]);
     addNote(autoPage, "Bo", [{ kind: "message", text: "Ship it" }], "released");
     const sid = await open(m, held);
     await open(m, auto);
@@ -346,7 +446,9 @@ test("a held remote note stays out of poll until Send; an --auto note arrives at
     assert.match(r.out, /remote: true/);
 
     // Send in the side panel: released here, and on the page object.
-    const [note] = await until("the held note", () => remoteNotes(m, sid).then((n) => (n.length ? n : null)));
+    const [note] = await until("the held note", () =>
+      remoteNotes(m, sid).then((n) => (n.length ? n : null)),
+    );
     assert.equal(note.held, true);
     const sent = await m.api("POST", `/s/${sid}/release`, { ids: [note.id] });
     assert.equal(sent.data.count, 1);
@@ -354,7 +456,9 @@ test("a held remote note stays out of poll until Send; an --auto note arrives at
     assert.equal(field(r.out, "status"), "feedback", r.out);
     assert.match(r.out, /from: Ana\n\s+remote: true/);
     assert.match(r.out, /Why now\?/);
-    await until("releaseNote on the page", () => stub.applied.some((a) => a.page === heldPage && a.name === "releaseNote"));
+    await until("releaseNote on the page", () =>
+      stub.applied.some((a) => a.page === heldPage && a.name === "releaseNote"),
+    );
     assert.equal((rowsOf(heldPage).find((x) => x.id === heldNote) as NoteRow).state, "released");
   } finally {
     await cleanup(m);
@@ -372,7 +476,9 @@ test("Send on machine A arrives released on machine B", async () => {
     await open(b, f);
     // B listens; its socket stays open for live rows.
     const waiting = b.run("poll", f, "--timeout-ms", "15000");
-    const [note] = await until("the held note on A", () => remoteNotes(a, sidA).then((n) => (n.length ? n : null)));
+    const [note] = await until("the held note on A", () =>
+      remoteNotes(a, sidA).then((n) => (n.length ? n : null)),
+    );
     await a.api("POST", `/s/${sidA}/release`, { ids: [note.id] });
     const r = await waiting;
     assert.equal(field(r.out, "status"), "feedback", r.out);
@@ -397,7 +503,9 @@ test("a crash after the notes but before the cursor delivers each note once", as
 
     // What a crash leaves: the first note committed, the second not, the cursor not saved.
     const db = new DatabaseSync(path.join(m.state, "hub.db"));
-    const second = db.prepare("SELECT id FROM notes WHERE items LIKE '%second%'").get() as { id: string };
+    const second = db.prepare("SELECT id FROM notes WHERE items LIKE '%second%'").get() as {
+      id: string;
+    };
     db.prepare("DELETE FROM items WHERE entry_id = ?").run(second.id);
     db.prepare("DELETE FROM notes WHERE id = ?").run(second.id);
     db.exec("DELETE FROM cloud_pages; DELETE FROM cloud_rows;");
@@ -423,7 +531,9 @@ test("offline: local review works, a reply is queued with a warning and replayed
   goOffline();
   try {
     const sid = await open(m, f);
-    const sent = await m.api("POST", `/s/${sid}/send`, { items: [{ kind: "message", text: "local note" }] });
+    const sent = await m.api("POST", `/s/${sid}/send`, {
+      items: [{ kind: "message", text: "local note" }],
+    });
     assert.equal(sent.status, 200);
     const started = Date.now();
     let r = await m.run("poll", f, "--timeout-ms", "5000");
@@ -436,10 +546,16 @@ test("offline: local review works, a reply is queued with a warning and replayed
     assert.match(field(r.out, "warning") ?? "", /queued/, r.out);
 
     stub.offline = false;
-    await until("the queued reply on the page", () => rowsOf(id).some((x) => x.type === "reply"), 15_000);
+    await until(
+      "the queued reply on the page",
+      () => rowsOf(id).some((x) => x.type === "reply"),
+      15_000,
+    );
     r = await m.run("reply", f, "--agent-reply", "Done online.");
     assert.equal(field(r.out, "warning"), undefined, r.out);
-    const replies = rowsOf(id).filter((x): x is ReplyRow => x.type === "reply").map((x) => x.text);
+    const replies = rowsOf(id)
+      .filter((x): x is ReplyRow => x.type === "reply")
+      .map((x) => x.text);
     assert.deepEqual(replies, ["Done offline.", "Done online."], "each reply once, in order");
   } finally {
     stub.offline = false;
@@ -456,8 +572,13 @@ test("Discard goes out as discardNote, a row discarded upstream never reaches th
   const m = await machine({ [f]: { id, auto: false } });
   try {
     const sid = await open(m, f);
-    const notes = await until("the remote notes", () => remoteNotes(m, sid).then((n) => (n.length === 2 ? n : null)));
-    const t = (await m.api("GET", `/s/${sid}/transcript`)).data.entries as { id: string; items: { text: string }[] }[];
+    const notes = await until("the remote notes", () =>
+      remoteNotes(m, sid).then((n) => (n.length === 2 ? n : null)),
+    );
+    const t = (await m.api("GET", `/s/${sid}/transcript`)).data.entries as {
+      id: string;
+      items: { text: string }[];
+    }[];
     const idOf = (text: string) => (t.find((e) => e.items[0]?.text === text) as { id: string }).id;
     assert.equal(notes.length, 2, "the note discarded upstream is on record, not in the panel");
     await m.api("POST", `/s/${sid}/discard`, { ids: [idOf("drop me")] });
@@ -465,8 +586,13 @@ test("Discard goes out as discardNote, a row discarded upstream never reaches th
     let r = await m.run("poll", f, "--timeout-ms", "5000");
     assert.match(r.out, /keep me/, r.out);
     assert.doesNotMatch(r.out, /drop me|dropped upstream/);
-    await until("discardNote on the page", () => stub.applied.some((a) => a.page === id && a.name === "discardNote"));
-    assert.equal((rowsOf(id).find((x) => x.type === "note" && x.author === "Ana") as NoteRow).state, "discarded");
+    await until("discardNote on the page", () =>
+      stub.applied.some((a) => a.page === id && a.name === "discardNote"),
+    );
+    assert.equal(
+      (rowsOf(id).find((x) => x.type === "note" && x.author === "Ana") as NoteRow).state,
+      "discarded",
+    );
 
     // The page expires: the handshake answers 404, the reply stands locally with a warning, and nothing stays queued.
     stub.pages.delete(id);
@@ -476,7 +602,10 @@ test("Discard goes out as discardNote, a row discarded upstream never reaches th
     const db = new DatabaseSync(path.join(m.state, "hub.db"), { readOnly: true });
     assert.equal((db.prepare("SELECT COUNT(*) AS n FROM cloud_queue").get() as { n: number }).n, 0);
     db.close();
-    assert.match(fs.readFileSync(path.join(m.state, "server.log"), "utf8"), /sync-stopped \S+ .*404/);
+    assert.match(
+      fs.readFileSync(path.join(m.state, "server.log"), "utf8"),
+      /sync-stopped \S+ .*404/,
+    );
   } finally {
     await cleanup(m);
   }
@@ -534,34 +663,52 @@ test("presence relay: hosted viewers reach the owner's review page; the owner's 
     // The review page opens: the server's socket joins as the owner, and the page learns which viewer is itself.
     const local = await reviewPage(m, sid);
     await until("the owner's hello on the page object", () => p.heard.some((x) => x.t === "hello"));
-    const self = await until("our own hello, relayed", () => local.viewer.find((x): x is ViewerHello => x.t === "hello" && x.self));
+    const self = await until("our own hello, relayed", () =>
+      local.viewer.find((x): x is ViewerHello => x.t === "hello" && x.self),
+    );
     assert.equal(self.viewer.role, "owner");
 
     // A hosted viewer joins, starts writing, clicks a statement: all three show locally.
     const ana = hostedViewer(id, "Ana");
     ana.status("writing");
     ana.focus("root");
-    await until("Ana's focus, relayed", () => local.viewer.some((x) => x.t === "focus" && x.viewer === ana.id && x.statement === "root"));
+    await until("Ana's focus, relayed", () =>
+      local.viewer.some((x) => x.t === "focus" && x.viewer === ana.id && x.statement === "root"),
+    );
     assert.ok(local.viewer.some((x) => x.t === "hello" && x.viewer.name === "Ana"));
-    assert.ok(local.viewer.some((x) => x.t === "status" && x.viewer === ana.id && x.status === "writing"));
+    assert.ok(
+      local.viewer.some((x) => x.t === "status" && x.viewer === ana.id && x.status === "writing"),
+    );
 
     // A local click goes to the hosted viewers, who outline it.
-    const posted = await m.api("POST", `/s/${sid}/presence`, { v: SYNC_VERSION, t: "focus", statement: "root" });
+    const posted = await m.api("POST", `/s/${sid}/presence`, {
+      v: SYNC_VERSION,
+      t: "focus",
+      statement: "root",
+    });
     assert.equal(posted.status, 204);
-    await until("the owner's focus on the page object", () => p.heard.some((x) => x.t === "focus" && x.statement === "root"));
+    await until("the owner's focus on the page object", () =>
+      p.heard.some((x) => x.t === "focus" && x.statement === "root"),
+    );
     assert.equal(p.viewers.get(self.viewer.id)?.hello.focus, "root");
 
     // A second tab gets the roster so far, with Ana's latest status and focus.
     const second = await reviewPage(m, sid);
-    const roster = await until("the roster", () => second.viewer.find((x): x is ViewerHello => x.t === "hello" && x.viewer.id === ana.id));
+    const roster = await until("the roster", () =>
+      second.viewer.find((x): x is ViewerHello => x.t === "hello" && x.viewer.id === ana.id),
+    );
     assert.equal(roster.status, "writing");
     assert.equal(roster.focus, "root");
 
     // The last review page closes while a poll keeps the socket open: the owner leaves the page.
     const polling = m.run("poll", f, "--timeout-ms", "6000");
     const listening = async () => {
-      const r = await fetch(`http://127.0.0.1:${m.port}/api/sessions`, { headers: { "x-austere-key": ownerHeaders(m.state)["x-austere-key"] } });
-      return ((await r.json()) as { sessions: { id: string; presence: string }[] }).sessions.some((x) => x.id === sid && x.presence === "listening");
+      const r = await fetch(`http://127.0.0.1:${m.port}/api/sessions`, {
+        headers: { "x-austere-key": ownerHeaders(m.state)["x-austere-key"] },
+      });
+      return ((await r.json()) as { sessions: { id: string; presence: string }[] }).sessions.some(
+        (x) => x.id === sid && x.presence === "listening",
+      );
     };
     await until("the poll listening", listening);
     local.close();
@@ -572,8 +719,13 @@ test("presence relay: hosted viewers reach the owner's review page; the owner's 
     // Ana leaves while no review page is open; the next one does not show her.
     ana.leave();
     const third = await reviewPage(m, sid);
-    await until("the owner back on the page", () => third.viewer.some((x) => x.t === "hello" && x.self));
-    assert.ok(!third.viewer.some((x) => x.t === "hello" && x.viewer.id === ana.id), "no stale chip for Ana");
+    await until("the owner back on the page", () =>
+      third.viewer.some((x) => x.t === "hello" && x.self),
+    );
+    assert.ok(
+      !third.viewer.some((x) => x.t === "hello" && x.viewer.id === ana.id),
+      "no stale chip for Ana",
+    );
     third.close();
     await polling;
 
@@ -582,11 +734,17 @@ test("presence relay: hosted viewers reach the owner's review page; the owner's 
     const q = await reviewPage(m, quietSid);
     await until("the quiet page's row in the cache", () => {
       const db = new DatabaseSync(path.join(m.state, "hub.db"), { readOnly: true });
-      const row = db.prepare("SELECT 1 FROM cloud_rows WHERE page_id = ? AND type = 'page'").get(off);
+      const row = db
+        .prepare("SELECT 1 FROM cloud_rows WHERE page_id = ? AND type = 'page'")
+        .get(off);
       db.close();
       return row;
     });
-    await m.api("POST", `/s/${quietSid}/presence`, { v: SYNC_VERSION, t: "status", status: "viewing" });
+    await m.api("POST", `/s/${quietSid}/presence`, {
+      v: SYNC_VERSION,
+      t: "status",
+      status: "viewing",
+    });
     assert.deepEqual((stub.pages.get(off) as StubPage).heard, []);
     q.close();
   } finally {
@@ -609,13 +767,22 @@ test("a project poll keeps the hosted socket of every published page in the proj
     await until("no socket held for an idle page", () => pa.live.size === 0 && pb.live.size === 0);
 
     const polling = m.run("poll", "--project", WORK, "--timeout-ms", "4000");
-    await until("both pages' sockets open for the project poll", () => pa.live.size > 0 && pb.live.size > 0);
+    await until(
+      "both pages' sockets open for the project poll",
+      () => pa.live.size > 0 && pb.live.size > 0,
+    );
 
     // A hosted note on either page reaches the one project poll.
     addNote(idB, "Ana", [{ kind: "message", text: "hosted note on b" }], "released");
     const r = await polling;
-    assert.ok(r.out.includes(format({ file: b })) && /message: hosted note on b/.test(r.out), r.out);
-    await until("sockets released once the project poll is over", () => pa.live.size === 0 && pb.live.size === 0);
+    assert.ok(
+      r.out.includes(format({ file: b })) && /message: hosted note on b/.test(r.out),
+      r.out,
+    );
+    await until(
+      "sockets released once the project poll is over",
+      () => pa.live.size === 0 && pb.live.size === 0,
+    );
     assert.ok(sidA && sidB);
   } finally {
     await cleanup(m);
@@ -631,12 +798,31 @@ test("the agent prompt names the file and the project poll, the shared page when
   const autoPage = newPage();
   const livePage = newPage();
   // Published without --auto on this machine, but the page now releases at once (a publish from another machine).
-  put(livePage, { type: "page", id: livePage, title: "x", cliVersion: "0.9.0", html: "0".repeat(64), packs: [], auto: true, unlisted: false, presence: true, publishedAt: Date.now(), expiresAt: Date.now() + 86400000, deleted: false });
-  const m = await machine({ [held]: { id: heldPage, auto: false }, [auto]: { id: autoPage, auto: true }, [live]: { id: livePage, auto: false } });
+  put(livePage, {
+    type: "page",
+    id: livePage,
+    title: "x",
+    cliVersion: "0.9.0",
+    html: "0".repeat(64),
+    packs: [],
+    auto: true,
+    unlisted: false,
+    presence: true,
+    publishedAt: Date.now(),
+    expiresAt: Date.now() + 86400000,
+    deleted: false,
+  });
+  const m = await machine({
+    [held]: { id: heldPage, auto: false },
+    [auto]: { id: autoPage, auto: true },
+    [live]: { id: livePage, auto: false },
+  });
   try {
     const prompt = async (f: string) => {
       const sid = await open(m, f);
-      const res = await fetch(`http://127.0.0.1:${m.port}/s/${sid}/agent-prompt`, { headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` } });
+      const res = await fetch(`http://127.0.0.1:${m.port}/s/${sid}/agent-prompt`, {
+        headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` },
+      });
       assert.equal(res.status, 200);
       return res.text();
     };
@@ -662,7 +848,9 @@ test("the agent prompt names the file and the project poll, the shared page when
     // The page's live mode decides, not cloud.json's copy: the pull that caches its row may land just after the page opens.
     const sid = await open(m, live);
     const l: string = await until("the live mode in the prompt", async (): Promise<string> => {
-      const res = await fetch(`http://127.0.0.1:${m.port}/s/${sid}/agent-prompt`, { headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` } });
+      const res = await fetch(`http://127.0.0.1:${m.port}/s/${sid}/agent-prompt`, {
+        headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` },
+      });
       const text = await res.text();
       return /as they are posted/.test(text) ? text : "";
     });
@@ -676,11 +864,16 @@ test("the agent prompt names the file and the project poll, the shared page when
     // Another agent already polls the project: the prompt names the page poll, so the new agent does not replace that poll.
     const polling = m.run("poll", "--project", WORK, "--timeout-ms", "4000");
     const plainSid = await open(m, plain);
-    const busy: string = await until("the page poll while the project is polled", async (): Promise<string> => {
-      const res = await fetch(`http://127.0.0.1:${m.port}/s/${plainSid}/agent-prompt`, { headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` } });
-      const text = await res.text();
-      return text.includes(`Run \`austere-axi poll ${quote(plain)}\``) ? text : "";
-    });
+    const busy: string = await until(
+      "the page poll while the project is polled",
+      async (): Promise<string> => {
+        const res = await fetch(`http://127.0.0.1:${m.port}/s/${plainSid}/agent-prompt`, {
+          headers: { ...ownerHeaders(m.state), host: `127.0.0.1:${m.port}` },
+        });
+        const text = await res.text();
+        return text.includes(`Run \`austere-axi poll ${quote(plain)}\``) ? text : "";
+      },
+    );
     assert.match(busy, /austere-axi poll "/, "a path with a space or quote is double-quoted");
     assert.doesNotMatch(busy, /--project/);
     await polling;

@@ -18,16 +18,16 @@ inputs:
     description: >
       Command that runs austere-axi, replacing the npm install (for example `node dist/cli.mjs`). It runs without a shell.
       Used by this repository's own tests; leave empty otherwise.
-    default: ''
+    default: ""
   artifact-name:
     description: Name of the workflow artifact that holds the exported pages.
     default: austere-review
   retention-days:
     description: Artifact retention in days. 0 uses the repository default.
-    default: '0'
+    default: "0"
   comment:
     description: Post or update the sticky comment on the pull request. `false` leaves only the artifact and the job summary.
-    default: 'true'
+    default: "true"
   comment-tag:
     description: Names the sticky comment. Use a different tag for each use of the action in one pull request.
     default: default
@@ -37,7 +37,7 @@ inputs:
 
 outputs:
   ok:
-    description: '`true` when every page passed `check` and was exported.'
+    description: "`true` when every page passed `check` and was exported."
     value: ${{ steps.austere.outputs.ok }}
   artifact-url:
     description: Download URL of the artifact (needs a GitHub login).

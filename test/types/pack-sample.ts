@@ -57,5 +57,12 @@ const pack: PackModule = {
 export default pack;
 
 // A wrong prop type must fail the type check.
-// @ts-expect-error name is a string
-austereComponent({ name: 1, group: "Content", props: z.object({}), description: "x", renderer: () => null, example: "" });
+austereComponent({
+  // @ts-expect-error name is a string
+  name: 1,
+  group: "Content",
+  props: z.object({}),
+  description: "x",
+  renderer: () => null,
+  example: "",
+});

@@ -99,7 +99,10 @@ export function isFirstParty(name: string): boolean {
  * was installed (a folder or tarball can claim any name); one not installed
  * here is fetched from the registry by name.
  */
-export function isThirdParty(name: string, installed: Pick<LockEntry, "trust" | "source"> | null = findInstalled(name)): boolean {
+export function isThirdParty(
+  name: string,
+  installed: Pick<LockEntry, "trust" | "source"> | null = findInstalled(name),
+): boolean {
   if (installed) return !(installed.trust === "first-party" && installed.source === "npm");
   return !isFirstParty(name);
 }
@@ -123,7 +126,13 @@ export function writeJsonAtomic(file: string, value: unknown): void {
 
 let core: CoreCatalog | null = null;
 export function coreCatalog(): CoreCatalog {
-  if (!core) core = readJson<CoreCatalog>(assetPath("catalog.json"), { format: CATALOG_FORMAT, pack: "core", groups: [], components: [] });
+  if (!core)
+    core = readJson<CoreCatalog>(assetPath("catalog.json"), {
+      format: CATALOG_FORMAT,
+      pack: "core",
+      groups: [],
+      components: [],
+    });
   return core;
 }
 
@@ -136,7 +145,14 @@ export function bundledPacks(): BundledPack[] {
   for (const id of fs.readdirSync(root).sort()) {
     const catalog = readJson<PackCatalog | null>(path.join(root, id, "catalog.json"), null);
     if (!catalog) continue;
-    bundled.push({ id, name: catalog.pack, version: catalog.version, dir: path.join(root, id), catalog, bundled: true });
+    bundled.push({
+      id,
+      name: catalog.pack,
+      version: catalog.version,
+      dir: path.join(root, id),
+      catalog,
+      bundled: true,
+    });
   }
   return bundled;
 }
@@ -170,7 +186,12 @@ export function installedPacks(): InstalledPack[] {
   return Object.entries(lock.packs)
     .map(([name, e]) => {
       const dir = path.join(packsDir(), packDirName(name, e.version));
-      return { name, ...e, dir, catalog: readJson<PackCatalog | null>(path.join(dir, "catalog.json"), null) };
+      return {
+        name,
+        ...e,
+        dir,
+        catalog: readJson<PackCatalog | null>(path.join(dir, "catalog.json"), null),
+      };
     })
     .filter((p): p is InstalledPack => !!p.catalog)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -198,7 +219,8 @@ export function declaredPacks(html: string): PackRef[] {
 /** Component names a program calls. */
 export function calledComponents(program: string | null | undefined): Set<string> {
   const out = new Set<string>();
-  for (const m of String(program || "").matchAll(/(?<![\w@$.])([A-Z][A-Za-z0-9]*)\s*\(/g)) out.add(m[1]);
+  for (const m of String(program || "").matchAll(/(?<![\w@$.])([A-Z][A-Za-z0-9]*)\s*\(/g))
+    out.add(m[1]);
   return out;
 }
 
@@ -225,14 +247,18 @@ export function pagePacks(html: string): PagePacks {
     else installed.push(p);
   }
   // Declared with a hash that is not the installed build's (rebuilt and re-added at the same version).
-  const stale = declared.filter((d) => d.integrity && installed.some((p) => p.name === d.name && p.integrity !== d.integrity));
+  const stale = declared.filter(
+    (d) => d.integrity && installed.some((p) => p.name === d.name && p.integrity !== d.integrity),
+  );
   return {
     declared,
     installed,
     missing,
     mismatched,
     stale,
-    thirdParty: declared.filter((d) => isThirdParty(d.name, installed.find((p) => p.name === d.name) || findInstalled(d.name))),
+    thirdParty: declared.filter((d) =>
+      isThirdParty(d.name, installed.find((p) => p.name === d.name) || findInstalled(d.name)),
+    ),
   };
 }
 
@@ -261,11 +287,16 @@ export function packsMetaTag(packs: PackRef[]): string {
 /** Put (or replace, or remove) the meta tag in a page's <head>. */
 export function setPacksMeta(html: string, packs: PackRef[]): string {
   const has = PACKS_META_RE.test(html);
-  if (!packs.length) return has ? html.replace(new RegExp(`[ \\t]*${PACKS_META_RE.source}[ \\t]*\\r?\\n?`, "i"), "") : html;
+  if (!packs.length)
+    return has
+      ? html.replace(new RegExp(`[ \\t]*${PACKS_META_RE.source}[ \\t]*\\r?\\n?`, "i"), "")
+      : html;
   const tag = packsMetaTag(packs);
   if (has) return html.replace(PACKS_META_RE, () => tag);
   // Before the runtime <script>, so the packs are known when it boots; else at the end of <head>.
-  const runtime = /[ \t]*<script\b[^>]*\bsrc=["'][^"']*austere(?:\.min)?\.js[^"']*["'][^>]*>/i.exec(html);
+  const runtime = /[ \t]*<script\b[^>]*\bsrc=["'][^"']*austere(?:\.min)?\.js[^"']*["'][^>]*>/i.exec(
+    html,
+  );
   if (runtime) return html.slice(0, runtime.index) + tag + "\n" + html.slice(runtime.index);
   const head = /<\/head>/i.exec(html);
   if (head) return html.slice(0, head.index) + tag + "\n" + html.slice(head.index);
@@ -287,7 +318,8 @@ export function mergePackSchemas(schema: SpecSchema, catalogs: PackCatalog[]): S
   out.required ||= [];
   for (const cat of catalogs) {
     // A catalog's defs are JSON schema objects (the pack kit writes them from the library's schema).
-    for (const [k, v] of Object.entries(cat.defs || {})) if (!out.$defs[k]) out.$defs[k] = v as SchemaNode;
+    for (const [k, v] of Object.entries(cat.defs || {}))
+      if (!out.$defs[k]) out.$defs[k] = v as SchemaNode;
     for (const c of cat.components || []) {
       if (out.properties[c.name]) continue;
       const ref = { $ref: `#/$defs/${c.name}` };
@@ -295,7 +327,8 @@ export function mergePackSchemas(schema: SpecSchema, catalogs: PackCatalog[]): S
       out.required.push(c.name);
       for (const slot of c.slots || []) {
         const [parent, prop] = slot.split(".");
-        const p = out.$defs[parent] && out.$defs[parent].properties && out.$defs[parent].properties[prop];
+        const p =
+          out.$defs[parent] && out.$defs[parent].properties && out.$defs[parent].properties[prop];
         const union = (p && p.items && p.items.anyOf) || (p && p.anyOf);
         if (union && !union.some((r) => r.$ref === ref.$ref)) union.push({ ...ref });
       }

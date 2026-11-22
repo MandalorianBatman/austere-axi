@@ -13,8 +13,12 @@ import { launchBrowser } from "../../scripts/lib/browser.ts";
 import { ownerKey } from "../../src/cli/invites.ts";
 import { freePort } from "../port.ts";
 
-const STATE = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-history-browser-state-")));
-const WORK = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-history-browser-work-")));
+const STATE = fs.realpathSync(
+  fs.mkdtempSync(path.join(os.tmpdir(), "austere-history-browser-state-")),
+);
+const WORK = fs.realpathSync(
+  fs.mkdtempSync(path.join(os.tmpdir(), "austere-history-browser-work-")),
+);
 const CLI = path.resolve("src/cli/main.ts");
 const KEY = ownerKey(STATE);
 let port: number;
@@ -25,11 +29,20 @@ let env: NodeJS.ProcessEnv;
 
 function api<T>(route: string, body: unknown): Promise<T> {
   const { promise, resolve, reject } = Promise.withResolvers<T>();
-  const r = http.request({ host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } }, (res) => {
-    let data = "";
-    res.on("data", (c) => (data += c));
-    res.on("end", () => resolve(JSON.parse(data) as T));
-  });
+  const r = http.request(
+    {
+      host: "127.0.0.1",
+      port,
+      method: "POST",
+      path: route,
+      headers: { "content-type": "application/json", "x-austere-key": KEY },
+    },
+    (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => resolve(JSON.parse(data) as T));
+    },
+  );
   r.on("error", reject);
   r.end(JSON.stringify(body));
   return promise;
@@ -52,7 +65,8 @@ third = TextContent("steady")
 
 /** Screenshots for the pull request: set HISTORY_SHOTS to a folder to keep them. */
 async function shot(page: Page, name: string) {
-  if (process.env.HISTORY_SHOTS) await page.screenshot({ path: path.join(process.env.HISTORY_SHOTS, `${name}.png`) });
+  if (process.env.HISTORY_SHOTS)
+    await page.screenshot({ path: path.join(process.env.HISTORY_SHOTS, `${name}.png`) });
 }
 
 /** Run the CLI against the test server, as an agent would. */
@@ -65,14 +79,19 @@ function cli(args: string[], input = ""): string {
 /** The tab is hidden or shown, as a browser reports it. */
 async function setVisible(page: Page, visible: boolean) {
   await page.evaluate((v) => {
-    Object.defineProperty(document, "visibilityState", { get: () => (v ? "visible" : "hidden"), configurable: true });
+    Object.defineProperty(document, "visibilityState", {
+      get: () => (v ? "visible" : "hidden"),
+      configurable: true,
+    });
     document.dispatchEvent(new Event("visibilitychange"));
   }, visible);
 }
 
 async function ownerPage(file: string, width = 1280) {
   const { session } = await api<{ session: { id: string } }>("/api/open", { file });
-  const context = await browser.newContext({ viewport: { width, height: width > 500 ? 900 : 844 } });
+  const context = await browser.newContext({
+    viewport: { width, height: width > 500 ? 900 : 844 },
+  });
   const page = await context.newPage();
   const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
@@ -81,7 +100,9 @@ async function ownerPage(file: string, width = 1280) {
   });
   const { code } = await api<{ code: string }>("/api/login", {});
   // The page tells the server it was seen: until that is answered, hiding the tab would leave nothing to compare with.
-  const seen = page.waitForResponse((r) => r.url().endsWith("/viewed") && r.request().method() === "POST" && r.ok());
+  const seen = page.waitForResponse(
+    (r) => r.url().endsWith("/viewed") && r.request().method() === "POST" && r.ok(),
+  );
   await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
   await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor({ timeout: 15_000 });
   await seen;
@@ -91,21 +112,29 @@ async function ownerPage(file: string, width = 1280) {
 /** Waits until the frame outlines exactly these statements: the ones whose text sits inside a mark. */
 async function outlinedIs(page: Page, want: string[]) {
   const frame = (await (await page.$(".frame"))!.contentFrame())!;
-  await frame.waitForFunction((ids) => {
-    const marks = [...document.querySelectorAll(".austere-mark")].map((m) => m.getBoundingClientRect());
-    const on = [...document.querySelectorAll("[data-oui-id]")]
-      .filter((el) => {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        const r = range.getBoundingClientRect();
-        const x = r.left + r.width / 2;
-        const y = r.top + r.height / 2;
-        // The page is a stack of TextContent statements; `root` has no box of its own.
-        return el.getAttribute("data-oui-c") === "TextContent" && marks.some((m) => x >= m.left && x <= m.right && y >= m.top && y <= m.bottom);
-      })
-      .map((el) => el.getAttribute("data-oui-id"));
-    return JSON.stringify(on.sort()) === ids;
-  }, JSON.stringify([...want].sort()));
+  await frame.waitForFunction(
+    (ids) => {
+      const marks = [...document.querySelectorAll(".austere-mark")].map((m) =>
+        m.getBoundingClientRect(),
+      );
+      const on = [...document.querySelectorAll("[data-oui-id]")]
+        .filter((el) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const r = range.getBoundingClientRect();
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          // The page is a stack of TextContent statements; `root` has no box of its own.
+          return (
+            el.getAttribute("data-oui-c") === "TextContent" &&
+            marks.some((m) => x >= m.left && x <= m.right && y >= m.top && y <= m.bottom)
+          );
+        })
+        .map((el) => el.getAttribute("data-oui-id"));
+      return JSON.stringify(on.sort()) === ids;
+    },
+    JSON.stringify([...want].sort()),
+  );
 }
 
 before(async () => {
@@ -133,8 +162,17 @@ before(async () => {
     OPENUI_TELEMETRY_DISABLED: "1",
   };
   // The test may itself run inside a harness: its session must not become a page's author.
-  for (const name of ["PI_SESSION_ID", "PI_SESSION_FILE", "COPILOT_AGENT_SESSION_ID", "DSH_SESSION_ID"]) delete env[name];
-  server = spawn(process.execPath, [CLI, "server", "--port", String(port)], { env, stdio: "ignore" });
+  for (const name of [
+    "PI_SESSION_ID",
+    "PI_SESSION_FILE",
+    "COPILOT_AGENT_SESSION_ID",
+    "DSH_SESSION_ID",
+  ])
+    delete env[name];
+  server = spawn(process.execPath, [CLI, "server", "--port", String(port)], {
+    env,
+    stdio: "ignore",
+  });
   for (let i = 0; i < 100; i++) {
     try {
       if ((await fetch(`http://127.0.0.1:${port}/api/health`)).ok) return;
@@ -171,11 +209,16 @@ test("two patches while the tab is hidden: '2 revisions since you last looked', 
 
     await setVisible(page, true);
     await page.locator(".since").waitFor({ state: "visible" });
-    assert.equal((await page.locator(".since-text").innerText()).trim(), "2 revisions since you last looked");
+    assert.equal(
+      (await page.locator(".since-text").innerText()).trim(),
+      "2 revisions since you last looked",
+    );
     assert.equal((await page.locator(".changes").innerText()).trim(), "2 changed");
     await shot(page, "since");
     await page.locator('.since [data-since="show"]').click();
-    await page.waitForFunction(() => document.querySelector(".changes")?.getAttribute("aria-pressed") === "true");
+    await page.waitForFunction(
+      () => document.querySelector(".changes")?.getAttribute("aria-pressed") === "true",
+    );
     await outlinedIs(page, ["intro", "more"]);
 
     // The history lists the revisions, newest first, and outlines what one of them changed.
@@ -186,7 +229,10 @@ test("two patches while the tab is hidden: '2 revisions since you last looked', 
     assert.equal(await rows.count(), 3);
     assert.match(await rows.nth(0).innerText(), /^Now · Revision 3 .*patched\s+more/s);
     assert.match(await rows.nth(1).innerText(), /Revision 2 .*patched\s+intro/s);
-    assert.match(await rows.nth(2).innerText(), /Revision 1 .*3 statements? at the start|statements at the start/s);
+    assert.match(
+      await rows.nth(2).innerText(),
+      /Revision 1 .*3 statements? at the start|statements at the start/s,
+    );
     await shot(page, "history-1280");
     await rows.nth(1).click();
     await outlinedIs(page, ["intro"]);
@@ -206,11 +252,17 @@ test("two patches while the tab is hidden: '2 revisions since you last looked', 
     await page.locator(".restore").click();
     await frame.getByText("hello", { exact: true }).waitFor();
     assert.match(fs.readFileSync(file, "utf8"), /intro = TextContent\("hello"\)/);
-    assert.match(fs.readFileSync(file, "utf8"), /more = TextContent\("changed too"\)/, "only the part went back");
+    assert.match(
+      fs.readFileSync(file, "utf8"),
+      /more = TextContent\("changed too"\)/,
+      "only the part went back",
+    );
     const log = cli(["history", file]);
     assert.match(log, /rev: 4\n\s+at: [^\n]+\n\s+source: restore\n\s+changed: \[intro\]/);
 
-    const rest = await fetch(`http://127.0.0.1:${port}/s/${id}/history`, { headers: { cookie: (await context.cookies()).map((c) => `${c.name}=${c.value}`).join("; ") } });
+    const rest = await fetch(`http://127.0.0.1:${port}/s/${id}/history`, {
+      headers: { cookie: (await context.cookies()).map((c) => `${c.name}=${c.value}`).join("; ") },
+    });
     assert.equal(rest.status, 200);
     assert.deepEqual(problems, []);
   } finally {
@@ -229,12 +281,21 @@ test("at 390 px the strip and the history fit the screen", async (t) => {
     await frame.getByText("hello, phone").waitFor();
     await setVisible(page, true);
     await page.locator(".since").waitFor({ state: "visible" });
-    assert.equal((await page.locator(".since-text").innerText()).trim(), "1 revision since you last looked");
+    assert.equal(
+      (await page.locator(".since-text").innerText()).trim(),
+      "1 revision since you last looked",
+    );
     await page.locator('.since [data-since="history"]').click();
     await page.locator(".hist-pick").first().waitFor();
     const box = await page.locator(".hist").boundingBox();
-    assert.ok(box && box.x >= 0 && box.x + box.width <= 390, `the history is inside the screen: ${JSON.stringify(box)}`);
-    assert.ok((await page.evaluate(() => document.documentElement.scrollWidth)) <= 390, "no sideways scroll");
+    assert.ok(
+      box && box.x >= 0 && box.x + box.width <= 390,
+      `the history is inside the screen: ${JSON.stringify(box)}`,
+    );
+    assert.ok(
+      (await page.evaluate(() => document.documentElement.scrollWidth)) <= 390,
+      "no sideways scroll",
+    );
     await shot(page, "history-390");
     assert.deepEqual(problems, []);
   } finally {
@@ -257,13 +318,19 @@ test("a reviewer sees changes, not history or Restore; the routes answer 403", a
     assert.equal(await guest.locator(".since, .hist, .restore").count(), 0);
     const base = `http://127.0.0.1:${port}/s/${session.id}`;
     const origin = { origin: `http://127.0.0.1:${port}` };
-    const call = (route: string, init: RequestInit = {}) => guest.evaluate(async ([url, i]) => (await fetch(url as string, i as RequestInit)).status, [`${base}${route}`, { ...init, headers: { "content-type": "application/json", ...origin } }] as const);
+    const call = (route: string, init: RequestInit = {}) =>
+      guest.evaluate(async ([url, i]) => (await fetch(url as string, i as RequestInit)).status, [
+        `${base}${route}`,
+        { ...init, headers: { "content-type": "application/json", ...origin } },
+      ] as const);
     assert.equal(await call("/history"), 403);
     assert.equal(await call("/history?statement=intro"), 403);
     assert.equal(await call("/restore", { method: "POST", body: JSON.stringify({ rev: 1 }) }), 403);
     assert.equal(await call("/viewed", { method: "POST", body: JSON.stringify({ rev: 1 }) }), 403);
     // The owner's key from a foreign Origin is refused too.
-    const foreign = await fetch(`${base}/history`, { headers: { "x-austere-key": KEY, origin: "http://evil.example" } });
+    const foreign = await fetch(`${base}/history`, {
+      headers: { "x-austere-key": KEY, origin: "http://evil.example" },
+    });
     assert.equal(foreign.status, 403);
   } finally {
     await ctx.close();

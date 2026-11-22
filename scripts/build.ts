@@ -27,7 +27,9 @@ import {
 } from "./lib/plugins.ts";
 
 const DIST = path.join(ROOT, "dist");
-const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as { version: string };
+const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as {
+  version: string;
+};
 const only = process.argv.slice(2);
 const want = (step: string): boolean => only.length === 0 || only.includes(step);
 
@@ -50,7 +52,13 @@ async function buildRuntime() {
       "process.env.NODE_ENV": '"production"',
       __AUSTERE_VERSION__: JSON.stringify(pkg.version),
     },
-    plugins: [fontPlugin, registryPlugin, slimHighlighterPlugin, zodLocalesPlugin, bundledPacksPlugin(DIST)],
+    plugins: [
+      fontPlugin,
+      registryPlugin,
+      slimHighlighterPlugin,
+      zodLocalesPlugin,
+      bundledPacksPlugin(DIST),
+    ],
     // One runtime per page: a second copy (an exported page, which inlines one, opened for
     // review) would render the page twice and open two annotate boxes. The first sets
     // window.__austere; any later copy does nothing.
@@ -72,13 +80,21 @@ async function buildPacks() {
   fs.rmSync(path.join(DIST, "packs"), { recursive: true, force: true });
   for (const p of bundledPackSources()) {
     const outDir = path.join(DIST, "packs", p.id);
-    const { catalog, warnings } = await buildPack({ dir: p.dir, esbuild, outDir, version: pkg.version });
+    const { catalog, warnings } = await buildPack({
+      dir: p.dir,
+      esbuild,
+      outDir,
+      version: pkg.version,
+    });
     for (const w of warnings) console.warn(`pack     ${p.id}: ${w}`);
-    console.log(`pack     dist/packs/${p.id}/pack.js ${(catalog.size / 1024).toFixed(1)} KB (${catalog.components.map((c) => c.name).join(", ")})`);
+    console.log(
+      `pack     dist/packs/${p.id}/pack.js ${(catalog.size / 1024).toFixed(1)} KB (${catalog.components.map((c) => c.name).join(", ")})`,
+    );
   }
 }
 
-const packsBuilt = () => bundledPackSources().every((p) => fs.existsSync(path.join(DIST, "packs", p.id, "catalog.json")));
+const packsBuilt = () =>
+  bundledPackSources().every((p) => fs.existsSync(path.join(DIST, "packs", p.id, "catalog.json")));
 
 async function buildPackKit() {
   const out = path.join(DIST, "pack-kit.mjs");
@@ -90,7 +106,9 @@ async function buildPackKit() {
     target: "node20",
     minify: true,
     legalComments: "none",
-    banner: { js: "import { createRequire as __austereRequire } from 'node:module'; const require = __austereRequire(import.meta.url);" },
+    banner: {
+      js: "import { createRequire as __austereRequire } from 'node:module'; const require = __austereRequire(import.meta.url);",
+    },
     define: { "process.env.NODE_ENV": '"production"' },
     outfile: out,
     logLevel: "warning",
@@ -124,14 +142,18 @@ async function buildSpec() {
   fs.writeFileSync(path.join(DIST, "prompt.md"), prompt);
   fs.writeFileSync(path.join(DIST, "catalog.json"), JSON.stringify(lib.catalog(pkg.version)));
   const names = Object.keys(lib.austereLibrary.components);
-  console.log(`spec     ${names.length} components, prompt ${prompt.length} chars (~${estimateTokens(prompt)} tokens)`);
+  console.log(
+    `spec     ${names.length} components, prompt ${prompt.length} chars (~${estimateTokens(prompt)} tokens)`,
+  );
 }
 
 async function buildChrome() {
   const outDir = path.join(DIST, "chrome");
   fs.mkdirSync(outDir, { recursive: true });
   await esbuild.build({
-    entryPoints: ["chrome.ts", "chrome.css", "shell.ts", "shell.css"].map((f) => path.join(ROOT, "src/chrome", f)),
+    entryPoints: ["chrome.ts", "chrome.css", "shell.ts", "shell.css"].map((f) =>
+      path.join(ROOT, "src/chrome", f),
+    ),
     bundle: true,
     minify: true,
     format: "iife",

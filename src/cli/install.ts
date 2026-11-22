@@ -14,7 +14,17 @@ import path from "node:path";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
 import type { PackCatalog } from "../../types/catalog.d.ts";
-import { coreCatalog, installedPacks, isFirstParty, packDirName, packsDir, PACK_API, readLock, writeLock, TRUSTED_SCOPE } from "./packs.ts";
+import {
+  coreCatalog,
+  installedPacks,
+  isFirstParty,
+  packDirName,
+  packsDir,
+  PACK_API,
+  readLock,
+  writeLock,
+  TRUSTED_SCOPE,
+} from "./packs.ts";
 import type { PackSource, PackTrust } from "./packs.ts";
 import { mayTrust, readTrustList, trustOf } from "./trust.ts";
 import type { TrustList } from "./trust.ts";
@@ -89,7 +99,11 @@ export function untar(buf: Buffer): Map<string, Buffer> {
   let off = 0;
   let longName: string | null = null;
   let paxPath: string | null = null;
-  const str = (h: Buffer, a: number, b: number): string => h.subarray(a, b).toString("utf8").replace(/\0[\s\S]*$/, "");
+  const str = (h: Buffer, a: number, b: number): string =>
+    h
+      .subarray(a, b)
+      .toString("utf8")
+      .replace(/\0[\s\S]*$/, "");
   while (off + 512 <= buf.length) {
     const h = buf.subarray(off, off + 512);
     if (h.every((b) => b === 0)) break;
@@ -110,7 +124,11 @@ export function untar(buf: Buffer): Map<string, Buffer> {
       continue;
     }
     if (type === "0") {
-      const full = (paxPath || longName || name).replace(/^\.?\//, "").split("/").slice(1).join("/");
+      const full = (paxPath || longName || name)
+        .replace(/^\.?\//, "")
+        .split("/")
+        .slice(1)
+        .join("/");
       if (PACK_FILES.has(full)) files.set(full, Buffer.from(body));
     }
     paxPath = null;
@@ -138,7 +156,11 @@ export function pickVersion(meta: RegistryMeta, range: string): string | null {
   const m = /^([\^~])?(\d+)(?:\.(\d+|x|\*))?(?:\.(\d+|x|\*))?$/.exec(range);
   if (!m) return null;
   const [, op, M, mi, pa] = m;
-  const want = [Number(M), mi && /\d/.test(mi) ? Number(mi) : null, pa && /\d/.test(pa) ? Number(pa) : null];
+  const want = [
+    Number(M),
+    mi && /\d/.test(mi) ? Number(mi) : null,
+    pa && /\d/.test(pa) ? Number(pa) : null,
+  ];
   const ok = (v: string): boolean => {
     if (v.includes("-")) return false;
     const [a, b, c] = v.split(".").map(Number);
@@ -157,18 +179,31 @@ export function pickVersion(meta: RegistryMeta, range: string): string | null {
 // ── sources ──
 
 /** GET `url`; a request to `registry` carries its token (authHeaders decides). */
-export async function fetchBuffer(url: string, { accept, signal, registry }: { accept?: string; signal?: AbortSignal; registry?: Registry } = {}): Promise<Buffer> {
+export async function fetchBuffer(
+  url: string,
+  { accept, signal, registry }: { accept?: string; signal?: AbortSignal; registry?: Registry } = {},
+): Promise<Buffer> {
   let res;
   try {
-    res = await fetch(url, { headers: { ...(accept ? { accept } : {}), ...(registry ? authHeaders(registry, url) : {}) }, redirect: "follow", signal });
+    res = await fetch(url, {
+      headers: { ...(accept ? { accept } : {}), ...(registry ? authHeaders(registry, url) : {}) },
+      redirect: "follow",
+      signal,
+    });
   } catch (caught) {
     // fetch rejects with a TypeError whose cause carries the network error code.
     const err = caught as { cause?: { code?: string }; message?: string };
-    const e = Object.assign(new Error(`could not reach ${url} (${err.cause?.code || err.message})`), { network: true });
+    const e = Object.assign(
+      new Error(`could not reach ${url} (${err.cause?.code || err.message})`),
+      { network: true },
+    );
     throw e;
   }
   if (!res.ok) {
-    const hint = (res.status === 401 || res.status === 403) && registry?.tokenEnv ? ` (is ${registry.tokenEnv} set to a token this registry accepts?)` : "";
+    const hint =
+      (res.status === 401 || res.status === 403) && registry?.tokenEnv
+        ? ` (is ${registry.tokenEnv} set to a token this registry accepts?)`
+        : "";
     const e = Object.assign(new Error(`${url}: HTTP ${res.status}${hint}`), { status: res.status });
     throw e;
   }
@@ -179,21 +214,41 @@ export async function fetchBuffer(url: string, { accept, signal, registry }: { a
     buf = Buffer.from(await res.arrayBuffer());
   } catch (caught) {
     // The connection dropped mid-body: as much a network failure as no answer at all.
-    throw Object.assign(new Error(`could not read ${url} (${caught instanceof Error ? caught.message : String(caught)})`), { network: true });
+    throw Object.assign(
+      new Error(
+        `could not read ${url} (${caught instanceof Error ? caught.message : String(caught)})`,
+      ),
+      { network: true },
+    );
   }
-  if (buf.length > MAX_TARBALL) throw new Error(`${url} is larger than ${MAX_TARBALL / 1024 / 1024} MB`);
+  if (buf.length > MAX_TARBALL)
+    throw new Error(`${url} is larger than ${MAX_TARBALL / 1024 / 1024} MB`);
   return buf;
 }
 
-async function fromRegistry(spec: string, registry: Registry, signal?: AbortSignal): Promise<FetchedPack & Required<Pick<FetchedPack, "expect">>> {
-  const { name, version: range } = spec.startsWith("@") || spec.includes("@") ? splitSpec(spec) : { name: spec, version: "" };
+async function fromRegistry(
+  spec: string,
+  registry: Registry,
+  signal?: AbortSignal,
+): Promise<FetchedPack & Required<Pick<FetchedPack, "expect">>> {
+  const { name, version: range } =
+    spec.startsWith("@") || spec.includes("@") ? splitSpec(spec) : { name: spec, version: "" };
   if (!isValidPackName(name)) throw new Error(`${JSON.stringify(name)} is not an npm package name`);
   const metaUrl = registry.url + name.replace("/", "%2f");
   let meta: RegistryMeta;
   try {
-    meta = JSON.parse((await fetchBuffer(metaUrl, { accept: "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8", signal, registry })).toString("utf8"));
+    meta = JSON.parse(
+      (
+        await fetchBuffer(metaUrl, {
+          accept: "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8",
+          signal,
+          registry,
+        })
+      ).toString("utf8"),
+    );
   } catch (err) {
-    if (err instanceof Error && "status" in err && err.status === 404) throw new Error(`no package ${name} on ${registry.url}`);
+    if (err instanceof Error && "status" in err && err.status === 404)
+      throw new Error(`no package ${name} on ${registry.url}`);
     throw err;
   }
   const version = pickVersion(meta, range);
@@ -204,12 +259,19 @@ async function fromRegistry(spec: string, registry: Registry, signal?: AbortSign
   if (dist.integrity) {
     const [alg] = dist.integrity.split("-");
     if (!["sha512", "sha384", "sha256"].includes(alg) || sri(alg, tgz) !== dist.integrity) {
-      throw new Error(`${name}@${version}: the tarball does not match the registry's integrity hash`);
+      throw new Error(
+        `${name}@${version}: the tarball does not match the registry's integrity hash`,
+      );
     }
   } else if (dist.shasum && crypto.createHash("sha1").update(tgz).digest("hex") !== dist.shasum) {
     throw new Error(`${name}@${version}: the tarball does not match the registry's shasum`);
   }
-  return { ...readTarball(tgz, `${name}@${version}`), expect: { name, version }, source: "npm", resolved: dist.tarball };
+  return {
+    ...readTarball(tgz, `${name}@${version}`),
+    expect: { name, version },
+    source: "npm",
+    resolved: dist.tarball,
+  };
 }
 
 function readTarball(tgz: Buffer, label: string): PackFiles {
@@ -217,13 +279,18 @@ function readTarball(tgz: Buffer, label: string): PackFiles {
   try {
     files = untar(zlib.gunzipSync(tgz, { maxOutputLength: MAX_UNPACKED }));
   } catch (err) {
-    if ((err as InstallError).code === "ERR_BUFFER_TOO_LARGE") throw new Error(`${label} unpacks to more than ${MAX_UNPACKED / 1024 / 1024} MB`);
-    throw new Error(`${label}: not a gzipped tarball (${err instanceof Error ? err.message : undefined})`);
+    if ((err as InstallError).code === "ERR_BUFFER_TOO_LARGE")
+      throw new Error(`${label} unpacks to more than ${MAX_UNPACKED / 1024 / 1024} MB`);
+    throw new Error(
+      `${label}: not a gzipped tarball (${err instanceof Error ? err.message : undefined})`,
+    );
   }
   const packJs = files.get("dist/pack.js");
   const catalog = files.get("dist/catalog.json");
   if (!packJs || !catalog) {
-    throw new Error(`${label} is not an austere-axi pack: it has no dist/pack.js and dist/catalog.json (\`austere-axi components build\` makes them)`);
+    throw new Error(
+      `${label} is not an austere-axi pack: it has no dist/pack.js and dist/catalog.json (\`austere-axi components build\` makes them)`,
+    );
   }
   return { packJs, catalog, packageJson: files.get("package.json") || null };
 }
@@ -231,17 +298,25 @@ function readTarball(tgz: Buffer, label: string): PackFiles {
 function fromTarball(file: string): FetchedPack {
   const abs = path.resolve(file.replace(/^~(?=[\\/])/, process.env.HOME || ""));
   if (!fs.existsSync(abs)) throw new Error(`no such file: ${abs}`);
-  return { ...readTarball(fs.readFileSync(abs), path.basename(abs)), source: "tarball", resolved: abs };
+  return {
+    ...readTarball(fs.readFileSync(abs), path.basename(abs)),
+    source: "tarball",
+    resolved: abs,
+  };
 }
 
 function fromFolder(dir: string): FetchedPack {
   const abs = path.resolve(dir.replace(/^~(?=[\\/])/, process.env.HOME || ""));
   if (!fs.existsSync(abs)) throw new Error(`no such folder: ${abs}`);
   if (fs.statSync(abs).isFile()) return fromTarball(abs);
-  const read = (rel: string): Buffer | null => (fs.existsSync(path.join(abs, rel)) ? fs.readFileSync(path.join(abs, rel)) : null);
+  const read = (rel: string): Buffer | null =>
+    fs.existsSync(path.join(abs, rel)) ? fs.readFileSync(path.join(abs, rel)) : null;
   const packJs = read("dist/pack.js");
   const catalog = read("dist/catalog.json");
-  if (!packJs || !catalog) throw new Error(`${abs} has no dist/pack.js and dist/catalog.json: run \`austere-axi components build ${dir}\` first`);
+  if (!packJs || !catalog)
+    throw new Error(
+      `${abs} has no dist/pack.js and dist/catalog.json: run \`austere-axi components build ${dir}\` first`,
+    );
   return { packJs, catalog, packageJson: read("package.json"), source: "folder", resolved: abs };
 }
 
@@ -254,23 +329,62 @@ function parseCatalog(buf: Buffer, label: string): PackCatalog {
   } catch {
     throw new Error(`${label}: dist/catalog.json is not JSON`);
   }
-  if (cat.format !== CATALOG_FORMAT) throw new Error(`${label}: catalog format ${cat.format}; this austere-axi reads ${CATALOG_FORMAT}`);
-  if (cat.api !== PACK_API) throw new Error(`${label} was built for pack API ${cat.api}; this austere-axi has ${PACK_API}`);
-  if (!isValidPackName(cat.pack || "") || !isValidVersion(cat.version || "")) throw new Error(`${label}: catalog has no valid pack name and version`);
-  if (!Array.isArray(cat.components) || !cat.components.length) throw new Error(`${label}: catalog lists no components`);
-  if (cat.groups != null && !(Array.isArray(cat.groups) && cat.groups.every((g) => typeof g?.name === "string" && Array.isArray(g.notes) && g.notes.every((n) => typeof n === "string")))) {
-    throw new Error(`${label}: catalog has malformed groups (expected [{ "name": "...", "notes": ["..."] }])`);
+  if (cat.format !== CATALOG_FORMAT)
+    throw new Error(
+      `${label}: catalog format ${cat.format}; this austere-axi reads ${CATALOG_FORMAT}`,
+    );
+  if (cat.api !== PACK_API)
+    throw new Error(`${label} was built for pack API ${cat.api}; this austere-axi has ${PACK_API}`);
+  if (!isValidPackName(cat.pack || "") || !isValidVersion(cat.version || ""))
+    throw new Error(`${label}: catalog has no valid pack name and version`);
+  if (!Array.isArray(cat.components) || !cat.components.length)
+    throw new Error(`${label}: catalog lists no components`);
+  if (
+    cat.groups != null &&
+    !(
+      Array.isArray(cat.groups) &&
+      cat.groups.every(
+        (g) =>
+          typeof g?.name === "string" &&
+          Array.isArray(g.notes) &&
+          g.notes.every((n) => typeof n === "string"),
+      )
+    )
+  ) {
+    throw new Error(
+      `${label}: catalog has malformed groups (expected [{ "name": "...", "notes": ["..."] }])`,
+    );
   }
   for (const c of cat.components) {
-    if (!c || typeof c.name !== "string" || !/^[A-Z][A-Za-z0-9]*$/.test(c.name) || typeof c.signature !== "string" || typeof c.group !== "string") {
-      throw new Error(`${label}: bad component entry ${JSON.stringify(c?.name)} (needs a name, signature and group)`);
+    if (
+      !c ||
+      typeof c.name !== "string" ||
+      !/^[A-Z][A-Za-z0-9]*$/.test(c.name) ||
+      typeof c.signature !== "string" ||
+      typeof c.group !== "string"
+    ) {
+      throw new Error(
+        `${label}: bad component entry ${JSON.stringify(c?.name)} (needs a name, signature and group)`,
+      );
     }
-    if (c.description != null && typeof c.description !== "string") throw new Error(`${label}: ${c.name} has a description that is not a string`);
-    if (c.examples != null && !(Array.isArray(c.examples) && c.examples.every((x) => typeof x === "string"))) {
+    if (c.description != null && typeof c.description !== "string")
+      throw new Error(`${label}: ${c.name} has a description that is not a string`);
+    if (
+      c.examples != null &&
+      !(Array.isArray(c.examples) && c.examples.every((x) => typeof x === "string"))
+    ) {
       throw new Error(`${label}: ${c.name} has malformed examples (expected an array of strings)`);
     }
-    if (c.slots != null && !(Array.isArray(c.slots) && c.slots.every((x) => /^[A-Z][A-Za-z0-9]*\.[a-z][A-Za-z0-9]*$/.test(x)))) {
-      throw new Error(`${label}: ${c.name} has malformed slots (expected ["Card.children", ...] or null)`);
+    if (
+      c.slots != null &&
+      !(
+        Array.isArray(c.slots) &&
+        c.slots.every((x) => /^[A-Z][A-Za-z0-9]*\.[a-z][A-Za-z0-9]*$/.test(x))
+      )
+    ) {
+      throw new Error(
+        `${label}: ${c.name} has malformed slots (expected ["Card.children", ...] or null)`,
+      );
     }
   }
   return cat;
@@ -280,18 +394,27 @@ function parseCatalog(buf: Buffer, label: string): PackCatalog {
 function verifyPack(got: FetchedPack, label: string): { cat: PackCatalog; integrity: string } {
   const cat = parseCatalog(got.catalog, label);
   if (got.expect && (cat.pack !== got.expect.name || cat.version !== got.expect.version)) {
-    throw new Error(`${label}: its catalog says ${cat.pack}@${cat.version}; rebuild the pack before publishing`);
+    throw new Error(
+      `${label}: its catalog says ${cat.pack}@${cat.version}; rebuild the pack before publishing`,
+    );
   }
-  if (got.packJs.length > MAX_PACK_JS) throw new Error(`${label}: pack.js is over ${MAX_PACK_JS / 1024 / 1024} MB`);
+  if (got.packJs.length > MAX_PACK_JS)
+    throw new Error(`${label}: pack.js is over ${MAX_PACK_JS / 1024 / 1024} MB`);
   const integrity = sri("sha384", got.packJs);
   if (cat.integrity && cat.integrity !== integrity) {
-    throw new Error(`${label}: dist/pack.js changed after its catalog was built; run \`austere-axi components build\` again`);
+    throw new Error(
+      `${label}: dist/pack.js changed after its catalog was built; run \`austere-axi components build\` again`,
+    );
   }
   return { cat, integrity };
 }
 
 /** A registry pack's verified catalog and pack.js integrity, read from its tarball on `registry` without installing it. `spec`: name[@range]. */
-export async function readRegistryPack(spec: string, registry: Registry, signal?: AbortSignal): Promise<{ name: string; version: string; catalog: PackCatalog; integrity: string }> {
+export async function readRegistryPack(
+  spec: string,
+  registry: Registry,
+  signal?: AbortSignal,
+): Promise<{ name: string; version: string; catalog: PackCatalog; integrity: string }> {
   const got = await fromRegistry(spec, registry, signal);
   const { name, version } = got.expect;
   const { cat, integrity } = verifyPack(got, `${name}@${version}`);
@@ -302,7 +425,10 @@ export async function readRegistryPack(spec: string, registry: Registry, signal?
  * Install a pack. `spec`: npm name[@range] (from the registry registryFor routes it to), a .tgz, or a built pack folder.
  * Third-party packs from npm need `trust` unless the trust list covers them; a tarball always does.
  */
-export async function addPack(spec: string, { trust = false }: { trust?: boolean } = {}): Promise<AddedPack> {
+export async function addPack(
+  spec: string,
+  { trust = false }: { trust?: boolean } = {},
+): Promise<AddedPack> {
   const registry = looksLikePath(spec) ? null : registryFor(readRegistries(), splitSpec(spec).name);
   // Read only when it decides something: a registry pack that is not first-party, without --trust.
   let list: TrustList | null = null;
@@ -318,7 +444,8 @@ export async function addPack(spec: string, { trust = false }: { trust?: boolean
       );
     }
     // A pinned pack without a range installs the pinned version, not whatever is latest now.
-    if (list && !range && Object.hasOwn(list.pins, name)) spec = `${name}@${list.pins[name].version}`;
+    if (list && !range && Object.hasOwn(list.pins, name))
+      spec = `${name}@${list.pins[name].version}`;
   }
   const got: FetchedPack = registry ? await fromRegistry(spec, registry) : fromFolder(spec);
   if (got.source === "tarball" && !trust) {
@@ -333,7 +460,11 @@ export async function addPack(spec: string, { trust = false }: { trust?: boolean
   }
   const label = got.expect ? `${got.expect.name}@${got.expect.version}` : spec;
   const { cat, integrity } = verifyPack(got, label);
-  if (registry && list && !trustOf(list, { name: cat.pack, version: cat.version, integrity }, registry.url)) {
+  if (
+    registry &&
+    list &&
+    !trustOf(list, { name: cat.pack, version: cat.version, integrity }, registry.url)
+  ) {
     throw Object.assign(
       new Error(
         `${label} does not match the user's trust list, which pins ${cat.pack}@${list.pins[cat.pack].version} and the hash of its pack.js: only that exact version and file install without --trust. Ask the user to review ${label} and run \`austere-axi trust add ${label}\` or \`austere-axi components add ${label} --trust\` themselves.`,
@@ -346,9 +477,11 @@ export async function addPack(spec: string, { trust = false }: { trust?: boolean
   const coreNames = new Set(coreCatalog().components.map((c) => c.name));
   const others = installedPacks().filter((p) => p.name !== cat.pack);
   for (const c of cat.components) {
-    if (coreNames.has(c.name)) warnings.push(`${c.name} is a core component; pages use the core one`);
+    if (coreNames.has(c.name))
+      warnings.push(`${c.name} is a core component; pages use the core one`);
     const clash = others.find((p) => p.catalog.components.some((x) => x.name === c.name));
-    if (clash) warnings.push(`${c.name} is also in ${clash.name}; a page should declare only one of them`);
+    if (clash)
+      warnings.push(`${c.name} is also in ${clash.name}; a page should declare only one of them`);
   }
 
   const lock = readLock();
@@ -360,19 +493,37 @@ export async function addPack(spec: string, { trust = false }: { trust?: boolean
   fs.writeFileSync(path.join(dir, "catalog.json"), got.catalog);
   if (got.packageJson) fs.writeFileSync(path.join(dir, "package.json"), got.packageJson);
   if (previous && previous.version !== cat.version) {
-    fs.rmSync(path.join(packsDir(), packDirName(cat.pack, previous.version)), { recursive: true, force: true });
+    fs.rmSync(path.join(packsDir(), packDirName(cat.pack, previous.version)), {
+      recursive: true,
+      force: true,
+    });
   }
   lock.packs[cat.pack] = {
     version: cat.version,
     integrity,
     source: got.source,
     resolved: got.resolved,
-    trust: got.source === "npm" && isFirstParty(cat.pack) ? "first-party" : got.source === "folder" ? "local" : list ? "trust-list" : "--trust",
+    trust:
+      got.source === "npm" && isFirstParty(cat.pack)
+        ? "first-party"
+        : got.source === "folder"
+          ? "local"
+          : list
+            ? "trust-list"
+            : "--trust",
     components: cat.components.map((c) => c.name),
     installedAt: new Date().toISOString(),
   };
   writeLock(lock);
-  return { name: cat.pack, version: cat.version, integrity, previous: previous?.version, components: lock.packs[cat.pack].components, warnings, trust: lock.packs[cat.pack].trust };
+  return {
+    name: cat.pack,
+    version: cat.version,
+    integrity,
+    previous: previous?.version,
+    components: lock.packs[cat.pack].components,
+    warnings,
+    trust: lock.packs[cat.pack].trust,
+  };
 }
 
 export function removePack(name: string): { name: string; version: string } | null {
@@ -381,7 +532,10 @@ export function removePack(name: string): { name: string; version: string } | nu
   if (!entry) return null;
   delete lock.packs[name];
   writeLock(lock);
-  fs.rmSync(path.join(packsDir(), packDirName(name, entry.version)), { recursive: true, force: true });
+  fs.rmSync(path.join(packsDir(), packDirName(name, entry.version)), {
+    recursive: true,
+    force: true,
+  });
   return { name, version: entry.version };
 }
 

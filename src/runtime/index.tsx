@@ -49,7 +49,13 @@ export type ChromeToFrame =
   | { type: "highlight"; ids: unknown; scroll: unknown }
   | { type: "presence"; marks: unknown }
   | { type: "history-counts"; counts: unknown }
-  | { type: "init"; mode: unknown; state?: Record<string, unknown> | null; scrollY: number; quickSwitch?: unknown }
+  | {
+      type: "init";
+      mode: unknown;
+      state?: Record<string, unknown> | null;
+      scrollY: number;
+      quickSwitch?: unknown;
+    }
   | { type: "mode"; mode: unknown };
 
 /** What the frame posts to the chrome, sent as { austere: 1, ...message }. */
@@ -127,7 +133,14 @@ function plainForm(state: unknown): Record<string, unknown> | undefined {
 
 /** A message from the chrome: austere: 1 and a string type. Each handler checks the fields it reads. */
 function isChromeMessage(d: unknown): d is ChromeToFrame {
-  return !!d && typeof d === "object" && "austere" in d && d.austere === 1 && "type" in d && typeof d.type === "string";
+  return (
+    !!d &&
+    typeof d === "object" &&
+    "austere" in d &&
+    d.austere === 1 &&
+    "type" in d &&
+    typeof d.type === "string"
+  );
 }
 
 function createBridge(): Bridge {
@@ -193,7 +206,11 @@ function packError(pack: WantedPack, err: Error) {
   failed.add(pack.name);
   // A script's onerror carries no reason; for an installed pack, check knows it.
   const why = !pack.bundled && served() ? " (`austere-axi check <file>` says why)" : "";
-  reportRuntimeError({ source: "pack", component: pack.name, message: `pack ${pack.name}@${pack.version}: ${err.message}${why}` });
+  reportRuntimeError({
+    source: "pack",
+    component: pack.name,
+    message: `pack ${pack.name}@${pack.version}: ${err.message}${why}`,
+  });
 }
 
 /** The library with every registered pack, rebuilt only when the set of packs changes. */
@@ -207,12 +224,18 @@ function libraryWithPacks() {
     currentLibrary = packs.length
       ? buildLibrary(
           packs.flatMap((p) => p.components),
-          { onSkip: (c, message) => reportRuntimeError({ source: "pack", component: c.name, message }) },
+          {
+            onSkip: (c, message) =>
+              reportRuntimeError({ source: "pack", component: c.name, message }),
+          },
         )
       : austereLibrary;
   } catch (err) {
     // Never let a pack blank the page: render with the core components.
-    reportRuntimeError({ source: "pack", message: `packs could not be added (${(err as Error).message}); rendering without them` });
+    reportRuntimeError({
+      source: "pack",
+      message: `packs could not be added (${(err as Error).message}); rendering without them`,
+    });
     currentLibrary = austereLibrary;
   }
   window.__austere.library = currentLibrary;
@@ -223,7 +246,8 @@ function libraryWithPacks() {
 async function prepare(program: string): Promise<Library> {
   declared ||= declaredPacks();
   const want = packsFor(program, declared).filter((p) => !failed.has(p.name));
-  if (want.some((p) => !registeredPacks().some((r) => r.name === p.name))) await loadPacks(want, { onError: packError });
+  if (want.some((p) => !registeredPacks().some((r) => r.name === p.name)))
+    await loadPacks(want, { onError: packError });
   return libraryWithPacks();
 }
 
@@ -288,7 +312,10 @@ function App({ programRef, initialLibrary, bridge, annotator, initialState }: Ap
         return;
       }
       if (event.type !== "continue_conversation") return;
-      const item: ActionItem = { kind: "action", message: event.humanFriendlyMessage || "(button)" };
+      const item: ActionItem = {
+        kind: "action",
+        message: event.humanFriendlyMessage || "(button)",
+      };
       const form = plainForm(event.formState);
       if (form) item.form = form;
       if (event.params?.context !== undefined) item.context = event.params.context;
@@ -322,7 +349,10 @@ function App({ programRef, initialLibrary, bridge, annotator, initialState }: Ap
     [bridge],
   );
 
-  const onStateUpdate = useCallback((state: Record<string, unknown>) => bridge.send({ type: "state", state }), [bridge]);
+  const onStateUpdate = useCallback(
+    (state: Record<string, unknown>) => bridge.send({ type: "state", state }),
+    [bridge],
+  );
 
   return (
     <ThemeProvider mode="dark">
@@ -377,26 +407,38 @@ function boot() {
   // Starts empty: its null program never matches the one on screen.
   let mapped: { program: string | null; map: StatementMap } = { program: null, map: new Map() };
   const lookup = (): [StatementMap, RefsTo] => {
-    if (mapped.program !== live.current) mapped = { program: live.current, map: statementMap(live.current) };
+    if (mapped.program !== live.current)
+      mapped = { program: live.current, map: statementMap(live.current) };
     return [mapped.map, referencesTo];
   };
   const ann = createAnnotator({ post: (msg) => bridge.send(msg), lookup });
   annotator = ann;
   // Registered here, not in App: the chrome may send it as soon as the frame is ready.
   bridge.on("highlight", ({ ids, scroll }) => {
-    ann.highlight(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [], !!scroll);
+    ann.highlight(
+      Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [],
+      !!scroll,
+    );
   });
   // The owner's history: how many revisions changed each statement.
   bridge.on("history-counts", ({ counts }) => {
     const out: Record<string, number> = {};
-    if (counts && typeof counts === "object") for (const [id, n] of Object.entries(counts).slice(0, 2000)) if (typeof n === "number" && Number.isInteger(n) && n > 0) out[id] = n;
+    if (counts && typeof counts === "object")
+      for (const [id, n] of Object.entries(counts).slice(0, 2000))
+        if (typeof n === "number" && Number.isInteger(n) && n > 0) out[id] = n;
     ann.setHistory(out);
   });
   // Other viewers' last clicks. Only well-formed marks are drawn; the colour goes into CSS.
   bridge.on("presence", ({ marks }) => {
     const ok = (m: unknown): m is FocusMark => {
       const f = m as Partial<FocusMark> | null;
-      return !!f && typeof f.statement === "string" && typeof f.name === "string" && typeof f.colour === "string" && /^#[0-9a-f]{6}$/i.test(f.colour);
+      return (
+        !!f &&
+        typeof f.statement === "string" &&
+        typeof f.name === "string" &&
+        typeof f.colour === "string" &&
+        /^#[0-9a-f]{6}$/i.test(f.colour)
+      );
     };
     ann.focus(Array.isArray(marks) ? marks.filter(ok).slice(0, 50) : []);
   });
@@ -407,7 +449,12 @@ function boot() {
     if (e.defaultPrevented || e.button !== 0) return;
     const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
     // An SVG <a> has no string href, so it never matched the pattern either.
-    if (!(a instanceof HTMLAnchorElement) || !/^(https?|mailto):/i.test(a.href) || (a.protocol === location.protocol && a.host === location.host)) return;
+    if (
+      !(a instanceof HTMLAnchorElement) ||
+      !/^(https?|mailto):/i.test(a.href) ||
+      (a.protocol === location.protocol && a.host === location.host)
+    )
+      return;
     const target = (a.getAttribute("target") || "").toLowerCase();
     if (!target || target === "_self") return;
     e.preventDefault();
@@ -432,7 +479,9 @@ function boot() {
     bridge.send({ type: "ready", title: document.title, version: VERSION });
   });
   bridge.on("mode", (d) => ann.setMode(d.mode));
-  window.addEventListener("scroll", () => bridge.send({ type: "scroll", y: window.scrollY }), { passive: true });
+  window.addEventListener("scroll", () => bridge.send({ type: "scroll", y: window.scrollY }), {
+    passive: true,
+  });
   bridge.send({ type: "hello", title: document.title, version: VERSION });
   // Framed by something that is not the review chrome: render anyway.
   setTimeout(() => render(undefined), 600);
@@ -442,5 +491,6 @@ window.__austere = { version: VERSION, library: austereLibrary, packs: registere
 
 // Run late (an exported page's loader runs this script after the page has loaded): wait a
 // task, so the pack scripts the loader runs right after this one have registered.
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
+if (document.readyState === "loading")
+  document.addEventListener("DOMContentLoaded", boot, { once: true });
 else setTimeout(boot, 0);

@@ -109,7 +109,10 @@ export interface PageResult {
   exported?: string;
 }
 
-export function renderComment(results: PageResult[], { tag, artifactUrl, runUrl }: { tag: string; artifactUrl?: string; runUrl?: string }): string {
+export function renderComment(
+  results: PageResult[],
+  { tag, artifactUrl, runUrl }: { tag: string; artifactUrl?: string; runUrl?: string },
+): string {
   const failed = results.filter((r) => !r.ok);
   const exported = results.filter((r) => r.exported);
   const lines = [marker(tag), ""];
@@ -122,13 +125,17 @@ export function renderComment(results: PageResult[], { tag, artifactUrl, runUrl 
   for (const r of results) {
     const name = `\`${r.page.replace(/`/g, "")}\``;
     const title = r.title && r.title !== r.page ? ` ${escapeMd(r.title, 80)}` : "";
-    lines.push(`| ${name}${title} | ${r.ok ? "ok" : "**errors**"} | ${r.ok ? r.statements : "-"} | ${r.warnings} |`);
+    lines.push(
+      `| ${name}${title} | ${r.ok ? "ok" : "**errors**"} | ${r.ok ? r.statements : "-"} | ${r.warnings} |`,
+    );
   }
   let shown = 0;
   let omitted = 0;
   const errorLines: string[] = [];
   for (const r of failed) {
-    const list: PageResult["errors"] = r.errors.length ? r.errors : [{ message: r.error || "check failed" }];
+    const list: PageResult["errors"] = r.errors.length
+      ? r.errors
+      : [{ message: r.error || "check failed" }];
     for (const e of list) {
       if (shown >= MAX_COMMENT_ERRORS) {
         omitted++;
@@ -136,7 +143,9 @@ export function renderComment(results: PageResult[], { tag, artifactUrl, runUrl 
       }
       shown++;
       const where = e.statement ? `${e.statement}${e.line ? `:${e.line}` : ""}: ` : "";
-      errorLines.push(`- \`${r.page.replace(/`/g, "")}\` ${where ? `${escapeMd(where, 80)} ` : ""}${escapeMd(e.message || e.code || "error", 300)}`);
+      errorLines.push(
+        `- \`${r.page.replace(/`/g, "")}\` ${where ? `${escapeMd(where, 80)} ` : ""}${escapeMd(e.message || e.code || "error", 300)}`,
+      );
     }
   }
   if (errorLines.length) {
@@ -199,10 +208,16 @@ export async function upsertComment({
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "austere-axi-action",
   };
-  const call = async <T,>(method: string, url: string, payload?: unknown): Promise<T> => {
-    const res = await f(url, { method, headers, body: payload ? JSON.stringify(payload) : undefined });
+  const call = async <T>(method: string, url: string, payload?: unknown): Promise<T> => {
+    const res = await f(url, {
+      method,
+      headers,
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
     if (!res.ok) {
-      const err: HttpError = new Error(`${method} ${url.replace(api, "")} -> ${res.status} ${(await res.text()).slice(0, 200)}`);
+      const err: HttpError = new Error(
+        `${method} ${url.replace(api, "")} -> ${res.status} ${(await res.text()).slice(0, 200)}`,
+      );
       err.status = res.status;
       throw err;
     }
@@ -216,15 +231,25 @@ export async function upsertComment({
   const ours = (c: IssueComment) => (login ? c.user?.login === login : c.user?.type === "Bot");
   let existing: IssueComment | null = null;
   for (let page = 1; !existing; page++) {
-    const batch = await call<IssueComment[]>("GET", `${api}/repos/${repo}/issues/${pr}/comments?per_page=100&page=${page}`);
-    existing = batch.find((c) => typeof c.body === "string" && c.body.startsWith(mark) && ours(c)) || null;
+    const batch = await call<IssueComment[]>(
+      "GET",
+      `${api}/repos/${repo}/issues/${pr}/comments?per_page=100&page=${page}`,
+    );
+    existing =
+      batch.find((c) => typeof c.body === "string" && c.body.startsWith(mark) && ours(c)) || null;
     if (batch.length < 100) break;
   }
   if (existing) {
-    const c = await call<{ html_url: string }>("PATCH", `${api}/repos/${repo}/issues/comments/${existing.id}`, { body });
+    const c = await call<{ html_url: string }>(
+      "PATCH",
+      `${api}/repos/${repo}/issues/comments/${existing.id}`,
+      { body },
+    );
     return { action: "updated", url: c.html_url };
   }
-  const c = await call<{ html_url: string }>("POST", `${api}/repos/${repo}/issues/${pr}/comments`, { body });
+  const c = await call<{ html_url: string }>("POST", `${api}/repos/${repo}/issues/${pr}/comments`, {
+    body,
+  });
   return { action: "created", url: c.html_url };
 }
 
@@ -240,11 +265,21 @@ export function resolveCli(
     env = process.env,
     execPath = process.execPath,
     exists = fs.existsSync,
-  }: { platform?: string; env?: Record<string, string | undefined>; execPath?: string; exists?: (p: string) => boolean } = {},
+  }: {
+    platform?: string;
+    env?: Record<string, string | undefined>;
+    execPath?: string;
+    exists?: (p: string) => boolean;
+  } = {},
 ): string[] {
   if (platform !== "win32" || cli[0] !== "npx") return cli;
   const entry = (dir: string) => path.win32.join(dir, "node_modules", "npm", "bin", "npx-cli.js");
-  const onPath = String(env.PATH || "").split(";").map((d) => d.replace(/"/g, "").trim()).filter(Boolean);
-  const dir = onPath.find((d) => exists(path.win32.join(d, "npx.cmd")) && exists(entry(d))) ?? path.win32.dirname(execPath);
+  const onPath = String(env.PATH || "")
+    .split(";")
+    .map((d) => d.replace(/"/g, "").trim())
+    .filter(Boolean);
+  const dir =
+    onPath.find((d) => exists(path.win32.join(d, "npx.cmd")) && exists(entry(d))) ??
+    path.win32.dirname(execPath);
   return exists(entry(dir)) ? [execPath, entry(dir), ...cli.slice(1)] : cli;
 }

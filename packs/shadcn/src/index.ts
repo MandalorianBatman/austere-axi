@@ -12,6 +12,19 @@ import css from "./shadcn.css";
 import type { PackModule } from "austere-axi/pack";
 
 export default {
-  components: [Progress, Avatar, AvatarGroup, Tooltip, HoverCard, Breadcrumb, BreadcrumbItem, Kbd, Skeleton, Calendar, Timeline, TimelineItem],
+  components: [
+    Progress,
+    Avatar,
+    AvatarGroup,
+    Tooltip,
+    HoverCard,
+    Breadcrumb,
+    BreadcrumbItem,
+    Kbd,
+    Skeleton,
+    Calendar,
+    Timeline,
+    TimelineItem,
+  ],
   css,
 } satisfies PackModule;

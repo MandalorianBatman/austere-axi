@@ -1,6 +1,12 @@
 import React from "react";
 import { createLibrary, defineComponent } from "@openuidev/react-lang";
-import type { ComponentGroup, ComponentRenderProps, ComponentRenderer, DefinedComponent, Library } from "@openuidev/react-lang";
+import type {
+  ComponentGroup,
+  ComponentRenderProps,
+  ComponentRenderer,
+  DefinedComponent,
+  Library,
+} from "@openuidev/react-lang";
 import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
 // Every file in ./components/ (not starting with "_"), collected at build time.
 import customComponents from "austere:components";
@@ -45,7 +51,9 @@ function tagged<P>(Comp: ComponentRenderer<P>, name: string): ComponentRenderer<
 export const CUSTOM_COMPONENTS = customComponents;
 
 /** Components that leave the prompt but stay searchable (name → "extended"). */
-export function tiersFor(components: AustereComponent[] = customComponents): Record<string, string> {
+export function tiersFor(
+  components: AustereComponent[] = customComponents,
+): Record<string, string> {
   return Object.fromEntries([
     ...EXTENDED.map((n) => [n, "extended"] as const),
     ...components.filter((c) => c.tier === "extended").map((c) => [c.name, "extended"] as const),
@@ -53,8 +61,14 @@ export function tiersFor(components: AustereComponent[] = customComponents): Rec
 }
 
 /** Example programs by component name, for the catalog. */
-export function examplesFor(components: AustereComponent[] = customComponents): Record<string, string[]> {
-  return Object.fromEntries(components.filter((c): c is AustereComponent & { example: string[] } => !!c.example).map((c) => [c.name, c.example] as const));
+export function examplesFor(
+  components: AustereComponent[] = customComponents,
+): Record<string, string[]> {
+  return Object.fromEntries(
+    components
+      .filter((c): c is AustereComponent & { example: string[] } => !!c.example)
+      .map((c) => [c.name, c.example] as const),
+  );
 }
 
 export const TIERS = tiersFor();
@@ -66,7 +80,11 @@ export const EXAMPLES = examplesFor();
  * comes after them, in the order it first appears.
  */
 export function groupsFor(components: AustereComponent[] = customComponents): PromptGroup[] {
-  const groups: PromptGroup[] = STOCK_GROUPS.map((g) => ({ name: g.name, components: [...g.components], notes: [...g.notes] }));
+  const groups: PromptGroup[] = STOCK_GROUPS.map((g) => ({
+    name: g.name,
+    components: [...g.components],
+    notes: [...g.notes],
+  }));
   for (const c of components) {
     let g = groups.find((x) => x.name === c.group);
     if (!g) groups.push((g = { name: c.group, components: [], notes: [] }));
@@ -83,14 +101,20 @@ export const GROUPS = groupsFor();
  * removed, plus our components and any pack components (`extra`). A pack
  * component whose name is taken is skipped and reported through `onSkip`.
  */
-export function buildLibrary(extra: AustereComponent[] = [], { onSkip }: BuildLibraryOptions = {}): Library {
+export function buildLibrary(
+  extra: AustereComponent[] = [],
+  { onSkip }: BuildLibraryOptions = {},
+): Library {
   const stockNames = new Set(Object.keys(openuiLibrary.components));
   for (const c of customComponents) {
     if (stockNames.has(c.name) && !REMOVED.includes(c.name)) {
       throw new Error(`custom component ${c.name} collides with a stock OpenUI component`);
     }
   }
-  const taken = new Set([...[...stockNames].filter((n) => !REMOVED.includes(n)), ...customComponents.map((c) => c.name)]);
+  const taken = new Set([
+    ...[...stockNames].filter((n) => !REMOVED.includes(n)),
+    ...customComponents.map((c) => c.name),
+  ]);
   const added: AustereComponent[] = [];
   for (const c of extra) {
     if (taken.has(c.name)) {
@@ -105,7 +129,11 @@ export function buildLibrary(extra: AustereComponent[] = [], { onSkip }: BuildLi
     openuiLibrary.extend({
       components: {
         remove: REMOVED,
-        add: components.map((c) => (c.slots && c.slots.length ? { component: definitionOf(c), slots: c.slots } : definitionOf(c))),
+        add: components.map((c) =>
+          c.slots && c.slots.length
+            ? { component: definitionOf(c), slots: c.slots }
+            : definitionOf(c),
+        ),
       },
     });
   // A pack slot this library cannot place ("Nope.children") is dropped, not fatal:
@@ -119,18 +147,26 @@ export function buildLibrary(extra: AustereComponent[] = [], { onSkip }: BuildLi
       const m = /Slot "([^"]+)" for "([^"]+)"/.exec(String(messageOf(err)));
       const victim = m && added.find((c) => c.name === m[2]);
       if (!victim || attempt > 50) throw err;
-      onSkip?.(victim, `${victim.name}: ${String(messageOf(err)).replace(/^\[extend\] /, "")} It can still be used in a Stack.`);
+      onSkip?.(
+        victim,
+        `${victim.name}: ${String(messageOf(err)).replace(/^\[extend\] /, "")} It can still be used in a Stack.`,
+      );
       victim.slots = (victim.slots ?? []).filter((x) => x !== m[1]);
     }
   }
-  const untagged = new Set([...STOCK_UNTAGGED, ...components.filter((c) => !c.tagged).map((c) => c.name)]);
+  const untagged = new Set([
+    ...STOCK_UNTAGGED,
+    ...components.filter((c) => !c.tagged).map((c) => c.name),
+  ]);
   // Tagged components get their statement name in the DOM; form fields stay untagged but may store their shown default.
   const overrides = Object.values(curated.components).flatMap((c) => {
     const stock = STOCK_RENDERERS[c.name] || c.component;
     const renderer = storingShownDefault(c.name, stock);
     if (untagged.has(c.name) && renderer === stock) return [];
     const component = untagged.has(c.name) ? renderer : tagged(renderer, c.name);
-    return [defineComponent({ name: c.name, props: c.props, description: c.description, component })];
+    return [
+      defineComponent({ name: c.name, props: c.props, description: c.description, component }),
+    ];
   });
   const final = curated.extend({ components: { override: overrides } });
   return createLibrary({

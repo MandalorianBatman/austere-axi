@@ -57,12 +57,22 @@ const LINKS = `<!doctype html><html><head><title>Links</title></head><body>
 if (window.opener) document.title = "origin:" + self.origin;
 document.getElementById("self").addEventListener("click", () => window.open(location.pathname));
 </script></body></html>`;
-const ORIGIN_PAGE = { status: 200, contentType: "text/html", body: "<script>document.title = self.origin</script>" };
+const ORIGIN_PAGE = {
+  status: 200,
+  contentType: "text/html",
+  body: "<script>document.title = self.origin</script>",
+};
 
 function api(route: string, body: unknown): Promise<ApiReply> {
   return new Promise((resolve, reject) => {
     const r = http.request(
-      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", ...ownerHeaders(STATE) } },
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: route,
+        headers: { "content-type": "application/json", ...ownerHeaders(STATE) },
+      },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -88,10 +98,19 @@ before(async () => {
   fs.writeFileSync(FILE, ARTIFACT);
   fs.writeFileSync(LINKS_FILE, LINKS);
   port = await freePort();
-  server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)], {
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" },
-    stdio: "ignore",
-  });
+  server = spawn(
+    process.execPath,
+    [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)],
+    {
+      env: {
+        ...process.env,
+        AUSTERE_AXI_STATE_DIR: STATE,
+        AUSTERE_AXI_NO_TAILSCALE: "1",
+        OPENUI_TELEMETRY_DISABLED: "1",
+      },
+      stdio: "ignore",
+    },
+  );
   for (let i = 0; i < 100; i++) {
     try {
       await new Promise<void>((resolve, reject) => {
@@ -155,7 +174,8 @@ test("the chrome opens external links for the frame, never its own origin", asyn
     await frame.waitForSelector("#target");
     const opened: Page[] = [];
     context.on("page", (p) => opened.push(p));
-    const send = (url: string) => frame.evaluate((u) => parent.postMessage({ austere: 1, type: "open-url", url: u }, "*"), url);
+    const send = (url: string) =>
+      frame.evaluate((u) => parent.postMessage({ austere: 1, type: "open-url", url: u }, "*"), url);
     await send(`http://127.0.0.1:${port}/s/${session.id}/a/escape.html`);
     await send("javascript:alert(1)");
     await page.waitForTimeout(300);
@@ -185,7 +205,11 @@ test("a new-window link in the frame opens through the chrome, outside the sandb
     const popup = await popupP;
     await popup.waitForURL("https://example.com/x");
     await popup.waitForFunction(() => document.title !== "", null, { timeout: 5000 });
-    assert.equal(await popup.title(), "https://example.com", "the link opened in a sandboxed popup");
+    assert.equal(
+      await popup.title(),
+      "https://example.com",
+      "the link opened in a sandboxed popup",
+    );
   } finally {
     await context.close();
   }
@@ -205,7 +229,11 @@ test("a page opened on its own lets external popups escape, but its own URL stay
     await page.click("#self");
     let popup = await popupP;
     await popup.waitForFunction(() => /^origin:/.test(document.title), null, { timeout: 5000 });
-    assert.equal(await popup.title(), "origin:null", "a popup on the artifact URL left the sandbox");
+    assert.equal(
+      await popup.title(),
+      "origin:null",
+      "a popup on the artifact URL left the sandbox",
+    );
     popupP = context.waitForEvent("page", { timeout: 5000 });
     await page.click("#ext");
     popup = await popupP;

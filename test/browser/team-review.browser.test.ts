@@ -46,11 +46,20 @@ function freePort(): Promise<number> {
 function api(route: string, body: unknown, timeoutMs = 0): Promise<ApiReply> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
-    const r = http.request({ host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } }, (res) => {
-      let data = "";
-      res.on("data", (c) => (data += c));
-      res.on("end", () => resolve(JSON.parse(data) as ApiReply));
-    });
+    const r = http.request(
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: route,
+        headers: { "content-type": "application/json", "x-austere-key": KEY },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (c) => (data += c));
+        res.on("end", () => resolve(JSON.parse(data) as ApiReply));
+      },
+    );
     r.on("error", reject);
     if (timeoutMs) r.setTimeout(timeoutMs, () => r.destroy(new Error("timeout")));
     r.end(payload);
@@ -80,7 +89,13 @@ intro = TextContent("hello")
   );
   port = await freePort();
   server = spawn(process.execPath, ["src/cli/main.ts", "server", "--port", String(port)], {
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", AUSTERE_AXI_LINK_HOST: "127.0.0.1", OPENUI_TELEMETRY_DISABLED: "1" },
+    env: {
+      ...process.env,
+      AUSTERE_AXI_STATE_DIR: STATE,
+      AUSTERE_AXI_NO_TAILSCALE: "1",
+      AUSTERE_AXI_LINK_HOST: "127.0.0.1",
+      OPENUI_TELEMETRY_DISABLED: "1",
+    },
     stdio: "ignore",
   });
   for (let i = 0; i < 100; i++) {
@@ -123,7 +138,11 @@ test("a teammate's note is held, then the owner sends it on", async (t) => {
     await guest.click("form[action$='/join'] button");
     await guest.waitForSelector(".composer textarea");
     assert.ok(!guest.url().includes("invite="), "token dropped from the URL");
-    assert.equal(await guest.locator('[data-cmd="end"]').count(), 0, "no End review for a reviewer");
+    assert.equal(
+      await guest.locator('[data-cmd="end"]').count(),
+      0,
+      "no End review for a reviewer",
+    );
     assert.equal(await guest.locator(".send-end").count(), 0);
 
     await guest.fill(".composer textarea", "tighten the intro");
@@ -166,7 +185,9 @@ test("a teammate without a link asks from the page's address; the waiting page o
   const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const otherCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const waiting = async () => {
-    const r = await fetch(`http://127.0.0.1:${port}/api/share/requests`, { headers: { "x-austere-key": KEY } });
+    const r = await fetch(`http://127.0.0.1:${port}/api/share/requests`, {
+      headers: { "x-austere-key": KEY },
+    });
     return ((await r.json()) as { waiting: { id: string; name: string }[] }).waiting;
   };
   try {
@@ -185,7 +206,10 @@ test("a teammate without a link asks from the page's address; the waiting page o
     await other.waitForSelector("text=Waiting for the owner");
 
     const asked = await waiting();
-    assert.deepEqual(asked.map((r) => r.name), ["Fay", "Fay"]);
+    assert.deepEqual(
+      asked.map((r) => r.name),
+      ["Fay", "Fay"],
+    );
     const approved = await api("/api/share/approve", { id: asked[0].id });
     assert.equal(approved.device?.name, "Fay", JSON.stringify(approved));
 
@@ -213,7 +237,10 @@ test("a teammate without a link asks from the page's address; the waiting page o
 test("Share from the page menu: copy the link, open it in a second browser, and the note arrives under that name, held", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const { session } = await api("/api/open", { file: FILE });
-  const ownerCtx = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["clipboard-read", "clipboard-write"] });
+  const ownerCtx = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    permissions: ["clipboard-read", "clipboard-write"],
+  });
   const guestCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const thirdCtx = await browser.newContext();
   try {
@@ -230,7 +257,11 @@ test("Share from the page menu: copy the link, open it in a second browser, and 
     await owner.waitForSelector(".banner:has-text('Link copied.')");
     const link = await owner.evaluate(() => navigator.clipboard.readText());
     assert.match(link, new RegExp(`/s/${session.id}\\?invite=[A-Za-z0-9_-]{32,}$`));
-    assert.equal(await owner.inputValue("dialog.share .share-link"), link, "the dialog shows the link it copied");
+    assert.equal(
+      await owner.inputValue("dialog.share .share-link"),
+      link,
+      "the dialog shows the link it copied",
+    );
 
     const guest = await guestCtx.newPage();
     await guest.goto(link);
@@ -257,7 +288,11 @@ test("Share from the page menu: copy the link, open it in a second browser, and 
     await guest.goto(more.link);
     await guest.click("form[action$='/join'] button");
     await guest.waitForSelector(".composer textarea");
-    assert.equal((await guestCtx.cookies()).filter((c) => c.name.startsWith("austere_rv_")).length, 2, "one cookie per device");
+    assert.equal(
+      (await guestCtx.cookies()).filter((c) => c.name.startsWith("austere_rv_")).length,
+      2,
+      "one cookie per device",
+    );
     for (const sid of [session.id, other.session.id]) {
       const res = await guest.goto(`http://127.0.0.1:${port}/s/${sid}`);
       assert.equal(res?.status(), 200, sid);
@@ -282,8 +317,13 @@ test("a login code from the CLI signs the browser in as the owner, once", async 
     await page.waitForURL(`http://127.0.0.1:${port}/s/${session.id}`);
     await page.waitForSelector(".composer textarea");
     const cookie = (await ctx.cookies()).find((c) => c.name === "austere_owner");
-    assert.ok(cookie && cookie.value !== KEY, "the browser holds a cookie derived from the key, not the key");
-    const again = await (await other.newPage()).goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
+    assert.ok(
+      cookie && cookie.value !== KEY,
+      "the browser holds a cookie derived from the key, not the key",
+    );
+    const again = await (
+      await other.newPage()
+    ).goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
     assert.equal(again?.status(), 403, "the code is used up");
   } finally {
     await ctx.close();
@@ -304,14 +344,32 @@ test("the owner's held view shows what the agent would receive, and a bad note c
     await guest.waitForSelector(".composer textarea");
     const send = (items: unknown[]) =>
       guest.evaluate(
-        ({ id, items }: { id: string; items: unknown[] }) => fetch(`/s/${id}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items }) }).then((r) => r.status),
+        ({ id, items }: { id: string; items: unknown[] }) =>
+          fetch(`/s/${id}/send`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ items }),
+          }).then((r) => r.status),
         { id: session.id, items },
       );
     const long = "q".repeat(300) + " TAIL-PAST-CUT";
     assert.equal(
       await send([
-        { kind: "annotation", target: "intro", component: "TextContent", path: ["root", "HiddenWithin", "intro"], selection: long, note: "n1" },
-        { kind: "annotation", target: "intro", component: "TextContent", selection: { length: 999 }, note: "POISON" },
+        {
+          kind: "annotation",
+          target: "intro",
+          component: "TextContent",
+          path: ["root", "HiddenWithin", "intro"],
+          selection: long,
+          note: "n1",
+        },
+        {
+          kind: "annotation",
+          target: "intro",
+          component: "TextContent",
+          selection: { length: 999 },
+          note: "POISON",
+        },
         { kind: "message", text: "LATER-NOTE" },
       ]),
       200,

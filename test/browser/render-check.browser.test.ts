@@ -13,62 +13,101 @@ import { ROOT, htmlPage } from "../../scripts/lib/plugins.ts";
 const CLI = path.join(ROOT, "src/cli/main.ts");
 
 const STATE = fs.mkdtempSync(path.join(os.tmpdir(), "austere-render-state-"));
-const ENV = { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" };
+const ENV = {
+  ...process.env,
+  AUSTERE_AXI_STATE_DIR: STATE,
+  AUSTERE_AXI_NO_TAILSCALE: "1",
+  OPENUI_TELEMETRY_DISABLED: "1",
+};
 const skip = findChrome() ? false : "no Chrome; set CHROME_PATH";
 
-test("a layout problem check only warns about fails check --render, named by its statement", { skip }, () => {
-  const file = path.join(STATE, "overlap.html");
-  const program = [
-    `root = Stack([intro, diag])`,
-    `intro = TextContent("hi")`,
-    `diag = Architecture([a, b, c], [], [one, two])`,
-    `a = Node("A")`,
-    `b = Node("B")`,
-    `c = Node("C")`,
-    `one = Group("One", [a, b])`,
-    `two = Group("Two", [b, c])`,
-  ].join("\n");
-  fs.writeFileSync(file, htmlPage("Overlap", program, CDN_RUNTIME_URL));
-  const plain = spawnSync(process.execPath, [CLI, "check", file], { env: ENV, encoding: "utf8" });
-  assert.equal(plain.status, 0, "the static check only warns about overlapping groups");
-  const r = spawnSync(process.execPath, [CLI, "check", "--render", file], { env: ENV, encoding: "utf8" });
-  assert.equal(r.status, 1, r.stdout + r.stderr);
-  assert.match(r.stdout, /status: errors/);
-  assert.match(r.stdout, /statement: diag/);
-});
+test(
+  "a layout problem check only warns about fails check --render, named by its statement",
+  { skip },
+  () => {
+    const file = path.join(STATE, "overlap.html");
+    const program = [
+      `root = Stack([intro, diag])`,
+      `intro = TextContent("hi")`,
+      `diag = Architecture([a, b, c], [], [one, two])`,
+      `a = Node("A")`,
+      `b = Node("B")`,
+      `c = Node("C")`,
+      `one = Group("One", [a, b])`,
+      `two = Group("Two", [b, c])`,
+    ].join("\n");
+    fs.writeFileSync(file, htmlPage("Overlap", program, CDN_RUNTIME_URL));
+    const plain = spawnSync(process.execPath, [CLI, "check", file], { env: ENV, encoding: "utf8" });
+    assert.equal(plain.status, 0, "the static check only warns about overlapping groups");
+    const r = spawnSync(process.execPath, [CLI, "check", "--render", file], {
+      env: ENV,
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout, /status: errors/);
+    assert.match(r.stdout, /statement: diag/);
+  },
+);
 
-test("a clean page reports nothing; a row too wide for a phone names the statements past the edge", { skip }, async () => {
-  const clean = await renderCheck(htmlPage("Clean", 'root = Stack([intro])\nintro = Card([CardHeader("Title", "Sub"), t])\nt = MarkDownRenderer("hello")', CDN_RUNTIME_URL), os.tmpdir());
-  assert.equal(clean.status, "ok", JSON.stringify(clean));
-  assert.deepEqual(clean.errors, []);
-  assert.deepEqual(clean.overflow, []);
+test(
+  "a clean page reports nothing; a row too wide for a phone names the statements past the edge",
+  { skip },
+  async () => {
+    const clean = await renderCheck(
+      htmlPage(
+        "Clean",
+        'root = Stack([intro])\nintro = Card([CardHeader("Title", "Sub"), t])\nt = MarkDownRenderer("hello")',
+        CDN_RUNTIME_URL,
+      ),
+      os.tmpdir(),
+    );
+    assert.equal(clean.status, "ok", JSON.stringify(clean));
+    assert.deepEqual(clean.errors, []);
+    assert.deepEqual(clean.overflow, []);
 
-  const cards = Array.from({ length: 12 }, (_, i) => `c${i}`);
-  const program = [`root = Stack([row])`, `row = Stack([${cards.join(", ")}], "row")`, ...cards.map((c) => `${c} = Card([CardHeader("Header ${c} is wide", "sub")])`)].join("\n");
-  const wide = await renderCheck(htmlPage("Wide", program, CDN_RUNTIME_URL), os.tmpdir());
-  assert.equal(wide.status, "ok", JSON.stringify(wide));
-  assert.equal(wide.overflow.length, 1, JSON.stringify(wide.overflow));
-  assert.equal(wide.overflow[0].width, 390);
-  assert.ok(wide.overflow[0].statements.length > 0 && wide.overflow[0].statements.every((s) => cards.includes(s)), JSON.stringify(wide.overflow));
-});
+    const cards = Array.from({ length: 12 }, (_, i) => `c${i}`);
+    const program = [
+      `root = Stack([row])`,
+      `row = Stack([${cards.join(", ")}], "row")`,
+      ...cards.map((c) => `${c} = Card([CardHeader("Header ${c} is wide", "sub")])`),
+    ].join("\n");
+    const wide = await renderCheck(htmlPage("Wide", program, CDN_RUNTIME_URL), os.tmpdir());
+    assert.equal(wide.status, "ok", JSON.stringify(wide));
+    assert.equal(wide.overflow.length, 1, JSON.stringify(wide.overflow));
+    assert.equal(wide.overflow[0].width, 390);
+    assert.ok(
+      wide.overflow[0].statements.length > 0 &&
+        wide.overflow[0].statements.every((s) => cards.includes(s)),
+      JSON.stringify(wide.overflow),
+    );
+  },
+);
 
-test("a row too wide for a phone is found even in an inner tab of a tab not open by default", { skip }, async () => {
-  const cards = Array.from({ length: 12 }, (_, i) => `c${i}`);
-  const program = [
-    `root = Stack([tabs])`,
-    `tabs = Tabs([first, second])`,
-    `first = TabItem("first", "First", [TextContent("hi")])`,
-    `second = TabItem("second", "Second", [inner])`,
-    `inner = Tabs([innerFirst, innerSecond])`,
-    `innerFirst = TabItem("a", "Inner first", [TextContent("inner")])`,
-    `innerSecond = TabItem("b", "Inner second", [row])`,
-    `row = Stack([${cards.join(", ")}], "row")`,
-    ...cards.map((c) => `${c} = Card([CardHeader("Header ${c} is wide", "sub")])`),
-  ].join("\n");
-  const r = await renderCheck(htmlPage("Hidden wide row", program, CDN_RUNTIME_URL), os.tmpdir());
-  assert.equal(r.status, "ok", JSON.stringify(r));
-  assert.deepEqual(r.errors, []);
-  assert.equal(r.overflow.length, 1, JSON.stringify(r.overflow));
-  assert.equal(r.overflow[0].width, 390);
-  assert.ok(r.overflow[0].statements.length > 0 && r.overflow[0].statements.every((s) => cards.includes(s)), JSON.stringify(r.overflow));
-});
+test(
+  "a row too wide for a phone is found even in an inner tab of a tab not open by default",
+  { skip },
+  async () => {
+    const cards = Array.from({ length: 12 }, (_, i) => `c${i}`);
+    const program = [
+      `root = Stack([tabs])`,
+      `tabs = Tabs([first, second])`,
+      `first = TabItem("first", "First", [TextContent("hi")])`,
+      `second = TabItem("second", "Second", [inner])`,
+      `inner = Tabs([innerFirst, innerSecond])`,
+      `innerFirst = TabItem("a", "Inner first", [TextContent("inner")])`,
+      `innerSecond = TabItem("b", "Inner second", [row])`,
+      `row = Stack([${cards.join(", ")}], "row")`,
+      ...cards.map((c) => `${c} = Card([CardHeader("Header ${c} is wide", "sub")])`),
+    ].join("\n");
+    const r = await renderCheck(htmlPage("Hidden wide row", program, CDN_RUNTIME_URL), os.tmpdir());
+    assert.equal(r.status, "ok", JSON.stringify(r));
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.overflow.length, 1, JSON.stringify(r.overflow));
+    assert.equal(r.overflow[0].width, 390);
+    assert.ok(
+      r.overflow[0].statements.length > 0 &&
+        r.overflow[0].statements.every((s) => cards.includes(s)),
+      JSON.stringify(r.overflow),
+    );
+  },
+);

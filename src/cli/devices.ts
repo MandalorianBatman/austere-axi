@@ -104,12 +104,22 @@ export function randomToken(): string {
 /** A live row: not revoked, and for an unclaimed single-use link, not expired. */
 export function isLive(row: DeviceRow, now = Date.now()): boolean {
   if (row.revoked_at != null) return false;
-  if (row.claimed_at == null && !row.reusable && row.link_expires_at != null && row.link_expires_at <= now) return false;
+  if (
+    row.claimed_at == null &&
+    !row.reusable &&
+    row.link_expires_at != null &&
+    row.link_expires_at <= now
+  )
+    return false;
   return true;
 }
 
 /** Whether `row`'s scope reaches the copy `artifactId` in project `projectId`. */
-export function covers(row: Pick<DeviceRow, "scope_kind" | "scope_id">, artifactId: string, projectId: string | null): boolean {
+export function covers(
+  row: Pick<DeviceRow, "scope_kind" | "scope_id">,
+  artifactId: string,
+  projectId: string | null,
+): boolean {
   if (row.scope_kind === "all") return true;
   if (row.scope_kind === "project") return projectId != null && row.scope_id === projectId;
   return row.scope_id === artifactId;
@@ -125,12 +135,18 @@ export class DeviceStore {
   }
 
   get(id: string): DeviceRow | null {
-    return (this.db.prepare("SELECT * FROM devices WHERE id = ?").get(id) as unknown as DeviceRow | undefined) ?? null;
+    return (
+      (this.db.prepare("SELECT * FROM devices WHERE id = ?").get(id) as unknown as
+        | DeviceRow
+        | undefined) ?? null
+    );
   }
 
   /** Every row, links and devices, revoked ones too, the newest first. */
   list(): DeviceRow[] {
-    return this.db.prepare("SELECT * FROM devices ORDER BY created_at DESC, rowid DESC").all() as unknown as DeviceRow[];
+    return this.db
+      .prepare("SELECT * FROM devices ORDER BY created_at DESC, rowid DESC")
+      .all() as unknown as DeviceRow[];
   }
 
   /**
@@ -138,19 +154,51 @@ export class DeviceStore {
    * name already has the same scope (revoke that one first), so `share revoke <name>` stays unambiguous.
    * Returns the row and its token.
    */
-  createLink({ name, scope, page, auto = false, expiresAt }: { name: unknown; scope: Scope; page: string; auto?: boolean; expiresAt?: number }): { row: DeviceRow; token: string } {
+  createLink({
+    name,
+    scope,
+    page,
+    auto = false,
+    expiresAt,
+  }: {
+    name: unknown;
+    scope: Scope;
+    page: string;
+    auto?: boolean;
+    expiresAt?: number;
+  }): { row: DeviceRow; token: string } {
     const clean = cleanName(name);
     const now = this.now();
     const expires = expiresAt ?? now + LINK_TTL_MS;
     if (expires <= now) throw new Error("the link would expire before anyone could open it");
     return inTransaction(this.db, () => {
-      const same = (this.db.prepare("SELECT * FROM devices WHERE scope_kind = ? AND scope_id IS ?").all(scope.kind, scope.id) as unknown as DeviceRow[]).filter((r) => sameName(r.name, clean) && isLive(r, now));
-      if (same.length) throw new Error(`"${clean}" already has access with this scope; revoke it first (share revoke "${clean}")`);
+      const same = (
+        this.db
+          .prepare("SELECT * FROM devices WHERE scope_kind = ? AND scope_id IS ?")
+          .all(scope.kind, scope.id) as unknown as DeviceRow[]
+      ).filter((r) => sameName(r.name, clean) && isLive(r, now));
+      if (same.length)
+        throw new Error(
+          `"${clean}" already has access with this scope; revoke it first (share revoke "${clean}")`,
+        );
       const token = randomToken();
       const id = newDeviceId();
       this.db
-        .prepare("INSERT INTO devices (id, name, origin, link_hash, link_token, link_page, link_expires_at, scope_kind, scope_id, auto, created_at) VALUES (?, ?, 'link', ?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(id, clean, hashSecret(token), token, page, expires, scope.kind, scope.id, auto ? 1 : 0, now);
+        .prepare(
+          "INSERT INTO devices (id, name, origin, link_hash, link_token, link_page, link_expires_at, scope_kind, scope_id, auto, created_at) VALUES (?, ?, 'link', ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          id,
+          clean,
+          hashSecret(token),
+          token,
+          page,
+          expires,
+          scope.kind,
+          scope.id,
+          auto ? 1 : 0,
+          now,
+        );
       return { row: this.get(id) as DeviceRow, token };
     });
   }
@@ -158,7 +206,11 @@ export class DeviceStore {
   /** The row a link token opens, whatever its state (see linkState), or null. */
   findLink(token: unknown): DeviceRow | null {
     if (typeof token !== "string" || !token || token.length > 200) return null;
-    return (this.db.prepare("SELECT * FROM devices WHERE link_hash = ?").get(hashSecret(token)) as unknown as DeviceRow | undefined) ?? null;
+    return (
+      (this.db
+        .prepare("SELECT * FROM devices WHERE link_hash = ?")
+        .get(hashSecret(token)) as unknown as DeviceRow | undefined) ?? null
+    );
   }
 
   /** Whether a link row still lets a browser in. */
@@ -188,7 +240,20 @@ export class DeviceStore {
             `INSERT INTO devices (id, name, origin, secret_hash, scope_kind, scope_id, auto, created_at, claimed_at, last_seen_at, last_addr, last_host, user_agent)
              VALUES (?, ?, 'link', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(id, fresh.name, hashSecret(secret), fresh.scope_kind, fresh.scope_id, fresh.auto, now, now, now, clip(meta.addr), clip(meta.host), clip(meta.userAgent));
+          .run(
+            id,
+            fresh.name,
+            hashSecret(secret),
+            fresh.scope_kind,
+            fresh.scope_id,
+            fresh.auto,
+            now,
+            now,
+            now,
+            clip(meta.addr),
+            clip(meta.host),
+            clip(meta.userAgent),
+          );
         return { device: this.get(id) as DeviceRow, secret };
       }
       const done = this.db
@@ -196,7 +261,16 @@ export class DeviceStore {
           `UPDATE devices SET claimed_at = ?, secret_hash = ?, link_token = NULL, last_seen_at = ?, last_addr = ?, last_host = ?, user_agent = ?
            WHERE id = ? AND claimed_at IS NULL AND revoked_at IS NULL AND reusable = 0 AND (link_expires_at IS NULL OR link_expires_at > ?)`,
         )
-        .run(now, hashSecret(secret), now, clip(meta.addr), clip(meta.host), clip(meta.userAgent), link.id, now);
+        .run(
+          now,
+          hashSecret(secret),
+          now,
+          clip(meta.addr),
+          clip(meta.host),
+          clip(meta.userAgent),
+          link.id,
+          now,
+        );
       if (Number(done.changes) !== 1) return null;
       return { device: this.get(link.id) as DeviceRow, secret };
     });
@@ -205,7 +279,9 @@ export class DeviceStore {
   /** The live device a cookie value belongs to, or null: a claimed device, or an old-style link whose token is the cookie. */
   bySecret(secret: unknown): DeviceRow | null {
     if (typeof secret !== "string" || !secret || secret.length > 200) return null;
-    const row = this.db.prepare("SELECT * FROM devices WHERE secret_hash = ? AND revoked_at IS NULL").get(hashSecret(secret)) as unknown as DeviceRow | undefined;
+    const row = this.db
+      .prepare("SELECT * FROM devices WHERE secret_hash = ? AND revoked_at IS NULL")
+      .get(hashSecret(secret)) as unknown as DeviceRow | undefined;
     return row ?? null;
   }
 
@@ -214,13 +290,21 @@ export class DeviceStore {
     const now = this.now();
     if (row.last_seen_at != null && now - row.last_seen_at < SEEN_EVERY_MS) return false;
     row.last_seen_at = now;
-    this.db.prepare("UPDATE devices SET last_seen_at = ?, last_addr = ?, last_host = ?, user_agent = COALESCE(?, user_agent) WHERE id = ?").run(now, clip(meta.addr), clip(meta.host), clip(meta.userAgent), row.id);
+    this.db
+      .prepare(
+        "UPDATE devices SET last_seen_at = ?, last_addr = ?, last_host = ?, user_agent = COALESCE(?, user_agent) WHERE id = ?",
+      )
+      .run(now, clip(meta.addr), clip(meta.host), clip(meta.userAgent), row.id);
     return true;
   }
 
   /** The hostname a reverse lookup found for the address a device was last seen at, while it still is that address. */
   setHost(id: string, addr: string, host: string): void {
-    this.db.prepare("UPDATE devices SET last_host = ? WHERE id = ? AND last_addr = ? AND last_host IS NULL").run(clip(host), id, clip(addr));
+    this.db
+      .prepare(
+        "UPDATE devices SET last_host = ? WHERE id = ? AND last_addr = ? AND last_host IS NULL",
+      )
+      .run(clip(host), id, clip(addr));
   }
 
   /**
@@ -228,18 +312,45 @@ export class DeviceStore {
    * found again by `tailscale whois` on every visit over the tailnet listener, so it has no secret
    * and no cookie. Refused, as a link is, when a live row of that name or that login already has this scope.
    */
-  allowLogin({ login, name, scope, auto = false }: { login: unknown; name: unknown; scope: Scope; auto?: boolean }): DeviceRow {
+  allowLogin({
+    login,
+    name,
+    scope,
+    auto = false,
+  }: {
+    login: unknown;
+    name: unknown;
+    scope: Scope;
+    auto?: boolean;
+  }): DeviceRow {
     const who = String(login ?? "").trim();
-    if (!who || who.length > 200 || /[\s\u0000-\u001f\u007f]/.test(who)) throw new Error("a Tailscale login is required, as Tailscale shows it (e.g. ana@example.com or ana@github)");
-    if (who === "tagged-devices") throw new Error("tagged devices belong to no person; let a person's login in instead");
+    if (!who || who.length > 200 || /[\s\u0000-\u001f\u007f]/.test(who))
+      throw new Error(
+        "a Tailscale login is required, as Tailscale shows it (e.g. ana@example.com or ana@github)",
+      );
+    if (who === "tagged-devices")
+      throw new Error("tagged devices belong to no person; let a person's login in instead");
     const clean = cleanName(name);
     const now = this.now();
     return inTransaction(this.db, () => {
-      const same = (this.db.prepare("SELECT * FROM devices WHERE scope_kind = ? AND scope_id IS ?").all(scope.kind, scope.id) as unknown as DeviceRow[]).filter((r) => isLive(r, now) && (sameName(r.name, clean) || (r.origin === "tailscale" && r.verified_login === who)));
-      if (same.length) throw new Error(`"${same[0].name}" already has access with this scope; revoke it first (share revoke "${same[0].name}")`);
+      const same = (
+        this.db
+          .prepare("SELECT * FROM devices WHERE scope_kind = ? AND scope_id IS ?")
+          .all(scope.kind, scope.id) as unknown as DeviceRow[]
+      ).filter(
+        (r) =>
+          isLive(r, now) &&
+          (sameName(r.name, clean) || (r.origin === "tailscale" && r.verified_login === who)),
+      );
+      if (same.length)
+        throw new Error(
+          `"${same[0].name}" already has access with this scope; revoke it first (share revoke "${same[0].name}")`,
+        );
       const id = newDeviceId();
       this.db
-        .prepare("INSERT INTO devices (id, name, origin, verified_login, scope_kind, scope_id, auto, created_at, claimed_at) VALUES (?, ?, 'tailscale', ?, ?, ?, ?, ?, ?)")
+        .prepare(
+          "INSERT INTO devices (id, name, origin, verified_login, scope_kind, scope_id, auto, created_at, claimed_at) VALUES (?, ?, 'tailscale', ?, ?, ?, ?, ?, ?)",
+        )
         .run(id, clean, who, scope.kind, scope.id, auto ? 1 : 0, now, now);
       return this.get(id) as DeviceRow;
     });
@@ -247,7 +358,11 @@ export class DeviceStore {
 
   /** The live rows that let Tailscale login `login` in by itself (allowLogin), the oldest first. */
   byLogin(login: string): DeviceRow[] {
-    return this.db.prepare("SELECT * FROM devices WHERE origin = 'tailscale' AND verified_login = ? AND revoked_at IS NULL ORDER BY created_at, rowid").all(login) as unknown as DeviceRow[];
+    return this.db
+      .prepare(
+        "SELECT * FROM devices WHERE origin = 'tailscale' AND verified_login = ? AND revoked_at IS NULL ORDER BY created_at, rowid",
+      )
+      .all(login) as unknown as DeviceRow[];
   }
 
   /**
@@ -257,7 +372,9 @@ export class DeviceStore {
   bindLogin(row: DeviceRow, login: string): void {
     if (row.verified_login != null) return;
     row.verified_login = login;
-    this.db.prepare("UPDATE devices SET verified_login = ? WHERE id = ? AND verified_login IS NULL").run(login, row.id);
+    this.db
+      .prepare("UPDATE devices SET verified_login = ? WHERE id = ? AND verified_login IS NULL")
+      .run(login, row.id);
   }
 
   /** Revoke what `key` names: a row's id, or every live row with that name. Returns the rows revoked. */
@@ -267,8 +384,14 @@ export class DeviceStore {
     const now = this.now();
     return inTransaction(this.db, () => {
       // Names compare in JS: SQLite's lower() folds ASCII only, so "Éva" and "éva" would differ there.
-      const rows = (this.db.prepare("SELECT * FROM devices WHERE revoked_at IS NULL").all() as unknown as DeviceRow[]).filter((r) => r.id === k || (sameName(r.name, k) && isLive(r, now)));
-      const stmt = this.db.prepare("UPDATE devices SET revoked_at = ?, secret_hash = NULL, link_token = NULL WHERE id = ?");
+      const rows = (
+        this.db
+          .prepare("SELECT * FROM devices WHERE revoked_at IS NULL")
+          .all() as unknown as DeviceRow[]
+      ).filter((r) => r.id === k || (sameName(r.name, k) && isLive(r, now)));
+      const stmt = this.db.prepare(
+        "UPDATE devices SET revoked_at = ?, secret_hash = NULL, link_token = NULL WHERE id = ?",
+      );
       for (const r of rows) stmt.run(now, r.id);
       return rows.map((r) => ({ ...r, revoked_at: now, secret_hash: null, link_token: null }));
     });
@@ -286,7 +409,9 @@ export class DeviceStore {
   setScope(id: string, scope: Scope): DeviceRow {
     const row = this.live(id);
     const page = row.claimed_at == null && scope.kind === "page" ? scope.id : row.link_page;
-    this.db.prepare("UPDATE devices SET scope_kind = ?, scope_id = ?, link_page = ? WHERE id = ?").run(scope.kind, scope.id, page, row.id);
+    this.db
+      .prepare("UPDATE devices SET scope_kind = ?, scope_id = ?, link_page = ? WHERE id = ?")
+      .run(scope.kind, scope.id, page, row.id);
     return this.get(row.id) as DeviceRow;
   }
 
@@ -299,20 +424,31 @@ export class DeviceStore {
     if (!row.reusable) throw new Error("this link is single-use already");
     const token = randomToken();
     const expires = expiresAt ?? this.now() + LINK_TTL_MS;
-    this.db.prepare("UPDATE devices SET reusable = 0, secret_hash = NULL, link_hash = ?, link_token = ?, link_expires_at = ? WHERE id = ?").run(hashSecret(token), token, expires, row.id);
+    this.db
+      .prepare(
+        "UPDATE devices SET reusable = 0, secret_hash = NULL, link_hash = ?, link_token = ?, link_expires_at = ? WHERE id = ?",
+      )
+      .run(hashSecret(token), token, expires, row.id);
     return { row: this.get(row.id) as DeviceRow, token };
   }
 
   /** Names of the live rows with auto on that reach this copy: their notes reach the agent without the owner. */
   autoNames(artifactId: string, projectId: string | null): string[] {
     const now = this.now();
-    const rows = this.db.prepare("SELECT * FROM devices WHERE auto = 1 AND revoked_at IS NULL ORDER BY created_at").all() as unknown as DeviceRow[];
-    return [...new Set(rows.filter((r) => isLive(r, now) && covers(r, artifactId, projectId)).map((r) => r.name))];
+    const rows = this.db
+      .prepare("SELECT * FROM devices WHERE auto = 1 AND revoked_at IS NULL ORDER BY created_at")
+      .all() as unknown as DeviceRow[];
+    return [
+      ...new Set(
+        rows.filter((r) => isLive(r, now) && covers(r, artifactId, projectId)).map((r) => r.name),
+      ),
+    ];
   }
 
   private live(id: string): DeviceRow {
     const row = this.get(id);
-    if (!row || !isLive(row, this.now())) throw new Error(`no live link or device ${JSON.stringify(id)}`);
+    if (!row || !isLive(row, this.now()))
+      throw new Error(`no live link or device ${JSON.stringify(id)}`);
     return row;
   }
 }
@@ -338,7 +474,14 @@ interface LegacyInvite {
 function isLegacyInvite(i: unknown): i is LegacyInvite {
   if (!i || typeof i !== "object") return false;
   const o = i as Record<string, unknown>;
-  return typeof o.token === "string" && o.token.length >= 22 && typeof o.name === "string" && Boolean(o.name) && typeof o.sessionId === "string" && Boolean(o.sessionId);
+  return (
+    typeof o.token === "string" &&
+    o.token.length >= 22 &&
+    typeof o.name === "string" &&
+    Boolean(o.name) &&
+    typeof o.sessionId === "string" &&
+    Boolean(o.sessionId)
+  );
 }
 
 /**
@@ -376,7 +519,17 @@ export function importInvites(db: sqlite.DatabaseSync, dir: string): number {
       } catch {
         name = String(inv.name).slice(0, 40) || "reviewer";
       }
-      const r = stmt.run(`d${crypto.createHash("sha256").update(`austere-axi invite\0${inv.token}`).digest("hex").slice(0, 10)}`, name, h, h, inv.token, inv.sessionId, inv.sessionId, inv.auto ? 1 : 0, Number(inv.createdAt) || Date.now());
+      const r = stmt.run(
+        `d${crypto.createHash("sha256").update(`austere-axi invite\0${inv.token}`).digest("hex").slice(0, 10)}`,
+        name,
+        h,
+        h,
+        inv.token,
+        inv.sessionId,
+        inv.sessionId,
+        inv.auto ? 1 : 0,
+        Number(inv.createdAt) || Date.now(),
+      );
       n += Number(r.changes);
     }
     return n;

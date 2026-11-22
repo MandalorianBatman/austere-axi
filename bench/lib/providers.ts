@@ -118,16 +118,25 @@ export function complete(model: Model, convo: Convo): Promise<Turn> {
 }
 
 export function missingCredentials(model: ModelConfig): string | null {
-  if (model.provider === "anthropic" && !process.env[model.keyEnv]) return `${model.keyEnv} is not set`;
+  if (model.provider === "anthropic" && !process.env[model.keyEnv])
+    return `${model.keyEnv} is not set`;
   return null;
 }
 
 export function priceUsage(pricing: Pricing, u: Usage): number {
   const per = (n: number, rate: number | undefined) => (n * (rate ?? 0)) / 1e6;
-  return per(u.input, pricing.input) + per(u.output, pricing.output) + per(u.cacheRead, pricing.cacheRead ?? pricing.input) + per(u.cacheWrite, pricing.cacheWrite ?? pricing.input);
+  return (
+    per(u.input, pricing.input) +
+    per(u.output, pricing.output) +
+    per(u.cacheRead, pricing.cacheRead ?? pricing.input) +
+    per(u.cacheWrite, pricing.cacheWrite ?? pricing.input)
+  );
 }
 
-async function anthropic(model: AnthropicModelConfig & { id: string }, convo: Convo): Promise<Turn> {
+async function anthropic(
+  model: AnthropicModelConfig & { id: string },
+  convo: Convo,
+): Promise<Turn> {
   const started = performance.now();
   let ttftMs: number | null = null;
   const body = {
@@ -140,7 +149,11 @@ async function anthropic(model: AnthropicModelConfig & { id: string }, convo: Co
   };
   const res = await fetchWithRetry(`${model.baseUrl.replace(/\/$/, "")}/v1/messages`, {
     method: "POST",
-    headers: { "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": process.env[model.keyEnv] ?? "" },
+    headers: {
+      "content-type": "application/json",
+      "anthropic-version": "2023-06-01",
+      "x-api-key": process.env[model.keyEnv] ?? "",
+    },
     body: JSON.stringify(body),
   });
   const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: null };
@@ -152,7 +165,8 @@ async function anthropic(model: AnthropicModelConfig & { id: string }, convo: Co
     if (u.output_tokens != null) usage.output = u.output_tokens;
     if (u.cache_read_input_tokens != null) usage.cacheRead = u.cache_read_input_tokens;
     if (u.cache_creation_input_tokens != null) usage.cacheWrite = u.cache_creation_input_tokens;
-    if (u.output_tokens_details?.thinking_tokens != null) usage.thinking = u.output_tokens_details.thinking_tokens;
+    if (u.output_tokens_details?.thinking_tokens != null)
+      usage.thinking = u.output_tokens_details.thinking_tokens;
   };
   const decoder = new TextDecoder();
   let buf = "";
@@ -162,7 +176,11 @@ async function anthropic(model: AnthropicModelConfig & { id: string }, convo: Co
     while ((cut = buf.indexOf("\n\n")) >= 0) {
       const event = buf.slice(0, cut);
       buf = buf.slice(cut + 2);
-      const data = event.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("");
+      const data = event
+        .split("\n")
+        .filter((l) => l.startsWith("data:"))
+        .map((l) => l.slice(5).trim())
+        .join("");
       if (!data) continue;
       const msg: StreamEvent = JSON.parse(data);
       if (msg.type === "message_start") take(msg.message?.usage);
@@ -175,7 +193,14 @@ async function anthropic(model: AnthropicModelConfig & { id: string }, convo: Co
       } else if (msg.type === "error") throw new Error(`${model.id}: ${JSON.stringify(msg.error)}`);
     }
   }
-  return { text, usage, costUsd: priceUsage(model.pricing, usage), wallMs: performance.now() - started, ttftMs, stopReason };
+  return {
+    text,
+    usage,
+    costUsd: priceUsage(model.pricing, usage),
+    wallMs: performance.now() - started,
+    ttftMs,
+    stopReason,
+  };
 }
 
 async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
@@ -197,7 +222,19 @@ async function claudeCli(model: ClaudeCliModelConfig, convo: Convo): Promise<Tur
   const dir = convo.state?.dir ?? fs.mkdtempSync(path.join(STATE, "claude-"));
   const sysFile = path.join(dir, "system.md");
   if (!convo.state) fs.writeFileSync(sysFile, convo.system);
-  const args = ["-p", "--model", model.model, "--system-prompt-file", sysFile, "--tools", "", "--setting-sources", "", "--output-format", "json"];
+  const args = [
+    "-p",
+    "--model",
+    model.model,
+    "--system-prompt-file",
+    sysFile,
+    "--tools",
+    "",
+    "--setting-sources",
+    "",
+    "--output-format",
+    "json",
+  ];
   if (model.effort) args.push("--effort", model.effort);
   if (convo.state?.sessionId) args.push("--resume", convo.state.sessionId);
   const prompt = convo.messages[convo.messages.length - 1].content;
@@ -232,7 +269,11 @@ function run(cmd: string, args: string[], stdin: string, cwd: string): Promise<s
     child.stdout.on("data", (d: Buffer) => (out += d));
     child.stderr.on("data", (d: Buffer) => (err += d));
     child.on("error", reject);
-    child.on("close", (code) => (code === 0 || out.trim().startsWith("{") ? resolve(out) : reject(new Error(`${cmd} exited ${code}: ${err.slice(0, 500)}`))));
+    child.on("close", (code) =>
+      code === 0 || out.trim().startsWith("{")
+        ? resolve(out)
+        : reject(new Error(`${cmd} exited ${code}: ${err.slice(0, 500)}`)),
+    );
     child.stdin.end(stdin);
   });
 }

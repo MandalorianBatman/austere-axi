@@ -3,14 +3,24 @@
 const PLAIN = /^[A-Za-z0-9_./@:+-][A-Za-z0-9 _./@:+(),=<>*#%?!'-]*$/;
 
 /** JSON.stringify leaves NEL, LS and PS raw; YAML readers treat them as line breaks, so escape them. */
-const json = (v: unknown): string => JSON.stringify(v).replace(/[\u0085\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+const json = (v: unknown): string =>
+  JSON.stringify(v).replace(
+    /[\u0085\u2028\u2029]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
 
 function scalar(v: unknown): string {
   if (v === null || v === undefined) return "null";
   if (typeof v === "number" || typeof v === "boolean") return String(v);
   const s = String(v);
   if (s === "") return '""';
-  if (PLAIN.test(s) && !/^(true|false|null|yes|no|-?\d[\d.]*)$/i.test(s) && !/: /.test(s) && !/\s$/.test(s)) return s;
+  if (
+    PLAIN.test(s) &&
+    !/^(true|false|null|yes|no|-?\d[\d.]*)$/i.test(s) &&
+    !/: /.test(s) &&
+    !/\s$/.test(s)
+  )
+    return s;
   return json(s);
 }
 
@@ -90,5 +100,7 @@ export function format(obj: object): string {
  * output (an add-on such as austere-wiki): the same fields, with none of the YAML quoting rules to parse.
  */
 export function print(obj: object): void {
-  process.stdout.write((process.env.AUSTERE_AXI_FORMAT === "json" ? JSON.stringify(obj) : format(obj)) + "\n");
+  process.stdout.write(
+    (process.env.AUSTERE_AXI_FORMAT === "json" ? JSON.stringify(obj) : format(obj)) + "\n",
+  );
 }

@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { changedStatementIds, closureOf, referencesTo, renameStatements, splitStatements, statementMap } from "../src/shared/statements.ts";
+import {
+  changedStatementIds,
+  closureOf,
+  referencesTo,
+  renameStatements,
+  splitStatements,
+  statementMap,
+} from "../src/shared/statements.ts";
 
 const program = `root = Stack([intro, flow], "column", "l")
 // a comment
@@ -13,14 +20,19 @@ flow = CodeBlock('text', 'step one
 
 test("splits statements, keeping multi-line strings and skipping comments", () => {
   const s = splitStatements(program);
-  assert.deepEqual(s.map((x) => x.id), ["root", "intro", "text", "flow"]);
+  assert.deepEqual(
+    s.map((x) => x.id),
+    ["root", "intro", "text", "flow"],
+  );
   assert.equal(s[2].line, 4);
   assert.equal(s[2].endLine, 5);
   assert.match(s[3].text, /a --> b'\)$/);
 });
 
 test("detects changed and added statements", () => {
-  const next = program.replace("Hi = there", "Hello").replace("flow = ", "extra = TextContent(\"x\")\nflow = ");
+  const next = program
+    .replace("Hi = there", "Hello")
+    .replace("flow = ", 'extra = TextContent("x")\nflow = ');
   assert.deepEqual(changedStatementIds(program, next).sort(), ["extra", "intro"]);
   assert.deepEqual(changedStatementIds(program, program), []);
 });
@@ -44,7 +56,13 @@ d = TextContent("d")`);
 test("renameStatements: definitions and references follow; strings, comments, members and object keys do not", () => {
   const text = `flow = Architecture([client, api], {client: 1, label: "client"}) // client
 client = Node("client", client.name)`;
-  const out = renameStatements(text, new Map([["client", "client2"], ["flow", "flow2"]]));
+  const out = renameStatements(
+    text,
+    new Map([
+      ["client", "client2"],
+      ["flow", "flow2"],
+    ]),
+  );
   assert.equal(
     out,
     `flow2 = Architecture([client2, api], {client: 1, label: "client"}) // client
@@ -75,7 +93,11 @@ flag = TextContent("f")`);
   assert.deepEqual(closureOf(map, ["keyed"]), ["keyed"]);
   assert.deepEqual(closureOf(map, ["second"]), ["second"]);
   assert.deepEqual(closureOf(map, ["third"]), ["third"]);
-  assert.deepEqual(closureOf(map, ["ternary"]), ["ternary", "other", "flag"], "a ternary's branches are values");
+  assert.deepEqual(
+    closureOf(map, ["ternary"]),
+    ["ternary", "other", "flag"],
+    "a ternary's branches are values",
+  );
   const sum = statementMap(`root = Chart({x: flag ? 1 + amount : 0})
 flag = TextContent("f")
 amount = TextContent("a")`);

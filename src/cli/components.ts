@@ -11,7 +11,17 @@ const BIN = "austere-axi";
 
 /** A catalog entry with where it comes from: core, a bundled pack (part of core), an installed pack, or a pack on npm that is not installed. */
 export type ComponentEntry = CatalogEntry &
-  ({ source: "core" } | { source: "bundled" } | { source: "installed"; version: string } | { source: "remote"; version: string; trust: RemotePack["trust"]; registry: RemotePack["registry"] });
+  (
+    | { source: "core" }
+    | { source: "bundled" }
+    | { source: "installed"; version: string }
+    | {
+        source: "remote";
+        version: string;
+        trust: RemotePack["trust"];
+        registry: RemotePack["registry"];
+      }
+  );
 
 export interface ComponentCatalog {
   entries: ComponentEntry[];
@@ -53,36 +63,58 @@ export interface ComponentShow {
 }
 
 /** A pack component with the fields a hand-written catalog may leave out (parseCatalog allows that) filled in. */
-const filled = <C extends CatalogEntry>(c: C): C => ({ ...c, description: c.description ?? "", examples: c.examples ?? [] });
+const filled = <C extends CatalogEntry>(c: C): C => ({
+  ...c,
+  description: c.description ?? "",
+  examples: c.examples ?? [],
+});
 
 /** Every component an agent can use here: core (with bundled packs) first, then installed packs, then the packs on npm given. */
 export function catalogEntries(remote: RemotePack[] = []): ComponentCatalog {
   const core = coreCatalog();
-  const out = core.components.map((c): ComponentEntry => ({ ...c, source: c.pack === "core" ? "core" : "bundled" }));
+  const out = core.components.map((c): ComponentEntry => ({
+    ...c,
+    source: c.pack === "core" ? "core" : "bundled",
+  }));
   const notes = new Map(core.groups.map((g) => [`core\0${g.name}`, g.notes]));
   for (const p of installedPacks()) {
     for (const g of p.catalog.groups || []) notes.set(`${p.name}\0${g.name}`, g.notes);
-    for (const c of p.catalog.components) out.push({ ...filled(c), pack: p.name, version: p.version, source: "installed" });
+    for (const c of p.catalog.components)
+      out.push({ ...filled(c), pack: p.name, version: p.version, source: "installed" });
   }
   for (const p of remote) {
     for (const g of p.catalog.groups || []) notes.set(`${p.name}\0${g.name}`, g.notes);
-    for (const c of p.catalog.components) out.push({ ...filled(c), pack: p.name, version: p.version, source: "remote", trust: p.trust, registry: p.registry });
+    for (const c of p.catalog.components)
+      out.push({
+        ...filled(c),
+        pack: p.name,
+        version: p.version,
+        source: "remote",
+        trust: p.trust,
+        registry: p.registry,
+      });
   }
-  const notesOf = (e: ComponentEntry): string[] => notes.get(`${e.source === "installed" || e.source === "remote" ? e.pack : "core"}\0${e.group}`) || [];
+  const notesOf = (e: ComponentEntry): string[] =>
+    notes.get(
+      `${e.source === "installed" || e.source === "remote" ? e.pack : "core"}\0${e.group}`,
+    ) || [];
   return { entries: out, notesOf, groups: core.groups.map((g) => g.name) };
 }
 
 function where(e: ComponentEntry): string {
   if (e.source === "core") return e.tier === "extended" ? "core, not in spec" : "core";
   if (e.source === "bundled") return "core";
-  if (e.source === "remote") return `npm ${e.pack}@${e.version}${e.registry.scope ? ` (${new URL(e.registry.url).host})` : ""}, not installed, ${e.trust}`;
+  if (e.source === "remote")
+    return `npm ${e.pack}@${e.version}${e.registry.scope ? ` (${new URL(e.registry.url).host})` : ""}, not installed, ${e.trust}`;
   return `pack ${e.pack}@${e.version}`;
 }
 
 /** How to get a pack on npm: an agent installs a first-party one or one on the user's trust list; the user vets and installs a third-party one. */
 function howToGet(e: ComponentEntry & { source: "remote" }): string {
-  if (e.trust === "first-party") return `${e.pack} is not installed: \`${BIN} components add ${e.pack}\`.`;
-  if (e.trust === "trusted") return `${e.pack} is on the user's trust list and not installed: you may run \`${BIN} components add ${e.pack}@${e.version}\`.`;
+  if (e.trust === "first-party")
+    return `${e.pack} is not installed: \`${BIN} components add ${e.pack}\`.`;
+  if (e.trust === "trusted")
+    return `${e.pack} is on the user's trust list and not installed: you may run \`${BIN} components add ${e.pack}@${e.version}\`.`;
   return `${e.pack} is third-party and not installed: ask the user to review its source (${npmView(e.pack, e.registry)}) and run \`${BIN} components add ${e.pack} --trust\`.`;
 }
 
@@ -91,7 +123,10 @@ export function listComponents(filter: string | undefined): ComponentList | Comm
   const f = filter ? String(filter).toLowerCase() : null;
   const out: ComponentList = {};
   const core = entries.filter((e) => e.source === "core" || e.source === "bundled");
-  const groupNames = [...groups, ...new Set(core.map((e) => e.group).filter((g) => !groups.includes(g)))];
+  const groupNames = [
+    ...groups,
+    ...new Set(core.map((e) => e.group).filter((g) => !groups.includes(g))),
+  ];
   const coreOut: Record<string, string> = {};
   const extended: Record<string, string> = {};
   for (const g of groupNames) {
@@ -105,7 +140,12 @@ export function listComponents(filter: string | undefined): ComponentList | Comm
   if (Object.keys(coreOut).length) out.core = coreOut;
   // Core components the spec leaves out to save tokens: still usable, signatures via `show`.
   if (Object.keys(extended).length) out.extended = extended;
-  const packs = installedPacks().filter((p) => !f || f === p.name.toLowerCase() || p.catalog.components.some((c) => c.group.toLowerCase() === f));
+  const packs = installedPacks().filter(
+    (p) =>
+      !f ||
+      f === p.name.toLowerCase() ||
+      p.catalog.components.some((c) => c.group.toLowerCase() === f),
+  );
   if (packs.length) {
     out.packs = packs.map((p) => ({
       pack: `${p.name}@${p.version}`,
@@ -113,13 +153,15 @@ export function listComponents(filter: string | undefined): ComponentList | Comm
       components: p.catalog.components.map((c) => c.name).join(", "),
     }));
   }
-  if (!Object.keys(out).length) return { status: "error", error: `nothing matches ${filter}; groups: ${groups.join(" ")}` };
+  if (!Object.keys(out).length)
+    return { status: "error", error: `nothing matches ${filter}; groups: ${groups.join(" ")}` };
   out.next = `\`${BIN} components show <Name>\` for a signature; \`${BIN} components search <words>\` to find one.`;
   return out;
 }
 
 /** `text` cut to `max` characters at a word boundary. */
-const clip = (text: string, max: number): string => (text.length > max ? text.slice(0, max - 1).replace(/\s+\S*$/, "") + "…" : text);
+const clip = (text: string, max: number): string =>
+  text.length > max ? text.slice(0, max - 1).replace(/\s+\S*$/, "") + "…" : text;
 
 type SearchResult =
   | CommandError
@@ -128,7 +170,11 @@ type SearchResult =
 
 export async function searchComponents(words: string[]): Promise<SearchResult> {
   const query = words.join(" ").trim();
-  if (!query) return { status: "error", error: `search needs words: ${BIN} components search gantt timeline` };
+  if (!query)
+    return {
+      status: "error",
+      error: `search needs words: ${BIN} components search gantt timeline`,
+    };
   const remote = await remotePacks();
   const { entries, notesOf } = catalogEntries(remote.packs);
   // Packs on npm are ranked apart and capped, so third-party text can never push core and installed components out.
@@ -155,11 +201,19 @@ export async function searchComponents(words: string[]): Promise<SearchResult> {
   const localNames = new Set(entries.filter((e) => e.source !== "remote").map((e) => e.name));
   const listed = [...local, ...npm].map((e) => e.name);
   for (const e of npm) {
-    if (e.source === "remote" && (localNames.has(e.name) || listed.filter((n) => n === e.name).length > 1)) {
-      next.push(`\`${BIN} components show ${e.name} --pack ${e.pack}\` for the one from ${e.pack}.`);
+    if (
+      e.source === "remote" &&
+      (localNames.has(e.name) || listed.filter((n) => n === e.name).length > 1)
+    ) {
+      next.push(
+        `\`${BIN} components show ${e.name} --pack ${e.pack}\` for the one from ${e.pack}.`,
+      );
     }
   }
-  if (local.some((e) => e.source === "installed")) next.push(`Pack components need the page to declare their pack: \`${BIN} check --fix <file>\` adds it.`);
+  if (local.some((e) => e.source === "installed"))
+    next.push(
+      `Pack components need the page to declare their pack: \`${BIN} check --fix <file>\` adds it.`,
+    );
   const seen = new Set<string>();
   for (const e of npm) {
     if (e.source !== "remote" || seen.has(e.pack)) continue;
@@ -180,11 +234,18 @@ export async function searchComponents(words: string[]): Promise<SearchResult> {
 }
 
 /** `pack`: look the names up in that pack only ("core", a bundled or installed pack, or a pack on npm). */
-export async function showComponents(names: string[], pack?: string): Promise<ComponentShow | CommandError> {
-  if (!names.length) return { status: "error", error: `show needs a name: ${BIN} components show Gantt` };
+export async function showComponents(
+  names: string[],
+  pack?: string,
+): Promise<ComponentShow | CommandError> {
+  if (!names.length)
+    return { status: "error", error: `show needs a name: ${BIN} components show Gantt` };
   const lookup = (all: ComponentEntry[], n: string) => {
     const entries = pack ? all.filter((x) => x.pack === pack) : all;
-    return entries.find((x) => x.name === n) || entries.find((x) => x.name.toLowerCase() === n.toLowerCase());
+    return (
+      entries.find((x) => x.name === n) ||
+      entries.find((x) => x.name.toLowerCase() === n.toLowerCase())
+    );
   };
   let catalog = catalogEntries();
   let remote: RemotePacks | undefined;
@@ -205,15 +266,30 @@ export async function showComponents(names: string[], pack?: string): Promise<Co
       // A pack on npm is unvetted third-party text, so it gets a fixed share of the agent's context.
       const fromNpm = e.source === "remote";
       const o: ShownComponent = fromNpm
-        ? { name: e.name, signature: clip(e.signature, 300), description: clip(e.description, 140), group: clip(e.group, 40), from: where(e) }
-        : { name: e.name, signature: e.signature, description: e.description, group: e.group, from: where(e) };
+        ? {
+            name: e.name,
+            signature: clip(e.signature, 300),
+            description: clip(e.description, 140),
+            group: clip(e.group, 40),
+            from: where(e),
+          }
+        : {
+            name: e.name,
+            signature: e.signature,
+            description: e.description,
+            group: e.group,
+            from: where(e),
+          };
       let notes = notesOf(e)
-        .filter((line) => new RegExp(`\\b${e.name}\\b`).test(line) && !line.startsWith("- Also in "))
+        .filter(
+          (line) => new RegExp(`\\b${e.name}\\b`).test(line) && !line.startsWith("- Also in "),
+        )
         .map((l) => l.replace(/^- /, ""));
       if (fromNpm) notes = notes.slice(0, 3).map((l) => clip(l, 140));
       if (notes.length) o.notes = notes;
       if (e.examples.length) o.example = fromNpm ? clip(e.examples[0], 600) : e.examples[0];
-      if (e.source === "installed") o.use = `From pack ${e.pack}: after writing the page, \`${BIN} check --fix <file>\` declares it.`;
+      if (e.source === "installed")
+        o.use = `From pack ${e.pack}: after writing the page, \`${BIN} check --fix <file>\` declares it.`;
       if (e.source === "remote") o.use = howToGet(e);
       return o;
     }),

@@ -127,7 +127,16 @@ interface ReplyRow {
 }
 
 /** A transcript entry in a session file from before hub.db, as loosely as it was read. */
-type LegacyEntry = { [key: string]: unknown; id?: string; role?: string; at?: number; text?: unknown; items?: unknown; held?: boolean; discarded?: boolean } | null;
+type LegacyEntry = {
+  [key: string]: unknown;
+  id?: string;
+  role?: string;
+  at?: number;
+  text?: unknown;
+  items?: unknown;
+  held?: boolean;
+  discarded?: boolean;
+} | null;
 
 /** A session file from before hub.db (`sessions/*.json`). */
 interface LegacySession {
@@ -140,7 +149,24 @@ interface LegacySession {
   pending?: unknown;
 }
 
-type Statement = "ensure" | "session" | "sessions" | "save" | "notes" | "note" | "hasNotes" | "saveNote" | "maxSeq" | "replies" | "saveReply" | "indexItem" | "itemStatus" | "projectOf" | "rootOf" | "inProject" | "inRoot";
+type Statement =
+  | "ensure"
+  | "session"
+  | "sessions"
+  | "save"
+  | "notes"
+  | "note"
+  | "hasNotes"
+  | "saveNote"
+  | "maxSeq"
+  | "replies"
+  | "saveReply"
+  | "indexItem"
+  | "itemStatus"
+  | "projectOf"
+  | "rootOf"
+  | "inProject"
+  | "inRoot";
 
 export function sessionId(file: string): string {
   return crypto.createHash("sha1").update(file).digest("hex").slice(0, 12);
@@ -164,7 +190,8 @@ export function noteStatus(e: UserEntry, ackedSeq: number): NoteStatus {
   return "received";
 }
 
-const deliverable = (e: TranscriptEntry): e is QueuedEntry => e.role === "user" && e.seq != null && !e.held && !e.discarded;
+const deliverable = (e: TranscriptEntry): e is QueuedEntry =>
+  e.role === "user" && e.seq != null && !e.held && !e.discarded;
 
 export class SessionStore {
   db: sqlite.DatabaseSync;
@@ -192,7 +219,9 @@ export class SessionStore {
           page_id = COALESCE(artifacts.page_id, excluded.page_id)`),
       session: db.prepare(`SELECT * FROM artifacts WHERE id = ?`),
       sessions: db.prepare(`SELECT * FROM artifacts WHERE reviewed = 1`),
-      save: db.prepare(`UPDATE artifacts SET title = ?, updated_at = ?, acked_seq = ? WHERE id = ?`),
+      save: db.prepare(
+        `UPDATE artifacts SET title = ?, updated_at = ?, acked_seq = ? WHERE id = ?`,
+      ),
       notes: db.prepare(`SELECT * FROM notes ORDER BY at, rowid`),
       note: db.prepare(`SELECT 1 FROM notes WHERE id = ?`),
       hasNotes: db.prepare(`SELECT 1 FROM notes WHERE artifact_id = ? LIMIT 1`),
@@ -203,7 +232,9 @@ export class SessionStore {
           seen_at = excluded.seen_at, work_at = excluded.work_at, done_at = excluded.done_at`),
       maxSeq: db.prepare(`SELECT COALESCE(MAX(seq), 0) AS n FROM notes`),
       replies: db.prepare(`SELECT * FROM replies ORDER BY at, rowid`),
-      saveReply: db.prepare(`INSERT INTO replies (id, artifact_id, at, text) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`),
+      saveReply: db.prepare(
+        `INSERT INTO replies (id, artifact_id, at, text) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+      ),
       indexItem: db.prepare(`
         INSERT INTO items (id, artifact_id, entry_id, at, kind, target, text, status, data, author, device_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -211,7 +242,9 @@ export class SessionStore {
       itemStatus: db.prepare(`UPDATE items SET status = ? WHERE entry_id = ?`),
       projectOf: db.prepare(`SELECT project_id FROM artifacts WHERE id = ?`),
       rootOf: db.prepare(`SELECT root FROM artifacts WHERE id = ?`),
-      inProject: db.prepare(`SELECT id FROM artifacts WHERE project_id = ? AND reviewed = 1 ORDER BY id`),
+      inProject: db.prepare(
+        `SELECT id FROM artifacts WHERE project_id = ? AND reviewed = 1 ORDER BY id`,
+      ),
       inRoot: db.prepare(`SELECT id FROM artifacts WHERE root = ? AND reviewed = 1 ORDER BY id`),
     };
     this.importSessionFiles(path.join(dir, "sessions"));
@@ -242,7 +275,8 @@ export class SessionStore {
   load(): void {
     // A session's revision counter starts at the copy's stored revision, so it keeps counting up across restarts.
     const revs = headRevisions(this.db);
-    for (const row of this.q.sessions.all() as unknown as ArtifactRow[]) this.sessions.set(row.id, { ...hydrate(row), revision: revs.get(row.id) ?? 0 });
+    for (const row of this.q.sessions.all() as unknown as ArtifactRow[])
+      this.sessions.set(row.id, { ...hydrate(row), revision: revs.get(row.id) ?? 0 });
     for (const row of this.q.notes.all() as unknown as NoteRow[]) {
       const s = this.sessions.get(row.artifact_id);
       if (s) s.transcript.push(noteEntry(row));
@@ -254,7 +288,9 @@ export class SessionStore {
     for (const s of this.sessions.values()) {
       s.transcript.sort((a, b) => a.at - b.at);
       // A restart forgets which batch went out; the notes marked seen say it, so a reply without a cursor still acknowledges them.
-      for (const e of s.transcript) if (e.role === "user" && e.seenAt && e.seq != null) s.deliveredSeq = Math.max(s.deliveredSeq, e.seq);
+      for (const e of s.transcript)
+        if (e.role === "user" && e.seenAt && e.seq != null)
+          s.deliveredSeq = Math.max(s.deliveredSeq, e.seq);
     }
   }
 
@@ -279,7 +315,17 @@ export class SessionStore {
       // One transaction: a merge or forget-root in another process cannot prune the page between the two.
       const row = this.tx(() => {
         const loc = resolveProject(this.db, file, cwd);
-        this.q.ensure.run(id, file, loc.root, path.basename(file), now, now, loc.projectId, loc.root, loc.pageId);
+        this.q.ensure.run(
+          id,
+          file,
+          loc.root,
+          path.basename(file),
+          now,
+          now,
+          loc.projectId,
+          loc.root,
+          loc.pageId,
+        );
         return this.q.session.get(id) as unknown as ArtifactRow;
       });
       s = { ...hydrate(row), revision: headRevision(this.db, id)?.rev ?? 0 };
@@ -300,14 +346,41 @@ export class SessionStore {
 
   saveNote(s: Session, e: UserEntry): void {
     const state = e.discarded ? "discarded" : e.held ? "held" : "queued";
-    this.q.saveNote.run(e.id, s.id, e.seq ?? null, state, e.author || "", JSON.stringify(e.items || []), e.end ? 1 : 0, e.at, e.releasedAt ?? null, e.seenAt ?? null, e.workAt ?? null, e.doneAt ?? null, e.remoteId ?? null, e.deviceId ?? null);
+    this.q.saveNote.run(
+      e.id,
+      s.id,
+      e.seq ?? null,
+      state,
+      e.author || "",
+      JSON.stringify(e.items || []),
+      e.end ? 1 : 0,
+      e.at,
+      e.releasedAt ?? null,
+      e.seenAt ?? null,
+      e.workAt ?? null,
+      e.doneAt ?? null,
+      e.remoteId ?? null,
+      e.deviceId ?? null,
+    );
   }
 
   /** Index each item of a note for the hub, with where the note stands. */
   indexNote(s: Session, e: UserEntry): void {
     const status = noteStatus(e, s.ackedSeq);
     (e.items || []).forEach((it, i) => {
-      this.q.indexItem.run(String(it.id || `${e.id}.${i}`), s.id, e.id, e.at, String(it.kind || "message"), bindText(it.target || it.statement), bindText(itemText(it)) ?? "", status, JSON.stringify(it), String(e.author || ""), e.deviceId ?? null);
+      this.q.indexItem.run(
+        String(it.id || `${e.id}.${i}`),
+        s.id,
+        e.id,
+        e.at,
+        String(it.kind || "message"),
+        bindText(it.target || it.statement),
+        bindText(itemText(it)) ?? "",
+        status,
+        JSON.stringify(it),
+        String(e.author || ""),
+        e.deviceId ?? null,
+      );
     });
   }
 
@@ -327,7 +400,9 @@ export class SessionStore {
 
   /** The project a page belongs to, read from hub.db each time: `project merge` in another process can move it. */
   projectIdOf(s: Session): string | null {
-    return (this.q.projectOf.get(s.id) as { project_id: string | null } | undefined)?.project_id ?? null;
+    return (
+      (this.q.projectOf.get(s.id) as { project_id: string | null } | undefined)?.project_id ?? null
+    );
   }
 
   /** The root (checkout) a page lives in, read from hub.db each time like its project. */
@@ -337,12 +412,16 @@ export class SessionStore {
 
   /** Every review session of a project. */
   inProject(projectId: string): Session[] {
-    return (this.q.inProject.all(projectId) as { id: string }[]).map((r) => this.sessions.get(r.id)).filter((s): s is Session => Boolean(s));
+    return (this.q.inProject.all(projectId) as { id: string }[])
+      .map((r) => this.sessions.get(r.id))
+      .filter((s): s is Session => Boolean(s));
   }
 
   /** Every review session in one root of a project: one checkout. */
   inRoot(root: string): Session[] {
-    return (this.q.inRoot.all(root) as { id: string }[]).map((r) => this.sessions.get(r.id)).filter((s): s is Session => Boolean(s));
+    return (this.q.inRoot.all(root) as { id: string }[])
+      .map((r) => this.sessions.get(r.id))
+      .filter((s): s is Session => Boolean(s));
   }
 
   nextSeq(): number {
@@ -360,9 +439,32 @@ export class SessionStore {
   addUserBatch(
     s: Session,
     items: NoteItem[],
-    { end = false, author = "", deviceId = "", hold = false, remote = "", at = Date.now() }: { end?: boolean; author?: string; deviceId?: string; hold?: boolean; remote?: string; at?: number } = {},
+    {
+      end = false,
+      author = "",
+      deviceId = "",
+      hold = false,
+      remote = "",
+      at = Date.now(),
+    }: {
+      end?: boolean;
+      author?: string;
+      deviceId?: string;
+      hold?: boolean;
+      remote?: string;
+      at?: number;
+    } = {},
   ): UserEntry {
-    const entry: UserEntry = { id: newId("u"), role: "user", at, items, end: end || undefined, seenAt: null, doneAt: null, seq: null };
+    const entry: UserEntry = {
+      id: newId("u"),
+      role: "user",
+      at,
+      items,
+      end: end || undefined,
+      seenAt: null,
+      doneAt: null,
+      seq: null,
+    };
     if (author) entry.author = author;
     if (deviceId) entry.deviceId = deviceId;
     if (hold) entry.held = true;
@@ -380,7 +482,9 @@ export class SessionStore {
 
   /** The note that came from a hosted page's row `remoteId`, if this session has it. */
   byRemote(s: Session, remoteId: string): UserEntry | null {
-    return s.transcript.find((e): e is UserEntry => e.role === "user" && e.remoteId === remoteId) ?? null;
+    return (
+      s.transcript.find((e): e is UserEntry => e.role === "user" && e.remoteId === remoteId) ?? null
+    );
   }
 
   /** Held entries, oldest first. */
@@ -414,7 +518,10 @@ export class SessionStore {
   discard(s: Session, ids: string[] | null): UserEntry[] {
     const want = ids ? new Set(ids) : null;
     const out = this.heldEntries(s).filter((e) => !want || want.has(e.id));
-    this.updateNotes(s, out.map((e): NoteChange => [e, { held: false, discarded: true }]));
+    this.updateNotes(
+      s,
+      out.map((e): NoteChange => [e, { held: false, discarded: true }]),
+    );
     return out;
   }
 
@@ -422,19 +529,27 @@ export class SessionStore {
   addAgentReply(s: Session, text: string): AgentEntry {
     const now = Date.now();
     const entry: AgentEntry = { id: newId("a"), role: "agent", at: now, text };
-    const done = s.transcript.filter((e): e is QueuedEntry => deliverable(e) && e.seq <= s.ackedSeq && !e.doneAt);
-    this.updateNotes(s, done.map((e): NoteChange => [e, { doneAt: now }]), () => {
-      this.q.saveReply.run(entry.id, s.id, entry.at, text);
-      s.updatedAt = now;
-      this.saveSession(s);
-    });
+    const done = s.transcript.filter(
+      (e): e is QueuedEntry => deliverable(e) && e.seq <= s.ackedSeq && !e.doneAt,
+    );
+    this.updateNotes(
+      s,
+      done.map((e): NoteChange => [e, { doneAt: now }]),
+      () => {
+        this.q.saveReply.run(entry.id, s.id, entry.at, text);
+        s.updatedAt = now;
+        this.saveSession(s);
+      },
+    );
     s.transcript.push(entry);
     return entry;
   }
 
   /** Notes after `from` (a seq) that can go to the agent, oldest first. */
   after(s: Session, from: number): QueuedEntry[] {
-    return s.transcript.filter((e): e is QueuedEntry => deliverable(e) && e.seq > from).sort((a, b) => a.seq - b.seq);
+    return s.transcript
+      .filter((e): e is QueuedEntry => deliverable(e) && e.seq > from)
+      .sort((a, b) => a.seq - b.seq);
   }
 
   /** Notes the agent has not acknowledged. A Done (an empty final batch) is not a note to answer, so it does not count. */
@@ -445,7 +560,10 @@ export class SessionStore {
   /** A poll answer with these notes went out. They stay unread until the agent acknowledges them. */
   markDelivered(s: Session, entries: UserEntry[]): void {
     const now = Date.now();
-    this.updateNotes(s, entries.filter((e) => !e.seenAt).map((e): NoteChange => [e, { seenAt: now }]));
+    this.updateNotes(
+      s,
+      entries.filter((e) => !e.seenAt).map((e): NoteChange => [e, { seenAt: now }]),
+    );
     s.deliveredSeq = Math.max(s.deliveredSeq, ...entries.map((e) => Number(e.seq)));
   }
 
@@ -457,7 +575,9 @@ export class SessionStore {
   ack(s: Session, cursor: number): QueuedEntry[] {
     const target = Math.min(Math.floor(Number(cursor)), this.nextSeq() - 1);
     if (!(target > s.ackedSeq)) return [];
-    const acked = s.transcript.filter((e): e is QueuedEntry => deliverable(e) && e.seq > s.ackedSeq && e.seq <= target);
+    const acked = s.transcript.filter(
+      (e): e is QueuedEntry => deliverable(e) && e.seq > s.ackedSeq && e.seq <= target,
+    );
     const now = Date.now();
     const before = s.ackedSeq;
     s.ackedSeq = target;
@@ -497,9 +617,15 @@ export class SessionStore {
    * plus acknowledged ones with no agent reply since; `all` adds the addressed ones.
    * Unless `peek`, reading acknowledges them, so a later poll does not deliver them again.
    */
-  feedback(s: Session, { all = false, peek = false }: { all?: boolean; peek?: boolean } = {}): { entries: FeedbackEntry[]; fresh: QueuedEntry[] } {
+  feedback(
+    s: Session,
+    { all = false, peek = false }: { all?: boolean; peek?: boolean } = {},
+  ): { entries: FeedbackEntry[]; fresh: QueuedEntry[] } {
     const picked = s.transcript
-      .filter((e): e is QueuedEntry => deliverable(e) && (e.items || []).length > 0 && (all || e.seq > s.ackedSeq || !e.doneAt))
+      .filter(
+        (e): e is QueuedEntry =>
+          deliverable(e) && (e.items || []).length > 0 && (all || e.seq > s.ackedSeq || !e.doneAt),
+      )
       // Delivery order, not transcript order: a held note released later has a newer seq but sits earlier in the transcript.
       .sort((a, b) => a.seq - b.seq);
     const entries = picked.map((e): FeedbackEntry => ({
@@ -519,9 +645,11 @@ export class SessionStore {
   /** The agent started on delivered notes (the file changed after it got them). */
   markWorking(s: Session, entries: UserEntry[]): void {
     const now = Date.now();
-    this.updateNotes(s, entries.map((e): NoteChange => [e, { workAt: now }]));
+    this.updateNotes(
+      s,
+      entries.map((e): NoteChange => [e, { workAt: now }]),
+    );
   }
-
 
   // ── session files from before the database ──
 
@@ -565,17 +693,35 @@ export class SessionStore {
     // session since: the database is newer than the file.
     const known = !!this.q.hasNotes.get(d.id);
     const loc = resolveProject(this.db, d.file);
-    this.q.ensure.run(d.id, d.file, loc.root, d.title || path.basename(d.file), d.createdAt || now, d.updatedAt || now, loc.projectId, loc.root, loc.pageId);
+    this.q.ensure.run(
+      d.id,
+      d.file,
+      loc.root,
+      d.title || path.basename(d.file),
+      d.createdAt || now,
+      d.updatedAt || now,
+      loc.projectId,
+      loc.root,
+      loc.pageId,
+    );
     const s = hydrate(this.q.session.get(d.id) as unknown as ArtifactRow);
-    if (!known) Object.assign(s, { title: d.title || s.title, updatedAt: Math.max(s.updatedAt, d.updatedAt || 0) });
+    if (!known)
+      Object.assign(s, {
+        title: d.title || s.title,
+        updatedAt: Math.max(s.updatedAt, d.updatedAt || 0),
+      });
     const transcript: LegacyEntry[] = Array.isArray(d.transcript) ? d.transcript : [];
     const pending = new Set<string>(Array.isArray(d.pending) ? d.pending : []);
     type Note = NonNullable<LegacyEntry> & { id: string };
-    const users = transcript.filter((e): e is Note => Boolean(e && e.role === "user" && e.id && !this.q.note.get(e.id)));
+    const users = transcript.filter((e): e is Note =>
+      Boolean(e && e.role === "user" && e.id && !this.q.note.get(e.id)),
+    );
     const open = (e: Note): boolean => !e.held && !e.discarded;
     // Delivered notes first, so they sit at or below the cursor; then the ones still pending, in order.
     const delivered = users.filter((e) => open(e) && !pending.has(e.id));
-    const waiting = [...pending].map((id) => users.find((e) => e.id === id)).filter((e): e is Note => Boolean(e && open(e)));
+    const waiting = [...pending]
+      .map((id) => users.find((e) => e.id === id))
+      .filter((e): e is Note => Boolean(e && open(e)));
     const rest = users.filter((e) => !open(e));
     const save = (e: Note, seq: number | null): UserEntry => {
       // A note this version wrote, read back from its file.
@@ -590,7 +736,8 @@ export class SessionStore {
     for (const e of rest) saved.push(save(e, null));
     for (const e of saved) this.indexNote(s, e);
     for (const e of transcript) {
-      if (e && e.role === "agent" && e.id) this.q.saveReply.run(e.id, s.id, e.at || now, String(e.text || ""));
+      if (e && e.role === "agent" && e.id)
+        this.q.saveReply.run(e.id, s.id, e.at || now, String(e.text || ""));
     }
     this.saveSession(s);
   }

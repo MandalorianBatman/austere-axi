@@ -5,7 +5,10 @@ import { OK, requireMode } from "./types.ts";
 import type { Adapter, BuildInput, BuiltCommand, Capabilities, RunResult } from "./types.ts";
 import type { CommandSpec } from "./config.ts";
 
-const NO_SESSION: Capabilities["same"] = { ok: false, reason: "a command adapter has no session to resume or fork; it runs new only" };
+const NO_SESSION: Capabilities["same"] = {
+  ok: false,
+  reason: "a command adapter has no session to resume or fork; it runs new only",
+};
 
 export function commandAdapter(name: string, spec: CommandSpec): Adapter {
   const capabilities: Capabilities = {
@@ -22,7 +25,13 @@ export function commandAdapter(name: string, spec: CommandSpec): Adapter {
     /** The fixed argv; model, limits and extra arguments do not apply. */
     build(input: BuildInput): BuiltCommand {
       requireMode("command", capabilities, input.mode);
-      return { bin: spec.bin, args: [...spec.args], env: {}, stdinFile: input.promptFile, cwd: input.cwd };
+      return {
+        bin: spec.bin,
+        args: [...spec.args],
+        env: {},
+        stdinFile: input.promptFile,
+        cwd: input.cwd,
+      };
     },
     readResult: (): RunResult => ({}),
   };

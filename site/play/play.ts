@@ -10,7 +10,13 @@
 import { createParser } from "@openuidev/lang-core";
 import type { LibraryJSONSchema } from "@openuidev/lang-core";
 import type { Catalog, CatalogEntry } from "../../types/catalog.d.ts";
-import { escapeHtml, readArtifact, replaceProgram, rewriteRuntime, skeleton } from "../../src/cli/artifact.ts";
+import {
+  escapeHtml,
+  readArtifact,
+  replaceProgram,
+  rewriteRuntime,
+  skeleton,
+} from "../../src/cli/artifact.ts";
 import { format } from "../../src/cli/output.ts";
 import { checkProgram } from "../../src/shared/check-program.ts";
 import type { CheckEntry } from "../../src/shared/check-program.ts";
@@ -57,12 +63,16 @@ type FrameMessage = { austere: 1 } & (
 );
 
 /** Messages the page posts to the frame. */
-type PageMessage = { type: "init"; mode: string; scrollY: number } | { type: "source"; program: string } | { type: "mode"; mode: string };
+type PageMessage =
+  | { type: "init"; mode: string; scrollY: number }
+  | { type: "source"; program: string }
+  | { type: "mode"; mode: string };
 
 type Timer = ReturnType<typeof setTimeout>;
 
 // Elements of index.html: the queries are of known elements (a cast at the boundary).
-const $ = <E extends Element = HTMLElement>(selector: string): E => document.querySelector(selector) as E;
+const $ = <E extends Element = HTMLElement>(selector: string): E =>
+  document.querySelector(selector) as E;
 const BLANK: Template = {
   id: "blank",
   title: "Blank page",
@@ -82,11 +92,21 @@ const parser = createParser(data.spec, data.spec.root || "Stack");
 
 const app = $("#app");
 const frame = $<HTMLIFrameElement>("#frame");
-const state: { program: string; mode: string; feedback: FeedbackItem[]; problems?: Problem[]; runtimeErrors: Problem[]; frameReady: boolean; sent: string } = { program: "", mode: "annotate", feedback: [], runtimeErrors: [], frameReady: false, sent: "" };
+const state: {
+  program: string;
+  mode: string;
+  feedback: FeedbackItem[];
+  problems?: Problem[];
+  runtimeErrors: Problem[];
+  frameReady: boolean;
+  sent: string;
+} = { program: "", mode: "annotate", feedback: [], runtimeErrors: [], frameReady: false, sent: "" };
 
 // ── page documents ─────────────────────────────────────────────────────────
 
-const titleOf = (program: string): string => /CardHeader\(\s*"((?:[^"\\]|\\.)*)"/.exec(program)?.[1]?.replace(/\\(.)/g, "$1") || "austere-axi page";
+const titleOf = (program: string): string =>
+  /CardHeader\(\s*"((?:[^"\\]|\\.)*)"/.exec(program)?.[1]?.replace(/\\(.)/g, "$1") ||
+  "austere-axi page";
 
 /** The artifact file for a program. The frame and the download differ only in the runtime tag. */
 function pageHtml(program: string, runtimeTag?: string): string {
@@ -124,7 +144,8 @@ function change(program: string, { reload = false } = {}) {
 function runCheck() {
   const program = state.program;
   statementIndex = new Map(splitStatements(program).map((s) => [s.id, s]));
-  const lineOf = (id: string | undefined) => (id === undefined ? undefined : statementIndex.get(id)?.line);
+  const lineOf = (id: string | undefined) =>
+    id === undefined ? undefined : statementIndex.get(id)?.line;
   const result = checkProgram(program, { parser: () => parser, lineOf });
   const problems: Problem[] = [
     ...result.errors.map((e) => ({ ...e, severity: "error" as const })),
@@ -134,7 +155,8 @@ function runCheck() {
     problems.unshift({
       severity: "error",
       code: "script-close",
-      message: "`</script` ends the page's script block, so an .html file cannot contain it. Write the text another way.",
+      message:
+        "`</script` ends the page's script block, so an .html file cannot contain it. Write the text another way.",
     });
   }
   state.problems = problems;
@@ -152,19 +174,31 @@ function runCheck() {
 }
 
 function problemLine(p: Problem): number {
-  return p.line || (p.statement && statementIndex.get(p.statement)?.line) || (p.statements && statementIndex.get(p.statements[0])?.line) || 0;
+  return (
+    p.line ||
+    (p.statement && statementIndex.get(p.statement)?.line) ||
+    (p.statements && statementIndex.get(p.statements[0])?.line) ||
+    0
+  );
 }
 
 function renderProblems() {
   const all = [...(state.problems || []), ...state.runtimeErrors];
-  editor.mark(all.map((p) => ({ line: problemLine(p), severity: p.severity })).filter((m) => m.line));
+  editor.mark(
+    all.map((p) => ({ line: problemLine(p), severity: p.severity })).filter((m) => m.line),
+  );
   const list = $("#diag");
   list.replaceChildren(
     ...all.map((p) => {
       const li = document.createElement("li");
       li.className = p.severity;
       const line = problemLine(p);
-      const where = [line ? `line ${line}` : "", p.statement || (p.statements && p.statements.join(", ")) || ""].filter(Boolean).join(" · ");
+      const where = [
+        line ? `line ${line}` : "",
+        p.statement || (p.statements && p.statements.join(", ")) || "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
       const button = document.createElement("button");
       button.type = "button";
       button.disabled = !line;
@@ -172,7 +206,9 @@ function renderProblems() {
       if (line) {
         button.addEventListener("click", () => {
           showView("source");
-          const s = (p.statement && statementIndex.get(p.statement)) || [...statementIndex.values()].find((x) => x.line === line);
+          const s =
+            (p.statement && statementIndex.get(p.statement)) ||
+            [...statementIndex.values()].find((x) => x.line === line);
           editor.reveal(line, s ? s.endLine : line);
           editor.focus();
         });
@@ -222,8 +258,18 @@ window.addEventListener("message", (event) => {
       break;
     case "runtime-error":
       const error = d.error;
-      if (error && !state.runtimeErrors.some((e) => e.statement === error.statementId && e.message === error.message)) {
-        state.runtimeErrors.push({ severity: "error", code: "render", statement: error.statementId, message: `Render error: ${error.message}` });
+      if (
+        error &&
+        !state.runtimeErrors.some(
+          (e) => e.statement === error.statementId && e.message === error.message,
+        )
+      ) {
+        state.runtimeErrors.push({
+          severity: "error",
+          code: "render",
+          statement: error.statementId,
+          message: `Render error: ${error.message}`,
+        });
         renderProblems();
       }
       break;
@@ -265,7 +311,11 @@ function renderFeedback() {
   $("#fb-count").textContent = items.length ? `(${items.length})` : "";
   if (!items.length) return;
   const at = locator(statementIndex);
-  $("#fb-text").textContent = format({ status: "feedback", file: "page.html", items: items.map((item) => describeItem(item, at)) });
+  $("#fb-text").textContent = format({
+    status: "feedback",
+    file: "page.html",
+    items: items.map((item) => describeItem(item, at)),
+  });
   const targets = [...new Set(items.filter((i) => i.kind === "annotation").map((i) => i.target))];
   const jump = $("#fb-jump");
   jump.replaceChildren(
@@ -295,8 +345,12 @@ $("#fb-clear").addEventListener("click", () => {
 // ── templates, share, download ─────────────────────────────────────────────
 
 const select = $<HTMLSelectElement>("#template");
-const option = (props: Partial<HTMLOptionElement>) => Object.assign(document.createElement("option"), props);
-select.replaceChildren(...templates.map((t) => option({ value: t.id, textContent: t.title })), option({ value: "", textContent: "Your page", hidden: true }));
+const option = (props: Partial<HTMLOptionElement>) =>
+  Object.assign(document.createElement("option"), props);
+select.replaceChildren(
+  ...templates.map((t) => option({ value: t.id, textContent: t.title })),
+  option({ value: "", textContent: "Your page", hidden: true }),
+);
 select.addEventListener("change", () => {
   const t = templates.find((x) => x.id === select.value);
   if (t) load(t.program);
@@ -323,7 +377,10 @@ async function currentUrl() {
 
 $("#copy-link").addEventListener("click", async () => {
   const url = await currentUrl();
-  const long = url.length > LONG_LINK ? ` The link is ${url.length.toLocaleString("en-US")} characters; some apps cut links over ${LONG_LINK.toLocaleString("en-US")}.` : "";
+  const long =
+    url.length > LONG_LINK
+      ? ` The link is ${url.length.toLocaleString("en-US")} characters; some apps cut links over ${LONG_LINK.toLocaleString("en-US")}.`
+      : "";
   try {
     await navigator.clipboard.writeText(url);
     toast(`Link copied. It holds the whole page, so anyone who opens it sees what you see.${long}`);
@@ -334,7 +391,11 @@ $("#copy-link").addEventListener("click", async () => {
 
 $("#download").addEventListener("click", () => {
   const html = pageHtml(state.program);
-  const name = (readArtifact(html).title || "page").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "page";
+  const name =
+    (readArtifact(html).title || "page")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "page";
   const a = Object.assign(document.createElement("a"), {
     href: URL.createObjectURL(new Blob([html], { type: "text/html" })),
     download: `${name}.html`,
@@ -359,9 +420,11 @@ function toast(text: string) {
 
 function showView(view: string | undefined) {
   app.dataset.view = view;
-  for (const tab of document.querySelectorAll<HTMLElement>(".tabs [role=tab]")) tab.setAttribute("aria-selected", String(tab.dataset.view === view));
+  for (const tab of document.querySelectorAll<HTMLElement>(".tabs [role=tab]"))
+    tab.setAttribute("aria-selected", String(tab.dataset.view === view));
 }
-for (const tab of document.querySelectorAll<HTMLElement>(".tabs [role=tab]")) tab.addEventListener("click", () => showView(tab.dataset.view));
+for (const tab of document.querySelectorAll<HTMLElement>(".tabs [role=tab]"))
+  tab.addEventListener("click", () => showView(tab.dataset.view));
 
 // ── component reference (catalog.json) ─────────────────────────────────────
 
@@ -369,7 +432,12 @@ const code = (text: string): string => escapeHtml(text).replace(/`([^`]+)`/g, "<
 
 function renderReference(filter = "") {
   const q = filter.trim().toLowerCase();
-  const groups = new Map(data.catalog.groups.map((g): [string, { notes: string[]; items: CatalogEntry[] }] => [g.name, { notes: g.notes, items: [] }]));
+  const groups = new Map(
+    data.catalog.groups.map((g): [string, { notes: string[]; items: CatalogEntry[] }] => [
+      g.name,
+      { notes: g.notes, items: [] },
+    ]),
+  );
   for (const c of data.catalog.components) {
     if (q && !`${c.name} ${c.description} ${c.group}`.toLowerCase().includes(q)) continue;
     if (!groups.has(c.group)) groups.set(c.group, { notes: [], items: [] });
@@ -378,7 +446,10 @@ function renderReference(filter = "") {
   const html = [...groups]
     .filter(([, g]) => g.items.length)
     .map(([name, g]) => {
-      const notes = q || !g.notes.length ? "" : `<ul class="notes">${g.notes.map((n) => `<li>${code(n.replace(/^-\s*/, ""))}</li>`).join("")}</ul>`;
+      const notes =
+        q || !g.notes.length
+          ? ""
+          : `<ul class="notes">${g.notes.map((n) => `<li>${code(n.replace(/^-\s*/, ""))}</li>`).join("")}</ul>`;
       const items = g.items
         .map(
           (c) => `<article class="comp">

@@ -47,7 +47,8 @@ export function reviewerCookies(header: string | undefined): { name: string; val
   for (const part of String(header || "").split(";")) {
     const i = part.indexOf("=");
     const name = i > 0 ? part.slice(0, i).trim() : "";
-    if (name === COOKIE || /^austere_rv_d[0-9a-f]{10}$/.test(name)) out.push({ name, value: part.slice(i + 1).trim() });
+    if (name === COOKIE || /^austere_rv_d[0-9a-f]{10}$/.test(name))
+      out.push({ name, value: part.slice(i + 1).trim() });
   }
   return out;
 }
@@ -100,7 +101,8 @@ export class LoginCodes {
 }
 
 // Looked up by hash, so the lookup's timing says nothing about a live code.
-const hashCode = (code: string): string => crypto.createHash("sha256").update(String(code)).digest("base64url");
+const hashCode = (code: string): string =>
+  crypto.createHash("sha256").update(String(code)).digest("base64url");
 
 /**
  * The owner's key: a random token in the state dir (owner.key), made on first use. The CLI sends it

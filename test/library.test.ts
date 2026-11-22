@@ -44,22 +44,35 @@ test("every component is in exactly one prompt group", () => {
     }
   }
   const missing = names.filter((n) => !seen.has(n));
-  assert.deepEqual(missing, [], `not in any group (they would land under "### Other"): ${missing.join(", ")}`);
+  assert.deepEqual(
+    missing,
+    [],
+    `not in any group (they would land under "### Other"): ${missing.join(", ")}`,
+  );
   assert.doesNotMatch(lib.prompt(), /^### Other$/m);
 });
 
 test(`component reference stays within ${PROMPT_BUDGET_TOKENS} tokens`, () => {
   const tokens = estimateTokens(lib.prompt());
-  assert.ok(tokens <= PROMPT_BUDGET_TOKENS, `prompt is ~${tokens} tokens, over the ${PROMPT_BUDGET_TOKENS} budget`);
+  assert.ok(
+    tokens <= PROMPT_BUDGET_TOKENS,
+    `prompt is ~${tokens} tokens, over the ${PROMPT_BUDGET_TOKENS} budget`,
+  );
 });
 
 test(`--help stays within ${HELP_BUDGET_TOKENS} tokens`, () => {
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-help-"));
   try {
-    const r = spawnSync(process.execPath, ["src/cli/main.ts", "--help"], { encoding: "utf8", env: { ...process.env, AUSTERE_AXI_STATE_DIR: state } });
+    const r = spawnSync(process.execPath, ["src/cli/main.ts", "--help"], {
+      encoding: "utf8",
+      env: { ...process.env, AUSTERE_AXI_STATE_DIR: state },
+    });
     assert.equal(r.status, 0, r.stderr);
     const tokens = estimateTokens(r.stdout);
-    assert.ok(tokens <= HELP_BUDGET_TOKENS, `--help is ~${tokens} tokens, over the ${HELP_BUDGET_TOKENS} budget`);
+    assert.ok(
+      tokens <= HELP_BUDGET_TOKENS,
+      `--help is ~${tokens} tokens, over the ${HELP_BUDGET_TOKENS} budget`,
+    );
   } finally {
     fs.rmSync(state, { recursive: true, force: true });
   }
@@ -80,7 +93,10 @@ function params(signature: string) {
     } else cur += ch;
   }
   if (cur.trim()) out.push(cur.trim());
-  return out.map((p) => /^(\w+)(\?)?:\s*([\s\S]*)$/.exec(p)).filter((m) => m !== null).map(([, name, q, type]) => ({ name, optional: !!q, type }));
+  return out
+    .map((p) => /^(\w+)(\?)?:\s*([\s\S]*)$/.exec(p))
+    .filter((m) => m !== null)
+    .map(([, name, q, type]) => ({ name, optional: !!q, type }));
 }
 
 test("a component the spec leaves out is never the only way to fill a required prop of one it keeps", () => {
@@ -90,9 +106,13 @@ test("a component the spec leaves out is never the only way to fill a required p
     if (extended.has(name)) continue;
     for (const p of params(c.signature)) {
       if (p.optional) continue;
-      const refs = [...p.type.matchAll(/\b([A-Z][A-Za-z0-9]*)\b/g)].map((m) => m[1]).filter((n) => spec.components[n]);
+      const refs = [...p.type.matchAll(/\b([A-Z][A-Za-z0-9]*)\b/g)]
+        .map((m) => m[1])
+        .filter((n) => spec.components[n]);
       if (refs.length && refs.every((n) => extended.has(n))) {
-        assert.fail(`${name}(${p.name}) takes only ${refs.join(" | ")}, which are all out of the spec; keep one of them in it`);
+        assert.fail(
+          `${name}(${p.name}) takes only ${refs.join(" | ")}, which are all out of the spec; keep one of them in it`,
+        );
       }
     }
   }
@@ -106,13 +126,25 @@ test("a pack component whose slot the library cannot place keeps its other slots
     notes: [],
     tagged: true,
     slots: ["Nope.children", "Card.children"],
-    definition: defineComponent({ name: "Zed", props: z.object({ text: z.string() }), description: "test", component: () => null }),
+    definition: defineComponent({
+      name: "Zed",
+      props: z.object({ text: z.string() }),
+      description: "test",
+      component: () => null,
+    }),
   } as unknown as AustereComponent;
   const withZed = lib.buildLibrary([zed], { onSkip: (c, message) => skipped.push(message) });
   assert.ok(withZed.components.Zed);
   assert.match(skipped.join("\n"), /Nope/);
-  assert.match(JSON.stringify((withZed.toJSONSchema().$defs as Record<string, unknown>).Card), /#\/\$defs\/Zed/);
-  assert.deepEqual(zed.slots, ["Nope.children", "Card.children"], "the pack's own component is not mutated");
+  assert.match(
+    JSON.stringify((withZed.toJSONSchema().$defs as Record<string, unknown>).Card),
+    /#\/\$defs\/Zed/,
+  );
+  assert.deepEqual(
+    zed.slots,
+    ["Nope.children", "Card.children"],
+    "the pack's own component is not mutated",
+  );
   // A pack component named like a core one is skipped, not fatal.
   const dup: AustereComponent = { ...zed, name: "Card", slots: null };
   const notes: string[] = [];
@@ -124,13 +156,20 @@ test("released prop orders are append-only", () => {
   const { errors, added, appended } = compareSignatures(readSnapshot(), signaturesOf(lib.schema()));
   assert.deepEqual(errors, [], errors.join("\n"));
   const pending = [...added, ...appended];
-  assert.deepEqual(pending, [], `not recorded in test/fixtures/signatures.json; run \`npm run signatures\`: ${pending.join(", ")}`);
+  assert.deepEqual(
+    pending,
+    [],
+    `not recorded in test/fixtures/signatures.json; run \`npm run signatures\`: ${pending.join(", ")}`,
+  );
 });
 
 test("custom components have short descriptions", () => {
   for (const c of lib.CUSTOM_COMPONENTS) {
     const d = lib.austereLibrary.components[c.name].description;
-    assert.ok(d !== undefined && d.length <= DESCRIPTION_MAX_CHARS, `${c.name} description is ${d?.length} chars (max ${DESCRIPTION_MAX_CHARS})`);
+    assert.ok(
+      d !== undefined && d.length <= DESCRIPTION_MAX_CHARS,
+      `${c.name} description is ${d?.length} chars (max ${DESCRIPTION_MAX_CHARS})`,
+    );
   }
 });
 
@@ -139,9 +178,13 @@ test("the gallery of every example (and of every stress example) passes check wi
   // statement names must not collide.
   const schema = lib.schema();
   for (const field of ["example", "stress"] as const) {
-    const r = checkHtml(htmlPage("gallery", examplePage(lib.CUSTOM_COMPONENTS, field), "austere.js"), { schema });
+    const r = checkHtml(
+      htmlPage("gallery", examplePage(lib.CUSTOM_COMPONENTS, field), "austere.js"),
+      { schema },
+    );
     assert.equal(r.ok, true, `${field}: ${JSON.stringify(r.errors)}`);
-    const warnings = field === "stress" ? r.warnings.filter((w) => w.code !== "architecture-layout") : r.warnings;
+    const warnings =
+      field === "stress" ? r.warnings.filter((w) => w.code !== "architecture-layout") : r.warnings;
     assert.deepEqual(warnings, [], `${field} warnings: ${JSON.stringify(r.warnings)}`);
   }
 });
@@ -154,7 +197,10 @@ test("every custom component example and stress example passes check", () => {
       const r = checkHtml(htmlPage(c.name, examplePage([c], field), "austere.js"), { schema });
       assert.equal(r.ok, true, `${c.name} ${field}: ${JSON.stringify(r.errors)}`);
       // Stress examples are oversized on purpose; a layout warning is expected there.
-      const warnings = field === "stress" ? r.warnings.filter((w) => w.code !== "architecture-layout") : r.warnings;
+      const warnings =
+        field === "stress"
+          ? r.warnings.filter((w) => w.code !== "architecture-layout")
+          : r.warnings;
       assert.deepEqual(warnings, [], `${c.name} ${field} warnings: ${JSON.stringify(r.warnings)}`);
     }
   }

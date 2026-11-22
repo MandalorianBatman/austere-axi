@@ -37,7 +37,13 @@ right = TextContent("Right cell")`;
 function api(route: string, body: unknown): Promise<{ session: { id: string }; code: string }> {
   return new Promise((resolve, reject) => {
     const r = http.request(
-      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", ...ownerHeaders(STATE) } },
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: route,
+        headers: { "content-type": "application/json", ...ownerHeaders(STATE) },
+      },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -63,10 +69,19 @@ before(async () => {
   }
   browser = launched.browser;
   port = await freePort();
-  server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)], {
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1" },
-    stdio: "ignore",
-  });
+  server = spawn(
+    process.execPath,
+    [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)],
+    {
+      env: {
+        ...process.env,
+        AUSTERE_AXI_STATE_DIR: STATE,
+        AUSTERE_AXI_NO_TAILSCALE: "1",
+        OPENUI_TELEMETRY_DISABLED: "1",
+      },
+      stdio: "ignore",
+    },
+  );
   for (let i = 0; i < 100; i++) {
     try {
       await new Promise<void>((resolve, reject) => {
@@ -96,7 +111,12 @@ after(async () => {
 });
 
 const cardHeight = (frame: Frame, id: string) =>
-  frame.evaluate((id) => document.querySelector(`[data-oui-id="${id}"] > .openui-card`)?.getBoundingClientRect().height ?? 0, id);
+  frame.evaluate(
+    (id) =>
+      document.querySelector(`[data-oui-id="${id}"] > .openui-card`)?.getBoundingClientRect()
+        .height ?? 0,
+    id,
+  );
 
 test("a Card folds to its header, and a folded card is still annotated by its statement name", async (t) => {
   if (skipReason) return t.skip(skipReason);
@@ -123,9 +143,23 @@ test("a Card folds to its header, and a folded card is still annotated by its st
 
     // A Card without a header, or a row Card (its header is one cell of the row), renders as
     // the stock Card: its children sit directly in it.
-    assert.equal(await frame.locator('[data-oui-id="plain"] .austere-card-fold, [data-oui-id="plain"] .austere-card-body').count(), 0);
+    assert.equal(
+      await frame
+        .locator(
+          '[data-oui-id="plain"] .austere-card-fold, [data-oui-id="plain"] .austere-card-body',
+        )
+        .count(),
+      0,
+    );
     assert.equal(await frame.locator('[data-oui-id="side"] .austere-card-fold').count(), 0);
-    assert.equal(await frame.locator('[data-oui-id="plain"] > .openui-card.openui-card-card.openui-card-full > [data-oui-id="intro"]').count(), 1);
+    assert.equal(
+      await frame
+        .locator(
+          '[data-oui-id="plain"] > .openui-card.openui-card-card.openui-card-full > [data-oui-id="intro"]',
+        )
+        .count(),
+      1,
+    );
 
     // Open by default; the chevron folds the body away and brings it back.
     assert.equal(await fold.getAttribute("aria-expanded"), "true");
@@ -134,11 +168,21 @@ test("a Card folds to its header, and a folded card is still annotated by its st
     const open = await cardHeight(frame, "plan");
     await fold.click();
     assert.equal(await fold.getAttribute("aria-expanded"), "false");
-    assert.equal(await frame.locator('[data-oui-id="plan"] .austere-card-body').getAttribute("hidden"), "until-found");
+    assert.equal(
+      await frame.locator('[data-oui-id="plan"] .austere-card-body').getAttribute("hidden"),
+      "until-found",
+    );
     assert.ok(!(await steps.isVisible()), "the body still shows when folded");
     const folded = await cardHeight(frame, "plan");
-    assert.ok(folded < open - 40, `the folded card (${folded}px) is not shorter than the open one (${open}px)`);
-    assert.equal(await frame.locator(".austere-pop").isVisible(), false, "the chevron opened a note instead of folding");
+    assert.ok(
+      folded < open - 40,
+      `the folded card (${folded}px) is not shorter than the open one (${open}px)`,
+    );
+    assert.equal(
+      await frame.locator(".austere-pop").isVisible(),
+      false,
+      "the chevron opened a note instead of folding",
+    );
 
     // The folded card's title is annotated as the card, by its statement name.
     await frame.locator('[data-oui-id="plan"] .openui-header-top-left').click();
@@ -146,20 +190,41 @@ test("a Card folds to its header, and a folded card is still annotated by its st
     assert.match((await frame.locator(".austere-hover-label").textContent()) ?? "", /^plan · Card/);
     await frame.locator(".austere-pop textarea").fill("split the ramp");
     await frame.locator(".austere-pop textarea").press("Enter");
-    await page.waitForFunction(() => (window as unknown as { annotations: unknown[] }).annotations.length > 0);
-    const [item] = await page.evaluate(() => (window as unknown as { annotations: { target: string; excerpt?: string }[] }).annotations);
+    await page.waitForFunction(
+      () => (window as unknown as { annotations: unknown[] }).annotations.length > 0,
+    );
+    const [item] = await page.evaluate(
+      () =>
+        (window as unknown as { annotations: { target: string; excerpt?: string }[] }).annotations,
+    );
     assert.equal(item.target, "plan");
     const excerpt = item.excerpt ?? "";
-    assert.ok(excerpt.includes("Rollout plan"), `the excerpt ${JSON.stringify(item.excerpt)} does not quote the title`);
-    assert.ok(!excerpt.includes("Ship behind a flag"), `the excerpt ${JSON.stringify(item.excerpt)} quotes the folded body`);
+    assert.ok(
+      excerpt.includes("Rollout plan"),
+      `the excerpt ${JSON.stringify(item.excerpt)} does not quote the title`,
+    );
+    assert.ok(
+      !excerpt.includes("Ship behind a flag"),
+      `the excerpt ${JSON.stringify(item.excerpt)} quotes the folded body`,
+    );
 
     // A changed statement inside a folded card is outlined on the card.
     const post = (msg: object) =>
-      page.evaluate((m) => (document.querySelector("iframe.frame") as HTMLIFrameElement).contentWindow?.postMessage({ austere: 1, ...m }, "*"), msg);
+      page.evaluate(
+        (m) =>
+          (document.querySelector("iframe.frame") as HTMLIFrameElement).contentWindow?.postMessage(
+            { austere: 1, ...m },
+            "*",
+          ),
+        msg,
+      );
     await post({ type: "highlight", ids: ["risk"] });
     await frame.locator(".austere-mark").waitFor({ timeout: 5_000 });
     const mark = await frame.locator(".austere-mark").boundingBox();
-    assert.ok(mark && Math.abs(mark.height - 8 - folded) <= 2, `the mark ${JSON.stringify(mark)} is not on the folded card (${folded}px)`);
+    assert.ok(
+      mark && Math.abs(mark.height - 8 - folded) <= 2,
+      `the mark ${JSON.stringify(mark)} is not on the folded card (${folded}px)`,
+    );
     await post({ type: "highlight", ids: [] });
 
     // A reveal (a note in the history, a viewer's focus) of a statement inside unfolds the card.

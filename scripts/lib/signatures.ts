@@ -25,7 +25,9 @@ export const SIGNATURES_FILE = path.join(ROOT, "test/fixtures/signatures.json");
 /** { Name: { props: [...], required: [...] } } from a library JSON schema. */
 export function signaturesOf(schema: Record<string, unknown>): Signatures {
   const out: Signatures = {};
-  for (const [name, def] of Object.entries((schema.$defs || {}) as Record<string, SchemaDef | null | undefined>)) {
+  for (const [name, def] of Object.entries(
+    (schema.$defs || {}) as Record<string, SchemaDef | null | undefined>,
+  )) {
     if (!def || def.type !== "object" || !def.properties) continue;
     out[name] = { props: Object.keys(def.properties), required: def.required || [] };
   }
@@ -43,7 +45,10 @@ export function readSnapshot(): Signatures {
 /**
  * errors: contract violations; added/appended: what a snapshot update would record.
  */
-export function compareSignatures(snapshot: Signatures, current: Signatures): { errors: string[]; added: string[]; appended: string[]; next: Signatures } {
+export function compareSignatures(
+  snapshot: Signatures,
+  current: Signatures,
+): { errors: string[]; added: string[]; appended: string[]; next: Signatures } {
   const errors: string[] = [];
   const added: string[] = [];
   const appended: string[] = [];
@@ -51,18 +56,24 @@ export function compareSignatures(snapshot: Signatures, current: Signatures): { 
   for (const [name, old] of Object.entries(snapshot)) {
     const cur = current[name];
     if (!cur) {
-      errors.push(`${name} was removed. Stored artifacts that use it would stop rendering; keep it (it can leave its prompt group's notes) or bump the major version.`);
+      errors.push(
+        `${name} was removed. Stored artifacts that use it would stop rendering; keep it (it can leave its prompt group's notes) or bump the major version.`,
+      );
       continue;
     }
     const prefix = cur.props.slice(0, old.props.length);
     if (prefix.join(",") !== old.props.join(",")) {
-      errors.push(`${name}(${old.props.join(", ")}) became ${name}(${cur.props.join(", ")}). Props are positional: only append new optional props at the end.`);
+      errors.push(
+        `${name}(${old.props.join(", ")}) became ${name}(${cur.props.join(", ")}). Props are positional: only append new optional props at the end.`,
+      );
       continue;
     }
     const extra = cur.props.slice(old.props.length);
     const requiredExtra = extra.filter((p) => cur.required.includes(p));
     if (requiredExtra.length) {
-      errors.push(`${name}: appended prop(s) ${requiredExtra.join(", ")} must be optional, since stored calls do not pass them.`);
+      errors.push(
+        `${name}: appended prop(s) ${requiredExtra.join(", ")} must be optional, since stored calls do not pass them.`,
+      );
       continue;
     }
     if (extra.length) {

@@ -11,7 +11,12 @@ function day(ms: number): string {
   const same = (a: Date, b: Date): boolean => a.toDateString() === b.toDateString();
   if (same(d, today)) return "Today";
   if (same(d, yesterday)) return "Yesterday";
-  return d.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+  return d.toLocaleDateString("en", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: d.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  });
 }
 
 function when(ms: number): string {
@@ -58,7 +63,12 @@ li.n{display:flex;flex-direction:column;gap:4px;padding:12px 20px;border-top:1px
 @media (max-width:600px){main{padding:20px 12px 48px}.head,.block,li.n,.empty{padding-left:14px;padding-right:14px}button,.nav a{min-height:44px}}
 `;
 
-const STATUS_LABEL: Record<string, string | undefined> = { open: "unanswered", received: "unanswered", addressed: "answered", held: "held for the owner" };
+const STATUS_LABEL: Record<string, string | undefined> = {
+  open: "unanswered",
+  received: "unanswered",
+  addressed: "answered",
+  held: "held for the owner",
+};
 
 /**
  * What a link to a copy whose file is gone opens: where it was, the notes it still holds, and a button to put it away.
@@ -66,8 +76,19 @@ const STATUS_LABEL: Record<string, string | undefined> = { open: "unanswered", r
  * @param notes Hub.notes() rows of this copy
  */
 export function missingPage(
-  copy: { id: string; file: string; title: string | null; archived_at: number | null; updated_at: number },
-  { version, project, label, notes }: { version: string; project: string; label: string; notes: Omit<HubNoteRow, "kind">[] },
+  copy: {
+    id: string;
+    file: string;
+    title: string | null;
+    archived_at: number | null;
+    updated_at: number;
+  },
+  {
+    version,
+    project,
+    label,
+    notes,
+  }: { version: string; project: string; label: string; notes: Omit<HubNoteRow, "kind">[] },
 ): string {
   const rows = notes
     .map((n) => {

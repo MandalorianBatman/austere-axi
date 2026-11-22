@@ -1,5 +1,10 @@
 import React from "react";
-import { useFormName, useGetFieldValue, useIsStreaming, useSetFieldValue } from "@openuidev/react-lang";
+import {
+  useFormName,
+  useGetFieldValue,
+  useIsStreaming,
+  useSetFieldValue,
+} from "@openuidev/react-lang";
 import type { ComponentRenderProps, ComponentRenderer } from "@openuidev/react-lang";
 
 /** The props these fields read here; the stock renderer gets them all, unchanged. */
@@ -20,7 +25,8 @@ function checkedDefault({ items }: FieldProps): Record<string, boolean> | undefi
   const list: ItemNode[] = Array.isArray(items) ? items : [];
   if (!list.some((i) => typeof i?.props?.defaultChecked === "boolean")) return undefined;
   const out: Record<string, boolean> = {};
-  for (const i of list) if (typeof i?.props?.name === "string") out[i.props.name] = i.props.defaultChecked === true;
+  for (const i of list)
+    if (typeof i?.props?.name === "string") out[i.props.name] = i.props.defaultChecked === true;
   return out;
 }
 
@@ -29,8 +35,10 @@ function checkedDefault({ items }: FieldProps): Record<string, boolean> | undefi
 // field shows untouched, in the shape the field itself stores. OptionCards and Chips store
 // their default already.
 const SHOWN_DEFAULT: Record<string, (props: FieldProps) => unknown> = {
-  RadioGroup: ({ defaultValue }) => (typeof defaultValue === "string" && defaultValue ? defaultValue : undefined),
-  Slider: ({ defaultValue }) => (Array.isArray(defaultValue) && defaultValue.length ? defaultValue : undefined),
+  RadioGroup: ({ defaultValue }) =>
+    typeof defaultValue === "string" && defaultValue ? defaultValue : undefined,
+  Slider: ({ defaultValue }) =>
+    Array.isArray(defaultValue) && defaultValue.length ? defaultValue : undefined,
   CheckBoxGroup: checkedDefault,
   SwitchGroup: checkedDefault,
 };
@@ -42,7 +50,10 @@ const SHOWN_DEFAULT: Record<string, (props: FieldProps) => unknown> = {
  * reviewer sees. A field bound to a $variable keeps its binding. Any other component's
  * renderer comes back as it was.
  */
-export function storingShownDefault<P>(name: string, Stock: ComponentRenderer<P>): ComponentRenderer<P> {
+export function storingShownDefault<P>(
+  name: string,
+  Stock: ComponentRenderer<P>,
+): ComponentRenderer<P> {
   const shown = SHOWN_DEFAULT[name];
   if (!shown) return Stock;
   function StoresDefault(render: ComponentRenderProps<P>) {
@@ -55,7 +66,13 @@ export function storingShownDefault<P>(name: string, Stock: ComponentRenderer<P>
     const value = field && props.value === undefined ? shown(props) : undefined;
     const key = JSON.stringify(value);
     React.useEffect(() => {
-      if (isStreaming || !field || value === undefined || getFieldValue(formName, field) !== undefined) return;
+      if (
+        isStreaming ||
+        !field ||
+        value === undefined ||
+        getFieldValue(formName, field) !== undefined
+      )
+        return;
       // false: not a reviewer edit, so nothing is saved for a reload (the page shows the default again).
       setFieldValue(formName, name, field, value, false);
       // key stands for value, which is a new array or object on every render

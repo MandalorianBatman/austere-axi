@@ -6,7 +6,17 @@
 
 import "./zod-jitless.ts";
 import { LIMITS, SYNC_VERSION, mutation, parseServerFrame, syncProtocols } from "../shared/sync.ts";
-import type { AckFrame, AddNoteArgs, ClientPresence, Mutation, NoteAnnotation, NoteItem, PageRow, ReceivedChanges, ReceivedFrame } from "../shared/sync.ts";
+import type {
+  AckFrame,
+  AddNoteArgs,
+  ClientPresence,
+  Mutation,
+  NoteAnnotation,
+  NoteItem,
+  PageRow,
+  ReceivedChanges,
+  ReceivedFrame,
+} from "../shared/sync.ts";
 import { Presence } from "./presence.ts";
 import { openSyncSocket } from "./sync-socket.ts";
 import type { SyncClose, SyncSocket } from "./sync-socket.ts";
@@ -151,7 +161,14 @@ interface ChangedEvent {
 /** A run of the attached agent, as the server sums it up (RunSummary in src/cli/dispatch.ts). */
 interface RunSummary {
   id: string;
-  status: "queued" | "waiting_for_session" | "running" | "done" | "failed" | "stopped" | "interrupted";
+  status:
+    | "queued"
+    | "waiting_for_session"
+    | "running"
+    | "done"
+    | "failed"
+    | "stopped"
+    | "interrupted";
   reason: string | null;
   mode: string | null;
   harness: string | null;
@@ -189,13 +206,36 @@ interface AttachRow {
 
 /** GET /s/:id/attach (AttachInfo in src/cli/server.ts). */
 interface AttachInfo {
-  effective: { state: "on" | "off"; source: "page" | "project" | "default"; mode: AttachModeId; session: string; harness: string; model: string | null };
+  effective: {
+    state: "on" | "off";
+    source: "page" | "project" | "default";
+    mode: AttachModeId;
+    session: string;
+    harness: string;
+    model: string | null;
+  };
   page: AttachRow | null;
   project: { name: string; setting: AttachRow | null } | null;
   target: { mode: AttachModeId; harness: string; session: string | null };
   author: { id: string; harness: string; short: string } | null;
-  sessions: { id: string; harness: string; short: string; roles: string[]; lastSeen: number; liveness: string }[];
-  harnesses: Record<string, { found: boolean; capabilities: Record<AttachModeId | "model", Capability>; writeGrant: boolean; grantCommand?: string; models?: string[] }>;
+  sessions: {
+    id: string;
+    harness: string;
+    short: string;
+    roles: string[];
+    lastSeen: number;
+    liveness: string;
+  }[];
+  harnesses: Record<
+    string,
+    {
+      found: boolean;
+      capabilities: Record<AttachModeId | "model", Capability>;
+      writeGrant: boolean;
+      grantCommand?: string;
+      models?: string[];
+    }
+  >;
   run: RunSummary | null;
   sessionFileSize: number | null;
   warnings: string[];
@@ -216,7 +256,9 @@ interface ItemOptions {
   held?: boolean;
 }
 
-const BOOT: Boot = (window as Window & { __AUSTERE__?: Boot }).__AUSTERE__ ?? JSON.parse(document.getElementById("austere-boot")?.textContent || "{}");
+const BOOT: Boot =
+  (window as Window & { __AUSTERE__?: Boot }).__AUSTERE__ ??
+  JSON.parse(document.getElementById("austere-boot")?.textContent || "{}");
 const SID = BOOT.id;
 // Hosted mode (austere-cloud, docs/hosted-share-links.md): a reviewer page that syncs over the
 // page's WebSocket instead of the local event stream and has no owner controls.
@@ -313,7 +355,10 @@ interface OutboxEntry {
 let CLIENT = "";
 if (HOSTED) {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
-  CLIENT = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  CLIENT = btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 const OUTBOX_KEY = `austere:outbox:${SID}`;
 const savedOutbox = SS.get<unknown>(OUTBOX_KEY);
@@ -418,7 +463,8 @@ const runMarks = new Map<string, RunMark>();
 // ── markup ──
 
 // Elements of the markup below: the queries are of known elements (a cast at the boundary).
-const $ = <E extends Element = HTMLElement>(sel: string, root: ParentNode = document): E => root.querySelector(sel) as E;
+const $ = <E extends Element = HTMLElement>(sel: string, root: ParentNode = document): E =>
+  root.querySelector(sel) as E;
 
 document.body.innerHTML = `
 <div class="app">
@@ -517,13 +563,35 @@ document.body.innerHTML = `
 // RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
 // from all of them (RLM-322).
 if (!OWNER) {
-  const ownerOnly = ['[data-cmd="history"]', ".since", ".hist", '[data-cmd="copy-path"]', '[data-cmd="copy-agent-prompt"]', ".copy-prompt", '[data-cmd="share"]', '[data-cmd="archive"]', '[data-cmd="unarchive"]', ".send-end", ".attach", ".attach-pop", ".share-btn", ".goto-btn", ".rev", ".hist-btn", '[data-tab="agent"]', '[data-tab="history"]'];
+  const ownerOnly = [
+    '[data-cmd="history"]',
+    ".since",
+    ".hist",
+    '[data-cmd="copy-path"]',
+    '[data-cmd="copy-agent-prompt"]',
+    ".copy-prompt",
+    '[data-cmd="share"]',
+    '[data-cmd="archive"]',
+    '[data-cmd="unarchive"]',
+    ".send-end",
+    ".attach",
+    ".attach-pop",
+    ".share-btn",
+    ".goto-btn",
+    ".rev",
+    ".hist-btn",
+    '[data-tab="agent"]',
+    '[data-tab="history"]',
+  ];
   if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
   for (const sel of ownerOnly) $(sel)?.remove();
 }
 
 // The markup's icons (icons.ts): decorative beside a text label, named by the button's aria-label when alone.
-const DOTS: Shape[] = [5, 12, 19].map((cx): Shape => ["circle", { cx, cy: 12, r: 1.6, fill: "currentColor", stroke: "none" }]);
+const DOTS: Shape[] = [5, 12, 19].map((cx): Shape => [
+  "circle",
+  { cx, cy: 12, r: 1.6, fill: "currentColor", stroke: "none" },
+]);
 const LINK: Shape[] = [
   ["path", { d: "M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" }],
   ["path", { d: "M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" }],
@@ -532,7 +600,8 @@ const LOGO: Shape[] = [
   ["rect", { x: 1.5, y: 1.5, width: 21, height: 21, rx: 5, class: "logo-box" }],
   ["path", { d: "M6.75 17.25 12 6l5.25 11.25M8.6 13.5h6.8", class: "logo-a" }],
 ];
-for (const b of document.querySelectorAll<HTMLButtonElement>(".seg [data-mode]")) b.prepend(icon(b.dataset.mode === "explore" ? "explore" : "annotate", { size: 14, width: 1.9 }));
+for (const b of document.querySelectorAll<HTMLButtonElement>(".seg [data-mode]"))
+  b.prepend(icon(b.dataset.mode === "explore" ? "explore" : "annotate", { size: 14, width: 1.9 }));
 $(".menu-btn").append(svgIcon(DOTS, { size: 16 }));
 $(".sheet-close").append(icon("chevronDown", { size: 20, width: 2 }));
 $(".attach-pill")?.append(icon("chevronDown", { size: 12, width: 2, cls: "attach-caret" }));
@@ -540,12 +609,20 @@ $(".share-btn")?.prepend(svgIcon(LINK, { size: 14, width: 1.9 }));
 $(".hist-btn")?.prepend(icon("clock", { size: 13, width: 1.9 }));
 $(".since-x")?.append(icon("close", { size: 14, width: 2 }));
 $(".hist-close")?.append(icon("close", { size: 16, width: 1.8 }));
-if (OWNER && !HOSTED) $(".bar-start").prepend(h("a", { class: "bar-home", href: "/", "aria-label": "Back to the hub", title: "Back to the hub" }, svgIcon(LOGO, { size: 24 })));
+if (OWNER && !HOSTED)
+  $(".bar-start").prepend(
+    h(
+      "a",
+      { class: "bar-home", href: "/", "aria-label": "Back to the hub", title: "Back to the hub" },
+      svgIcon(LOGO, { size: 24 }),
+    ),
+  );
 
 function renderViewer() {
   if (OWNER) return;
   $(".file").textContent = viewerName ? `reviewing as ${viewerName}` : "";
-  const hint = HOSTED || VIEWER.auto ? "Enter sends" : "the owner sends your notes on · Enter sends";
+  const hint =
+    HOSTED || VIEWER.auto ? "Enter sends" : "the owner sends your notes on · Enter sends";
   $(".composer-hint").textContent = viewerName ? `Posting as ${viewerName} · ${hint}` : hint;
 }
 
@@ -558,7 +635,12 @@ const nameForm = HOSTED
       h(
         "div",
         { class: "name-row" },
-        h("input", { id: "austere-name", maxlength: String(NAME_MAX), autocomplete: "name", placeholder: "Name" }),
+        h("input", {
+          id: "austere-name",
+          maxlength: String(NAME_MAX),
+          autocomplete: "name",
+          placeholder: "Name",
+        }),
         h("button", { type: "submit", class: "btn primary", text: "Continue" }),
       ),
     )
@@ -589,9 +671,14 @@ const reportForm: HTMLFormElement | null = HOSTED?.report
         "div",
         { class: "report-row" },
         h("span", { class: "report-status" }),
-        h("button", { type: "button", class: "btn tiny ghost", text: "Cancel", onclick: () => {
-          if (reportForm) reportForm.hidden = true;
-        } }),
+        h("button", {
+          type: "button",
+          class: "btn tiny ghost",
+          text: "Cancel",
+          onclick: () => {
+            if (reportForm) reportForm.hidden = true;
+          },
+        }),
         h("button", { type: "submit", class: "btn tiny primary", text: "Send report" }),
       ),
     )
@@ -600,7 +687,12 @@ if (HOSTED) {
   const foot = h(
     "footer",
     { class: "hosted-foot" },
-    h("a", { href: "https://github.com/MandalorianBatman/austere-axi", target: "_blank", rel: "noopener noreferrer", text: "Made with austere-axi" }),
+    h("a", {
+      href: "https://github.com/MandalorianBatman/austere-axi",
+      target: "_blank",
+      rel: "noopener noreferrer",
+      text: "Made with austere-axi",
+    }),
   );
   if (reportForm) {
     foot.append(
@@ -624,12 +716,21 @@ if (HOSTED) {
       if (!reason) return $("textarea", reportForm).focus();
       status.textContent = "Sending…";
       try {
-        const headers: Record<string, string> = { "content-type": "application/json", ...(invite ? { "X-Austere-Invite": invite } : {}) };
-        const r = await fetch(HOSTED.report as string, { method: "POST", headers, body: JSON.stringify({ reason }) });
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          ...(invite ? { "X-Austere-Invite": invite } : {}),
+        };
+        const r = await fetch(HOSTED.report as string, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ reason }),
+        });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         $<HTMLTextAreaElement>("textarea", reportForm).value = "";
         reportForm.hidden = true;
-        $(".report-open", foot).replaceWith(h("span", { class: "report-done", text: "Reported. Thank you." }));
+        $(".report-open", foot).replaceWith(
+          h("span", { class: "report-done", text: "Reported. Thank you." }),
+        );
       } catch (err) {
         status.textContent = `Not sent: ${(err as Error).message}`;
       }
@@ -672,14 +773,26 @@ $(".file").title = BOOT.file || "";
 // ── tiny markdown for agent replies ──
 
 function esc(s: unknown): string {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]);
+  return String(s).replace(
+    /[&<>"']/g,
+    (c) =>
+      (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<
+          string,
+          string
+        >
+      )[c],
+  );
 }
 function inline(s: string): string {
   return esc(s)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    .replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener">$1</a>',
+    );
 }
 function markdown(src: unknown): string {
   const lines = String(src).replace(/\r\n/g, "\n").split("\n");
@@ -698,8 +811,11 @@ function markdown(src: unknown): string {
     if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
       const ordered = /^\s*\d+\./.test(line);
       const buf: string[] = [];
-      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) buf.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""));
-      out.push(`<${ordered ? "ol" : "ul"}>${buf.map((b) => `<li>${inline(b)}</li>`).join("")}</${ordered ? "ol" : "ul"}>`);
+      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i]))
+        buf.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""));
+      out.push(
+        `<${ordered ? "ol" : "ul"}>${buf.map((b) => `<li>${inline(b)}</li>`).join("")}</${ordered ? "ol" : "ul"}>`,
+      );
       continue;
     }
     if (/^#{1,6}\s+/.test(line)) {
@@ -712,7 +828,12 @@ function markdown(src: unknown): string {
       continue;
     }
     const buf: string[] = [];
-    while (i < lines.length && lines[i].trim() && !/^```|^\s*([-*]|\d+\.)\s+|^#{1,6}\s/.test(lines[i])) buf.push(lines[i++]);
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !/^```|^\s*([-*]|\d+\.)\s+|^#{1,6}\s/.test(lines[i])
+    )
+      buf.push(lines[i++]);
     out.push(`<p>${buf.map(inline).join("<br>")}</p>`);
   }
   return out.join("");
@@ -780,7 +901,12 @@ window.addEventListener("message", (e) => {
       break;
     case "runtime-error":
       const error = d.error;
-      if (error && !state.runtimeErrors.some((x) => x.statementId === error.statementId && x.message === error.message)) {
+      if (
+        error &&
+        !state.runtimeErrors.some(
+          (x) => x.statementId === error.statementId && x.message === error.message,
+        )
+      ) {
         state.runtimeErrors.push(error);
         state.errorsRevision = state.revision;
         renderLog();
@@ -795,7 +921,9 @@ window.addEventListener("message", (e) => {
       break;
     case "changes":
       // Frame code is untrusted: keep string ids only.
-      state.changes = Array.isArray(d.ids) ? d.ids.filter((id): id is string => typeof id === "string").slice(0, 50) : [];
+      state.changes = Array.isArray(d.ids)
+        ? d.ids.filter((id): id is string => typeof id === "string").slice(0, 50)
+        : [];
       renderChanges();
       if (state.highlight) postHighlight(false);
       break;
@@ -808,7 +936,8 @@ window.addEventListener("message", (e) => {
       break;
     case "history":
       // The popover's History (n) on a statement: the owner's only, and only a statement name is taken from the frame.
-      if (OWNER && !HOSTED && typeof d.id === "string") void showStatementHistory(d.id.slice(0, 200));
+      if (OWNER && !HOSTED && typeof d.id === "string")
+        void showStatementHistory(d.id.slice(0, 200));
       break;
     case "open-url":
       openExternal(d.url);
@@ -836,10 +965,26 @@ function saveQueue() {
 }
 
 function addToQueue(raw: unknown) {
-  if (state.archived || !raw || typeof raw !== "object" || typeof (raw as { kind?: unknown }).kind !== "string") return;
+  if (
+    state.archived ||
+    !raw ||
+    typeof raw !== "object" ||
+    typeof (raw as { kind?: unknown }).kind !== "string"
+  )
+    return;
   // Frame code is untrusted: the item is rendered here and saved to localStorage, so its text fields must be strings.
   const fields = raw as Record<string, unknown>;
-  for (const k of ["target", "component", "note", "text", "selection", "excerpt", "message", "statement"]) if (k in fields) fields[k] = str(fields[k]);
+  for (const k of [
+    "target",
+    "component",
+    "note",
+    "text",
+    "selection",
+    "excerpt",
+    "message",
+    "statement",
+  ])
+    if (k in fields) fields[k] = str(fields[k]);
   const item = raw as QueueItem;
   item.qid = `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   state.queue.push(item);
@@ -857,7 +1002,10 @@ function reportRenderErrors() {
   if (!OWNER || state.archived || state.thirdParty) return;
   clearTimeout(renderReportTimer);
   renderReportTimer = setTimeout(async () => {
-    const errors = [...state.parserErrors, ...state.runtimeErrors].map((e) => ({ statement: str(e.statementId), message: str(e.message) }));
+    const errors = [...state.parserErrors, ...state.runtimeErrors].map((e) => ({
+      statement: str(e.statementId),
+      message: str(e.message),
+    }));
     if (!errors.length) return;
     const reply = await fetch(`${BASE}/render-errors`, {
       method: "POST",
@@ -880,10 +1028,15 @@ function removeFromQueue(qid: string | undefined) {
   renderDock();
 }
 
-function anchorLabel(item: QueueItem): { icon: string; text: string | undefined; sub: string | undefined } {
+function anchorLabel(item: QueueItem): {
+  icon: string;
+  text: string | undefined;
+  sub: string | undefined;
+} {
   if (item.kind === "annotation") return { icon: "✎", text: item.target, sub: item.component };
   if (item.kind === "action") return { icon: "↗", text: item.message, sub: "button" };
-  if (item.kind === "render-error") return { icon: "!", text: item.statement || "page", sub: "render issue" };
+  if (item.kind === "render-error")
+    return { icon: "!", text: item.statement || "page", sub: "render issue" };
   return { icon: "", text: "", sub: "" };
 }
 
@@ -900,9 +1053,12 @@ const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" 
 
 function itemQuote(item: QueueItem): unknown {
   if (item.selection) return item.selection;
-  if (item.detail?.part) return item.excerpt ? `${item.detail.part}  ${item.excerpt}` : item.detail.part;
+  if (item.detail?.part)
+    return item.excerpt ? `${item.detail.part}  ${item.excerpt}` : item.detail.part;
   if (item.detail?.column) {
-    const where = [item.detail.row && `row ${item.detail.row}`, `column ${item.detail.column}`].filter(Boolean).join(", ");
+    const where = [item.detail.row && `row ${item.detail.row}`, `column ${item.detail.column}`]
+      .filter(Boolean)
+      .join(", ");
     return item.excerpt ? `${item.excerpt}  (${where})` : where;
   }
   if (item.kind === "action" && item.form) return flatForm(item.form).join(" · ");
@@ -915,7 +1071,11 @@ function itemBody(item: QueueItem, opts: ItemOptions = {}): HTMLElement {
   try {
     return renderItem(item, opts);
   } catch {
-    return h("div", { class: "item" }, h("div", { class: "note", text: "This note could not be displayed." }));
+    return h(
+      "div",
+      { class: "item" },
+      h("div", { class: "note", text: "This note could not be displayed." }),
+    );
   }
 }
 
@@ -944,12 +1104,19 @@ function renderItem(item: QueueItem, { queued, held }: ItemOptions = {}): HTMLEl
   }
   // What the agent receives on release: within the path above the leaf, the whole detail, the whole quote.
   if (held && item.kind === "annotation") {
-    const within = (Array.isArray(item.path) ? item.path : []).slice(0, -1).filter((p) => typeof p === "string" && p !== "root");
-    if (within.length) wrap.append(h("div", { class: "anchor-sub", text: `within ${within.join(" > ")}` }));
-    if (item.detail && typeof item.detail === "object") wrap.append(h("div", { class: "anchor-sub", text: flatForm(item.detail).join(" · ") }));
+    const within = (Array.isArray(item.path) ? item.path : [])
+      .slice(0, -1)
+      .filter((p) => typeof p === "string" && p !== "root");
+    if (within.length)
+      wrap.append(h("div", { class: "anchor-sub", text: `within ${within.join(" > ")}` }));
+    if (item.detail && typeof item.detail === "object")
+      wrap.append(h("div", { class: "anchor-sub", text: flatForm(item.detail).join(" · ") }));
   }
   const quote = str(itemQuote(item));
-  if (quote) wrap.append(h("blockquote", { text: held || quote.length <= 260 ? quote : quote.slice(0, 259) + "…" }));
+  if (quote)
+    wrap.append(
+      h("blockquote", { text: held || quote.length <= 260 ? quote : quote.slice(0, 259) + "…" }),
+    );
   const noteText = item.kind === "message" ? item.text : item.note;
   if (queued && state.editing === item.qid) {
     const ta = h("textarea", { class: "edit", rows: "2" });
@@ -995,7 +1162,11 @@ function whoLabel(entry: Entry): string {
 
 async function heldAction(kind: string, ids?: string[]) {
   try {
-    await fetch(`${BASE}/${kind}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(ids ? { ids } : { all: true }) });
+    await fetch(`${BASE}/${kind}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(ids ? { ids } : { all: true }),
+    });
   } catch {
     composerError("Could not reach the server. Try again.");
   }
@@ -1005,14 +1176,33 @@ function receipt(entry: Entry): HTMLElement | null {
   // Hosted notes have no delivery receipts: the owner's agent sees them after a sync.
   if (HOSTED) {
     if (entry.pending) return h("div", { class: "receipt" }, h("em", { text: "Sending…" }));
-    return entry.author === viewerName ? h("div", { class: "receipt" }, h("em", { text: "Sent to the page owner" })) : null;
+    return entry.author === viewerName
+      ? h("div", { class: "receipt" }, h("em", { text: "Sent to the page owner" }))
+      : null;
   }
   if (entry.held) {
-    const row = h("div", { class: "receipt held" }, h("span", { class: "held-label", text: OWNER ? "Held · not sent to the agent" : "Waiting for the owner to send it on" }));
+    const row = h(
+      "div",
+      { class: "receipt held" },
+      h("span", {
+        class: "held-label",
+        text: OWNER ? "Held · not sent to the agent" : "Waiting for the owner to send it on",
+      }),
+    );
     if (OWNER) {
       row.append(
-        h("button", { type: "button", class: "btn tiny primary", text: "Send", onclick: () => heldAction("release", [entry.id]) }),
-        h("button", { type: "button", class: "btn tiny ghost", text: "Discard", onclick: () => heldAction("discard", [entry.id]) }),
+        h("button", {
+          type: "button",
+          class: "btn tiny primary",
+          text: "Send",
+          onclick: () => heldAction("release", [entry.id]),
+        }),
+        h("button", {
+          type: "button",
+          class: "btn tiny ghost",
+          text: "Discard",
+          onclick: () => heldAction("discard", [entry.id]),
+        }),
       );
     }
     return row;
@@ -1024,12 +1214,23 @@ function receipt(entry: Entry): HTMLElement | null {
   ];
   const row = h("div", { class: "receipt" });
   for (const [label, at] of steps) {
-    row.append(h("span", { class: at ? "on" : "", title: at ? `${label} ${fmtTime(at)}` : `Not ${label.toLowerCase()} yet`, text: label }));
+    row.append(
+      h("span", {
+        class: at ? "on" : "",
+        title: at ? `${label} ${fmtTime(at)}` : `Not ${label.toLowerCase()} yet`,
+        text: label,
+      }),
+    );
   }
   if (!entry.seenAt) {
     row.append(
       h("em", {
-        text: state.presence === "listening" ? "" : state.unread ? `waiting for the agent (${state.unread} not answered yet)` : "waiting for the agent",
+        text:
+          state.presence === "listening"
+            ? ""
+            : state.unread
+              ? `waiting for the agent (${state.unread} not answered yet)`
+              : "waiting for the agent",
       }),
     );
   }
@@ -1050,7 +1251,13 @@ function renderLog(scrollToEnd = false) {
         h(
           "div",
           { class: "issue" },
-          h("div", { class: "issue-text" }, err.statementId ? h("code", { text: err.statementId }) : null, " ", err.message),
+          h(
+            "div",
+            { class: "issue-text" },
+            err.statementId ? h("code", { text: err.statementId }) : null,
+            " ",
+            err.message,
+          ),
           // Once the owner's page has sent it to the agent (reportRenderErrors), there is nothing to queue.
           state.archived || sent
             ? null
@@ -1059,7 +1266,13 @@ function renderLog(scrollToEnd = false) {
                 class: "btn tiny",
                 text: "Queue fix",
                 onclick: () =>
-                  addToQueue({ kind: "render-error", statement: err.statementId, target: err.statementId, message: err.message, note: "Fix this render error." }),
+                  addToQueue({
+                    kind: "render-error",
+                    statement: err.statementId,
+                    target: err.statementId,
+                    message: err.message,
+                    note: "Fix this render error.",
+                  }),
               }),
         ),
       );
@@ -1067,10 +1280,24 @@ function renderLog(scrollToEnd = false) {
     log.append(box);
   }
   if (state.more) {
-    log.append(h("button", { type: "button", class: "btn tiny ghost load-earlier", text: "Load earlier messages", onclick: loadEarlier }));
+    log.append(
+      h("button", {
+        type: "button",
+        class: "btn tiny ghost load-earlier",
+        text: "Load earlier messages",
+        onclick: loadEarlier,
+      }),
+    );
   }
   // Hosted: notes waiting for their ack follow the conversation.
-  const pending = mine().map((o): Entry => ({ id: `out:${o.m.clientId}:${o.m.n}`, role: "user", author: viewerName, items: o.m.args.items, at: o.at, pending: true }));
+  const pending = mine().map((o): Entry => ({
+    id: `out:${o.m.clientId}:${o.m.n}`,
+    role: "user",
+    author: viewerName,
+    items: o.m.args.items,
+    at: o.at,
+    pending: true,
+  }));
   const entries = pending.length ? [...state.transcript, ...pending] : state.transcript;
   if (!entries.length) {
     log.append(
@@ -1087,10 +1314,19 @@ function renderLog(scrollToEnd = false) {
   // The owner's run marks (RLM-346) sit among the entries by time; with older entries not loaded yet, older marks wait too.
   const since = state.more ? (entries[0]?.at ?? 0) : 0;
   const marks = OWNER ? [...runMarks.values()].filter((m) => m.at >= since) : [];
-  const rows: (Entry | RunMark)[] = marks.length ? [...entries, ...marks].sort((a, b) => a.at - b.at) : entries;
+  const rows: (Entry | RunMark)[] = marks.length
+    ? [...entries, ...marks].sort((a, b) => a.at - b.at)
+    : entries;
   for (const entry of rows) {
     if ("tone" in entry) {
-      log.append(h("div", { class: `run-mark ${entry.tone}` }, h("span", { text: entry.text }), h("time", { text: fmtTime(entry.at) })));
+      log.append(
+        h(
+          "div",
+          { class: `run-mark ${entry.tone}` },
+          h("span", { text: entry.text }),
+          h("time", { text: fmtTime(entry.at) }),
+        ),
+      );
     } else if (entry.role === "agent") {
       log.append(
         h(
@@ -1105,7 +1341,11 @@ function renderLog(scrollToEnd = false) {
       if (entry.items?.length || !entry.end) {
         const n = entry.items?.length ?? 0;
         const who = n ? `${whoLabel(entry)} sent ${n} note${n === 1 ? "" : "s"}` : whoLabel(entry);
-        const bubble = h("div", { class: `msg user${entry.held ? " held" : ""}` }, h("div", { class: "who", text: `${who} · ${fmtTime(entry.at)}` }));
+        const bubble = h(
+          "div",
+          { class: `msg user${entry.held ? " held" : ""}` },
+          h("div", { class: "who", text: `${who} · ${fmtTime(entry.at)}` }),
+        );
         for (const it of entry.items || []) bubble.append(itemBody(it, { held: !!entry.held }));
         const r = receipt(entry);
         if (r) bubble.append(r);
@@ -1131,8 +1371,22 @@ function renderLog(scrollToEnd = false) {
         "div",
         { class: "held-bar" },
         h("span", { text: `${heldCount} held from teammates` }),
-        h("button", { type: "button", class: "btn tiny primary", text: "Send all", onclick: () => heldAction("release", state.transcript.filter((e) => e.held).map((e) => e.id)) }),
-        h("button", { type: "button", class: "btn tiny ghost", text: "Discard all", onclick: () => heldAction("discard") }),
+        h("button", {
+          type: "button",
+          class: "btn tiny primary",
+          text: "Send all",
+          onclick: () =>
+            heldAction(
+              "release",
+              state.transcript.filter((e) => e.held).map((e) => e.id),
+            ),
+        }),
+        h("button", {
+          type: "button",
+          class: "btn tiny ghost",
+          text: "Discard all",
+          onclick: () => heldAction("discard"),
+        }),
       ),
     );
   }
@@ -1141,7 +1395,9 @@ function renderLog(scrollToEnd = false) {
     log.append(
       h("div", {
         class: "archived-note",
-        text: OWNER ? "This page is archived. Unarchive it from the ⋯ menu to add notes." : "The owner archived this page. Ask them to reopen it if you have more notes.",
+        text: OWNER
+          ? "This page is archived. Unarchive it from the ⋯ menu to add notes."
+          : "The owner archived this page. Ask them to reopen it if you have more notes.",
       }),
     );
   }
@@ -1187,7 +1443,17 @@ function renderQueue(scrollToEnd = false) {
             },
             icon("pencil", { size: 14, width: 1.8 }),
           ),
-          h("button", { type: "button", class: "icon-btn q-remove", "aria-label": `Remove note ${i + 1}`, title: "Remove", onclick: () => removeFromQueue(item.qid) }, icon("close", { size: 14, width: 1.8 })),
+          h(
+            "button",
+            {
+              type: "button",
+              class: "icon-btn q-remove",
+              "aria-label": `Remove note ${i + 1}`,
+              title: "Remove",
+              onclick: () => removeFromQueue(item.qid),
+            },
+            icon("close", { size: 14, width: 1.8 }),
+          ),
         ),
       ),
     );
@@ -1202,7 +1468,8 @@ function renderComposer() {
   const n = state.queue.length;
   textarea.disabled = archived || !!lockout || state.sending;
   // Hosted: nothing goes out until the service has said who this reviewer is.
-  $<HTMLButtonElement>(".send").disabled = archived || !!lockout || state.sending || (!!HOSTED && inviteName === undefined);
+  $<HTMLButtonElement>(".send").disabled =
+    archived || !!lockout || state.sending || (!!HOSTED && inviteName === undefined);
   const sendEnd = $<HTMLButtonElement>(".send-end");
   if (sendEnd) {
     // With nothing typed or queued the button only tells the agent there are no more notes (an empty final batch).
@@ -1217,7 +1484,10 @@ function renderComposer() {
         ? "Tell the agent you have no more notes"
         : "Send these notes and tell the agent it can stop listening. You can still add notes later.";
   }
-  $(".send").replaceChildren(state.sending ? "Sending…" : n ? `Send ${n} note${n === 1 ? "" : "s"}` : "Send", ...(state.sending ? [] : [icon("arrowRight", { size: 14, width: 2.1 })]));
+  $(".send").replaceChildren(
+    state.sending ? "Sending…" : n ? `Send ${n} note${n === 1 ? "" : "s"}` : "Send",
+    ...(state.sending ? [] : [icon("arrowRight", { size: 14, width: 2.1 })]),
+  );
   textarea.placeholder = archived ? "Page archived" : "Add a note about the whole page";
   $(".tab-count").textContent = n ? String(n) : "";
 }
@@ -1271,7 +1541,13 @@ async function sendAll(end = false) {
  */
 function toNoteItem(item: QueueItem): NoteItem {
   if (item.kind === "message") return { kind: "message", text: str(item.text) };
-  if (item.kind === "action") return { kind: "message", text: [str(item.message), item.form ? flatForm(item.form).join(" · ") : ""].filter(Boolean).join(" · ") };
+  if (item.kind === "action")
+    return {
+      kind: "message",
+      text: [str(item.message), item.form ? flatForm(item.form).join(" · ") : ""]
+        .filter(Boolean)
+        .join(" · "),
+    };
   const out: NoteAnnotation = { kind: "annotation" };
   const target = item.kind === "render-error" ? item.statement : item.target;
   if (typeof target === "string" && target) out.target = target;
@@ -1280,11 +1556,13 @@ function toNoteItem(item: QueueItem): NoteItem {
     if (typeof v === "string" && v) out[k] = v;
   }
   if (item.kind === "render-error" && typeof item.message === "string") out.excerpt = item.message;
-  if (Array.isArray(item.path)) out.path = item.path.filter((p): p is string => typeof p === "string");
+  if (Array.isArray(item.path))
+    out.path = item.path.filter((p): p is string => typeof p === "string");
   const d = item.detail;
   if (d && typeof d === "object") {
     const detail: NonNullable<NoteAnnotation["detail"]> = {};
-    for (const k of ["part", "row", "column"] as const) if (typeof d[k] === "string") detail[k] = d[k];
+    for (const k of ["part", "row", "column"] as const)
+      if (typeof d[k] === "string") detail[k] = d[k];
     if (Number.isInteger(d.rowIndex)) detail.rowIndex = d.rowIndex as number;
     if (Object.keys(detail).length) out.detail = detail;
   }
@@ -1292,7 +1570,8 @@ function toNoteItem(item: QueueItem): NoteItem {
 }
 
 /** Hosted: queues the batch as one `addNote` and sends it if the socket is open; the ack settles it. */
-const UNSAVED_WARNING = "This browser could not keep a copy of your note: keep this tab open until it shows “Sent to the page owner”.";
+const UNSAVED_WARNING =
+  "This browser could not keep a copy of your note: keep this tab open until it shows “Sent to the page owner”.";
 
 /** The composer's outbox notice: a rate-limit wait and the unsaved-copy warning, each while it holds. */
 function showOutboxNotice() {
@@ -1331,7 +1610,9 @@ function sendHosted(queued: QueueItem[]) {
   const items = queued.map(toNoteItem);
   const bytes = new TextEncoder().encode(JSON.stringify(items)).length;
   if (bytes > LIMITS.noteItemsBytes) {
-    composerError(`Too long to send: ${bytes} bytes, the limit is ${LIMITS.noteItemsBytes}. Shorten or remove a note.`);
+    composerError(
+      `Too long to send: ${bytes} bytes, the limit is ${LIMITS.noteItemsBytes}. Shorten or remove a note.`,
+    );
     return;
   }
   const args: AddNoteArgs = inviteName === null ? { items, name: viewerName } : { items };
@@ -1373,17 +1654,25 @@ function setMode(mode: string | undefined) {
   if (wasExploring && state.mode === "annotate") log.scrollTop = log.scrollHeight;
   // An archived page takes no notes: the frame is in Explore, and the switch says so.
   const shown: Mode = state.archived ? "explore" : state.mode;
-  $(".subbar-hint").textContent = state.archived ? "The page is archived: it takes no notes" : shown === "explore" ? "Use the page normally: tabs, forms, links" : "Click any part of the page to comment on it";
+  $(".subbar-hint").textContent = state.archived
+    ? "The page is archived: it takes no notes"
+    : shown === "explore"
+      ? "Use the page normally: tabs, forms, links"
+      : "Click any part of the page to comment on it";
   // The mode buttons only: the attach panel's On / Off / default is a .seg too.
   for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button[data-mode]")) {
     b.classList.toggle("on", b.dataset.mode === shown);
     b.setAttribute("aria-pressed", String(b.dataset.mode === shown));
     b.disabled = state.archived && b.dataset.mode === "annotate";
-    if (b.dataset.mode === "annotate") b.title = state.archived ? "The page is archived: it takes no notes" : "Click anything to comment on it (⌘/Ctrl+I)";
+    if (b.dataset.mode === "annotate")
+      b.title = state.archived
+        ? "The page is archived: it takes no notes"
+        : "Click anything to comment on it (⌘/Ctrl+I)";
   }
   post({ type: "mode", mode: shown });
 }
-for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button[data-mode]")) b.addEventListener("click", () => setMode(b.dataset.mode));
+for (const b of document.querySelectorAll<HTMLButtonElement>(".seg button[data-mode]"))
+  b.addEventListener("click", () => setMode(b.dataset.mode));
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && (e.key === "i" || e.key === "I")) {
     e.preventDefault();
@@ -1408,8 +1697,13 @@ function renderPresence() {
   else if (!state.connected) [label, cls] = ["Reconnecting…", "off"];
   else if (HOSTED) [label, cls] = ["Shared page", "hosted"];
   else if (state.presence === "listening") [label, cls] = ["Agent listening", "listening"];
-  else if (state.presence === "working") [label, cls] = [took ? `Agent working (${took})` : "Agent working", "working"];
-  else if (state.presence === "stale") [label, cls] = [took ? `Took your notes ${took} ago, no reply yet` : "Took your notes, no reply yet", "stale"];
+  else if (state.presence === "working")
+    [label, cls] = [took ? `Agent working (${took})` : "Agent working", "working"];
+  else if (state.presence === "stale")
+    [label, cls] = [
+      took ? `Took your notes ${took} ago, no reply yet` : "Took your notes, no reply yet",
+      "stale",
+    ];
   else [label, cls] = ["Agent not listening", "idle"];
   if (cls === "idle" && state.unread) label += ` · ${state.unread} not answered yet`;
   // With an agent attached, "not listening" says nothing: the Agent pill tells what runs.
@@ -1481,7 +1775,6 @@ $(".changes").addEventListener("click", () => {
   postHighlight(state.highlight);
 });
 
-
 // ── history (RLM-352): what changed since the owner last looked, every version, a part's earlier texts, restore ──
 
 /** A revision in `/history`'s answer (revisionLog in src/cli/history.ts). */
@@ -1514,11 +1807,19 @@ let hist: HistoryData | null = null;
 const isoTime = (at: number): string => {
   const d = new Date(at);
   const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return d.toDateString() === new Date().toDateString() ? t : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${t}`;
+  return d.toDateString() === new Date().toDateString()
+    ? t
+    : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${t}`;
 };
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
-const noteLine = (n: { author: string; target: string | null; text: string }): string => `${n.author}${n.target ? ` on ${n.target}` : ""}: ${n.text}`;
-const SOURCES: Record<string, string> = { patch: "patched", file: "edited", open: "found on open", restore: "restored" };
+const noteLine = (n: { author: string; target: string | null; text: string }): string =>
+  `${n.author}${n.target ? ` on ${n.target}` : ""}: ${n.text}`;
+const SOURCES: Record<string, string> = {
+  patch: "patched",
+  file: "edited",
+  open: "found on open",
+  restore: "restored",
+};
 
 /** The newest `/history` request: an answer to an earlier one may arrive after it and must not replace what it brought. */
 let histLoad = 0;
@@ -1552,7 +1853,9 @@ function loadHistory(): Promise<HistoryData | null> {
 function sendHistoryCounts() {
   if (!hist) return;
   const counts: Record<string, number> = {};
-  for (const r of hist.revisions) for (const name of new Set([...r.changed, ...r.removed])) counts[name] = (counts[name] || 0) + 1;
+  for (const r of hist.revisions)
+    for (const name of new Set([...r.changed, ...r.removed]))
+      counts[name] = (counts[name] || 0) + 1;
   post({ type: "history-counts", counts });
 }
 
@@ -1582,7 +1885,11 @@ const inView = (): boolean => document.visibilityState === "visible";
 async function markViewed() {
   if (!hist || !inView() || hist.viewed >= hist.head) return;
   const head = hist.head;
-  const r = await fetch(`${BASE}/viewed`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rev: head }) }).catch(() => null);
+  const r = await fetch(`${BASE}/viewed`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rev: head }),
+  }).catch(() => null);
   if (r?.ok && hist) hist.viewed = Math.max(hist.viewed, head);
 }
 
@@ -1632,21 +1939,44 @@ async function showHistory() {
   const gen = histGen;
   const data = await loadHistory();
   if (gen !== histGen) return;
-  if (!data) return void body.append(h2("hist-empty", "History could not be loaded. Check that austere-axi is still running."));
-  if (!data.revisions.length) return void body.append(h2("hist-empty", "No revision is recorded yet."));
+  if (!data)
+    return void body.append(
+      h2("hist-empty", "History could not be loaded. Check that austere-axi is still running."),
+    );
+  if (!data.revisions.length)
+    return void body.append(h2("hist-empty", "No revision is recorded yet."));
   // The same count the bar above the page shows.
   const newer = data.revisions.filter((r) => r.rev > data.viewed).length;
-  if (newer && state.sinceChanges.length) body.append(h2("hist-since", `${plural(newer, "revision")} since you last looked`));
+  if (newer && state.sinceChanges.length)
+    body.append(h2("hist-since", `${plural(newer, "revision")} since you last looked`));
   for (const r of data.revisions) {
-    const names = r.created ? [`${plural(r.created, "statement")} at the start`] : [...r.changed, ...r.removed.map((n) => `${n} (deleted)`)];
+    const names = r.created
+      ? [`${plural(r.created, "statement")} at the start`]
+      : [...r.changed, ...r.removed.map((n) => `${n} (deleted)`)];
     const btn = h("button", { type: "button", class: "hist-pick", "aria-pressed": "false" });
     btn.append(
-      h("span", { class: "hist-meta", text: `${r.rev === data.head ? "Now · " : ""}Revision ${r.rev} · ${isoTime(r.at)} · ${SOURCES[r.source] || r.source}${r.by ? ` by ${r.by}` : ""}` }),
-      h("span", { class: "hist-names", text: names.length > 6 ? `${names.slice(0, 6).join(", ")} +${names.length - 6}` : names.join(", ") }),
+      h("span", {
+        class: "hist-meta",
+        text: `${r.rev === data.head ? "Now · " : ""}Revision ${r.rev} · ${isoTime(r.at)} · ${SOURCES[r.source] || r.source}${r.by ? ` by ${r.by}` : ""}`,
+      }),
+      h("span", {
+        class: "hist-names",
+        text:
+          names.length > 6
+            ? `${names.slice(0, 6).join(", ")} +${names.length - 6}`
+            : names.join(", "),
+      }),
     );
-    if (r.cause.length) btn.append(h("span", { class: "hist-cause", text: `${noteLine(r.cause[0]).slice(0, 140)}${r.cause.length > 1 ? ` (+${r.cause.length - 1} more)` : ""}` }));
+    if (r.cause.length)
+      btn.append(
+        h("span", {
+          class: "hist-cause",
+          text: `${noteLine(r.cause[0]).slice(0, 140)}${r.cause.length > 1 ? ` (+${r.cause.length - 1} more)` : ""}`,
+        }),
+      );
     btn.addEventListener("click", () => {
-      for (const other of body.querySelectorAll(".hist-pick")) other.setAttribute("aria-pressed", String(other === btn));
+      for (const other of body.querySelectorAll(".hist-pick"))
+        other.setAttribute("aria-pressed", String(other === btn));
       histPreview = true;
       post({ type: "highlight", ids: r.changed.slice(0, 100), scroll: true });
     });
@@ -1661,16 +1991,34 @@ async function showStatementHistory(name: string) {
   const gen = histGen;
   const r = await fetch(`${BASE}/history?statement=${encodeURIComponent(name)}`).catch(() => null);
   if (gen !== histGen) return;
-  if (!r?.ok) return void body.append(h2("hist-empty", "History could not be loaded. Check that austere-axi is still running."));
-  const versions = ((await r.json().catch(() => ({ versions: [] }))) as { versions: StatementVersion[] }).versions;
+  if (!r?.ok)
+    return void body.append(
+      h2("hist-empty", "History could not be loaded. Check that austere-axi is still running."),
+    );
+  const versions = (
+    (await r.json().catch(() => ({ versions: [] }))) as { versions: StatementVersion[] }
+  ).versions;
   if (gen !== histGen) return;
-  if (!versions.length) return void body.append(h2("hist-empty", "No earlier version is recorded."));
+  if (!versions.length)
+    return void body.append(h2("hist-empty", "No earlier version is recorded."));
   versions.forEach((v, i) => {
     const row = h2("hist-row", "");
-    const meta = h("span", { class: "hist-meta", text: `${i === 0 ? "Now · " : ""}Revision ${v.rev} · ${isoTime(v.at)} · ${SOURCES[v.source] || v.source}` });
-    const text = h("pre", { class: "hist-text", text: v.text === null ? "(deleted)" : v.text.slice(0, 1500) || "(no text)" });
+    const meta = h("span", {
+      class: "hist-meta",
+      text: `${i === 0 ? "Now · " : ""}Revision ${v.rev} · ${isoTime(v.at)} · ${SOURCES[v.source] || v.source}`,
+    });
+    const text = h("pre", {
+      class: "hist-text",
+      text: v.text === null ? "(deleted)" : v.text.slice(0, 1500) || "(no text)",
+    });
     row.append(meta, text);
-    if (v.cause.length) row.append(h("span", { class: "hist-cause", text: `${v.cause.slice(0, 2).map(noteLine).join(" · ").slice(0, 200)}${v.cause.length > 2 ? ` (+${v.cause.length - 2} more)` : ""}` }));
+    if (v.cause.length)
+      row.append(
+        h("span", {
+          class: "hist-cause",
+          text: `${v.cause.slice(0, 2).map(noteLine).join(" · ").slice(0, 200)}${v.cause.length > 2 ? ` (+${v.cause.length - 2} more)` : ""}`,
+        }),
+      );
     if (i > 0 && v.text !== null) {
       row.append(
         h("button", {
@@ -1686,12 +2034,20 @@ async function showStatementHistory(name: string) {
 }
 
 async function restoreStatement(name: string, rev: number) {
-  const r = await fetch(`${BASE}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rev, statements: [name] }) }).catch(() => null);
+  const r = await fetch(`${BASE}/restore`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rev, statements: [name] }),
+  }).catch(() => null);
   if (!r) return showBanner(UNREACHABLE);
   if (!r.ok) return showBanner(`Could not restore ${name}: ${await failure(r)}`);
   const done = (await r.json().catch(() => ({}))) as { unchanged?: boolean };
   closeHistory();
-  flash(done.unchanged ? `${name} already reads as it did in revision ${rev}.` : `${name} is back as it was in revision ${rev}.`);
+  flash(
+    done.unchanged
+      ? `${name} already reads as it did in revision ${rev}.`
+      : `${name} is back as it was in revision ${rev}.`,
+  );
   void refreshHistory();
 }
 
@@ -1702,9 +2058,14 @@ function h2(cls: string, text: string): HTMLDivElement {
 
 if (OWNER && !HOSTED) {
   $(".hist-close").addEventListener("click", closeHistory);
-  $(".hist-btn").addEventListener("click", () => (histPop().hidden ? void showHistory() : closeHistory()));
+  $(".hist-btn").addEventListener("click", () =>
+    histPop().hidden ? void showHistory() : closeHistory(),
+  );
   $(".since").addEventListener("click", (e) => {
-    const act = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-since]")?.dataset.since : undefined;
+    const act =
+      e.target instanceof Element
+        ? e.target.closest<HTMLElement>("[data-since]")?.dataset.since
+        : undefined;
     if (act === "dismiss") $(".since").hidden = true;
     if (act === "history") void showHistory();
     if (act === "show") {
@@ -1807,19 +2168,28 @@ async function copyAgentPrompt() {
     try {
       text = await (agentPrompt ?? loadAgentPrompt());
     } catch {
-      return showBanner("Could not get the agent prompt from austere-axi. Check that it is still running.");
+      return showBanner(
+        "Could not get the agent prompt from austere-axi. Check that it is still running.",
+      );
     }
   }
   await copyText(text, "Agent prompt");
 }
 
 menuPop.addEventListener("click", async (e) => {
-  const cmd = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd : undefined;
+  const cmd =
+    e.target instanceof Element
+      ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd
+      : undefined;
   // The share note stays open so its command can be selected.
   if (!cmd) return e.stopPropagation();
   if (cmd === "copy-path") await copyText(BOOT.file, "File path");
   // Hosted, the URL without its fragment: the invite token is already out of the address bar.
-  if (cmd === "copy-link") await copyText(HOSTED ? location.origin + location.pathname : state.links?.remote || location.href, HOSTED ? "Page link" : "Review link");
+  if (cmd === "copy-link")
+    await copyText(
+      HOSTED ? location.origin + location.pathname : state.links?.remote || location.href,
+      HOSTED ? "Page link" : "Review link",
+    );
   if (cmd === "copy-agent-prompt") await copyAgentPrompt();
   if (cmd === "history") void showHistory();
   if (cmd === "reload") loadFrame();
@@ -1874,17 +2244,67 @@ function askArchive(plan: ArchivePlan): Promise<boolean | null> {
     answer(null);
   });
   const parts = [
-    h("h2", { id: "confirm-title", text: several ? `Archive this copy (${plan.copy})?` : "Archive this page?" }),
-    h("p", { text: several ? "This copy leaves the hub's lists and no one can add notes to it until you unarchive it." : "It leaves the hub's lists and no one can add notes until you unarchive it." }),
-    waiting ? h("p", { text: waiting === 1 ? "1 unanswered note goes with it: it is kept, but leaves the hub's counts." : `${waiting} unanswered notes go with it: they are kept, but leave the hub's counts.` }) : null,
-    several ? h("p", { text: plan.others.length === 1 ? "This copy stays open:" : "These copies stay open:" }) : null,
-    several ? h("ul", {}, plan.others.map((c) => h("li", { title: c.file, text: c.unanswered ? `${c.copy} · ${c.unanswered} unanswered note${c.unanswered === 1 ? "" : "s"}` : c.copy }))) : null,
+    h("h2", {
+      id: "confirm-title",
+      text: several ? `Archive this copy (${plan.copy})?` : "Archive this page?",
+    }),
+    h("p", {
+      text: several
+        ? "This copy leaves the hub's lists and no one can add notes to it until you unarchive it."
+        : "It leaves the hub's lists and no one can add notes until you unarchive it.",
+    }),
+    waiting
+      ? h("p", {
+          text:
+            waiting === 1
+              ? "1 unanswered note goes with it: it is kept, but leaves the hub's counts."
+              : `${waiting} unanswered notes go with it: they are kept, but leave the hub's counts.`,
+        })
+      : null,
+    several
+      ? h("p", {
+          text: plan.others.length === 1 ? "This copy stays open:" : "These copies stay open:",
+        })
+      : null,
+    several
+      ? h(
+          "ul",
+          {},
+          plan.others.map((c) =>
+            h("li", {
+              title: c.file,
+              text: c.unanswered
+                ? `${c.copy} · ${c.unanswered} unanswered note${c.unanswered === 1 ? "" : "s"}`
+                : c.copy,
+            }),
+          ),
+        )
+      : null,
     h(
       "div",
       { class: "confirm-actions" },
-      h("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: () => answer(null) }),
-      several ? h("button", { type: "button", class: "btn", "data-archive": "every", text: "Archive every copy", onclick: () => answer(true) }) : null,
-      h("button", { type: "button", class: "btn primary", "data-archive": "this", text: several ? "Archive this copy" : "Archive page", onclick: () => answer(false) }),
+      h("button", {
+        type: "button",
+        class: "btn ghost",
+        text: "Cancel",
+        onclick: () => answer(null),
+      }),
+      several
+        ? h("button", {
+            type: "button",
+            class: "btn",
+            "data-archive": "every",
+            text: "Archive every copy",
+            onclick: () => answer(true),
+          })
+        : null,
+      h("button", {
+        type: "button",
+        class: "btn primary",
+        "data-archive": "this",
+        text: several ? "Archive this copy" : "Archive page",
+        onclick: () => answer(false),
+      }),
     ),
   ];
   dialog.append(...parts.filter((el) => el !== null));
@@ -1899,7 +2319,11 @@ async function archivePage() {
   if (!r.ok) return showArchiveError(`Could not archive this page: ${await failure(r)}`);
   const every = await askArchive((await r.json()) as ArchivePlan);
   if (every === null) return;
-  const done = await fetch(`${BASE}/archive`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ every }) }).catch(() => null);
+  const done = await fetch(`${BASE}/archive`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ every }),
+  }).catch(() => null);
   if (!done) return showArchiveError(UNREACHABLE);
   if (!done.ok) return showArchiveError(`Could not archive this page: ${await failure(done)}`);
   clearArchiveError();
@@ -1928,7 +2352,11 @@ async function sharePage() {
   const r = await fetch(`${BASE}/share`).catch(() => null);
   if (!r) return showBanner(UNREACHABLE);
   if (!r.ok) return showBanner(`Could not share this page: ${await failure(r)}`);
-  const offer = (await r.json()) as { project: { id: string; name: string } | null; remote: boolean; auto?: boolean };
+  const offer = (await r.json()) as {
+    project: { id: string; name: string } | null;
+    remote: boolean;
+    auto?: boolean;
+  };
   const dialog = h("dialog", { class: "confirm share", "aria-labelledby": "share-title" });
   const close = () => {
     dialog.close();
@@ -1938,21 +2366,62 @@ async function sharePage() {
     e.preventDefault();
     close();
   });
-  const option = (group: string, value: string, label: string, checked: boolean) => h("label", { class: "share-opt" }, h("input", { type: "radio", name: group, value, checked }), h("span", { text: label }));
-  const name = h("input", { type: "text", name: "name", maxlength: "40", required: true, placeholder: "Their name", "aria-label": "Name", autocomplete: "off" });
+  const option = (group: string, value: string, label: string, checked: boolean) =>
+    h(
+      "label",
+      { class: "share-opt" },
+      h("input", { type: "radio", name: group, value, checked }),
+      h("span", { text: label }),
+    );
+  const name = h("input", {
+    type: "text",
+    name: "name",
+    maxlength: "40",
+    required: true,
+    placeholder: "Their name",
+    "aria-label": "Name",
+    autocomplete: "off",
+  });
   const error = h("p", { class: "share-error", role: "alert", hidden: true });
   const create = h("button", { type: "submit", class: "btn primary", text: "Create link" });
   const form = h(
     "form",
     { class: "share-form" },
     h("h2", { id: "share-title", text: "Share with one person" }),
-    h("p", { text: "The first browser that opens the link becomes their device, and the link stops working. An unopened link expires in 7 days." }),
+    h("p", {
+      text: "The first browser that opens the link becomes their device, and the link stops working. An unopened link expires in 7 days.",
+    }),
     name,
-    h("fieldset", {}, h("legend", { text: "They can review" }), option("scope", "page", "This page", true), offer.project ? option("scope", "project", `Every page in ${offer.project.name}`, false) : null, option("scope", "all", "Every page", false)),
-    h("fieldset", {}, h("legend", { text: "Their notes" }), option("mode", "hold", "Wait for me to send them on", !offer.auto), option("mode", "auto", "Go straight to the agent", Boolean(offer.auto))),
-    offer.remote ? null : h("p", { class: "share-error", text: "No tailnet address is up here, so a teammate could not open a link. Start Tailscale, or set AUSTERE_AXI_HOST." }),
+    h(
+      "fieldset",
+      {},
+      h("legend", { text: "They can review" }),
+      option("scope", "page", "This page", true),
+      offer.project
+        ? option("scope", "project", `Every page in ${offer.project.name}`, false)
+        : null,
+      option("scope", "all", "Every page", false),
+    ),
+    h(
+      "fieldset",
+      {},
+      h("legend", { text: "Their notes" }),
+      option("mode", "hold", "Wait for me to send them on", !offer.auto),
+      option("mode", "auto", "Go straight to the agent", Boolean(offer.auto)),
+    ),
+    offer.remote
+      ? null
+      : h("p", {
+          class: "share-error",
+          text: "No tailnet address is up here, so a teammate could not open a link. Start Tailscale, or set AUSTERE_AXI_HOST.",
+        }),
     error,
-    h("div", { class: "confirm-actions" }, h("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: close }), create),
+    h(
+      "div",
+      { class: "confirm-actions" },
+      h("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: close }),
+      create,
+    ),
   );
   // An untouched notes choice is the saved default: leave it to the server, which holds the notes where an attached agent rules auto out.
   // A click counts too: clicking the radio that is already selected fires no `change`, and it is still the owner's choice.
@@ -1970,7 +2439,12 @@ async function sharePage() {
       method: "POST",
       headers: { "content-type": "application/json" },
       // The project the dialog offered: the server refuses the share if the page has moved since.
-      body: JSON.stringify({ name: String(data.get("name") || ""), scope: String(data.get("scope") || "page"), project: offer.project?.id, auto: modeTouched ? data.get("mode") === "auto" : undefined }),
+      body: JSON.stringify({
+        name: String(data.get("name") || ""),
+        scope: String(data.get("scope") || "page"),
+        project: offer.project?.id,
+        auto: modeTouched ? data.get("mode") === "auto" : undefined,
+      }),
     }).catch(() => null);
     create.disabled = false;
     if (!done || !done.ok) {
@@ -1979,15 +2453,29 @@ async function sharePage() {
       return;
     }
     const made = (await done.json()) as ShareMade;
-    const field = h("input", { type: "text", class: "share-link", readonly: true, value: made.link, "aria-label": "Link" });
+    const field = h("input", {
+      type: "text",
+      class: "share-link",
+      readonly: true,
+      value: made.link,
+      "aria-label": "Link",
+    });
     form.replaceChildren(
       h("h2", { id: "share-title", text: `Link for ${made.name}` }),
-      h("p", { text: `Reaches ${made.reaches}. ${made.auto ? "Their notes go straight to the agent." : "Their notes wait for you."} Works once, until ${new Date(made.expiresAt).toLocaleString()} if nobody opens it. Send it only to ${made.name}.` }),
+      h("p", {
+        text: `Reaches ${made.reaches}. ${made.auto ? "Their notes go straight to the agent." : "Their notes wait for you."} Works once, until ${new Date(made.expiresAt).toLocaleString()} if nobody opens it. Send it only to ${made.name}.`,
+      }),
       field,
       h(
         "div",
         { class: "confirm-actions" },
-        h("button", { type: "button", class: "btn", "data-share": "copy", text: "Copy link", onclick: () => copyText(made.link, "Link") }),
+        h("button", {
+          type: "button",
+          class: "btn",
+          "data-share": "copy",
+          text: "Copy link",
+          onclick: () => copyText(made.link, "Link"),
+        }),
         h("button", { type: "button", class: "btn primary", text: "Done", onclick: close }),
       ),
     );
@@ -2004,7 +2492,11 @@ async function sharePage() {
 const MODES: { id: AttachModeId; label: string; hint: string }[] = [
   { id: "same", label: "Same session", hint: "Each run continues the session" },
   { id: "fork", label: "Fork", hint: "Each run branches from the session" },
-  { id: "new", label: "New session", hint: "The first run starts a session; later runs continue it" },
+  {
+    id: "new",
+    label: "New session",
+    hint: "The first run starts a session; later runs continue it",
+  },
 ];
 /** `runs.reason` in words, for a run event without a message. */
 const RUN_REASONS: Record<string, string> = {
@@ -2030,7 +2522,17 @@ const runStateEl = OWNER ? $(".run-state") : null;
  * A run event moves `runGen` on: an answer that left before it keeps the event's run (a `running`
  * event that beat a slow `/attach` keeps its Stop).
  */
-const attach: { info: AttachInfo | null; run: RunSummary | null; message: string; log: string[] | null; busy: boolean; error: string; infoGen: number; infoShown: number; runGen: number } = {
+const attach: {
+  info: AttachInfo | null;
+  run: RunSummary | null;
+  message: string;
+  log: string[] | null;
+  busy: boolean;
+  error: string;
+  infoGen: number;
+  infoShown: number;
+  runGen: number;
+} = {
   info: null,
   run: null,
   message: "",
@@ -2074,7 +2576,13 @@ function ago(ms: number): string {
 /** A run's start and end as Conversation entries. A run that never started shows only when it failed (it was refused). */
 function addRunMarks(run: RunSummary, message?: string) {
   const what = [run.harness, run.mode, run.model].filter(Boolean).join(" · ");
-  if (run.started_at) runMarks.set(`${run.id}:start`, { id: run.id, at: run.started_at, text: `Agent run started${what ? ` · ${what}` : ""}`, tone: "start" });
+  if (run.started_at)
+    runMarks.set(`${run.id}:start`, {
+      id: run.id,
+      at: run.started_at,
+      text: `Agent run started${what ? ` · ${what}` : ""}`,
+      tone: "start",
+    });
   if (!run.ended_at || (!run.started_at && run.status !== "failed")) return;
   const took = run.started_at ? ` after ${clock(run.ended_at - run.started_at)}` : "";
   const why = message || RUN_REASONS[run.reason ?? ""] || run.reason || "";
@@ -2082,7 +2590,10 @@ function addRunMarks(run: RunSummary, message?: string) {
     run.status === "done"
       ? { text: `Agent run finished${took}`, tone: "done" }
       : run.status === "failed"
-        ? { text: `Agent run ${run.started_at ? "failed" : "did not start"}${why ? `: ${why}` : ""}`, tone: "failed" }
+        ? {
+            text: `Agent run ${run.started_at ? "failed" : "did not start"}${why ? `: ${why}` : ""}`,
+            tone: "failed",
+          }
         : run.status === "stopped"
           ? { text: `Agent run stopped${took}`, tone: "stopped" }
           : { text: "Agent run interrupted: the server restarted", tone: "stopped" };
@@ -2118,11 +2629,16 @@ function renderAttach() {
   if (!attachPill) return;
   const info = attach.info;
   const on = info?.effective.state === "on";
-  const detail = on && info ? [info.target.harness, info.effective.mode, info.effective.model].filter(Boolean).join(" · ") : "Off";
+  const detail =
+    on && info
+      ? [info.target.harness, info.effective.mode, info.effective.model].filter(Boolean).join(" · ")
+      : "Off";
   $(".attach-detail").textContent = detail;
   $(".attach-short").textContent = on ? "On" : "Off";
   attachPill.classList.toggle("on", on);
-  attachPill.title = on ? `Agent attached: ${detail}. A note you send starts it.` : "Attach an agent to this page";
+  attachPill.title = on
+    ? `Agent attached: ${detail}. A note you send starts it.`
+    : "Attach an agent to this page";
   renderPresence();
   renderRunState();
   if (attachPop && !attachPop.hidden) renderAttachPop();
@@ -2131,12 +2647,29 @@ function renderAttach() {
 /** Stop, View log and Retry for the run's state. */
 function runButtons(run: RunSummary): HTMLElement[] {
   if (run.status === "running" || run.status === "queued" || run.status === "waiting_for_session") {
-    return [h("button", { type: "button", class: "btn tiny ghost run-stop", text: "Stop", onclick: () => runAction("stop") })];
+    return [
+      h("button", {
+        type: "button",
+        class: "btn tiny ghost run-stop",
+        text: "Stop",
+        onclick: () => runAction("stop"),
+      }),
+    ];
   }
   if (run.status === "failed") {
     return [
-      h("button", { type: "button", class: "btn tiny ghost run-log", text: "View log", onclick: () => openLog() }),
-      h("button", { type: "button", class: "btn tiny run-retry", text: "Retry", onclick: () => runAction("retry") }),
+      h("button", {
+        type: "button",
+        class: "btn tiny ghost run-log",
+        text: "View log",
+        onclick: () => openLog(),
+      }),
+      h("button", {
+        type: "button",
+        class: "btn tiny run-retry",
+        text: "Retry",
+        onclick: () => runAction("retry"),
+      }),
     ];
   }
   return [];
@@ -2150,7 +2683,13 @@ function runLabel(run: RunSummary): Child[] {
     case "waiting_for_session":
       return ["Waiting for session"];
     case "running":
-      return ["Running ", h("span", { class: "run-elapsed", text: clock(Date.now() - (run.started_at ?? Date.now())) })];
+      return [
+        "Running ",
+        h("span", {
+          class: "run-elapsed",
+          text: clock(Date.now() - (run.started_at ?? Date.now())),
+        }),
+      ];
     case "failed":
       return ["Run failed"];
     case "done":
@@ -2162,7 +2701,12 @@ function runLabel(run: RunSummary): Child[] {
   }
 }
 
-const ACTIVE = new Set<RunSummary["status"]>(["queued", "waiting_for_session", "running", "failed"]);
+const ACTIVE = new Set<RunSummary["status"]>([
+  "queued",
+  "waiting_for_session",
+  "running",
+  "failed",
+]);
 
 function renderRunState() {
   if (!runStateEl) return;
@@ -2173,13 +2717,19 @@ function renderRunState() {
   runStateEl.className = `run-state${run ? ` ${run.status}` : ""}`;
   attachPill?.setAttribute("data-run", show && run ? run.status : "");
   if (run && show) {
-    runStateEl.title = run.status === "failed" ? attach.message || RUN_REASONS[run.reason ?? ""] || "" : run.status === "waiting_for_session" ? attach.message : "";
+    runStateEl.title =
+      run.status === "failed"
+        ? attach.message || RUN_REASONS[run.reason ?? ""] || ""
+        : run.status === "waiting_for_session"
+          ? attach.message
+          : "";
     runStateEl.append(h("span", { class: "run-label" }, ...runLabel(run)), ...runButtons(run));
   }
   clearInterval(elapsedTimer);
   if (run?.status === "running") {
     elapsedTimer = window.setInterval(() => {
-      for (const el of document.querySelectorAll(".run-elapsed")) el.textContent = clock(Date.now() - (run.started_at ?? Date.now()));
+      for (const el of document.querySelectorAll(".run-elapsed"))
+        el.textContent = clock(Date.now() - (run.started_at ?? Date.now()));
     }, 1000);
   }
   renderAttachRun();
@@ -2190,7 +2740,11 @@ async function runAction(kind: "stop" | "retry") {
   if (!r) return flash("Could not reach austere-axi. Check that it is still running.");
   if (!r.ok) {
     const d = (await r.json().catch(() => ({}))) as { error?: string };
-    flash(d.error ? `${kind === "stop" ? "Stop" : "Retry"}: ${d.error}` : `${kind} failed (${r.status})`);
+    flash(
+      d.error
+        ? `${kind === "stop" ? "Stop" : "Retry"}: ${d.error}`
+        : `${kind} failed (${r.status})`,
+    );
   }
 }
 
@@ -2201,7 +2755,9 @@ async function openLog() {
   let log: string[];
   try {
     const r = await fetch(`${BASE}/run/${run.id}/log`);
-    log = r.ok ? ((await r.json()) as { tail: string[] }).tail : [`Could not read the log (${r.status}).`];
+    log = r.ok
+      ? ((await r.json()) as { tail: string[] }).tail
+      : [`Could not read the log (${r.status}).`];
   } catch {
     log = ["Could not reach austere-axi."];
   }
@@ -2246,11 +2802,17 @@ function renderTabs() {
   // On a wide screen the Agent and History panels lie over the notes, the queue and the composer:
   // what is covered takes no focus. On a narrow one they are popovers, and the sheet under them stays in use.
   const covered = current !== "notes" && !isNarrow();
-  for (const el of document.querySelectorAll<HTMLElement>(".panel > .log, .panel > .queue, .panel > .composer")) el.inert = covered;
+  for (const el of document.querySelectorAll<HTMLElement>(
+    ".panel > .log, .panel > .queue, .panel > .composer",
+  ))
+    el.inert = covered;
 }
 
 $(".panel-tabs").addEventListener("click", (e) => {
-  const tab = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-tab]")?.dataset.tab : undefined;
+  const tab =
+    e.target instanceof Element
+      ? e.target.closest<HTMLElement>("[data-tab]")?.dataset.tab
+      : undefined;
   if (!tab) return;
   // The document's click closes the Agent panel and the ⋯ menu: a tab click is not an outside click for the first.
   e.stopPropagation();
@@ -2270,14 +2832,27 @@ async function saveAttach(change: AttachChange) {
   if (!info || attach.busy) return;
   const own = info.page && info.page.state !== "inherit" ? info.page.state : null;
   const e = info.effective;
-  const body: AttachChange = own ? { state: own, ...change } : { state: "inherit", mode: e.mode, session: e.session, harness: e.harness, model: e.model, ...change };
+  const body: AttachChange = own
+    ? { state: own, ...change }
+    : {
+        state: "inherit",
+        mode: e.mode,
+        session: e.session,
+        harness: e.harness,
+        model: e.model,
+        ...change,
+      };
   attach.busy = true;
   attach.error = "";
   const gen = ++attach.infoGen;
   const runGen = attach.runGen;
   renderAttachPop();
   try {
-    const r = await fetch(`${BASE}/attach`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(`${BASE}/attach`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
     const d = (await r.json().catch(() => ({}))) as AttachInfo & { error?: string };
     if (r.ok) applyAttach(d, gen, runGen);
     else attach.error = d.error || `Could not change it (${r.status}).`;
@@ -2301,7 +2876,16 @@ function renderAttachPop() {
       "div",
       { class: "attach-head" },
       h("strong", { text: "Agent on this page" }),
-      h("button", { type: "button", class: "icon-btn attach-close", "aria-label": "Close", onclick: closeAttach }, icon("close", { size: 16, width: 1.8 })),
+      h(
+        "button",
+        {
+          type: "button",
+          class: "icon-btn attach-close",
+          "aria-label": "Close",
+          onclick: closeAttach,
+        },
+        icon("close", { size: 16, width: 1.8 }),
+      ),
     ),
   );
   if (!info) {
@@ -2314,7 +2898,10 @@ function renderAttachPop() {
   const project = info.project?.setting;
   const projectText = project && project.state !== "inherit" ? project.state : "off";
   attachPop.append(
-    h("p", { class: "attach-note", text: "When on, a note you send or release starts the agent: it reads the notes, patches the page and replies." }),
+    h("p", {
+      class: "attach-note",
+      text: "When on, a note you send or release starts the agent: it reads the notes, patches the page and replies.",
+    }),
     h(
       "div",
       { class: "seg attach-state", role: "group", "aria-label": "Attach" },
@@ -2331,7 +2918,11 @@ function renderAttachPop() {
           class: pageState === value ? "on" : null,
           "aria-pressed": String(pageState === value),
           // An auto page may not end up on (Q3, A17): neither by On nor by going back to a project default that is on.
-          disabled: attach.busy || (!!info.auto && pageState !== value && (value === "on" || (value === "inherit" && projectText === "on"))),
+          disabled:
+            attach.busy ||
+            (!!info.auto &&
+              pageState !== value &&
+              (value === "on" || (value === "inherit" && projectText === "on"))),
           text: label,
           onclick: () => saveAttach({ state: value }),
         }),
@@ -2339,13 +2930,24 @@ function renderAttachPop() {
     ),
     h("p", {
       class: "attach-note",
-      text: own ? `Project default${info.project ? ` (${info.project.name})` : ""}: ${projectText}.` : `This page uses the project default: ${e.state}. Choose On or Off to give it its own setting.`,
+      text: own
+        ? `Project default${info.project ? ` (${info.project.name})` : ""}: ${projectText}.`
+        : `This page uses the project default: ${e.state}. Choose On or Off to give it its own setting.`,
     }),
   );
-  if (info.auto && e.state !== "on") attachPop.append(h("div", { class: "attach-warn", text: `${info.auto}. Attach and --auto exclude each other: publish or share it without --auto to turn attach on.` }));
+  if (info.auto && e.state !== "on")
+    attachPop.append(
+      h("div", {
+        class: "attach-warn",
+        text: `${info.auto}. Attach and --auto exclude each other: publish or share it without --auto to turn attach on.`,
+      }),
+    );
 
   const fieldsOff = !own || attach.busy;
-  const sessionHarness = e.session === "author" ? info.author?.harness : info.sessions.find((s) => s.id === e.session)?.harness;
+  const sessionHarness =
+    e.session === "author"
+      ? info.author?.harness
+      : info.sessions.find((s) => s.id === e.session)?.harness;
   const runHarness = sessionHarness ?? e.harness;
   const caps = info.harnesses[runHarness]?.capabilities;
   const blocked: string[] = [];
@@ -2358,30 +2960,86 @@ function renderAttachPop() {
       h(
         "label",
         { class: `attach-radio${reason ? " disabled" : ""}`, title: reason || m.hint },
-        h("input", { type: "radio", name: "attach-mode", value: m.id, checked: e.mode === m.id, disabled: fieldsOff || !!reason, onchange: () => saveAttach({ mode: m.id }) }),
+        h("input", {
+          type: "radio",
+          name: "attach-mode",
+          value: m.id,
+          checked: e.mode === m.id,
+          disabled: fieldsOff || !!reason,
+          onchange: () => saveAttach({ mode: m.id }),
+        }),
         h("span", { text: m.label }),
       ),
     );
   }
   if (blocked.length) modes.append(h("div", { class: "attach-reason", text: blocked.join(" · ") }));
-  if (e.mode !== "new") modes.append(h("div", { class: "attach-hint", text: `Resends the whole session each run${info.sessionFileSize ? ` · ${bytes(info.sessionFileSize)}` : ""}` }));
+  if (e.mode !== "new")
+    modes.append(
+      h("div", {
+        class: "attach-hint",
+        text: `Resends the whole session each run${info.sessionFileSize ? ` · ${bytes(info.sessionFileSize)}` : ""}`,
+      }),
+    );
 
   const sessions = field("Session");
   const sessionRadio = (value: string, label: string, meta: string) =>
     h(
       "label",
       { class: "attach-radio attach-session" },
-      h("input", { type: "radio", name: "attach-session", value, checked: e.session === value, disabled: fieldsOff, onchange: () => saveAttach({ session: value }) }),
+      h("input", {
+        type: "radio",
+        name: "attach-session",
+        value,
+        checked: e.session === value,
+        disabled: fieldsOff,
+        onchange: () => saveAttach({ session: value }),
+      }),
       h("span", { text: label }),
       meta ? h("small", { text: meta }) : null,
     );
-  sessions.append(sessionRadio("author", "Author", info.author ? `${info.author.harness} ${info.author.short}` : "none registered: a new session"));
-  for (const s of info.sessions) sessions.append(sessionRadio(s.id, `${s.harness} ${s.short}`, `${s.roles.join(", ")} · ${ago(s.lastSeen)} · ${s.liveness}`));
-  if (e.session !== "author" && !info.sessions.some((s) => s.id === e.session)) sessions.append(sessionRadio(e.session, `session ${e.session}`, "not registered for this page"));
-  if (!info.sessions.length) sessions.append(h("div", { class: "attach-hint", text: "No agent session has opened, patched or polled this page yet." }));
+  sessions.append(
+    sessionRadio(
+      "author",
+      "Author",
+      info.author
+        ? `${info.author.harness} ${info.author.short}`
+        : "none registered: a new session",
+    ),
+  );
+  for (const s of info.sessions)
+    sessions.append(
+      sessionRadio(
+        s.id,
+        `${s.harness} ${s.short}`,
+        `${s.roles.join(", ")} · ${ago(s.lastSeen)} · ${s.liveness}`,
+      ),
+    );
+  if (e.session !== "author" && !info.sessions.some((s) => s.id === e.session))
+    sessions.append(
+      sessionRadio(e.session, `session ${e.session}`, "not registered for this page"),
+    );
+  if (!info.sessions.length)
+    sessions.append(
+      h("div", {
+        class: "attach-hint",
+        text: "No agent session has opened, patched or polled this page yet.",
+      }),
+    );
 
-  const harness = h("select", { class: "attach-select", "aria-label": "Harness", disabled: fieldsOff, onchange: (ev) => saveAttach({ harness: (ev.target as HTMLSelectElement).value }) });
-  for (const [name, hi] of Object.entries(info.harnesses)) harness.append(h("option", { value: name, selected: name === e.harness, text: hi.found ? name : `${name} (not found)` }));
+  const harness = h("select", {
+    class: "attach-select",
+    "aria-label": "Harness",
+    disabled: fieldsOff,
+    onchange: (ev) => saveAttach({ harness: (ev.target as HTMLSelectElement).value }),
+  });
+  for (const [name, hi] of Object.entries(info.harnesses))
+    harness.append(
+      h("option", {
+        value: name,
+        selected: name === e.harness,
+        text: hi.found ? name : `${name} (not found)`,
+      }),
+    );
   const models = info.harnesses[runHarness]?.models;
   const modelCap = info.harnesses[runHarness]?.capabilities.model;
   const model = h("input", {
@@ -2396,8 +3054,15 @@ function renderAttachPop() {
     disabled: fieldsOff || (!!modelCap && !modelCap.ok),
     onchange: (ev) => saveAttach({ model: (ev.target as HTMLInputElement).value.trim() || null }),
   });
-  const datalist = models?.length ? h("datalist", { id: "attach-models" }, ...models.map((m) => h("option", { value: m }))) : null;
-  attachPop.append(modes, sessions, field("Harness (for a new session)", harness), field("Model", model, datalist));
+  const datalist = models?.length
+    ? h("datalist", { id: "attach-models" }, ...models.map((m) => h("option", { value: m })))
+    : null;
+  attachPop.append(
+    modes,
+    sessions,
+    field("Harness (for a new session)", harness),
+    field("Model", model, datalist),
+  );
 
   const grant = info.harnesses[info.target.harness]?.grantCommand;
   if (grant) {
@@ -2405,14 +3070,29 @@ function renderAttachPop() {
       h(
         "div",
         { class: "attach-warn attach-grant" },
-        h("span", { text: `${info.target.harness} has no write grant: its runs cannot patch this page and end with “no reply”. Grant it once, at a terminal:` }),
-        h("span", { class: "attach-cmd" }, h("code", { text: grant }), h("button", { type: "button", class: "btn tiny", text: "Copy", onclick: () => copyText(grant, "Command") })),
+        h("span", {
+          text: `${info.target.harness} has no write grant: its runs cannot patch this page and end with “no reply”. Grant it once, at a terminal:`,
+        }),
+        h(
+          "span",
+          { class: "attach-cmd" },
+          h("code", { text: grant }),
+          h("button", {
+            type: "button",
+            class: "btn tiny",
+            text: "Copy",
+            onclick: () => copyText(grant, "Command"),
+          }),
+        ),
       ),
     );
   }
-  for (const w of info.warnings) if (!(grant && w.includes(grant)) && !(info.auto && w.startsWith(info.auto))) attachPop.append(h("div", { class: "attach-warn", text: w }));
+  for (const w of info.warnings)
+    if (!(grant && w.includes(grant)) && !(info.auto && w.startsWith(info.auto)))
+      attachPop.append(h("div", { class: "attach-warn", text: w }));
   attachPop.append(h("div", { class: "attach-run-slot" }));
-  if (attach.error) attachPop.append(h("div", { class: "attach-error", role: "alert", text: attach.error }));
+  if (attach.error)
+    attachPop.append(h("div", { class: "attach-error", role: "alert", text: attach.error }));
   renderAttachRun();
 }
 
@@ -2423,14 +3103,26 @@ function renderAttachRun() {
   slot.textContent = "";
   const run = attach.run;
   if (!run) return;
-  const why = run.status === "failed" ? attach.message || RUN_REASONS[run.reason ?? ""] || run.reason || "" : run.status === "waiting_for_session" ? attach.message : "";
+  const why =
+    run.status === "failed"
+      ? attach.message || RUN_REASONS[run.reason ?? ""] || run.reason || ""
+      : run.status === "waiting_for_session"
+        ? attach.message
+        : "";
   slot.append(
     h(
       "div",
       { class: `attach-run ${run.status}` },
-      h("div", { class: "attach-run-head" }, h("span", { class: "run-label" }, ...runLabel(run)), ...runButtons(run)),
+      h(
+        "div",
+        { class: "attach-run-head" },
+        h("span", { class: "run-label" }, ...runLabel(run)),
+        ...runButtons(run),
+      ),
       why ? h("div", { class: "attach-hint", text: why }) : null,
-      attach.log ? h("pre", { class: "attach-log", text: attach.log.join("\n") || "(the log is empty)" }) : null,
+      attach.log
+        ? h("pre", { class: "attach-log", text: attach.log.join("\n") || "(the log is empty)" })
+        : null,
     ),
   );
 }
@@ -2465,13 +3157,24 @@ function renderDock() {
   const n = state.queue.length;
   const parts = [n ? `${n} note${n === 1 ? "" : "s"} ready` : "Notes"];
   const last = state.transcript[state.transcript.length - 1];
-  if (last?.role === "agent" && last.at > (SS.get<number>(`austere:seen:${SID}`) || 0)) parts.push("new reply");
+  if (last?.role === "agent" && last.at > (SS.get<number>(`austere:seen:${SID}`) || 0))
+    parts.push("new reply");
   // On a phone the header hides the presence: the dock carries its label (none when an attached agent's pill says it).
   const p = $(".presence");
-  const label = p.classList.contains("attached") ? null : h("span", { class: `dock-presence ${p.className.replace("presence", "").trim()}`, text: p.textContent || "" });
+  const label = p.classList.contains("attached")
+    ? null
+    : h("span", {
+        class: `dock-presence ${p.className.replace("presence", "").trim()}`,
+        text: p.textContent || "",
+      });
   dock.replaceChildren(
     h("span", { class: "dock-grip" }),
-    h("span", { class: "dock-text" }, h("span", { class: "dock-title", text: parts.join(" · ") }), label),
+    h(
+      "span",
+      { class: "dock-text" },
+      h("span", { class: "dock-title", text: parts.join(" · ") }),
+      label,
+    ),
     icon("chevronDown", { size: 16, width: 2, cls: "dock-caret" }),
   );
 }
@@ -2492,7 +3195,9 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && state.sheetOpen && isNarrow()) setSheet(false);
 });
 let touchY: number | null = null;
-$(".panel-head").addEventListener("touchstart", (e) => (touchY = e.touches[0].clientY), { passive: true });
+$(".panel-head").addEventListener("touchstart", (e) => (touchY = e.touches[0].clientY), {
+  passive: true,
+});
 $(".panel-head").addEventListener(
   "touchend",
   (e) => {
@@ -2501,7 +3206,9 @@ $(".panel-head").addEventListener(
   },
   { passive: true },
 );
-$(".dock").addEventListener("touchstart", (e) => (touchY = e.touches[0].clientY), { passive: true });
+$(".dock").addEventListener("touchstart", (e) => (touchY = e.touches[0].clientY), {
+  passive: true,
+});
 $(".dock").addEventListener(
   "touchend",
   (e) => {
@@ -2558,7 +3265,10 @@ async function loadEarlier() {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d: { entries?: Entry[]; more?: boolean } = await r.json();
     const known = new Set(state.transcript.map((e) => e.id));
-    state.transcript = [...(d.entries || []).filter((e) => !e.discarded && !known.has(e.id)), ...state.transcript];
+    state.transcript = [
+      ...(d.entries || []).filter((e) => !e.discarded && !known.has(e.id)),
+      ...state.transcript,
+    ];
     state.more = !!d.more;
     const fromBottom = log.scrollHeight - log.scrollTop;
     renderLog();
@@ -2585,9 +3295,17 @@ function connect() {
     renderPresence();
     setTimeout(() => {
       if (!state.connected && Date.now() - disconnectedAt > 3500) {
-        showBanner("Lost the austere-axi server. Run any austere-axi command to restart it; this page reconnects on its own.", [
-          h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() }),
-        ]);
+        showBanner(
+          "Lost the austere-axi server. Run any austere-axi command to restart it; this page reconnects on its own.",
+          [
+            h("button", {
+              type: "button",
+              class: "btn tiny",
+              text: "Reload",
+              onclick: () => location.reload(),
+            }),
+          ],
+        );
       }
     }, 4000);
   });
@@ -2595,14 +3313,19 @@ function connect() {
     // A published page's hosted viewers, relayed by the server (Q17), and the owner's own status and focus sent back.
     // The server keeps them for the page's socket; an unpublished page ignores them.
     const sendPresence = (frame: ClientPresence) => {
-      fetch(`${BASE}/presence`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(frame) }).catch(() => {});
+      fetch(`${BASE}/presence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(frame),
+      }).catch(() => {});
     };
     source.addEventListener("open", () => presence.connect(sendPresence));
     source.addEventListener("error", () => presence.disconnect());
     source.addEventListener("viewer", (e) => {
       const parsed = parseServerFrame(e.data);
       const f = parsed.ok ? parsed.value : null;
-      if (f && (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye")) presence.handle(f);
+      if (f && (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye"))
+        presence.handle(f);
     });
     // The Agent pill (RLM-346): the setting and the runs, again on each (re)connect; then each run's changes as they happen.
     source.addEventListener("snapshot", () => {
@@ -2635,7 +3358,12 @@ function connect() {
     state.links = d.links;
     if (d.version && d.version !== BOOT.version) {
       showBanner("austere-axi was updated. This page is running the previous version.", [
-        h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() }),
+        h("button", {
+          type: "button",
+          class: "btn tiny",
+          text: "Reload",
+          onclick: () => location.reload(),
+        }),
       ]);
     }
     showPackNotice(d.thirdPartyPacks);
@@ -2708,7 +3436,9 @@ function connect() {
       return;
     }
     if (d.state === "stopped") {
-      showBanner("The austere-axi server stopped. Run any austere-axi command to start it again; this page reconnects on its own.");
+      showBanner(
+        "The austere-axi server stopped. Run any austere-axi command to start it again; this page reconnects on its own.",
+      );
     }
   });
 }
@@ -2736,13 +3466,34 @@ function lock(label: string, message: string, actions: HTMLElement[] = []) {
 function refused(status: number): boolean {
   if (status === 403) {
     // The service's account sign-in (same origin, a plain navigation); it brings the viewer back to this page.
-    const signIn = typeof HOSTED?.signIn === "string" && HOSTED.signIn.startsWith("/") && !HOSTED.signIn.startsWith("//") ? HOSTED.signIn : null;
+    const signIn =
+      typeof HOSTED?.signIn === "string" &&
+      HOSTED.signIn.startsWith("/") &&
+      !HOSTED.signIn.startsWith("//")
+        ? HOSTED.signIn
+        : null;
     const actions = signIn ? [h("a", { class: "btn tiny", href: signIn, text: "Sign in" })] : [];
     const orSignIn = signIn ? " Or sign in with the account the owner shared it with." : "";
-    if (ownerView) lock("Signed out", `Your owner sign-in has expired. ${signIn ? "Sign in again, or run" : "Run"} \`austere-axi publish login <file>\` for a new link.`, actions);
-    else if (invite) lock("Invite no longer valid", `This invite is no longer valid. Ask the page owner for a new link.${orSignIn}`, actions);
-    else lock("Invite required", `This page is invite-only. Open it from the link the page owner sent you.${orSignIn}`, actions);
-  } else if (status === 404 || status === 410) lock("Page removed", "This page is no longer available.");
+    if (ownerView)
+      lock(
+        "Signed out",
+        `Your owner sign-in has expired. ${signIn ? "Sign in again, or run" : "Run"} \`austere-axi publish login <file>\` for a new link.`,
+        actions,
+      );
+    else if (invite)
+      lock(
+        "Invite no longer valid",
+        `This invite is no longer valid. Ask the page owner for a new link.${orSignIn}`,
+        actions,
+      );
+    else
+      lock(
+        "Invite required",
+        `This page is invite-only. Open it from the link the page owner sent you.${orSignIn}`,
+        actions,
+      );
+  } else if (status === 404 || status === 410)
+    lock("Page removed", "This page is no longer available.");
   else return false;
   return true;
 }
@@ -2751,11 +3502,27 @@ function refused(status: number): boolean {
  * POST {base}/asset-token: trades the invite (none on an unlisted page) or the owner's sign-in
  * cookie for a 10-minute frame token, the page title and who the viewer is.
  */
-async function requestAssetToken(signal?: AbortSignal): Promise<{ status: number; token?: string; name?: string | null; title?: string; owner?: boolean }> {
-  const r = await fetch(`${BASE}/asset-token`, { method: "POST", headers: invite ? { "X-Austere-Invite": invite } : {}, signal });
+async function requestAssetToken(signal?: AbortSignal): Promise<{
+  status: number;
+  token?: string;
+  name?: string | null;
+  title?: string;
+  owner?: boolean;
+}> {
+  const r = await fetch(`${BASE}/asset-token`, {
+    method: "POST",
+    headers: invite ? { "X-Austere-Invite": invite } : {},
+    signal,
+  });
   if (!r.ok) return { status: r.status };
-  const d = (await r.json().catch(() => null)) as { token?: unknown; name?: unknown; title?: unknown; owner?: unknown } | null;
-  const token = typeof d?.token === "string" && /^[A-Za-z0-9_-]+$/.test(d.token) ? d.token : undefined;
+  const d = (await r.json().catch(() => null)) as {
+    token?: unknown;
+    name?: unknown;
+    title?: unknown;
+    owner?: unknown;
+  } | null;
+  const token =
+    typeof d?.token === "string" && /^[A-Za-z0-9_-]+$/.test(d.token) ? d.token : undefined;
   return {
     status: r.status,
     token,
@@ -2771,7 +3538,12 @@ async function loadHostedFrame(): Promise<boolean> {
   if (answer && refused(answer.status)) return false;
   if (!answer?.token) {
     showBanner(`Could not load this page${answer ? ` (HTTP ${answer.status})` : ""}.`, [
-      h("button", { type: "button", class: "btn tiny", text: "Retry", onclick: () => startHosted() }),
+      h("button", {
+        type: "button",
+        class: "btn tiny",
+        text: "Retry",
+        onclick: () => startHosted(),
+      }),
     ]);
     return false;
   }
@@ -2796,7 +3568,8 @@ async function loadHostedFrame(): Promise<boolean> {
 /** Base64 of `bytes`, in chunks (spreading a whole runtime into fromCharCode overflows the stack). */
 function base64(bytes: Uint8Array): string {
   let bin = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
 }
 
@@ -2807,7 +3580,8 @@ async function gzipBase64(code: string): Promise<string> {
 
 // The published page's script tags: the pinned runtime and bundled packs (/rt/), and installed packs
 // (/pk/). The service refuses any other `src`, so these are all the page runs.
-const HOSTED_SCRIPT_RE = /<script\b[^>]*\bsrc\s*=\s*["'](\/(?:rt|pk)\/[^"']+)["'][^>]*>\s*<\/script\s*>/gi;
+const HOSTED_SCRIPT_RE =
+  /<script\b[^>]*\bsrc\s*=\s*["'](\/(?:rt|pk)\/[^"']+)["'][^>]*>\s*<\/script\s*>/gi;
 
 /**
  * Hosted "Download standalone HTML": the published page with its scripts packed in, in the format
@@ -2836,9 +3610,15 @@ async function downloadStandalone(): Promise<void> {
     );
     // All blocks and the loader where the first tag was: the runtime first, then the packs, in page order.
     let i = 0;
-    const out = html.replace(HOSTED_SCRIPT_RE, () => (i++ ? "" : [...packed, LOADER_TAG].join("\n")));
+    const out = html.replace(HOSTED_SCRIPT_RE, () =>
+      i++ ? "" : [...packed, LOADER_TAG].join("\n"),
+    );
     url = URL.createObjectURL(new Blob([out], { type: "text/html" }));
-    const slug = pageTitle.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "page";
+    const slug =
+      pageTitle
+        .replace(/[^\p{L}\p{N}]+/gu, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 80) || "page";
     // In the document while clicked: Firefox ignores a click on a detached download anchor.
     const a = h("a", { href: url, download: `${slug}.html`, hidden: true });
     document.body.append(a);
@@ -2861,8 +3641,17 @@ function applyChanges(changes: ReceivedChanges) {
   for (const row of changes.rows) {
     if (row.type === "page") applyPage(row);
     // Reviewers see notes in every state; discarded ones are hidden.
-    else if (row.type === "note") entries.push({ id: `note:${row.id}`, role: "user", author: row.author.slice(0, NAME_MAX), items: row.items, at: row.at, discarded: row.state === "discarded" });
-    else if (row.type === "reply") entries.push({ id: `reply:${row.id}`, role: "agent", text: row.text, at: row.at });
+    else if (row.type === "note")
+      entries.push({
+        id: `note:${row.id}`,
+        role: "user",
+        author: row.author.slice(0, NAME_MAX),
+        items: row.items,
+        at: row.at,
+        discarded: row.state === "discarded",
+      });
+    else if (row.type === "reply")
+      entries.push({ id: `reply:${row.id}`, role: "agent", text: row.text, at: row.at });
   }
   mergeEntries(entries);
   cursor = changes.cursor;
@@ -2875,7 +3664,14 @@ function applyPage(row: PageRow) {
   if (row.deleted) return lock("Page removed", "The owner removed this page.");
   publishedAt ??= row.publishedAt;
   if (row.publishedAt !== publishedAt) {
-    showBanner("New version, reload", [h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() })]);
+    showBanner("New version, reload", [
+      h("button", {
+        type: "button",
+        class: "btn tiny",
+        text: "Reload",
+        onclick: () => location.reload(),
+      }),
+    ]);
   }
   showPackNotice(row.packs.map((p) => p.name));
   renderShare(row.unlisted);
@@ -2928,7 +3724,8 @@ function onSyncFrame(frame: ReceivedFrame) {
   if (frame.t === "changes") applyChanges(frame);
   else if (frame.t === "ack") settle(frame);
   // `forbidden` and `upgrade_required` come before the server closes the socket: onSyncClose says why.
-  else if (frame.t === "error" && frame.code !== "forbidden" && frame.code !== "upgrade_required") composerError(frame.message);
+  else if (frame.t === "error" && frame.code !== "forbidden" && frame.code !== "upgrade_required")
+    composerError(frame.message);
 }
 
 function onSyncClose(close: SyncClose, retrying: boolean) {
@@ -2936,9 +3733,15 @@ function onSyncClose(close: SyncClose, retrying: boolean) {
   if (!retrying && !lockout) {
     if (close.error?.code === "upgrade_required") {
       lock("Update needed", "This page needs a newer review page. Reload to get it.", [
-        h("button", { type: "button", class: "btn tiny", text: "Reload", onclick: () => location.reload() }),
+        h("button", {
+          type: "button",
+          class: "btn tiny",
+          text: "Reload",
+          onclick: () => location.reload(),
+        }),
       ]);
-    } else if (close.code === 1000 && !close.error) lock("Page removed", "This page is no longer available.");
+    } else if (close.code === 1000 && !close.error)
+      lock("Page removed", "This page is no longer available.");
     // `forbidden` and close 1008: the invite was revoked or expired, or the page is no longer unlisted.
     else refused(403);
   }
@@ -2983,11 +3786,20 @@ async function startHosted() {
   socket.onClose(() => presence.disconnect());
 }
 
-
 // ── boot ──
 
 // The owner's way between pages and the hub (RLM-358): never for a reviewer or a hosted page.
-const nav = OWNER && !HOSTED ? installNav({ id: SID, bar: $(".bar-title"), menu: menuPop, flash, highlight: (ids) => post({ type: "highlight", ids, scroll: true }), openAttach }) : null;
+const nav =
+  OWNER && !HOSTED
+    ? installNav({
+        id: SID,
+        bar: $(".bar-title"),
+        menu: menuPop,
+        flash,
+        highlight: (ids) => post({ type: "highlight", ids, scroll: true }),
+        openAttach,
+      })
+    : null;
 const gotoBtn = document.querySelector<HTMLButtonElement>(".goto-btn");
 if (gotoBtn && nav) {
   gotoBtn.append(icon("search", { size: 16, width: 1.8 }));

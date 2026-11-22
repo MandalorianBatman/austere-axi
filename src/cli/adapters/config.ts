@@ -22,7 +22,8 @@ export interface AdaptersConfig {
 
 export const HARNESSES: readonly HarnessId[] = ["omp", "copilot"];
 
-export const isHarness = (v: string): v is HarnessId => (HARNESSES as readonly string[]).includes(v);
+export const isHarness = (v: string): v is HarnessId =>
+  (HARNESSES as readonly string[]).includes(v);
 
 /**
  * Arguments every run of a harness gets before the owner's own. All empty: no adapter adds a
@@ -32,7 +33,10 @@ export const isHarness = (v: string): v is HarnessId => (HARNESSES as readonly s
 export const DEFAULT_EXTRA_ARGS: Record<HarnessId, string[]> = { omp: [], copilot: [] };
 
 /** The owner's extra arguments that grant a harness's runs the right to write (A13): what `attach status` and the attach popover tell the user to set. */
-export const GRANT_ARGS: Record<HarnessId, string> = { omp: "--approval-mode yolo", copilot: "--allow-all" };
+export const GRANT_ARGS: Record<HarnessId, string> = {
+  omp: "--approval-mode yolo",
+  copilot: "--allow-all",
+};
 
 /** The terminal command that grants `harness` the right to write. */
 export function grantCommand(harness: HarnessId): string {
@@ -51,7 +55,8 @@ export function adaptersFile(): string {
 
 const empty = (): AdaptersConfig => ({ extraArgs: {}, commands: {} });
 
-const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
+const isStrings = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((x) => typeof x === "string");
 
 /** The owner's adapter settings; empty when the file does not exist. A malformed file throws, naming it. */
 export function readAdapters(): AdaptersConfig {
@@ -63,7 +68,10 @@ export function readAdapters(): AdaptersConfig {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return empty();
     throw err;
   }
-  const bad = (why: string) => new Error(`${file} is malformed (${why}); ask the user to fix it or set it again with \`austere-axi adapter set\``);
+  const bad = (why: string) =>
+    new Error(
+      `${file} is malformed (${why}); ask the user to fix it or set it again with \`austere-axi adapter set\``,
+    );
   let data: unknown;
   try {
     data = JSON.parse(raw);
@@ -72,10 +80,12 @@ export function readAdapters(): AdaptersConfig {
   }
   if (!data || typeof data !== "object" || Array.isArray(data)) throw bad("not an object");
   const d = data as { format?: unknown; extraArgs?: unknown; commands?: unknown };
-  if (d.format !== FORMAT) throw bad(`format ${JSON.stringify(d.format)}; this austere-axi reads ${FORMAT}`);
+  if (d.format !== FORMAT)
+    throw bad(`format ${JSON.stringify(d.format)}; this austere-axi reads ${FORMAT}`);
   const cfg = empty();
   if (d.extraArgs !== undefined) {
-    if (!d.extraArgs || typeof d.extraArgs !== "object" || Array.isArray(d.extraArgs)) throw bad("extraArgs is not an object");
+    if (!d.extraArgs || typeof d.extraArgs !== "object" || Array.isArray(d.extraArgs))
+      throw bad("extraArgs is not an object");
     for (const [h, args] of Object.entries(d.extraArgs)) {
       if (!isHarness(h)) throw bad(`extraArgs names an unknown harness ${JSON.stringify(h)}`);
       if (!isStrings(args)) throw bad(`extraArgs.${h} is not a list of strings`);
@@ -83,11 +93,13 @@ export function readAdapters(): AdaptersConfig {
     }
   }
   if (d.commands !== undefined) {
-    if (!d.commands || typeof d.commands !== "object" || Array.isArray(d.commands)) throw bad("commands is not an object");
+    if (!d.commands || typeof d.commands !== "object" || Array.isArray(d.commands))
+      throw bad("commands is not an object");
     for (const [name, spec] of Object.entries(d.commands)) {
       if (!isCommandName(name)) throw bad(`command name ${JSON.stringify(name)}`);
       const s = spec as { bin?: unknown; args?: unknown } | null;
-      if (!s || typeof s.bin !== "string" || !s.bin || !isStrings(s.args)) throw bad(`commands.${name} needs bin (a string) and args (a list of strings)`);
+      if (!s || typeof s.bin !== "string" || !s.bin || !isStrings(s.args))
+        throw bad(`commands.${name} needs bin (a string) and args (a list of strings)`);
       cfg.commands[name] = { bin: s.bin, args: s.args };
     }
   }
@@ -98,7 +110,12 @@ export function readAdapters(): AdaptersConfig {
 export function writeAdapters(cfg: AdaptersConfig): void {
   const file = adaptersFile();
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ format: FORMAT, extraArgs: cfg.extraArgs, commands: cfg.commands }, null, 2) + "\n", { mode: 0o600 });
+  fs.writeFileSync(
+    tmp,
+    JSON.stringify({ format: FORMAT, extraArgs: cfg.extraArgs, commands: cfg.commands }, null, 2) +
+      "\n",
+    { mode: 0o600 },
+  );
   fs.renameSync(tmp, file);
 }
 
@@ -116,8 +133,13 @@ export function extraArgsFor(harness: HarnessId, cfg: AdaptersConfig): string[] 
 export function hasWriteGrant(harness: AdapterKind, cfg: AdaptersConfig): boolean {
   if (harness === "command") return true;
   const args = extraArgsFor(harness, cfg);
-  if (harness === "omp") return args.some((a, i) => a === "--approval-mode=yolo" || (a === "--approval-mode" && args[i + 1] === "yolo"));
-  return args.some((a) => a === "--allow-all" || a === "--allow-tool" || a.startsWith("--allow-tool="));
+  if (harness === "omp")
+    return args.some(
+      (a, i) => a === "--approval-mode=yolo" || (a === "--approval-mode" && args[i + 1] === "yolo"),
+    );
+  return args.some(
+    (a) => a === "--allow-all" || a === "--allow-tool" || a.startsWith("--allow-tool="),
+  );
 }
 
 /**
@@ -169,7 +191,9 @@ export function shellWords(line: string): string[] {
 
 /** Words back into one line a shell splits the same way: single-quoted where needed. */
 export function shellJoin(words: readonly string[]): string {
-  return words.map((w) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`)).join(" ");
+  return words
+    .map((w) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`))
+    .join(" ");
 }
 
 /**
@@ -178,7 +202,16 @@ export function shellJoin(words: readonly string[]): string {
  * quotes, an embedded `"` doubled and backslashes before the closing quote doubled, as the program's
  * argv parser reads them; neither shell groups single quotes.
  */
-export function commandLine(words: readonly string[], platform: NodeJS.Platform = process.platform): string {
+export function commandLine(
+  words: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): string {
   if (platform !== "win32") return shellJoin(words);
-  return words.map((w) => (/^[A-Za-z0-9_./:=@+,\\-]+$/.test(w) ? w : `"${w.replace(/"/g, '""').replace(/(\\+)$/, "$1$1")}"`)).join(" ");
+  return words
+    .map((w) =>
+      /^[A-Za-z0-9_./:=@+,\\-]+$/.test(w)
+        ? w
+        : `"${w.replace(/"/g, '""').replace(/(\\+)$/, "$1$1")}"`,
+    )
+    .join(" ");
 }

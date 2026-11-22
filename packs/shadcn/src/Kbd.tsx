@@ -28,7 +28,8 @@ export default austereComponent({
   group: "Content",
   tier: "extended",
   props: z.object({ keys: z.string() }),
-  description: 'Keyboard shortcut. keys joins keys with "+", e.g. "Ctrl+K"; each key is drawn as a key cap.',
+  description:
+    'Keyboard shortcut. keys joins keys with "+", e.g. "Ctrl+K"; each key is drawn as a key cap.',
   renderer: KbdView,
   example: `shortcut = Kbd("Ctrl+Shift+P")`,
 });

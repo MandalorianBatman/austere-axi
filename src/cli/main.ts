@@ -9,20 +9,74 @@ import { CDN_RUNTIME_URL, readArtifact, replaceProgram } from "./artifact.ts";
 import { checkHtml, statementLines } from "./check.ts";
 import type { CheckResult } from "./check.ts";
 import { splitStatements, statementMap } from "../shared/statements.ts";
-import { commandPort, ensureServer, health, loginUrl, openBrowser, openUrl, probePort, request, serverIfRunning, shutdownServer, takeServerNote } from "./client.ts";
+import {
+  commandPort,
+  ensureServer,
+  health,
+  loginUrl,
+  openBrowser,
+  openUrl,
+  probePort,
+  request,
+  serverIfRunning,
+  shutdownServer,
+  takeServerNote,
+} from "./client.ts";
 import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
 import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { planCopy, parseSource, recordOrigins, originsOf } from "./copy.ts";
 import type { CopyPlan } from "./copy.ts";
-import { changesOutput, decisionsOutput, findOutput, historyOutput, outlineOutput, programAt, showOutput } from "./history-cmds.ts";
+import {
+  changesOutput,
+  decisionsOutput,
+  findOutput,
+  historyOutput,
+  outlineOutput,
+  programAt,
+  showOutput,
+} from "./history-cmds.ts";
 import { ageOf, keepPage, recordWithHub, reindex, restoredProgram } from "./history.ts";
-import { addRoot, copyLabel, findProject, findRoot, forgetRoot, listProjects, mergeProjects, renameProject } from "./projects.ts";
+import {
+  addRoot,
+  copyLabel,
+  findProject,
+  findRoot,
+  forgetRoot,
+  listProjects,
+  mergeProjects,
+  renameProject,
+} from "./projects.ts";
 import type { ProjectRow } from "./projects.ts";
 import { lockStateDir, processAlive } from "./lock.ts";
-import { installService, installedServiceFor, serverUnit, serviceContext, serviceStatus, uninstallService } from "./service.ts";
+import {
+  installService,
+  installedServiceFor,
+  serverUnit,
+  serviceContext,
+  serviceStatus,
+  uninstallService,
+} from "./service.ts";
 import { SessionStore, sessionId } from "./sessions.ts";
 import type { FeedbackEntry, NoteItem } from "./sessions.ts";
-import type { AccessRequestSummary, AccessRequestsResponse, AccessSummary, ArchiveMissingResponse, ArchiveResponse, FeedbackResponse, OpenResponse, PollResponse, ProjectFeedbackResponse, RequestDecisionResponse, RequestSwitchResponse, RevokeResponse, RunStopResponse, SessionListing, SessionsResponse, ShareListResponse, ShareResponse } from "./server.ts";
+import type {
+  AccessRequestSummary,
+  AccessRequestsResponse,
+  AccessSummary,
+  ArchiveMissingResponse,
+  ArchiveResponse,
+  FeedbackResponse,
+  OpenResponse,
+  PollResponse,
+  ProjectFeedbackResponse,
+  RequestDecisionResponse,
+  RequestSwitchResponse,
+  RevokeResponse,
+  RunStopResponse,
+  SessionListing,
+  SessionsResponse,
+  ShareListResponse,
+  ShareResponse,
+} from "./server.ts";
 import type { CloudSettings, LocalNetwork } from "../shared/hub-api.ts";
 import * as cloud from "./cloud.ts";
 import { exportHtml } from "./export.ts";
@@ -33,24 +87,77 @@ import type { FeedbackItem } from "../shared/feedback.ts";
 import { VERSION, applyDevDefaults, assetPath, canonicalFile, quote, stateDir } from "./paths.ts";
 import { listComponents, searchComponents, showComponents } from "./components.ts";
 import type { InstallError } from "./install.ts";
-import { installedPacks, isThirdParty, neededPacks, packDefining, pagePacks, setPacksMeta } from "./packs.ts";
+import {
+  installedPacks,
+  isThirdParty,
+  neededPacks,
+  packDefining,
+  pagePacks,
+  setPacksMeta,
+} from "./packs.ts";
 import type { InstalledPack } from "./packs.ts";
 import { isScope, readTrustList, trustFile, updateTrustList } from "./trust.ts";
-import { defaultRegistry, npmView, readRegistries, registriesFile, registryEntry, registryFor, writeRegistries } from "./registries.ts";
+import {
+  defaultRegistry,
+  npmView,
+  readRegistries,
+  registriesFile,
+  registryEntry,
+  registryFor,
+  writeRegistries,
+} from "./registries.ts";
 import { splitSpec } from "../shared/packs-meta.ts";
 import type { PackRef } from "../shared/packs-meta.ts";
 import { callerProcess, detectCaller, parseSessionOverride } from "./caller.ts";
-import { callerReport, listSessions, liveness, registerSession, registerWithHubDb, shortId } from "./agent-sessions.ts";
+import {
+  callerReport,
+  listSessions,
+  liveness,
+  registerSession,
+  registerWithHubDb,
+  shortId,
+} from "./agent-sessions.ts";
 import type { CallerReport, PageSession } from "./agent-sessions.ts";
 import { adapterFor, ADAPTERS, capabilitiesOf, findOnPath } from "./adapters/index.ts";
-import { adaptersFile, commandLine, extraArgsFor, grantCommand, HARNESSES, hasWriteGrant, isCommandName, isHarness, readAdapters, shellJoin, shellWords, writeAdapters } from "./adapters/config.ts";
+import {
+  adaptersFile,
+  commandLine,
+  extraArgsFor,
+  grantCommand,
+  HARNESSES,
+  hasWriteGrant,
+  isCommandName,
+  isHarness,
+  readAdapters,
+  shellJoin,
+  shellWords,
+  writeAdapters,
+} from "./adapters/config.ts";
 import type { AdaptersConfig } from "./adapters/config.ts";
 import type { Capability } from "./adapters/types.ts";
 import { LOOKS_RULE } from "./agent-prompt.ts";
-import { adapterWarnings, attachReport, changeSetting, effectiveAttach, isAttachMode, readSetting, resolveSessionValue, resolveSetting } from "./attach.ts";
+import {
+  adapterWarnings,
+  attachReport,
+  changeSetting,
+  effectiveAttach,
+  isAttachMode,
+  readSetting,
+  resolveSessionValue,
+  resolveSetting,
+} from "./attach.ts";
 import type { AttachFields, AttachSettingRow, AttachState } from "./attach.ts";
 import { endLeftover, getRun, listRuns, readAttachLimits, readRunLog } from "./dispatch.ts";
-import { headCursor, newTriggerId, parseDuration, quietMs, readTriggers, triggerStatus, triggersFile, writeTriggers } from "./triggers.ts";
+import {
+  headCursor,
+  newTriggerId,
+  parseDuration,
+  quietMs,
+  readTriggers,
+  triggerStatus,
+  triggersFile,
+  writeTriggers,
+} from "./triggers.ts";
 import type { Trigger } from "./triggers.ts";
 import type { ListedRun } from "./dispatch.ts";
 
@@ -156,14 +263,17 @@ function canShare(): boolean {
 
 /** The main help's line for hosted share links: `publish` once signed in, else how to sign in (with cloud off, `cloud login` says to run `cloud on`). */
 function shareLine(): string {
-  if (canShare()) return `  ${BIN} publish <file>          hosted share link, only when the user asks`;
+  if (canShare())
+    return `  ${BIN} publish <file>          hosted share link, only when the user asks`;
   return `  ${BIN} cloud login             sign in to share pages, only when the user asks`;
 }
 
 /** COMMANDS as help lists them: without the account's commands until this machine can share. */
 function shownCommands(): [string, CommandSpec][] {
   const share = canShare();
-  return Object.entries(COMMANDS).filter(([name]) => share || !Object.hasOwn(ACCOUNT_COMMANDS, name));
+  return Object.entries(COMMANDS).filter(
+    ([name]) => share || !Object.hasOwn(ACCOUNT_COMMANDS, name),
+  );
 }
 
 /** `help all`: every command from COMMANDS (generated, so it cannot drift), then notes and the environment. */
@@ -194,7 +304,8 @@ ENV
 }
 
 /** `--session` on the commands that register their caller (RLM-343). */
-const SESSION_FLAG = "the agent session this runs in, as <harness>:<id> (omp, copilot, dsh), when the harness's environment does not name it; the id stays on this machine";
+const SESSION_FLAG =
+  "the agent session this runs in, as <harness>:<id> (omp, copilot, dsh), when the harness's environment does not name it; the id stays on this machine";
 
 /**
  * Every command: usage line, one-line summary, the flags it accepts (name → help) and an example.
@@ -205,27 +316,35 @@ const COMMANDS: Record<string, CommandSpec> = {
   open: {
     usage: "<file> [--no-open]",
     summary: "validate the page and open it for review (`open <file>` is the same)",
-    flags: { "no-open": "do not launch a browser; print the url (and a phone url when Tailscale is up)", session: SESSION_FLAG },
+    flags: {
+      "no-open": "do not launch a browser; print the url (and a phone url when Tailscale is up)",
+      session: SESSION_FLAG,
+    },
     example: "plan.html --no-open",
   },
   poll: {
-    usage: "poll [file] [--project p] [--cursor n] [--after n] [--timeout-ms n] [--agent-reply text | --agent-reply-file path|-]",
+    usage:
+      "poll [file] [--project p] [--cursor n] [--after n] [--timeout-ms n] [--agent-reply text | --agent-reply-file path|-]",
     summary:
       "wait until the reviewer presses Send; returns the feedback batch and a cursor. With no file it listens to every page of this checkout (the root folder you run it in; --project: every checkout of a project): each batch names its file and copy, --cursor acknowledges every page, a poll on one page wins for that page and a checkout's poll wins over the project's. Replies stay per page: use reply <file>",
     flags: {
       cursor: "acknowledge feedback up to n (the cursor the last poll printed)",
       after: "return everything after n again",
-      "agent-reply": "post a reply first: a small Markdown subset (paragraphs, - lists, `code`, **bold**, links), a line or two",
+      "agent-reply":
+        "post a reply first: a small Markdown subset (paragraphs, - lists, `code`, **bold**, links), a line or two",
       "agent-reply-file": "read the reply from a file, or - for stdin",
-      project: "listen to every checkout of a project when no file is given: a name, an id, or a folder inside one of its roots (default: only the checkout of the current folder)",
+      project:
+        "listen to every checkout of a project when no file is given: a name, an id, or a folder inside one of its roots (default: only the checkout of the current folder)",
       "timeout-ms": "return status: timeout after n ms (default: wait for feedback)",
       session: SESSION_FLAG,
     },
-    example: 'poll plan.html --cursor 3 --agent-reply "Switched the rollout to dual-write."   |   poll --cursor 9',
+    example:
+      'poll plan.html --cursor 3 --agent-reply "Switched the rollout to dual-write."   |   poll --cursor 9',
   },
   reply: {
     usage: "reply <file> --agent-reply text | --agent-reply-file path|- [--cursor n]",
-    summary: "post a reply without polling; acknowledges feedback up to the cursor. On a published file the reply is also posted to the hosted page (a warning says when it is queued)",
+    summary:
+      "post a reply without polling; acknowledges feedback up to the cursor. On a published file the reply is also posted to the hosted page (a warning says when it is queued)",
     flags: {
       "agent-reply": "reply text: a small Markdown subset, a line or two",
       "agent-reply-file": "read the reply from a file, or - for stdin",
@@ -243,9 +362,11 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   feedback: {
     usage: "feedback [file] [--project p] [--all] [--peek]",
-    summary: "feedback no agent has answered yet; reading it acknowledges it, reply answers it. With no file it reads every page of this checkout (the root folder you run it in; --project: every checkout of a project)",
+    summary:
+      "feedback no agent has answered yet; reading it acknowledges it, reply answers it. With no file it reads every page of this checkout (the root folder you run it in; --project: every checkout of a project)",
     flags: {
-      project: "read every checkout of a project when no file is given: a name, an id, or a folder inside one of its roots (default: only the checkout of the current folder)",
+      project:
+        "read every checkout of a project when no file is given: a name, an id, or a folder inside one of its roots (default: only the checkout of the current folder)",
       all: "include feedback already answered",
       peek: "read without acknowledging",
       session: SESSION_FLAG,
@@ -256,18 +377,25 @@ const COMMANDS: Record<string, CommandSpec> = {
     usage: "sessions list [file] [--project p]",
     summary:
       "the agent sessions that opened, patched, polled, replied to or read the feedback of a page: harness, short id, role (author: opened or patched it first; editor: opened or patched it later; listener), last seen, and whether its harness process still runs (alive, exited, unknown). With no file: every page of the project (the folder you run it in, or --project)",
-    flags: { project: "the project to list when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)" },
+    flags: {
+      project:
+        "the project to list when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)",
+    },
     example: "sessions list plan.html",
   },
   attach: {
-    usage: "attach status [file] [--project p] | attach on|off [file] [--project p] [--mode m] [--session s] [--harness h] [--model x] | attach inherit <file>",
+    usage:
+      "attach status [file] [--project p] | attach on|off [file] [--project p] [--mode m] [--session s] [--harness h] [--model x] | attach inherit <file>",
     summary:
       "whether an agent is attached to a page: with attach on, a note the owner sends or releases starts the page's harness headless (see run). status works anywhere and changes nothing: the setting that applies (the page's, else its project's, else off) and where it comes from, the mode, the session a run resumes, the harness, the model, the last run, and warnings (no write grant: runs cannot patch the page). on, off and inherit (the page back to its project's default) are the user's: at a terminal only, or from the review page. With no file: the project of the current folder (or --project)",
     flags: {
-      project: "the project to show or set when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)",
+      project:
+        "the project to show or set when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)",
       mode: "on/off: same (resume the session), fork (branch from it) or new (a fresh session, kept for the page's later runs)",
-      session: "on/off: author (the session that wrote the page; the default) or a session's short or full id from sessions list",
-      harness: "on/off: omp, copilot or a command adapter's name; runs a new session with it (default: the project's, else omp)",
+      session:
+        "on/off: author (the session that wrote the page; the default) or a session's short or full id from sessions list",
+      harness:
+        "on/off: omp, copilot or a command adapter's name; runs a new session with it (default: the project's, else omp)",
       model: 'on/off: the model runs use (default: the harness\'s own); "" clears it',
     },
     example: "attach status plan.html   |   attach on plan.html --mode fork",
@@ -276,26 +404,33 @@ const COMMANDS: Record<string, CommandSpec> = {
     usage: "run list [file] [--project p] | run log <id> | run stop <file> | run stop --project p",
     summary:
       "the runs of an attached agent: with attach on, a note the owner sends or releases starts the page's harness headless to read it, patch the page and reply. list: status (queued, waiting_for_session, running, done, failed, stopped, interrupted), why it failed, harness and mode, the notes it was for; with no file: every page of the project. log: what the run printed (kept 30 days). stop: end the page's runs, killing the running one and what it started",
-    flags: { project: "the project to list when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)" },
+    flags: {
+      project:
+        "the project to list when no file is given: a name, an id, or a folder inside one of its roots (default: the current folder)",
+    },
     example: "run list plan.html   |   run log r1a2b3c4d5e6f   |   run stop plan.html",
   },
   trigger: {
-    usage: 'trigger list | trigger add --project <p> --on quiet:<duration> [--max-time <duration>] -- <bin> [args…] | trigger remove <id>',
+    usage:
+      "trigger list | trigger add --project <p> --on quiet:<duration> [--max-time <duration>] -- <bin> [args…] | trigger remove <id>",
     summary:
       "run a command once a project has been quiet: no revision and no note for the duration (`quiet:2h`), then the command runs once, in the project's first folder, with AUSTERE_AXI_PROJECT and AUSTERE_AXI_CHANGES_CURSOR (the cursor `changes --since` takes) set. Nothing new since its last run, no run. It is a run (`run list --project p`, `run log`, `run stop --project p`) with the limits of attach.json. `add` and `remove` change what runs on this machine, so only the user at a terminal does: they name the command, and nothing in a project or a page ever does",
     flags: {
       project: "the project to watch: a name, an id, or a folder inside one of its roots (add)",
       on: "when to run: quiet:<duration>, like quiet:2h or quiet:90s (add)",
-      "max-time": "the longest the command may run, like 30m (add; default: maxMinutes in attach.json)",
+      "max-time":
+        "the longest the command may run, like 30m (add; default: maxMinutes in attach.json)",
     },
     example: "trigger add --project shop --on quiet:2h -- austere-wiki ingest --project shop",
   },
   check: {
     usage: "check <file> [--fix] [--render]",
-    summary: "validate the program without a browser: syntax, components, props, references, reachability",
+    summary:
+      "validate the program without a browser: syntax, components, props, references, reachability",
     flags: {
       fix: 'declare the packs the page uses (writes the <meta name="austere-packs"> tag)',
-      render: "also render it in headless Chrome and report render errors and sideways scrolling as text (needs Chrome or CHROME_PATH); only when the user asks",
+      render:
+        "also render it in headless Chrome and report render errors and sideways scrolling as text (needs Chrome or CHROME_PATH); only when the user asks",
     },
     example: "check plan.html",
   },
@@ -308,24 +443,33 @@ const COMMANDS: Record<string, CommandSpec> = {
       rev: "with --from: copy from this revision of the page (see history)",
       session: SESSION_FLAG,
     },
-    example: "patch plan.html <<'EOF'\n  intro = Card([CardHeader(\"New title\")])\n  EOF   |   patch new.html --from plan.html#flowDiagram <<'EOF'\n  root = Stack([flowDiagram])\n  EOF",
+    example:
+      "patch plan.html <<'EOF'\n  intro = Card([CardHeader(\"New title\")])\n  EOF   |   patch new.html --from plan.html#flowDiagram <<'EOF'\n  root = Stack([flowDiagram])\n  EOF",
   },
   find: {
     usage: "find <words> [--project p] [--component c] [--limit n] [--all]",
     summary:
       "search the text of every page's statements: title, file, copy, statement, component, snippet, age. Default: the project of this folder, 8 results; archived pages and files that are gone are left out. The last line says how to copy a part: patch --from",
     flags: {
-      project: "search this project: a name, an id, or a folder inside one of its roots (default: the project of this folder)",
+      project:
+        "search this project: a name, an id, or a folder inside one of its roots (default: the project of this folder)",
       component: "only statements of this component, e.g. Table or Architecture",
       limit: "up to n results (default 8)",
       all: "also archived pages and copies whose file is gone",
     },
     example: "find rollout options   |   find session --component Table",
   },
-  outline: { usage: "outline <file>", summary: "the page as a tree from root: each statement's name, component, first words and child count; far cheaper than reading the file", flags: {}, example: "outline plan.html" },
+  outline: {
+    usage: "outline <file>",
+    summary:
+      "the page as a tree from root: each statement's name, component, first words and child count; far cheaper than reading the file",
+    flags: {},
+    example: "outline plan.html",
+  },
   show: {
     usage: "show <file> [statement…] [--text|--source] [--deps] [--rev n]",
-    summary: "read parts of a page: the statements' source (default) or their plain text (a table as Markdown, a diagram as its edges); no statement names: all of them. --rev reads an earlier version",
+    summary:
+      "read parts of a page: the statements' source (default) or their plain text (a table as Markdown, a diagram as its edges); no statement names: all of them. --rev reads an earlier version",
     flags: {
       text: "plain text instead of source",
       source: "OpenUI Lang source (the default)",
@@ -336,26 +480,42 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   history: {
     usage: "history <file> [--statement name] [--since rev] [--limit n]",
-    summary: "every version of a page, newest first: when, what made it, the statements it changed and the note behind it. Revisions are kept whole in hub.db, never in the project",
-    flags: { statement: "only revisions that changed this statement", since: "only revisions after this one", limit: "the newest n revisions (default 20)" },
+    summary:
+      "every version of a page, newest first: when, what made it, the statements it changed and the note behind it. Revisions are kept whole in hub.db, never in the project",
+    flags: {
+      statement: "only revisions that changed this statement",
+      since: "only revisions after this one",
+      limit: "the newest n revisions (default 20)",
+    },
     example: "history plan.html --statement options",
   },
   restore: {
     usage: "restore <file> --rev n [statement…]",
-    summary: "put the page, or the named statements, back as they were at revision n: written like a patch and kept as a new revision, so nothing is lost",
+    summary:
+      "put the page, or the named statements, back as they were at revision n: written like a patch and kept as a new revision, so nothing is lost",
     flags: { rev: "the revision to go back to (see history)", session: SESSION_FLAG },
     example: "restore plan.html --rev 2 options",
   },
   changes: {
     usage: "changes [<file>] [--project p] [--since cursor] [--limit n]",
-    summary: "what changed on pages since a cursor: for each revision the statements before and after, as text, the notes that caused it and the agent's reply. Prints `cursor:` for the next call. No file: the project of this folder",
-    flags: { project: "a project: a name, an id, or a folder inside one of its roots", since: "revisions after this cursor (default 0: from the start)", limit: "up to n revisions (default 20)" },
+    summary:
+      "what changed on pages since a cursor: for each revision the statements before and after, as text, the notes that caused it and the agent's reply. Prints `cursor:` for the next call. No file: the project of this folder",
+    flags: {
+      project: "a project: a name, an id, or a folder inside one of its roots",
+      since: "revisions after this cursor (default 0: from the start)",
+      limit: "up to n revisions (default 20)",
+    },
     example: "changes --since 41",
   },
   decisions: {
     usage: "decisions [<file>] [--project p] [--since cursor] [--limit n]",
-    summary: "the reviewer's decisions: forms submitted and buttons pressed (with their values) and batches sent with Send & finish, with page, statement, time and author. Prints `cursor:` for the next call. No file: the project of this folder",
-    flags: { project: "a project: a name, an id, or a folder inside one of its roots", since: "decisions after this cursor (default 0)", limit: "up to n decisions (default 50)" },
+    summary:
+      "the reviewer's decisions: forms submitted and buttons pressed (with their values) and batches sent with Send & finish, with page, statement, time and author. Prints `cursor:` for the next call. No file: the project of this folder",
+    flags: {
+      project: "a project: a name, an id, or a folder inside one of its roots",
+      since: "decisions after this cursor (default 0)",
+      limit: "up to n decisions (default 50)",
+    },
     example: "decisions --project shop",
   },
   spec: {
@@ -365,10 +525,13 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "spec Charts Forms",
   },
   components: {
-    usage: "components [list [group] | search <words> | show <Name...> [--pack pkg] | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
-    summary: "every component, including ones spec leaves out; search also lists up to 3 from packs on npm (not installed) under `npm`, and show finds them; install, remove and write packs",
+    usage:
+      "components [list [group] | search <words> | show <Name...> [--pack pkg] | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
+    summary:
+      "every component, including ones spec leaves out; search also lists up to 3 from packs on npm (not installed) under `npm`, and show finds them; install, remove and write packs",
     flags: {
-      trust: "install a third-party pack not on the user's trust list; ask the user to review it and run the command themselves",
+      trust:
+        "install a third-party pack not on the user's trust list; ask the user to review it and run the command themselves",
       name: "npm package name for `new`",
       pack: "`show` looks only in this pack (core, an installed pack, or one on npm), for a name several packs share",
     },
@@ -385,31 +548,41 @@ const COMMANDS: Record<string, CommandSpec> = {
     usage: "registry [list | add <@scope> <url> [--token-env NAME] | remove <@scope>]",
     summary:
       "private npm registries for scopes: search, show and add fetch the scope's packs from its registry; grants no trust (its packs stay third-party unless on the trust list); add needs the user at a terminal",
-    flags: { "token-env": "name of an environment variable holding a bearer token for the registry (the token itself is never stored)" },
+    flags: {
+      "token-env":
+        "name of an environment variable holding a bearer token for the registry (the token itself is never stored)",
+    },
     example: "registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN",
   },
   adapter: {
-    usage: 'adapter [list | command <name> [--model m] | set <omp|copilot> --extra-args "…" | set <name> --command "<bin> <args…>"]',
+    usage:
+      'adapter [list | command <name> [--model m] | set <omp|copilot> --extra-args "…" | set <name> --command "<bin> <args…>"]',
     summary:
       "how runs start an agent: each harness's binary, what it can do (same/fork/new session, model, cost cap) and the owner's extra arguments. No adapter grants write permission by default; the owner does with set, at a terminal only (omp: --approval-mode yolo, copilot: --allow-all). An empty value clears",
     flags: {
       model: "command: the model the command selects (the harness's own default when absent)",
-      "extra-args": "set: arguments added last to every run of this harness, split like a shell line with no expansion",
-      command: "set: a command adapter's fixed binary and arguments, the prompt on stdin (new session only)",
+      "extra-args":
+        "set: arguments added last to every run of this harness, split like a shell line with no expansion",
+      command:
+        "set: a command adapter's fixed binary and arguments, the prompt on stdin (new session only)",
     },
     example: 'adapter set omp --extra-args "--approval-mode yolo"',
   },
   export: {
     usage: "export <file> [--out path]",
-    summary: "one self-contained HTML file that works offline; keep reviewing and patching the source page, not the copy",
+    summary:
+      "one self-contained HTML file that works offline; keep reviewing and patching the source page, not the copy",
     flags: { out: "output path (default: <file>.export.html)" },
     example: "export plan.html --out review.html",
   },
   hub: {
-    usage: "hub [list|notes|open|reindex] [words] [--project p] [--archived] [--all] [--unanswered] [--limit n]",
-    summary: "the owner's home page: an inbox of what needs you, every page by project (one entry per page, a copy per worktree), every note and run, search over pages and their parts",
+    usage:
+      "hub [list|notes|open|reindex] [words] [--project p] [--archived] [--all] [--unanswered] [--limit n]",
+    summary:
+      "the owner's home page: an inbox of what needs you, every page by project (one entry per page, a copy per worktree), every note and run, search over pages and their parts",
     flags: {
-      project: "only pages or notes from this project: a name, an id, or a folder inside one of its roots (list, notes)",
+      project:
+        "only pages or notes from this project: a name, an id, or a folder inside one of its roots (list, notes)",
       archived: "list archived pages instead (list)",
       all: "also list pages only checked, never opened for review, and archived ones (list)",
       unanswered: "only notes no agent answered (notes)",
@@ -418,11 +591,13 @@ const COMMANDS: Record<string, CommandSpec> = {
     example: "hub notes --unanswered   |   hub reindex",
   },
   project: {
-    usage: "project [list [--roots] | add <dir> [--name n] [--yes] | merge <a> <b> | rename <p> <name> | forget-root <dir> [--drop]]",
+    usage:
+      "project [list [--roots] | add <dir> [--name n] [--yes] | merge <a> <b> | rename <p> <name> | forget-root <dir> [--drop]]",
     summary:
       "projects in the hub: a name and its root folders, found without git (a .git folder or a worktree's .git file, else the folder you ran in when the page is inside it, else the page's folder); add assigns a root (never /, the temp folder or a folder holding the home folder), merge moves b's roots into a, forget-root drops one and says where its pages went (a folder with a .git is found again at once)",
     flags: {
-      roots: "list every root folder with its kind; without it list prints the main root and how many roots of each kind (list)",
+      roots:
+        "list every root folder with its kind; without it list prints the main root and how many roots of each kind (list)",
       name: "the project to add the root to, made if there is none (add); not empty, not shaped like an id",
       yes: "take in the other projects' roots and pages the new root holds; without it add lists them and changes nothing (add)",
       drop: "forget a root whose folder is gone, archiving its pages (notes kept) instead of filing them under folders that do not exist (forget-root)",
@@ -433,10 +608,21 @@ const COMMANDS: Record<string, CommandSpec> = {
     usage: "archive <file> [--every-copy] | archive --missing [--project p]",
     summary:
       "put a page away, only when the user asks: the hub's lists leave it out (`hub list --archived` shows it) and it stops taking notes; its notes stay. Works on a file that is gone. A page in several worktrees has a copy in each: archive puts away this copy and names the copies that stay open (--every-copy: all of them), with the unanswered notes on each. --missing does it for every copy opened for review whose file is gone (a deleted worktree), and says how many notes were still unanswered",
-    flags: { "every-copy": "every copy of the page, not only this one", missing: "every copy whose file is gone, instead of one file", project: "with --missing: only this project: a name, an id, or a folder inside one of its roots" },
-    example: "archive plan.html   |   archive plan.html --every-copy   |   archive --missing --project shop",
+    flags: {
+      "every-copy": "every copy of the page, not only this one",
+      missing: "every copy whose file is gone, instead of one file",
+      project:
+        "with --missing: only this project: a name, an id, or a folder inside one of its roots",
+    },
+    example:
+      "archive plan.html   |   archive plan.html --every-copy   |   archive --missing --project shop",
   },
-  unarchive: { usage: "unarchive <file>", summary: "bring an archived page back: it is listed again and takes notes", flags: {}, example: "unarchive plan.html" },
+  unarchive: {
+    usage: "unarchive <file>",
+    summary: "bring an archived page back: it is listed again and takes notes",
+    flags: {},
+    example: "unarchive plan.html",
+  },
   share: {
     usage:
       'share <file> --as "<name>" [--project <p> | --all] [--auto | --hold] [--expires <dur>] | share list [--links] | share revoke <name|id> | share requests [on|off] [--project <p>] | share approve <id> [--project <p> | --all] [--auto | --hold] [--as "<name>"] | share deny <id> | share block <id> | share default [hold|auto] | share tailscale <login> [<file>] [--project <p> | --all] [--as "<name>"] [--auto | --hold]',
@@ -444,14 +630,16 @@ const COMMANDS: Record<string, CommandSpec> = {
       "named link for a teammate on your tailnet. The first browser that opens it becomes that person's device and the link stops working; a link nobody opens expires (default 7d). It reaches the page, or with --project the page's project, or with --all every page. Their notes wait for you unless --auto (`default auto` makes that the default). list shows the links nobody has opened yet and the devices; revoke cuts one off at once. Requests (off by default): with `requests on` (every page) or `requests on --project <p>`, a browser without a link that opens a page's address can type a name and ask; `requests` lists who waits, approve lets that browser in (the page, or --project / --all), deny refuses it (it may ask again), block stops that browser asking. Over Tailscale the server asks `tailscale whois` who is behind the connection: a request then carries that person's Tailscale name, login and device, and `share tailscale <login>` lets that login in on any of their devices without a link (the page, its project, or --project / --all)",
     flags: {
       as: "the reviewer's name; with approve: let them in under this name instead of the one they typed; with tailscale: the name to show (default: the login)",
-      project: "reach every page of this project (the page's own: a name, an id, or a folder inside one of its roots); with requests on|off: that project only",
+      project:
+        "reach every page of this project (the page's own: a name, an id, or a folder inside one of its roots); with requests on|off: that project only",
       all: "reach every page on this machine",
       auto: "send this reviewer's notes straight to the agent",
       hold: "hold this reviewer's notes for you (when `share default auto` is set)",
       expires: "an unopened link stops working after this long: 30m, 12h, 7d, 2w (default 7d)",
       links: "show the links (list)",
     },
-    example: 'share plan.html --as "Ana"   |   share plan.html --as "Bo" --project shop --expires 2d   |   share requests on --project shop   |   share approve r0123456789   |   share tailscale ana@example.com --project shop',
+    example:
+      'share plan.html --as "Ana"   |   share plan.html --as "Bo" --project shop --expires 2d   |   share requests on --project shop   |   share approve r0123456789   |   share tailscale ana@example.com --project shop',
   },
   publish: {
     usage:
@@ -459,11 +647,15 @@ const COMMANDS: Record<string, CommandSpec> = {
     summary:
       "hosted share link on austere.blundertech.com: uploads the page, its installed packs and the images beside it; again on the same file updates the same link. Pages are invite-only: each --invite prints that reviewer's own link, revocable with publish revoke; publish login prints a single-use link that signs your own browser in to the hosted page. The only command that publishes a page; run it only when the user asks to share a page. Afterwards the local server syncs the page: its notes reach poll and feedback marked remote: true, held for the owner unless --auto, and replies and the owner's Send/Discard go to the hosted page",
     flags: {
-      invite: "invite a reviewer by name and print their link (repeatable); the same name again keeps its link",
-      expires: "the invites of this publish stop working after this long: 30m, 12h, 7d, 2w (default: with the page)",
-      unlisted: "anyone with the plain page URL may review, naming themselves (applies to this publish)",
+      invite:
+        "invite a reviewer by name and print their link (repeatable); the same name again keeps its link",
+      expires:
+        "the invites of this publish stop working after this long: 30m, 12h, 7d, 2w (default: with the page)",
+      unlisted:
+        "anyone with the plain page URL may review, naming themselves (applies to this publish)",
       auto: "reviewers' notes go straight to the agent instead of held (applies to this publish)",
-      "no-presence": "viewers do not see who else is on the page or what they clicked (applies to this publish)",
+      "no-presence":
+        "viewers do not see who else is on the page or what they clicked (applies to this publish)",
       new: "a fresh link instead of updating this file's",
     },
     example: 'publish plan.html --invite "Ana" --invite "Ben"',
@@ -484,7 +676,8 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   stop: { usage: "stop", summary: "stop the background server", flags: {}, example: "stop" },
   server: {
-    usage: "server [install|uninstall|status|restart] [--persist] [--port n] [--also-listen addr]... [--verbose] [--link-url u] [--adopt] [--force] | server lan [<address>|off]",
+    usage:
+      "server [install|uninstall|status|restart] [--persist] [--port n] [--also-listen addr]... [--verbose] [--link-url u] [--adopt] [--force] | server lan [<address>|off]",
     summary:
       "run the server in the foreground (behind a reverse proxy); `server install` (at a terminal only) makes it always on as a per-user systemd or launchd service that starts at login and restarts on failure: it shows what it will write and asks first, and puts back what was there when the service does not start. `server status` says whether it runs, `server restart` restarts it (after an upgrade too), `server uninstall` removes it. `server lan <address>` also listens on one of this computer's local-network addresses, for reviewers only (the owner never signs in there; its traffic is not encrypted); `server lan off` stops; `server lan` lists the addresses (Settings → Network does the same)",
     flags: {
@@ -492,18 +685,64 @@ const COMMANDS: Record<string, CommandSpec> = {
       port: "listen port (default: AUSTERE_AXI_PORT, else the port in the state dir's server.lock, else the installed service's, else 4388); with install, the port the service listens on (default: the installed unit's)",
       verbose: "log requests",
       "also-listen": "extra address to listen on (repeatable)",
-      "link-url": "install: the address reviewers reach the server at, e.g. https://austere.example.com (AUSTERE_AXI_LINK_URL in the unit; default: the installed unit's)",
-      adopt: "install: take the place of a unit you wrote yourself: keep its Environment=, EnvironmentFile=, ExecStartPre=, ExecStartPost=, After=, Wants= and Requires= lines in a drop-in, back it up, stop and disable it",
-      force: "install, uninstall: go ahead although the installed unit runs another CLI or another state dir",
+      "link-url":
+        "install: the address reviewers reach the server at, e.g. https://austere.example.com (AUSTERE_AXI_LINK_URL in the unit; default: the installed unit's)",
+      adopt:
+        "install: take the place of a unit you wrote yourself: keep its Environment=, EnvironmentFile=, ExecStartPre=, ExecStartPost=, After=, Wants= and Requires= lines in a drop-in, back it up, stop and disable it",
+      force:
+        "install, uninstall: go ahead although the installed unit runs another CLI or another state dir",
     },
     example: "server install --link-url https://austere.example.com",
   },
-  mcp: { usage: "mcp", summary: "MCP server on stdio: spec check open poll reply patch find outline show history restore changes decisions components sessions_list run_list run_log attach_status as tools", flags: {}, example: "mcp" },
-  help: { usage: "help [command]", summary: "the full workflow, or one command's help", flags: {}, example: "help poll" },
+  mcp: {
+    usage: "mcp",
+    summary:
+      "MCP server on stdio: spec check open poll reply patch find outline show history restore changes decisions components sessions_list run_list run_log attach_status as tools",
+    flags: {},
+    example: "mcp",
+  },
+  help: {
+    usage: "help [command]",
+    summary: "the full workflow, or one command's help",
+    flags: {},
+    example: "help poll",
+  },
 };
 
 /** Flags that take a value; every other flag is a switch. */
-const VALUE_FLAGS = new Set(["on", "max-time", "agent-reply", "agent-reply-file", "owner", "out", "port", "also-listen", "timeout-ms", "name", "pack", "project", "as", "cursor", "after", "token-env", "invite", "expires", "link-url", "limit", "session", "extra-args", "command", "mode", "model", "harness", "statement", "since", "rev", "component", "from"]);
+const VALUE_FLAGS = new Set([
+  "on",
+  "max-time",
+  "agent-reply",
+  "agent-reply-file",
+  "owner",
+  "out",
+  "port",
+  "also-listen",
+  "timeout-ms",
+  "name",
+  "pack",
+  "project",
+  "as",
+  "cursor",
+  "after",
+  "token-env",
+  "invite",
+  "expires",
+  "link-url",
+  "limit",
+  "session",
+  "extra-args",
+  "command",
+  "mode",
+  "model",
+  "harness",
+  "statement",
+  "since",
+  "rev",
+  "component",
+  "from",
+]);
 
 function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: string } {
   const flags: Flags = {};
@@ -515,7 +754,9 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
       break;
     }
     // Page ids are base64url, so one may start with "--": after `publish rm` and `clone` it is the id, not a flag (RLM-403).
-    const idSlot = (pos.length === 2 && pos[0] === "publish" && pos[1] === "rm") || (pos.length === 1 && pos[0] === "clone");
+    const idSlot =
+      (pos.length === 2 && pos[0] === "publish" && pos[1] === "rm") ||
+      (pos.length === 1 && pos[0] === "clone");
     if (idSlot && cloud.PAGE_ID_RE.test(a)) pos.push(a);
     else if (a.startsWith("--")) {
       const eq = a.indexOf("=");
@@ -526,7 +767,8 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
         if (i + 1 >= argv.length) return { flags, pos, error: `--${key} needs a value` };
         val = argv[++i];
       }
-      if (key === "also-listen" || key === "invite" || key === "from") (flags[key] ||= []).push(String(val));
+      if (key === "also-listen" || key === "invite" || key === "from")
+        (flags[key] ||= []).push(String(val));
       else flags[key] = val;
     } else if (a === "-h") flags.help = true;
     else if (a === "-v" || a === "-V") flags.version = true;
@@ -554,7 +796,13 @@ function fail(message: string, extra: Printed = {}): void {
 /** The command was called wrong (unknown command or flag, missing argument): exit 2, before anything runs. */
 function usage(message: string, cmd?: string | null): void {
   const spec = cmd && COMMANDS[cmd];
-  print({ status: "error", code: "USAGE", error: message, usage: spec ? `${BIN} ${spec.usage}` : undefined, help: `${BIN} ${spec ? `${cmd} ` : ""}--help` });
+  print({
+    status: "error",
+    code: "USAGE",
+    error: message,
+    usage: spec ? `${BIN} ${spec.usage}` : undefined,
+    help: `${BIN} ${spec ? `${cmd} ` : ""}--help`,
+  });
   process.exitCode = 2;
 }
 
@@ -574,7 +822,12 @@ const REMOVED_FLAGS: Record<string, string> = {
 };
 
 function removed(what: string, instead: string): void {
-  print({ status: "error", code: "REMOVED", error: `${what} was removed: ${instead}`, help: `${BIN} --help` });
+  print({
+    status: "error",
+    code: "REMOVED",
+    error: `${what} was removed: ${instead}`,
+    help: `${BIN} --help`,
+  });
   process.exitCode = 2;
 }
 
@@ -585,12 +838,23 @@ function commandHelp(cmd: string): void {
   if (flags.length) {
     lines.push("", "FLAGS");
     const width = Math.max(...flags.map(([k]) => k.length + (VALUE_FLAGS.has(k) ? 6 : 0)));
-    for (const [k, text] of flags) lines.push(`  ${(`--${k}` + (VALUE_FLAGS.has(k) ? " <val>" : "")).padEnd(width + 4)}${text}`);
+    for (const [k, text] of flags)
+      lines.push(`  ${(`--${k}` + (VALUE_FLAGS.has(k) ? " <val>" : "")).padEnd(width + 4)}${text}`);
   }
   if (Object.hasOwn(ACCOUNT_COMMANDS, cmd) && !canShare()) {
-    lines.push("", "NOT SIGNED IN", `  ${cmd} needs the hosted service's account on this machine: ${cloud.cloudEnabled() ? "" : `${BIN} cloud on, then `}${BIN} cloud login (only when the user asks to share a page)`);
+    lines.push(
+      "",
+      "NOT SIGNED IN",
+      `  ${cmd} needs the hosted service's account on this machine: ${cloud.cloudEnabled() ? "" : `${BIN} cloud on, then `}${BIN} cloud login (only when the user asks to share a page)`,
+    );
   }
-  lines.push("", "EXAMPLE", `  ${BIN} ${spec.example}`, "", `Full workflow and file skeleton: ${BIN} --help`);
+  lines.push(
+    "",
+    "EXAMPLE",
+    `  ${BIN} ${spec.example}`,
+    "",
+    `Full workflow and file skeleton: ${BIN} --help`,
+  );
   process.stdout.write(lines.join("\n") + "\n");
 }
 
@@ -657,11 +921,17 @@ async function cmdHome() {
   }));
   print({
     bin: `${BIN} ${VERSION}`,
-    description: "review pages written in OpenUI Lang; the reviewer annotates them in the browser and notes come back by statement name",
+    description:
+      "review pages written in OpenUI Lang; the reviewer annotates them in the browser and notes come back by statement name",
     server: h ? `running on ${commandPort()} (v${h.version})` : "not running",
     pages: shown.length ? shown : 0,
-    more: sessions.length > shown.length ? `${shown.length} of ${sessions.length} pages shown` : undefined,
-    commands: Object.fromEntries(shownCommands().map(([name, c]) => [name === "open" ? "<file>" : name, c.summary])),
+    more:
+      sessions.length > shown.length
+        ? `${shown.length} of ${sessions.length} pages shown`
+        : undefined,
+    commands: Object.fromEntries(
+      shownCommands().map(([name, c]) => [name === "open" ? "<file>" : name, c.summary]),
+    ),
     next: shown.length
       ? `${BIN} poll waits for feedback on every page of this checkout (${BIN} poll <file> for one page). ${BIN} --help: workflow and file skeleton.`
       : `${BIN} --help: workflow and file skeleton. ${BIN} spec: component reference. ${BIN} <command> --help: one command.`,
@@ -672,7 +942,10 @@ async function cmdHome() {
 
 /** The caller: `--session`, else the harness's environment, with its harness process when that is among this process's parents. */
 function callerOf(flags: Flags): CallerReport | null {
-  const caller = detectCaller(process.env, typeof flags.session === "string" ? flags.session : undefined);
+  const caller = detectCaller(
+    process.env,
+    typeof flags.session === "string" ? flags.session : undefined,
+  );
   return caller && callerReport(caller, callerProcess(caller), process.cwd());
 }
 
@@ -689,12 +962,17 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
   const check = checkHtml(html, { file: quote(file) });
   const caller = callerOf(flags);
   await ensureServer();
-  const r = await request<OpenResponse>("POST", "/api/open", { file: abs, cwd: process.cwd(), session: caller ?? undefined });
+  const r = await request<OpenResponse>("POST", "/api/open", {
+    file: abs,
+    cwd: process.cwd(),
+    session: caller ?? undefined,
+  });
   if (r.status !== 200) return fail(r.data?.error || `open failed (${r.status})`);
   const d = r.data;
   const noOpen = flags["no-open"] || browserDisabled();
   let browser: string;
-  if (d.browsers > 0) browser = `already open (${d.browsers} tab${d.browsers > 1 ? "s" : ""}); it live-updates`;
+  if (d.browsers > 0)
+    browser = `already open (${d.browsers} tab${d.browsers > 1 ? "s" : ""}); it live-updates`;
   else if (noOpen) browser = "not opened (--no-open)";
   else browser = (await openBrowser(d.links.local)) ? "opened" : "could not launch";
   const out: Printed = {
@@ -709,20 +987,30 @@ async function cmdOpen(file: string | undefined, flags: Flags): Promise<void> {
     project: d.project?.name,
   };
   if (d.similar?.length) {
-    out.similar = d.similar.map((x) => ({ title: x.title || undefined, file: x.file, age: ageOf(x.updatedAt) }));
+    out.similar = d.similar.map((x) => ({
+      title: x.title || undefined,
+      file: x.file,
+      age: ageOf(x.updatedAt),
+    }));
     out.similar_note = `A page may already cover this: \`${BIN} find <words>\` searches them, \`${BIN} patch ${quote(file)} --from <page>#<statement>\` copies a part.`;
   }
   if (d.pending) out.queued_feedback = d.pending;
   if (d.held) out.held_notes = `${d.held} from teammates, waiting for the owner to send them`;
   // From this folder a bare poll means this checkout: name the page's project when the page is in another one.
-  const poll = !d.project ? `${BIN} poll ${quote(file)}` : d.project.here ? `${BIN} poll` : `${BIN} poll --project ${quote(d.project.ref)}`;
+  const poll = !d.project
+    ? `${BIN} poll ${quote(file)}`
+    : d.project.here
+      ? `${BIN} poll`
+      : `${BIN} poll --project ${quote(d.project.ref)}`;
   if (d.session.archived) {
     out.next = `The page is archived, so it takes no notes. Only if the user asks, run \`${BIN} unarchive ${quote(file)}\`, then \`${poll}\`.`;
   } else {
     const scope = d.project
       ? ` One poll covers every page ${d.project.here ? "of this checkout" : `of ${d.project.name}`} you open, this one included: if it is already running, it has this page too (\`${BIN} poll ${quote(file)}\` for this page only).`
       : "";
-    out.next = check.ok ? `Run \`${poll}\`; on status: timeout, run it again.${scope}` : `Fix the errors above (the page renders what it can), then run \`${poll}\`.${scope}`;
+    out.next = check.ok
+      ? `Run \`${poll}\`; on status: timeout, run it again.${scope}`
+      : `Fix the errors above (the page renders what it can), then run \`${poll}\`.${scope}`;
   }
   print(out);
 }
@@ -743,12 +1031,15 @@ function describeItems(abs: string, items: NoteItem[]): Printed[] {
       o = describeItem(item, at);
     } catch {
       // one malformed item must not hide the rest of the delivery, which the server already marked received
-      o = { malformed: `could not read this ${typeof it?.kind === "string" ? it.kind : "feedback"} item` };
+      o = {
+        malformed: `could not read this ${typeof it?.kind === "string" ? it.kind : "feedback"} item`,
+      };
     }
-    return it?.author ? { from: it.author, ...(it.remote === true ? { remote: true } : {}), ...o } : o;
+    return it?.author
+      ? { from: it.author, ...(it.remote === true ? { remote: true } : {}), ...o }
+      : o;
   });
 }
-
 
 function thirdPartyOf(abs: string): string[] {
   try {
@@ -763,10 +1054,13 @@ const NEXT: Record<string, (f: string, cursor?: number) => string> = {
     `Revise with \`${BIN} patch ${f}\`: send only the changed statements on stdin (same name replaces, new name adds); do not rewrite or re-read the file. Then \`${BIN} poll ${f} --cursor ${cursor} --agent-reply "<one line: what changed>"\`.`,
   feedbackFinal: (f, cursor) =>
     `The reviewer sent this with Done or Send & finish: this page is done. Apply it with \`${BIN} patch ${f}\` (changed statements only), then \`${BIN} reply ${f} --cursor ${cursor} --agent-reply "<what changed>"\` and summarize in chat. Stop polling this page; a note sent later waits for the next poll.`,
-  replaced: () => "A newer poll on this page took over (another one, or your own newer one); notes go to it. Stop this one.",
-  interrupted: (again) => `The server stopped or restarted; the feedback is safe and still unread. Run the same poll again: \`${again}\`.`,
+  replaced: () =>
+    "A newer poll on this page took over (another one, or your own newer one); notes go to it. Stop this one.",
+  interrupted: (again) =>
+    `The server stopped or restarted; the feedback is safe and still unread. Run the same poll again: \`${again}\`.`,
   timeout: (f) => `No feedback yet. Run \`${BIN} poll ${f}\` again.`,
-  archived: (f) => `Stop polling: the owner archived this page, so it takes no notes and this poll could never return any. Unarchive only if the user asks: \`${BIN} unarchive ${f}\`, then poll.`,
+  archived: (f) =>
+    `Stop polling: the owner archived this page, so it takes no notes and this poll could never return any. Unarchive only if the user asks: \`${BIN} unarchive ${f}\`, then poll.`,
 };
 
 /** `--timeout-ms` as a number: undefined when absent, null (after a usage error) when it is not a whole number. */
@@ -774,12 +1068,16 @@ function timeoutFlag(flags: Flags): number | undefined | null {
   const v = flags["timeout-ms"];
   if (v === undefined) return undefined;
   if (typeof v === "string" && /^\d+$/.test(v)) return Number(v);
-  usage(`--timeout-ms takes a whole number of milliseconds (0: no timeout), not ${JSON.stringify(v)}`, "poll");
+  usage(
+    `--timeout-ms takes a whole number of milliseconds (0: no timeout), not ${JSON.stringify(v)}`,
+    "poll",
+  );
   return null;
 }
 
 /** The poll to run again after `interrupted`: the same one, with the `--cursor` it was given. */
-const pollAgain = (base: string, flags: Flags): string => (seqFlag(flags, "cursor") ? `${base} --cursor ${seqFlag(flags, "cursor")}` : base);
+const pollAgain = (base: string, flags: Flags): string =>
+  seqFlag(flags, "cursor") ? `${base} --cursor ${seqFlag(flags, "cursor")}` : base;
 
 /** `--cursor` / `--after` as given; the server checks they are whole numbers. */
 function seqFlag(flags: Flags, name: string): string | undefined {
@@ -792,7 +1090,16 @@ function seqFlag(flags: Flags, name: string): string | undefined {
  * (a name, an id or a folder), every root of that project. `covers` names that scope in the output.
  * `pages`: how many of its pages are open for review (not archived; copies count once); `reviewed`: any page was ever opened, archived ones included.
  */
-async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string; root: string | null; scope: string; covers: string; files: string[]; pages: number; reviewed: boolean } | null> {
+async function projectOfFlags(flags: Flags): Promise<{
+  id: string;
+  name: string;
+  root: string | null;
+  scope: string;
+  covers: string;
+  files: string[];
+  pages: number;
+  reviewed: boolean;
+} | null> {
   const wide = typeof flags.project === "string";
   const ref = typeof flags.project === "string" ? flags.project : process.cwd();
   let hub: Hub;
@@ -813,9 +1120,18 @@ async function projectOfFlags(flags: Flags): Promise<{ id: string; name: string;
       return null;
     }
     const root = wide ? null : findRoot(hub.db, ref);
-    type Row = { file: string; reviewed: number; archived_at: number | null; page_id: string | null };
+    type Row = {
+      file: string;
+      reviewed: number;
+      archived_at: number | null;
+      page_id: string | null;
+    };
     const cols = "SELECT file, reviewed, archived_at, page_id FROM artifacts";
-    const rows = (root ? hub.db.prepare(`${cols} WHERE root = ?`).all(root) : hub.db.prepare(`${cols} WHERE project_id = ?`).all(project.id)) as Row[];
+    const rows = (
+      root
+        ? hub.db.prepare(`${cols} WHERE root = ?`).all(root)
+        : hub.db.prepare(`${cols} WHERE project_id = ?`).all(project.id)
+    ) as Row[];
     return {
       id: project.id,
       name: project.name,
@@ -847,7 +1163,10 @@ const noOpenPage = (project: { name: string; root: string | null; covers: string
 async function cmdProjectPoll(flags: Flags): Promise<void> {
   if (flags["agent-reply"] !== undefined || flags["agent-reply-file"] !== undefined) {
     const n = typeof flags.cursor === "string" ? flags.cursor : "<n>";
-    return usage(`a reply belongs to one page: run \`${BIN} reply <file> --cursor ${n} --agent-reply "..."\` for each page, then \`${BIN} poll --cursor ${n}\``, "poll");
+    return usage(
+      `a reply belongs to one page: run \`${BIN} reply <file> --cursor ${n} --agent-reply "..."\` for each page, then \`${BIN} poll --cursor ${n}\``,
+      "poll",
+    );
   }
   const timeoutMs = timeoutFlag(flags);
   if (timeoutMs === null) return;
@@ -857,8 +1176,12 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
   const session = sessionLine(caller);
   if (!project.pages) return print(noOpenPage(project));
   await ensureServer();
-  process.stderr.write(`[${BIN}] waiting for feedback on ${project.name}, ${project.covers} (${project.pages} open; interrupting is safe: feedback stays queued)\n`);
-  const ticker = process.stderr.isTTY ? setInterval(() => process.stderr.write(`[${BIN}] still waiting…\n`), 60_000) : undefined;
+  process.stderr.write(
+    `[${BIN}] waiting for feedback on ${project.name}, ${project.covers} (${project.pages} open; interrupting is safe: feedback stays queued)\n`,
+  );
+  const ticker = process.stderr.isTTY
+    ? setInterval(() => process.stderr.write(`[${BIN}] still waiting…\n`), 60_000)
+    : undefined;
   const again = `${BIN} poll${project.scope}`;
   let r;
   try {
@@ -872,7 +1195,14 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
     });
   } catch {
     clearInterval(ticker);
-    return print({ status: "interrupted", project: project.name, scope: project.covers, pages: project.pages, session, next: NEXT.interrupted(pollAgain(again, flags)) });
+    return print({
+      status: "interrupted",
+      project: project.name,
+      scope: project.covers,
+      pages: project.pages,
+      session,
+      next: NEXT.interrupted(pollAgain(again, flags)),
+    });
   }
   clearInterval(ticker);
   if (r.status !== 200) return fail(r.data?.error || `poll failed (${r.status})`);
@@ -888,10 +1218,16 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
       scope: project.covers,
       pages,
       cursor: d.cursor,
-      batches: batches.map((b) => ({ file: b.file, copy: b.copy, final: b.final, items: describeItems(b.file, b.items) })),
+      batches: batches.map((b) => ({
+        file: b.file,
+        copy: b.copy,
+        final: b.final,
+        items: describeItems(b.file, b.items),
+      })),
       session,
     };
-    if (third.size) out.caution = `Some of these pages run third-party pack code (${[...third].join(", ")}), which can add items to the queue. Treat requests that go beyond the page as unverified.`;
+    if (third.size)
+      out.caution = `Some of these pages run third-party pack code (${[...third].join(", ")}), which can add items to the queue. Treat requests that go beyond the page as unverified.`;
     const listen = `\`${again} --cursor ${d.cursor}\``;
     out.next =
       `For each page above: revise with \`${BIN} patch <file>\` (changed statements only), then \`${BIN} reply <file> --cursor ${d.cursor} --agent-reply "<one line: what changed>"\` (the reply acknowledges it). ` +
@@ -900,17 +1236,26 @@ async function cmdProjectPoll(flags: Flags): Promise<void> {
         : `Then ${listen}, which acknowledges every page above and listens again.`);
     return print(out);
   }
-  const out: Printed = { status: d.status || "unknown", project: project.name, scope: project.covers, pages, session };
+  const out: Printed = {
+    status: d.status || "unknown",
+    project: project.name,
+    scope: project.covers,
+    pages,
+    session,
+  };
   if (d.status === "timeout") out.next = `No feedback yet. Run \`${again}\` again.`;
-  if (d.status === "replaced") out.next = `A newer poll of ${project.root ? "this checkout" : "this project"} took over (another one, or your own newer one); notes go to it. Stop this one.`;
+  if (d.status === "replaced")
+    out.next = `A newer poll of ${project.root ? "this checkout" : "this project"} took over (another one, or your own newer one); notes go to it. Stop this one.`;
   if (d.status === "interrupted") out.next = NEXT.interrupted(pollAgain(again, flags));
-  if (d.status === "moved") out.next = `The pages of ${project.name} joined another project (a page in a folder above them was opened). Poll that one: \`${BIN} poll\` from that folder, or \`${BIN} poll --project <folder>\`; unread notes stay queued.`;
+  if (d.status === "moved")
+    out.next = `The pages of ${project.name} joined another project (a page in a folder above them was opened). Poll that one: \`${BIN} poll\` from that folder, or \`${BIN} poll --project <folder>\`; unread notes stay queued.`;
   print(out);
 }
 
 async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
   if (file === undefined) return cmdProjectPoll(flags);
-  if (typeof flags.project === "string") return usage("poll takes a file or --project, not both", "poll");
+  if (typeof flags.project === "string")
+    return usage("poll takes a file or --project, not both", "poll");
   const abs = needFile(file, "poll");
   if (!abs) return; // needFile reported a missing file
   const caller = callerOf(flags);
@@ -922,7 +1267,9 @@ async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
   if (!reply && (flags["agent-reply"] !== undefined || flags["agent-reply-file"] !== undefined)) {
     return fail("the agent reply is empty");
   }
-  process.stderr.write(`[${BIN}] waiting for feedback on ${path.basename(abs)} (interrupting is safe: feedback stays queued)\n`);
+  process.stderr.write(
+    `[${BIN}] waiting for feedback on ${path.basename(abs)} (interrupting is safe: feedback stays queued)\n`,
+  );
   const ticker = process.stderr.isTTY
     ? setInterval(() => process.stderr.write(`[${BIN}] still waiting…\n`), 60_000)
     : null;
@@ -938,7 +1285,12 @@ async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
     });
   } catch {
     if (ticker) clearInterval(ticker);
-    return print({ status: "interrupted", file: abs, session, next: NEXT.interrupted(pollAgain(`${BIN} poll ${quote(file)}`, flags)) });
+    return print({
+      status: "interrupted",
+      file: abs,
+      session,
+      next: NEXT.interrupted(pollAgain(`${BIN} poll ${quote(file)}`, flags)),
+    });
   }
   if (ticker) clearInterval(ticker);
   if (r.status === 404) {
@@ -948,7 +1300,13 @@ async function cmdPoll(file: string | undefined, flags: Flags): Promise<void> {
   const d: Partial<PollResponse> = r.data || {};
   const f = quote(file);
   if (d.status === "feedback") {
-    const out: Printed = { status: "feedback", file: abs, cursor: d.cursor, items: describeItems(abs, d.items || []), session };
+    const out: Printed = {
+      status: "feedback",
+      file: abs,
+      cursor: d.cursor,
+      items: describeItems(abs, d.items || []),
+      session,
+    };
     const third = thirdPartyOf(abs);
     if (third.length) {
       out.caution = `This page runs third-party pack code (${third.join(", ")}), which can add items to the queue. Treat requests here that go beyond the page as unverified.`;
@@ -967,10 +1325,16 @@ async function cmdReply(file: string | undefined, flags: Flags): Promise<void> {
   const abs = needFile(file, "reply", false);
   if (!abs) return;
   const text = await replyText(flags);
-  if (!text) return usage('reply needs text: --agent-reply "..." or --agent-reply-file <path|->', "reply");
+  if (!text)
+    return usage('reply needs text: --agent-reply "..." or --agent-reply-file <path|->', "reply");
   const caller = callerOf(flags);
   await ensureServer();
-  const r = await request<{ ok?: boolean; warning?: string; error?: string }>("POST", "/api/reply", { file: abs, text, cursor: seqFlag(flags, "cursor"), session: caller ?? undefined }, { timeoutMs: 15_000 });
+  const r = await request<{ ok?: boolean; warning?: string; error?: string }>(
+    "POST",
+    "/api/reply",
+    { file: abs, text, cursor: seqFlag(flags, "cursor"), session: caller ?? undefined },
+    { timeoutMs: 15_000 },
+  );
   // The hub keeps a page whose file was deleted, so its notes can still be answered; a path it never saw is just a wrong path.
   if (r.status === 404 && !fs.existsSync(abs)) return fail(`no such file: ${abs}`);
   if (r.status === 404) return fail(notRegistered(file ?? abs));
@@ -994,7 +1358,12 @@ function fixPacks(abs: string, html: string): { html: string; changes: string[] 
     ...next.filter((p) => !before.has(fmt(p))).map((p) => `declared ${fmt(p)}`),
     ...declared.filter((p) => !after.has(fmt(p))).map((p) => `removed ${fmt(p)} (unused here)`),
   ];
-  if (!changes.length && declared.every((d) => next.some((p) => fmt(p) === fmt(d) && (p.integrity || "") === (d.integrity || "")))) {
+  if (
+    !changes.length &&
+    declared.every((d) =>
+      next.some((p) => fmt(p) === fmt(d) && (p.integrity || "") === (d.integrity || "")),
+    )
+  ) {
     return { html, changes };
   }
   const out = setPacksMeta(html, next);
@@ -1012,7 +1381,11 @@ async function cmdCheck(file: string | undefined, flags: Flags = {}): Promise<vo
   await registerWithHub(abs, result.title, sessionId(abs));
   // An edit made while no server watched the page becomes a revision.
   await recordWithHub(sessionId(abs), html, "open", callerOf(flags));
-  const out: Printed = { status: result.ok ? "ok" : "errors", file: abs, statements: result.statements };
+  const out: Printed = {
+    status: result.ok ? "ok" : "errors",
+    file: abs,
+    statements: result.statements,
+  };
   if (fixed.length) out.fixed = fixed;
   if (result.errors.length) out.errors = result.errors;
   if (result.warnings.length) out.warnings = result.warnings;
@@ -1036,9 +1409,13 @@ async function renderOut(html: string, dir: string): Promise<Printed> {
   if (r.status === "unavailable") return { status: "unavailable", reason: r.reason };
   const status = r.errors.length ? "errors" : r.overflow.length ? "warnings" : "clean";
   const out: Printed = { status, widths: "1280, 390", statements: r.statements };
-  if (r.errors.length) out.errors = r.errors.map((e) => ({ statement: e.statement || "(page)", message: e.error }));
+  if (r.errors.length)
+    out.errors = r.errors.map((e) => ({ statement: e.statement || "(page)", message: e.error }));
   if (r.overflow.length) {
-    out.scrolls_sideways = r.overflow.map((o) => ({ width: o.width, statements: o.statements.length ? o.statements.join(", ") : "(not one statement)" }));
+    out.scrolls_sideways = r.overflow.map((o) => ({
+      width: o.width,
+      statements: o.statements.length ? o.statements.join(", ") : "(not one statement)",
+    }));
   }
   if (r.notices.length) out.notices = r.notices;
   return out;
@@ -1063,13 +1440,23 @@ async function recordBaseline(abs: string, html: string): Promise<void> {
 async function cmdPatch(file: string | undefined, flags: Flags): Promise<void> {
   const abs = needFile(file, "patch");
   if (!abs || file === undefined) return; // needFile reported a missing file
-  if (process.stdin.isTTY) return usage(`pipe the changed statements on stdin: ${BIN} patch ${quote(file)} <<'EOF' ... EOF`, "patch");
+  if (process.stdin.isTTY)
+    return usage(
+      `pipe the changed statements on stdin: ${BIN} patch ${quote(file)} <<'EOF' ... EOF`,
+      "patch",
+    );
   const rev = intFlag(flags, "rev", 1, "patch");
   if (rev === null) return;
   const from = flags.from ?? [];
-  if (rev !== undefined && !from.length) return usage("--rev is for --from: the revision of the page copied from", "patch");
+  if (rev !== undefined && !from.length)
+    return usage("--rev is for --from: the revision of the page copied from", "patch");
   const patch = await readStdin();
-  if (!patch.trim()) return fail(from.length ? "stdin was empty: reference the copied statements from a parent (for example, root = Stack([..., name]))" : "stdin was empty");
+  if (!patch.trim())
+    return fail(
+      from.length
+        ? "stdin was empty: reference the copied statements from a parent (for example, root = Stack([..., name]))"
+        : "stdin was empty",
+    );
   const html = fs.readFileSync(abs, "utf8");
   const art = readArtifact(html);
   if (art.program == null) return fail('no <script type="text/openui"> block to patch');
@@ -1096,7 +1483,11 @@ async function cmdPatch(file: string | undefined, flags: Flags): Promise<void> {
   const merged = mergeStatements(art.program.trim(), incoming, "root");
   // mergeStatements garbage-collects statements unreachable from root; report patched ones it dropped (`x = null` deletes are intended).
   const kept = new Set(splitStatements(merged).map((s) => s.id));
-  const patched = new Set(splitStatements(incoming).filter((s) => !/=\s*null\s*;?$/.test(s.text)).map((s) => s.id));
+  const patched = new Set(
+    splitStatements(incoming)
+      .filter((s) => !/=\s*null\s*;?$/.test(s.text))
+      .map((s) => s.id),
+  );
   const dropped = [...patched].filter((id) => !kept.has(id));
   const next = replaceProgram(html, merged);
   const id = sessionId(abs);
@@ -1115,10 +1506,17 @@ async function cmdPatch(file: string | undefined, flags: Flags): Promise<void> {
   if (copy) {
     out.copied = origins.map((o) => o.name);
     if (Object.keys(copy.renamed).length) out.renamed = copy.renamed;
-    const packed = [...new Set([...copy.text.matchAll(/\b([A-Z][A-Za-z0-9]*)\(/g)].map((m) => m[1]))].filter((c) => packDefining(c));
-    if (packed.length) out.next = `The copied parts use pack components (${packed.join(", ")}): run \`${BIN} check --fix ${quote(file)}\` so the page declares the pack.`;
+    const packed = [
+      ...new Set([...copy.text.matchAll(/\b([A-Z][A-Za-z0-9]*)\(/g)].map((m) => m[1])),
+    ].filter((c) => packDefining(c));
+    if (packed.length)
+      out.next = `The copied parts use pack components (${packed.join(", ")}): run \`${BIN} check --fix ${quote(file)}\` so the page declares the pack.`;
   }
-  if (dropped.length) Object.assign(out, { dropped, warning: `unreferenced statement(s) dropped: ${dropped.join(", ")} (reference them from a parent to keep them on the page)` });
+  if (dropped.length)
+    Object.assign(out, {
+      dropped,
+      warning: `unreferenced statement(s) dropped: ${dropped.join(", ")} (reference them from a parent to keep them on the page)`,
+    });
   print({ ...out, check: compactCheck(result), session: sessionLine(caller, registered) });
 }
 
@@ -1145,7 +1543,15 @@ async function cmdHistory(file: string | undefined, flags: Flags): Promise<void>
   const since = intFlag(flags, "since", 0, "history");
   const limit = intFlag(flags, "limit", 1, "history");
   if (!page || since === null || limit === null) return;
-  return withHub(false, (hub) => print(historyOutput(hub.db, page.id, page.abs, { statement: typeof flags.statement === "string" ? flags.statement : undefined, since, limit: limit ?? 20 })));
+  return withHub(false, (hub) =>
+    print(
+      historyOutput(hub.db, page.id, page.abs, {
+        statement: typeof flags.statement === "string" ? flags.statement : undefined,
+        since,
+        limit: limit ?? 20,
+      }),
+    ),
+  );
 }
 
 /** `show <file> [statement…] [--text|--source] [--deps] [--rev n]` */
@@ -1153,11 +1559,18 @@ async function cmdShow(file: string | undefined, names: string[], flags: Flags):
   const page = pageArg(file, "show");
   const rev = intFlag(flags, "rev", 1, "show");
   if (!page || rev === null) return;
-  if (flags.text && flags.source) return usage("--text and --source choose one thing to print", "show");
+  if (flags.text && flags.source)
+    return usage("--text and --source choose one thing to print", "show");
   const hub = rev === undefined ? null : await readHub();
   try {
     const at = programAt(hub?.db ?? null, page.id, page.abs, rev);
-    print(showOutput(at.program, at.html, page.abs, names, { text: !!flags.text, deps: !!flags.deps, rev: at.rev }));
+    print(
+      showOutput(at.program, at.html, page.abs, names, {
+        text: !!flags.text,
+        deps: !!flags.deps,
+        rev: at.rev,
+      }),
+    );
   } catch (err) {
     fail(messageOf(err));
   } finally {
@@ -1172,7 +1585,14 @@ async function cmdOutline(file: string | undefined): Promise<void> {
   const hub = await readHub();
   try {
     const at = programAt(hub?.db ?? null, page.id, page.abs, undefined);
-    const copied = new Map(hub ? originsOf(hub.db, page.id).map((o): [string, string] => [o.name, `${o.file ? path.basename(o.file) : "?"}#${o.statement}`]) : []);
+    const copied = new Map(
+      hub
+        ? originsOf(hub.db, page.id).map((o): [string, string] => [
+            o.name,
+            `${o.file ? path.basename(o.file) : "?"}#${o.statement}`,
+          ])
+        : [],
+    );
     print(outlineOutput(at.program, at.html, page.abs, copied));
   } catch (err) {
     fail(messageOf(err));
@@ -1186,7 +1606,11 @@ async function cmdRestore(file: string | undefined, names: string[], flags: Flag
   const page = pageArg(file, "restore");
   const rev = intFlag(flags, "rev", 1, "restore");
   if (!page || rev === null || file === undefined) return;
-  if (rev === undefined) return usage(`restore needs --rev n: ${BIN} history ${quote(file)} lists the revisions`, "restore");
+  if (rev === undefined)
+    return usage(
+      `restore needs --rev n: ${BIN} history ${quote(file)} lists the revisions`,
+      "restore",
+    );
   if (!fs.existsSync(page.abs)) return fail(`no such file: ${page.abs}`);
   const hub = await readHub();
   try {
@@ -1196,20 +1620,39 @@ async function cmdRestore(file: string | undefined, names: string[], flags: Flag
     if (art.program == null) return fail('no <script type="text/openui"> block to patch');
     const then = statementMap(old.program);
     const missing = names.filter((n) => !then.has(n));
-    if (missing.length) return fail(`revision ${rev} has no statement ${missing.join(", ")}; it has: ${[...then.keys()].join(", ")}`);
+    if (missing.length)
+      return fail(
+        `revision ${rev} has no statement ${missing.join(", ")}; it has: ${[...then.keys()].join(", ")}`,
+      );
     const merged = restoredProgram(art.program, old.program, names);
-    if (merged === null) return print({ status: "unchanged", file: page.abs, note: `The page already reads as revision ${rev}${names.length ? ` in ${names.join(", ")}` : ""}.` });
+    if (merged === null)
+      return print({
+        status: "unchanged",
+        file: page.abs,
+        note: `The page already reads as revision ${rev}${names.length ? ` in ${names.join(", ")}` : ""}.`,
+      });
     const next = replaceProgram(html, merged);
     const id = page.id;
     // "Nothing is lost" needs the page as it is kept first: with no way to write hub.db, the file is left as it is.
-    if (!(await keepPage(page.abs, id, html))) return fail(`${hubDbFile()} cannot be written (another austere-axi version may hold the state dir), so the current page cannot be kept first; ${page.abs} is unchanged`);
+    if (!(await keepPage(page.abs, id, html)))
+      return fail(
+        `${hubDbFile()} cannot be written (another austere-axi version may hold the state dir), so the current page cannot be kept first; ${page.abs} is unchanged`,
+      );
     const caller = callerOf(flags);
     const registered = caller ? await registerWithHubDb(caller, [id], "patch") : false;
     // Recorded before the write, as `patch` does, so a watching server keeps the source.
     const recorded = await recordWithHub(id, next, "restore", caller);
     fs.writeFileSync(page.abs, next);
     const result = checkHtml(next, { file: quote(file) });
-    print({ status: "restored", file: page.abs, from: rev, statements: names.length ? names : undefined, rev: recorded?.rev, check: compactCheck(result), session: sessionLine(caller, registered) });
+    print({
+      status: "restored",
+      file: page.abs,
+      from: rev,
+      statements: names.length ? names : undefined,
+      rev: recorded?.rev,
+      check: compactCheck(result),
+      session: sessionLine(caller, registered),
+    });
   } catch (err) {
     fail(messageOf(err));
   } finally {
@@ -1218,22 +1661,35 @@ async function cmdRestore(file: string | undefined, names: string[], flags: Flag
 }
 
 /** Which pages `changes` and `decisions` read: the file, `--project`, or the project of this folder (else everything). */
-function historyScope(hub: Hub, file: string | undefined, flags: Flags): { artifactId?: string; projectId?: string } {
+function historyScope(
+  hub: Hub,
+  file: string | undefined,
+  flags: Flags,
+): { artifactId?: string; projectId?: string } {
   if (file) return { artifactId: sessionId(canonicalFile(file)) };
   const projectId = projectFlag(hub, flags);
   return { projectId: projectId || findProject(hub.db, process.cwd())?.id || undefined };
 }
 
 /** `changes [<file>] [--project p] [--since cursor] [--limit n]` and `decisions`, which read the same way. */
-async function cmdChanges(kind: "changes" | "decisions", file: string | undefined, flags: Flags): Promise<void> {
+async function cmdChanges(
+  kind: "changes" | "decisions",
+  file: string | undefined,
+  flags: Flags,
+): Promise<void> {
   const since = intFlag(flags, "since", 0, kind);
   const limit = intFlag(flags, "limit", 1, kind);
   if (since === null || limit === null) return;
   return withHub(false, (hub) => {
     const scope = historyScope(hub, file, flags);
     // The continuation names the same scope: the file, or the project that was asked for.
-    const named = file ? ` ${quote(file)}` : typeof flags.project === "string" ? ` --project ${quote(flags.project)}` : "";
-    if (kind === "changes") print(changesOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 20, ...scope }, named));
+    const named = file
+      ? ` ${quote(file)}`
+      : typeof flags.project === "string"
+        ? ` --project ${quote(flags.project)}`
+        : "";
+    if (kind === "changes")
+      print(changesOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 20, ...scope }, named));
     else print(decisionsOutput(hub.db, { cursor: since ?? 0, limit: limit ?? 50, ...scope }));
   });
 }
@@ -1245,15 +1701,25 @@ async function cmdFind(words: string[], flags: Flags): Promise<void> {
   if (limit === null) return;
   return withHub(false, (hub) => {
     const projectId = projectFlag(hub, flags) || findProject(hub.db, process.cwd())?.id || "";
-    print(findOutput(hub.db, words.join(" "), { projectId, component: typeof flags.component === "string" ? flags.component : "", limit: limit ?? 8, all: !!flags.all }));
+    print(
+      findOutput(hub.db, words.join(" "), {
+        projectId,
+        component: typeof flags.component === "string" ? flags.component : "",
+        limit: limit ?? 8,
+        all: !!flags.all,
+      }),
+    );
   });
 }
 
 /** A pack's part of the reference: its signatures and notes, as `spec` prints core groups. */
 function packSpec(p: InstalledPack): string {
   const lines = [`### ${p.name}@${p.version}${isThirdParty(p.name, p) ? " (third-party)" : ""}`];
-  lines.push(`A page using these must declare the pack: run \`${BIN} check --fix <file>\` after writing it. Examples: \`${BIN} components show <Name>\`.`);
-  for (const c of p.catalog.components) lines.push(`${c.signature}${c.description ? ` — ${c.description}` : ""}`);
+  lines.push(
+    `A page using these must declare the pack: run \`${BIN} check --fix <file>\` after writing it. Examples: \`${BIN} components show <Name>\`.`,
+  );
+  for (const c of p.catalog.components)
+    lines.push(`${c.signature}${c.description ? ` — ${c.description}` : ""}`);
   for (const g of p.catalog.groups || []) lines.push(...(g.notes || []));
   return lines.join("\n") + "\n";
 }
@@ -1264,21 +1730,30 @@ function cmdSpec(groups: string[]): boolean | void {
   const packArgs = groups.filter((g) => packs.some((p) => p.name === g));
   if (packArgs.length) {
     // packArgs holds only names of installed packs, so every find succeeds.
-    return process.stdout.write(packArgs.map((g) => packSpec(packs.find((p) => p.name === g) as InstalledPack)).join("\n"));
+    return process.stdout.write(
+      packArgs.map((g) => packSpec(packs.find((p) => p.name === g) as InstalledPack)).join("\n"),
+    );
   }
   if (!groups.length) {
     if (!text.endsWith("\n")) text += "\n";
     if (packs.length) {
       text += `\n## Installed packs\nMore components (\`${BIN} spec <pack>\` for signatures). A page using one must declare its pack: run \`${BIN} check --fix <file>\` after writing it.\n`;
-      for (const p of packs) text += `- ${p.name}@${p.version}: ${p.catalog.components.map((c) => c.name).join(", ")}\n`;
+      for (const p of packs)
+        text += `- ${p.name}@${p.version}: ${p.catalog.components.map((c) => c.name).join(", ")}\n`;
     }
     return process.stdout.write(text);
   }
   const wanted = new Set(groups.map((g) => g.toLowerCase()));
   const parts = text.split(/\n(?=### )/);
   const head = parts[0].split("\n## Component Signatures")[0];
-  const picked = parts.filter((p) => p.startsWith("### ") && wanted.has(p.slice(4, p.indexOf("\n")).trim().toLowerCase()));
-  if (!picked.length) return usage(`unknown group; one of: Layout Content Data Charts Forms Buttons, or an installed pack`, "spec");
+  const picked = parts.filter(
+    (p) => p.startsWith("### ") && wanted.has(p.slice(4, p.indexOf("\n")).trim().toLowerCase()),
+  );
+  if (!picked.length)
+    return usage(
+      `unknown group; one of: Layout Content Data Charts Forms Buttons, or an installed pack`,
+      "spec",
+    );
   const trimmed = picked.map((p) => p.split(/\n## /)[0]);
   process.stdout.write(`${head}\n\n## Component Signatures (subset)\n\n${trimmed.join("\n")}\n`);
 }
@@ -1286,10 +1761,18 @@ function cmdSpec(groups: string[]): boolean | void {
 function cmdExport(file: string | undefined, flags: Flags): void {
   const abs = needFile(file, "export");
   if (!abs) return;
-  const out = typeof flags.out === "string" ? path.resolve(flags.out) : abs.replace(/\.html?$/i, "") + ".export.html";
+  const out =
+    typeof flags.out === "string"
+      ? path.resolve(flags.out)
+      : abs.replace(/\.html?$/i, "") + ".export.html";
   const { html, notices } = exportHtml(fs.readFileSync(abs, "utf8"), path.dirname(abs));
   fs.writeFileSync(out, html);
-  print({ status: "exported", file: out, bytes: html.length, notices: notices.length ? notices : undefined });
+  print({
+    status: "exported",
+    file: out,
+    bytes: html.length,
+    notices: notices.length ? notices : undefined,
+  });
 }
 
 function printResult(out: object): void {
@@ -1305,9 +1788,15 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
     case "search":
       return printResult(await searchComponents(args));
     case "show":
-      return printResult(await showComponents(args, typeof flags.pack === "string" ? flags.pack : undefined));
+      return printResult(
+        await showComponents(args, typeof flags.pack === "string" ? flags.pack : undefined),
+      );
     case "add": {
-      if (!args[0]) return usage(`add needs a pack: ${BIN} components add <npm-package>[@version] | <folder> | <file.tgz>`, "components");
+      if (!args[0])
+        return usage(
+          `add needs a pack: ${BIN} components add <npm-package>[@version] | <folder> | <file.tgz>`,
+          "components",
+        );
       const { addPack } = await import("./install.ts");
       let r;
       try {
@@ -1315,8 +1804,12 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
       } catch (caught) {
         // addPack throws Errors, flagged with `code` or `network` where main says more.
         const err = caught as InstallError;
-        const out: Printed = { status: err.code === "untrusted" ? "needs --trust" : "error", error: err.message };
-        if (err.network) out.next = `Offline or behind a proxy? \`npm pack ${args[0]}\` downloads it; then \`${BIN} components add ./<file>.tgz\`.`;
+        const out: Printed = {
+          status: err.code === "untrusted" ? "needs --trust" : "error",
+          error: err.message,
+        };
+        if (err.network)
+          out.next = `Offline or behind a proxy? \`npm pack ${args[0]}\` downloads it; then \`${BIN} components add ./<file>.tgz\`.`;
         print(out);
         process.exitCode = 1;
         return;
@@ -1328,13 +1821,15 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
         trust: r.trust,
         components: r.components,
         warnings: r.warnings.length ? r.warnings : undefined,
-        next: r.previous === r.version
-          ? `Same version as before: run \`${BIN} check --fix <file>\` on pages that use it, to update their integrity hash.`
-          : `\`${BIN} components show ${r.components[0]}\` for its signature. A page that uses it must declare it: \`${BIN} check --fix <file>\` adds the tag.`,
+        next:
+          r.previous === r.version
+            ? `Same version as before: run \`${BIN} check --fix <file>\` on pages that use it, to update their integrity hash.`
+            : `\`${BIN} components show ${r.components[0]}\` for its signature. A page that uses it must declare it: \`${BIN} check --fix <file>\` adds the tag.`,
       });
     }
     case "remove": {
-      if (!args[0]) return usage(`remove needs a pack name: ${BIN} components remove <name>`, "components");
+      if (!args[0])
+        return usage(`remove needs a pack name: ${BIN} components remove <name>`, "components");
       const { removePack } = await import("./install.ts");
       const r = removePack(args[0]);
       if (!r) return fail(`${args[0]} is not installed (${BIN} components list)`);
@@ -1347,7 +1842,9 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
     case "new": {
       const { newPack } = await import("./pack-dev.ts");
       try {
-        const r = newPack(args[0], { name: typeof flags.name === "string" ? flags.name : undefined });
+        const r = newPack(args[0], {
+          name: typeof flags.name === "string" ? flags.name : undefined,
+        });
         return print({
           status: "created",
           pack: r.name,
@@ -1380,7 +1877,10 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
       // `components charts` reads as `components list charts`.
       const listed = listComponents(sub);
       if (listed.status !== "error") return print(listed as Printed);
-      return usage(`unknown components command: ${sub}. One of: list search show add remove new build`, "components");
+      return usage(
+        `unknown components command: ${sub}. One of: list search show add remove new build`,
+        "components",
+      );
     }
   }
 }
@@ -1402,7 +1902,9 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
     case undefined:
     case "list": {
       const list = readTrustList();
-      const pins = Object.entries(list.pins).map(([name, p]) => `${name}@${p.version} ${p.integrity}`);
+      const pins = Object.entries(list.pins).map(
+        ([name, p]) => `${name}@${p.version} ${p.integrity}`,
+      );
       return print({
         file: trustFile(),
         pins: pins.length ? pins : "none",
@@ -1412,16 +1914,27 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
     }
     case "add": {
       const target = args[0];
-      if (!target) return usage(`add needs a pack or scope: ${BIN} trust add <npm-package>[@version] | @scope`, "trust");
+      if (!target)
+        return usage(
+          `add needs a pack or scope: ${BIN} trust add <npm-package>[@version] | @scope`,
+          "trust",
+        );
       if (!process.stdin.isTTY) {
-        return fail(`trust add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} trust add ${target}\` themselves after reviewing it.`);
+        return fail(
+          `trust add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} trust add ${target}\` themselves after reviewing it.`,
+        );
       }
       const list = readTrustList();
       const regs = readRegistries();
       if (isScope(target)) {
         const registry = registryFor(regs, target).url;
-        if (list.scopes.some((s) => s.scope === target && s.registry === registry)) return print({ status: "already trusted", scope: target, registry });
-        if (!(await confirm(`Let agents install any pack under ${target}/ from ${registry} without --trust? Its code runs inside your review pages.`))) {
+        if (list.scopes.some((s) => s.scope === target && s.registry === registry))
+          return print({ status: "already trusted", scope: target, registry });
+        if (
+          !(await confirm(
+            `Let agents install any pack under ${target}/ from ${registry} without --trust? Its code runs inside your review pages.`,
+          ))
+        ) {
           return print({ status: "not changed" });
         }
         updateTrustList((fresh) => {
@@ -1440,9 +1953,16 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
       }
       const pin = { version: p.version, integrity: p.integrity };
       const previous = Object.hasOwn(list.pins, p.name) ? list.pins[p.name] : undefined;
-      if (previous && previous.version === pin.version && previous.integrity === pin.integrity) return print({ status: "already pinned", pack: `${p.name}@${p.version}` });
-      process.stderr.write(`${p.name}@${p.version}  ${p.integrity}\ncomponents: ${p.catalog.components.map((c) => c.name).join(", ")}\nsource: ${npmView(p.name, registry)}\n`);
-      if (!(await confirm(`Pin ${p.name}@${p.version}? Agents could then install this exact version without --trust; its code runs inside your review pages.`))) {
+      if (previous && previous.version === pin.version && previous.integrity === pin.integrity)
+        return print({ status: "already pinned", pack: `${p.name}@${p.version}` });
+      process.stderr.write(
+        `${p.name}@${p.version}  ${p.integrity}\ncomponents: ${p.catalog.components.map((c) => c.name).join(", ")}\nsource: ${npmView(p.name, registry)}\n`,
+      );
+      if (
+        !(await confirm(
+          `Pin ${p.name}@${p.version}? Agents could then install this exact version without --trust; its code runs inside your review pages.`,
+        ))
+      ) {
         return print({ status: "not changed" });
       }
       let replaced: string | undefined;
@@ -1462,7 +1982,11 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
     }
     case "remove": {
       const target = args[0];
-      if (!target) return usage(`remove needs a pack or scope: ${BIN} trust remove <npm-package> | @scope`, "trust");
+      if (!target)
+        return usage(
+          `remove needs a pack or scope: ${BIN} trust remove <npm-package> | @scope`,
+          "trust",
+        );
       const removed = updateTrustList((list) => {
         if (isScope(target) && list.scopes.some((s) => s.scope === target)) {
           list.scopes = list.scopes.filter((s) => s.scope !== target);
@@ -1473,7 +1997,11 @@ async function cmdTrust(sub: string | undefined, args: string[]): Promise<void> 
         return true;
       });
       if (!removed) return fail(`${target} is not on the trust list (${BIN} trust list)`);
-      return print({ status: "removed", entry: target, note: "Packs already installed stay installed: `components remove` removes one." });
+      return print({
+        status: "removed",
+        entry: target,
+        note: "Packs already installed stay installed: `components remove` removes one.",
+      });
     }
     default:
       return usage(`unknown trust command: ${sub}. One of: list add remove`, "trust");
@@ -1488,13 +2016,21 @@ async function cmdRegistry(sub: string | undefined, args: string[], flags: Flags
       return print({
         file: registriesFile(),
         default: defaultRegistry().url,
-        scopes: regs.size ? [...regs.values()].map((r) => `${r.scope} ${r.url}${r.tokenEnv ? ` (token from $${r.tokenEnv})` : ""}`) : "none",
+        scopes: regs.size
+          ? [...regs.values()].map(
+              (r) => `${r.scope} ${r.url}${r.tokenEnv ? ` (token from $${r.tokenEnv})` : ""}`,
+            )
+          : "none",
         note: "Packs in a listed scope come from its registry for search, show and add; every other pack from the default one. A registry grants no trust: its packs are third-party unless on the trust list.",
       });
     }
     case "add": {
       const [scope, url] = args;
-      if (!scope || !url) return usage(`add needs a scope and a registry URL: ${BIN} registry add @scope <url> [--token-env NAME]`, "registry");
+      if (!scope || !url)
+        return usage(
+          `add needs a scope and a registry URL: ${BIN} registry add @scope <url> [--token-env NAME]`,
+          "registry",
+        );
       const tokenEnv = typeof flags["token-env"] === "string" ? flags["token-env"] : undefined;
       let entry;
       try {
@@ -1504,7 +2040,9 @@ async function cmdRegistry(sub: string | undefined, args: string[], flags: Flags
       }
       // A mapping decides which host gets the token in --token-env, so only the user at a terminal may make one, as with trust add.
       if (!process.stdin.isTTY) {
-        return fail(`registry add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} registry add ${scope} <url>\` themselves.`);
+        return fail(
+          `registry add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} registry add ${scope} <url>\` themselves.`,
+        );
       }
       const regs = readRegistries();
       const previous = regs.get(scope);
@@ -1515,7 +2053,9 @@ async function cmdRegistry(sub: string | undefined, args: string[], flags: Flags
         scope,
         registry: entry.url,
         replaced: previous && previous.url !== entry.url ? previous.url : undefined,
-        token: entry.tokenEnv ? `$${entry.tokenEnv}${process.env[entry.tokenEnv] ? "" : " (not set in this shell)"}` : undefined,
+        token: entry.tokenEnv
+          ? `$${entry.tokenEnv}${process.env[entry.tokenEnv] ? "" : " (not set in this shell)"}`
+          : undefined,
         file: registriesFile(),
         note: `Packs under ${scope}/ now come from this registry. They stay third-party until the user trusts them: \`${BIN} trust add ${scope}\` at a terminal.`,
       });
@@ -1524,9 +2064,14 @@ async function cmdRegistry(sub: string | undefined, args: string[], flags: Flags
       const scope = args[0];
       if (!scope) return usage(`remove needs a scope: ${BIN} registry remove @scope`, "registry");
       const regs = readRegistries();
-      if (!regs.delete(scope)) return fail(`${scope} is not mapped to a registry (${BIN} registry list)`);
+      if (!regs.delete(scope))
+        return fail(`${scope} is not mapped to a registry (${BIN} registry list)`);
       writeRegistries(regs);
-      return print({ status: "removed", scope, note: `Packs under ${scope}/ come from the default registry again (${defaultRegistry().url}).` });
+      return print({
+        status: "removed",
+        scope,
+        note: `Packs under ${scope}/ come from the default registry again (${defaultRegistry().url}).`,
+      });
     }
     default:
       return usage(`unknown registry command: ${sub}. One of: list add remove`, "registry");
@@ -1589,9 +2134,16 @@ function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void
     case "command": {
       // What a `new` run of this adapter would run, for a program that starts the harness itself with its own prompt (the wiki's ingest). It reads; nothing starts.
       const name = args[0];
-      if (!name) return usage(`command needs an adapter: ${BIN} adapter command <omp|copilot|name> [--model m]`, "adapter");
+      if (!name)
+        return usage(
+          `command needs an adapter: ${BIN} adapter command <omp|copilot|name> [--model m]`,
+          "adapter",
+        );
       const adapter = adapterFor(name, cfg);
-      if (!adapter) return fail(`no adapter named ${name}: a harness (${HARNESSES.join(", ")}) or a command set with \`${BIN} adapter set\``);
+      if (!adapter)
+        return fail(
+          `no adapter named ${name}: a harness (${HARNESSES.join(", ")}) or a command set with \`${BIN} adapter set\``,
+        );
       const found = findOnPath(adapter.bin);
       if (!found) return fail(`${adapter.bin} is not on PATH`);
       const cap = capabilitiesOf(adapter).new;
@@ -1603,34 +2155,56 @@ function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void
         return fail(messageOf(err));
       }
       const model = typeof flags.model === "string" ? flags.model : undefined;
-      if (model !== undefined && !capabilitiesOf(adapter).model.ok) return fail(`${name} cannot choose a model`);
+      if (model !== undefined && !capabilitiesOf(adapter).model.ok)
+        return fail(`${name} cannot choose a model`);
       const built = adapter.build({
         mode: "new",
         model,
         promptFile: "<stdin>",
         cwd: process.cwd(),
-        limits: { ...(limits.maxCost !== undefined ? { maxCost: limits.maxCost } : {}), ...(limits.maxAiCredits !== undefined ? { maxAiCredits: limits.maxAiCredits } : {}) },
+        limits: {
+          ...(limits.maxCost !== undefined ? { maxCost: limits.maxCost } : {}),
+          ...(limits.maxAiCredits !== undefined ? { maxAiCredits: limits.maxAiCredits } : {}),
+        },
         extraArgs: isHarness(adapter.id) ? extraArgsFor(adapter.id, cfg) : [],
       });
-      return print({ adapter: name, bin: found, args: built.args, env: Object.keys(built.env).length ? built.env : undefined, stdin: "the prompt", session_id: built.sessionId, max_minutes: limits.maxMinutes, note: "Run it with the prompt on stdin, never in argv; the owner's extra arguments and limits are in." });
+      return print({
+        adapter: name,
+        bin: found,
+        args: built.args,
+        env: Object.keys(built.env).length ? built.env : undefined,
+        stdin: "the prompt",
+        session_id: built.sessionId,
+        max_minutes: limits.maxMinutes,
+        note: "Run it with the prompt on stdin, never in argv; the owner's extra arguments and limits are in.",
+      });
     }
     case "set": {
       const name = args[0];
       const extra = flags["extra-args"];
       const command = flags.command;
-      if (!name) return usage(`set needs a harness or a command name: ${BIN} adapter set <omp|copilot> --extra-args "…"`, "adapter");
+      if (!name)
+        return usage(
+          `set needs a harness or a command name: ${BIN} adapter set <omp|copilot> --extra-args "…"`,
+          "adapter",
+        );
       let flag: "extra-args" | "command";
       let value: string;
       if (isHarness(name)) {
-        if (typeof extra !== "string" || command !== undefined) return usage(`set ${name} takes --extra-args "…" ("" clears it)`, "adapter");
+        if (typeof extra !== "string" || command !== undefined)
+          return usage(`set ${name} takes --extra-args "…" ("" clears it)`, "adapter");
         flag = "extra-args";
         value = extra;
       } else if (isCommandName(name)) {
-        if (typeof command !== "string" || extra !== undefined) return usage(`set ${name} takes --command "<bin> <args…>" ("" removes it)`, "adapter");
+        if (typeof command !== "string" || extra !== undefined)
+          return usage(`set ${name} takes --command "<bin> <args…>" ("" removes it)`, "adapter");
         flag = "command";
         value = command;
       } else {
-        return usage(`no harness named ${name}: one of ${HARNESSES.join(" ")}, or a command adapter name (lowercase letters, digits, -)`, "adapter");
+        return usage(
+          `no harness named ${name}: one of ${HARNESSES.join(" ")}, or a command adapter name (lowercase letters, digits, -)`,
+          "adapter",
+        );
       }
       let words: string[];
       try {
@@ -1639,10 +2213,17 @@ function cmdAdapter(sub: string | undefined, args: string[], flags: Flags): void
         return usage(`--${flag}: ${messageOf(err)}`, "adapter");
       }
       // `""` splits into one empty word: no binary to run, and adapters.json would refuse to load.
-      if (flag === "command" && words.length && !words[0]) return usage(`--command: the first word is the binary to run and cannot be empty ("" removes the adapter)`, "adapter");
+      if (flag === "command" && words.length && !words[0])
+        return usage(
+          `--command: the first word is the binary to run and cannot be empty ("" removes the adapter)`,
+          "adapter",
+        );
       // These arguments decide what a run may do on this machine (A13), so only the user at a terminal sets them, as with trust add.
       if (!process.stdin.isTTY) {
-        return usage(`adapter set needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${commandLine(["adapter", "set", name, `--${flag}`, value])}\` themselves.`, "adapter");
+        return usage(
+          `adapter set needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${commandLine(["adapter", "set", name, `--${flag}`, value])}\` themselves.`,
+          "adapter",
+        );
       }
       if (isHarness(name)) {
         if (words.length) cfg.extraArgs[name] = words;
@@ -1669,8 +2250,15 @@ function shortDate(ms: number): string {
 function feedbackItems(abs: string, entries: FeedbackEntry[], all: boolean): Printed[] {
   const items: Printed[] = [];
   for (const e of entries) {
-    for (const it of describeItems(abs, (e.items || []).map((x) => (e.author ? { ...x, author: e.author, ...(e.remote ? { remote: true } : {}) } : x)))) {
-      items.push(all ? { sent: shortDate(e.at), status: e.status, ...it } : { sent: shortDate(e.at), ...it });
+    for (const it of describeItems(
+      abs,
+      (e.items || []).map((x) =>
+        e.author ? { ...x, author: e.author, ...(e.remote ? { remote: true } : {}) } : x,
+      ),
+    )) {
+      items.push(
+        all ? { sent: shortDate(e.at), status: e.status, ...it } : { sent: shortDate(e.at), ...it },
+      );
     }
   }
   return items;
@@ -1683,7 +2271,11 @@ function endsWithFinal(entries: FeedbackEntry[]): boolean {
 }
 
 /** Record the caller in hub.db opened here (no server); false when that failed. Never fails the command. */
-function registerHere(db: SessionStore["db"], caller: CallerReport | null, artifactIds: string[]): boolean {
+function registerHere(
+  db: SessionStore["db"],
+  caller: CallerReport | null,
+  artifactIds: string[],
+): boolean {
   if (!caller) return false;
   try {
     registerSession(db, caller, { artifactIds, action: "feedback" });
@@ -1695,7 +2287,8 @@ function registerHere(db: SessionStore["db"], caller: CallerReport | null, artif
 
 async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void> {
   if (file === undefined) return cmdProjectFeedback(flags);
-  if (typeof flags.project === "string") return usage("feedback takes a file or --project, not both", "feedback");
+  if (typeof flags.project === "string")
+    return usage("feedback takes a file or --project, not both", "feedback");
   const abs = needFile(file, "feedback");
   if (!abs) return; // needFile reported a missing file
   const opts = { all: !!flags.all, peek: !!flags.peek };
@@ -1706,7 +2299,12 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
   // A published file's hosted notes come in through the server: start it so it can catch up.
   if (cloud.readCloud().pages[abs]) await ensureServer();
   if (await serverIfRunning()) {
-    const r = await request<FeedbackResponse>("POST", "/api/feedback", { file: abs, ...opts, session: caller ?? undefined }, { timeoutMs: 15_000 });
+    const r = await request<FeedbackResponse>(
+      "POST",
+      "/api/feedback",
+      { file: abs, ...opts, session: caller ?? undefined },
+      { timeoutMs: 15_000 },
+    );
     if (r.status === 200) {
       entries = r.data.entries;
       archived = r.data.session.archived;
@@ -1735,7 +2333,13 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
     return print({ status: "none", file: abs, note: notRegistered(file), session });
   }
   if (!entries.length) {
-    return print({ status: "none", file: abs, archived: archived || undefined, note: "Every piece of feedback on it has been answered.", session });
+    return print({
+      status: "none",
+      file: abs,
+      archived: archived || undefined,
+      note: "Every piece of feedback on it has been answered.",
+      session,
+    });
   }
   const f = quote(file);
   const final = endsWithFinal(entries);
@@ -1749,7 +2353,9 @@ async function cmdFeedback(file: string | undefined, flags: Flags): Promise<void
     next:
       `Apply what still applies with \`${BIN} patch ${f}\` (changed statements only; names are stable), then \`${BIN} reply ${f} --agent-reply "<what changed>"\`, ` +
       `which marks it addressed. ` +
-      (final ? `The reviewer pressed Done or Send & finish on the newest batch: continue in chat, do not poll afterwards.` : `To continue live with the reviewer: ${archived ? `\`${BIN} unarchive ${f}\` (the page is archived, so it takes no notes), then ` : ""}\`${BIN} ${f}\`, then poll.`),
+      (final
+        ? `The reviewer pressed Done or Send & finish on the newest batch: continue in chat, do not poll afterwards.`
+        : `To continue live with the reviewer: ${archived ? `\`${BIN} unarchive ${f}\` (the page is archived, so it takes no notes), then ` : ""}\`${BIN} ${f}\`, then poll.`),
   });
 }
 
@@ -1767,7 +2373,17 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
   const published = cloud.readCloud().pages;
   if (project.files.some((f) => published[f])) await ensureServer();
   if (await serverIfRunning()) {
-    const r = await request<ProjectFeedbackResponse>("POST", "/api/feedback", { project: project.id, root: project.root ?? undefined, ...opts, session: caller ?? undefined }, { timeoutMs: 15_000 });
+    const r = await request<ProjectFeedbackResponse>(
+      "POST",
+      "/api/feedback",
+      {
+        project: project.id,
+        root: project.root ?? undefined,
+        ...opts,
+        session: caller ?? undefined,
+      },
+      { timeoutMs: 15_000 },
+    );
     if (r.status !== 200) return fail(r.data?.error || `feedback failed (${r.status})`);
     batches = r.data.batches;
   } else {
@@ -1777,11 +2393,22 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
       try {
         const roots = new Hub(store.db);
         const pages = project.root ? store.inRoot(project.root) : store.inProject(project.id);
-        registered = registerHere(store.db, caller, pages.map((s) => s.id));
+        registered = registerHere(
+          store.db,
+          caller,
+          pages.map((s) => s.id),
+        );
         for (const s of pages) {
           const { entries } = store.feedback(s, opts);
           const root = roots.artifact(s.id)?.root;
-          if (entries.length) batches.push({ file: s.file, copy: root ? copyLabel(root) : path.basename(path.dirname(s.file)), archived: Boolean(s.archivedAt), missing: !fs.existsSync(s.file) || undefined, entries });
+          if (entries.length)
+            batches.push({
+              file: s.file,
+              copy: root ? copyLabel(root) : path.basename(path.dirname(s.file)),
+              archived: Boolean(s.archivedAt),
+              missing: !fs.existsSync(s.file) || undefined,
+              entries,
+            });
         }
       } finally {
         store.close();
@@ -1791,7 +2418,15 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
     }
   }
   const session = sessionLine(caller, registered);
-  if (!batches.length) return print({ status: "none", project: project.name, scope: project.covers, pages: project.pages, note: `Every piece of feedback in ${project.root ? "this checkout" : "this project"} has been answered.`, session });
+  if (!batches.length)
+    return print({
+      status: "none",
+      project: project.name,
+      scope: project.covers,
+      pages: project.pages,
+      note: `Every piece of feedback in ${project.root ? "this checkout" : "this project"} has been answered.`,
+      session,
+    });
   const final = batches.every((b) => endsWithFinal(b.entries));
   const gone = batches.some((b) => b.missing);
   print({
@@ -1799,14 +2434,23 @@ async function cmdProjectFeedback(flags: Flags): Promise<void> {
     project: project.name,
     scope: project.covers,
     pages: project.pages,
-    batches: batches.map((b) => ({ file: b.file, copy: b.copy, archived: b.archived || undefined, missing: b.missing || undefined, final: endsWithFinal(b.entries) || undefined, items: feedbackItems(b.file, b.entries, opts.all) })),
+    batches: batches.map((b) => ({
+      file: b.file,
+      copy: b.copy,
+      archived: b.archived || undefined,
+      missing: b.missing || undefined,
+      final: endsWithFinal(b.entries) || undefined,
+      items: feedbackItems(b.file, b.entries, opts.all),
+    })),
     session,
     next:
       `For each page above: apply what still applies with \`${BIN} patch <file>\` (changed statements only), then \`${BIN} reply <file> --agent-reply "<what changed>"\`, which marks it addressed. ` +
       (gone
         ? `A batch with missing: true is a file that is gone: do not patch it; \`${BIN} reply <file> --agent-reply "<file is gone>"\` still answers its notes, and \`${BIN} archive --missing\` puts every gone copy away. `
         : "") +
-      (final ? `The reviewer pressed Done or Send & finish on every newest batch: continue in chat, do not poll afterwards.` : `To continue live with the reviewer: \`${BIN} poll${project.scope}\`.`),
+      (final
+        ? `The reviewer pressed Done or Send & finish on every newest batch: continue in chat, do not poll afterwards.`
+        : `To continue live with the reviewer: \`${BIN} poll${project.scope}\`.`),
   });
 }
 
@@ -1836,13 +2480,20 @@ async function withHub(write: boolean, fn: (hub: Hub) => void): Promise<void> {
 function projectFlag(hub: Hub, flags: Flags): string {
   if (typeof flags.project !== "string") return "";
   const p = findProject(hub.db, flags.project);
-  if (!p) throw new Error(`no project ${flags.project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`);
+  if (!p)
+    throw new Error(
+      `no project ${flags.project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`,
+    );
   return p.id;
 }
 
 function feedbackText(c: HubCounts): string | undefined {
   const waiting = unanswered(c);
-  return [waiting ? `${waiting} unanswered` : "", c.addressed ? `${c.addressed} answered` : ""].filter(Boolean).join(", ") || undefined;
+  return (
+    [waiting ? `${waiting} unanswered` : "", c.addressed ? `${c.addressed} answered` : ""]
+      .filter(Boolean)
+      .join(", ") || undefined
+  );
 }
 
 const HUB_LIMIT = 40;
@@ -1860,7 +2511,12 @@ function limitFlag(flags: Flags): number | null {
 
 /** The first `limit` of `all`, and the line that says how many were left out ("40 of 45 shown; --limit n for more"). */
 function limited<T>(all: T[], limit: number, what: string): { shown: T[]; shownNote?: string } {
-  return all.length > limit ? { shown: all.slice(0, limit), shownNote: `${limit} of ${all.length} ${what} shown; \`--limit n\` shows more` } : { shown: all };
+  return all.length > limit
+    ? {
+        shown: all.slice(0, limit),
+        shownNote: `${limit} of ${all.length} ${what} shown; \`--limit n\` shows more`,
+      }
+    : { shown: all };
 }
 
 /** AUSTERE_AXI_NO_OPEN=1: this machine has no screen, so never start a browser. */
@@ -1874,15 +2530,31 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
     case "on":
     case "off":
     case "status":
-      return removed(`${BIN} hub ${sub}`, `the hub has no on/off switch; open it with \`${BIN} hub open\``);
+      return removed(
+        `${BIN} hub ${sub}`,
+        `the hub has no on/off switch; open it with \`${BIN} hub open\``,
+      );
     case undefined:
     case "list": {
       const limit = limitFlag(flags);
       if (limit === null) return;
       return withHub(false, (hub) => {
-        const found: HubPage[] = hub.list({ q: args.join(" "), project: projectFlag(hub, flags), archived: !!flags.archived, all: !!flags.all, limit: Infinity });
+        const found: HubPage[] = hub.list({
+          q: args.join(" "),
+          project: projectFlag(hub, flags),
+          archived: !!flags.archived,
+          all: !!flags.all,
+          limit: Infinity,
+        });
         const { shown: pages, shownNote } = limited(found, limit, "pages");
-        if (!pages.length) return print({ pages: "none", note: flags.all || flags.archived ? undefined : "pages only checked (never opened for review) and archived ones are left out: --all lists them" });
+        if (!pages.length)
+          return print({
+            pages: "none",
+            note:
+              flags.all || flags.archived
+                ? undefined
+                : "pages only checked (never opened for review) and archived ones are left out: --all lists them",
+          });
         print({
           pages: pages.map((p) => ({
             title: p.title || undefined,
@@ -1893,7 +2565,14 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
             copies: p.copies.map((c) => ({
               label: c.label,
               file: c.file,
-              state: [c.reviewed ? "" : "checked", c.missing ? "missing" : "", c.archived_at ? "archived" : ""].filter(Boolean).join(", ") || undefined,
+              state:
+                [
+                  c.reviewed ? "" : "checked",
+                  c.missing ? "missing" : "",
+                  c.archived_at ? "archived" : "",
+                ]
+                  .filter(Boolean)
+                  .join(", ") || undefined,
               feedback: p.copies.length > 1 ? feedbackText(c) : undefined,
             })),
           })),
@@ -1906,7 +2585,12 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
       const limit = limitFlag(flags);
       if (limit === null) return;
       return withHub(false, (hub) => {
-        const found: HubNoteRow[] = hub.notes({ q: args.join(" "), project: projectFlag(hub, flags), status: flags.unanswered ? "unanswered" : "", limit: -1 });
+        const found: HubNoteRow[] = hub.notes({
+          q: args.join(" "),
+          project: projectFlag(hub, flags),
+          status: flags.unanswered ? "unanswered" : "",
+          limit: -1,
+        });
         const { shown: rows, shownNote } = limited(found, limit, "notes");
         if (!rows.length) return print({ notes: "none" });
         print({
@@ -1914,7 +2598,8 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
             from: r.author || undefined,
             text: r.text || undefined,
             target: r.target || undefined,
-            status: r.status === "addressed" ? "answered" : r.status === "held" ? "held" : "unanswered",
+            status:
+              r.status === "addressed" ? "answered" : r.status === "held" ? "held" : "unanswered",
             page: r.title || path.basename(r.file),
             project: r.project,
             copy: r.label || undefined,
@@ -1929,13 +2614,26 @@ async function cmdHub(sub: string | undefined, args: string[], flags: Flags): Pr
     case "reindex":
       return withHub(true, (hub) => {
         const r = reindex(hub.db);
-        print({ status: "reindexed", pages: r.copies, statements: r.statements, missing: r.missing || undefined, note: r.missing ? "Copies whose file is gone are not in the index (their revisions stay)." : undefined });
+        print({
+          status: "reindexed",
+          pages: r.copies,
+          statements: r.statements,
+          missing: r.missing || undefined,
+          note: r.missing
+            ? "Copies whose file is gone are not in the index (their revisions stay)."
+            : undefined,
+        });
       });
     case "open": {
       await ensureServer();
       const noOpen = browserDisabled();
       const opened = !noOpen && (await openBrowser(url));
-      return print({ status: opened ? "opened" : "open the url", url, note: noOpen ? "AUSTERE_AXI_NO_OPEN is set: no browser was started" : undefined, sign_in: opened ? undefined : signInHint() });
+      return print({
+        status: opened ? "opened" : "open the url",
+        url,
+        note: noOpen ? "AUSTERE_AXI_NO_OPEN is set: no browser was started" : undefined,
+        sign_in: opened ? undefined : signInHint(),
+      });
     }
     default:
       return usage(`unknown hub command: ${sub}. One of: list notes open reindex`, "hub");
@@ -1955,7 +2653,11 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
     case "list":
       return withHub(false, (hub) => {
         const projects = listProjects(hub.db);
-        if (!projects.length) return print({ projects: "none", note: "A page you check or open for review files itself under a project." });
+        if (!projects.length)
+          return print({
+            projects: "none",
+            note: "A page you check or open for review files itself under a project.",
+          });
         // A project can hold hundreds of worktrees: by default the main root and a count per kind.
         const kinds = (roots: { kind: string }[]): string => {
           const n = new Map<string, number>();
@@ -1967,18 +2669,48 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
             name: p.name,
             id: p.id,
             pages: p.pages,
-            ...(flags.roots ? { roots: p.roots.map((r) => `${r.root} (${r.kind})`) } : { root: p.roots[0] ? `${p.roots[0].root} (${p.roots[0].kind})` : undefined, roots: kinds(p.roots) || undefined }),
-            ...(p.sameAs ? { hint: `same repository as project ${p.sameAs.name}: \`${BIN} ${p.sameAs.merge}\`` } : {}),
+            ...(flags.roots
+              ? { roots: p.roots.map((r) => `${r.root} (${r.kind})`) }
+              : {
+                  root: p.roots[0] ? `${p.roots[0].root} (${p.roots[0].kind})` : undefined,
+                  roots: kinds(p.roots) || undefined,
+                }),
+            ...(p.sameAs
+              ? {
+                  hint: `same repository as project ${p.sameAs.name}: \`${BIN} ${p.sameAs.merge}\``,
+                }
+              : {}),
           })),
-          ...(flags.roots || !projects.some((p) => p.roots.length > 1) ? {} : { next: `\`${BIN} project list --roots\` lists every root folder` }),
+          ...(flags.roots || !projects.some((p) => p.roots.length > 1)
+            ? {}
+            : { next: `\`${BIN} project list --roots\` lists every root folder` }),
         });
       });
     case "add":
       if (!need(1, `a folder: ${BIN} project add <dir> [--name n] [--yes]`)) return;
       return withHub(true, (hub) => {
-        const r = addRoot(hub.db, args[0], typeof flags.name === "string" ? flags.name : undefined, { yes: !!flags.yes });
-        const absorbed = r.absorbed.length ? r.absorbed.map((a) => ({ project: a.project, id: a.id, pages: a.pages, roots: a.roots.length ? a.roots : undefined })) : undefined;
-        if (r.added) return print({ status: "added", project: r.project.name, id: r.project.id, root: r.root, absorbed });
+        const r = addRoot(
+          hub.db,
+          args[0],
+          typeof flags.name === "string" ? flags.name : undefined,
+          { yes: !!flags.yes },
+        );
+        const absorbed = r.absorbed.length
+          ? r.absorbed.map((a) => ({
+              project: a.project,
+              id: a.id,
+              pages: a.pages,
+              roots: a.roots.length ? a.roots : undefined,
+            }))
+          : undefined;
+        if (r.added)
+          return print({
+            status: "added",
+            project: r.project.name,
+            id: r.project.id,
+            root: r.root,
+            absorbed,
+          });
         print({
           status: "needs --yes",
           root: r.root,
@@ -1992,7 +2724,14 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
       if (!need(2, `two projects: ${BIN} project merge <a> <b>`)) return;
       return withHub(true, (hub) => {
         const p = mergeProjects(hub.db, args[0], args[1]);
-        print({ status: "merged", project: p.name, id: p.id, roots: listProjects(hub.db).find((x) => x.id === p.id)?.roots.map((r) => r.root) });
+        print({
+          status: "merged",
+          project: p.name,
+          id: p.id,
+          roots: listProjects(hub.db)
+            .find((x) => x.id === p.id)
+            ?.roots.map((r) => r.root),
+        });
       });
     case "rename":
       if (!need(2, `a project and a name: ${BIN} project rename <p> <name>`)) return;
@@ -2007,15 +2746,28 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
         const r = forgetRoot(hub.db, args[0], { drop: !!flags.drop });
         archived.push(...r.archived);
         let note: string | undefined;
-        if (r.status === "dropped") note = `Its pages stay in ${r.project}, archived; their notes are kept: \`${BIN} hub list --archived\`.`;
+        if (r.status === "dropped")
+          note = `Its pages stay in ${r.project}, archived; their notes are kept: \`${BIN} hub list --archived\`.`;
         else if (r.again) {
-          const why = r.again.kind === "git" || r.again.kind === "worktree" ? "has a .git" : "has pages in it and no root above";
-          const split = r.again.id !== r.id && hub.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(r.id);
+          const why =
+            r.again.kind === "git" || r.again.kind === "worktree"
+              ? "has a .git"
+              : "has pages in it and no root above";
+          const split =
+            r.again.id !== r.id && hub.db.prepare("SELECT 1 FROM projects WHERE id = ?").get(r.id);
           note = split
             ? `${r.root} ${why}, so it is a root again at once, of project ${r.again.project} (${r.again.id}), apart from ${r.project} (${r.id}): a page in both is two pages now. \`${BIN} project merge ${r.id} ${r.again.id}\` joins them back.`
             : `${r.root} ${why}, so it is a root again at once, of project ${r.again.project} (${r.again.id}${r.again.id === r.id ? "" : `; it was ${r.id}`}).`;
         }
-        print({ status: r.status, root: r.root, project: r.project, id: r.id, went: r.went.length ? r.went : undefined, archived: r.status === "dropped" ? archived.length : undefined, note });
+        print({
+          status: r.status,
+          root: r.root,
+          project: r.project,
+          id: r.id,
+          went: r.went.length ? r.went : undefined,
+          archived: r.status === "dropped" ? archived.length : undefined,
+          note,
+        });
       });
       // A running server holds open pages in memory: it archives them too, so their composers lock. Every copy is tried; the first failure is reported after.
       if (archived.length && (await serverIfRunning())) {
@@ -2023,7 +2775,10 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
         for (const file of archived) {
           try {
             const res = await request("POST", "/api/archive", { file }, { timeoutMs: 10_000 });
-            if (res.status !== 200) throw new Error(`the running server did not archive ${file}: ${res.data?.error || `status ${res.status}`}`);
+            if (res.status !== 200)
+              throw new Error(
+                `the running server did not archive ${file}: ${res.data?.error || `status ${res.status}`}`,
+              );
           } catch (err) {
             failed ??= err;
           }
@@ -2033,7 +2788,10 @@ async function cmdProject(sub: string | undefined, args: string[], flags: Flags)
       return;
     }
     default:
-      return usage(`unknown project command: ${sub}. One of: list add merge rename forget-root`, "project");
+      return usage(
+        `unknown project command: ${sub}. One of: list add merge rename forget-root`,
+        "project",
+      );
   }
 }
 
@@ -2055,9 +2813,17 @@ async function archiveMissing(flags: Flags): Promise<void> {
   if (project === null) return;
   let copies: ArchiveMissingResponse["copies"];
   if (await serverIfRunning()) {
-    const r = await request<ArchiveMissingResponse>("POST", "/api/archive", { missing: true, project }, { timeoutMs: 30_000 });
+    const r = await request<ArchiveMissingResponse>(
+      "POST",
+      "/api/archive",
+      { missing: true, project },
+      { timeoutMs: 30_000 },
+    );
     // An older server does not know `missing`: it asks for a file.
-    if (r.status === 400 && /file is required/.test(String(r.data?.error))) return fail(`the running server is older than this CLI and does not know archive --missing: run \`${BIN} stop\`, then archive again`);
+    if (r.status === 400 && /file is required/.test(String(r.data?.error)))
+      return fail(
+        `the running server is older than this CLI and does not know archive --missing: run \`${BIN} stop\`, then archive again`,
+      );
     if (r.status !== 200) return fail(r.data?.error || `archive failed (${r.status})`);
     copies = r.data.copies;
   } else {
@@ -2079,14 +2845,16 @@ async function archiveMissing(flags: Flags): Promise<void> {
     }
     if (process.exitCode) return;
   }
-  if (!copies.length) return print({ status: "none", note: "No copy opened for review has a missing file." });
+  if (!copies.length)
+    return print({ status: "none", note: "No copy opened for review has a missing file." });
   const waiting = copies.reduce((n, c) => n + c.unanswered, 0);
   print({
     status: "archived",
     count: copies.length,
     unanswered: waiting || undefined,
     files: copies.slice(0, ARCHIVE_MISSING_LISTED).map((c) => c.file),
-    more: copies.length > ARCHIVE_MISSING_LISTED ? copies.length - ARCHIVE_MISSING_LISTED : undefined,
+    more:
+      copies.length > ARCHIVE_MISSING_LISTED ? copies.length - ARCHIVE_MISSING_LISTED : undefined,
     note: `Their notes are kept: \`${BIN} hub list --archived\` lists the copies${waiting ? `, and \`${BIN} feedback\` still shows the unanswered notes (archived: true)` : ""}.`,
   });
 }
@@ -2103,8 +2871,10 @@ function archivedOut(file: string, abs: string, plan: ArchivePlan): Printed {
     : "";
   const row = (c: ArchiveCopy) => ({ file: c.file, copy: c.copy, unanswered: c.unanswered });
   let note: string;
-  if (plan.archived.length > 1) note = `Every copy of this page is archived: each refuses notes until \`${BIN} unarchive <its file>\`.${kept}`;
-  else if (plan.others.length) note = `Only this copy (${plan.copy}) is archived: it refuses notes until \`${BIN} unarchive ${f}\`.${kept} The copies in still_open stay open and listed; \`${BIN} archive ${f} --every-copy\` archives them too.`;
+  if (plan.archived.length > 1)
+    note = `Every copy of this page is archived: each refuses notes until \`${BIN} unarchive <its file>\`.${kept}`;
+  else if (plan.others.length)
+    note = `Only this copy (${plan.copy}) is archived: it refuses notes until \`${BIN} unarchive ${f}\`.${kept} The copies in still_open stay open and listed; \`${BIN} archive ${f} --every-copy\` archives them too.`;
   else note = `Notes are refused until \`${BIN} unarchive ${f}\`.${kept}`;
   return {
     status: "archived",
@@ -2123,29 +2893,55 @@ function archivedOut(file: string, abs: string, plan: ArchivePlan): Printed {
  * `archive` takes one copy of the page (`--every-copy`: each one) and names the copies that stay open.
  * `archive --missing` does it for every copy whose file is gone.
  */
-async function cmdArchive(file: string | undefined, archive: boolean, flags: Flags = {}): Promise<void> {
+async function cmdArchive(
+  file: string | undefined,
+  archive: boolean,
+  flags: Flags = {},
+): Promise<void> {
   const cmd = archive ? "archive" : "unarchive";
   if (flags.missing && file) return usage("archive takes a file or --missing, not both", "archive");
-  if (flags.missing && flags["every-copy"]) return usage("archive takes --every-copy only with a file", "archive");
+  if (flags.missing && flags["every-copy"])
+    return usage("archive takes --every-copy only with a file", "archive");
   if (flags.missing) return archiveMissing(flags);
-  if (typeof flags.project === "string") return usage("archive takes --project only with --missing", "archive");
-  if (!file) return usage(`${cmd} needs a file: ${BIN} ${cmd} <file.html>${archive ? ` or ${BIN} archive --missing` : ""}`, cmd);
+  if (typeof flags.project === "string")
+    return usage("archive takes --project only with --missing", "archive");
+  if (!file)
+    return usage(
+      `${cmd} needs a file: ${BIN} ${cmd} <file.html>${archive ? ` or ${BIN} archive --missing` : ""}`,
+      cmd,
+    );
   const abs = canonicalFile(file);
   const every = !!flags["every-copy"];
-  const done = (plan?: ArchivePlan) => print(plan ? archivedOut(file, abs, plan) : { status: "unarchived", file: abs });
+  const done = (plan?: ArchivePlan) =>
+    print(plan ? archivedOut(file, abs, plan) : { status: "unarchived", file: abs });
   if (await serverIfRunning()) {
-    const r = await request<Partial<ArchiveResponse> & { error?: string }>("POST", `/api/${cmd}`, { file: abs, every: every || undefined }, { timeoutMs: 10_000 });
+    const r = await request<Partial<ArchiveResponse> & { error?: string }>(
+      "POST",
+      `/api/${cmd}`,
+      { file: abs, every: every || undefined },
+      { timeoutMs: 10_000 },
+    );
     // An older server answers "unknown route" (no archive at all), or archives this copy without naming the copies (no --every-copy).
     if (r.status === 404) {
-      if (/unknown route/.test(String(r.data?.error))) return fail(`the running server is older than this CLI and does not know ${cmd}: run \`${BIN} stop\`, then ${cmd} again`);
+      if (/unknown route/.test(String(r.data?.error)))
+        return fail(
+          `the running server is older than this CLI and does not know ${cmd}: run \`${BIN} stop\`, then ${cmd} again`,
+        );
       return fail(`not in the hub: ${abs}`);
     }
     if (r.status !== 200) return fail(r.data?.error || `${cmd} failed (${r.status})`);
     if (!archive) return done();
     const { copy, archived, others } = r.data;
     if (copy === undefined || !archived || !others) {
-      if (every) return fail(`the running server is older than this CLI: it archived this copy only, as it does not know --every-copy. Run \`${BIN} stop\`, then \`${BIN} archive ${quote(file)} --every-copy\` again`);
-      return print({ status: "archived", file: abs, note: `Notes are refused until \`${BIN} unarchive ${quote(file)}\`.` });
+      if (every)
+        return fail(
+          `the running server is older than this CLI: it archived this copy only, as it does not know --every-copy. Run \`${BIN} stop\`, then \`${BIN} archive ${quote(file)} --every-copy\` again`,
+        );
+      return print({
+        status: "archived",
+        file: abs,
+        note: `Notes are refused until \`${BIN} unarchive ${quote(file)}\`.`,
+      });
     }
     return done({ copy, archived, others });
   }
@@ -2170,10 +2966,16 @@ async function cmdArchive(file: string | undefined, archive: boolean, flags: Fla
 
 /** `sessions list [<file>|--project p]`: the agent sessions that worked on a page, or on every page of a project. */
 async function cmdSessions(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
-  if (sub !== undefined && sub !== "list") return usage(`unknown sessions command: ${sub}. One of: list`, "sessions");
-  if (args.length > 1) return usage(`sessions list takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`, "sessions");
+  if (sub !== undefined && sub !== "list")
+    return usage(`unknown sessions command: ${sub}. One of: list`, "sessions");
+  if (args.length > 1)
+    return usage(
+      `sessions list takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`,
+      "sessions",
+    );
   const file = args[0];
-  if (file !== undefined && typeof flags.project === "string") return usage("sessions list takes a file or --project, not both", "sessions");
+  if (file !== undefined && typeof flags.project === "string")
+    return usage("sessions list takes a file or --project, not both", "sessions");
   return withHub(false, (hub) => {
     let scope: Printed;
     let rows: PageSession[];
@@ -2209,7 +3011,10 @@ async function cmdSessions(sub: string | undefined, args: string[], flags: Flags
 
 /** The project a command without a file works on: `--project`, else the one holding the current folder. Throws when there is none. */
 function projectScope(hub: Hub, flags: Flags): ProjectRow {
-  const project = findProject(hub.db, typeof flags.project === "string" ? flags.project : process.cwd());
+  const project = findProject(
+    hub.db,
+    typeof flags.project === "string" ? flags.project : process.cwd(),
+  );
   if (project) return project;
   throw new Error(
     typeof flags.project === "string"
@@ -2223,24 +3028,50 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
   if (sub === "stop" && typeof flags.project === "string") {
     // A project's trigger runs (RLM-360): they need the server that runs them.
     if (args.length) return usage("run stop takes a file or --project, not both", "run");
-    if (!(await serverIfRunning())) return print({ status: "nothing to stop", note: "No server is running, so no trigger run is. A run a crashed server left is ended by the next server start." });
+    if (!(await serverIfRunning()))
+      return print({
+        status: "nothing to stop",
+        note: "No server is running, so no trigger run is. A run a crashed server left is ended by the next server start.",
+      });
     // Resolved here: the server's folder is not this one.
     let projectId = "";
     await withHub(false, (hub) => {
       projectId = projectScope(hub, flags).id;
     });
     if (process.exitCode) return;
-    const r = await request<RunStopResponse>("POST", "/api/run/stop", { project: projectId }, { timeoutMs: 15_000 });
+    const r = await request<RunStopResponse>(
+      "POST",
+      "/api/run/stop",
+      { project: projectId },
+      { timeoutMs: 15_000 },
+    );
     if (r.status !== 200) return fail(r.data?.error || `run stop failed (${r.status})`);
-    return print({ status: r.data.stopped ? "stopped" : "nothing to stop", project: flags.project, runs: r.data.stopped || undefined });
+    return print({
+      status: r.data.stopped ? "stopped" : "nothing to stop",
+      project: flags.project,
+      runs: r.data.stopped || undefined,
+    });
   }
   if (sub === "stop") {
-    if (args.length !== 1) return usage(`run stop takes one file: ${BIN} run stop <file> (or --project p for its trigger runs)`, "run");
+    if (args.length !== 1)
+      return usage(
+        `run stop takes one file: ${BIN} run stop <file> (or --project p for its trigger runs)`,
+        "run",
+      );
     const abs = canonicalFile(args[0]);
     if (await serverIfRunning()) {
-      const r = await request<RunStopResponse>("POST", "/api/run/stop", { file: abs }, { timeoutMs: 15_000 });
+      const r = await request<RunStopResponse>(
+        "POST",
+        "/api/run/stop",
+        { file: abs },
+        { timeoutMs: 15_000 },
+      );
       if (r.status !== 200) return fail(r.data?.error || `run stop failed (${r.status})`);
-      return print({ status: r.data.stopped ? "stopped" : "nothing to stop", file: abs, runs: r.data.stopped || undefined });
+      return print({
+        status: r.data.stopped ? "stopped" : "nothing to stop",
+        file: abs,
+        runs: r.data.stopped || undefined,
+      });
     }
     // No server owns a run now: a queued or waiting run ends here, under the state dir's lock so no
     // server starts meanwhile and launches it. A server that took the lock first stops it itself.
@@ -2252,9 +3083,19 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       return cmdRun(sub, args, flags);
     }
     try {
-      let rows: { id: string; status: string; pid: number | null; pid_start: string | null; bin: string | null }[] = [];
+      let rows: {
+        id: string;
+        status: string;
+        pid: number | null;
+        pid_start: string | null;
+        bin: string | null;
+      }[] = [];
       await withHub(false, (hub) => {
-        rows = hub.db.prepare("SELECT id, status, pid, pid_start, bin FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").all(sessionId(abs)) as unknown as typeof rows;
+        rows = hub.db
+          .prepare(
+            "SELECT id, status, pid, pid_start, bin FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')",
+          )
+          .all(sessionId(abs)) as unknown as typeof rows;
       });
       if (process.exitCode) return;
       // A `running` row is a crashed server's run: its harness may still write the page, so its tree
@@ -2266,13 +3107,17 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
         else kept.push(row.id);
       }
       await withHub(true, (hub) => {
-        const end = hub.db.prepare("UPDATE runs SET status = 'stopped', reason = 'stopped', ended_at = ? WHERE id = ?");
+        const end = hub.db.prepare(
+          "UPDATE runs SET status = 'stopped', reason = 'stopped', ended_at = ? WHERE id = ?",
+        );
         for (const id of stopped) end.run(Date.now(), id);
         print({
           status: stopped.length ? "stopped" : kept.length ? "not stopped" : "nothing to stop",
           file: abs,
           runs: stopped.length || undefined,
-          warning: kept.length ? `could not confirm that run ${kept.join(", ")} ended: a process with its recorded pid may still be the run's, and nothing that cannot be confirmed as the run's is killed. It stays running (the page starts no other run); once that process is gone, run stop again ends it` : undefined,
+          warning: kept.length
+            ? `could not confirm that run ${kept.join(", ")} ended: a process with its recorded pid may still be the run's, and nothing that cannot be confirmed as the run's is killed. It stays running (the page starts no other run); once that process is gone, run stop again ends it`
+            : undefined,
         });
       });
     } finally {
@@ -2281,18 +3126,30 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
     return;
   }
   if (sub === "log") {
-    if (args.length !== 1) return usage(`run log takes a run id: ${BIN} run log <id> (see ${BIN} run list)`, "run");
+    if (args.length !== 1)
+      return usage(`run log takes a run id: ${BIN} run log <id> (see ${BIN} run list)`, "run");
     return withHub(false, (hub) => {
       const row = getRun(hub.db, args[0]);
       if (!row) throw new Error(`no run ${args[0]} (see \`${BIN} run list\`)`);
       const text = readRunLog(row);
-      print({ id: row.id, status: row.status, reason: row.reason ?? undefined, log: text === null ? "none" : text.trimEnd() || "empty" });
+      print({
+        id: row.id,
+        status: row.status,
+        reason: row.reason ?? undefined,
+        log: text === null ? "none" : text.trimEnd() || "empty",
+      });
     });
   }
-  if (sub !== undefined && sub !== "list") return usage(`unknown run command: ${sub}. One of: list, log, stop`, "run");
-  if (args.length > 1) return usage(`run list takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`, "run");
+  if (sub !== undefined && sub !== "list")
+    return usage(`unknown run command: ${sub}. One of: list, log, stop`, "run");
+  if (args.length > 1)
+    return usage(
+      `run list takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`,
+      "run",
+    );
   const file = args[0];
-  if (file !== undefined && typeof flags.project === "string") return usage("run list takes a file or --project, not both", "run");
+  if (file !== undefined && typeof flags.project === "string")
+    return usage("run list takes a file or --project, not both", "run");
   return withHub(false, (hub) => {
     let scope: Printed;
     let rows: ListedRun[];
@@ -2305,7 +3162,12 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
       scope = { project: project.name };
       rows = listRuns(hub.db, { projectId: project.id });
     }
-    if (!rows.length) return print({ ...scope, runs: "none", note: "A run starts when attach is on for a page and the owner sends or releases a note while no agent polls it." });
+    if (!rows.length)
+      return print({
+        ...scope,
+        runs: "none",
+        note: "A run starts when attach is on for a page and the owner sends or releases a note while no agent polls it.",
+      });
     print({
       ...scope,
       runs: rows.map((r) => ({
@@ -2313,11 +3175,25 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
         file: file === undefined ? (r.file ?? undefined) : undefined,
         status: r.status,
         reason: r.reason ?? undefined,
-        harness: r.harness ? `${r.harness}${r.mode ? ` ${r.mode}` : ""}${r.model ? ` ${r.model}` : ""}` : undefined,
+        harness: r.harness
+          ? `${r.harness}${r.mode ? ` ${r.mode}` : ""}${r.model ? ` ${r.model}` : ""}`
+          : undefined,
         trigger: r.trigger_id ?? undefined,
-        notes: r.kind === "trigger" ? (r.seq_from === null ? undefined : `changes after ${r.seq_from}, up to ${r.seq_to}`) : r.seq_from === null ? undefined : r.seq_from === r.seq_to ? `seq ${r.seq_from}` : `seq ${r.seq_from}..${r.seq_to}`,
+        notes:
+          r.kind === "trigger"
+            ? r.seq_from === null
+              ? undefined
+              : `changes after ${r.seq_from}, up to ${r.seq_to}`
+            : r.seq_from === null
+              ? undefined
+              : r.seq_from === r.seq_to
+                ? `seq ${r.seq_from}`
+                : `seq ${r.seq_from}..${r.seq_to}`,
         started: r.started_at === null ? undefined : shortDate(r.started_at),
-        took: r.started_at !== null && r.ended_at !== null ? `${Math.max(0, Math.round((r.ended_at - r.started_at) / 1000))}s` : undefined,
+        took:
+          r.started_at !== null && r.ended_at !== null
+            ? `${Math.max(0, Math.round((r.ended_at - r.started_at) / 1000))}s`
+            : undefined,
       })),
       next: `${BIN} run log <id> shows what a run printed.`,
     });
@@ -2336,7 +3212,12 @@ async function cmdTrigger(sub: string | undefined, args: string[], flags: Flags)
     } catch (err) {
       return fail(messageOf(err));
     }
-    if (!list.length) return print({ file: triggersFile(), triggers: "none", note: `${BIN} trigger add --project <p> --on quiet:2h -- <command> makes one (at a terminal).` });
+    if (!list.length)
+      return print({
+        file: triggersFile(),
+        triggers: "none",
+        note: `${BIN} trigger add --project <p> --on quiet:2h -- <command> makes one (at a terminal).`,
+      });
     return withHub(false, (hub) =>
       print({
         file: triggersFile(),
@@ -2346,14 +3227,17 @@ async function cmdTrigger(sub: string | undefined, args: string[], flags: Flags)
           on: s.trigger.on,
           run: commandLine(s.trigger.run),
           max_time: s.trigger.maxTime,
-          last_run: s.lastRun ? `${s.lastRun.status}, ${s.lastRun.id}${s.lastRun.at === null ? "" : `, ${shortDate(s.lastRun.at)}`}` : "none",
+          last_run: s.lastRun
+            ? `${s.lastRun.status}, ${s.lastRun.id}${s.lastRun.at === null ? "" : `, ${shortDate(s.lastRun.at)}`}`
+            : "none",
           cursor: s.lastCursor,
         })),
         next: `${BIN} run list --project <p> shows the runs; ${BIN} trigger remove <id> removes one.`,
       }),
     );
   }
-  if (sub !== "add" && sub !== "remove") return usage(`unknown trigger command: ${sub}. One of: list add remove`, "trigger");
+  if (sub !== "add" && sub !== "remove")
+    return usage(`unknown trigger command: ${sub}. One of: list add remove`, "trigger");
   let list;
   try {
     list = readTriggers();
@@ -2361,38 +3245,79 @@ async function cmdTrigger(sub: string | undefined, args: string[], flags: Flags)
     return fail(messageOf(err));
   }
   if (sub === "remove") {
-    if (args.length !== 1) return usage(`trigger remove takes one id: ${BIN} trigger remove <id> (see ${BIN} trigger list)`, "trigger");
-    if (!list.some((t) => t.id === args[0])) return fail(`no trigger ${args[0]} (${BIN} trigger list shows them)`);
+    if (args.length !== 1)
+      return usage(
+        `trigger remove takes one id: ${BIN} trigger remove <id> (see ${BIN} trigger list)`,
+        "trigger",
+      );
+    if (!list.some((t) => t.id === args[0]))
+      return fail(`no trigger ${args[0]} (${BIN} trigger list shows them)`);
     // What runs on this machine is the user's to change, as with trust add.
-    if (!process.stdin.isTTY) return usage(`trigger remove needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} trigger remove ${args[0]}\` themselves.`, "trigger");
+    if (!process.stdin.isTTY)
+      return usage(
+        `trigger remove needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} trigger remove ${args[0]}\` themselves.`,
+        "trigger",
+      );
     writeTriggers(list.filter((t) => t.id !== args[0]));
     return print({ status: "removed", id: args[0], file: triggersFile() });
   }
   const project = flags.project;
   const on = flags.on;
   const maxTime = flags["max-time"];
-  if (typeof project !== "string" || typeof on !== "string" || !args.length) return usage(`add needs a project, when and a command: ${BIN} trigger add --project <p> --on quiet:2h -- <bin> [args…]`, "trigger");
-  if (quietMs(on) === null) return usage(`--on ${JSON.stringify(on)}: use quiet:<duration>, like quiet:2h, quiet:30m or quiet:90s`, "trigger");
-  if (maxTime !== undefined && (typeof maxTime !== "string" || parseDuration(maxTime) === null)) return usage(`--max-time ${JSON.stringify(maxTime)}: use a duration like 30m or 2h`, "trigger");
-  if (!args[0]) return usage("the command's first word is the binary to run and cannot be empty", "trigger");
+  if (typeof project !== "string" || typeof on !== "string" || !args.length)
+    return usage(
+      `add needs a project, when and a command: ${BIN} trigger add --project <p> --on quiet:2h -- <bin> [args…]`,
+      "trigger",
+    );
+  if (quietMs(on) === null)
+    return usage(
+      `--on ${JSON.stringify(on)}: use quiet:<duration>, like quiet:2h, quiet:30m or quiet:90s`,
+      "trigger",
+    );
+  if (maxTime !== undefined && (typeof maxTime !== "string" || parseDuration(maxTime) === null))
+    return usage(`--max-time ${JSON.stringify(maxTime)}: use a duration like 30m or 2h`, "trigger");
+  if (!args[0])
+    return usage("the command's first word is the binary to run and cannot be empty", "trigger");
   // The command runs on this machine whenever the project goes quiet, so only the user at a terminal names it (Q9).
   if (!process.stdin.isTTY) {
-    return usage(`trigger add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${commandLine(["trigger", "add", "--project", project, "--on", on, ...(typeof maxTime === "string" ? ["--max-time", maxTime] : []), "--", ...args])}\` themselves.`, "trigger");
+    return usage(
+      `trigger add needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${commandLine(["trigger", "add", "--project", project, "--on", on, ...(typeof maxTime === "string" ? ["--max-time", maxTime] : []), "--", ...args])}\` themselves.`,
+      "trigger",
+    );
   }
   let found: string | null = null;
   await withHub(false, (hub) => {
     found = findProject(hub.db, project)?.name ?? null;
   });
   if (process.exitCode) return;
-  if (!found) return fail(`no project ${project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`);
+  if (!found)
+    return fail(
+      `no project ${project} (a project name, id, or a folder inside one of its roots; \`${BIN} project list\` shows them)`,
+    );
   const run = [...args];
-  if (!(await confirm(`When project ${found} has been quiet for ${on.slice(6)}, run \`${commandLine(run)}\` on this machine?`))) return print({ status: "not changed" });
+  if (
+    !(await confirm(
+      `When project ${found} has been quiet for ${on.slice(6)}, run \`${commandLine(run)}\` on this machine?`,
+    ))
+  )
+    return print({ status: "not changed" });
   // The server runs in its own folder: it gets the project's name, not a `.` or a relative path.
-  const entry: Trigger = { id: newTriggerId(), project: found, on, run, ...(typeof maxTime === "string" ? { maxTime } : {}) };
+  const entry: Trigger = {
+    id: newTriggerId(),
+    project: found,
+    on,
+    run,
+    ...(typeof maxTime === "string" ? { maxTime } : {}),
+  };
   // From this moment: activity before the server's next look still runs it.
   await withHub(true, (hub) => {
     const proj = findProject(hub.db, found as string);
-    if (proj) hub.db.prepare("INSERT INTO trigger_state (trigger_id, last_cursor, last_run_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").run(entry.id, headCursor(hub.db, proj.id), Date.now());
+    if (proj)
+      hub.db
+        .prepare(
+          "INSERT INTO trigger_state (trigger_id, last_cursor, last_run_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+        )
+        .run(entry.id, headCursor(hub.db, proj.id), Date.now());
   });
   if (process.exitCode) return;
   // Another terminal may have changed the list while the question was open.
@@ -2421,20 +3346,44 @@ function attachStatusOf(hub: Hub, abs: string, cfg: AdaptersConfig): Printed {
   const e = r.effective;
   const t = r.target;
   const named = t.session ? `${t.session.harness} ${shortId(t.session.session_id)}` : null;
-  const session = e.session === "author" ? (named ? `author: ${named}` : "author: none registered, so a run starts a new session") : named ? named : `${e.session} is no longer registered, so a run starts a new session`;
+  const session =
+    e.session === "author"
+      ? named
+        ? `author: ${named}`
+        : "author: none registered, so a run starts a new session"
+      : named
+        ? named
+        : `${e.session} is no longer registered, so a run starts a new session`;
   const last = listRuns(hub.db, { artifactId: id }, 1)[0];
   return {
     file: abs,
     attach: e.state,
-    from: e.source === "project" ? `project ${r.project?.name ?? ""}`.trim() : e.source === "page" ? "page" : "default (off)",
-    mode: t.mode === e.mode ? e.mode : `${e.mode} (runs as ${t.mode}: no session to ${e.mode === "same" ? "resume" : "fork"})`,
-    session: t.mode === "new" && e.mode === "new" ? "new (the first run's session is kept for the next)" : session,
+    from:
+      e.source === "project"
+        ? `project ${r.project?.name ?? ""}`.trim()
+        : e.source === "page"
+          ? "page"
+          : "default (off)",
+    mode:
+      t.mode === e.mode
+        ? e.mode
+        : `${e.mode} (runs as ${t.mode}: no session to ${e.mode === "same" ? "resume" : "fork"})`,
+    session:
+      t.mode === "new" && e.mode === "new"
+        ? "new (the first run's session is kept for the next)"
+        : session,
     harness: t.harness,
     model: e.model ?? "the harness's default",
     page_setting: r.page?.state ?? "none",
-    project_setting: r.project ? `${r.project.setting?.state ?? "none"} (${r.project.name})` : "none",
-    last_run: last ? `${last.status}${last.reason ? ` (${last.reason})` : ""}, ${last.id}${last.started_at === null ? "" : `, ${shortDate(last.started_at)}`}` : "none",
-    not_in_hub: hub.artifact(id) ? undefined : "this file was never opened or checked: it has no page row yet",
+    project_setting: r.project
+      ? `${r.project.setting?.state ?? "none"} (${r.project.name})`
+      : "none",
+    last_run: last
+      ? `${last.status}${last.reason ? ` (${last.reason})` : ""}, ${last.id}${last.started_at === null ? "" : `, ${shortDate(last.started_at)}`}`
+      : "none",
+    not_in_hub: hub.artifact(id)
+      ? undefined
+      : "this file was never opened or checked: it has no page row yet",
     warnings: r.warnings.length ? r.warnings : undefined,
     next:
       e.state === "on"
@@ -2444,14 +3393,21 @@ function attachStatusOf(hub: Hub, abs: string, cfg: AdaptersConfig): Printed {
 }
 
 /** What `attach status --project` prints: the project's default for its pages. */
-function attachProjectStatus(project: ProjectRow, row: AttachSettingRow | null, cfg: AdaptersConfig): Printed {
+function attachProjectStatus(
+  project: ProjectRow,
+  row: AttachSettingRow | null,
+  cfg: AdaptersConfig,
+): Printed {
   const e = resolveSetting(null, row);
   const warnings = adapterWarnings(e, cfg);
   return {
     project: project.name,
     attach: row ? row.state : "none (pages without their own setting are off)",
     mode: e.mode,
-    session: e.session === "author" ? "author (each page's own author; none registered: a new session)" : e.session,
+    session:
+      e.session === "author"
+        ? "author (each page's own author; none registered: a new session)"
+        : e.session,
     harness: e.harness,
     model: e.model ?? "the harness's default",
     warnings: warnings.length ? warnings : undefined,
@@ -2462,14 +3418,27 @@ function attachProjectStatus(project: ProjectRow, row: AttachSettingRow | null, 
 /** `attach status [<file>|--project p]` (anywhere, read-only) and `attach on|off [<file>|--project p]`, `attach inherit <file>` (the owner's, at a terminal only, Q4). */
 async function cmdAttach(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
   const verb = sub ?? "status";
-  if (!["status", "on", "off", "inherit"].includes(verb)) return usage(`unknown attach command: ${verb}. One of: status, on, off, inherit`, "attach");
-  if (args.length > 1) return usage(`attach ${verb} takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`, "attach");
+  if (!["status", "on", "off", "inherit"].includes(verb))
+    return usage(`unknown attach command: ${verb}. One of: status, on, off, inherit`, "attach");
+  if (args.length > 1)
+    return usage(
+      `attach ${verb} takes one file at most; it got ${args.map((a) => `"${a}"`).join(" ")}`,
+      "attach",
+    );
   const file = args[0];
   const project = typeof flags.project === "string" ? flags.project : undefined;
-  if (file !== undefined && project !== undefined) return usage(`attach ${verb} takes a file or --project, not both`, "attach");
-  const given = (["mode", "session", "harness", "model"] as const).filter((k) => flags[k] !== undefined);
-  if ((verb === "status" || verb === "inherit") && given.length) return usage(`attach ${verb} takes no --${given[0]}`, "attach");
-  if (verb === "inherit" && file === undefined) return usage(`attach inherit takes a file: ${BIN} attach inherit <file> (the page goes back to its project's default)`, "attach");
+  if (file !== undefined && project !== undefined)
+    return usage(`attach ${verb} takes a file or --project, not both`, "attach");
+  const given = (["mode", "session", "harness", "model"] as const).filter(
+    (k) => flags[k] !== undefined,
+  );
+  if ((verb === "status" || verb === "inherit") && given.length)
+    return usage(`attach ${verb} takes no --${given[0]}`, "attach");
+  if (verb === "inherit" && file === undefined)
+    return usage(
+      `attach inherit takes a file: ${BIN} attach inherit <file> (the page goes back to its project's default)`,
+      "attach",
+    );
   let cfg: AdaptersConfig;
   try {
     cfg = readAdapters();
@@ -2486,33 +3455,56 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
   }
 
   const fields: AttachFields = {};
-  const value = (k: "mode" | "session" | "harness" | "model"): string | undefined => (typeof flags[k] === "string" ? flags[k] : undefined);
+  const value = (k: "mode" | "session" | "harness" | "model"): string | undefined =>
+    typeof flags[k] === "string" ? flags[k] : undefined;
   const mode = value("mode");
   if (mode !== undefined) {
-    if (!isAttachMode(mode)) return usage(`--mode is same, fork or new; it got ${JSON.stringify(mode)}`, "attach");
+    if (!isAttachMode(mode))
+      return usage(`--mode is same, fork or new; it got ${JSON.stringify(mode)}`, "attach");
     fields.mode = mode;
   }
   const session = value("session");
   if (session !== undefined) {
-    if (!session) return usage("--session is author, or a session's short or full id (see sessions list)", "attach");
+    if (!session)
+      return usage(
+        "--session is author, or a session's short or full id (see sessions list)",
+        "attach",
+      );
     fields.session = session;
   }
   const harness = value("harness");
   if (harness !== undefined) {
-    if (!isHarness(harness) && !isCommandName(harness)) return usage(`--harness is ${HARNESSES.join(", ")} or a command adapter's name; it got ${JSON.stringify(harness)}`, "attach");
+    if (!isHarness(harness) && !isCommandName(harness))
+      return usage(
+        `--harness is ${HARNESSES.join(", ")} or a command adapter's name; it got ${JSON.stringify(harness)}`,
+        "attach",
+      );
     fields.harness = harness;
   }
   const model = value("model");
   if (model !== undefined) {
-    if (/[\s\0-\x1f]/.test(model) || model.length > 200) return usage("--model is one model name, without spaces (\"\" clears it)", "attach");
+    if (/[\s\0-\x1f]/.test(model) || model.length > 200)
+      return usage('--model is one model name, without spaces ("" clears it)', "attach");
     fields.model = model || null;
   }
   // Attach decides what runs on this machine, unattended (Q4): only the user at a terminal, or the owner's review page, sets it.
   if (!process.stdin.isTTY) {
-    const words = ["attach", verb, ...(file !== undefined ? [file] : []), ...(project !== undefined ? ["--project", project] : []), ...given.flatMap((k) => [`--${k}`, String(flags[k])])];
-    return usage(`attach ${verb} needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${commandLine(words)}\` themselves, or to use the Agent pill on the page's review tab.`, "attach");
+    const words = [
+      "attach",
+      verb,
+      ...(file !== undefined ? [file] : []),
+      ...(project !== undefined ? ["--project", project] : []),
+      ...given.flatMap((k) => [`--${k}`, String(flags[k])]),
+    ];
+    return usage(
+      `attach ${verb} needs the user at a terminal and changes nothing here. Ask the user to run \`${BIN} ${commandLine(words)}\` themselves, or to use the Agent pill on the page's review tab.`,
+      "attach",
+    );
   }
-  if (fields.harness !== undefined && !adapterFor(fields.harness, cfg)) return fail(`no adapter named ${fields.harness}: set one with \`${BIN} adapter set ${fields.harness} --command "<bin> <args…>"\``);
+  if (fields.harness !== undefined && !adapterFor(fields.harness, cfg))
+    return fail(
+      `no adapter named ${fields.harness}: set one with \`${BIN} adapter set ${fields.harness} --command "<bin> <args…>"\``,
+    );
   const abs = file === undefined ? null : canonicalFile(file);
   if (abs !== null && !fs.existsSync(abs)) return fail(`no such file: ${abs}`);
   const status = verb === "inherit" ? "inherit (the project's default)" : verb;
@@ -2526,20 +3518,35 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
       });
     }
     if (abs === null && !projectId) return; // withHub has failed the command
-    const r = await request("POST", "/api/attach", { ...(abs !== null ? { file: abs } : { project: projectId }), change: { state: verb, ...fields } }, { timeoutMs: 10_000 });
-    if (r.status === 404 && /unknown route/.test(String(r.data?.error))) return fail(`the running server is older than this CLI and does not know attach: run \`${BIN} stop\`, then attach ${verb} again`);
+    const r = await request(
+      "POST",
+      "/api/attach",
+      {
+        ...(abs !== null ? { file: abs } : { project: projectId }),
+        change: { state: verb, ...fields },
+      },
+      { timeoutMs: 10_000 },
+    );
+    if (r.status === 404 && /unknown route/.test(String(r.data?.error)))
+      return fail(
+        `the running server is older than this CLI and does not know attach: run \`${BIN} stop\`, then attach ${verb} again`,
+      );
     if (r.status !== 200) return fail(r.data?.error || `attach ${verb} failed (${r.status})`);
     return withHub(false, (hub) => {
       if (abs !== null) return print({ status, ...attachStatusOf(hub, abs, cfg) });
       const p = projectScope(hub, flags);
-      print({ status: `project ${verb}`, ...attachProjectStatus(p, readSetting(hub.db, "project", p.id), cfg) });
+      print({
+        status: `project ${verb}`,
+        ...attachProjectStatus(p, readSetting(hub.db, "project", p.id), cfg),
+      });
     });
   }
   // No server: hold the state dir's lock so hub.db is not written while a server starts on it.
   const release = await lockStateDir(stateDir(), { wait: 5000 });
   try {
     await withHub(true, (hub) => {
-      if (fields.session !== undefined) fields.session = resolveSessionValue(hub.db, fields.session);
+      if (fields.session !== undefined)
+        fields.session = resolveSessionValue(hub.db, fields.session);
       if (abs === null) {
         const p = projectScope(hub, flags);
         const row = changeSetting(hub.db, { projectId: p.id }, verb as AttachState, fields, cfg);
@@ -2548,7 +3555,13 @@ async function cmdAttach(sub: string | undefined, args: string[], flags: Flags):
       const id = sessionId(abs);
       // The page row is keyed by the page (A19): a file the hub never saw gets its row first.
       if (!hub.artifact(id)) hub.register({ id, file: abs, title: null });
-      changeSetting(hub.db, { page: { artifactId: id, file: abs } }, verb as AttachState, fields, cfg);
+      changeSetting(
+        hub.db,
+        { page: { artifactId: id, file: abs } },
+        verb as AttachState,
+        fields,
+        cfg,
+      );
       print({ status, ...attachStatusOf(hub, abs, cfg) });
     });
   } finally {
@@ -2570,8 +3583,21 @@ function accessRow(a: AccessSummary): Printed {
     reaches: a.reaches,
     mode: a.auto ? "auto" : "hold",
     ...(a.claimedAt == null
-      ? { kind: a.reusable ? "old-style link: reusable, no expiry; revoke it and share again for a single-use one" : "link", created: ago(a.createdAt), expires: a.expiresAt == null ? undefined : shortDate(a.expiresAt), link: a.link }
-      : { joined: ago(a.claimedAt), seen: a.lastSeenAt == null ? undefined : ago(a.lastSeenAt), from: [a.lastAddr, a.lastHost && `(${a.lastHost})`].filter(Boolean).join(" ") || undefined, tailscale: a.verifiedLogin ?? undefined }),
+      ? {
+          kind: a.reusable
+            ? "old-style link: reusable, no expiry; revoke it and share again for a single-use one"
+            : "link",
+          created: ago(a.createdAt),
+          expires: a.expiresAt == null ? undefined : shortDate(a.expiresAt),
+          link: a.link,
+        }
+      : {
+          joined: ago(a.claimedAt),
+          seen: a.lastSeenAt == null ? undefined : ago(a.lastSeenAt),
+          from:
+            [a.lastAddr, a.lastHost && `(${a.lastHost})`].filter(Boolean).join(" ") || undefined,
+          tailscale: a.verifiedLogin ?? undefined,
+        }),
   };
 }
 
@@ -2580,12 +3606,19 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
   if (sub === "list") {
     const withLinks = Boolean(flags.links);
     await ensureServer();
-    const r = await request<ShareListResponse>("GET", `/api/share/list${withLinks ? "?links=1" : ""}`);
+    const r = await request<ShareListResponse>(
+      "GET",
+      `/api/share/list${withLinks ? "?links=1" : ""}`,
+    );
     if (r.status !== 200) return fail(r.data?.error || `share list failed (${r.status})`);
     const { links, devices } = r.data;
     // A server from before devices (kept running by its supervisor) answers with `invites`.
-    if (!Array.isArray(links) || !Array.isArray(devices)) return fail(`the running server is older than this CLI and does not list links or devices: run \`${BIN} stop\` (or restart its service), then share list again`);
-    if (!links.length && !devices.length) return print({ links: "none", devices: "none", next: `${BIN} share <file> --as "<name>"` });
+    if (!Array.isArray(links) || !Array.isArray(devices))
+      return fail(
+        `the running server is older than this CLI and does not list links or devices: run \`${BIN} stop\` (or restart its service), then share list again`,
+      );
+    if (!links.length && !devices.length)
+      return print({ links: "none", devices: "none", next: `${BIN} share <file> --as "<name>"` });
     return print({
       links: links.length ? links.map(accessRow) : "none waiting",
       devices: devices.length ? devices.map(accessRow) : "none",
@@ -2593,17 +3626,42 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
     });
   }
   if (sub === "requests") return shareRequests(more, flags);
-  if (flags.auto && flags.hold) return usage("--auto and --hold exclude each other: pick one", "share");
+  if (flags.auto && flags.hold)
+    return usage("--auto and --hold exclude each other: pick one", "share");
   if (sub === "default") return shareDefault(more);
   if (sub === "approve" || sub === "deny" || sub === "block") {
     const [rid] = more;
-    if (!rid) return usage(`${sub} needs a request id: ${BIN} share ${sub} <id> (see ${BIN} share requests)`, "share");
-    if (sub === "approve" && flags.project !== undefined && flags.all) return usage("--project and --all exclude each other: pick one scope", "share");
-    if (sub === "approve" && flags.as !== undefined && (typeof flags.as !== "string" || !flags.as.trim())) return usage(`--as needs a name: ${BIN} share approve ${rid} --as "<name>"`, "share");
+    if (!rid)
+      return usage(
+        `${sub} needs a request id: ${BIN} share ${sub} <id> (see ${BIN} share requests)`,
+        "share",
+      );
+    if (sub === "approve" && flags.project !== undefined && flags.all)
+      return usage("--project and --all exclude each other: pick one scope", "share");
+    if (
+      sub === "approve" &&
+      flags.as !== undefined &&
+      (typeof flags.as !== "string" || !flags.as.trim())
+    )
+      return usage(`--as needs a name: ${BIN} share approve ${rid} --as "<name>"`, "share");
     await ensureServer();
     // A folder names the project whose root holds it; the server has no working directory to resolve it against.
-    const project = typeof flags.project === "string" ? (fs.existsSync(flags.project) ? path.resolve(flags.project) : flags.project) : undefined;
-    const body = sub === "approve" ? { id: rid, scope: flags.all ? "all" : flags.project !== undefined ? "project" : "page", project, auto: notesMode(flags), name: flags.as } : { id: rid };
+    const project =
+      typeof flags.project === "string"
+        ? fs.existsSync(flags.project)
+          ? path.resolve(flags.project)
+          : flags.project
+        : undefined;
+    const body =
+      sub === "approve"
+        ? {
+            id: rid,
+            scope: flags.all ? "all" : flags.project !== undefined ? "project" : "page",
+            project,
+            auto: notesMode(flags),
+            name: flags.as,
+          }
+        : { id: rid };
     const r = await request<RequestDecisionResponse>("POST", `/api/share/${sub}`, body);
     if (r.status !== 200) return fail(r.data?.error || `${sub} failed (${r.status})`);
     const { request: q, device } = r.data;
@@ -2613,29 +3671,64 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
         reviewer: device.name,
         id: device.id,
         reaches: device.reaches,
-        mode: device.auto ? "auto: their notes go straight to the agent" : "hold: their notes wait until the owner sends them on",
+        mode: device.auto
+          ? "auto: their notes go straight to the agent"
+          : "hold: their notes wait until the owner sends them on",
         note: "The browser that asked opens the page by itself; no other browser can use this approval.",
         next: `${BIN} share revoke ${device.id} cuts it off.`,
       });
     }
-    return print({ status: q.status, request: `${q.name} (${q.id})`, note: q.status === "blocked" ? "That browser can no longer ask." : "That browser may ask again.", next: `${BIN} share requests lists who else waits.` });
+    return print({
+      status: q.status,
+      request: `${q.name} (${q.id})`,
+      note:
+        q.status === "blocked" ? "That browser can no longer ask." : "That browser may ask again.",
+      next: `${BIN} share requests lists who else waits.`,
+    });
   }
   if (sub === "tailscale") {
     const [login, file] = more;
-    if (!login) return usage(`tailscale needs a login, as Tailscale shows it: ${BIN} share tailscale <login> [<file>] [--project <p> | --all]`, "share");
-    if (flags.project !== undefined && flags.all) return usage("--project and --all exclude each other: pick one scope", "share");
-    if (flags.as !== undefined && (typeof flags.as !== "string" || !flags.as.trim())) return usage(`--as needs a name: ${BIN} share tailscale ${login} --as "<name>"`, "share");
-    if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project)) return usage(`--project needs a project: ${BIN} share tailscale ${login} --project <name>`, "share");
+    if (!login)
+      return usage(
+        `tailscale needs a login, as Tailscale shows it: ${BIN} share tailscale <login> [<file>] [--project <p> | --all]`,
+        "share",
+      );
+    if (flags.project !== undefined && flags.all)
+      return usage("--project and --all exclude each other: pick one scope", "share");
+    if (flags.as !== undefined && (typeof flags.as !== "string" || !flags.as.trim()))
+      return usage(`--as needs a name: ${BIN} share tailscale ${login} --as "<name>"`, "share");
+    if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project))
+      return usage(
+        `--project needs a project: ${BIN} share tailscale ${login} --project <name>`,
+        "share",
+      );
     let abs: string | null = null;
     if (file !== undefined) {
       abs = needFile(file, "share");
       if (!abs) return;
-    } else if (!flags.all && flags.project === undefined) return usage(`say what ${login} reaches: a page (${BIN} share tailscale ${login} <file>), --project <p>, or --all`, "share");
+    } else if (!flags.all && flags.project === undefined)
+      return usage(
+        `say what ${login} reaches: a page (${BIN} share tailscale ${login} <file>), --project <p>, or --all`,
+        "share",
+      );
     await ensureServer();
     // A folder names the project whose root holds it; the server has no working directory to resolve it against.
-    const project = typeof flags.project === "string" ? (fs.existsSync(flags.project) ? path.resolve(flags.project) : flags.project) : undefined;
+    const project =
+      typeof flags.project === "string"
+        ? fs.existsSync(flags.project)
+          ? path.resolve(flags.project)
+          : flags.project
+        : undefined;
     const scope = flags.all ? "all" : flags.project !== undefined ? "project" : "page";
-    const r = await request<AccessSummary>("POST", "/api/share/tailscale", { login, file: abs, name: flags.as, scope, project, auto: notesMode(flags), cwd: process.cwd() });
+    const r = await request<AccessSummary>("POST", "/api/share/tailscale", {
+      login,
+      file: abs,
+      name: flags.as,
+      scope,
+      project,
+      auto: notesMode(flags),
+      cwd: process.cwd(),
+    });
     if (r.status !== 200) return fail(r.data?.error || `share tailscale failed (${r.status})`);
     const d = r.data;
     return print({
@@ -2643,25 +3736,41 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
       reviewer: d.name,
       tailscale: d.verifiedLogin ?? login,
       reaches: d.reaches,
-      mode: d.auto ? "auto: their notes go straight to the agent" : "hold: their notes wait until the owner sends them on",
+      mode: d.auto
+        ? "auto: their notes go straight to the agent"
+        : "hold: their notes wait until the owner sends them on",
       note: `Any device signed in to Tailscale as ${login} opens the pages this reaches, over this computer's Tailscale address, with no link: Tailscale vouches for the login. Not on this computer, the local network or HTTPS.`,
       next: `${BIN} share revoke ${d.id} cuts it off.`,
     });
   }
   if (sub === "revoke") {
     const key = more.join(" ");
-    if (!key) return usage(`revoke needs a name or id: ${BIN} share revoke <name|id> (see ${BIN} share list)`, "share");
+    if (!key)
+      return usage(
+        `revoke needs a name or id: ${BIN} share revoke <name|id> (see ${BIN} share list)`,
+        "share",
+      );
     await ensureServer();
     const r = await request<RevokeResponse>("POST", "/api/share/revoke", { key });
     if (r.status !== 200) return fail(r.data?.error || `revoke failed (${r.status})`);
-    return print({ status: "revoked", revoked: r.data.revoked.map((i) => `${i.name} (${i.kind} ${i.id})`), note: "Their link and open pages stop working at once." });
+    return print({
+      status: "revoked",
+      revoked: r.data.revoked.map((i) => `${i.name} (${i.kind} ${i.id})`),
+      note: "Their link and open pages stop working at once.",
+    });
   }
   // share <file> --as "<name>" [--project <p> | --all] [--auto] [--expires <dur>]
   const abs = needFile(sub, "share");
   if (!abs) return;
-  if (typeof flags.as !== "string" || !flags.as.trim()) return usage(`share needs a reviewer name: ${BIN} share ${quote(sub)} --as "<name>"`, "share");
-  if (flags.project !== undefined && flags.all) return usage("--project and --all exclude each other: pick one scope", "share");
-  if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project)) return usage(`--project needs the page's project: ${BIN} share ${quote(sub)} --as "<name>" --project <name>`, "share");
+  if (typeof flags.as !== "string" || !flags.as.trim())
+    return usage(`share needs a reviewer name: ${BIN} share ${quote(sub)} --as "<name>"`, "share");
+  if (flags.project !== undefined && flags.all)
+    return usage("--project and --all exclude each other: pick one scope", "share");
+  if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project))
+    return usage(
+      `--project needs the page's project: ${BIN} share ${quote(sub)} --as "<name>" --project <name>`,
+      "share",
+    );
   let expiresAt: number | undefined;
   if (flags.expires !== undefined) {
     try {
@@ -2672,14 +3781,24 @@ async function cmdShare(args: string[], flags: Flags): Promise<void> {
   }
   const scope = flags.all ? "all" : flags.project !== undefined ? "project" : "page";
   await ensureServer();
-  const r = await request<ShareResponse>("POST", "/api/share", { file: abs, name: flags.as, auto: notesMode(flags), scope, project: flags.project, expiresAt, cwd: process.cwd() });
+  const r = await request<ShareResponse>("POST", "/api/share", {
+    file: abs,
+    name: flags.as,
+    auto: notesMode(flags),
+    scope,
+    project: flags.project,
+    expiresAt,
+    cwd: process.cwd(),
+  });
   if (r.status !== 200) return fail(r.data?.error || `share failed (${r.status})`);
   const d = r.data;
   print({
     status: "shared",
     reviewer: d.name,
     reaches: d.reaches,
-    mode: d.auto ? "auto: their notes go straight to the agent" : "hold: their notes wait until the owner sends them on",
+    mode: d.auto
+      ? "auto: their notes go straight to the agent"
+      : "hold: their notes wait until the owner sends them on",
     link: d.link,
     expires: `${shortDate(d.expiresAt)} if nobody opens it`,
     note: `The first browser that opens this link becomes ${d.name}'s device, and the link stops working. Send it only to ${d.name}.`,
@@ -2695,52 +3814,94 @@ function notesMode(flags: Flags): boolean | undefined {
 /** `share default [hold|auto]`: where a new reviewer's notes go unless a share says (Settings → Review defaults in the hub). */
 async function shareDefault(args: string[]): Promise<void> {
   const [mode] = args;
-  if (mode !== undefined && mode !== "hold" && mode !== "auto") return usage(`share default takes hold or auto: ${BIN} share default [hold|auto]`, "share");
+  if (mode !== undefined && mode !== "hold" && mode !== "auto")
+    return usage(`share default takes hold or auto: ${BIN} share default [hold|auto]`, "share");
   await ensureServer();
-  const r = mode === undefined ? await request<{ auto: boolean }>("GET", "/api/share/default") : await request<{ auto: boolean }>("POST", "/api/share/default", { auto: mode === "auto" });
+  const r =
+    mode === undefined
+      ? await request<{ auto: boolean }>("GET", "/api/share/default")
+      : await request<{ auto: boolean }>("POST", "/api/share/default", { auto: mode === "auto" });
   // An older server does not know the route.
-  if (r.status === 404) return fail(`the running server is older than this CLI and does not know share default: run \`${BIN} stop\` (or restart its service), then try again`);
+  if (r.status === 404)
+    return fail(
+      `the running server is older than this CLI and does not know share default: run \`${BIN} stop\` (or restart its service), then try again`,
+    );
   if (r.status !== 200) return fail(r.data?.error || `share default failed (${r.status})`);
   print({
     status: mode === undefined ? undefined : "saved",
-    default: r.data.auto ? "auto: a new reviewer's notes go straight to the agent" : "hold: a new reviewer's notes wait until the owner sends them on",
+    default: r.data.auto
+      ? "auto: a new reviewer's notes go straight to the agent"
+      : "hold: a new reviewer's notes wait until the owner sends them on",
     note: "A share or an approval with --auto or --hold says for itself. Reviewers you let in already keep their own.",
   });
 }
 
 /** One row of `share requests`. */
 function requestRow(q: AccessRequestSummary): Printed {
-  const tailscale = q.verifiedLogin ? `${q.verifiedLogin}${q.tailscaleDevice ? ` on ${q.tailscaleDevice}` : ""} (verified by Tailscale)` : undefined;
-  return { name: q.name, id: q.id, asked: shortDate(q.createdAt), page: q.file ?? q.page, from: [q.addr, q.host && `(${q.host})`].filter(Boolean).join(" ") || undefined, browser: q.browser, tailscale };
+  const tailscale = q.verifiedLogin
+    ? `${q.verifiedLogin}${q.tailscaleDevice ? ` on ${q.tailscaleDevice}` : ""} (verified by Tailscale)`
+    : undefined;
+  return {
+    name: q.name,
+    id: q.id,
+    asked: shortDate(q.createdAt),
+    page: q.file ?? q.page,
+    from: [q.addr, q.host && `(${q.host})`].filter(Boolean).join(" ") || undefined,
+    browser: q.browser,
+    tailscale,
+  };
 }
 
 /** `share requests` lists who waits; `share requests on|off [--project <p>]` turns requests on or off. */
 async function shareRequests(args: string[], flags: Flags): Promise<void> {
   const [mode] = args;
-  if (mode !== undefined && mode !== "on" && mode !== "off") return usage(`share requests takes on or off: ${BIN} share requests [on|off] [--project <p>]`, "share");
-  if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project)) return usage(`--project needs a project: ${BIN} share requests ${mode ?? "on"} --project <name>`, "share");
+  if (mode !== undefined && mode !== "on" && mode !== "off")
+    return usage(
+      `share requests takes on or off: ${BIN} share requests [on|off] [--project <p>]`,
+      "share",
+    );
+  if (flags.project !== undefined && (typeof flags.project !== "string" || !flags.project))
+    return usage(
+      `--project needs a project: ${BIN} share requests ${mode ?? "on"} --project <name>`,
+      "share",
+    );
   await ensureServer();
   // A project's own setting wins over the one for every page.
   const where = (s: RequestSwitchResponse): string => {
     const differ = s.projects.filter((p) => p.on !== s.all).map((p) => `project ${p.name}`);
-    if (s.all) return differ.length ? `on for every page except ${differ.join(", ")}` : "on for every page";
+    if (s.all)
+      return differ.length ? `on for every page except ${differ.join(", ")}` : "on for every page";
     return differ.length ? `on for ${differ.join(", ")} only` : "off";
   };
   if (mode) {
     // A folder names the project whose root holds it; the server has no working directory to resolve it against.
-    const project = typeof flags.project === "string" ? (fs.existsSync(flags.project) ? path.resolve(flags.project) : flags.project) : undefined;
-    const r = await request<RequestSwitchResponse>("POST", "/api/share/requests", { on: mode === "on", project });
+    const project =
+      typeof flags.project === "string"
+        ? fs.existsSync(flags.project)
+          ? path.resolve(flags.project)
+          : flags.project
+        : undefined;
+    const r = await request<RequestSwitchResponse>("POST", "/api/share/requests", {
+      on: mode === "on",
+      project,
+    });
     if (r.status !== 200) return fail(r.data?.error || `share requests failed (${r.status})`);
     return print({
       status: "saved",
       requests: where(r.data),
-      note: mode === "on" ? "A browser without a link that opens a page's address can now type a name and ask; it gets in only once you approve it." : undefined,
+      note:
+        mode === "on"
+          ? "A browser without a link that opens a page's address can now type a name and ask; it gets in only once you approve it."
+          : undefined,
       next: `${BIN} share requests lists who waits.`,
     });
   }
   const r = await request<AccessRequestsResponse>("GET", "/api/share/requests");
   if (r.status !== 200) return fail(r.data?.error || `share requests failed (${r.status})`);
-  if (!Array.isArray(r.data.waiting)) return fail(`the running server is older than this CLI and has no requests: run \`${BIN} stop\` (or restart its service), then try again`);
+  if (!Array.isArray(r.data.waiting))
+    return fail(
+      `the running server is older than this CLI and has no requests: run \`${BIN} stop\` (or restart its service), then try again`,
+    );
   const { waiting, blocked } = r.data;
   return print({
     requests: where(r.data.switch),
@@ -2759,7 +3920,11 @@ async function shareRequests(args: string[], flags: Flags): Promise<void> {
 /** A cloud command's failure: the service's status and code, and `cloud login` as the next step when this machine is not signed in. */
 function cloudFail(caught: unknown): void {
   const err = caught as { message: string; status?: number; code?: string };
-  fail(err.message, { http: err.status, code: err.code, next: err.code === cloud.LOGIN_REQUIRED ? `${BIN} cloud login` : undefined });
+  fail(err.message, {
+    http: err.status,
+    code: err.code,
+    next: err.code === cloud.LOGIN_REQUIRED ? `${BIN} cloud login` : undefined,
+  });
 }
 
 /** `publish`: the one command that talks to the hosted service. */
@@ -2770,24 +3935,50 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
       const pages = await cloud.listPages();
       if (!pages.length) return print({ pages: "none", next: `${BIN} publish <file>` });
       return print({
-        pages: pages.map((p) => ({ id: p.id, title: p.title, file: p.file, url: p.url, expires: shortDate(p.expiresAt), notes: p.notes })),
+        pages: pages.map((p) => ({
+          id: p.id,
+          title: p.title,
+          file: p.file,
+          url: p.url,
+          expires: shortDate(p.expiresAt),
+          notes: p.notes,
+        })),
         next: `${BIN} publish rm <file|id> deletes one now.`,
       });
     }
     if (sub === "rm") {
       const key = more.join(" ");
-      if (!key) return usage(`rm needs a file or page id: ${BIN} publish rm <file|id> (see ${BIN} publish list)`, "publish");
+      if (!key)
+        return usage(
+          `rm needs a file or page id: ${BIN} publish rm <file|id> (see ${BIN} publish list)`,
+          "publish",
+        );
       const asFile = canonicalFile(key);
       const r = await cloud.removePage(cloud.readCloud().pages[asFile] ? asFile : key);
-      return print({ status: "removed", id: r.id, file: r.file, note: r.gone ? "It was already gone from the service (expired or deleted)." : "The link stops working at once." });
+      return print({
+        status: "removed",
+        id: r.id,
+        file: r.file,
+        note: r.gone
+          ? "It was already gone from the service (expired or deleted)."
+          : "The link stops working at once.",
+      });
     }
     if (sub === "invites" || sub === "revoke" || sub === "login") {
       const [file, ...name] = more;
-      if (!file) return usage(`${sub} needs a file: ${BIN} publish ${sub} <file>${sub === "revoke" ? " <name>" : ""}`, "publish");
+      if (!file)
+        return usage(
+          `${sub} needs a file: ${BIN} publish ${sub} <file>${sub === "revoke" ? " <name>" : ""}`,
+          "publish",
+        );
       // The saved page entry is enough: the source may have been moved or deleted since it was published.
       const abs = canonicalFile(file);
       if (sub === "login") {
-        if (name.length) return usage(`login takes one file; it got ${more.map((a) => `"${a}"`).join(" ")}`, "publish");
+        if (name.length)
+          return usage(
+            `login takes one file; it got ${more.map((a) => `"${a}"`).join(" ")}`,
+            "publish",
+          );
         const r = await cloud.ownerLogin(abs);
         return print({
           id: r.id,
@@ -2797,9 +3988,18 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
         });
       }
       if (sub === "revoke") {
-        if (!name.length) return usage(`revoke needs an invite name: ${BIN} publish revoke <file> <name> (see ${BIN} publish invites <file>)`, "publish");
+        if (!name.length)
+          return usage(
+            `revoke needs an invite name: ${BIN} publish revoke <file> <name> (see ${BIN} publish invites <file>)`,
+            "publish",
+          );
         const r = await cloud.revokeInvite(abs, name.join(" "));
-        return print({ status: "revoked", invite: r.name, id: r.id, note: "That link stops working now, and any page open with it is disconnected." });
+        return print({
+          status: "revoked",
+          invite: r.name,
+          id: r.id,
+          note: "That link stops working now, and any page open with it is disconnected.",
+        });
       }
       const r = await cloud.listInvites(abs);
       // A publish sets auto, unlisted and presence every time: the suggested commands repeat the page's current ones.
@@ -2813,7 +4013,9 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
               status: i.status,
               link: i.link,
               expires: i.expiresAt === null ? undefined : shortDate(i.expiresAt),
-              note: i.replaced ? `granted again from another machine, which has the link; ${again} --invite ${quote(i.name)} makes this machine's link the live one again (the other machine's stops)` : undefined,
+              note: i.replaced
+                ? `granted again from another machine, which has the link; ${again} --invite ${quote(i.name)} makes this machine's link the live one again (the other machine's stops)`
+                : undefined,
             }))
           : "none",
         next: `${again} --invite <name> adds one; ${BIN} publish revoke ${quote(file)} <name> revokes one.`,
@@ -2840,13 +4042,19 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
     // Without a server, the state dir's lock (which an offline `attach on` takes too) spans the check
     // and the publish, so no `attach on` passes its own --auto check in between (it reads cloud.json,
     // which the publish writes last).
-    const release = flags.auto && !(await serverIfRunning()) ? await lockStateDir(stateDir(), { wait: 5000 }) : null;
+    const release =
+      flags.auto && !(await serverIfRunning())
+        ? await lockStateDir(stateDir(), { wait: 5000 })
+        : null;
     let r: cloud.Published;
     try {
       if (flags.auto) {
         const on = await attachOn();
         if (on === null) return;
-        if (on) return fail(`attach is on for ${abs}: --auto would let reviewers' notes start the attached agent without you. Run \`${BIN} attach off ${quote(sub)}\` first, or publish without --auto.`);
+        if (on)
+          return fail(
+            `attach is on for ${abs}: --auto would let reviewers' notes start the attached agent without you. Run \`${BIN} attach off ${quote(sub)}\` first, or publish without --auto.`,
+          );
       }
       r = await cloud.publish(abs, {
         auto: !!flags.auto,
@@ -2862,7 +4070,9 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
     // A running server takes `attach on` itself, so no lock spans it: one that came in during the
     // publish is reported. Runs refuse the page meanwhile (auto_conflict), so no note starts the agent.
     if (r.auto && release === null && (await attachOn())) {
-      return fail(`${abs} is published with --auto, but attach was turned on for it meanwhile; runs refuse the page (auto_conflict) until \`${BIN} attach off ${quote(sub)}\`, or \`${BIN} publish ${quote(sub)}\` without --auto.`);
+      return fail(
+        `${abs} is published with --auto, but attach was turned on for it meanwhile; runs refuse the page (auto_conflict) until \`${BIN} attach off ${quote(sub)}\`, or \`${BIN} publish ${quote(sub)}\` without --auto.`,
+      );
     }
     // Unknown (the rows did not arrive) is not "nobody": warn only when the service showed no live invite.
     const nobody = !r.unlisted && !r.invites.length && r.otherInvites === 0;
@@ -2873,7 +4083,13 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
       id: r.id,
       url: r.unlisted ? r.url : undefined,
       access: r.unlisted ? "unlisted: anyone with the url may review" : "invite-only",
-      invites: r.invites.length ? r.invites.map((i) => ({ name: i.name, link: i.link, expires: i.expiresAt === null ? undefined : shortDate(i.expiresAt) })) : undefined,
+      invites: r.invites.length
+        ? r.invites.map((i) => ({
+            name: i.name,
+            link: i.link,
+            expires: i.expiresAt === null ? undefined : shortDate(i.expiresAt),
+          }))
+        : undefined,
       mode: r.auto ? "auto" : "hold",
       presence: r.presence ? undefined : "off",
       expires: r.expiresAt === null ? undefined : shortDate(r.expiresAt),
@@ -2892,8 +4108,16 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
 /** `cloud on|off|status|login|logout|whoami`: the cloud switch, and the hosted service's account on this machine. */
 async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> {
   const subs = ["on", "off", "status", "login", "logout", "whoami"];
-  if (!sub || !subs.includes(sub)) return usage(`cloud needs on, off, status, login, logout or whoami${sub ? `, not ${sub}` : ""}`, "cloud");
-  if (rest.length) return usage(`cloud ${sub} takes no arguments; it got ${rest.map((a) => `"${a}"`).join(" ")}`, "cloud");
+  if (!sub || !subs.includes(sub))
+    return usage(
+      `cloud needs on, off, status, login, logout or whoami${sub ? `, not ${sub}` : ""}`,
+      "cloud",
+    );
+  if (rest.length)
+    return usage(
+      `cloud ${sub} takes no arguments; it got ${rest.map((a) => `"${a}"`).join(" ")}`,
+      "cloud",
+    );
   if (sub === "on" || sub === "off" || sub === "status") return cloudSwitch(sub);
   try {
     if (sub === "logout") {
@@ -2901,20 +4125,35 @@ async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> 
       return print({
         status: was ? "signed out" : "not signed in",
         account: was ?? undefined,
-        note: was ? "This machine forgot the account. Your hosted pages stay; `cloud login` brings them back." : undefined,
+        note: was
+          ? "This machine forgot the account. Your hosted pages stay; `cloud login` brings them back."
+          : undefined,
       });
     }
     if (sub === "whoami") {
       const me = await cloud.whoami();
       if (!me) return print({ status: "not signed in", next: `${BIN} cloud login` });
-      return print({ status: "signed in", email: me.email, name: me.name || undefined, pages: me.pages, service: cloud.cloudUrl() });
+      return print({
+        status: "signed in",
+        email: me.email,
+        name: me.name || undefined,
+        pages: me.pages,
+        service: cloud.cloudUrl(),
+      });
     }
     const r = await cloud.login(async (p) => {
       // Always print the link: on a headless or remote machine the browser opens nowhere useful (RLM-431).
       const minutes = Math.round(p.expiresIn / 60);
-      const lines = [`Sign in at ${p.verificationUriComplete} (code ${p.userCode}, works for ${minutes} minute${minutes === 1 ? "" : "s"}); any device works.`];
-      if (p.verificationUriComplete !== p.verificationUri) lines.push(`Or open ${p.verificationUri} and enter the code ${p.userCode}.`);
-      const browser = browserDisabled() ? "AUSTERE_AXI_NO_OPEN is set: no browser was started." : openUrl(p.verificationUriComplete) ? "Opened your browser." : "Could not start a browser.";
+      const lines = [
+        `Sign in at ${p.verificationUriComplete} (code ${p.userCode}, works for ${minutes} minute${minutes === 1 ? "" : "s"}); any device works.`,
+      ];
+      if (p.verificationUriComplete !== p.verificationUri)
+        lines.push(`Or open ${p.verificationUri} and enter the code ${p.userCode}.`);
+      const browser = browserDisabled()
+        ? "AUSTERE_AXI_NO_OPEN is set: no browser was started."
+        : openUrl(p.verificationUriComplete)
+          ? "Opened your browser."
+          : "Could not start a browser.";
       lines.push(`${browser} Check that the page shows the code ${p.userCode}.`);
       process.stderr.write(lines.map((l) => `[${BIN}] ${l}\n`).join(""));
     });
@@ -2936,9 +4175,15 @@ async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> 
 /** `cloud on|off|status`: the switch of Settings → Cloud, through the server so its sync follows at once. */
 async function cloudSwitch(sub: "on" | "off" | "status"): Promise<void> {
   await ensureServer();
-  const r = sub === "status" ? await request<CloudSettings>("GET", "/api/settings/cloud") : await request<CloudSettings>("POST", "/api/settings/cloud", { on: sub === "on" });
+  const r =
+    sub === "status"
+      ? await request<CloudSettings>("GET", "/api/settings/cloud")
+      : await request<CloudSettings>("POST", "/api/settings/cloud", { on: sub === "on" });
   // An older server does not know the route.
-  if (r.status === 404) return fail(`the running server is older than this CLI and does not know cloud ${sub}: run \`${BIN} stop\` (or restart its service), then try again`);
+  if (r.status === 404)
+    return fail(
+      `the running server is older than this CLI and does not know cloud ${sub}: run \`${BIN} stop\` (or restart its service), then try again`,
+    );
   if (r.status !== 200) return fail(r.data?.error || `cloud ${sub} failed (${r.status})`);
   const c = r.data;
   print({
@@ -2959,13 +4204,24 @@ async function cloudSwitch(sub: "on" | "off" | "status"): Promise<void> {
 /** `clone [<id> [<file>]]`: list the owner's hosted pages, or bring one down as a local, attached file. */
 async function cmdClone(args: string[]): Promise<void> {
   const [id, file, ...more] = args;
-  if (more.length) return usage(`clone takes an id and a file; it got ${args.map((a) => `"${a}"`).join(" ")}`, "clone");
+  if (more.length)
+    return usage(
+      `clone takes an id and a file; it got ${args.map((a) => `"${a}"`).join(" ")}`,
+      "clone",
+    );
   try {
     if (!id) {
       const pages = await cloud.listPages();
       if (!pages.length) return print({ pages: "none", next: `${BIN} publish <file>` });
       return print({
-        pages: pages.map((p) => ({ id: p.id, title: p.title, file: p.file, url: p.url, expires: shortDate(p.expiresAt), notes: p.notes })),
+        pages: pages.map((p) => ({
+          id: p.id,
+          title: p.title,
+          file: p.file,
+          url: p.url,
+          expires: shortDate(p.expiresAt),
+          notes: p.notes,
+        })),
         next: `${BIN} clone <id> [<file>] brings a page without a file here down to this machine.`,
       });
     }
@@ -2998,11 +4254,17 @@ async function cmdStop(): Promise<void> {
   // stop returns when the process is gone, so the next command has the state dir to itself.
   // A server from before the proof has no proven pid: it is not waited for.
   const pid = h.legacy ? 0 : h.pid;
-  for (const deadline = Date.now() + STOP_WAIT_MS; pid && processAlive(pid) && Date.now() < deadline; ) await sleep(50);
+  for (
+    const deadline = Date.now() + STOP_WAIT_MS;
+    pid && processAlive(pid) && Date.now() < deadline;
+  )
+    await sleep(50);
   print({
     status: pid && processAlive(pid) ? "stopping" : "stopped",
     port,
-    note: h.supervised ? `It runs under ${h.supervised}; the next command that needs a server starts the service again. \`${BIN} server uninstall\` takes the service away for good.` : undefined,
+    note: h.supervised
+      ? `It runs under ${h.supervised}; the next command that needs a server starts the service again. \`${BIN} server uninstall\` takes the service away for good.`
+      : undefined,
   });
 }
 
@@ -3036,32 +4298,73 @@ async function cmdLogin(file: string | undefined): Promise<void> {
 
 async function cmdServer(sub: string | undefined, rest: string[], flags: Flags): Promise<void> {
   const p = flags.port ? Number(flags.port) : undefined;
-  if (p !== undefined && !(Number.isInteger(p) && p > 0 && p < 65536)) return usage(`--port must be a port number: ${flags.port}`, "server");
+  if (p !== undefined && !(Number.isInteger(p) && p > 0 && p < 65536))
+    return usage(`--port must be a port number: ${flags.port}`, "server");
   if (sub === undefined) {
-    if (flags["link-url"] !== undefined) return usage("--link-url is for `server install`; a foreground server reads AUSTERE_AXI_LINK_URL", "server");
+    if (flags["link-url"] !== undefined)
+      return usage(
+        "--link-url is for `server install`; a foreground server reads AUSTERE_AXI_LINK_URL",
+        "server",
+      );
     // A foreground server and an installed service want the same port and the same state
     // dir: the service would restart in a loop while this one holds them.
-    const installed = installedServiceFor(serviceContext(probePort), stateDir(), p ?? commandPort());
+    const installed = installedServiceFor(
+      serviceContext(probePort),
+      stateDir(),
+      p ?? commandPort(),
+    );
     if (installed) {
-      process.stderr.write(`a service for this state dir is installed (${installed.file}); it will keep restarting while this server holds the port. Stop it with \`${BIN} server uninstall\`, or run this server on another port.\n`);
+      process.stderr.write(
+        `a service for this state dir is installed (${installed.file}); it will keep restarting while this server holds the port. Stop it with \`${BIN} server uninstall\`, or run this server on another port.\n`,
+      );
     }
     const { runServer } = await import("./server.ts");
-    return void (await runServer({ port: p ?? commandPort(), verbose: !!flags.verbose, alsoListen: flags["also-listen"] || [], persist: !!flags.persist }));
+    return void (await runServer({
+      port: p ?? commandPort(),
+      verbose: !!flags.verbose,
+      alsoListen: flags["also-listen"] || [],
+      persist: !!flags.persist,
+    }));
   }
   if (sub === "lan") {
-    if (rest.length > 2 || Object.keys(flags).length) return usage(`server lan takes one address or off: ${BIN} server lan [<address>|off]`, "server");
+    if (rest.length > 2 || Object.keys(flags).length)
+      return usage(
+        `server lan takes one address or off: ${BIN} server lan [<address>|off]`,
+        "server",
+      );
     return serverLan(rest[1]);
   }
-  if (!["install", "uninstall", "status", "restart"].includes(sub)) return usage(`unknown server subcommand: ${sub}. One of: install uninstall status restart lan`, "server");
-  if (rest.length > 1) return usage(`server ${sub} takes no arguments; it got ${rest.slice(1).map((a) => `"${a}"`).join(" ")}`, "server");
-  const allowed = sub === "install" ? ["port", "link-url", "adopt", "force"] : sub === "uninstall" ? ["force"] : sub === "restart" ? [] : ["port"];
+  if (!["install", "uninstall", "status", "restart"].includes(sub))
+    return usage(
+      `unknown server subcommand: ${sub}. One of: install uninstall status restart lan`,
+      "server",
+    );
+  if (rest.length > 1)
+    return usage(
+      `server ${sub} takes no arguments; it got ${rest
+        .slice(1)
+        .map((a) => `"${a}"`)
+        .join(" ")}`,
+      "server",
+    );
+  const allowed =
+    sub === "install"
+      ? ["port", "link-url", "adopt", "force"]
+      : sub === "uninstall"
+        ? ["force"]
+        : sub === "restart"
+          ? []
+          : ["port"];
   const extra = Object.keys(flags).filter((k) => !allowed.includes(k));
-  if (extra.length) return usage(`server ${sub} does not take ${extra.map((k) => `--${k}`).join(" ")}`, "server");
+  if (extra.length)
+    return usage(`server ${sub} does not take ${extra.map((k) => `--${k}`).join(" ")}`, "server");
   const ctx = serviceContext(probePort, confirm);
   try {
     if (sub === "install") {
       const linkUrl = typeof flags["link-url"] === "string" ? flags["link-url"] : undefined;
-      return print(await installService({ port: p, linkUrl, adopt: !!flags.adopt, force: !!flags.force }, ctx));
+      return print(
+        await installService({ port: p, linkUrl, adopt: !!flags.adopt, force: !!flags.force }, ctx),
+      );
     }
     if (sub === "uninstall") return print(uninstallService(ctx, { force: !!flags.force }));
     if (sub === "restart") {
@@ -3072,14 +4375,26 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
         status: before ? "restarted" : "started",
         server: `v${h.version}, pid ${h.pid}, port ${h.port}, ${h.supervised ? `run by ${h.unit ?? h.supervised}` : "not run by a service"}`,
         was: before ? `v${before.version}, pid ${before.pid}` : "not running",
-        note: h.supervised ? undefined : `No service runs it: it stops after 30 idle minutes unless it was started with --persist, and the next command that needs a server starts one. \`${BIN} server install\` keeps one running.`,
+        note: h.supervised
+          ? undefined
+          : `No service runs it: it stops after 30 idle minutes unless it was started with --persist, and the next command that needs a server starts one. \`${BIN} server install\` keeps one running.`,
       });
     }
     const h = await health(p ?? commandPort());
     const running = h && !h.foreign && !h.legacy ? h : null;
     // A server from before 0.12 does not say a unit runs it; the system does.
     const unit = running ? serverUnit(running.pid) : null;
-    return print(serviceStatus(ctx, running && { ...running, supervised: running.supervised ?? unit?.supervisor, unit: unit?.unit ?? running.unit }, VERSION));
+    return print(
+      serviceStatus(
+        ctx,
+        running && {
+          ...running,
+          supervised: running.supervised ?? unit?.supervisor,
+          unit: unit?.unit ?? running.unit,
+        },
+        VERSION,
+      ),
+    );
   } catch (err) {
     return fail(messageOf(err));
   }
@@ -3088,18 +4403,34 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
 /** `server lan [<address>|off]`: Settings → Network → Local network, at a terminal (RLM-399). */
 async function serverLan(arg: string | undefined): Promise<void> {
   await ensureServer();
-  const r = arg === undefined ? await request<LocalNetwork>("GET", "/api/settings/lan") : await request<LocalNetwork>("POST", "/api/settings/lan", { lan: arg === "off" ? null : arg });
+  const r =
+    arg === undefined
+      ? await request<LocalNetwork>("GET", "/api/settings/lan")
+      : await request<LocalNetwork>("POST", "/api/settings/lan", {
+          lan: arg === "off" ? null : arg,
+        });
   if (r.status !== 200) return fail(r.data?.error || `server lan failed (${r.status})`);
-  if (!Array.isArray(r.data.choices)) return fail(`the running server is older than this CLI and has no local-network switch: run \`${BIN} stop\` (or restart its service), then try again`);
+  if (!Array.isArray(r.data.choices))
+    return fail(
+      `the running server is older than this CLI and has no local-network switch: run \`${BIN} stop\` (or restart its service), then try again`,
+    );
   const d = r.data;
   return print({
     status: arg === undefined ? undefined : "saved",
-    lan: !d.address ? "off" : d.listening ? `on: reviewers reach this server at ${d.url}` : `on for ${d.address}, but this computer does not have that address now; the server listens there once it does and restarts`,
-    addresses: d.choices.length ? d.choices.map((c) => `${c.address} (${c.iface})`) : "none: this computer is on no local network",
+    lan: !d.address
+      ? "off"
+      : d.listening
+        ? `on: reviewers reach this server at ${d.url}`
+        : `on for ${d.address}, but this computer does not have that address now; the server listens there once it does and restarts`,
+    addresses: d.choices.length
+      ? d.choices.map((c) => `${c.address} (${c.iface})`)
+      : "none: this computer is on no local network",
     note: d.address
       ? "Reviewers only: the owner never signs in on this address. Traffic on this network is not encrypted. Others on the same network could read pages, notes and reviewers' access. Use it on a network you trust, or use Tailscale or HTTPS."
       : undefined,
-    next: d.address ? `${BIN} server lan off stops.` : `${BIN} server lan <address> listens on one of these, for reviewers only.`,
+    next: d.address
+      ? `${BIN} server lan off stops.`
+      : `${BIN} server lan <address> listens on one of these, for reviewers only.`,
   });
 }
 
@@ -3109,12 +4440,15 @@ const MIN_NODE = [22, 18];
 async function main(): Promise<unknown> {
   const [major, minor] = process.versions.node.split(".").map(Number);
   if (major < MIN_NODE[0] || (major === MIN_NODE[0] && minor < MIN_NODE[1])) {
-    return fail(`austere-axi needs Node ${MIN_NODE.join(".")} or newer; this is ${process.versions.node}. Install a current Node LTS.`);
+    return fail(
+      `austere-axi needs Node ${MIN_NODE.join(".")} or newer; this is ${process.versions.node}. Install a current Node LTS.`,
+    );
   }
   const { flags, pos, error } = parseArgs(process.argv.slice(2));
   if (flags.version) return process.stdout.write(VERSION + "\n");
   const [cmd, ...rest] = pos;
-  if (cmd !== undefined && Object.hasOwn(REMOVED_COMMANDS, cmd)) return removed(`${BIN} ${cmd}`, REMOVED_COMMANDS[cmd]);
+  if (cmd !== undefined && Object.hasOwn(REMOVED_COMMANDS, cmd))
+    return removed(`${BIN} ${cmd}`, REMOVED_COMMANDS[cmd]);
   const gone = Object.keys(flags).find((k) => Object.hasOwn(REMOVED_FLAGS, k));
   if (gone) return removed(`--${gone}`, REMOVED_FLAGS[gone]);
   // The state dir decides what help shows (publish and clone only when signed in), so it is set first.
@@ -3126,17 +4460,30 @@ async function main(): Promise<unknown> {
     if (Object.hasOwn(COMMANDS, cmd)) name = cmd;
     else if (/\.html?$/i.test(cmd) || fs.existsSync(cmd)) name = "open";
     else if (flags.help) return process.stdout.write(help());
-    else return usage(`unknown command: ${cmd}. One of: ${shownCommands().map(([n]) => n).join(" ")}, or a page file`);
+    else
+      return usage(
+        `unknown command: ${cmd}. One of: ${shownCommands()
+          .map(([n]) => n)
+          .join(" ")}, or a page file`,
+      );
   }
   if (flags.help) return name && name !== "help" ? commandHelp(name) : process.stdout.write(help());
   if (error) return usage(error, name);
   const allowed = name ? Object.keys(COMMANDS[name].flags) : [];
   const unknown = Object.keys(flags).filter((k) => !allowed.includes(k));
   if (unknown.length) {
-    const valid = allowed.length ? `valid: ${allowed.map((k) => `--${k}`).join(" ")}` : "it takes no flags";
+    const valid = allowed.length
+      ? `valid: ${allowed.map((k) => `--${k}`).join(" ")}`
+      : "it takes no flags";
     // A page id that starts with "--" and is not a full id still reads as a flag: name the way out.
-    const idHint = name === "publish" && pos[1] === "rm" ? `. A page id that starts with -- goes after --: ${BIN} publish rm -- <id>` : "";
-    return usage(`unknown flag${unknown.length > 1 ? "s" : ""} for ${name ?? BIN}: ${unknown.map((k) => `--${k}`).join(" ")}; ${valid}${idHint}`, name);
+    const idHint =
+      name === "publish" && pos[1] === "rm"
+        ? `. A page id that starts with -- goes after --: ${BIN} publish rm -- <id>`
+        : "";
+    return usage(
+      `unknown flag${unknown.length > 1 ? "s" : ""} for ${name ?? BIN}: ${unknown.map((k) => `--${k}`).join(" ")}; ${valid}${idHint}`,
+      name,
+    );
   }
   // A caller's `<harness>:<id>`; attach's --session is its own selector (author, a short or full id).
   if (typeof flags.session === "string" && name && COMMANDS[name].flags.session === SESSION_FLAG) {
@@ -3224,7 +4571,13 @@ async function main(): Promise<unknown> {
     case "help":
       if (!rest[0]) return process.stdout.write(help());
       if (rest[0] === "all") return process.stdout.write(help() + helpAll());
-      if (!Object.hasOwn(COMMANDS, rest[0])) return usage(`no command named ${rest[0]}. One of: all ${shownCommands().map(([n]) => n).join(" ")}`, "help");
+      if (!Object.hasOwn(COMMANDS, rest[0]))
+        return usage(
+          `no command named ${rest[0]}. One of: all ${shownCommands()
+            .map(([n]) => n)
+            .join(" ")}`,
+          "help",
+        );
       return commandHelp(rest[0]);
     default:
       return cmdOpen(cmd, flags);

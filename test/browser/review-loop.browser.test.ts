@@ -17,7 +17,13 @@ import { launchBrowser } from "../../scripts/lib/browser.ts";
 import { CDN_RUNTIME_URL } from "../../src/cli/artifact.ts";
 import { ownerKey } from "../../src/cli/invites.ts";
 import { ownerHeaders } from "../owner.ts";
-import { ROOT, examplePage, htmlPage, loadLibrary, type LoadedLibrary } from "../../scripts/lib/plugins.ts";
+import {
+  ROOT,
+  examplePage,
+  htmlPage,
+  loadLibrary,
+  type LoadedLibrary,
+} from "../../scripts/lib/plugins.ts";
 
 const VIEWPORTS = [
   { name: "desktop", width: 1280, height: 900 },
@@ -72,7 +78,13 @@ function api(route: string, body: unknown): Promise<ApiReply> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const r = http.request(
-      { host: "127.0.0.1", port, method: "POST", path: route, headers: { "content-type": "application/json", "x-austere-key": KEY } },
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: route,
+        headers: { "content-type": "application/json", "x-austere-key": KEY },
+      },
       (res) => {
         let data = "";
         res.on("data", (c) => (data += c));
@@ -87,11 +99,17 @@ function api(route: string, body: unknown): Promise<ApiReply> {
 /** Pages to check: galleries of custom component examples and stress examples, plus every example page. */
 function pages() {
   const gallery = path.join(WORK, "gallery.html");
-  fs.writeFileSync(gallery, htmlPage("Gallery", examplePage(lib.CUSTOM_COMPONENTS), CDN_RUNTIME_URL));
+  fs.writeFileSync(
+    gallery,
+    htmlPage("Gallery", examplePage(lib.CUSTOM_COMPONENTS), CDN_RUNTIME_URL),
+  );
   const list = [{ name: "gallery", file: gallery }];
   if (lib.CUSTOM_COMPONENTS.some((c) => c.stress)) {
     const stress = path.join(WORK, "stress.html");
-    fs.writeFileSync(stress, htmlPage("Stress", examplePage(lib.CUSTOM_COMPONENTS, "stress"), CDN_RUNTIME_URL));
+    fs.writeFileSync(
+      stress,
+      htmlPage("Stress", examplePage(lib.CUSTOM_COMPONENTS, "stress"), CDN_RUNTIME_URL),
+    );
     list.push({ name: "stress", file: stress });
   }
   for (const f of fs.readdirSync(path.join(ROOT, "examples")).filter((x) => x.endsWith(".html"))) {
@@ -105,7 +123,9 @@ function pages() {
 
 async function openReview(file: string, viewport: { width: number; height: number }) {
   const { session } = await api("/api/open", { file });
-  const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
+  const context = await browser.newContext({
+    viewport: { width: viewport.width, height: viewport.height },
+  });
   const page = await context.newPage();
   const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
@@ -137,11 +157,21 @@ before(async () => {
   }
   browser = launched.browser;
   port = await freePort();
-  server = spawn(process.execPath, [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)], {
-    // A quiet agent turns stale after 2 s here, not 10 min, so the phone test can see it.
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, AUSTERE_AXI_NO_TAILSCALE: "1", OPENUI_TELEMETRY_DISABLED: "1", AUSTERE_AXI_STALE_WORKING_MS: "2000" },
-    stdio: "ignore",
-  });
+  server = spawn(
+    process.execPath,
+    [path.join(ROOT, "src/cli/main.ts"), "server", "--port", String(port)],
+    {
+      // A quiet agent turns stale after 2 s here, not 10 min, so the phone test can see it.
+      env: {
+        ...process.env,
+        AUSTERE_AXI_STATE_DIR: STATE,
+        AUSTERE_AXI_NO_TAILSCALE: "1",
+        OPENUI_TELEMETRY_DISABLED: "1",
+        AUSTERE_AXI_STALE_WORKING_MS: "2000",
+      },
+      stdio: "ignore",
+    },
+  );
   for (let i = 0; i < 100; i++) {
     try {
       await new Promise<void>((resolve, reject) => {
@@ -179,7 +209,9 @@ describe("renders cleanly", () => {
         try {
           const state = await frame.evaluate(() => ({
             overflow: document.documentElement.scrollWidth - window.innerWidth,
-            renderErrors: Array.from(document.querySelectorAll(".austere-render-error")).map((e) => (e.textContent as string).trim()),
+            renderErrors: Array.from(document.querySelectorAll(".austere-render-error")).map((e) =>
+              (e.textContent as string).trim(),
+            ),
             statements: document.querySelectorAll("[data-oui-id]").length,
           }));
           const issues = await page.locator(".issues").allInnerTexts();
@@ -215,7 +247,10 @@ test("every component part is annotatable end to end", async (t) => {
       }
       const out: { id: string; part: string }[] = [];
       for (const [id, parts] of by) {
-        const idx = [...new Set([0, Math.floor((parts.length - 1) / 2), parts.length - 1])].slice(0, max);
+        const idx = [...new Set([0, Math.floor((parts.length - 1) / 2), parts.length - 1])].slice(
+          0,
+          max,
+        );
         for (const i of idx) out.push({ id, part: parts[i] });
       }
       return out;
@@ -233,13 +268,16 @@ test("every component part is annotatable end to end", async (t) => {
       for (const program of c.example || []) {
         // value-only parts have none: their container's example shows them
         const first = (program.match(/^\s*([A-Za-z_]\w*)\s*=/m) as RegExpMatchArray)[1];
-        if (!withParts.has(first)) t.diagnostic(`${c.name} (${first}) has no data-austere-part targets`);
+        if (!withParts.has(first))
+          t.diagnostic(`${c.name} (${first}) has no data-austere-part targets`);
       }
     }
     assert.ok(targets.length > 0, "no data-austere-part targets found");
 
     for (const { id, part } of targets) {
-      const loc = frame.locator(`[data-oui-id="${id}"] [data-austere-part="${part.replace(/"/g, '\\"')}"]`).first();
+      const loc = frame
+        .locator(`[data-oui-id="${id}"] [data-austere-part="${part.replace(/"/g, '\\"')}"]`)
+        .first();
       // An SVG stroke (a diagram edge) is not hit at its bounding-box centre:
       // find a point on the stroke that nothing covers, and click exactly there.
       const point = await loc.evaluate((el: SVGGeometryElement) => {
@@ -254,7 +292,9 @@ test("every component part is annotatable end to end", async (t) => {
         return null;
       });
       if (point) {
-        const origin = await (await frame.frameElement()).evaluate((f: HTMLIFrameElement) => {
+        const origin = await (
+          await frame.frameElement()
+        ).evaluate((f: HTMLIFrameElement) => {
           const r = f.getBoundingClientRect();
           return { x: r.left + f.clientLeft, y: r.top + f.clientTop };
         });
@@ -276,10 +316,16 @@ test("every component part is annotatable end to end", async (t) => {
     const res = await api("/api/poll", { file: gallery.file, timeoutMs: 5000 });
     assert.equal(res.status, "feedback", `poll returned ${res.status}`);
     for (const { id, part } of targets) {
-      const hit = res.items.find((i) => i.kind === "annotation" && i.note === `check ${id}: ${part}`);
+      const hit = res.items.find(
+        (i) => i.kind === "annotation" && i.note === `check ${id}: ${part}`,
+      );
       assert.ok(hit, `part "${part}" in ${id} never reached poll`);
       assert.equal(hit.target, id, `part "${part}" was addressed to ${hit.target}, expected ${id}`);
-      assert.equal(hit.detail?.part, part, `part "${part}" in ${id} arrived as ${JSON.stringify(hit.detail)}`);
+      assert.equal(
+        hit.detail?.part,
+        part,
+        `part "${part}" in ${id} arrived as ${JSON.stringify(hit.detail)}`,
+      );
     }
     assert.deepEqual(problems, [], "browser errors");
   } finally {
@@ -304,17 +350,27 @@ test("a page using an installed pack renders it, warns about third-party code, a
   const file = path.join(WORK, "with-pack.html");
   fs.writeFileSync(
     file,
-    htmlPage("With a pack", 'root = Stack([c])\nc = Card([CardHeader("Launch"), launch])\nlaunch = Milestones(["Mon | Freeze | branch cut", "Fri | GA"])', CDN_RUNTIME_URL),
+    htmlPage(
+      "With a pack",
+      'root = Stack([c])\nc = Card([CardHeader("Launch"), launch])\nlaunch = Milestones(["Mon | Freeze | branch cut", "Fri | GA"])',
+      CDN_RUNTIME_URL,
+    ),
   );
   cli("check", "--fix", file);
   const { context, page, frame, problems } = await openReview(file, VIEWPORTS[1]);
   try {
     await frame.waitForSelector(".pack-milestones li", { timeout: 10_000 });
-    assert.match((await page.locator(".notice").textContent()) as string, /Third-party pack code runs in this page: check queued items before you send \(austere-pack-milestones@0\.1\.0\)/);
+    assert.match(
+      (await page.locator(".notice").textContent()) as string,
+      /Third-party pack code runs in this page: check queued items before you send \(austere-pack-milestones@0\.1\.0\)/,
+    );
     await frame.locator('[data-austere-part="GA"]').click();
     await frame.locator(".austere-pop textarea").fill("move GA");
     await frame.locator(".austere-pop textarea").press("Enter");
-    await page.locator(".dock").click().catch(() => {});
+    await page
+      .locator(".dock")
+      .click()
+      .catch(() => {});
     await page.locator(".composer .send").click();
     const res = await api("/api/poll", { file, timeoutMs: 5000 });
     const hit = res.items?.find((i) => i.note === "move GA");
@@ -340,12 +396,23 @@ test("a diagram copied from another page with patch --from renders, and each of 
   const source = path.join(WORK, "copy-source.html");
   fs.copyFileSync(path.join(ROOT, "examples", "session-migration.html"), source);
   const file = path.join(WORK, "copy-target.html");
-  fs.writeFileSync(file, htmlPage("Copy target", 'root = Stack([intro])\nintro = TextContent("a page of its own")', CDN_RUNTIME_URL));
-  const patched = spawnSync(process.execPath, [path.join(ROOT, "src/cli/main.ts"), "patch", file, "--from", `${source}#flowDiagram`], {
-    env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, OPENUI_TELEMETRY_DISABLED: "1" },
-    input: 'root = Stack([intro, flowDiagram])',
-    encoding: "utf8",
-  });
+  fs.writeFileSync(
+    file,
+    htmlPage(
+      "Copy target",
+      'root = Stack([intro])\nintro = TextContent("a page of its own")',
+      CDN_RUNTIME_URL,
+    ),
+  );
+  const patched = spawnSync(
+    process.execPath,
+    [path.join(ROOT, "src/cli/main.ts"), "patch", file, "--from", `${source}#flowDiagram`],
+    {
+      env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, OPENUI_TELEMETRY_DISABLED: "1" },
+      input: "root = Stack([intro, flowDiagram])",
+      encoding: "utf8",
+    },
+  );
   assert.equal(patched.status, 0, patched.stdout + patched.stderr);
   assert.match(run("check", file), /status: ok/);
   const { context, page, frame, problems } = await openReview(file, VIEWPORTS[0]);
@@ -361,7 +428,12 @@ test("a diagram copied from another page with patch --from renders, and each of 
     }
     await page.locator(".composer .send").click();
     const res = await api("/api/poll", { file, timeoutMs: 5000 });
-    for (const id of nodes) assert.equal(res.items.find((i) => i.note === `check node ${id}`)?.target, id, `node ${id} reached poll addressed to itself`);
+    for (const id of nodes)
+      assert.equal(
+        res.items.find((i) => i.note === `check node ${id}`)?.target,
+        id,
+        `node ${id} reached poll addressed to itself`,
+      );
     assert.deepEqual(problems, [], "browser errors");
   } finally {
     await context.close();
@@ -389,7 +461,9 @@ test("one press of a Form's button sends every answer, pre-selected ones the rev
     await page.locator(".composer .send").click();
     const res = await api("/api/poll", { file, timeoutMs: 5000 });
     const action = res.items.find((i) => i.kind === "action");
-    assert.deepEqual(action?.form, { answers: { db: "pg", plan: "b", checks: { lint: true, fuzz: false }, size: [3] } });
+    assert.deepEqual(action?.form, {
+      answers: { db: "pg", plan: "b", checks: { lint: true, fuzz: false }, size: [3] },
+    });
     assert.deepEqual(problems, [], "browser errors");
   } finally {
     await context.close();
@@ -399,16 +473,27 @@ test("one press of a Form's button sends every answer, pre-selected ones the rev
 test("with no agent listening the reviewer can still send; Send & finish and Done mark the batch final; only archiving locks the composer", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "archive-lock.html");
-  fs.writeFileSync(file, htmlPage("Archive lock", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  fs.writeFileSync(
+    file,
+    htmlPage(
+      "Archive lock",
+      'root = Stack([intro])\nintro = TextContent("hello")',
+      CDN_RUNTIME_URL,
+    ),
+  );
   const { context, page, problems } = await openReview(file, VIEWPORTS[0]);
-  const finalLine = "You told the agent this was your last note. Notes you add later wait until an agent checks.";
+  const finalLine =
+    "You told the agent this was your last note. Notes you add later wait until an agent checks.";
   try {
     await page.waitForSelector(".presence:has-text('Agent not listening')");
     assert.equal(await page.locator(".composer textarea").isDisabled(), false);
     await page.fill(".composer textarea", "one more thing");
     await page.click(".composer .send");
     await page.waitForSelector(".presence:has-text('1 not answered yet')");
-    assert.equal(await page.locator(".receipt em").textContent(), "waiting for the agent (1 not answered yet)");
+    assert.equal(
+      await page.locator(".receipt em").textContent(),
+      "waiting for the agent (1 not answered yet)",
+    );
     const res = await api("/api/poll", { file, timeoutMs: 5000 });
     assert.equal(res.status, "feedback");
     assert.equal(res.items[0].text, "one more thing");
@@ -432,7 +517,11 @@ test("with no agent listening the reviewer can still send; Send & finish and Don
     assert.equal(empty.final, true);
     assert.deepEqual(empty.items, []);
     await page.waitForFunction(() => document.querySelectorAll(".final-note").length === 2);
-    assert.equal(await page.locator(".log .msg.user").count(), 2, "Done adds the line only, no empty note");
+    assert.equal(
+      await page.locator(".log .msg.user").count(),
+      2,
+      "Done adds the line only, no empty note",
+    );
     assert.equal(await done.isDisabled(), true, "Done once is enough");
 
     // A later note is still accepted.
@@ -440,7 +529,10 @@ test("with no agent listening the reviewer can still send; Send & finish and Don
     assert.equal(await done.isDisabled(), false);
     await page.click(".composer .send");
     const later = await api("/api/poll", { file, cursor: empty.cursor, timeoutMs: 5000 });
-    assert.deepEqual(later.items.map((i) => i.text), ["after all, one more"]);
+    assert.deepEqual(
+      later.items.map((i) => i.text),
+      ["after all, one more"],
+    );
     assert.equal(later.final, undefined);
 
     await page.click(".menu-btn");
@@ -455,7 +547,10 @@ test("with no agent listening the reviewer can still send; Send & finish and Don
     assert.equal(await page.locator(".archived-note").count(), 1);
     // The frame is in Explore, and the switch shows it: Annotate is off and cannot be picked.
     assert.equal(await page.locator('.seg [data-mode="annotate"]').isDisabled(), true);
-    assert.match(String(await page.locator('.seg [data-mode="explore"]').getAttribute("class")), /\bon\b/);
+    assert.match(
+      String(await page.locator('.seg [data-mode="explore"]').getAttribute("class")),
+      /\bon\b/,
+    );
 
     await page.click(".menu-btn");
     await page.click('[data-cmd="unarchive"]');
@@ -488,7 +583,13 @@ function twoCopies(dir: string, name: string, program: string): { main: string; 
 function sendNote(id: string, text: string): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
     const r = http.request(
-      { host: "127.0.0.1", port, method: "POST", path: `/s/${id}/send`, headers: { "content-type": "application/json", ...ownerHeaders(STATE) } },
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: `/s/${id}/send`,
+        headers: { "content-type": "application/json", ...ownerHeaders(STATE) },
+      },
       (res) => {
         res.resume();
         res.on("end", () => resolve(res.statusCode));
@@ -502,12 +603,18 @@ function sendNote(id: string, text: string): Promise<number | undefined> {
 test("a page with two copies: the dialog names this copy, its unanswered notes and the copy that stays; every copy archives both; errors show", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(WORK, "copies-")));
-  const { main, feat } = twoCopies(dir, "plan.html", 'root = Stack([intro])\nintro = TextContent("hello")');
+  const { main, feat } = twoCopies(
+    dir,
+    "plan.html",
+    'root = Stack([intro])\nintro = TextContent("hello")',
+  );
   const a = (await api("/api/open", { file: main })).session.id;
   const b = (await api("/api/open", { file: feat })).session.id;
   for (const text of ["one", "two", "three"]) assert.equal(await sendNote(a, text), 200);
   assert.equal(await sendNote(b, "on feat"), 200);
-  const archived = async (file: string) => ((await api("/api/open", { file })) as ApiReply & { session: { archived: boolean } }).session.archived;
+  const archived = async (file: string) =>
+    ((await api("/api/open", { file })) as ApiReply & { session: { archived: boolean } }).session
+      .archived;
 
   for (const viewport of VIEWPORTS) {
     const { context, page, problems } = await openReview(main, viewport);
@@ -518,17 +625,32 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
         await page.waitForSelector("dialog.confirm[open]");
       };
       // The composer locks when the page is archived (at 390 px the presence label is not shown).
-      const locked = (on: boolean) => page.waitForFunction((on) => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.disabled === on, on);
+      const locked = (on: boolean) =>
+        page.waitForFunction(
+          (on) =>
+            document.querySelector<HTMLTextAreaElement>(".composer textarea")?.disabled === on,
+          on,
+        );
       await ask();
       const dialog = page.locator("dialog.confirm");
       assert.equal(await dialog.locator("h2").textContent(), "Archive this copy (main)?");
       const text = String(await dialog.textContent());
-      assert.match(text, /3 unanswered notes go with it: they are kept, but leave the hub's counts\./);
+      assert.match(
+        text,
+        /3 unanswered notes go with it: they are kept, but leave the hub's counts\./,
+      );
       assert.match(text, /This copy stays open:/);
       assert.equal(await dialog.locator("li").textContent(), "feat · 1 unanswered note");
-      assert.equal(await dialog.locator("li").getAttribute("title"), feat, "the full path is a hover away");
+      assert.equal(
+        await dialog.locator("li").getAttribute("title"),
+        feat,
+        "the full path is a hover away",
+      );
       const box = await dialog.boundingBox();
-      assert.ok(box && box.x >= 0 && box.x + box.width <= viewport.width, `the dialog fits at ${viewport.width} px`);
+      assert.ok(
+        box && box.x >= 0 && box.x + box.width <= viewport.width,
+        `the dialog fits at ${viewport.width} px`,
+      );
 
       // Cancel archives nothing; Escape neither.
       await dialog.locator("button", { hasText: "Cancel" }).click();
@@ -546,7 +668,13 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
       assert.equal(await archived(feat), false, "the copy in the other worktree stays open");
 
       // A failed unarchive says why instead of doing nothing.
-      await page.route("**/unarchive", (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "disk full" }) }));
+      await page.route("**/unarchive", (route) =>
+        route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "disk full" }),
+        }),
+      );
       await page.click(".menu-btn");
       await page.click('[data-cmd="unarchive"]');
       await page.waitForSelector(".banner:has-text('Could not unarchive this page: disk full')");
@@ -554,7 +682,11 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
       await page.click(".menu-btn");
       await page.click('[data-cmd="unarchive"]');
       await locked(false);
-      assert.equal(await page.locator(".banner:has-text('Could not unarchive')").count(), 0, "a later success clears the error");
+      assert.equal(
+        await page.locator(".banner:has-text('Could not unarchive')").count(),
+        0,
+        "a later success clears the error",
+      );
 
       // Every copy.
       await ask();
@@ -566,12 +698,22 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
       await page.click(".menu-btn");
       await page.click('[data-cmd="unarchive"]');
       await locked(false);
-      await page.route("**/archive", (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not in the hub" }) }));
+      await page.route("**/archive", (route) =>
+        route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "not in the hub" }),
+        }),
+      );
       await page.click(".menu-btn");
       await page.click('[data-cmd="archive"]');
       await page.waitForSelector(".banner:has-text('Could not archive this page: not in the hub')");
       await page.unroute("**/archive");
-      assert.deepEqual(problems.filter((p) => !/status of 40[04]|status of 500/.test(p)), [], "browser errors");
+      assert.deepEqual(
+        problems.filter((p) => !/status of 40[04]|status of 500/.test(p)),
+        [],
+        "browser errors",
+      );
     } finally {
       await context.close();
     }
@@ -583,7 +725,10 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
 test("on a phone the dock says what the agent does; with nobody listening the composer says what Send does and the owner can copy the agent prompt", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "presence-phone.html");
-  fs.writeFileSync(file, htmlPage("Presence", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  fs.writeFileSync(
+    file,
+    htmlPage("Presence", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL),
+  );
   const { context, page, problems } = await openReview(file, VIEWPORTS[1]);
   try {
     const dock = page.locator(".dock .dock-presence");
@@ -591,11 +736,18 @@ test("on a phone the dock says what the agent does; with nobody listening the co
     await page.locator(".dock").click();
     const line = page.locator(".composer-presence");
     await line.waitFor({ state: "visible" });
-    assert.equal(await line.locator("span").textContent(), "Saved. The agent gets them the next time it checks.");
-    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${port}` });
+    assert.equal(
+      await line.locator("span").textContent(),
+      "Saved. The agent gets them the next time it checks.",
+    );
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: `http://127.0.0.1:${port}`,
+    });
     await line.locator(".copy-prompt").click();
     await page.waitForSelector(".banner:not([hidden])");
-    assert.ok((await page.evaluate(() => navigator.clipboard.readText())).includes(`File: ${file}`));
+    assert.ok(
+      (await page.evaluate(() => navigator.clipboard.readText())).includes(`File: ${file}`),
+    );
 
     await page.fill(".composer textarea", "tighten the intro");
     await page.click(".composer .send");
@@ -605,8 +757,14 @@ test("on a phone the dock says what the agent does; with nobody listening the co
     // The poll that took the notes is gone and never replies: working, then stale.
     await page.waitForSelector(".dock .dock-presence:has-text('Agent working')");
     assert.equal(await line.isVisible(), false, "an agent has the notes: no not-listening line");
-    await page.waitForSelector(".dock .dock-presence:has-text('Took your notes, no reply yet')", { timeout: 15_000 });
-    assert.equal(await dock.evaluate((el) => el.scrollWidth <= el.clientWidth), true, "the stale label fits the dock at 390 px");
+    await page.waitForSelector(".dock .dock-presence:has-text('Took your notes, no reply yet')", {
+      timeout: 15_000,
+    });
+    assert.equal(
+      await dock.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      true,
+      "the stale label fits the dock at 390 px",
+    );
 
     await api("/api/reply", { file, text: "done", cursor: res.cursor });
     await page.waitForSelector(".dock .dock-presence:has-text('Agent not listening')");
@@ -619,10 +777,19 @@ test("on a phone the dock says what the agent does; with nobody listening the co
 test("Copy agent prompt under the composer asks again after the prompt could not be fetched", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "prompt-retry.html");
-  fs.writeFileSync(file, htmlPage("Prompt retry", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  fs.writeFileSync(
+    file,
+    htmlPage(
+      "Prompt retry",
+      'root = Stack([intro])\nintro = TextContent("hello")',
+      CDN_RUNTIME_URL,
+    ),
+  );
   const { context, page } = await openReview(file, VIEWPORTS[0]);
   try {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${port}` });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: `http://127.0.0.1:${port}`,
+    });
     // Opening the menu fetches the prompt again; here the service does not answer.
     await page.route("**/agent-prompt", (route) => route.abort());
     await page.click(".menu-btn");
@@ -632,7 +799,9 @@ test("Copy agent prompt under the composer asks again after the prompt could not
     await page.unroute("**/agent-prompt");
     await page.locator(".composer-presence .copy-prompt").click();
     await page.waitForSelector(".banner:has-text('Agent prompt copied.')");
-    assert.ok((await page.evaluate(() => navigator.clipboard.readText())).includes(`File: ${file}`));
+    assert.ok(
+      (await page.evaluate(() => navigator.clipboard.readText())).includes(`File: ${file}`),
+    );
   } finally {
     await context.close();
   }
@@ -641,36 +810,74 @@ test("Copy agent prompt under the composer asks again after the prompt could not
 test("Explore hides the conversation and gives the page the full width; Annotate brings it back", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "explore-panel.html");
-  fs.writeFileSync(file, htmlPage("Explore panel", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  fs.writeFileSync(
+    file,
+    htmlPage(
+      "Explore panel",
+      'root = Stack([intro])\nintro = TextContent("hello")',
+      CDN_RUNTIME_URL,
+    ),
+  );
   for (const viewport of VIEWPORTS) {
     const { context, page, problems } = await openReview(file, viewport);
     const conversation = viewport.width > 860 ? ".panel" : ".dock";
-    const frameWidth = () => page.locator("iframe.frame").evaluate((el) => el.getBoundingClientRect().width);
+    const frameWidth = () =>
+      page.locator("iframe.frame").evaluate((el) => el.getBoundingClientRect().width);
     try {
       await page.click('.seg button[data-mode="annotate"]');
-      assert.equal(await page.locator(conversation).isVisible(), true, `${viewport.name}: conversation shown in Annotate`);
+      assert.equal(
+        await page.locator(conversation).isVisible(),
+        true,
+        `${viewport.name}: conversation shown in Annotate`,
+      );
       const annotateWidth = await frameWidth();
 
       await page.click('.seg button[data-mode="explore"]');
-      assert.equal(await page.locator(".panel").isVisible(), false, `${viewport.name}: panel hidden in Explore`);
-      assert.equal(await page.locator(".dock").isVisible(), false, `${viewport.name}: dock hidden in Explore`);
-      assert.equal(await frameWidth(), viewport.width, `${viewport.name}: page takes the full width in Explore`);
+      assert.equal(
+        await page.locator(".panel").isVisible(),
+        false,
+        `${viewport.name}: panel hidden in Explore`,
+      );
+      assert.equal(
+        await page.locator(".dock").isVisible(),
+        false,
+        `${viewport.name}: dock hidden in Explore`,
+      );
+      assert.equal(
+        await frameWidth(),
+        viewport.width,
+        `${viewport.name}: page takes the full width in Explore`,
+      );
 
       // The mode is remembered, and the panel stays hidden after a reload.
       await page.reload();
       await page.waitForSelector("iframe.frame");
-      assert.equal(await page.locator(".panel").isVisible(), false, `${viewport.name}: panel hidden after reload in Explore`);
+      assert.equal(
+        await page.locator(".panel").isVisible(),
+        false,
+        `${viewport.name}: panel hidden after reload in Explore`,
+      );
 
       // Replies that arrive while the conversation is hidden: Annotate shows the latest one.
       const last = `reply ${viewport.name} 24`;
-      for (let i = 0; i < 25; i++) await api("/api/reply", { file, text: `reply ${viewport.name} ${i}\n${"line\n".repeat(4)}` });
+      for (let i = 0; i < 25; i++)
+        await api("/api/reply", {
+          file,
+          text: `reply ${viewport.name} ${i}\n${"line\n".repeat(4)}`,
+        });
       await page.waitForSelector(`.log :text("${last}")`, { state: "attached" });
 
       await page.keyboard.press("ControlOrMeta+i");
       await page.waitForSelector(`${conversation}:visible`);
-      assert.equal(await frameWidth(), annotateWidth, `${viewport.name}: layout restored in Annotate`);
+      assert.equal(
+        await frameWidth(),
+        annotateWidth,
+        `${viewport.name}: layout restored in Annotate`,
+      );
       if (viewport.width > 860) {
-        const gap = await page.locator(".log").evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+        const gap = await page
+          .locator(".log")
+          .evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
         assert.ok(gap < 2, `${viewport.name}: log scrolled to the latest reply (gap ${gap}px)`);
       }
       assert.deepEqual(problems, [], "browser errors");
@@ -683,9 +890,17 @@ test("Explore hides the conversation and gives the page the full width; Annotate
 test("the queue numbers its notes and brings a new one into view; the Agent panel takes what it covers out of the tab order; the mode buttons say which is on", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "queue-panel.html");
-  fs.writeFileSync(file, htmlPage("Queue panel", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL));
+  fs.writeFileSync(
+    file,
+    htmlPage("Queue panel", 'root = Stack([intro])\nintro = TextContent("hello")', CDN_RUNTIME_URL),
+  );
   const { context, page, frame, problems } = await openReview(file, { width: 1280, height: 640 });
-  const pressed = () => page.locator(".seg [data-mode]").evaluateAll((els) => els.map((el) => `${(el as HTMLElement).dataset.mode}:${el.getAttribute("aria-pressed")}`));
+  const pressed = () =>
+    page
+      .locator(".seg [data-mode]")
+      .evaluateAll((els) =>
+        els.map((el) => `${(el as HTMLElement).dataset.mode}:${el.getAttribute("aria-pressed")}`),
+      );
   const list = page.locator(".queue-list");
   const numbers = () => list.locator(".q-num").allInnerTexts();
   try {
@@ -694,13 +909,26 @@ test("the queue numbers its notes and brings a new one into view; the Agent pane
       await frame.locator('[data-oui-id="intro"]').click();
       await frame.fill(".austere-pop textarea", `note ${i}\n${"line\n".repeat(3)}`);
       await frame.click('.austere-pop [data-act="queue"]');
-      await page.waitForFunction((n) => document.querySelectorAll(".queue-list .q-item").length === n, i);
+      await page.waitForFunction(
+        (n) => document.querySelectorAll(".queue-list .q-item").length === n,
+        i,
+      );
     }
     assert.equal(await page.locator(".queue-title").textContent(), "Ready to send · 6");
     assert.deepEqual(await numbers(), ["1", "2", "3", "4", "5", "6"]);
-    assert.deepEqual(await list.locator(".q-edit").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label"))), [1, 2, 3, 4, 5, 6].map((n) => `Edit note ${n}`));
+    assert.deepEqual(
+      await list
+        .locator(".q-edit")
+        .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label"))),
+      [1, 2, 3, 4, 5, 6].map((n) => `Edit note ${n}`),
+    );
     // The list scrolls by itself: the note just added is the one in view.
-    const scroll = () => list.evaluate((el) => ({ over: el.scrollHeight - el.clientHeight, gap: el.scrollHeight - el.scrollTop - el.clientHeight, top: el.scrollTop }));
+    const scroll = () =>
+      list.evaluate((el) => ({
+        over: el.scrollHeight - el.clientHeight,
+        gap: el.scrollHeight - el.scrollTop - el.clientHeight,
+        top: el.scrollTop,
+      }));
     const full = await scroll();
     assert.ok(full.over > 0, "six notes are more than the list shows at once");
     assert.ok(full.gap < 2, `the newest note is in view (${full.gap}px below the fold)`);
@@ -711,14 +939,23 @@ test("the queue numbers its notes and brings a new one into view; the Agent pane
     assert.ok((await scroll()).top > 0, "the list did not jump back to its first note");
 
     // The Agent panel lies over the queue and the composer: they take no focus until Notes is back.
-    const inert = () => page.locator(".panel > .log, .panel > .queue, .panel > .composer").evaluateAll((els) => els.map((el) => (el as HTMLElement).inert));
+    const inert = () =>
+      page
+        .locator(".panel > .log, .panel > .queue, .panel > .composer")
+        .evaluateAll((els) => els.map((el) => (el as HTMLElement).inert));
     await page.click('.panel-tab[data-tab="agent"]');
     await page.locator(".attach-pop").waitFor({ state: "visible" });
-    assert.equal(await page.locator('.panel-tab[data-tab="agent"]').getAttribute("aria-current"), "true");
+    assert.equal(
+      await page.locator('.panel-tab[data-tab="agent"]').getAttribute("aria-current"),
+      "true",
+    );
     assert.deepEqual(await inert(), [true, true, true]);
     await page.click('.panel-tab[data-tab="notes"]');
     await page.locator(".attach-pop").waitFor({ state: "hidden" });
-    assert.equal(await page.locator('.panel-tab[data-tab="notes"]').getAttribute("aria-current"), "true");
+    assert.equal(
+      await page.locator('.panel-tab[data-tab="notes"]').getAttribute("aria-current"),
+      "true",
+    );
     assert.deepEqual(await inert(), [false, false, false]);
 
     await page.keyboard.press("ControlOrMeta+i");
@@ -733,7 +970,10 @@ test("an Image shows the whole picture at its own aspect ratio: card-wide, scree
   if (skipReason) return t.skip(skipReason);
   // Inline pictures: the test is about layout, not about how the frame fetches files.
   const svg = (w: number, h: number) =>
-    "data:image/svg+xml;base64," + Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#888"/></svg>`).toString("base64");
+    "data:image/svg+xml;base64," +
+    Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#888"/></svg>`,
+    ).toString("base64");
   const file = path.join(WORK, "image-ratio.html");
   const program = [
     "root = Stack([card, pair, pick])",
@@ -753,7 +993,9 @@ test("an Image shows the whole picture at its own aspect ratio: card-wide, scree
   for (const viewport of VIEWPORTS) {
     const { context, frame, problems } = await openReview(file, viewport);
     try {
-      await frame.waitForFunction(() => Array.from(document.querySelectorAll("img")).every((i) => i.complete && i.naturalWidth > 0));
+      await frame.waitForFunction(() =>
+        Array.from(document.querySelectorAll("img")).every((i) => i.complete && i.naturalWidth > 0),
+      );
       for (const name of ["wide", "tall", "left", "right"]) {
         const box = await frame.locator(`[data-oui-id="${name}"]`).evaluate((node) => {
           const img = node.querySelector("img") as HTMLImageElement;
@@ -762,20 +1004,39 @@ test("an Image shows the whole picture at its own aspect ratio: card-wide, scree
           // The statement wrapper is display: contents; its first child is the block the Image takes up.
           const block = (node.firstElementChild as HTMLElement).getBoundingClientRect();
           // Ratio from the content box: the 1px border would skew a short picture's ratio.
-          return { w: r.width, h: r.height, ratio: img.clientWidth / img.clientHeight, right: r.right, natural: img.naturalWidth / img.naturalHeight, fit: getComputedStyle(img).objectFit, block: block.height, card: card.width, cardRight: card.right };
+          return {
+            w: r.width,
+            h: r.height,
+            ratio: img.clientWidth / img.clientHeight,
+            right: r.right,
+            natural: img.naturalWidth / img.naturalHeight,
+            fit: getComputedStyle(img).objectFit,
+            block: block.height,
+            card: card.width,
+            cardRight: card.right,
+          };
         });
         const where = `${name} @ ${viewport.name}: ${JSON.stringify(box)}`;
-        assert.ok(Math.abs(box.ratio / box.natural - 1) < 0.02, `${where}: box ratio matches the picture`);
+        assert.ok(
+          Math.abs(box.ratio / box.natural - 1) < 0.02,
+          `${where}: box ratio matches the picture`,
+        );
         assert.notEqual(box.fit, "cover", `${where}: never cropped`);
         assert.ok(Math.abs(box.block - box.h) < 1, `${where}: no band below the picture`);
         assert.ok(box.right <= box.cardRight, `${where}: stays inside its card`);
         if (name === "wide") assert.ok(box.w > box.card * 0.8, `${where}: takes the card width`);
-        if (name === "tall") assert.ok(box.h <= viewport.height * 0.8 + 2, `${where}: no taller than the screen allows`);
+        if (name === "tall")
+          assert.ok(
+            box.h <= viewport.height * 0.8 + 2,
+            `${where}: no taller than the screen allows`,
+          );
       }
       // An OptionCard thumbnail keeps the stock square tile, filled.
       const tile = await frame.locator('[data-oui-id="thumb"]').evaluate((node) => {
         const img = (node.querySelector("img") as HTMLImageElement).getBoundingClientRect();
-        const box = (node.closest(".openui-option-card__top--image") as HTMLElement).getBoundingClientRect();
+        const box = (
+          node.closest(".openui-option-card__top--image") as HTMLElement
+        ).getBoundingClientRect();
         return { img: [img.width, img.height], tile: [box.width, box.height] };
       });
       assert.deepEqual(tile.img, tile.tile, `thumbnail @ ${viewport.name}: fills its tile`);
@@ -789,16 +1050,30 @@ test("an Image shows the whole picture at its own aspect ratio: card-wide, scree
 test("the owner's page sends render errors to the agent once per revision, without a click", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "render-errors.html");
-  fs.writeFileSync(file, htmlPage("Render errors", 'root = Stack([intro, broken])\nintro = TextContent("hello")\nbroken = NoSuchThing("x")', CDN_RUNTIME_URL));
+  fs.writeFileSync(
+    file,
+    htmlPage(
+      "Render errors",
+      'root = Stack([intro, broken])\nintro = TextContent("hello")\nbroken = NoSuchThing("x")',
+      CDN_RUNTIME_URL,
+    ),
+  );
   const first = await openReview(file, VIEWPORTS[0]);
   try {
     const res = await api("/api/poll", { file, timeoutMs: 5000 });
     assert.equal(res.status, "feedback", JSON.stringify(res));
     const items = res.items.filter((x) => x.kind === "render-error");
-    assert.ok(items.some((x) => x.statement === "broken"), JSON.stringify(res.items));
+    assert.ok(
+      items.some((x) => x.statement === "broken"),
+      JSON.stringify(res.items),
+    );
     // Once the server confirms, the panel says so and drops "Queue fix".
     await first.page.waitForSelector(".issues-head:has-text('sent to the agent')");
-    assert.equal(await first.page.locator(".issue .btn").count(), 0, "no Queue fix button: it was sent already");
+    assert.equal(
+      await first.page.locator(".issue .btn").count(),
+      0,
+      "no Queue fix button: it was sent already",
+    );
 
     // A second tab on the same revision reports the same errors: the agent does not get them twice.
     const second = await openReview(file, VIEWPORTS[1]);
@@ -817,7 +1092,15 @@ test("the owner's page sends render errors to the agent once per revision, witho
 test("the changed button toggles a lasting highlight of the last turn's changes", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "toggle-changes.html");
-  const write = (a: string, b: string) => fs.writeFileSync(file, htmlPage("Toggle", `root = Stack([a, b])\na = TextContent("${a}")\nb = TextContent("${b}")`, CDN_RUNTIME_URL));
+  const write = (a: string, b: string) =>
+    fs.writeFileSync(
+      file,
+      htmlPage(
+        "Toggle",
+        `root = Stack([a, b])\na = TextContent("${a}")\nb = TextContent("${b}")`,
+        CDN_RUNTIME_URL,
+      ),
+    );
   write("one", "two");
   const { context, page, frame, problems } = await openReview(file, VIEWPORTS[0]);
   const btn = page.locator(".bar .changes");
@@ -826,7 +1109,9 @@ test("the changed button toggles a lasting highlight of the last turn's changes"
     frame.evaluate(() =>
       Array.from(document.querySelectorAll(".austere-mark")).map((m) => {
         const r = m.getBoundingClientRect();
-        const hit = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2).find((e) => e.closest("[data-oui-id]"));
+        const hit = document
+          .elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+          .find((e) => e.closest("[data-oui-id]"));
         return hit?.closest("[data-oui-id]")!.getAttribute("data-oui-id");
       }),
     );
@@ -856,7 +1141,11 @@ test("the changed button toggles a lasting highlight of the last turn's changes"
     await frame.evaluate(() => ((window as FlaggedWindow).__beforeReload = true));
     await page.locator(".menu-btn").click();
     await page.locator('[data-cmd="reload"]').click();
-    await frame.waitForFunction(() => !(window as FlaggedWindow).__beforeReload && document.querySelector("[data-oui-id]"), null, { timeout: 15_000 });
+    await frame.waitForFunction(
+      () => !(window as FlaggedWindow).__beforeReload && document.querySelector("[data-oui-id]"),
+      null,
+      { timeout: 15_000 },
+    );
     await marksBecome(["a"], "marks come back after a frame reload");
 
     // A new turn replaces the marks while the toggle stays on.
@@ -882,7 +1171,11 @@ test("a lasting highlight stays inside a statement's own scroller and never wide
   const write = (line: string) =>
     fs.writeFileSync(
       file,
-      htmlPage("Wide", `root = Stack([patch, side], "row")\nside = TextContent("notes")\npatch = Diff("diff --git a/a.js b/a.js\n--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-const a = 1;\n+${line}")`, CDN_RUNTIME_URL),
+      htmlPage(
+        "Wide",
+        `root = Stack([patch, side], "row")\nside = TextContent("notes")\npatch = Diff("diff --git a/a.js b/a.js\n--- a/a.js\n+++ b/a.js\n@@ -1 +1 @@\n-const a = 1;\n+${line}")`,
+        CDN_RUNTIME_URL,
+      ),
     );
   write("const a = 2;");
   const { context, page, frame, problems } = await openReview(file, VIEWPORTS[0]);
@@ -900,7 +1193,10 @@ test("a lasting highlight stays inside a statement's own scroller and never wide
         overflow: document.documentElement.scrollWidth - window.innerWidth,
       }));
       // The mark pads the statement's box by 4px.
-      assert.ok(geo.mark <= geo.diff + 4.5, `${when}: mark ends at ${geo.mark}px, past the diff's own edge at ${geo.diff}px`);
+      assert.ok(
+        geo.mark <= geo.diff + 4.5,
+        `${when}: mark ends at ${geo.mark}px, past the diff's own edge at ${geo.diff}px`,
+      );
       assert.ok(geo.overflow <= 1, `${when}: page scrolls sideways by ${geo.overflow}px`);
     };
     await check("live update");
@@ -908,7 +1204,11 @@ test("a lasting highlight stays inside a statement's own scroller and never wide
     await frame.evaluate(() => ((window as FlaggedWindow).__beforeReload = true));
     await page.locator(".menu-btn").click();
     await page.locator('[data-cmd="reload"]').click();
-    await frame.waitForFunction(() => !(window as FlaggedWindow).__beforeReload && document.querySelector(".austere-diff"), null, { timeout: 15_000 });
+    await frame.waitForFunction(
+      () => !(window as FlaggedWindow).__beforeReload && document.querySelector(".austere-diff"),
+      null,
+      { timeout: 15_000 },
+    );
     await check("after reload");
     assert.deepEqual(problems, [], "browser errors");
   } finally {
@@ -922,7 +1222,9 @@ test("the owner's menu copies an agent prompt that polls this file", async (t) =
   fs.writeFileSync(file, htmlPage("Prompt", `root = TextContent("hello")`, CDN_RUNTIME_URL));
   const { context, page, problems } = await openReview(file, VIEWPORTS[0]);
   try {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${port}` });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: `http://127.0.0.1:${port}`,
+    });
     await page.locator(".menu-btn").click();
     await page.locator('[data-cmd="copy-agent-prompt"]').click();
     await page.waitForSelector(".banner:not([hidden])");
@@ -942,7 +1244,9 @@ test("the copy items work where navigator.clipboard is missing (a review page op
   const { session } = await api("/api/open", { file });
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   // Outside a secure context the browser has no navigator.clipboard at all.
-  await context.addInitScript(() => Object.defineProperty(Navigator.prototype, "clipboard", { value: undefined }));
+  await context.addInitScript(() =>
+    Object.defineProperty(Navigator.prototype, "clipboard", { value: undefined }),
+  );
   const page = await context.newPage();
   try {
     const { code } = await api("/api/login", {});

@@ -25,7 +25,8 @@ export const Tooltip = austereComponent({
   group: "Content",
   tier: "extended",
   props: z.object({ text: z.string(), tip: z.string() }),
-  description: "Inline text with a short hint on hover or focus (a term and its definition). Keep tip to one line.",
+  description:
+    "Inline text with a short hint on hover or focus (a term and its definition). Keep tip to one line.",
   renderer: TooltipView,
   example: `term = Tooltip("idempotent", "Safe to run twice with the same result.")`,
 });
@@ -53,7 +54,8 @@ export const HoverCard = austereComponent({
   group: "Content",
   tier: "extended",
   props: z.object({ text: z.string(), title: z.string(), body: z.string().optional() }),
-  description: "Inline text that shows a small card (title and a line or two of body) on hover or focus, e.g. a person or a service.",
+  description:
+    "Inline text that shows a small card (title and a line or two of body) on hover or focus, e.g. a person or a service.",
   renderer: HoverCardView,
   example: `svc = HoverCard("billing-api", "billing-api", "Owns invoices and refunds. On call: payments team.")`,
 });

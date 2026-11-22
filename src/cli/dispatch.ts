@@ -26,7 +26,14 @@ import { childEnv } from "./service.ts";
 import { RENDER_CHECK_AUTHOR } from "./sessions.ts";
 import type { QueuedEntry, Session, SessionStore, TranscriptEntry } from "./sessions.ts";
 
-export type RunStatus = "queued" | "waiting_for_session" | "running" | "done" | "failed" | "stopped" | "interrupted";
+export type RunStatus =
+  | "queued"
+  | "waiting_for_session"
+  | "running"
+  | "done"
+  | "failed"
+  | "stopped"
+  | "interrupted";
 
 /**
  * Why a run failed or ended without running (`runs.reason`): the note's list (exit, timeout,
@@ -119,7 +126,13 @@ export interface AttachLimits {
   maxAiCredits?: number;
 }
 
-export const DEFAULT_ATTACH_LIMITS: Readonly<AttachLimits> = Object.freeze({ maxMinutes: 15, runsPerHour: 12, maxConcurrent: 2, debounceMs: 5000, recheckMs: 30_000 });
+export const DEFAULT_ATTACH_LIMITS: Readonly<AttachLimits> = Object.freeze({
+  maxMinutes: 15,
+  runsPerHour: 12,
+  maxConcurrent: 2,
+  debounceMs: 5000,
+  recheckMs: 30_000,
+});
 
 /** The largest value each limit takes: the timers stay within setTimeout's 2^31-1 ms. */
 const MAX_ATTACH_LIMITS: Readonly<Record<keyof AttachLimits, number>> = Object.freeze({
@@ -157,8 +170,10 @@ export function readAttachLimits(): AttachLimits {
   const out: AttachLimits = { ...DEFAULT_ATTACH_LIMITS };
   for (const [key, value] of Object.entries(data)) {
     if (!Object.hasOwn(MAX_ATTACH_LIMITS, key)) throw bad(`unknown key ${JSON.stringify(key)}`);
-    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) throw bad(`${key} must be a number above 0`);
-    if ((key === "runsPerHour" || key === "maxConcurrent") && !Number.isInteger(value)) throw bad(`${key} must be a whole number`);
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+      throw bad(`${key} must be a number above 0`);
+    if ((key === "runsPerHour" || key === "maxConcurrent") && !Number.isInteger(value))
+      throw bad(`${key} must be a whole number`);
     const max = MAX_ATTACH_LIMITS[key as keyof AttachLimits];
     if (value > max) throw bad(`${key} must be at most ${max}`);
     out[key as keyof AttachLimits] = value;
@@ -183,14 +198,28 @@ export function summary(row: RunRow): RunSummary {
 export type ListedRun = RunRow & { file: string | null };
 
 /** The runs of one copy, of every copy in a project, or all of them; the newest first. */
-export function listRuns(db: sqlite.DatabaseSync, where: { artifactId: string } | { projectId: string } | null, limit = 50): ListedRun[] {
-  const filter = !where ? "" : "artifactId" in where ? "WHERE r.artifact_id = ?" : "WHERE r.project_id = ?";
+export function listRuns(
+  db: sqlite.DatabaseSync,
+  where: { artifactId: string } | { projectId: string } | null,
+  limit = 50,
+): ListedRun[] {
+  const filter = !where
+    ? ""
+    : "artifactId" in where
+      ? "WHERE r.artifact_id = ?"
+      : "WHERE r.project_id = ?";
   const args = !where ? [] : "artifactId" in where ? [where.artifactId] : [where.projectId];
-  return db.prepare(`SELECT r.*, a.file AS file FROM runs r LEFT JOIN artifacts a ON a.id = r.artifact_id ${filter} ORDER BY r.rowid DESC LIMIT ?`).all(...args, limit) as unknown as ListedRun[];
+  return db
+    .prepare(
+      `SELECT r.*, a.file AS file FROM runs r LEFT JOIN artifacts a ON a.id = r.artifact_id ${filter} ORDER BY r.rowid DESC LIMIT ?`,
+    )
+    .all(...args, limit) as unknown as ListedRun[];
 }
 
 export function getRun(db: sqlite.DatabaseSync, id: string): RunRow | null {
-  return (db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as unknown as RunRow | undefined) ?? null;
+  return (
+    (db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as unknown as RunRow | undefined) ?? null
+  );
 }
 
 /** The text of a run's log; null when it has none (yet, or swept after 30 days). */
@@ -213,7 +242,11 @@ export function logTail(file: string | null, n = 20): string[] {
       const len = Math.min(size, 64 * 1024);
       const buf = Buffer.alloc(len);
       fs.readSync(fd, buf, 0, len, size - len);
-      return buf.toString("utf8").split(/\r?\n/).filter((l) => l !== "").slice(-n);
+      return buf
+        .toString("utf8")
+        .split(/\r?\n/)
+        .filter((l) => l !== "")
+        .slice(-n);
     } finally {
       fs.closeSync(fd);
     }
@@ -239,10 +272,19 @@ const PID_CHECK_MS = 1000;
  * The caller-detection variables of the harness the server was started from (caller.ts): a run
  * is its own session and must not report the server's. Plus the service manager's markers.
  */
-const INHERITED_SESSION_VARS = ["PI_SESSION_ID", "PI_SESSION_FILE", "COPILOT_AGENT_SESSION_ID", "DSH_SESSION_ID"];
+const INHERITED_SESSION_VARS = [
+  "PI_SESSION_ID",
+  "PI_SESSION_FILE",
+  "COPILOT_AGENT_SESSION_ID",
+  "DSH_SESSION_ID",
+];
 
 /** The environment of a run: the server's, without the markers above, with `AUSTERE_AXI_RUN_ID` and the state dir and port of this server (never the owner key). */
-export function runEnv(runId: string, port: number, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function runEnv(
+  runId: string,
+  port: number,
+  base: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
   const env = childEnv(base);
   for (const name of INHERITED_SESSION_VARS) delete env[name];
   env.AUSTERE_AXI_RUN_ID = runId;
@@ -257,15 +299,24 @@ export function runEnv(runId: string, port: number, base: NodeJS.ProcessEnv = pr
  * globally, which may be an older version that does not register the session or know the flags.
  * Written into `<state>/runs/bin` (0700) on each launch, so it follows the running server.
  */
-export function withCliShim(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
+export function withCliShim(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
   const dir = path.join(runsDir(), "bin");
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (platform === "win32") {
-    fs.writeFileSync(path.join(dir, "austere-axi.cmd"), `@"${process.execPath}" "${CLI_ENTRY}" %*\r\n`, { mode: 0o700 });
+    fs.writeFileSync(
+      path.join(dir, "austere-axi.cmd"),
+      `@"${process.execPath}" "${CLI_ENTRY}" %*\r\n`,
+      { mode: 0o700 },
+    );
   } else {
     const sh = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
     const file = path.join(dir, "austere-axi");
-    fs.writeFileSync(file, `#!/bin/sh\nexec ${sh(process.execPath)} ${sh(CLI_ENTRY)} "$@"\n`, { mode: 0o700 });
+    fs.writeFileSync(file, `#!/bin/sh\nexec ${sh(process.execPath)} ${sh(CLI_ENTRY)} "$@"\n`, {
+      mode: 0o700,
+    });
     fs.chmodSync(file, 0o700);
   }
   // Windows spells it `Path`; keep whichever key the environment already uses.
@@ -277,7 +328,10 @@ export function withCliShim(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = 
 /** Kill a run's whole process tree: its process group (POSIX, the run is spawned detached), `taskkill /T` on Windows. */
 export function killTree(pid: number, signal: NodeJS.Signals): void {
   if (process.platform === "win32") {
-    spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on("error", () => {});
+    spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on(
+      "error",
+      () => {},
+    );
     return;
   }
   try {
@@ -318,7 +372,12 @@ export type Tasklist = (pid: number) => string | null;
 
 function runTasklist(pid: number): string | null {
   try {
-    return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000, windowsHide: true });
+    return execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3000,
+      windowsHide: true,
+    });
   } catch {
     return null;
   }
@@ -333,7 +392,11 @@ const RUN_IMAGES = ["cmd.exe", "node.exe", "omp.exe", "copilot.exe", "bun.exe"];
  * `cmd.exe` for a `.cmd` shim; else one a run can be), false when no process has the pid or it runs
  * something else (reused: the run's own process is gone), null when `tasklist` fails.
  */
-export function windowsLeftover(pid: number, bin: string | null, tasklist: Tasklist = runTasklist): boolean | null {
+export function windowsLeftover(
+  pid: number,
+  bin: string | null,
+  tasklist: Tasklist = runTasklist,
+): boolean | null {
   const out = tasklist(pid);
   if (out === null) return null;
   // One CSV row per match, `"image","pid",…`; no match prints an INFO line instead.
@@ -380,7 +443,7 @@ export async function endLeftover(run: RunProcess): Promise<boolean> {
   if (alive !== true || pid == null) return alive !== null;
   killTree(pid, "SIGKILL");
   const still = () => (process.platform === "win32" ? pidExists(pid) : groupAlive(pid));
-  for (const deadline = Date.now() + 2000; still(); ) {
+  for (const deadline = Date.now() + 2000; still();) {
     if (Date.now() >= deadline) return false;
     await sleep(50);
   }
@@ -409,7 +472,8 @@ interface Running {
   resolve: () => void;
 }
 
-const deliverable = (e: TranscriptEntry): e is QueuedEntry => e.role === "user" && e.seq != null && !e.held && !e.discarded;
+const deliverable = (e: TranscriptEntry): e is QueuedEntry =>
+  e.role === "user" && e.seq != null && !e.held && !e.discarded;
 
 /**
  * Why the open notes keep a run from starting (A17), or null: a reviewer's note that has a seq
@@ -420,7 +484,17 @@ const deliverable = (e: TranscriptEntry): e is QueuedEntry => e.role === "user" 
  * so a reviewer whose invite took that name before it was reserved still counts.
  */
 export function unreleasedNotes(open: readonly QueuedEntry[]): string | null {
-  const notes = open.filter((e) => e.author && !(e.author === RENDER_CHECK_AUTHOR && e.items.length > 0 && e.items.every((i) => i.kind === "render-error")) && !e.releasedAt && !e.remote);
+  const notes = open.filter(
+    (e) =>
+      e.author &&
+      !(
+        e.author === RENDER_CHECK_AUTHOR &&
+        e.items.length > 0 &&
+        e.items.every((i) => i.kind === "render-error")
+      ) &&
+      !e.releasedAt &&
+      !e.remote,
+  );
   if (!notes.length) return null;
   const names = [...new Set(notes.map((e) => e.author))].join(", ");
   const [these, them] = notes.length === 1 ? ["A note", "it"] : [`${notes.length} notes`, "them"];
@@ -480,7 +554,9 @@ export class Dispatcher {
    */
   start(): void {
     const now = Date.now();
-    const stale = this.db.prepare("SELECT * FROM runs WHERE status IN ('running', 'waiting_for_session')").all() as unknown as RunRow[];
+    const stale = this.db
+      .prepare("SELECT * FROM runs WHERE status IN ('running', 'waiting_for_session')")
+      .all() as unknown as RunRow[];
     const interrupted: string[] = [];
     for (const row of stale) {
       if (row.status === "running" && row.pid != null) {
@@ -496,11 +572,23 @@ export class Dispatcher {
         }
       }
       interrupted.push(row.id);
-      this.db.prepare("UPDATE runs SET status = 'interrupted', ended_at = ? WHERE id = ?").run(now, row.id);
+      this.db
+        .prepare("UPDATE runs SET status = 'interrupted', ended_at = ? WHERE id = ?")
+        .run(now, row.id);
       if (row.requeued_from || !row.artifact_id) continue;
       this.db
-        .prepare("INSERT INTO runs (id, kind, artifact_id, project_id, seq_from, seq_to, status, requeued_from) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)")
-        .run(newRunId(), row.kind, row.artifact_id, row.project_id, row.seq_from, row.seq_to, row.id);
+        .prepare(
+          "INSERT INTO runs (id, kind, artifact_id, project_id, seq_from, seq_to, status, requeued_from) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)",
+        )
+        .run(
+          newRunId(),
+          row.kind,
+          row.artifact_id,
+          row.project_id,
+          row.seq_from,
+          row.seq_to,
+          row.id,
+        );
     }
     if (interrupted.length) this.o.log("runs-interrupted", interrupted.join(","));
     this.sweep(true);
@@ -534,9 +622,14 @@ export class Dispatcher {
       }
     }
     if (!runs.length) return;
-    for (const deadline = Date.now() + SHUTDOWN_GRACE_MS; pids.some(groupAlive) && Date.now() < deadline; ) await sleep(50);
+    for (
+      const deadline = Date.now() + SHUTDOWN_GRACE_MS;
+      pids.some(groupAlive) && Date.now() < deadline;
+    )
+      await sleep(50);
     for (const pid of pids) if (groupAlive(pid)) killTree(pid, "SIGKILL");
-    for (const deadline = Date.now() + 500; pids.some(groupAlive) && Date.now() < deadline; ) await sleep(50);
+    for (const deadline = Date.now() + 500; pids.some(groupAlive) && Date.now() < deadline;)
+      await sleep(50);
     // Windows has no group to probe (taskkill /T /F ends the tree): wait for the runs' own exit.
     await Promise.race([Promise.all(runs.map((r) => r.done)), sleep(500)]);
   }
@@ -553,7 +646,8 @@ export class Dispatcher {
     for (const name of fs.readdirSync(dir)) {
       const file = path.join(dir, name);
       try {
-        if ((atStart && name.endsWith(".prompt")) || fs.statSync(file).mtimeMs < cutoff) fs.unlinkSync(file);
+        if ((atStart && name.endsWith(".prompt")) || fs.statSync(file).mtimeMs < cutoff)
+          fs.unlinkSync(file);
       } catch {
         // gone already
       }
@@ -570,10 +664,21 @@ export class Dispatcher {
   noteSeq(s: Session): void {
     if (this.closed || effectiveAttach(this.db, s.id).state !== "on") return;
     const seq = Math.max(0, ...s.transcript.filter(deliverable).map((e) => e.seq));
-    const pending = this.db.prepare("SELECT * FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session') ORDER BY rowid LIMIT 1").get(s.id) as unknown as RunRow | undefined;
-    if (pending) this.db.prepare("UPDATE runs SET seq_to = MAX(COALESCE(seq_to, 0), ?) WHERE id = ?").run(seq, pending.id);
+    const pending = this.db
+      .prepare(
+        "SELECT * FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session') ORDER BY rowid LIMIT 1",
+      )
+      .get(s.id) as unknown as RunRow | undefined;
+    if (pending)
+      this.db
+        .prepare("UPDATE runs SET seq_to = MAX(COALESCE(seq_to, 0), ?) WHERE id = ?")
+        .run(seq, pending.id);
     else {
-      this.db.prepare("INSERT INTO runs (id, kind, artifact_id, project_id, seq_from, seq_to, status) VALUES (?, 'note', ?, ?, ?, ?, 'queued')").run(newRunId(), s.id, this.o.store.projectIdOf(s), seq, seq);
+      this.db
+        .prepare(
+          "INSERT INTO runs (id, kind, artifact_id, project_id, seq_from, seq_to, status) VALUES (?, 'note', ?, ?, ?, ?, 'queued')",
+        )
+        .run(newRunId(), s.id, this.o.store.projectIdOf(s), seq, seq);
     }
     const { debounceMs } = this.limits();
     this.readyAt.set(s.id, Date.now() + debounceMs);
@@ -588,8 +693,18 @@ export class Dispatcher {
 
   /** A poll arrived for `s`: it gets the notes, so a run that has not started is not needed. */
   pollArrived(s: Session): void {
-    const rows = this.db.prepare("SELECT * FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session')").all(s.id) as unknown as RunRow[];
-    for (const row of rows) this.end(row, "stopped", "listener", "An agent started polling the page: the notes go to it.");
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session')",
+      )
+      .all(s.id) as unknown as RunRow[];
+    for (const row of rows)
+      this.end(
+        row,
+        "stopped",
+        "listener",
+        "An agent started polling the page: the notes go to it.",
+      );
   }
 
   /**
@@ -599,7 +714,11 @@ export class Dispatcher {
    * Resolves when no child is left, with how many runs it stopped.
    */
   async stop(artifactId: string): Promise<number> {
-    const rows = this.db.prepare("SELECT * FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')").all(artifactId) as unknown as RunRow[];
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM runs WHERE artifact_id = ? AND status IN ('queued', 'waiting_for_session', 'running')",
+      )
+      .all(artifactId) as unknown as RunRow[];
     const waits: Promise<void>[] = [];
     let stopped = 0;
     for (const row of rows) {
@@ -625,11 +744,21 @@ export class Dispatcher {
    */
   retry(artifactId: string): { run: RunRow } | { error: string } {
     if (this.closed) return { error: "the server is stopping" };
-    if (effectiveAttach(this.db, artifactId).state !== "on") return { error: "attach is off for this page: turn it on first" };
-    const last = this.db.prepare("SELECT * FROM runs WHERE artifact_id = ? ORDER BY rowid DESC LIMIT 1").get(artifactId) as unknown as RunRow | undefined;
-    if (!last || last.status !== "failed") return { error: last ? `the last run is ${last.status}, not failed` : "this page has no run yet" };
+    if (effectiveAttach(this.db, artifactId).state !== "on")
+      return { error: "attach is off for this page: turn it on first" };
+    const last = this.db
+      .prepare("SELECT * FROM runs WHERE artifact_id = ? ORDER BY rowid DESC LIMIT 1")
+      .get(artifactId) as unknown as RunRow | undefined;
+    if (!last || last.status !== "failed")
+      return {
+        error: last ? `the last run is ${last.status}, not failed` : "this page has no run yet",
+      };
     const id = newRunId();
-    this.db.prepare("INSERT INTO runs (id, kind, artifact_id, project_id, seq_from, seq_to, status) VALUES (?, 'note', ?, ?, ?, ?, 'queued')").run(id, artifactId, last.project_id, last.seq_from, last.seq_to);
+    this.db
+      .prepare(
+        "INSERT INTO runs (id, kind, artifact_id, project_id, seq_from, seq_to, status) VALUES (?, 'note', ?, ?, ?, ?, 'queued')",
+      )
+      .run(id, artifactId, last.project_id, last.seq_from, last.seq_to);
     this.readyAt.delete(artifactId);
     this.emit(id, { message: `Retrying run ${last.id}.` });
     setImmediate(() => this.pump());
@@ -643,12 +772,16 @@ export class Dispatcher {
     let logFile = row.log_file;
     try {
       logFile ??= path.join(runsDir(), `${row.id}.log`);
-      fs.appendFileSync(logFile, `[austere-axi] ${status} (${reason}): ${message}\n`, { mode: 0o600 });
+      fs.appendFileSync(logFile, `[austere-axi] ${status} (${reason}): ${message}\n`, {
+        mode: 0o600,
+      });
     } catch {
       logFile = row.log_file;
     }
     this.announced.delete(row.id);
-    this.db.prepare("UPDATE runs SET status = ?, reason = ?, ended_at = ?, log_file = ? WHERE id = ?").run(status, reason, Date.now(), logFile, row.id);
+    this.db
+      .prepare("UPDATE runs SET status = ?, reason = ?, ended_at = ?, log_file = ? WHERE id = ?")
+      .run(status, reason, Date.now(), logFile, row.id);
     this.emit(row.id, { message });
     this.o.log("run", row.id, status, reason);
   }
@@ -661,7 +794,11 @@ export class Dispatcher {
   /** This dispatcher's run that is using `session` now: one started on it, or one resuming its harness session id. */
   private holderOf(session: AgentSessionRow): Running | null {
     for (const r of this.running.values()) {
-      if (r.row.agent_session_id === session.id || (r.adapter.id === session.harness && r.built.sessionId === session.session_id)) return r;
+      if (
+        r.row.agent_session_id === session.id ||
+        (r.adapter.id === session.harness && r.built.sessionId === session.session_id)
+      )
+        return r;
     }
     return null;
   }
@@ -669,12 +806,21 @@ export class Dispatcher {
   /** Waiting runs look again: now and then their session (exited, or this dispatcher's run on it ended → run), and every `recheckMs` everything. */
   private recheck(full: boolean): void {
     if (this.closed) return;
-    const rows = this.db.prepare("SELECT * FROM runs WHERE status = 'waiting_for_session'").all() as unknown as RunRow[];
+    const rows = this.db
+      .prepare("SELECT * FROM runs WHERE status = 'waiting_for_session'")
+      .all() as unknown as RunRow[];
     let changed = full;
     for (const row of rows) {
       const s = row.artifact_id ? this.o.store.get(row.artifact_id) : null;
       const session = row.agent_session_id ? sessionRow(this.db, row.agent_session_id) : null;
-      if (!full && s && session && (this.holderOf(session) || liveness(session) === "alive") && !this.o.listening(s)) continue;
+      if (
+        !full &&
+        s &&
+        session &&
+        (this.holderOf(session) || liveness(session) === "alive") &&
+        !this.o.listening(s)
+      )
+        continue;
       // Back to the queue; pump decides again (and waits again if the session still runs).
       this.db.prepare("UPDATE runs SET status = 'queued' WHERE id = ?").run(row.id);
       changed = true;
@@ -687,8 +833,12 @@ export class Dispatcher {
     if (this.closed) return;
     const limits = this.limits();
     const now = Date.now();
-    const queued = this.db.prepare("SELECT * FROM runs WHERE status = 'queued' AND kind = 'note' ORDER BY rowid").all() as unknown as RunRow[];
-    const busy = this.db.prepare("SELECT 1 FROM runs WHERE artifact_id = ? AND status IN ('running', 'waiting_for_session') LIMIT 1");
+    const queued = this.db
+      .prepare("SELECT * FROM runs WHERE status = 'queued' AND kind = 'note' ORDER BY rowid")
+      .all() as unknown as RunRow[];
+    const busy = this.db.prepare(
+      "SELECT 1 FROM runs WHERE artifact_id = ? AND status IN ('running', 'waiting_for_session') LIMIT 1",
+    );
     for (const row of queued) {
       const artifactId = row.artifact_id as string;
       if ((this.readyAt.get(artifactId) ?? 0) > now || busy.get(artifactId)) continue;
@@ -713,7 +863,12 @@ export class Dispatcher {
       }
       const conflict = this.o.autoConflict(s);
       if (conflict) {
-        this.end(row, "failed", "auto_conflict", `${conflict}; a run reads only notes the owner sent or released, so it does not start (Q3). Run \`austere-axi attach off\` for the page, or publish or share it without --auto.`);
+        this.end(
+          row,
+          "failed",
+          "auto_conflict",
+          `${conflict}; a run reads only notes the owner sent or released, so it does not start (Q3). Run \`austere-axi attach off\` for the page, or publish or share it without --auto.`,
+        );
         continue;
       }
       const unreleased = unreleasedNotes(openNotes);
@@ -722,9 +877,20 @@ export class Dispatcher {
         continue;
       }
       const open = openNotes.map((e) => e.seq);
-      const started = Number((this.db.prepare("SELECT COUNT(*) AS n FROM runs WHERE artifact_id = ? AND started_at >= ?").get(artifactId, now - HOUR_MS) as { n: number }).n);
+      const started = Number(
+        (
+          this.db
+            .prepare("SELECT COUNT(*) AS n FROM runs WHERE artifact_id = ? AND started_at >= ?")
+            .get(artifactId, now - HOUR_MS) as { n: number }
+        ).n,
+      );
       if (started >= limits.runsPerHour) {
-        this.end(row, "failed", "rate_limit", `${started} runs started on this page in the last hour; the limit is ${limits.runsPerHour} (runsPerHour in ${attachFile()}). The notes wait in the inbox.`);
+        this.end(
+          row,
+          "failed",
+          "rate_limit",
+          `${started} runs started on this page in the last hour; the limit is ${limits.runsPerHour} (runsPerHour in ${attachFile()}). The notes wait in the inbox.`,
+        );
         continue;
       }
       const target = resolveTarget(this.db, s.id, setting);
@@ -733,7 +899,12 @@ export class Dispatcher {
         const holder = this.holderOf(target.session);
         const live = holder ? "alive" : liveness(target.session);
         if (live === "unknown") {
-          this.end(row, "failed", "session_unknown", `Cannot tell whether ${target.session.harness} session ${target.session.session_id} is still open (no harness process was recorded for it), and resuming an open session is unsafe. Choose fork, or new, for this page.`);
+          this.end(
+            row,
+            "failed",
+            "session_unknown",
+            `Cannot tell whether ${target.session.harness} session ${target.session.session_id} is still open (no harness process was recorded for it), and resuming an open session is unsafe. Choose fork, or new, for this page.`,
+          );
           continue;
         }
         if (live === "alive") {
@@ -748,32 +919,75 @@ export class Dispatcher {
         // launch ends its run itself on every failure it knows; this keeps the server up, and no row stuck, on one it does not.
         this.o.log("run-launch", row.id, (err as Error).message);
         const current = getRun(this.db, row.id);
-        if (current && !this.running.has(row.id) && (current.status === "queued" || current.status === "running")) this.end(current, "failed", "unavailable", `Could not start the run: ${(err as Error).message}`);
+        if (
+          current &&
+          !this.running.has(row.id) &&
+          (current.status === "queued" || current.status === "running")
+        )
+          this.end(
+            current,
+            "failed",
+            "unavailable",
+            `Could not start the run: ${(err as Error).message}`,
+          );
       }
     }
   }
 
   /** Wait for `session` to be free (a run of this dispatcher, or its own process, holds it): announced once per run. */
-  private park(row: RunRow, session: AgentSessionRow, target: Pick<RunTarget, "harness" | "mode">, model: string | null, holder: Running | null): void {
-    this.db.prepare("UPDATE runs SET status = 'waiting_for_session', agent_session_id = ?, harness = ?, mode = ?, model = ? WHERE id = ?").run(session.id, target.harness, target.mode, model, row.id);
+  private park(
+    row: RunRow,
+    session: AgentSessionRow,
+    target: Pick<RunTarget, "harness" | "mode">,
+    model: string | null,
+    holder: Running | null,
+  ): void {
+    this.db
+      .prepare(
+        "UPDATE runs SET status = 'waiting_for_session', agent_session_id = ?, harness = ?, mode = ?, model = ? WHERE id = ?",
+      )
+      .run(session.id, target.harness, target.mode, model, row.id);
     if (this.announced.has(row.id)) return;
     this.announced.add(row.id);
     const why = holder ? `run ${holder.row.id} is using it` : "it is still running";
-    this.emit(row.id, { message: `Waiting for ${target.harness} session ${session.session_id} to be free: ${why}.` });
+    this.emit(row.id, {
+      message: `Waiting for ${target.harness} session ${session.session_id} to be free: ${why}.`,
+    });
   }
 
   /** The session the first `new` run on this copy made with this harness, followed through continuations (A18). */
   private dispatcherSession(artifactId: string, harness: string): AgentSessionRow | null {
-    const prior = this.db.prepare("SELECT agent_session_id FROM runs WHERE artifact_id = ? AND mode = 'new' AND harness = ? AND agent_session_id IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1").get(artifactId, harness) as
-      | { agent_session_id: string }
-      | undefined;
+    const prior = this.db
+      .prepare(
+        "SELECT agent_session_id FROM runs WHERE artifact_id = ? AND mode = 'new' AND harness = ? AND agent_session_id IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1",
+      )
+      .get(artifactId, harness) as { agent_session_id: string } | undefined;
     const row = prior ? sessionRow(this.db, prior.agent_session_id) : null;
     return row ? newestContinuation(this.db, row) : null;
   }
 
-  private launch(row: RunRow, s: Session, target: RunTarget, model: string | null, seqFrom: number, seqTo: number): void {
+  private launch(
+    row: RunRow,
+    s: Session,
+    target: RunTarget,
+    model: string | null,
+    seqFrom: number,
+    seqTo: number,
+  ): void {
     const fail = (reason: RunReasonCode, message: string) => {
-      this.db.prepare("UPDATE runs SET harness = ?, mode = ?, model = ?, agent_session_id = ?, seq_from = ?, seq_to = ? WHERE id = ?").run(target.harness, target.mode, model, target.session?.id ?? null, seqFrom, seqTo, row.id);
+      this.db
+        .prepare(
+          "UPDATE runs SET harness = ?, mode = ?, model = ?, agent_session_id = ?, seq_from = ?, seq_to = ? WHERE id = ?",
+        )
+        .run(
+          target.harness,
+          target.mode,
+          model,
+          target.session?.id ?? null,
+          seqFrom,
+          seqTo,
+          row.id,
+        );
       this.end(row, "failed", reason, message);
     };
     let adapter: Adapter | null;
@@ -782,7 +996,11 @@ export class Dispatcher {
     } catch (err) {
       return fail("config", (err as Error).message);
     }
-    if (!adapter) return fail("unavailable", `No adapter named ${target.harness}: a harness (omp, copilot) or a command set with \`austere-axi adapter set\`.`);
+    if (!adapter)
+      return fail(
+        "unavailable",
+        `No adapter named ${target.harness}: a harness (omp, copilot) or a command set with \`austere-axi adapter set\`.`,
+      );
     let fileLimits: AttachLimits;
     try {
       fileLimits = readAttachLimits();
@@ -793,7 +1011,11 @@ export class Dispatcher {
     const bin = findOnPath(adapter.bin, env);
     if (!bin) return fail("unavailable", `${adapter.bin} not found on PATH.`);
     const cap = capabilitiesOf(adapter, env)[target.mode];
-    if (!cap.ok) return fail("unsupported", `${target.harness} cannot run mode ${target.mode}: ${cap.reason}.`);
+    if (!cap.ok)
+      return fail(
+        "unsupported",
+        `${target.harness} cannot run mode ${target.mode}: ${cap.reason}.`,
+      );
 
     // A `new` run resumes the session the dispatcher's first `new` run on this page made (A18).
     let from = target.session;
@@ -806,7 +1028,8 @@ export class Dispatcher {
         // A session nobody can observe (no process recorded, as the dispatcher records its own) is free.
         const holder = this.holderOf(from);
         const live = holder ? "alive" : liveness(from);
-        if (live === "alive" || (live === "unknown" && from.pid != null)) return this.park(row, from, target, model, holder);
+        if (live === "alive" || (live === "unknown" && from.pid != null))
+          return this.park(row, from, target, model, holder);
         buildMode = "same";
       }
     }
@@ -828,9 +1051,14 @@ export class Dispatcher {
       fs.writeFileSync(promptFile, runPrompt({ file: s.file, cursor: seqTo }), { mode: 0o600 });
       childEnvVars = withCliShim(env);
     } catch (err) {
-      return fail("unavailable", `Could not write the run's prompt file: ${(err as Error).message}`);
+      return fail(
+        "unavailable",
+        `Could not write the run's prompt file: ${(err as Error).message}`,
+      );
     }
-    const art = this.db.prepare("SELECT root FROM artifacts WHERE id = ?").get(s.id) as { root: string | null } | undefined;
+    const art = this.db.prepare("SELECT root FROM artifacts WHERE id = ?").get(s.id) as
+      | { root: string | null }
+      | undefined;
     const cwd = art?.root && fs.existsSync(art.root) ? art.root : path.dirname(s.file);
     const runLimits: Limits = {};
     if (fileLimits.maxCost !== undefined) runLimits.maxCost = fileLimits.maxCost;
@@ -848,7 +1076,12 @@ export class Dispatcher {
       });
     } catch (err) {
       discardPrompt();
-      return fail(err instanceof AdapterError && err.code === "missing_session" ? "unavailable" : "unsupported", (err as Error).message);
+      return fail(
+        err instanceof AdapterError && err.code === "missing_session"
+          ? "unavailable"
+          : "unsupported",
+        (err as Error).message,
+      );
     }
 
     let logFd: number | undefined;
@@ -866,10 +1099,36 @@ export class Dispatcher {
     const spec = spawnSpec(bin, built.args, process.platform, env);
     // The row as it now stands: the run keeps this copy, so nothing after the spawn reads the database
     // before the child is owned. `bin` is the image its process runs (Windows restart recovery checks it).
-    const started: RunRow = { ...row, status: "running", started_at: Date.now(), harness: target.harness, mode: target.mode, model, agent_session_id: from?.id ?? null, seq_from: seqFrom, seq_to: seqTo, log_file: logFile, reason: null, bin: path.basename(spec.file) };
+    const started: RunRow = {
+      ...row,
+      status: "running",
+      started_at: Date.now(),
+      harness: target.harness,
+      mode: target.mode,
+      model,
+      agent_session_id: from?.id ?? null,
+      seq_from: seqFrom,
+      seq_to: seqTo,
+      log_file: logFile,
+      reason: null,
+      bin: path.basename(spec.file),
+    };
     this.db
-      .prepare("UPDATE runs SET status = 'running', started_at = ?, harness = ?, mode = ?, model = ?, agent_session_id = ?, seq_from = ?, seq_to = ?, log_file = ?, reason = NULL, bin = ? WHERE id = ?")
-      .run(started.started_at, started.harness, started.mode, started.model, started.agent_session_id, seqFrom, seqTo, logFile, started.bin, row.id);
+      .prepare(
+        "UPDATE runs SET status = 'running', started_at = ?, harness = ?, mode = ?, model = ?, agent_session_id = ?, seq_from = ?, seq_to = ?, log_file = ?, reason = NULL, bin = ? WHERE id = ?",
+      )
+      .run(
+        started.started_at,
+        started.harness,
+        started.mode,
+        started.model,
+        started.agent_session_id,
+        seqFrom,
+        seqTo,
+        logFile,
+        started.bin,
+        row.id,
+      );
     let child: ChildProcess;
     try {
       child = spawn(spec.file, spec.args, {
@@ -883,7 +1142,12 @@ export class Dispatcher {
     } catch (err) {
       fs.closeSync(logFd);
       discardPrompt();
-      return this.end({ ...row, log_file: logFile }, "failed", "unavailable", `Could not start ${bin}: ${(err as Error).message}`);
+      return this.end(
+        { ...row, log_file: logFile },
+        "failed",
+        "unavailable",
+        `Could not start ${bin}: ${(err as Error).message}`,
+      );
     } finally {
       fs.closeSync(promptFd);
     }
@@ -960,13 +1224,20 @@ export class Dispatcher {
     });
     try {
       // The run's process, for a restart after a crash (start) or an offline `run stop`; its group is the run's tree on POSIX.
-      if (child.pid) this.db.prepare("UPDATE runs SET pid = ?, pid_start = ? WHERE id = ?").run(child.pid, startOf(child.pid), row.id);
+      if (child.pid)
+        this.db
+          .prepare("UPDATE runs SET pid = ?, pid_start = ? WHERE id = ?")
+          .run(child.pid, startOf(child.pid), row.id);
       this.o.log("run", row.id, "running", target.harness, buildMode, `seq=${seqFrom}..${seqTo}`);
       this.emit(row.id);
     } catch (err) {
       // A run that cannot be recorded or announced must not go on unseen.
       this.o.log("run-start", row.id, (err as Error).message);
-      write(Buffer.from(`[austere-axi] could not record the run's start, so it is stopped: ${(err as Error).message}\n`));
+      write(
+        Buffer.from(
+          `[austere-axi] could not record the run's start, so it is stopped: ${(err as Error).message}\n`,
+        ),
+      );
       this.kill(r);
     }
   }
@@ -1001,7 +1272,10 @@ export class Dispatcher {
       r.resolve();
       return;
     }
-    const stdout = r.head.length + r.tail.length <= OUTPUT_KEEP || r.tail.startsWith(r.head) ? r.tail : `${r.head}\n${r.tail}`;
+    const stdout =
+      r.head.length + r.tail.length <= OUTPUT_KEEP || r.tail.startsWith(r.head)
+        ? r.tail
+        : `${r.head}\n${r.tail}`;
     const result = r.adapter.readResult({ stdout, stderr: r.stderr, exitCode: code });
     // Only a session the output names: a minted id the harness never confirmed was never made (A18).
     const agentSessionId = this.recordSession(r, result.sessionId);
@@ -1011,14 +1285,31 @@ export class Dispatcher {
     let message: string | undefined;
     if (r.stopped) [status, reason, message] = ["stopped", "stopped", "Stopped by the owner."];
     else if (forced) [status, reason] = ["failed", forced];
-    else if (r.timedOut) [status, reason, message] = ["failed", "timeout", `The run passed its time limit and was killed.`];
+    else if (r.timedOut)
+      [status, reason, message] = [
+        "failed",
+        "timeout",
+        `The run passed its time limit and was killed.`,
+      ];
     else if (result.reason) [status, reason] = ["failed", result.reason];
-    else if (code !== 0) [status, reason, message] = ["failed", "exit", `The harness exited with ${code ?? "a signal"}.`];
+    else if (code !== 0)
+      [status, reason, message] = [
+        "failed",
+        "exit",
+        `The harness exited with ${code ?? "a signal"}.`,
+      ];
     else {
       const from = row.seq_from ?? 0;
       const to = row.seq_to ?? 0;
-      const missing = s.transcript.filter((e): e is QueuedEntry => deliverable(e) && e.seq >= from && e.seq <= to && !e.doneAt);
-      if (missing.length) [status, reason, message] = ["failed", "no_reply", "The harness exited without replying to the notes (a harness that denies writes still exits 0; see `austere-axi adapter list`)."];
+      const missing = s.transcript.filter(
+        (e): e is QueuedEntry => deliverable(e) && e.seq >= from && e.seq <= to && !e.doneAt,
+      );
+      if (missing.length)
+        [status, reason, message] = [
+          "failed",
+          "no_reply",
+          "The harness exited without replying to the notes (a harness that denies writes still exits 0; see `austere-axi adapter list`).",
+        ];
     }
     try {
       if (message) fs.writeSync(r.logFd, `[austere-axi] ${status} (${reason}): ${message}\n`);
@@ -1029,7 +1320,11 @@ export class Dispatcher {
     // An exit handler must not throw (it would take the server down): a verdict that cannot be
     // written leaves the row `running`, for the next start's recovery to interrupt and requeue.
     try {
-      this.db.prepare("UPDATE runs SET status = ?, reason = ?, exit_code = ?, ended_at = ?, agent_session_id = COALESCE(?, agent_session_id) WHERE id = ?").run(status, reason, code, Date.now(), agentSessionId, row.id);
+      this.db
+        .prepare(
+          "UPDATE runs SET status = ?, reason = ?, exit_code = ?, ended_at = ?, agent_session_id = COALESCE(?, agent_session_id) WHERE id = ?",
+        )
+        .run(status, reason, code, Date.now(), agentSessionId, row.id);
       this.o.log("run", row.id, status, reason ?? "", `exit=${code}`);
       this.emit(row.id, status === "done" ? {} : { message, tail: logTail(row.log_file) });
     } catch (err) {
@@ -1049,7 +1344,12 @@ export class Dispatcher {
     try {
       if (r.from) {
         if (r.from.session_id === sessionId) return r.from.id;
-        const next = recordContinuation(this.db, r.from.id, sessionId, r.row.mode === "fork" ? "fork" : "continuation");
+        const next = recordContinuation(
+          this.db,
+          r.from.id,
+          sessionId,
+          r.row.mode === "fork" ? "fork" : "continuation",
+        );
         linkPage(this.db, r.s.id, next.id, "editor");
         return next.id;
       }
@@ -1061,7 +1361,17 @@ export class Dispatcher {
            ON CONFLICT(harness, session_id) DO UPDATE SET last_seen = MAX(agent_sessions.last_seen, excluded.last_seen)
            RETURNING id`,
         )
-        .get(crypto.randomBytes(6).toString("hex"), r.adapter.id, sessionId, r.built.cwd, r.row.model, start ? (r.child.pid ?? null) : null, start, now, now) as { id: string };
+        .get(
+          crypto.randomBytes(6).toString("hex"),
+          r.adapter.id,
+          sessionId,
+          r.built.cwd,
+          r.row.model,
+          start ? (r.child.pid ?? null) : null,
+          start,
+          now,
+          now,
+        ) as { id: string };
       linkPage(this.db, r.s.id, row.id, "editor");
       return row.id;
     } catch (err) {
@@ -1072,7 +1382,11 @@ export class Dispatcher {
 }
 
 function sessionRow(db: sqlite.DatabaseSync, id: string): AgentSessionRow | null {
-  return (db.prepare("SELECT * FROM agent_sessions WHERE id = ?").get(id) as unknown as AgentSessionRow | undefined) ?? null;
+  return (
+    (db.prepare("SELECT * FROM agent_sessions WHERE id = ?").get(id) as unknown as
+      | AgentSessionRow
+      | undefined) ?? null
+  );
 }
 
 export function newRunId(): string {

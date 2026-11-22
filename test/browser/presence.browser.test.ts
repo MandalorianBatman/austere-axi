@@ -44,7 +44,13 @@ let gone = false;
 let upgrades = 0;
 
 function shell() {
-  const boot = { id: ID, title: "Plan", artifactUrl: `${BASE}/a/`, viewer: { role: "reviewer", name: "" }, hosted: { base: BASE } };
+  const boot = {
+    id: ID,
+    title: "Plan",
+    artifactUrl: `${BASE}/a/`,
+    viewer: { role: "reviewer", name: "" },
+    hosted: { base: BASE },
+  };
   return `<!doctype html>
 <html lang="en" data-theme="dark"><head><meta charset="utf-8"><title>Plan · austere</title>
 <link rel="stylesheet" href="/rt/chrome/chrome.css">
@@ -57,14 +63,26 @@ function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "", origin);
   if (url.pathname === BASE) {
     if (gone) return res.writeHead(404).end("not found");
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": SHELL_CSP });
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": SHELL_CSP,
+    });
     return res.end(shell());
   }
   if (url.pathname === `${BASE}/a/${ASSET}/`) {
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": FRAME_CSP });
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": FRAME_CSP,
+    });
     return res.end(ARTIFACT);
   }
-  const asset = ({ "/rt/chrome/chrome.js": "dist/chrome/chrome.js", "/rt/chrome/chrome.css": "dist/chrome/chrome.css", "/rt/austere.js": "dist/austere.js" } as Record<string, string | undefined>)[url.pathname];
+  const asset = (
+    {
+      "/rt/chrome/chrome.js": "dist/chrome/chrome.js",
+      "/rt/chrome/chrome.css": "dist/chrome/chrome.css",
+      "/rt/austere.js": "dist/austere.js",
+    } as Record<string, string | undefined>
+  )[url.pathname];
   if (asset) {
     res.writeHead(200, { "content-type": asset.endsWith(".css") ? "text/css" : "text/javascript" });
     return res.end(fs.readFileSync(asset));
@@ -116,7 +134,10 @@ before(async () => {
   }
   browser = launched.browser;
   server = http.createServer(handle);
-  const wss = new WebSocketServer({ noServer: true, handleProtocols: (protocols) => (protocols.has(SUBPROTOCOL) ? SUBPROTOCOL : false) });
+  const wss = new WebSocketServer({
+    noServer: true,
+    handleProtocols: (protocols) => (protocols.has(SUBPROTOCOL) ? SUBPROTOCOL : false),
+  });
   server.on("upgrade", (req, sock, head) => {
     if (req.url !== `${BASE}/sync`) return sock.destroy();
     upgrades++;
@@ -126,7 +147,8 @@ before(async () => {
       ws.on("message", (data) => {
         const frame = JSON.parse(String(data));
         // The same socket carries the row feed: answer the pull with an empty page, record presence.
-        if (frame.t === "pull") return ws.send(JSON.stringify({ v: 1, t: "changes", rows: [], cursor: 0 }));
+        if (frame.t === "pull")
+          return ws.send(JSON.stringify({ v: 1, t: "changes", rows: [], cursor: 0 }));
         received.push(frame);
         wake?.();
       });
@@ -146,7 +168,12 @@ after(async () => {
 async function outlinesAre(page: Page, names: string[][]) {
   const frame = await (await page.$(".frame"))!.contentFrame();
   await frame!.waitForFunction(
-    (want) => JSON.stringify([...document.querySelectorAll(".austere-focus")].map((el) => [...el.querySelectorAll(".austere-focus-names > span")].map((s) => s.textContent))) === want,
+    (want) =>
+      JSON.stringify(
+        [...document.querySelectorAll(".austere-focus")].map((el) =>
+          [...el.querySelectorAll(".austere-focus-names > span")].map((s) => s.textContent),
+        ),
+      ) === want,
     JSON.stringify(names),
   );
 }
@@ -163,33 +190,55 @@ test("hosted chrome presence: roster chips, focus outlines, own focus and status
     const page = await ctx.newPage();
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(String(err)));
-    page.on("console", (m) => m.type() === "error" && /Content Security Policy/.test(m.text()) && errors.push(m.text()));
+    page.on(
+      "console",
+      (m) =>
+        m.type() === "error" && /Content Security Policy/.test(m.text()) && errors.push(m.text()),
+    );
     await page.goto(`${origin}${BASE}`);
     await page.frameLocator(".frame").locator("text=Intro paragraph").waitFor();
 
     // Joins with the prompt name.
-    assert.deepEqual(await frameFrom("hello"), { v: 1, t: "hello", status: "viewing", name: "Ana" });
+    assert.deepEqual(await frameFrom("hello"), {
+      v: 1,
+      t: "hello",
+      status: "viewing",
+      name: "Ana",
+    });
     assert.ok(await page.locator(".viewers").isHidden(), "no chips before the roster");
 
     // The roster: Bo (focused on plan) and the owner, then this viewer (self): its own chip first, named as the composer posts.
     play({ v: 1, t: "hello", viewer: BO, status: "viewing", focus: "plan", self: false });
     play({ v: 1, t: "hello", viewer: OWNER, status: "away", focus: null, self: false });
-    play({ v: 1, t: "hello", viewer: { id: "v-ana", name: "Ana", colour: "#46a758", role: "reviewer" }, status: "viewing", focus: null, self: true });
+    play({
+      v: 1,
+      t: "hello",
+      viewer: { id: "v-ana", name: "Ana", colour: "#46a758", role: "reviewer" },
+      status: "viewing",
+      focus: null,
+      self: true,
+    });
     await page.waitForFunction(() => document.querySelectorAll(".viewers .viewer").length === 3);
     const me = page.locator(".viewers .viewer").first();
     assert.equal(await me.innerText(), "A", "the header chip is this viewer, not the owner");
     assert.equal(await me.getAttribute("title"), "You · Ana");
-    assert.match(await me.getAttribute("class") ?? "", /\bself\b/);
+    assert.match((await me.getAttribute("class")) ?? "", /\bself\b/);
     assert.match(await page.locator(".composer-hint").innerText(), /^Posting as Ana/);
     const chips = page.locator(".viewers button.viewer");
     assert.equal(await chips.count(), 2, "the others");
     assert.equal(await chips.nth(0).innerText(), "B");
-    assert.match((await chips.nth(0).getAttribute("title")) ?? "", /^Bo · viewing · click to see where$/);
+    assert.match(
+      (await chips.nth(0).getAttribute("title")) ?? "",
+      /^Bo · viewing · click to see where$/,
+    );
     assert.match((await chips.nth(1).getAttribute("class")) ?? "", /\baway\b/);
     assert.ok(await chips.nth(1).isDisabled(), "no focus, nothing to scroll to");
     await outlinesAre(page, [["Bo"]]);
     const box = page.frameLocator(".frame").locator(".austere-focus");
-    assert.equal(await box.evaluate((el) => getComputedStyle(el).borderTopColor), "rgb(0, 144, 255)");
+    assert.equal(
+      await box.evaluate((el) => getComputedStyle(el).borderTopColor),
+      "rgb(0, 144, 255)",
+    );
 
     // Status and focus deltas; two viewers on one statement share an outline.
     play({ v: 1, t: "status", viewer: "v-bo", status: "writing" });
@@ -227,7 +276,12 @@ test("hosted chrome presence: roster chips, focus outlines, own focus and status
     received.length = 0;
     socket?.terminate();
     await page.waitForSelector(".viewers", { state: "hidden" });
-    assert.deepEqual(await frameFrom("hello", 10_000), { v: 1, t: "hello", status: "viewing", name: "Ana" });
+    assert.deepEqual(await frameFrom("hello", 10_000), {
+      v: 1,
+      t: "hello",
+      status: "viewing",
+      name: "Ana",
+    });
     assert.deepEqual(await frameFrom("focus"), { v: 1, t: "focus", statement: "intro" });
 
     // The page is deleted: the handshake is refused, the shell answers 404, and the chrome stops.
