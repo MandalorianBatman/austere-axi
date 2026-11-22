@@ -548,3 +548,53 @@ test("phone width: the sidebar is a drawer; the review header keeps the breadcru
     await context.close();
   }
 });
+
+test("a refresh keeps focus and scroll; a slow answer to an older request never replaces a newer view", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab();
+  try {
+    await group(page, "Quiet").waitFor();
+    // The tab coming back reads the inbox again: the row the owner stands on is the same element after it.
+    const button = page.getByRole("button", { name: "Archive Waiting page" });
+    await button.focus();
+    await page.evaluate(() => {
+      const row = document.querySelector<HTMLElement>("button[aria-label='Archive Waiting page']")!;
+      (window as unknown as { __row: HTMLElement }).__row = row;
+      document.body.style.minHeight = "4000px";
+      window.scrollTo(0, 300);
+    });
+    const read = page.waitForResponse((r) => r.url().includes("/hub/api/inbox"));
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await read;
+    await page.waitForTimeout(100);
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        same: document.activeElement === (window as unknown as { __row: HTMLElement }).__row,
+        y: Math.round(window.scrollY),
+      })),
+      { same: true, y: 300 },
+    );
+
+    // Pages → Everything is slow, Archived is quick: the last choice wins, whatever order the answers come in.
+    await page.locator(".views a[data-view=pages]").click();
+    await page.locator(".seg").waitFor();
+    await page.route(
+      (url) => url.pathname === "/hub/api/pages" && url.searchParams.get("view") === "all",
+      async (route) => {
+        await new Promise((r) => setTimeout(r, 700));
+        await route.continue();
+      },
+    );
+    await page.locator(".seg a", { hasText: "Everything" }).click();
+    await page.locator(".seg a", { hasText: "Archived" }).click();
+    await page.waitForTimeout(1200);
+    assert.equal(
+      (await page.locator(".seg a[aria-current=page]").innerText()).trim().split(/\s+/)[0],
+      "Archived",
+    );
+    assert.match(page.url(), /archived=1/);
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
+  }
+});

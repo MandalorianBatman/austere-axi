@@ -3078,7 +3078,7 @@ export async function runServer({
     return p.ref ? { id: p.id === "\0none" ? "" : p.id, name: p.name, ref: p.ref } : null;
   }
 
-  /** The hub (RLM-357): a client app over /hub/api, built like the review chrome (src/chrome/shell.ts). */
+  /** The hub (RLM-357): a client app over /hub/api, built like the review chrome (src/chrome/shell.tsx). */
   function hubShell(): string {
     const boot = { version: VERSION, home: os.homedir(), sep: path.sep };
     return `<!doctype html>

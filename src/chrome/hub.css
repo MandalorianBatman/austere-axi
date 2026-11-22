@@ -1,4 +1,4 @@
-/* The hub shell (shell.ts): sidebar, Inbox · Pages · Notes · Runs, the phone tab bar. Tokens in tokens.css. */
+/* The hub shell (shell.tsx): sidebar, Inbox · Pages · Notes · Runs, the phone tab bar. Tokens in tokens.css. */
 :root {
   --side-w: 248px;
   --content-w: 1040px; /* the main column, padding included */

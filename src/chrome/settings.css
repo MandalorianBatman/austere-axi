@@ -1,4 +1,4 @@
-/* Settings (settings.ts), inside the hub shell: the Hub-Settings artboard. Tokens in tokens.css.
+/* Settings (settings.tsx), inside the hub shell: the Hub-Settings artboard. Tokens in tokens.css.
    Generic hub classes (.btn, code, .meta, .summary, .empty) are restyled here only under .set-page. */
 .set-page {
   display: flex;
