@@ -244,7 +244,8 @@ code {
 .presence.ended::before {
   background: var(--red);
 }
-.presence.stale::before {
+.presence.stale::before,
+.presence.busy::before {
   background: var(--amber);
 }
 .presence.attached {
@@ -1044,7 +1045,8 @@ html.exploring .hist {
 .tab-dot.working {
   background: var(--green);
 }
-.tab-dot.stale {
+.tab-dot.stale,
+.tab-dot.busy {
   background: var(--amber);
 }
 .tab-dot.ended {
@@ -1877,7 +1879,8 @@ textarea.edit {
   .dock-presence.working::before {
     background: var(--green);
   }
-  .dock-presence.stale::before {
+  .dock-presence.stale::before,
+  .dock-presence.busy::before {
     background: var(--amber);
   }
   .dock-presence.ended::before {

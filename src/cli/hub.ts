@@ -186,9 +186,10 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
  * (RLM-397): `devices`, and `device_id` on `notes` and `items`. 4 adds access requests
  * (RLM-398): `access_requests` and `access_settings`. 5 adds history (RLM-349–354):
  * `revisions`, `statements`, `statements_fts` and `statement_origins`. 6 adds activity
- * triggers (RLM-360): `trigger_state` and `runs.trigger_id`.
+ * triggers (RLM-360): `trigger_state` and `runs.trigger_id`. 7 adds push delivery (RLM-447):
+ * `notes.seen_by`, the harness a wake handed a note to.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /** The schema version `db` is at. Before builds recorded it (0), a database 0.12.0 migrated already has version 1's last columns. */
 function schemaVersion(db: sqlite.DatabaseSync): number {
@@ -204,7 +205,8 @@ function schemaVersion(db: sqlite.DatabaseSync): number {
   if (!has("notes", "device_id") || !has("items", "device_id")) return 2;
   if (!has("access_requests", "secret_hash")) return 3;
   if (!has("revisions", "program_sha")) return 4;
-  return has("runs", "trigger_id") ? 6 : 5;
+  if (!has("runs", "trigger_id")) return 5;
+  return has("notes", "seen_by") ? 7 : 6;
 }
 
 /**
@@ -518,6 +520,8 @@ function migrate(db: sqlite.DatabaseSync, fts = true): void {
     // Team review devices (RLM-397): who may review, and which device wrote each note.
     db.exec(DEVICES_SCHEMA);
     if (!has("notes", "device_id")) db.exec("ALTER TABLE notes ADD COLUMN device_id TEXT");
+    // Push delivery (RLM-447): which harness a wake handed the note to.
+    if (!has("notes", "seen_by")) db.exec("ALTER TABLE notes ADD COLUMN seen_by TEXT");
     if (!has("items", "device_id")) db.exec("ALTER TABLE items ADD COLUMN device_id TEXT");
     // Access requests (RLM-398): browsers that asked to review, and where the owner lets them ask.
     db.exec(REQUESTS_SCHEMA);

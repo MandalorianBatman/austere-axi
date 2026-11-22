@@ -47,7 +47,7 @@ import {
 } from "./agent-sessions.ts";
 import type { CallerReport, SessionAction } from "./agent-sessions.ts";
 import { Wake, parseClientId } from "./wake.ts";
-import type { WakeAckResponse } from "./wake.ts";
+import type { WakeAckResponse, WakeStatus } from "./wake.ts";
 import { parseSessionOverride } from "./caller.ts";
 import type { Caller, Liveness } from "./caller.ts";
 import { detectUnit } from "./service.ts";
@@ -686,13 +686,19 @@ export async function runServer({
     log,
     listening: (s) => Boolean(listener(s)),
     autoConflict: (s) => autoConflict(store.db, s.file, s.id, liveAuto),
-    delivered: (s, entries) => {
-      store.markDelivered(s, entries);
+    delivered: (s, entries, harness) => {
+      store.markDelivered(s, entries, harness);
       dispatcher.pollArrived(s, "An agent session was woken with the notes: they go to it.");
       s.workingSince = Date.now();
       agentActive(s);
       broadcastTranscript(s, entries);
       broadcastPresence(s);
+    },
+    changed: (pageIds) => {
+      for (const id of pageIds) {
+        const s = store.get(id);
+        if (s) broadcastPresence(s);
+      }
     },
   });
   // Activity triggers (RLM-360): a command the owner named at a terminal runs once a project has gone quiet.
@@ -1571,13 +1577,22 @@ export async function runServer({
       : "working";
   }
 
-  /** Presence as the review page gets it: `since`, while an agent has the notes, is when it took them; `now` lets the page read it against its own clock. */
-  function presenceInfo(s: Session): { presence: Presence; since?: number; now: number } {
+  /**
+   * Presence as the review page gets it: `since`, while an agent has the notes, is when it took them; `now` lets the page read it against its own clock.
+   * `wake` (RLM-447): an agent session that a note would wake now (`idle`), or once its turn ends (`busy`).
+   */
+  function presenceInfo(s: Session): {
+    presence: Presence;
+    since?: number;
+    now: number;
+    wake?: WakeStatus;
+  } {
     const p = presence(s);
     return {
       presence: p,
       since: p === "working" || p === "stale" ? (s.workingSince ?? undefined) : undefined,
       now: Date.now(),
+      wake: p === "listening" ? undefined : (wakes.status(s) ?? undefined),
     };
   }
 

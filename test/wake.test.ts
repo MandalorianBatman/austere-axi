@@ -175,6 +175,76 @@ test("a page an agent polls is the poll's: no wake", async () => {
   assert.equal((await wakePoll("author-3", "client-aaaa")).status, "idle");
 });
 
+/** The owner's review page as it first loads: presence, the wake status and the notes. */
+interface Snapshot {
+  presence: string;
+  wake?: { harness: string; state: string };
+  transcript: { role: string; seenAt?: number; seenBy?: string }[];
+}
+
+function snapshot(id: string): Promise<Snapshot> {
+  const { promise, resolve, reject } = Promise.withResolvers<Snapshot>();
+  const r = http.get(
+    { host: "127.0.0.1", port: PORT, path: `/s/${id}/events`, headers: OWNER },
+    (res) => {
+      let buf = "";
+      res.setEncoding("utf8");
+      res.on("data", (c: string) => {
+        buf += c;
+        const m = /event: snapshot\ndata: (.*)\n\n/.exec(buf);
+        if (!m) return;
+        r.destroy();
+        resolve(JSON.parse(m[1]) as Snapshot);
+      });
+    },
+  );
+  r.on("error", (err) => (r.destroyed ? undefined : reject(err)));
+  return promise;
+}
+
+async function wakeUntil(id: string, state: string): Promise<Snapshot["wake"]> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const { wake } = await snapshot(id);
+    if (wake?.state === state) return wake;
+    if (Date.now() > deadline) assert.fail(`wake never read ${state}: ${JSON.stringify(wake)}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+test("the review page says whether a session would be woken, and which harness a note was delivered to", async () => {
+  const file = page("status.html");
+  const id = await openAs(file, "status-1");
+  assert.equal((await snapshot(id)).wake, undefined, "no client has asked: nothing to say");
+
+  // The client waits: Send wakes it now.
+  const ac = new AbortController();
+  const waiting = http.request({
+    host: "127.0.0.1",
+    port: PORT,
+    method: "POST",
+    path: "/api/sessions/omp:status-1/wake-poll",
+    headers: { "content-type": "application/json", ...OWNER },
+    signal: ac.signal,
+  });
+  waiting.on("error", () => {});
+  waiting.end(JSON.stringify({ client: "client-status", timeoutMs: 20_000 }));
+  assert.deepEqual(await wakeUntil(id, "idle"), { harness: "omp", state: "idle" });
+
+  // A turn starts (the client stops waiting), and the process cannot be checked: busy.
+  ac.abort();
+  await wakeUntil(id, "busy");
+
+  // The turn ends; the client takes the note; the page names the harness it went to.
+  await send(id, "note for the status line");
+  const got = await wakePoll("status-1", "client-status");
+  assert.equal(got.status, "wake");
+  await wakeAck("status-1", "client-status", got.claim ?? "", "delivered");
+  const note = (await snapshot(id)).transcript.find((e) => e.role === "user");
+  assert.equal(note?.seenBy, "omp");
+  assert.ok(note?.seenAt);
+});
+
 /** A fake omp session: idle or busy, and the turns the extension started. */
 function fakeHarness(sessionId: string) {
   const sent: string[] = [];

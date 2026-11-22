@@ -9,7 +9,7 @@
 //   chrome/          review UI and the hub shell, served by the local server
 //   cli.mjs          the CLI + server, dependencies bundled
 //   sync.mjs         hosted-page sync protocol ("austere-axi/sync"), zod bundled
-//   harness/omp.mjs  the omp / Pi extension that wakes an idle agent session (RLM-447)
+//   harness/omp.js   the omp / Pi extension that wakes an idle agent session (RLM-447); .js, which omp's extensions/ folder loads
 import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
@@ -189,7 +189,7 @@ async function buildCli() {
 
 // The omp / Pi extension: loaded by the harness (Bun), node builtins only.
 async function buildHarness() {
-  const out = path.join(DIST, "harness", "omp.mjs");
+  const out = path.join(DIST, "harness", "omp.js");
   await esbuild.build({
     entryPoints: [path.join(ROOT, "src/harness/omp.ts")],
     bundle: true,
@@ -199,7 +199,7 @@ async function buildHarness() {
     outfile: out,
     logLevel: "warning",
   });
-  console.log(`harness  dist/harness/omp.mjs ${(fs.statSync(out).size / 1024).toFixed(0)} KB`);
+  console.log(`harness  dist/harness/omp.js ${(fs.statSync(out).size / 1024).toFixed(0)} KB`);
 }
 
 if (want("packs") || (want("runtime") && !packsBuilt())) await buildPacks();
