@@ -4,6 +4,11 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Added
+
+- **Push delivery for omp.** A note the owner sends now starts the next turn of the open omp session that wrote, edited or listened to the page, when that session is idle, with no `poll` running. Load the extension with `omp -e "$(npm root -g)/austere-axi/dist/harness/omp.js"`, or link it into `~/.omp/agent/extensions/`. It does nothing in a session the server knows no page for (one check at start), never interrupts a running turn, and wakes a session once even when two omp processes have it open. The turn names the page and the `feedback`/`patch`/`reply` commands, never the notes' text. New server routes: `POST /api/sessions/<harness>:<id>/wake-poll` and `wake-ack`. A delivered wake cancels an attached run that has not started. In omp 18.22, `deliverAs: "followUp"` does not start a turn in an idle session, so the extension sends without it. See `docs/cli.md`, "Wake an idle session", and `docs/attach.md`, "Who gets a note". (RLM-447)
+- The review page says who would take a note: "Agent idle in omp · Send wakes it", "Agent busy in omp · notes wait for its turn", "Queued · agent busy" under a waiting note and "Delivered to omp 14:02" under a delivered one. "Agent not listening" shows only when nothing would take it. hub.db schema 7 adds `notes.seen_by`. (RLM-447)
+
 ### Changed
 
 - The `austere-setup` skill's description now lists when to use it (setup, a missing `austere-axi` or `/austere` command, old Node, pages that do not open, a server still on the old version after an update, phone review, an always-on server) instead of what it does, like the `austere` skill's in 0.17.0. After an update it restarts a running server. (RLM-425)
