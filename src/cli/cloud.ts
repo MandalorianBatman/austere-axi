@@ -7,10 +7,13 @@
 // schema module (src/shared/sync.ts); nothing here redefines them.
 //
 // State: <state>/cloud.json (mode 0600)
-//   { url, token, account, pages: { "<absolute path>": { id, auto, unlisted, presence, invites: { "<name>": { token, expiresAt } } } } }
+//   { url, owner, account, pages: { "<absolute path>": { id, auto, unlisted, presence, invites: { "<name>": { token, expiresAt } } } } }
 // Invite tokens are kept so a republish or `publish invites` can print the same links; the service
-// only ever sees their SHA-256. `token` is the anonymous owner token; `account` the signed-in
-// WorkOS account (`cloud login`), whose access token is the credential whenever it is there.
+// only ever sees their SHA-256. `account` is the signed-in WorkOS account (`cloud login`): its access
+// token is the only owner credential, so every owner command needs it. `owner` is the account (user
+// id) the `pages` map belongs to: a login as another account starts the map over. The anonymous owner
+// token of a version before 0.17 (`token`) is ignored and dropped at the next write; the service no
+// longer accepts it, and its pages are taken down.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -68,11 +71,15 @@ export interface Account {
 
 export interface CloudState {
   url: string;
-  token: string;
+  /** The account (WorkOS user id) the pages map belongs to; "" when unknown. Written only by login. */
+  owner: string;
   /** Written only by the account functions (login, logout, refresh) under the lock: `writeCloud` keeps the file's. */
   account: Account | null;
   pages: Record<string, PageEntry>;
 }
+
+/** `owner` of a pre-0.17 file whose pages an anonymous owner token published: no account holds them. */
+const ANONYMOUS = "(anonymous)";
 
 const str = (o: object, k: string): string | null => (k in o && typeof (o as Record<string, unknown>)[k] === "string" ? ((o as Record<string, unknown>)[k] as string) : null);
 
@@ -92,11 +99,14 @@ export function readCloud(): CloudState {
   } catch {
     // none yet, or unreadable: start empty
   }
-  const state: CloudState = { url: "", token: "", account: null, pages: {} };
+  const state: CloudState = { url: "", owner: "", account: null, pages: {} };
   if (!raw || typeof raw !== "object") return state;
   if ("url" in raw && typeof raw.url === "string") state.url = raw.url;
-  if ("token" in raw && typeof raw.token === "string") state.token = raw.token;
   if ("account" in raw) state.account = accountOf(raw.account);
+  // A file from before 0.17 names no owner: its pages are the signed-in account's, else the anonymous token's.
+  if ("owner" in raw && typeof raw.owner === "string") state.owner = raw.owner;
+  else if (state.account) state.owner = state.account.user.id;
+  else if ("token" in raw && typeof raw.token === "string" && raw.token) state.owner = ANONYMOUS;
   const pages = "pages" in raw && raw.pages && typeof raw.pages === "object" ? raw.pages : {};
   for (const [file, e] of Object.entries(pages)) {
     if (!e || typeof e !== "object" || !("id" in e) || typeof e.id !== "string") continue;
@@ -126,9 +136,10 @@ function writeFile(state: CloudState): void {
   fs.renameSync(tmp, file);
 }
 
-/** Writes `state`, but the account as the file has it: another process may have rotated its refresh token since `state` was read. */
+/** Writes `state`, but the account and owner as the file has them: another process may have rotated its refresh token, or signed in, since `state` was read. */
 export function writeCloud(state: CloudState): void {
-  writeFile({ ...state, account: readCloud().account });
+  const cur = readCloud();
+  writeFile({ ...state, account: cur.account, owner: cur.owner });
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -159,11 +170,10 @@ async function withCloudLock<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Sets (or, with null, removes) the account in cloud.json; call under the lock. `url` is the service it belongs to. */
-function saveAccount(account: Account | null, url?: string): void {
+/** Sets (or, with null, removes) the account in cloud.json, as a refresh or logout does; call under the lock. */
+function saveAccount(account: Account | null): void {
   const cur = readCloud();
   cur.account = account;
-  if (url) cur.url = url;
   writeFile(cur);
 }
 
@@ -210,6 +220,11 @@ export function setCloudEnabled(on: boolean): void {
 /** CloudError.code when the switch is off. */
 export const CLOUD_OFF = "cloud_off";
 
+/** CloudError.code when this machine is not signed in to the hosted service. */
+export const LOGIN_REQUIRED = "login_required";
+
+const NOT_SIGNED_IN = "not signed in to the hosted service: run `austere-axi cloud login` first (once per machine), then try again";
+
 /** Every request and socket to the service goes through here first. */
 function requireCloud(): void {
   if (!cloudEnabled()) throw new CloudError("cloud features are off, so only local review works: turn them on in Settings → Cloud, or run `austere-axi cloud on`", undefined, CLOUD_OFF);
@@ -219,12 +234,19 @@ function requireCloud(): void {
 function stateFor(url: string): CloudState {
   requireCloud();
   const state = readCloud();
-  if ((state.token || state.account) && state.url && state.url !== url) {
+  if (state.account && state.url && state.url !== url) {
     throw new CloudError(
-      `${cloudFile()} holds ${state.token ? "an owner token" : "an account"} for ${state.url}, not ${url}. Set AUSTERE_AXI_CLOUD_URL=${state.url}, use another AUSTERE_AXI_STATE_DIR for ${url}, or, if ${state.url} is gone, move ${cloudFile()} aside to start over on ${url}.`,
+      `${cloudFile()} holds an account for ${state.url}, not ${url}. Set AUSTERE_AXI_CLOUD_URL=${state.url}, use another AUSTERE_AXI_STATE_DIR for ${url}, or, if ${state.url} is gone, move ${cloudFile()} aside to start over on ${url}.`,
     );
   }
   state.url = url;
+  return state;
+}
+
+/** The state for an owner command: the account is the only credential, so a machine that is not signed in stops here, before any request. */
+function ownerState(url: string): CloudState {
+  const state = stateFor(url);
+  if (!state.account) throw new CloudError(NOT_SIGNED_IN, undefined, LOGIN_REQUIRED);
   return state;
 }
 
@@ -343,24 +365,9 @@ async function call<T>(base: string, method: string, route: string, opts: CallOp
   return text ? (JSON.parse(text) as T) : null;
 }
 
-/** The owner token, created on first use and saved before anything else can fail. */
-async function ensureToken(state: CloudState): Promise<string> {
-  if (state.token) return state.token;
-  const data = await call<{ token?: unknown }>(state.url, "POST", "/api/owners");
-  if (!data || typeof data.token !== "string") throw new CloudError(`${state.url} did not return an owner token`);
-  state.token = data.token;
-  writeCloud(state);
-  return state.token;
-}
-
-/** The credential for owner routes: the account's access token when signed in, else the owner token (made on first use). */
-export function credential(state: CloudState): Promise<string> {
-  return state.account ? accessToken(state) : ensureToken(state);
-}
-
-/** Whether this machine holds an owner credential (an account or an owner token). */
-export function hasOwner(state: CloudState): boolean {
-  return !!(state.token || state.account);
+/** Whether this machine is signed in to the hosted service: the account is the only owner credential. */
+export function signedIn(state: CloudState): boolean {
+  return state.account !== null;
 }
 
 // ── account (WorkOS CLI Auth: RFC 8628 device flow; docs/team-review.md) ──
@@ -413,16 +420,16 @@ function accountFrom(clientId: string, apiBase: string, data: Record<string, unk
 }
 
 /**
- * The account's access token, refreshed when it expires within a minute. The refresh token works
- * once: the new one is stored before the access token is used. `invalid_grant` (the session ended)
- * signs this machine out.
+ * The credential for owner routes: the account's access token, refreshed when it expires within a
+ * minute. The refresh token works once: the new one is stored before the access token is used.
+ * `invalid_grant` (the session ended) signs this machine out.
  */
-async function accessToken(state: CloudState): Promise<string> {
+export async function credential(state: CloudState): Promise<string> {
   if (state.account && fresh(state.account)) return state.account.accessToken;
   return withCloudLock(async () => {
     // Another process (the local server, another command) may have refreshed it meanwhile.
     const cur = readCloud().account;
-    if (!cur) throw new CloudError("signed out of the austere account meanwhile: run austere-axi cloud login");
+    if (!cur) throw new CloudError(NOT_SIGNED_IN, undefined, LOGIN_REQUIRED);
     state.account = cur;
     if (fresh(cur)) return cur.accessToken;
     const r = await workos(cur.apiBase, "/user_management/authenticate", { grant_type: "refresh_token", refresh_token: cur.refreshToken, client_id: cur.clientId });
@@ -451,20 +458,20 @@ export interface DevicePrompt {
 export interface LoggedIn {
   email: string;
   name: string;
-  /** Pages of this machine's anonymous owner token that the account took over; null without one. */
-  claimed: number | null;
-  claimError?: string;
+  /** Published files this machine forgot: their pages belonged to another account, or to a pre-0.17 anonymous owner token. */
+  forgotten: number;
 }
 
 /**
  * `cloud login`: WorkOS CLI Auth. Asks the service for its WorkOS client, starts a device
  * authorization (client id only: a public client holds no secret), shows the code through `prompt`,
- * and polls until the browser approves, then stores the tokens. A machine that published anonymously
- * hands its owner token to the account, so those pages are the account's.
+ * and polls until the browser approves, then stores the tokens. The pages map belongs to one account:
+ * signing in as another one starts it over, so `publish` makes new pages instead of failing on the
+ * other account's.
  */
 export async function login(prompt: (p: DevicePrompt) => void | Promise<void>): Promise<LoggedIn> {
   const base = cloudUrl();
-  const state = stateFor(base);
+  stateFor(base); // cloud on, and no account of another service here
   const config = await call<{ clientId?: unknown; apiBase?: unknown }>(base, "GET", "/auth/config");
   const clientId = typeof config?.clientId === "string" ? config.clientId : "";
   const apiBase = typeof config?.apiBase === "string" && /^https?:\/\//.test(config.apiBase) ? config.apiBase.replace(/\/+$/, "") : "";
@@ -499,21 +506,16 @@ export async function login(prompt: (p: DevicePrompt) => void | Promise<void>): 
     else if (r.data.error === "expired_token") throw new CloudError("the sign-in code expired before it was approved: run austere-axi cloud login again");
     else throw new CloudError(`${apiBase} refused the sign-in (${r.status}${typeof r.data.error === "string" ? `: ${r.data.error}` : ""})`);
   }
-  await withCloudLock(async () => saveAccount(account, base));
-  state.account = account;
-
-  let claimed: number | null = null;
-  let claimError: string | undefined;
-  if (state.token) {
-    try {
-      const c = await call<{ pages?: unknown }>(base, "POST", "/api/owners/claim", { token: account.accessToken, json: { token: state.token } });
-      claimed = typeof c?.pages === "number" ? c.pages : 0;
-    } catch (err) {
-      if (!(err instanceof CloudError)) throw err;
-      claimError = err.message;
+  let forgotten = 0;
+  await withCloudLock(async () => {
+    const cur = readCloud();
+    if (cur.owner && cur.owner !== account.user.id) {
+      forgotten = Object.keys(cur.pages).length;
+      cur.pages = {};
     }
-  }
-  return { email: account.user.email, name: account.user.name, claimed, claimError };
+    writeFile({ ...cur, url: base, owner: account.user.id, account });
+  });
+  return { email: account.user.email, name: account.user.name, forgotten };
 }
 
 /** `cloud logout`: forgets the account's tokens on this machine. Returns the email it was, or null. */
@@ -538,16 +540,14 @@ export async function whoami(): Promise<{ email: string; name: string; pages: nu
 // ── owner socket ──
 
 /**
- * A new owner socket to page `id`, the CLI version in `?cli=`. An owner token rides in the
- * subprotocols; an access token (a JWT, no valid subprotocol) in the upgrade's Authorization header.
+ * A new owner socket to page `id`, the CLI version in `?cli=`. The credential (the account's access
+ * token) rides in the upgrade's Authorization header.
  */
 export function ownerSocket(base: string, credential: string, id: string): WebSocket {
   requireCloud();
   const url = `${base.replace(/^http/, "ws")}/api/pages/${encodeURIComponent(id)}/sync?cli=${encodeURIComponent(VERSION)}`;
-  const jwt = credential.includes(".");
-  const headers: Record<string, string> = { "user-agent": `austere-axi/${VERSION}` };
-  if (jwt) headers.authorization = `Bearer ${credential}`;
-  return new WebSocket(url, syncProtocols(jwt ? {} : { owner: credential }), { headers, followRedirects: false });
+  const headers = { "user-agent": `austere-axi/${VERSION}`, authorization: `Bearer ${credential}` };
+  return new WebSocket(url, syncProtocols({}), { headers, followRedirects: false });
 }
 
 /**
@@ -740,7 +740,7 @@ export async function publish(abs: string, opts: PublishOptions = {}): Promise<P
   const names = [...new Set((opts.invite ?? []).map(inviteName))];
   if (opts.expiresAt !== undefined && !names.length) throw new CloudError("--expires applies to the invites of this publish: add --invite <name>");
   const base = cloudUrl();
-  const state = stateFor(base);
+  const state = ownerState(base);
   // Everything that can fail locally fails before the first request.
   const bundle = bundlePage(abs, fs.readFileSync(abs, "utf8"));
   const token = await credential(state);
@@ -821,14 +821,13 @@ export interface InviteInfo {
 function entryOf(state: CloudState, abs: string): PageEntry {
   const entry = state.pages[abs];
   if (!entry) throw new CloudError(`${abs} has not been published from this machine (see austere-axi publish list)`);
-  if (!hasOwner(state)) throw new CloudError("nothing has been published from this machine");
   return entry;
 }
 
 /** The page's invites, as the service has them (`acl` rows), with this machine's links. */
 export async function listInvites(abs: string): Promise<{ id: string; unlisted: boolean; auto: boolean; presence: boolean; invites: InviteInfo[] }> {
   const base = cloudUrl();
-  const state = stateFor(base);
+  const state = ownerState(base);
   const entry = entryOf(state, abs);
   const rows = latest((await ownerSession(base, await credential(state), entry.id, [], { pull: true })).rows);
   const page = rows.find((r): r is PageRow => r.type === "page");
@@ -852,7 +851,7 @@ export async function listInvites(abs: string): Promise<{ id: string; unlisted: 
 /** Revoke invite `name`: its link stops working and its open pages are disconnected at once. */
 export async function revokeInvite(abs: string, name: string): Promise<{ id: string; name: string }> {
   const base = cloudUrl();
-  const state = stateFor(base);
+  const state = ownerState(base);
   const entry = entryOf(state, abs);
   const n = inviteName(name);
   await ownerSession(base, await credential(state), entry.id, [{ name: "revoke", args: { name: n } }]);
@@ -867,7 +866,7 @@ export async function revokeInvite(abs: string, name: string): Promise<{ id: str
  */
 export async function ownerLogin(abs: string): Promise<{ id: string; url: string; ttlMs: number }> {
   const base = cloudUrl();
-  const state = stateFor(base);
+  const state = ownerState(base);
   const entry = entryOf(state, abs);
   const data = await call<{ code?: unknown; ttlMs?: unknown }>(base, "POST", `/api/pages/${encodeURIComponent(entry.id)}/login`, { token: await credential(state) });
   if (!data || typeof data.code !== "string" || !/^[A-Za-z0-9_-]+$/.test(data.code) || typeof data.ttlMs !== "number") {
@@ -885,11 +884,10 @@ export interface ListedPage {
   file?: string;
 }
 
-/** The owner's live pages, with the local file each came from. Without a token there is nothing to ask for. */
+/** The owner's live pages, with the local file each came from. */
 export async function listPages(): Promise<ListedPage[]> {
   const base = cloudUrl();
-  const state = stateFor(base);
-  if (!hasOwner(state)) return [];
+  const state = ownerState(base);
   const data = await call<{ pages?: ListedPage[] }>(base, "GET", "/api/pages", { token: await credential(state) });
   const fileOf = new Map(Object.entries(state.pages).map(([file, e]) => [e.id, file]));
   return (data?.pages || []).map((p) => ({ ...p, file: fileOf.get(p.id) }));
@@ -902,12 +900,11 @@ export async function listPages(): Promise<ListedPage[]> {
  */
 export async function removePage(key: string): Promise<{ id: string; file?: string; gone: boolean }> {
   const base = cloudUrl();
-  const state = stateFor(base);
+  const state = ownerState(base);
   let file = state.pages[key] ? key : undefined;
   const id = file ? state.pages[key].id : key;
   if (!file) file = Object.keys(state.pages).find((f) => state.pages[f].id === id);
   if (!file && !PAGE_ID_RE.test(id)) throw new CloudError(`${key} is not a published file or a page id (see austere-axi publish list)`);
-  if (!hasOwner(state)) throw new CloudError("nothing has been published from this machine");
   let gone = false;
   try {
     await ownerSession(base, await credential(state), id, [{ name: "delete", args: {} }]);
@@ -940,8 +937,7 @@ export function localCopy(html: string): string {
 export async function clonePage(id: string, abs: string): Promise<{ id: string; file: string; url: string; title: string }> {
   if (!PAGE_ID_RE.test(id)) throw new CloudError(`${id} is not a page id (see austere-axi clone)`);
   const base = cloudUrl();
-  const state = stateFor(base);
-  if (!hasOwner(state)) throw new CloudError("no owner credential on this machine: run austere-axi cloud login first");
+  const state = ownerState(base);
   const other = Object.keys(state.pages).find((f) => state.pages[f].id === id);
   if (other) throw new CloudError(`page ${id} is already attached to ${other}`);
   if (fs.existsSync(abs)) throw new CloudError(`${abs} exists already: clone writes a new file`);

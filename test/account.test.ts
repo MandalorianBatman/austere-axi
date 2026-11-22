@@ -1,6 +1,6 @@
 // `cloud login|logout|whoami` and `clone` (RLM-414) against a stub of austere-cloud and WorkOS in one
-// HTTP server: the device flow and its error codes, cloud.json (0600) and refresh-token rotation,
-// claiming the machine's owner token, publish over the account's access token, and clone.
+// HTTP server: the device flow and its error codes, cloud.json (0600) and refresh-token rotation, a
+// pre-0.17 cloud.json and another account's pages (RLM-434), publish over the access token, and clone.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -39,10 +39,7 @@ const stub = {
   refresh: new Map<string, string>(),
   /** The access token lifetime the next tokens get (s). */
   expIn: 300,
-  owners: new Set<string>(),
-  /** Owner token -> account that claimed it. */
-  claimed: new Map<string, string>(),
-  /** Page id -> owner (an owner token or "user:<id>"), its row and html. */
+  /** Page id -> owner ("user:<id>"), its row and html. */
   pages: new Map<string, { owner: string; row: PageRow | null; html: string }>(),
   objects: new Map<string, string>(),
   wsAuth: [] as string[],
@@ -61,15 +58,13 @@ function tokens() {
   return { user: USER, access_token: at, refresh_token: rt };
 }
 
-/** Who a bearer credential is: "user:<id>" for an access token, the owner token itself, or null. */
+/** Who a bearer access token is: "user:<id>", or null. The service takes nothing else (RLM-434). */
 function who(auth: string | undefined): string | null {
   const t = /^Bearer (\S+)$/.exec(auth ?? "")?.[1] ?? "";
-  if (stub.access.has(t)) return `user:${stub.access.get(t)}`;
-  return stub.owners.has(t) ? t : null;
+  return stub.access.has(t) ? `user:${stub.access.get(t)}` : null;
 }
 
-/** Whether `owner` (as `who` names it) owns a page created by `pageOwner`. */
-const owns = (owner: string, pageOwner: string) => owner === pageOwner || (owner.startsWith("user:") && stub.claimed.get(pageOwner) === owner.slice(5));
+const owns = (owner: string, pageOwner: string) => owner === pageOwner;
 
 before(async () => {
   server = http.createServer((req, res) => {
@@ -107,21 +102,9 @@ before(async () => {
       }
       // ── the service ──
       if (url === "/auth/config") return json(200, { clientId: "client_test", apiBase: BASE });
-      if (req.method === "POST" && url === "/api/owners") {
-        const token = crypto.randomBytes(32).toString("base64url");
-        stub.owners.add(token);
-        return json(201, { token });
-      }
       const me = who(req.headers.authorization);
       if (!me) return json(401, { error: "invalid token" });
-      if (url === "/api/me") return json(200, { user: me.startsWith("user:") ? { id: USER.id, email: USER.email, name: "Ana Lima" } : null, pages: [...stub.pages.values()].filter((p) => owns(me, p.owner)).length });
-      if (url === "/api/owners/claim") {
-        const { token } = JSON.parse(body) as { token: string };
-        if (!me.startsWith("user:")) return json(403, { error: "needs an account" });
-        if (!stub.owners.has(token)) return json(404, { error: "unknown owner token" });
-        stub.claimed.set(token, me.slice(5));
-        return json(200, { pages: [...stub.pages.values()].filter((p) => p.owner === token).length });
-      }
+      if (url === "/api/me") return json(200, { user: { id: USER.id, email: USER.email, name: "Ana Lima" }, pages: [...stub.pages.values()].filter((p) => owns(me, p.owner)).length });
       const obj = /^\/api\/objects\/([0-9a-f]{64})$/.exec(url);
       if (req.method === "PUT" && obj) {
         stub.objects.set(obj[1], body);
@@ -150,7 +133,7 @@ before(async () => {
   server.on("upgrade", (req, socket, head) => {
     const m = /^\/api\/pages\/([^/?]+)\/sync/.exec(req.url ?? "");
     const creds = readProtocols(req.headers["sec-websocket-protocol"]);
-    const me = req.headers.authorization ? who(req.headers.authorization) : creds.owner && stub.owners.has(creds.owner) ? creds.owner : null;
+    const me = who(req.headers.authorization);
     stub.wsAuth.push(req.headers.authorization ? "bearer" : creds.owner ? "subprotocol" : "none");
     const p = m ? stub.pages.get(m[1]) : undefined;
     if (!me || !p || !owns(me, p.owner)) {
@@ -231,14 +214,15 @@ test("cloud login on a clean machine: device code, approve, tokens in cloud.json
   assert.match(r.err, /AUSTERE_AXI_NO_OPEN is set: no browser was started\./);
   assert.equal(field(r.out, "status"), "signed in");
   assert.equal(field(r.out, "email"), "ana@example.com");
-  assert.equal(field(r.out, "claimed"), undefined, "nothing to claim on a clean machine");
+  assert.equal(field(r.out, "forgotten"), undefined, "nothing to forget on a clean machine");
   assert.equal(stub.requests.filter((x) => x === "POST /user_management/authenticate").length, 4);
   assert.ok(!stub.requests.includes("POST /api/owners"), "no anonymous owner token is made");
 
   const st = cloudJson();
   assert.equal(st.account.user.email, "ana@example.com");
   assert.equal(st.account.clientId, "client_test");
-  assert.equal(st.token, "");
+  assert.equal(st.owner, USER.id, "the published files' account");
+  assert.equal("token" in st, false, "no owner token");
   if (process.platform !== "win32") assert.equal(fs.statSync(path.join(STATE, "cloud.json")).mode & 0o777, 0o600);
 
   const w = await cli(["cloud", "whoami"]);
@@ -270,17 +254,50 @@ test("device flow refusals: access_denied and expired_token are errors, nothing 
   }
 });
 
-test("first login claims the machine's anonymous owner token: pages published before are the account's", async () => {
-  const file = path.join(WORK, "before.html");
+test("a pre-0.17 cloud.json: login sends no claim, forgets the anonymous token's pages and drops the token", async () => {
+  const file = path.join(WORK, "anon.html");
   fs.writeFileSync(file, PAGE);
-  const p = await cli(["publish", file]);
-  assert.equal(p.code, 0, p.out);
-  assert.deepEqual(stub.wsAuth, ["subprotocol"]);
+  const abs = fs.realpathSync(file);
+  const entry = { id: crypto.randomBytes(16).toString("base64url"), auto: false, unlisted: false, presence: true, invites: {} };
+  fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: BASE, token: "t".repeat(43), pages: { [abs]: entry } }), { mode: 0o600 });
+
   const r = await cli(["cloud", "login"]);
   assert.equal(r.code, 0, r.out);
-  assert.match(field(r.out, "claimed") ?? "", /^1 page /);
-  const list = await cli(["clone"]);
-  assert.match(list.out, /title: Plan/);
+  assert.match(field(r.out, "forgotten") ?? "", /^1 published file of another account \(or of an anonymous owner token from before 0\.17\)/);
+  assert.ok(!stub.requests.some((q) => q.includes("/api/owners")), "no claim, no owner token");
+  const st = cloudJson();
+  assert.equal("token" in st, false, "the owner token is dropped");
+  assert.deepEqual(st.pages, {});
+  assert.equal(st.owner, USER.id);
+  // publish on the file now makes a new page instead of failing on the old one.
+  const p = await cli(["publish", file]);
+  assert.equal(p.code, 0, p.out);
+  assert.equal(field(p.out, "status"), "published");
+});
+
+test("the published files belong to one account: another account's are forgotten at login, the same account's kept", async () => {
+  const file = path.join(WORK, "mine.html");
+  fs.writeFileSync(file, PAGE);
+  const abs = fs.realpathSync(file);
+  const entry = { id: crypto.randomBytes(16).toString("base64url"), auto: false, unlisted: false, presence: true, invites: {} };
+  const seed = (owner: string) => fs.writeFileSync(path.join(STATE, "cloud.json"), JSON.stringify({ url: BASE, owner, account: null, pages: { [abs]: entry } }), { mode: 0o600 });
+
+  seed("user_ben");
+  let r = await cli(["cloud", "login"]);
+  assert.equal(r.code, 0, r.out);
+  assert.match(field(r.out, "forgotten") ?? "", /^1 published file /);
+  assert.deepEqual(cloudJson().pages, {});
+
+  seed(USER.id);
+  r = await cli(["cloud", "login"]);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(field(r.out, "forgotten"), undefined);
+  assert.deepEqual(cloudJson().pages[abs], entry);
+  // logout keeps the map and its owner, so signing in again as the same account keeps it too.
+  assert.equal((await cli(["cloud", "logout"])).code, 0);
+  assert.equal(cloudJson().owner, USER.id);
+  assert.equal(field((await cli(["cloud", "login"])).out, "forgotten"), undefined);
+  assert.deepEqual(cloudJson().pages[abs], entry);
 });
 
 test("the access token is refreshed before it expires; the refresh token rotates; invalid_grant signs out", async () => {
