@@ -10,6 +10,7 @@
 //   cli.mjs          the CLI + server, dependencies bundled
 //   sync.mjs         hosted-page sync protocol ("austere-axi/sync"), zod bundled
 //   harness/omp.js   the omp / Pi extension that wakes an idle agent session (RLM-447); .js, which omp's extensions/ folder loads
+//   harness/copilot/extension.mjs   the same for Copilot CLI (RLM-452); link the folder into ~/.copilot/extensions/
 import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
@@ -187,19 +188,27 @@ async function buildCli() {
   console.log(`cli      dist/cli.mjs ${(fs.statSync(out).size / 1024).toFixed(0)} KB`);
 }
 
-// The omp / Pi extension: loaded by the harness (Bun), node builtins only.
+// The harness extensions that wake an idle agent session: loaded by the harness, node builtins only.
+// omp / Pi (Bun) loads a .js file; Copilot CLI loads `<name>/extension.mjs` and provides its SDK.
 async function buildHarness() {
-  const out = path.join(DIST, "harness", "omp.js");
-  await esbuild.build({
-    entryPoints: [path.join(ROOT, "src/harness/omp.ts")],
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    target: "node20",
-    outfile: out,
-    logLevel: "warning",
-  });
-  console.log(`harness  dist/harness/omp.js ${(fs.statSync(out).size / 1024).toFixed(0)} KB`);
+  const builds = [
+    { entry: "src/harness/omp.ts", out: "harness/omp.js" },
+    { entry: "src/harness/copilot-extension.ts", out: "harness/copilot/extension.mjs" },
+  ];
+  for (const b of builds) {
+    const out = path.join(DIST, b.out);
+    await esbuild.build({
+      entryPoints: [path.join(ROOT, b.entry)],
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      target: "node20",
+      external: ["@github/copilot-sdk", "@github/copilot-sdk/*"],
+      outfile: out,
+      logLevel: "warning",
+    });
+    console.log(`harness  dist/${b.out} ${(fs.statSync(out).size / 1024).toFixed(0)} KB`);
+  }
 }
 
 if (want("packs") || (want("runtime") && !packsBuilt())) await buildPacks();
