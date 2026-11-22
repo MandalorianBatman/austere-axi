@@ -24,6 +24,7 @@ import {
   loadLibrary,
   registryPlugin,
   slimHighlighterPlugin,
+  tailwindPlugin,
   zodLocalesPlugin,
 } from "./lib/plugins.ts";
 
@@ -161,10 +162,11 @@ async function buildChrome() {
     target: "es2020",
     jsx: "automatic",
     tsconfigRaw: IIFE_TSCONFIG,
+    alias: { "@": path.join(ROOT, "src") },
     define: { "process.env.NODE_ENV": '"production"' },
     outdir: outDir,
     // The hosted page socket reads frames with the sync module, which bundles zod.
-    plugins: [chromeFontsPlugin, zodLocalesPlugin],
+    plugins: [chromeFontsPlugin, tailwindPlugin, zodLocalesPlugin],
     logLevel: "warning",
   });
   console.log("chrome   dist/chrome/");

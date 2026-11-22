@@ -7,6 +7,8 @@
     "test/fixtures",
     "examples",
     "docs",
-    "bench/results"
+    "bench/results",
+    "src/chrome/ui",
+    "src/chrome/hooks"
   ]
 }

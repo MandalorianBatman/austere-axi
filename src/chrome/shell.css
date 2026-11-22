@@ -1,5 +1,6 @@
 /* The hub shell's stylesheet, in cascade order. Each part is owned by the module named in it. */
 @import "./tokens.css";
+@import "./tailwind.css";
 @import "./hub.css";
 @import "./settings.css";
 @import "./hub-narrow.css";

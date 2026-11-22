@@ -15,7 +15,12 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "paths": { "austere-axi/*": ["./types/*.d.ts"] }
+    "paths": {
+      "austere-axi/*": ["./types/*.d.ts"],
+      "@/chrome/ui/*": ["./src/chrome/ui/*.tsx"],
+      "@/chrome/lib/*": ["./src/chrome/lib/*.ts"],
+      "@/chrome/hooks/*": ["./src/chrome/hooks/*.ts"]
+    }
   },
   "include": [
     "src",
