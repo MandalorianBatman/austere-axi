@@ -7,12 +7,13 @@
 // schema module (src/shared/sync.ts); nothing here redefines them.
 //
 // State: <state>/cloud.json (mode 0600)
-//   { url, token?, account, pages: { "<absolute path>": { id, auto, unlisted, presence, invites: { "<name>": { token, expiresAt } } } } }
+//   { url, owner, account, pages: { "<absolute path>": { id, auto, unlisted, presence, invites: { "<name>": { token, expiresAt } } } } }
 // Invite tokens are kept so a republish or `publish invites` can print the same links; the service
 // only ever sees their SHA-256. `account` is the signed-in WorkOS account (`cloud login`): its access
-// token is the only owner credential, so every owner command needs it. `token` is the anonymous owner
-// token of a version before 0.17; nothing uses it except `cloud login`, which hands its pages to the
-// account and then drops it.
+// token is the only owner credential, so every owner command needs it. `owner` is the account (user
+// id) the `pages` map belongs to: a login as another account starts the map over. The anonymous owner
+// token of a version before 0.17 (`token`) is ignored and dropped at the next write; the service no
+// longer accepts it, and its pages are taken down.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -70,11 +71,15 @@ export interface Account {
 
 export interface CloudState {
   url: string;
-  token: string;
+  /** The account (WorkOS user id) the pages map belongs to; "" when unknown. Written only by login. */
+  owner: string;
   /** Written only by the account functions (login, logout, refresh) under the lock: `writeCloud` keeps the file's. */
   account: Account | null;
   pages: Record<string, PageEntry>;
 }
+
+/** `owner` of a pre-0.17 file whose pages an anonymous owner token published: no account holds them. */
+const ANONYMOUS = "(anonymous)";
 
 const str = (o: object, k: string): string | null => (k in o && typeof (o as Record<string, unknown>)[k] === "string" ? ((o as Record<string, unknown>)[k] as string) : null);
 
@@ -94,11 +99,14 @@ export function readCloud(): CloudState {
   } catch {
     // none yet, or unreadable: start empty
   }
-  const state: CloudState = { url: "", token: "", account: null, pages: {} };
+  const state: CloudState = { url: "", owner: "", account: null, pages: {} };
   if (!raw || typeof raw !== "object") return state;
   if ("url" in raw && typeof raw.url === "string") state.url = raw.url;
-  if ("token" in raw && typeof raw.token === "string") state.token = raw.token;
   if ("account" in raw) state.account = accountOf(raw.account);
+  // A file from before 0.17 names no owner: its pages are the signed-in account's, else the anonymous token's.
+  if ("owner" in raw && typeof raw.owner === "string") state.owner = raw.owner;
+  else if (state.account) state.owner = state.account.user.id;
+  else if ("token" in raw && typeof raw.token === "string" && raw.token) state.owner = ANONYMOUS;
   const pages = "pages" in raw && raw.pages && typeof raw.pages === "object" ? raw.pages : {};
   for (const [file, e] of Object.entries(pages)) {
     if (!e || typeof e !== "object" || !("id" in e) || typeof e.id !== "string") continue;
@@ -128,9 +136,10 @@ function writeFile(state: CloudState): void {
   fs.renameSync(tmp, file);
 }
 
-/** Writes `state`, but the account as the file has it: another process may have rotated its refresh token since `state` was read. */
+/** Writes `state`, but the account and owner as the file has them: another process may have rotated its refresh token, or signed in, since `state` was read. */
 export function writeCloud(state: CloudState): void {
-  writeFile({ ...state, account: readCloud().account });
+  const cur = readCloud();
+  writeFile({ ...state, account: cur.account, owner: cur.owner });
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -161,11 +170,10 @@ async function withCloudLock<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Sets (or, with null, removes) the account in cloud.json; call under the lock. `url` is the service it belongs to. */
-function saveAccount(account: Account | null, url?: string): void {
+/** Sets (or, with null, removes) the account in cloud.json, as a refresh or logout does; call under the lock. */
+function saveAccount(account: Account | null): void {
   const cur = readCloud();
   cur.account = account;
-  if (url) cur.url = url;
   writeFile(cur);
 }
 
@@ -226,9 +234,9 @@ function requireCloud(): void {
 function stateFor(url: string): CloudState {
   requireCloud();
   const state = readCloud();
-  if ((state.token || state.account) && state.url && state.url !== url) {
+  if (state.account && state.url && state.url !== url) {
     throw new CloudError(
-      `${cloudFile()} holds ${state.token ? "an owner token" : "an account"} for ${state.url}, not ${url}. Set AUSTERE_AXI_CLOUD_URL=${state.url}, use another AUSTERE_AXI_STATE_DIR for ${url}, or, if ${state.url} is gone, move ${cloudFile()} aside to start over on ${url}.`,
+      `${cloudFile()} holds an account for ${state.url}, not ${url}. Set AUSTERE_AXI_CLOUD_URL=${state.url}, use another AUSTERE_AXI_STATE_DIR for ${url}, or, if ${state.url} is gone, move ${cloudFile()} aside to start over on ${url}.`,
     );
   }
   state.url = url;
@@ -450,21 +458,20 @@ export interface DevicePrompt {
 export interface LoggedIn {
   email: string;
   name: string;
-  /** Pages of this machine's pre-0.17 anonymous owner token that the account took over; null without one. */
-  claimed: number | null;
-  claimError?: string;
+  /** Published files this machine forgot: their pages belonged to another account, or to a pre-0.17 anonymous owner token. */
+  forgotten: number;
 }
 
 /**
  * `cloud login`: WorkOS CLI Auth. Asks the service for its WorkOS client, starts a device
  * authorization (client id only: a public client holds no secret), shows the code through `prompt`,
- * and polls until the browser approves, then stores the tokens. A machine that published anonymously
- * (before 0.17) hands its owner token to the account, so those pages are the account's; the token is
- * then dropped.
+ * and polls until the browser approves, then stores the tokens. The pages map belongs to one account:
+ * signing in as another one starts it over, so `publish` makes new pages instead of failing on the
+ * other account's.
  */
 export async function login(prompt: (p: DevicePrompt) => void | Promise<void>): Promise<LoggedIn> {
   const base = cloudUrl();
-  const state = stateFor(base);
+  stateFor(base); // cloud on, and no account of another service here
   const config = await call<{ clientId?: unknown; apiBase?: unknown }>(base, "GET", "/auth/config");
   const clientId = typeof config?.clientId === "string" ? config.clientId : "";
   const apiBase = typeof config?.apiBase === "string" && /^https?:\/\//.test(config.apiBase) ? config.apiBase.replace(/\/+$/, "") : "";
@@ -499,26 +506,16 @@ export async function login(prompt: (p: DevicePrompt) => void | Promise<void>): 
     else if (r.data.error === "expired_token") throw new CloudError("the sign-in code expired before it was approved: run austere-axi cloud login again");
     else throw new CloudError(`${apiBase} refused the sign-in (${r.status}${typeof r.data.error === "string" ? `: ${r.data.error}` : ""})`);
   }
-  await withCloudLock(async () => saveAccount(account, base));
-  state.account = account;
-
-  let claimed: number | null = null;
-  let claimError: string | undefined;
-  if (state.token) {
-    try {
-      const c = await call<{ pages?: unknown }>(base, "POST", "/api/owners/claim", { token: account.accessToken, json: { token: state.token } });
-      claimed = typeof c?.pages === "number" ? c.pages : 0;
-      await withCloudLock(async () => {
-        const cur = readCloud();
-        cur.token = "";
-        writeFile(cur);
-      });
-    } catch (err) {
-      if (!(err instanceof CloudError)) throw err;
-      claimError = err.message;
+  let forgotten = 0;
+  await withCloudLock(async () => {
+    const cur = readCloud();
+    if (cur.owner && cur.owner !== account.user.id) {
+      forgotten = Object.keys(cur.pages).length;
+      cur.pages = {};
     }
-  }
-  return { email: account.user.email, name: account.user.name, claimed, claimError };
+    writeFile({ ...cur, url: base, owner: account.user.id, account });
+  });
+  return { email: account.user.email, name: account.user.name, forgotten };
 }
 
 /** `cloud logout`: forgets the account's tokens on this machine. Returns the email it was, or null. */

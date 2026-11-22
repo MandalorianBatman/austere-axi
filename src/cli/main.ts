@@ -471,7 +471,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   cloud: {
     usage: "cloud on | cloud off | cloud status | cloud login | cloud logout | cloud whoami",
     summary:
-      "cloud features: publish, clone, cloud login|whoami and the sync of hosted pages. Off by default: only local features work and nothing reaches the hosted service. `cloud on` and `cloud off` flip the switch (Settings → Cloud does the same), `cloud status` prints it. Your account on the hosted service (WorkOS sign-in: email code, Google, GitHub, passkey): `cloud login` prints a sign-in link with its code on stderr and opens the browser at it (not with AUSTERE_AXI_NO_OPEN=1); approve it there or on any other device, once per machine. publish, clone and the sync of hosted pages need it: until then they refuse before any request, and help leaves publish and clone out. You are then the owner of all your hosted pages, from every machine you log in on and in the browser with the same account, and pages this machine published anonymously before 0.17 become the account's. `cloud whoami` prints the account, `cloud logout` forgets it here. Only for hosted pages: the local server needs no account",
+      "cloud features: publish, clone, cloud login|whoami and the sync of hosted pages. Off by default: only local features work and nothing reaches the hosted service. `cloud on` and `cloud off` flip the switch (Settings → Cloud does the same), `cloud status` prints it. Your account on the hosted service (WorkOS sign-in: email code, Google, GitHub, passkey): `cloud login` prints a sign-in link with its code on stderr and opens the browser at it (not with AUSTERE_AXI_NO_OPEN=1); approve it there or on any other device, once per machine. publish, clone and the sync of hosted pages need it: until then they refuse before any request, and help leaves publish and clone out. You are then the owner of all your hosted pages, from every machine you log in on and in the browser with the same account; signing in as another account forgets this machine's published files. `cloud whoami` prints the account, `cloud logout` forgets it here. Only for hosted pages: the local server needs no account",
     flags: {},
     example: "cloud on   |   cloud login",
   },
@@ -2922,8 +2922,9 @@ async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> 
       status: "signed in",
       email: r.email,
       name: r.name || undefined,
-      claimed: r.claimed === null ? undefined : `${r.claimed} page${r.claimed === 1 ? "" : "s"} this machine published before are now the account's`,
-      warning: r.claimError ? `This machine's earlier pages are not the account's yet (${r.claimError}): run ${BIN} cloud login again to retry` : undefined,
+      forgotten: r.forgotten
+        ? `${r.forgotten} published file${r.forgotten === 1 ? "" : "s"} of another account (or of an anonymous owner token from before 0.17) no longer map to a hosted page here; publish makes new links`
+        : undefined,
       note: "You are the owner of all your hosted pages now, here and in the browser with the same account. Grant a page to someone by email on the service's dashboard.",
       next: `${BIN} publish <file> shares a page; ${BIN} clone lists your pages`,
     });
