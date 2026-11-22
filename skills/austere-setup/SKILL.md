@@ -22,7 +22,7 @@ If Node is older than 22.18, stop. Tell the user to install a current Node LTS.
 
 Run `npx -y austere-axi --help`. It must print the `WORKFLOW` section. If npm cannot reach the registry, stop and show the error.
 
-**Update.** If the user asked to update and `npm ls -g austere-axi` lists a global install, run `npm update -g austere-axi`, then `austere-axi --version`, and tell the user the new version. `npx -y austere-axi` does not change a global install. Then run `austere-axi server status`: if a server runs, run `austere-axi server restart`, so it serves the new version.
+**Update.** If the user asked to update and `npm ls -g austere-axi` lists a global install, run `npm update -g austere-axi`, then `austere-axi --version`, and tell the user the new version. `npx -y austere-axi` does not change a global install. Then run `austere-axi server status`: if a server runs, run `austere-axi server restart`, so it serves the new version. Its `server:` line names the version it runs. If that is still the old version, the service runs a CLI from npx's cache: tell the user to run `austere-axi server install` at a terminal, which points the service at the global install.
 
 ## 3. Install the `austere` skill
 
