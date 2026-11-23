@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/chrome/tailwind.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@/chrome",
+    "utils": "@/chrome/lib/utils",
+    "ui": "@/chrome/ui",
+    "lib": "@/chrome/lib",
+    "hooks": "@/chrome/hooks"
+  }
+}

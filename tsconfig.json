@@ -15,7 +15,10 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "paths": { "austere-axi/*": ["./types/*.d.ts"] }
+    "paths": {
+      "austere-axi/*": ["./types/*.d.ts"],
+      "@/*": ["./src/*", "./src/*.tsx", "./src/*.ts"]
+    }
   },
   "include": [
     "src",

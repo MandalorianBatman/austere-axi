@@ -118,7 +118,7 @@ async function ownerTab(
 }
 
 const group = (page: Page, name: string) =>
-  page.locator("section.group", { has: page.locator("h2", { hasText: name }) });
+  page.locator("section.inbox-group", { has: page.locator("h2", { hasText: name }) });
 const rowTitles = async (page: Page, name: string): Promise<string[]> =>
   (await group(page, name).locator(".row-title").allInnerTexts()).map((t) => t.trim());
 
@@ -263,7 +263,7 @@ test("the inbox: needs you, waiting on agent, quiet; archive and undo; a chip op
 
     // Archive takes the row away; Undo brings it back.
     await group(page, "Quiet").getByRole("button", { name: "Archive Quiet page" }).click();
-    await page.locator(".status", { hasText: "Archived Quiet page." }).waitFor();
+    await page.locator("[data-sonner-toast]", { hasText: "Archived Quiet page." }).waitFor();
     // The view is read again after the archive: wait for that, not for the status line.
     await group(page, "Quiet")
       .locator(".row-title", { hasText: "Quiet page" })
@@ -277,15 +277,19 @@ test("the inbox: needs you, waiting on agent, quiet; archive and undo; a chip op
     assert.ok(!listed.data.pages.some((p) => p.title === "Quiet page"), "archived in hub.db");
     // A failed Undo keeps the button beside the error; the retry brings the row back.
     await page.route("**/hub/api/page/*/unarchive", (route) => route.abort(), { times: 1 });
-    await page.locator(".status").getByRole("button", { name: "Undo" }).click();
-    await page.locator(".status", { hasText: "Could not undo." }).waitFor();
+    await page.locator("[data-sonner-toast]").getByRole("button", { name: "Undo" }).click();
+    await page.locator("[data-sonner-toast]", { hasText: "Could not undo." }).waitFor();
     // The browser logs the aborted request it was told to fail: expected, not a page error.
     problems.splice(
       0,
       problems.length,
       ...problems.filter((p) => !p.includes("Failed to load resource")),
     );
-    await page.locator(".status").getByRole("button", { name: "Undo" }).click();
+    // The toast that first said "Archived" may still be fading out: take the one that carries the error.
+    await page
+      .locator("[data-sonner-toast]", { hasText: "Could not undo." })
+      .getByRole("button", { name: "Undo" })
+      .click();
     await group(page, "Quiet").locator(".row-title", { hasText: "Quiet page" }).waitFor();
 
     // Keyboard: Tab reaches the views, Enter opens one, focus is visible.
@@ -517,18 +521,14 @@ test("phone width: the sidebar is a drawer; the review header keeps the breadcru
   const { page, context, problems } = await ownerTab(390);
   try {
     await group(page, "Quiet").waitFor();
-    assert.ok(
-      await page.locator(".side").evaluate((el) => el.getBoundingClientRect().right <= 0),
-      "the drawer starts closed",
-    );
+    const drawer = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
+    assert.equal(await drawer.count(), 0, "the drawer starts closed");
     await shot(page, "hub-inbox-390");
     await page.click(".side-toggle");
-    await page.waitForFunction(
-      () => document.querySelector(".side")!.getBoundingClientRect().left >= 0,
-    );
+    await drawer.waitFor();
     await shot(page, "hub-sidebar-390");
     await page.keyboard.press("Escape");
-    assert.equal(await page.locator(".side-toggle").getAttribute("aria-expanded"), "false");
+    await drawer.waitFor({ state: "detached" });
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
@@ -543,6 +543,260 @@ test("phone width: the sidebar is a drawer; the review header keeps the breadcru
       "a back arrow stands for the project's name",
     );
     await shot(page, "review-header-390");
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a refresh keeps focus and scroll; a slow answer to an older request never replaces a newer view", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab();
+  try {
+    await group(page, "Quiet").waitFor();
+    // The tab coming back reads the inbox again: the row the owner stands on is the same element after it.
+    const button = page.getByRole("button", { name: "Archive Waiting page" });
+    await button.focus();
+    await page.evaluate(() => {
+      const row = document.querySelector<HTMLElement>("button[aria-label='Archive Waiting page']")!;
+      (window as unknown as { __row: HTMLElement }).__row = row;
+      document.body.style.minHeight = "4000px";
+      window.scrollTo(0, 300);
+    });
+    const read = page.waitForResponse((r) => r.url().includes("/hub/api/inbox"));
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await read;
+    await page.waitForTimeout(100);
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        same: document.activeElement === (window as unknown as { __row: HTMLElement }).__row,
+        y: Math.round(window.scrollY),
+      })),
+      { same: true, y: 300 },
+    );
+
+    // Pages → Everything is slow, Archived is quick: the last choice wins, whatever order the answers come in.
+    await page.locator(".views a[data-view=pages]").click();
+    await page.getByRole("tablist", { name: "Which pages" }).waitFor();
+    await page.route(
+      (url) => url.pathname === "/hub/api/pages" && url.searchParams.get("view") === "all",
+      async (route) => {
+        await new Promise((r) => setTimeout(r, 700));
+        await route.continue();
+      },
+    );
+    await page.getByRole("tab", { name: /Everything/ }).click();
+    await page.getByRole("tab", { name: /Archived/ }).click();
+    await page.waitForTimeout(1200);
+    assert.equal(
+      (await page.locator("[role=tab][data-state=active]").innerText()).trim().split(/\s+/)[0],
+      "Archived",
+    );
+    assert.match(page.url(), /archived=1/);
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
+  }
+});
+
+// The hosted chrome's CSP (austere-cloud src/serve.ts): style-src allows 'unsafe-inline', nothing allows eval.
+// The shadcn primitives (Radix, Sonner) add inline styles; under this policy they must draw and report nothing.
+test("the hub under the hosted chrome's CSP: toast, select, tabs and tooltips draw with no violation", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const CSP =
+    "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await context.newPage();
+  const problems: string[] = [];
+  page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+  page.on("console", (m) => {
+    if (m.type() === "error") problems.push(`console error: ${m.text()}`);
+  });
+  await page.addInitScript(() => {
+    document.addEventListener("securitypolicyviolation", (e) =>
+      console.error(`CSP ${e.violatedDirective}: ${e.blockedURI} ${e.sample}`),
+    );
+  });
+  await page.route(
+    (url) => url.pathname === "/",
+    async (route) => {
+      const res = await route.fetch();
+      await route.fulfill({
+        response: res,
+        headers: { ...res.headers(), "content-security-policy": CSP },
+      });
+    },
+  );
+  try {
+    const { data } = await call<{ code: string }>("POST", "/api/login", {});
+    await page.goto(`http://127.0.0.1:${port}/?view=notes&login=${data.code}`);
+    await page.getByRole("combobox", { name: "Status" }).click();
+    await page.getByRole("option", { name: "Unanswered" }).click();
+    await page.getByRole("button", { name: "Filter" }).click();
+    await page.waitForURL(/status=unanswered/);
+    await page.getByRole("link", { name: "Pages" }).first().click();
+    await page.getByRole("tab", { name: /Everything/ }).click();
+    await page.getByRole("button", { name: /^Archive Quiet page/ }).hover();
+    await page.getByRole("tooltip").first().waitFor();
+    await page.getByRole("button", { name: /^Archive Quiet page/ }).click();
+    await page.locator("[data-sonner-toast]", { hasText: "Archived Quiet page." }).waitFor();
+    await page.locator("[data-sonner-toast]").getByRole("button", { name: "Undo" }).click();
+    await page.locator("[data-sonner-toast]", { hasText: "Archived Quiet page." }).waitFor({
+      state: "detached",
+    });
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test("phone: Pages does not scroll sideways, the drawer closes after a pick, a dialog returns focus", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab(390);
+  try {
+    await page.goto(`http://127.0.0.1:${port}/?view=pages`);
+    await page.getByRole("tablist", { name: "Which pages" }).waitFor();
+    const wide = () =>
+      page.evaluate(() => {
+        const w = document.documentElement.clientWidth;
+        const el = [...document.querySelectorAll("body *")].find(
+          (e) =>
+            e.getBoundingClientRect().right > w + 1 && getComputedStyle(e).position !== "fixed",
+        );
+        return {
+          over: document.documentElement.scrollWidth - w,
+          el: el ? `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)}` : "",
+        };
+      });
+    const w = await wide();
+    assert.ok(w.over <= 0, `no sideways scroll on Pages (${w.over}px): ${w.el}`);
+    // The tabs control a panel that exists.
+    const panel = await page.getByRole("tab", { selected: true }).getAttribute("aria-controls");
+    assert.equal(
+      await page.locator(`[id="${panel}"]`).count(),
+      1,
+      "aria-controls points at a panel",
+    );
+
+    // Drawer: open it, pick Notes; the URL moves and the sheet closes.
+    await page.click(".side-toggle");
+    const drawer = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
+    await drawer.waitFor();
+    await drawer.locator('a[data-view="notes"]').click();
+    await page.waitForURL(/view=notes/);
+    await drawer.waitFor({ state: "detached" });
+    const onToggle = () =>
+      page.evaluate(() => document.activeElement?.classList.contains("side-toggle"));
+    await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
+    // Esc: focus goes back to the toggle once the sheet is gone.
+    await page.click(".side-toggle");
+    await drawer.waitFor();
+    await page.keyboard.press("Escape");
+    await drawer.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
+    // Keyboard pick: focus the Runs link in the drawer, Enter.
+    await page.keyboard.press("Enter");
+    await drawer.waitFor();
+    await drawer.locator('a[data-view="runs"]').focus();
+    await page.keyboard.press("Enter");
+    await page.waitForURL(/view=runs/);
+    await drawer.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
+    assert.ok(await onToggle());
+
+    // Dialog: Esc gives focus back to the button that asked.
+    await page.goto(`http://127.0.0.1:${port}/?view=settings`);
+    const rename = page.getByRole("button", { name: "Rename shop" });
+    await rename.waitFor();
+    await rename.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog").waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "detached" });
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute("aria-label") === "Rename shop",
+    );
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test("Pages: the three filter tabs sit on one line, at desktop and tablet width", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  for (const width of [1280, 768]) {
+    const { page, context, problems } = await ownerTab(width);
+    try {
+      await page.goto(`http://127.0.0.1:${port}/?view=pages`);
+      await page.getByRole("tablist", { name: "Which pages" }).waitFor();
+      const ys = await page
+        .getByRole("tab")
+        .evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      await shot(page, `hub-pages-${width}`);
+      assert.equal(ys.length, 3);
+      assert.equal(new Set(ys).size, 1, `tabs share one y at ${width}px: ${ys}`);
+      assert.deepEqual(problems, []);
+    } finally {
+      await context.close();
+    }
+  }
+});
+
+test("stale reads: choosing the shown tab again wins; a search typed before a click does not replace the view; one Undo keeps another's", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab();
+  try {
+    // Pages: Everything (slow), then Open again before it answers. The last choice is what shows.
+    await page.goto(`http://127.0.0.1:${port}/?view=pages`);
+    await page.getByRole("tablist", { name: "Which pages" }).waitFor();
+    await page.route(
+      (url) => url.pathname === "/hub/api/pages" && url.searchParams.get("view") === "all",
+      async (route) => {
+        await new Promise((r) => setTimeout(r, 700));
+        await route.continue();
+      },
+    );
+    await page.getByRole("tab", { name: /Everything/ }).click();
+    await page.getByRole("tab", { name: /Open/ }).click();
+    await page.waitForTimeout(1200);
+    assert.equal(
+      (await page.locator("[role=tab][data-state=active]").innerText()).trim().split(/\s+/)[0],
+      "Open",
+    );
+    assert.doesNotMatch(page.url(), /all=1/);
+
+    // Search: type, then click Pages inside the 200 ms pause. Pages stays.
+    await page.goto(`http://127.0.0.1:${port}/?view=inbox`);
+    await group(page, "Quiet").waitFor();
+    await page.getByRole("searchbox", { name: "Search pages and parts" }).fill("plan");
+    await page.locator(".views a[data-view=pages]").click();
+    await page.waitForTimeout(600);
+    assert.match(page.url(), /view=pages/);
+    assert.doesNotMatch(page.url(), /view=search/);
+
+    // Undo: archive one page, start its slow Undo, archive another meanwhile. The second Undo stays.
+    await page.goto(`http://127.0.0.1:${port}/?view=inbox`);
+    await group(page, "Quiet").waitFor();
+    await page.getByRole("button", { name: "Archive Quiet page" }).click();
+    await page.locator("[data-sonner-toast]", { hasText: "Archived Quiet page." }).waitFor();
+    await page.route("**/hub/api/page/*/unarchive", async (route) => {
+      await new Promise((r) => setTimeout(r, 700));
+      await route.continue();
+    });
+    await page.locator("[data-sonner-toast]").getByRole("button", { name: "Undo" }).click();
+    await page.getByRole("button", { name: "Archive Waiting page" }).click();
+    await page.locator("[data-sonner-toast]", { hasText: "Archived Waiting page." }).waitFor();
+    await page.waitForTimeout(1200);
+    assert.ok(
+      await page
+        .locator("[data-sonner-toast]", { hasText: "Archived Waiting page." })
+        .getByRole("button", { name: "Undo" })
+        .isVisible(),
+      "the second page's Undo is still there",
+    );
+    // Put the state back for the tests after this one.
+    await page.locator("[data-sonner-toast]").getByRole("button", { name: "Undo" }).click();
+    await page.getByRole("link", { name: "Waiting page" }).first().waitFor();
     assert.deepEqual(problems, []);
   } finally {
     await context.close();

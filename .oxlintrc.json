@@ -13,5 +13,14 @@
     "no-unused-vars": "off",
     "react/refs": "off"
   },
-  "ignorePatterns": ["dist", "_site", "scratch", ".dev", "test/fixtures", "docs/*.gif"]
+  "ignorePatterns": [
+    "src/chrome/ui",
+    "src/chrome/hooks",
+    "dist",
+    "_site",
+    "scratch",
+    ".dev",
+    "test/fixtures",
+    "docs/*.gif"
+  ]
 }

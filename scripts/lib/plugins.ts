@@ -190,6 +190,24 @@ export const chromeFontsPlugin: Plugin = {
   },
 };
 
+// src/chrome/tailwind.css is Tailwind v4 input: run it through PostCSS and hand esbuild plain CSS.
+export const tailwindPlugin: Plugin = {
+  name: "austere-tailwind",
+  setup(build) {
+    build.onLoad({ filter: /chrome[\\/]tailwind\.css$/ }, async (args) => {
+      const [{ default: postcss }, { default: tailwindcss }] = await Promise.all([
+        import("postcss"),
+        import("@tailwindcss/postcss"),
+      ]);
+      const css = fs.readFileSync(args.path, "utf8");
+      const out = await postcss([tailwindcss({ optimize: { minify: false } })]).process(css, {
+        from: args.path,
+      });
+      return { contents: out.css, loader: "css", resolveDir: path.dirname(args.path) };
+    });
+  },
+};
+
 // OpenUI's CodeBlock imports the full Prism build and every theme; swap in
 // the light build with common languages (saves ~0.5 MB).
 export const slimHighlighterPlugin: Plugin = {

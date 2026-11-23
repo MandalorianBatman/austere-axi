@@ -1,4 +1,4 @@
-/* The hub shell (shell.ts): sidebar, Inbox · Pages · Notes · Runs, the phone tab bar. Tokens in tokens.css. */
+/* The hub shell (shell.tsx): sidebar, Inbox · Pages · Notes · Runs, the phone tab bar. Tokens in tokens.css. */
 :root {
   --side-w: 248px;
   --content-w: 1040px; /* the main column, padding included */
@@ -16,12 +16,15 @@ body {
   font: var(--fs)/1.45 var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
-a {
-  color: var(--accent);
-  text-decoration: none;
-}
-a:hover {
-  color: var(--accent-hover);
+/* In the base layer, so a utility (a shadcn Button or Sidebar link's text color) wins over the plain link color. */
+@layer base {
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  a:hover {
+    color: var(--accent-hover);
+  }
 }
 button,
 input,
@@ -46,43 +49,7 @@ em.gone {
   flex: none;
 }
 
-.hub {
-  display: grid;
-  grid-template-columns: var(--side-w) minmax(0, 1fr);
-  min-height: 100dvh;
-}
-
 /* ── sidebar ── */
-.side {
-  position: sticky;
-  top: 0;
-  height: 100dvh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 14px 12px 20px;
-  border-right: 1px solid var(--line);
-  background: var(--bg-2);
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 2px 8px 0;
-}
-.brand a {
-  flex: 1;
-  min-width: 0;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
-}
-.brand small {
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
 .logo {
   flex: none;
 }
@@ -102,71 +69,12 @@ em.gone {
 }
 
 /* a search field: the sidebar's, and the Notes filter's */
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--muted);
-  cursor: text;
-}
-.search-box:focus-within {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.search-box input {
-  flex: 1;
-  min-width: 0;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--text);
-}
-.search-box input::placeholder {
-  color: var(--muted);
-  opacity: 1;
-}
-
-.views {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.views a {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  padding: 0 10px;
-  border-radius: var(--radius);
-  color: var(--text-3);
-  font-weight: 500;
-}
-.views a:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-.views a[aria-current="page"] {
-  background: var(--surface-2);
-  color: var(--text);
-  font-weight: 600;
-}
-.views .label {
-  flex: 1;
-}
 .count {
   flex: none;
   color: var(--muted);
   font-size: 11px;
   text-align: center;
 }
-.views .count.need,
 .tabbar .count.need {
   min-width: 22px;
   padding: 1px 7px;
@@ -174,113 +82,6 @@ em.gone {
   background: var(--amber-pill);
   color: var(--amber);
   font-weight: 600;
-}
-
-.side-h {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 0 10px 4px;
-  color: var(--faint);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.side-h a {
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 500;
-}
-.side-h + .projects {
-  margin-top: -14px;
-}
-.projects,
-.proj-pages {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.projects {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.proj-head {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-height: 34px;
-  padding-right: 10px;
-  border-radius: var(--radius);
-}
-.proj.selected > .proj-head {
-  background: var(--surface);
-}
-.proj-toggle {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--faint);
-  cursor: pointer;
-}
-.proj-toggle:hover {
-  color: var(--text);
-}
-.proj-toggle .icon {
-  transition: transform 0.12s;
-}
-.proj-toggle[aria-expanded="true"] .icon {
-  transform: rotate(90deg);
-}
-.proj-link {
-  flex: 1;
-  min-width: 0;
-  color: var(--text);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.proj-link:hover {
-  color: var(--text);
-  text-decoration: underline;
-}
-.proj-pages {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 1px 0 6px;
-}
-.proj-pages a {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 0 10px 0 28px;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-}
-.proj-pages a.need {
-  color: var(--text-2);
-}
-.proj-pages a:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-.pg-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .dot {
   flex: none;
@@ -298,54 +99,41 @@ em.gone {
 .dot.live {
   background: var(--green);
 }
-.mini-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 2px 0 4px 28px;
-}
-.mini-chips a.mini-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 7px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--pill);
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 18px;
-}
-.mini-chip.waiting {
-  border-color: var(--amber-pill);
-  color: var(--amber);
-}
-.side-empty {
-  padding: 4px 10px;
-  color: var(--faint);
-}
 
 /* ── main column ── */
 .main {
   min-width: 0;
 }
-.top,
-.tabbar,
-.scrim {
-  display: none;
-}
-.status:not(:empty) {
+.proj-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  margin: 16px max(32px, calc((100% - var(--content-w)) / 2 + 32px)) 0;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 9px 16px;
   background: var(--surface);
+}
+.proj-row h2 {
+  margin: 0;
+}
+.proj-wait {
+  margin-left: auto;
   color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.proj-wait.need {
+  color: var(--amber);
+}
+.proj-row p.same {
+  flex-basis: 100%;
+  margin: 0;
+}
+.tabbar {
+  display: none;
 }
 .content {
+  /* A flex item of the inset: without min-width 0 it grows to its widest table row instead of scrolling or stacking. */
+  width: 100%;
+  min-width: 0;
   max-width: var(--content-w);
   margin: 0 auto;
   padding: 32px 32px 56px;
@@ -365,7 +153,7 @@ em.gone {
   justify-content: space-between;
   gap: 16px;
 }
-.view-h.split > div {
+.view-h.split > .view-h-text {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -382,7 +170,7 @@ h1 q {
   font-weight: 400;
 }
 .summary,
-.filter {
+.notes-filter {
   margin: 0 0 6px;
   color: var(--muted);
 }
@@ -393,7 +181,7 @@ h1 q {
   color: var(--amber);
   font-weight: 500;
 }
-.view-h + .filter {
+.view-h + .notes-filter {
   margin-top: 12px;
 }
 section {
@@ -432,7 +220,7 @@ h2 small {
 .sec-h h2 {
   margin: 0;
 }
-.group.needs h2 .n {
+.inbox-group.needs h2 .n {
   color: var(--amber);
 }
 .sec-h .hint {
@@ -474,74 +262,6 @@ code {
 }
 
 /* ── buttons ── */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: var(--control-h);
-  padding: 0 12px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.btn:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-.btn.fill {
-  border-color: var(--line-3);
-  background: var(--surface-2);
-  font-weight: 600;
-}
-.btn.fill:hover {
-  background: var(--surface-3);
-}
-.btn.ghost {
-  background: transparent;
-  color: var(--text-2);
-}
-.btn.ghost:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-.btn.tiny {
-  min-height: 26px;
-  padding: 0 9px;
-  font-size: var(--fs-sm);
-}
-.btn.primary {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-}
-.icon-btn {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-h);
-  height: var(--control-h);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--faint);
-  cursor: pointer;
-}
-.icon-btn:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-.btn:disabled,
-.icon-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
 
 /* ── lists: a bordered card of rows ── */
 .rows,
@@ -726,22 +446,6 @@ code.target {
   gap: 6px;
   margin-top: 8px;
 }
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  max-width: 100%;
-  padding: 0 10px;
-  border: 1px solid var(--line-3);
-  border-radius: var(--pill);
-  color: var(--text-2);
-  font-size: var(--fs-sm);
-}
-.chip:hover {
-  border-color: var(--accent);
-  color: var(--text);
-}
 .chip-label {
   min-width: 0;
   font-family: var(--font-mono);
@@ -756,10 +460,6 @@ code.target {
 }
 .chip.waiting .chip-note {
   color: var(--amber);
-}
-.chip.gone {
-  border-style: dashed;
-  color: var(--muted);
 }
 details.more > summary {
   display: inline-flex;
@@ -787,41 +487,9 @@ details.more > .chips {
 }
 
 /* ── tables: Pages and Runs ── */
-.seg {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--bg-2);
-}
-.seg a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 0 12px;
-  border-radius: var(--radius-sm);
-  color: var(--text-3);
-  font-weight: 500;
-}
-.seg a:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-.seg a[aria-current="page"] {
-  background: var(--surface-2);
-  color: var(--text);
-  font-weight: 600;
-}
-.seg .n {
-  color: var(--faint);
-  font-weight: 500;
-}
-.seg a[aria-current="page"] .n {
-  color: var(--muted);
-}
 .table {
+  /* Tailwind has a `.table` utility (display: table) that is generated from this class name: say block. */
+  display: block;
   margin-top: 24px;
   container-type: inline-size;
 }
@@ -924,29 +592,6 @@ details.more > .chips {
 }
 .trow .row-actions {
   justify-content: flex-end;
-}
-.proj-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  padding: 9px 16px;
-  background: var(--surface);
-}
-.proj-row h2 {
-  margin: 0;
-}
-.proj-wait {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-}
-.proj-wait.need {
-  color: var(--amber);
-}
-.proj-row p.same {
-  flex-basis: 100%;
-  margin: 0;
 }
 
 .runs-table {
@@ -1079,18 +724,6 @@ details.more > .chips {
   gap: 10px;
   margin: 20px 0 0;
 }
-.filters .search-box {
-  flex: 1 1 260px;
-  background: var(--bg-2);
-}
-.filters select {
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: var(--bg-2);
-  color: var(--text);
-}
 .notes.card,
 .content > .card {
   margin-top: 20px;
@@ -1181,4 +814,13 @@ details.more > .chips {
 }
 .snippet {
   color: var(--text-2);
+}
+
+/* The shadcn Sidebar's width is the hub's. */
+.hub {
+  --sidebar-width: var(--side-w);
+}
+[data-sidebar="sidebar"] a:not(.all-projects),
+[data-sidebar="sidebar"] a:not(.all-projects):hover {
+  color: inherit;
 }

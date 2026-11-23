@@ -1,4 +1,4 @@
-// The page a link to a copy whose file is gone opens. The hub itself is a client app (src/chrome/shell.ts) over /hub/api.
+// The page a link to a copy whose file is gone opens. The hub itself is a client app (src/chrome/shell.tsx) over /hub/api.
 import os from "node:os";
 import path from "node:path";
 import { escapeHtml } from "./artifact.ts";

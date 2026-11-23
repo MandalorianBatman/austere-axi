@@ -1,5 +1,5 @@
 // The hub shell's JSON API (`/hub/api/*`, RLM-356): what the server (src/cli/hub-api.ts) sends the
-// owner's hub (src/chrome/shell.ts) and the owner's review header (src/chrome/nav.ts). Types only:
+// owner's hub (src/chrome/shell.tsx) and the owner's review header (src/chrome/nav.ts). Types only:
 // every route is the owner's, behind the owner cookie.
 
 /** Who takes a page's unanswered notes: an agent polling it, the attached agent (in a run, or from the owner's next note), or nobody yet. */

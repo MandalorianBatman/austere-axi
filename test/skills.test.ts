@@ -11,8 +11,12 @@ const SKILLS = path.resolve(import.meta.dirname, "..", "skills");
 test("no shipped skill installs anything or runs the CLI through npx", () => {
   for (const name of fs.readdirSync(SKILLS)) {
     const text = fs.readFileSync(path.join(SKILLS, name, "SKILL.md"), "utf8");
-    for (const [install] of text.matchAll(/\bnpx\b[^\n`]*|\bnpm (?:i|install|update|exec)\b[^\n`]*|\bskills add\b[^\n`]*/g)) {
-      assert.fail(`skills/${name}/SKILL.md: \`${install}\` installs or downloads; installing belongs in README.md and docs/install.md`);
+    for (const [install] of text.matchAll(
+      /\bnpx\b[^\n`]*|\bnpm (?:i|install|update|exec)\b[^\n`]*|\bskills add\b[^\n`]*/g,
+    )) {
+      assert.fail(
+        `skills/${name}/SKILL.md: \`${install}\` installs or downloads; installing belongs in README.md and docs/install.md`,
+      );
     }
   }
 });
