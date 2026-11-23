@@ -627,8 +627,8 @@ test("hosted chrome: the ⋯ menu downloads a standalone copy; sharing follows t
     await page.frameLocator(".frame").locator("text=hello").waitFor();
 
     // Invite-only: each link names one reviewer, so no page link to pass on; the menu says how the owner shares.
-    await page.waitForSelector("[data-share-note]:not([hidden])", { state: "attached" });
     await page.click(".menu-btn");
+    await page.waitForSelector("[data-share-note]");
     assert.ok(
       await page.locator('[data-cmd="copy-link"]').isHidden(),
       "no page link on an invite-only page",
@@ -647,13 +647,15 @@ test("hosted chrome: the ⋯ menu downloads a standalone copy; sharing follows t
     const downloading = page.waitForEvent("download");
     await page.click('[data-cmd="export"]');
     await page.waitForSelector(
-      '.menu-pop:not([hidden]) [data-cmd="export"]:disabled:text("Preparing download…")',
+      '[role="menu"] [data-cmd="export"][data-disabled]:text("Preparing download…")',
     );
     release();
     const download = await downloading;
-    await page.waitForSelector(".menu-pop", { state: "hidden" });
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
     await page.unroute("**/rt/austere.js");
+    await page.click(".menu-btn");
     assert.equal(await page.locator('[data-cmd="export"]').innerText(), "Download standalone HTML");
+    await page.keyboard.press("Escape");
     assert.equal(download.suggestedFilename(), "Plan.html");
     const html = fs.readFileSync(await download.path(), "utf8");
     assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/, "no script left to fetch");
@@ -683,7 +685,8 @@ test("hosted chrome: the ⋯ menu downloads a standalone copy; sharing follows t
     svc.unlisted = true;
     put(pageRow(1_000));
     await page.goto(`${origin}${BASE}#i=${ANA}`);
-    await page.waitForSelector('[data-cmd="copy-link"]:not([hidden])', { state: "attached" });
+    await page.click(".menu-btn");
+    await page.waitForSelector('[data-cmd="copy-link"]');
     assert.match(
       await page.locator(".composer-hint").innerText(),
       /Posting as Ana/,
@@ -693,7 +696,6 @@ test("hosted chrome: the ⋯ menu downloads a standalone copy; sharing follows t
       await page.locator("[data-share-note]").isHidden(),
       "no owner-only note on an unlisted page",
     );
-    await page.click(".menu-btn");
     await page.click('[data-cmd="copy-link"]');
     assert.equal(
       await page.evaluate(() => navigator.clipboard.readText()),
@@ -704,10 +706,10 @@ test("hosted chrome: the ⋯ menu downloads a standalone copy; sharing follows t
     // Unlisted, without an invite: the same page link.
     await page.evaluate((id) => localStorage.removeItem(`austere:invite:${id}`), ID);
     await page.goto(`${origin}${BASE}`);
-    await page.waitForSelector('[data-cmd="copy-link"]:not([hidden])', { state: "attached" });
+    await page.click(".menu-btn");
+    await page.waitForSelector('[data-cmd="copy-link"]');
     assert.ok(await page.locator("[data-share-note]").isHidden());
     await page.evaluate(() => navigator.clipboard.writeText(""));
-    await page.click(".menu-btn");
     await page.click('[data-cmd="copy-link"]');
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `${origin}${BASE}`);
     assert.deepEqual(errors, []);

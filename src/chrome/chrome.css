@@ -1,8 +1,6 @@
-/* The review page (review-*.tsx), after the redesign's Review artboards. Tokens in tokens.css; the bar's
-   crumbs, the copy switcher and the Go to page switcher in nav.css. */
+/* The review page (review-*.tsx), after the redesign's Review artboards. Tokens in tokens.css. */
 @import "./tokens.css";
 @import "./tailwind-review.css";
-@import "./nav.css";
 
 :root {
   --panel-w: 384px;
@@ -330,64 +328,6 @@ code {
 .icon-btn:hover {
   background: var(--surface);
   color: var(--text);
-}
-.menu {
-  position: relative;
-}
-.menu-pop {
-  position: absolute;
-  right: 0;
-  top: 40px;
-  z-index: 20;
-  min-width: 220px;
-  padding: 6px;
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  border: 1px solid var(--line-3);
-  box-shadow: var(--shadow-pop);
-  display: grid;
-}
-.menu-pop[hidden] {
-  display: none;
-}
-.menu-pop button,
-.menu-pop a {
-  text-align: left;
-  border: 0;
-  background: transparent;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  text-decoration: none;
-  font-size: var(--fs);
-  cursor: pointer;
-}
-.menu-pop button:hover,
-.menu-pop a:hover {
-  background: var(--surface-2);
-}
-.menu-pop .danger {
-  color: var(--red);
-}
-.menu-pop button:disabled {
-  color: var(--muted);
-  cursor: progress;
-}
-.menu-note {
-  max-width: 300px;
-  padding: 8px 10px;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  line-height: 1.45;
-  cursor: text;
-}
-.menu-note code {
-  display: block;
-  margin: 4px 0;
-  font-size: 11px;
-  white-space: nowrap;
-  color: var(--text);
-  user-select: all;
 }
 
 /* ── the Agent pill and its panel (RLM-346, owner only) ── */
@@ -1838,7 +1778,7 @@ html.exploring .hist {
 }
 
 /* A phone (Phone-Review, Phone-Annotate, Phone-Notes). The title keeps its room; the crumbs are a 44 px
-   back chevron to the hub (nav.css). The mode switch, the notes and Send sit in one bar at the bottom,
+   back chevron to the hub (Crumbs in review-nav.tsx). The mode switch, the notes and Send sit in one bar at the bottom,
    and every control is a 44 px target. */
 @media (max-width: 480px) {
   :root {
@@ -1864,13 +1804,6 @@ html.exploring .hist {
   .bar .icon-btn {
     width: var(--touch);
     border-radius: var(--radius-md);
-  }
-  .menu-pop {
-    top: 48px;
-  }
-  .menu-pop button,
-  .menu-pop a {
-    min-height: var(--touch);
   }
   .subbar {
     position: fixed;

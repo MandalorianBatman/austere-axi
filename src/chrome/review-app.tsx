@@ -2,12 +2,13 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
-import { Icon, ShapeIcon } from "./icon.tsx";
+import { ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
 import { HOSTED, OWNER } from "./review-env.ts";
 import { AttachPill } from "./review-attach.tsx";
 import { useAttachFeed } from "./review-attach.ts";
 import { useBanner } from "./review-banner.ts";
+import { PanelBoundary } from "./review-boundary.tsx";
 import {
   ChangesButton,
   HistoryButton,
@@ -24,6 +25,7 @@ import { useHistoryFeed } from "./review-history.ts";
 import { HistoryPanel } from "./review-history-panel.tsx";
 import { useRootClass } from "./review-hooks.ts";
 import { Log } from "./review-log.tsx";
+import { GotoButton, OwnerNav } from "./review-nav.tsx";
 import { Queue } from "./review-queue.tsx";
 import { Dock, PanelHead, Scrim, useCovered, useSheetEscape } from "./review-tabs.tsx";
 import { useReview } from "./review-store.ts";
@@ -94,53 +96,89 @@ function App(): ReactElement {
                 <ShapeIcon shapes={LOGO} size={24} />
               </a>
             ) : null}
-            <TitleBlock />
+            <PanelBoundary name="The page title">
+              <TitleBlock />
+            </PanelBoundary>
           </div>
           <div className="bar-right">
-            <ChangesButton />
-            <span className="viewers" role="group" aria-label="On this page" hidden />
-            {OWNER ? <AttachPill /> : null}
-            <PresencePill />
-            {OWNER ? <ShareButton /> : null}
-            {OWNER_BAR ? (
-              <button
-                type="button"
-                className="icon-btn goto-btn"
-                aria-label="Go to page (Ctrl K)"
-                title="Go to page (Ctrl K)"
-              >
-                <Icon name="search" size={16} width={1.8} />
-              </button>
-            ) : null}
-            <MoreMenu />
+            <PanelBoundary name="The page bar">
+              <ChangesButton />
+              <span className="viewers" role="group" aria-label="On this page" hidden />
+              {OWNER ? <AttachPill /> : null}
+              <PresencePill />
+              {OWNER ? <ShareButton /> : null}
+              {OWNER_BAR ? <GotoButton /> : null}
+              <MoreMenu />
+            </PanelBoundary>
           </div>
         </header>
-        <Banner />
-        {OWNER ? <OwnerEffects /> : null}
-        {OWNER ? <Dialogs /> : null}
-        <Notice />
-        {OWNER ? <SinceBar /> : null}
+        <PanelBoundary name="The banner">
+          <Banner />
+        </PanelBoundary>
+        {OWNER ? (
+          <PanelBoundary name="The page's live feeds">
+            <OwnerEffects />
+          </PanelBoundary>
+        ) : null}
+        {OWNER ? (
+          <PanelBoundary name="The dialogs">
+            <Dialogs />
+          </PanelBoundary>
+        ) : null}
+        {OWNER_BAR ? (
+          <PanelBoundary name="The page switcher">
+            <OwnerNav />
+          </PanelBoundary>
+        ) : null}
+        <PanelBoundary name="The pack notice">
+          <Notice />
+        </PanelBoundary>
+        {OWNER ? (
+          <PanelBoundary name="The changes since you looked">
+            <SinceBar />
+          </PanelBoundary>
+        ) : null}
         <div className="main">
           <section className="stage" id="content" tabIndex={-1} aria-label="Page under review">
             <div className="subbar">
-              <ModeSwitch />
-              <div className="subbar-end">
-                {OWNER ? <Revision /> : null}
-                {OWNER ? <HistoryButton /> : null}
-              </div>
-              <Dock />
+              <PanelBoundary name="The mode switch">
+                <ModeSwitch />
+                <div className="subbar-end">
+                  {OWNER ? <Revision /> : null}
+                  {OWNER ? <HistoryButton /> : null}
+                </div>
+              </PanelBoundary>
+              <PanelBoundary name="The dock">
+                <Dock />
+              </PanelBoundary>
             </div>
-            <Frame />
+            <PanelBoundary name="The page">
+              <Frame />
+            </PanelBoundary>
           </section>
           <Scrim />
           <aside className="panel" aria-label="Review panel">
-            <PanelHead />
-            <Log inert={covered} />
-            <Queue inert={covered} />
-            <Composer inert={covered} />
-            <HostedFoot />
+            <PanelBoundary name="The panel tabs">
+              <PanelHead />
+            </PanelBoundary>
+            <PanelBoundary name="The conversation">
+              <Log inert={covered} />
+            </PanelBoundary>
+            <PanelBoundary name="The queue">
+              <Queue inert={covered} />
+            </PanelBoundary>
+            <PanelBoundary name="The note box">
+              <Composer inert={covered} />
+            </PanelBoundary>
+            <PanelBoundary name="The page footer">
+              <HostedFoot />
+            </PanelBoundary>
           </aside>
-          {OWNER ? <HistoryPanel /> : null}
+          {OWNER ? (
+            <PanelBoundary name="The history">
+              <HistoryPanel />
+            </PanelBoundary>
+          ) : null}
         </div>
       </div>
     </TooltipProvider>
@@ -150,5 +188,12 @@ function App(): ReactElement {
 /** Draws the page into the body, at once: the code that boots after this finds the markup there. */
 export function mountApp(): void {
   const root = createRoot(document.body);
-  flushSync(() => root.render(<App />));
+  // The panels have their own boundaries; this one is for what is left (the hooks of App, the tooltip provider).
+  flushSync(() =>
+    root.render(
+      <PanelBoundary name="The review page">
+        <App />
+      </PanelBoundary>,
+    ),
+  );
 }

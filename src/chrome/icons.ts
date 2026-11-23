@@ -1,7 +1,5 @@
 // Line icons for the review page and the hub (24×24, stroke = currentColor), drawn from the redesign's artboards.
-// Built with createElementNS, never innerHTML. Decorative by default (aria-hidden); pass a label for a meaningful icon.
-
-const NS = "http://www.w3.org/2000/svg";
+// Drawn by icon.tsx (Icon, ShapeIcon): decorative by default (aria-hidden); pass a label for a meaningful icon.
 
 type Shape = [tag: "path" | "circle" | "rect", attrs: Record<string, string | number>];
 
@@ -68,57 +66,5 @@ export const ICONS = {
 } satisfies Record<string, Shape[]>;
 
 export type IconName = keyof typeof ICONS;
-
-/**
- * An inline stroke icon. Decorative (aria-hidden) unless `label` is given, which makes it role="img".
- * @param size  width and height in CSS px
- * @param width stroke width
- */
-export function icon(
-  name: IconName,
-  {
-    size = 16,
-    width = 1.7,
-    label,
-    cls,
-  }: { size?: number; width?: number; label?: string; cls?: string } = {},
-): SVGSVGElement {
-  return svgIcon(ICONS[name], { size, width, label, cls });
-}
-
-/** The same, from shapes a module defines for itself (see ICONS for the format). */
-export function svgIcon(
-  shapes: readonly Shape[],
-  {
-    size = 16,
-    width = 1.7,
-    label,
-    cls,
-  }: { size?: number; width?: number; label?: string; cls?: string } = {},
-): SVGSVGElement {
-  const svg = document.createElementNS(NS, "svg");
-  const set = (el: Element, attrs: Record<string, string | number>): void => {
-    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
-  };
-  set(svg, {
-    width: size,
-    height: size,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    "stroke-width": width,
-    "stroke-linecap": "round",
-    "stroke-linejoin": "round",
-    class: `icon${cls ? ` ${cls}` : ""}`,
-  });
-  if (label) set(svg, { role: "img", "aria-label": label });
-  else svg.setAttribute("aria-hidden", "true");
-  for (const [tag, attrs] of shapes) {
-    const el = document.createElementNS(NS, tag);
-    set(el, attrs);
-    svg.append(el);
-  }
-  return svg;
-}
 
 export type { Shape };

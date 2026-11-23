@@ -117,6 +117,9 @@ async function ownerTab(
   return { page, context, problems };
 }
 
+/** The breadcrumb's link to the hub, by the name it shows (on a phone, a back arrow whose text is that name). */
+const crumbLink = (page: Page, name: string) =>
+  page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name });
 const group = (page: Page, name: string) =>
   page.locator("section.inbox-group", { has: page.locator("h2", { hasText: name }) });
 const rowTitles = async (page: Page, name: string): Promise<string[]> =>
@@ -403,21 +406,24 @@ test("review header: breadcrumb to the hub, copy switcher keeps the path, Ctrl+K
   const { page, context, problems } = await ownerTab();
   try {
     await page.goto(`http://127.0.0.1:${port}/s/${ids.quiet}`);
-    await page.locator(".crumbs a", { hasText: "shop" }).waitFor();
+    await crumbLink(page, "shop").waitFor();
     await page.goto(`http://127.0.0.1:${port}/s/${ids.plan}`);
     await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
-    const crumb = page.locator(".crumbs a");
-    await page.locator(".crumbs a", { hasText: "shop" }).waitFor();
+    const crumb = crumbLink(page, "shop");
+    await crumb.waitFor();
     assert.equal(
-      await page.locator(".crumb .crumb-back").isVisible(),
+      await crumb.locator("svg").isVisible(),
       false,
       "the back arrow is the phone's breadcrumb",
     );
     // The copy switcher lists both worktrees; the other one has the same rel_path.
-    const select = page.locator(".copy-switch");
-    assert.deepEqual((await select.locator("option").allInnerTexts()).sort(), ["feat", "main"]);
+    await page.getByRole("button", { name: "Copy of this page (worktree)" }).click();
+    assert.deepEqual((await page.getByRole("menuitemradio").allInnerTexts()).sort(), [
+      "feat",
+      "main",
+    ]);
     await shot(page, "review-header-1280");
-    await select.selectOption(ids.planFeat);
+    await page.getByRole("menuitemradio", { name: "feat" }).click();
     await page.waitForURL(`**/s/${ids.planFeat}`);
     const a = await call<{ rel_path: string }>(
       "GET",
@@ -441,19 +447,27 @@ test("review header: breadcrumb to the hub, copy switcher keeps the path, Ctrl+K
       .locator("body")
       .click({ position: { x: 5, y: 5 } });
     await page.keyboard.press("Control+k");
-    await page.locator(".qs").waitFor();
-    assert.deepEqual(
-      (await page.locator(".qs-item .qs-title").allInnerTexts()).map((s) => s.trim()),
-      ["Quiet page"],
-      "the page opened before; this page is left out",
-    );
+    const switcher = page.getByRole("dialog", { name: "Go to page" });
+    await switcher.waitFor();
+    const options = switcher.getByRole("option");
+    await options.first().waitFor();
+    assert.equal(await options.count(), 1, "the page opened before; this page is left out");
+    assert.match(await options.first().innerText(), /Quiet page/);
     // A modal: Tab stays in it, and reaches its one link.
+    const focused = (): Promise<string | undefined> =>
+      page.evaluate(
+        () =>
+          document.activeElement?.textContent?.trim() ||
+          document.activeElement?.getAttribute("aria-label") ||
+          "",
+      );
+    assert.equal(await focused(), "Search pages and parts");
     await page.keyboard.press("Tab");
-    assert.equal(await page.evaluate(() => document.activeElement?.className), "qs-hub");
+    assert.equal(await focused(), "Open the hub");
     await page.keyboard.press("Tab");
-    assert.equal(await page.evaluate(() => document.activeElement?.className), "qs-input");
-    await page.locator(".qs-input").fill("Waiting");
-    await page.locator(".qs-item", { hasText: "Waiting page" }).first().waitFor();
+    assert.equal(await focused(), "Search pages and parts");
+    await switcher.getByRole("combobox").fill("Waiting");
+    await options.filter({ hasText: "Waiting page" }).first().waitFor();
     await shot(page, "quick-switcher-1280");
     await page.keyboard.press("Enter");
     await page.waitForURL(`**/s/${ids.waiting}`);
@@ -490,15 +504,15 @@ test("a reviewer's page shows none of it, and the hub refuses the reviewer", asy
     await page.goto(`http://127.0.0.1:${port}/s/${ids.waiting}`);
     await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
     for (const sel of [
-      ".crumbs",
-      ".copy-switch",
-      ".qs",
+      '[aria-label="Breadcrumb"]',
+      '[aria-label="Copy of this page (worktree)"]',
+      '[aria-label="Go to page (Ctrl K)"]',
       '[data-cmd="goto"]',
       '[data-cmd="next-unanswered"]',
     ])
       assert.equal(await page.locator(sel).count(), 0, sel);
     await page.keyboard.press("Control+k");
-    assert.equal(await page.locator(".qs").count(), 0);
+    assert.equal(await page.getByRole("dialog").count(), 0);
     for (const route of [
       "/",
       "/hub/api/inbox",
@@ -536,10 +550,10 @@ test("phone width: the sidebar is a drawer; the review header keeps the breadcru
 
     await page.goto(`http://127.0.0.1:${port}/s/${ids.plan}`);
     await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
-    await page.locator(".crumbs a", { hasText: "shop" }).waitFor();
-    assert.ok(await page.locator(".crumbs").isVisible());
+    await crumbLink(page, "shop").waitFor({ state: "attached" });
+    assert.ok(await page.getByRole("navigation", { name: "Breadcrumb" }).isVisible());
     assert.ok(
-      await page.locator(".crumb .crumb-back").isVisible(),
+      await crumbLink(page, "shop").locator("svg").isVisible(),
       "a back arrow stands for the project's name",
     );
     await shot(page, "review-header-390");
