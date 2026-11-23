@@ -342,16 +342,17 @@ test("a Copilot page shows fork disabled with its reason", { skip: posixOnly }, 
     const answered = page.waitForResponse(
       (r) => r.url().endsWith("/attach") && r.request().method() === "POST",
     );
-    await page.selectOption(".attach-select", "copilot");
+    await page.click(".attach-select");
+    await page.getByRole("option", { name: "copilot" }).click();
     assert.equal((await answered).status(), 200);
-    const fork = page.locator('input[name="attach-mode"][value="fork"]');
+    const fork = page.locator('[role=radio][value="fork"]');
     assert.ok(await fork.isDisabled(), "fork is disabled");
     assert.match(
       (await fork.locator("xpath=..").getAttribute("title")) ?? "",
       /Copilot CLI has no fork/,
     );
     assert.match(await page.locator(".attach-reason").innerText(), /Fork: Copilot CLI has no fork/);
-    assert.ok(await page.locator('input[name="attach-mode"][value="same"]').isEnabled());
+    assert.ok(await page.locator('[role=radio][value="same"]').isEnabled());
     // Copilot has no grant here: the popover names the command that gives it.
     assert.match(
       await page.locator(".attach-grant code").innerText(),

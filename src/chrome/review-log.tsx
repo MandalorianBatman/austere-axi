@@ -185,7 +185,7 @@ function Message({ entry }: { entry: Entry }): ReactElement | null {
 
 const nearEnd = (el: HTMLElement): boolean => el.scrollHeight - el.scrollTop - el.clientHeight < 40;
 
-export function Log(): ReactElement {
+export function Log({ inert }: { inert?: boolean }): ReactElement {
   const s = useReview();
   const root = useRef<HTMLDivElement>(null);
   const viewport = (): HTMLElement | null =>
@@ -251,7 +251,7 @@ export function Log(): ReactElement {
   }, [s.mode, s.sheetOpen]);
 
   return (
-    <ScrollArea className="log" ref={root}>
+    <ScrollArea className="log" ref={root} inert={inert}>
       <div className="log-body" aria-busy={!s.loaded}>
         <Issues />
         {s.more ? (

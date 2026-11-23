@@ -22,7 +22,7 @@ export function agentFor(since: number | null, now: number): string {
 
 type Slice = Pick<
   ReviewState,
-  "archived" | "lockout" | "connected" | "presence" | "since" | "wake" | "unread" | "attachOn"
+  "archived" | "lockout" | "connected" | "presence" | "since" | "wake" | "unread" | "attachInfo"
 >;
 
 export function presenceView(s: Slice, now: number): PresenceView {
@@ -47,7 +47,7 @@ export function presenceView(s: Slice, now: number): PresenceView {
     [label, cls] = [`Agent busy in ${s.wake.harness} · notes wait for its turn`, "busy"];
   else [label, cls] = ["Agent not listening", "idle"];
   if (cls === "idle" && s.unread) label += ` · ${s.unread} not answered yet`;
-  const attached = cls === "idle" && s.attachOn;
+  const attached = cls === "idle" && s.attachInfo?.effective.state === "on";
   const title =
     cls === "idle"
       ? "Your notes are kept and reach the agent the next time it polls."

@@ -475,24 +475,27 @@ code {
 }
 /* On a wide screen the Agent panel opens over the side panel, below its tabs; on a narrow one it is a popover. */
 .attach-pop {
-  position: absolute;
-  top: var(--sub-h);
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  width: var(--panel-w);
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 16px;
-  border-left: 1px solid var(--line);
+  width: min(var(--panel-w), calc(100vw - 16px));
+  padding: 0;
+  border: 1px solid var(--line-3);
   background: var(--bg-2);
+  color: var(--text);
+  font-size: var(--fs);
+  box-shadow: var(--shadow-pop);
+}
+/* The popover scrolls inside the room the page leaves it. */
+.attach-scroll {
+  max-height: min(80dvh, var(--radix-popover-content-available-height));
+}
+.attach-scroll [data-slot="scroll-area-viewport"] {
+  max-height: inherit;
+}
+.attach-body,
+.attach-loading {
   display: grid;
   align-content: start;
   gap: 14px;
-  font-size: var(--fs);
-}
-.attach-pop[hidden] {
-  display: none;
+  padding: 16px;
 }
 .attach-head {
   display: flex;
@@ -568,10 +571,10 @@ code {
   color: var(--faint);
   cursor: not-allowed;
 }
-.attach-radio input {
-  margin: 0;
+.attach-radio [role="radio"],
+.share-opt [role="radio"] {
   align-self: center;
-  accent-color: var(--accent);
+  border-color: var(--line-3);
 }
 .attach-session small {
   margin-left: auto;
@@ -998,7 +1001,6 @@ html.exploring .scrim,
 html.exploring .dock {
   display: none;
 }
-html.exploring .attach-pop,
 html.exploring .hist {
   top: 0;
 }
@@ -1020,13 +1022,20 @@ html.exploring .hist {
   padding: 0 8px;
   border-bottom: 1px solid var(--line);
 }
+.panel-head > [data-slot="tabs"] {
+  min-width: 0;
+}
 .panel-tabs {
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
+  height: auto;
+  padding: 0;
+  background: transparent;
 }
 .panel-tab {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1039,10 +1048,13 @@ html.exploring .hist {
   font-weight: 500;
   cursor: pointer;
 }
+.panel-tab::after {
+  display: none;
+}
 .panel-tab:hover {
   color: var(--text);
 }
-.panel-tab[aria-current] {
+.panel-tab[data-state="active"] {
   background: var(--surface-2);
   color: var(--text);
   font-weight: 600;
@@ -1633,7 +1645,6 @@ html.exploring .hist {
   .attach-pill.on .attach-short {
     display: inline;
   }
-  .attach-pop,
   .hist {
     position: fixed;
     left: 8px;
@@ -1645,17 +1656,8 @@ html.exploring .hist {
     border-radius: var(--radius-lg);
     background: var(--surface);
     box-shadow: var(--shadow-pop);
-  }
-  .attach-pop {
-    top: calc(var(--bar-h) + 4px);
-    max-height: calc(100dvh - var(--bar-h) - 16px);
-  }
-  .hist {
     top: calc(var(--bar-h) + 8px);
     max-height: calc(100dvh - var(--bar-h) - 24px);
-  }
-  html.exploring .attach-pop {
-    top: calc(var(--bar-h) + 4px);
   }
   html.exploring .hist {
     top: calc(var(--bar-h) + 8px);

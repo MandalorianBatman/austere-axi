@@ -38,7 +38,7 @@ function IconAction({
   );
 }
 
-export function Queue(): ReactElement {
+export function Queue({ inert }: { inert?: boolean }): ReactElement {
   const queue = useReview((s) => s.queue);
   const n = queue.length;
   const list = useRef<HTMLOListElement>(null);
@@ -49,7 +49,7 @@ export function Queue(): ReactElement {
     before.current = n;
   }, [n]);
   return (
-    <section className="queue" aria-label="Ready to send" hidden={!n}>
+    <section className="queue" aria-label="Ready to send" hidden={!n} inert={inert}>
       <div className="queue-head">
         <span className="queue-title">Ready to send · {n}</span>
         <span className="queue-sub">Sent together, in this order</span>

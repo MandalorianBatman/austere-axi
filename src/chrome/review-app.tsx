@@ -5,6 +5,8 @@ import type { ReactElement } from "react";
 import { Icon, ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
 import { BASE, HOSTED, OWNER } from "./review-env.ts";
+import { AttachPill } from "./review-attach.tsx";
+import { useAttachFeed } from "./review-attach.ts";
 import { useBanner } from "./review-banner.ts";
 import {
   ChangesButton,
@@ -22,6 +24,7 @@ import { HistoryPanel } from "./review-history-panel.tsx";
 import { useRootClass } from "./review-hooks.ts";
 import { Log } from "./review-log.tsx";
 import { Queue } from "./review-queue.tsx";
+import { Dock, PanelHead, Scrim, useCovered, useSheetEscape } from "./review-tabs.tsx";
 import { useReview } from "./review-store.ts";
 import { Button } from "@/chrome/ui/button";
 import { TooltipProvider } from "@/chrome/ui/tooltip";
@@ -61,12 +64,18 @@ function Banner(): ReactElement {
 /** What the owner's page does on its own while it is open: keeps the history current. */
 function OwnerEffects(): null {
   useHistoryFeed();
+  useAttachFeed();
   return null;
 }
 
 function App(): ReactElement {
-  useRootClass("is-archived", useReview((s) => s.archived));
+  const archived = useReview((s) => s.archived);
+  useRootClass("is-archived", archived);
+  useRootClass("sheet-open", useReview((s) => s.sheetOpen));
+  useSheetEscape();
   useHighlightSync();
+  // On a wide screen History lies over the notes, the queue and the composer: what is covered takes no focus.
+  const covered = useCovered();
   return (
     <TooltipProvider>
       <a className="skip-link" href="#content">
@@ -88,25 +97,7 @@ function App(): ReactElement {
           <div className="bar-right">
             <ChangesButton />
             <span className="viewers" role="group" aria-label="On this page" hidden />
-            {OWNER ? (
-              <div className="attach">
-                <button
-                  type="button"
-                  className="attach-pill"
-                  aria-haspopup="dialog"
-                  aria-expanded="false"
-                  title="Attach an agent to this page"
-                >
-                  <span className="attach-dot" />
-                  <span className="attach-label">
-                    Agent: <span className="attach-detail">Off</span>
-                    <span className="attach-short">Off</span>
-                  </span>
-                  <Icon name="chevronDown" size={12} width={2} cls="attach-caret" />
-                </button>
-                <span className="run-state" hidden />
-              </div>
-            ) : null}
+            {OWNER ? <AttachPill /> : null}
             <PresencePill />
             {OWNER ? <ShareButton /> : null}
             {OWNER_BAR ? (
@@ -176,12 +167,12 @@ function App(): ReactElement {
                   </a>
                 ) : null}
                 {OWNER ? (
-                  <button type="button" data-cmd="archive">
+                  <button type="button" data-cmd="archive" hidden={archived}>
                     Archive page
                   </button>
                 ) : null}
                 {OWNER ? (
-                  <button type="button" data-cmd="unarchive">
+                  <button type="button" data-cmd="unarchive" hidden={!archived}>
                     Unarchive page
                   </button>
                 ) : null}
@@ -222,38 +213,18 @@ function App(): ReactElement {
                 {OWNER ? <Revision /> : null}
                 {OWNER ? <HistoryButton /> : null}
               </div>
-              <button type="button" className="dock" />
+              <Dock />
             </div>
             <iframe className="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-forms" />
           </section>
-          <div className="scrim" />
+          <Scrim />
           <aside className="panel" aria-label="Review panel">
-            <div className="panel-head">
-              <div className="panel-tabs" role="group" aria-label="Review panel views">
-                <button type="button" className="panel-tab" data-tab="notes" aria-current="true">
-                  Notes <span className="tab-count" />
-                </button>
-                {OWNER ? (
-                  <button type="button" className="panel-tab" data-tab="agent">
-                    Agent <span className="tab-dot" role="img" aria-label="Agent not listening" />
-                  </button>
-                ) : null}
-                {OWNER ? (
-                  <button type="button" className="panel-tab" data-tab="history">
-                    History
-                  </button>
-                ) : null}
-              </div>
-              <button type="button" className="icon-btn sheet-close" aria-label="Close the notes">
-                <Icon name="chevronDown" size={20} width={2} />
-              </button>
-            </div>
-            <Log />
-            <Queue />
-            <Composer />
+            <PanelHead />
+            <Log inert={covered} />
+            <Queue inert={covered} />
+            <Composer inert={covered} />
           </aside>
           {OWNER ? <HistoryPanel /> : null}
-          {OWNER ? <div className="attach-pop" role="dialog" aria-label="Agent on this page" hidden /> : null}
         </div>
       </div>
     </TooltipProvider>

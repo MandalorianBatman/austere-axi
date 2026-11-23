@@ -427,24 +427,24 @@ test("the page's Share with the default auto and attach on: untouched it holds t
     await page.waitForSelector(".composer textarea");
     await page.click(".menu-btn");
     await page.click('[data-cmd="share"]');
-    await page.waitForSelector("dialog.share[open]");
+    await page.waitForSelector("[role=dialog].share");
     assert.ok(
-      await page.locator("dialog.share input[name=mode][value=auto]").isChecked(),
+      await page.locator('[role=dialog].share [role=radio][value="auto"]').isChecked(),
       "the dialog starts at the default",
     );
-    await page.fill("dialog.share input[name=name]", name);
+    await page.fill("[role=dialog].share input[name=name]", name);
   };
   try {
     await share("Gil");
-    await page.click("dialog.share button[type=submit]");
-    await page.locator("dialog.share", { hasText: "Their notes wait for you." }).waitFor();
+    await page.click("[role=dialog].share button[type=submit]");
+    await page.locator("[role=dialog].share", { hasText: "Their notes wait for you." }).waitFor();
 
     await share("Hal");
-    await page.locator("dialog.share label", { hasText: "Go straight to the agent" }).click();
-    await page.click("dialog.share button[type=submit]");
-    await page.locator("dialog.share .share-error:not([hidden])").waitFor();
+    await page.locator("[role=dialog].share label", { hasText: "Go straight to the agent" }).click();
+    await page.click("[role=dialog].share button[type=submit]");
+    await page.locator("[role=dialog].share .share-error[role=alert]").waitFor();
     assert.match(
-      await page.locator("dialog.share .share-error:not([hidden])").innerText(),
+      await page.locator("[role=dialog].share .share-error[role=alert]").innerText(),
       /attach/i,
     );
     assert.deepEqual(

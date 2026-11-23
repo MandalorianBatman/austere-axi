@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type { TouchEvent } from "react";
 
 /** The time now, again every `every` ms: for a label that counts up ("4 min", "sending again in 2 s"). */
 export function useNow(every = 30_000): number {
@@ -48,4 +49,36 @@ export function useFetchJson<T>(url: string | null): Loaded<T> {
   }, [url]);
   // An answer belongs to the url it was asked for: after a change of url the old answer is not shown.
   return state.url === url ? state.result : { status: "loading" };
+}
+
+
+const NARROW = "(max-width: 860px)";
+
+/** Whether the screen is narrow (a phone): the notes are a sheet under the page, and History and the others are popovers. */
+export function useNarrow(): boolean {
+  return useSyncExternalStore(
+    (on) => {
+      const mq = window.matchMedia(NARROW);
+      mq.addEventListener("change", on);
+      return () => mq.removeEventListener("change", on);
+    },
+    () => window.matchMedia(NARROW).matches,
+  );
+}
+
+/** Touch handlers for a vertical swipe: `onSwipe` gets how far the finger moved down (negative: up). */
+export function swipe(onSwipe: (dy: number) => void): {
+  onTouchStart: (e: TouchEvent) => void;
+  onTouchEnd: (e: TouchEvent) => void;
+} {
+  let from: number | null = null;
+  return {
+    onTouchStart: (e) => {
+      from = e.touches[0].clientY;
+    },
+    onTouchEnd: (e) => {
+      if (from != null) onSwipe(e.changedTouches[0].clientY - from);
+      from = null;
+    },
+  };
 }

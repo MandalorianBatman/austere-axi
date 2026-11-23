@@ -4,6 +4,7 @@
 import { create } from "zustand";
 import type {
   Ask,
+  AttachInfo,
   Entry,
   HistoryData,
   Mode,
@@ -11,6 +12,7 @@ import type {
   QueueItem,
   RenderIssue,
   RunMark,
+  RunSummary,
   WakeInfo,
 } from "./review-types.ts";
 import { LS, SID, SS, HOSTED, VIEWER } from "./review-env.ts";
@@ -62,8 +64,21 @@ export interface ReviewState {
   sheetOpen: boolean;
   connected: boolean;
   links: { remote?: string } | null;
-  /** Whether an agent is attached to this page (the Agent pill's setting), for the presence label. */
-  attachOn: boolean;
+  /** The Agent pill's setting (GET /attach); null until the first answer. */
+  attachInfo: AttachInfo | null;
+  /** The newest run of the attached agent, from the `run` events and the setting. */
+  run: RunSummary | null;
+  /** The reason that came with the run's last event. */
+  runMessage: string;
+  /** The failed run's log, once asked for. */
+  runLog: string[] | null;
+  /** How many `run` events came: an answer that was asked before one holds an older run. */
+  runEvents: number;
+  /** Moves when something asks for the setting again. */
+  attachTick: number;
+  /** A change of the setting is on its way to the server. */
+  attachBusy: boolean;
+  attachError: string;
   /** Which view the panel shows: the notes, or the Agent or History panel that opens over them. */
   panel: "notes" | "agent" | "history";
   /** The History panel: one statement's earlier texts, or (null) every revision. */
@@ -77,6 +92,10 @@ export interface ReviewState {
   /** Revisions the owner has not seen since they last looked, and whether they dismissed the strip about them. */
   sinceCount: number;
   sinceDismissed: boolean;
+  /** When the reader last opened the notes, for "new reply" on the dock. */
+  seenAt: number;
+  /** Moves when the frame sends a note-worthy action: the dock pulses once. */
+  dockPulse: number;
   /** The dialog the owner is answering, if any. */
   ask: Ask | null;
   /** Hosted: why nothing more can be sent (the page is gone, or the invite no longer works). */
@@ -123,7 +142,14 @@ const initial: ReviewState = {
   sheetOpen: SS.get(`austere:sheet:${SID}`) === true,
   connected: false,
   links: null,
-  attachOn: false,
+  attachInfo: null,
+  run: null,
+  runMessage: "",
+  runLog: null,
+  runEvents: 0,
+  attachTick: 0,
+  attachBusy: false,
+  attachError: "",
   panel: "notes",
   historyFor: null,
   hist: null,
@@ -131,6 +157,8 @@ const initial: ReviewState = {
   historyTick: 0,
   sinceCount: 0,
   sinceDismissed: false,
+  seenAt: SS.get<number>(`austere:seen:${SID}`) || 0,
+  dockPulse: 0,
   ask: null,
   lockout: null,
   inviteName: undefined,
@@ -145,11 +173,10 @@ export const set = useReview.setState;
 
 export const isNarrow = (): boolean => window.matchMedia("(max-width: 860px)").matches;
 
-/** The notes sheet on a narrow screen: open or closed, kept for the tab. */
+/** The notes sheet on a narrow screen: open or closed, kept for the tab (`sheet-open` on <html> follows it). */
 export function setSheet(open: boolean): void {
   set({ sheetOpen: open });
   SS.set(`austere:sheet:${SID}`, open);
-  document.documentElement.classList.toggle("sheet-open", open);
 }
 
 /** The queue changed: keep a copy in this browser, so a reload does not lose it. */

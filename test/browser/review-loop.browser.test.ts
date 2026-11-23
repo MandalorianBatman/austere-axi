@@ -887,7 +887,7 @@ test("Explore hides the conversation and gives the page the full width; Annotate
   }
 });
 
-test("the queue numbers its notes and brings a new one into view; the Agent panel takes what it covers out of the tab order; the mode buttons say which is on", async (t) => {
+test("the queue numbers its notes and brings a new one into view; History takes what it covers out of the tab order; the mode buttons say which is on", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "queue-panel.html");
   fs.writeFileSync(
@@ -938,24 +938,26 @@ test("the queue numbers its notes and brings a new one into view; the Agent pane
     assert.deepEqual(await numbers(), ["1", "2", "3", "4", "5"]);
     assert.ok((await scroll()).top > 0, "the list did not jump back to its first note");
 
-    // The Agent panel lies over the queue and the composer: they take no focus until Notes is back.
+    // The Agent popover hangs from its pill and covers nothing. History lies over the queue and the composer:
+    // they take no focus until Notes is back.
     const inert = () =>
       page
         .locator(".panel > .log, .panel > .queue, .panel > .composer")
         .evaluateAll((els) => els.map((el) => (el as HTMLElement).inert));
+    const selected = (tab: string) =>
+      page.locator(`.panel-tab[data-tab="${tab}"]`).getAttribute("aria-selected");
     await page.click('.panel-tab[data-tab="agent"]');
     await page.locator(".attach-pop").waitFor({ state: "visible" });
-    assert.equal(
-      await page.locator('.panel-tab[data-tab="agent"]').getAttribute("aria-current"),
-      "true",
-    );
+    assert.equal(await selected("agent"), "true");
+    assert.deepEqual(await inert(), [false, false, false]);
+    await page.click('.panel-tab[data-tab="history"]');
+    await page.locator(".attach-pop").waitFor({ state: "hidden" });
+    await page.locator(".hist").waitFor({ state: "visible" });
+    assert.equal(await selected("history"), "true");
     assert.deepEqual(await inert(), [true, true, true]);
     await page.click('.panel-tab[data-tab="notes"]');
-    await page.locator(".attach-pop").waitFor({ state: "hidden" });
-    assert.equal(
-      await page.locator('.panel-tab[data-tab="notes"]').getAttribute("aria-current"),
-      "true",
-    );
+    await page.locator(".hist").waitFor({ state: "hidden" });
+    assert.equal(await selected("notes"), "true");
     assert.deepEqual(await inert(), [false, false, false]);
 
     await page.keyboard.press("ControlOrMeta+i");

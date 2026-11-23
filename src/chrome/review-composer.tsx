@@ -76,7 +76,7 @@ function hint(viewerName: string): string {
   return viewerName ? `Posting as ${viewerName} · ${base}` : base;
 }
 
-export function Composer(): ReactElement {
+export function Composer({ inert }: { inert?: boolean }): ReactElement {
   const s = useReview();
   const now = useNow();
   const n = s.queue.length;
@@ -97,6 +97,7 @@ export function Composer(): ReactElement {
       <form
         className="composer"
         aria-label="Send notes"
+        inert={inert}
         onSubmit={(e) => {
           e.preventDefault();
           void sendAll(false);

@@ -23,7 +23,7 @@ export function PresencePill(): ReactElement {
       since: r.since,
       wake: r.wake,
       unread: r.unread,
-      attachOn: r.attachOn,
+      attachInfo: r.attachInfo,
     })),
   );
   const view = presenceView(s, useNow());
