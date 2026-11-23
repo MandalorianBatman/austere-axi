@@ -418,7 +418,7 @@ test("review header: breadcrumb to the hub, copy switcher keeps the path, Ctrl+K
       "the back arrow is the phone's breadcrumb",
     );
     // The copy switcher lists both worktrees; the other one has the same rel_path.
-    await page.getByRole("button", { name: "Copy of this page (worktree)" }).click();
+    await page.getByRole("button", { name: /^Worktree copy: / }).click();
     assert.deepEqual((await page.getByRole("menuitemradio").allInnerTexts()).sort(), [
       "feat",
       "main",
@@ -725,7 +725,7 @@ test("a reviewer's page shows none of it, and the hub refuses the reviewer", asy
     await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
     for (const sel of [
       '[aria-label="Breadcrumb"]',
-      '[aria-label="Copy of this page (worktree)"]',
+      '[aria-label^="Worktree copy: "]',
       '[aria-label="Go to page (Ctrl K)"]',
       '[data-cmd="goto"]',
       '[data-cmd="next-unanswered"]',

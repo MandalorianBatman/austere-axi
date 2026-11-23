@@ -74,6 +74,7 @@ export function CopySwitcher(): ReactElement | null {
   const label = (c: (typeof page.copies)[number]): string =>
     `${c.label}${c.missing ? " (missing)" : c.archived ? " (archived)" : ""}`;
   const here = page.copies.find((c) => c.id === page.id);
+  const shown = here ? label(here) : page.id;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -82,11 +83,11 @@ export function CopySwitcher(): ReactElement | null {
           variant="outline"
           size="sm"
           className="max-w-48 flex-none font-mono text-[length:var(--fs-xs)] max-[860px]:max-w-24 max-[480px]:hidden"
-          aria-label="Copy of this page (worktree)"
+          aria-label={`Worktree copy: ${shown}`}
           title="The same page in another worktree"
         >
           <GitBranch data-icon="inline-start" />
-          <span className="truncate">{here ? label(here) : page.id}</span>
+          <span className="truncate">{shown}</span>
           <ChevronDown data-icon="inline-end" />
         </Button>
       </DropdownMenuTrigger>

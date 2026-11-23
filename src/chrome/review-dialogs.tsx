@@ -244,39 +244,44 @@ function ShareDialog({
                 control={form.control}
                 name="scope"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>They can review</FormLabel>
-                    <FormControl>
-                      <RadioGroup value={field.value} onValueChange={field.onChange}>
-                        <Choice value="page">This page</Choice>
-                        {offer.project ? (
-                          <Choice value="project">{`Every page in ${offer.project.name}`}</Choice>
-                        ) : null}
-                        <Choice value="all">Every page</Choice>
-                      </RadioGroup>
-                    </FormControl>
-                  </FormItem>
+                  <fieldset className="grid min-w-0 gap-2">
+                    <legend id="share-scope" className="mb-2 text-sm leading-none font-medium">
+                      They can review
+                    </legend>
+                    <RadioGroup
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      aria-labelledby="share-scope"
+                    >
+                      <Choice value="page">This page</Choice>
+                      {offer.project ? (
+                        <Choice value="project">{`Every page in ${offer.project.name}`}</Choice>
+                      ) : null}
+                      <Choice value="all">Every page</Choice>
+                    </RadioGroup>
+                  </fieldset>
                 )}
               />
               <FormField
                 control={form.control}
                 name="mode"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Their notes</FormLabel>
-                    <FormControl>
-                      <RadioGroup
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        onClickCapture={() => {
-                          touched.current = true;
-                        }}
-                      >
-                        <Choice value="hold">Wait for me to send them on</Choice>
-                        <Choice value="auto">Go straight to the agent</Choice>
-                      </RadioGroup>
-                    </FormControl>
-                  </FormItem>
+                  <fieldset className="grid min-w-0 gap-2">
+                    <legend id="share-mode" className="mb-2 text-sm leading-none font-medium">
+                      Their notes
+                    </legend>
+                    <RadioGroup
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      aria-labelledby="share-mode"
+                      onClickCapture={() => {
+                        touched.current = true;
+                      }}
+                    >
+                      <Choice value="hold">Wait for me to send them on</Choice>
+                      <Choice value="auto">Go straight to the agent</Choice>
+                    </RadioGroup>
+                  </fieldset>
                 )}
               />
               {offer.remote ? null : (

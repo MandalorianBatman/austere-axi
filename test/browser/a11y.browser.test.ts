@@ -127,6 +127,8 @@ async function ownerPage(file: string, width = 1280) {
   const { code } = await api<{ code: string }>("/api/login", {});
   await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
   await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor({ timeout: 15_000 });
+  // Narrow, the notes are a sheet that is not in the page until the dock opens it.
+  if (width <= 860) await page.locator(".dock").click();
   await page.waitForSelector(".panel-tab[data-tab=agent]");
   return { page, context, problems };
 }

@@ -8,11 +8,25 @@
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
 /* One token source: shadcn's color names are Tailwind theme colors that point at tokens.css. No shadcn
    variable is defined under a name tokens.css already uses (`--muted`, `--accent` mean other things there). */
 @theme inline {
+  /* The type scale is tokens.css's five steps; Tailwind's names point at them (no 14px anywhere). */
+  --text-2xs: var(--fs-xs);
+  --text-2xs--line-height: 1.4;
+  --text-xs: var(--fs-sm);
+  --text-xs--line-height: 1.4;
+  --text-sm: var(--fs);
+  --text-sm--line-height: 1.45;
+  --text-base: var(--fs);
+  --text-base--line-height: 1.45;
+  --text-md: var(--fs-md);
+  --text-md--line-height: 1.4;
+  --text-title: var(--fs-title);
+  --text-title--line-height: 1.25;
+  --breakpoint-xs: 30.0625rem; /* 481px: `max-xs:` is the phone (<= 480px) */
   --color-background: var(--bg);
   --color-foreground: var(--text);
   --color-card: var(--bg-2);
@@ -28,9 +42,10 @@
   --color-accent: var(--surface-2);
   --color-accent-foreground: var(--text);
   --color-destructive: var(--red);
+  --color-destructive-foreground: var(--red-ink);
   --color-border: var(--line-2);
-  --color-input: var(--line-2);
-  --color-ring: var(--accent-line);
+  --color-input: var(--line-input);
+  --color-ring: var(--accent);
   --color-sidebar: var(--bg-2);
   --color-sidebar-foreground: var(--text-3);
   --color-sidebar-primary: var(--accent);
@@ -40,11 +55,14 @@
   --color-sidebar-border: var(--line);
   --color-sidebar-ring: var(--accent-line);
 }
-
-/* The one place ui/sidebar.tsx reads a bare `--sidebar-*` name (the outline menu button): the same tokens, not a second set. */
+/* The one place ui/sidebar.tsx reads a bare `--sidebar-*` name (the outline menu button): the same tokens, not a second set.
+   `--popover*` and `--border` are what sonner (ui/sonner.tsx) reads; the same alias pattern. */
 :root {
   --sidebar-border: var(--line);
   --sidebar-accent: var(--surface-2);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --border: var(--line-3);
 }
 
 /* Tailwind v4 preflight draws borders and outlines in currentColor; shadcn's template sets them from the theme. */
@@ -53,6 +71,20 @@
   ::before,
   ::after {
     border-color: var(--color-border);
-    outline-color: color-mix(in oklab, var(--color-ring) 50%, transparent);
+  }
+  /* The shadcn parts' rem is 16px on every surface (hub.css and chrome.css set `font` on <html>, which would shrink it). */
+  html {
+    font-size: 16px;
+  }
+  /* One focus ring for everything: 2px solid accent, 2px offset (8.9:1). The translucent shadcn ring is gone. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
   }
 }

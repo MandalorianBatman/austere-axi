@@ -104,7 +104,8 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
   const now = useNow();
   const n = s.queued;
   const view = presenceView(s, now);
-  const locked = s.archived || !!s.lockout || s.sending;
+  // While a send is in flight the controls stay in the tab order (readOnly, aria-disabled): `disabled` would drop focus to <body>.
+  const locked = s.archived || !!s.lockout;
   const empty = !n && !s.draft.trim();
   const alreadyDone = empty && !!s.lastNote?.end && !s.lastNote.items?.length;
   // The store holds the draft (Send, Done and the dock read it); the form follows it, so a send that clears it clears the box.
@@ -152,6 +153,8 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
                     placeholder={s.archived ? "Page archived" : "Add a note about the whole page"}
                     className="composer-input min-h-[60px] max-h-40 resize-y bg-[var(--bg-3)] text-[length:var(--fs)] md:text-[length:var(--fs)]"
                     disabled={locked}
+                    readOnly={s.sending}
+                    aria-disabled={s.sending || undefined}
                     onChange={(e) => {
                       field.onChange(e);
                       set({ draft: e.target.value });
@@ -179,7 +182,8 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
                 type="button"
                 variant="outline"
                 className="send-end"
-                disabled={s.archived || s.sending || alreadyDone}
+                disabled={s.archived || alreadyDone}
+                aria-disabled={s.sending || undefined}
                 title={
                   alreadyDone
                     ? "You already told the agent you have no more notes"
@@ -187,7 +191,9 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
                       ? "Tell the agent you have no more notes"
                       : "Send these notes and tell the agent it can stop listening. You can still add notes later."
                 }
-                onClick={() => void sendAll(true)}
+                onClick={() => {
+                  if (!s.sending) void sendAll(true);
+                }}
               >
                 {empty ? "Done" : "Send & finish"}
               </Button>
@@ -196,6 +202,10 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
               type="submit"
               className="send"
               disabled={locked || (!!HOSTED && s.inviteName === undefined)}
+              aria-disabled={s.sending || undefined}
+              onClick={(e) => {
+                if (s.sending) e.preventDefault();
+              }}
             >
               {s.sending ? (
                 <>

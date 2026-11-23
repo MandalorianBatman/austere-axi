@@ -1,5 +1,6 @@
 // Small pieces the hub views and Settings share: links that move inside the hub, empty states, page rows.
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
+import { Collapsible } from "radix-ui";
 import type { ReactElement, ReactNode } from "react";
 import type { InboxPage, ShellCopy, ShellPage } from "../shared/hub-api.ts";
 import { joinText, middle, plural, titleOf, when } from "./format.ts";
@@ -15,6 +16,11 @@ import { Skeleton } from "@/chrome/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/chrome/ui/tooltip";
 import type { State } from "./hub-store.ts";
 
+/** Move focus to the view when what had it is gone; `#content` takes focus (tabIndex -1). */
+export function focusView(): void {
+  document.getElementById("content")?.focus({ preventScroll: true });
+}
+
 /** A link to another view or filter: a real URL, and a click moves inside the hub. */
 export function ViewLink({
   next,
@@ -29,7 +35,12 @@ export function ViewLink({
   return (
     <a
       href={toUrl({ ...state, ...next })}
-      onClick={(e) => go(e, next)}
+      onClick={(e) => {
+        go(e, next);
+        // The link is inside the view, which this click replaces.
+        if (!e.defaultPrevented) return;
+        focusView();
+      }}
       aria-current={current ? "page" : undefined}
     >
       {children}
@@ -140,14 +151,17 @@ export function Chips({ copies, least = 2 }: { copies: ShellCopy[]; least?: numb
         <Chip key={c.id} c={c} />
       ))}
       {rest.length ? (
-        <details className="more">
-          <summary>+{rest.length} more</summary>
-          <div className="chips">
+        <Collapsible.Root className="more">
+          <Collapsible.Trigger className="more-trigger">
+            <span className="more-open">Show fewer</span>
+            <span className="more-closed">+{rest.length} more</span>
+          </Collapsible.Trigger>
+          <Collapsible.Content className="chips">
             {rest.map((c) => (
               <Chip key={c.id} c={c} />
             ))}
-          </div>
-        </details>
+          </Collapsible.Content>
+        </Collapsible.Root>
       ) : null}
     </div>
   );
@@ -286,6 +300,7 @@ export function ArchiveButton({
   // The row comes back from the next read, and the button with it.
   const [busyFor, setBusyFor] = useState<ShellPage | null>(null);
   const busy = busyFor === p;
+  const btn = useRef<HTMLButtonElement>(null);
   const label = `${archivedView ? "Unarchive" : "Archive"} ${titleOf(p)}`;
   const title = archivedView
     ? "Bring this page back to the lists"
@@ -295,8 +310,17 @@ export function ArchiveButton({
   const flipIt = async (): Promise<void> => {
     if (busy) return;
     setBusyFor(p);
+    // The row goes away with the change: hand focus to its neighbour first (or the view).
+    const row = btn.current?.closest("li");
+    const next = row?.nextElementSibling ?? row?.previousElementSibling;
     const ok = await flip(p, archivedView ? "unarchive" : "archive");
-    if (!ok) setBusyFor(null);
+    if (!ok) {
+      setBusyFor(null);
+      return;
+    }
+    const target = next?.querySelector<HTMLElement>(".row-title");
+    if (target) target.focus();
+    else focusView();
   };
   return archivedView ? (
     <Button
@@ -304,6 +328,7 @@ export function ArchiveButton({
       variant="ghost"
       size="sm"
       title={title}
+      ref={btn}
       aria-label={label}
       disabled={busy}
       onClick={() => void flipIt()}
@@ -317,6 +342,7 @@ export function ArchiveButton({
           type="button"
           variant="ghost"
           size="icon"
+          ref={btn}
           aria-label={label}
           disabled={busy}
           onClick={() => void flipIt()}

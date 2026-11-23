@@ -32,23 +32,55 @@ import {
   stateWords,
 } from "./hub-parts.tsx";
 import { Icon } from "./icon.tsx";
+import { Alert, AlertDescription, AlertTitle } from "@/chrome/ui/alert";
 import { Button } from "@/chrome/ui/button";
+import { Label } from "@/chrome/ui/label";
 import { Input } from "@/chrome/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/chrome/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/chrome/ui/tabs";
-import { go, useHub } from "./hub-store.ts";
+import { go, reload, useHub } from "./hub-store.ts";
 
-/** The loaded answer, or its error; nothing while the first read is on its way. */
+/** The loaded answer, or its error; nothing while the first read is on its way. An error never replaces the h1: `title` stands in for it, and a failed refresh shows above the answer already on screen. */
+/** Selector of what takes focus when the Notes filter form remounts after a changed filter. */
+let refocusFilter: string | null = null;
+
 function Loaded<A, T>({
   result,
+  title,
   children,
 }: {
   result: { loaded: { args: A; data: T } | null; error: string | null };
+  title: string;
   children: (args: A, data: T) => ReactNode;
 }): ReactElement | null {
-  if (result.error) return <p className="error">{result.error}</p>;
-  if (!result.loaded) return <ViewSkeleton />;
-  return <>{children(result.loaded.args, result.loaded.data)}</>;
+  const alert = result.error ? (
+    <Alert variant="destructive" className="mb-4">
+      <AlertTitle>Could not load {title}</AlertTitle>
+      <AlertDescription>
+        <p>{result.error}</p>
+        <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={reload}>
+          Try again
+        </Button>
+      </AlertDescription>
+    </Alert>
+  ) : null;
+  if (!result.loaded)
+    return result.error ? (
+      <>
+        <header className="view-h">
+          <h1>{title}</h1>
+        </header>
+        {alert}
+      </>
+    ) : (
+      <ViewSkeleton />
+    );
+  return (
+    <>
+      {alert}
+      {children(result.loaded.args, result.loaded.data)}
+    </>
+  );
 }
 
 // ── Inbox ──
@@ -97,7 +129,7 @@ export function InboxView(): ReactElement {
     get<InboxResponse>(`/hub/api/inbox${query({ project: a.project })}`, signal),
   );
   return (
-    <Loaded result={result}>
+    <Loaded result={result} title="Inbox">
       {(a, data) => {
         const all = data.needs_you.length + data.waiting_on_agent.length + data.quiet.length;
         if (!all)
@@ -267,7 +299,7 @@ export function PagesView(): ReactElement {
     get<PagesResponse>(`/hub/api/pages${query({ project: a.project, view: a.pagesView })}`, signal),
   );
   return (
-    <Loaded result={result}>
+    <Loaded result={result} title="Pages">
       {(a, data) => {
         const { counts } = data;
         const unanswered = data.pages.reduce((n, p) => n + p.unanswered, 0);
@@ -443,7 +475,7 @@ export function NotesView(): ReactElement {
     get<NotesResponse>(`/hub/api/notes${query(a)}`, signal),
   );
   return (
-    <Loaded result={result}>
+    <Loaded result={result} title="Notes">
       {(a, data) => {
         const waiting = data.notes.filter((n) => n.status !== "addressed").length;
         const filtered = a.q || a.project || a.author || a.device || a.status;
@@ -458,6 +490,12 @@ export function NotesView(): ReactElement {
             <form
               // The filters the URL names; typing is the form's own until it is submitted.
               key={JSON.stringify([a.q, a.status, a.author])}
+              ref={(el) => {
+                // The remount that follows a changed filter drops focus: put it back.
+                if (!el || !refocusFilter) return;
+                el.querySelector<HTMLElement>(refocusFilter)?.focus();
+                refocusFilter = null;
+              }}
               className="filters flex flex-wrap items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -468,8 +506,17 @@ export function NotesView(): ReactElement {
                 };
                 // Reviewer names are the picker's values after a prefix, so a reviewer named "all" is not "everyone".
                 const author = pick("author").replace(/^a:/, "");
+                const q = String(f.get("q") ?? "");
+                if (
+                  JSON.stringify([q, pick("status"), author]) !==
+                  JSON.stringify([a.q, a.status, a.author])
+                )
+                  refocusFilter =
+                    document.activeElement?.getAttribute("name") === "q"
+                      ? "input[name=q]"
+                      : "button[type=submit]";
                 go(null, {
-                  q: String(f.get("q") ?? ""),
+                  q,
                   status: pick("status"),
                   author,
                 });
@@ -491,8 +538,11 @@ export function NotesView(): ReactElement {
                   aria-label="Search notes"
                 />
               </div>
+              <Label htmlFor="notes-status" className="text-muted-foreground">
+                Status
+              </Label>
               <Select name="status" defaultValue={a.status || ALL}>
-                <SelectTrigger aria-label="Status" className="min-w-32">
+                <SelectTrigger id="notes-status" className="min-w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -502,20 +552,25 @@ export function NotesView(): ReactElement {
                 </SelectContent>
               </Select>
               {data.authors.length ? (
-                <Select name="author" defaultValue={a.author ? `a:${a.author}` : ALL}>
-                  <SelectTrigger aria-label="Author" className="min-w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>Everyone</SelectItem>
-                    <SelectItem value="a:owner">Owner</SelectItem>
-                    {data.authors.map((x) => (
-                      <SelectItem key={x} value={`a:${x}`}>
-                        {x}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <>
+                  <Label htmlFor="notes-author" className="text-muted-foreground">
+                    Author
+                  </Label>
+                  <Select name="author" defaultValue={a.author ? `a:${a.author}` : ALL}>
+                    <SelectTrigger id="notes-author" className="min-w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>Everyone</SelectItem>
+                      <SelectItem value="a:owner">Owner</SelectItem>
+                      {data.authors.map((x) => (
+                        <SelectItem key={x} value={`a:${x}`}>
+                          {x}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
               ) : null}
               <Button type="submit">Filter</Button>
             </form>
@@ -621,7 +676,7 @@ export function RunsView(): ReactElement {
     get<HubRunsResponse>(`/hub/api/runs${query({ project: a.project })}`, signal),
   );
   return (
-    <Loaded result={result}>
+    <Loaded result={result} title="Runs">
       {(a, data) => (
         <>
           <header className="view-h">
@@ -675,7 +730,7 @@ export function SearchView(): ReactElement {
     get<SearchResponse>(`/hub/api/search${query({ q: a.q })}`, signal),
   );
   return (
-    <Loaded result={result}>
+    <Loaded result={result} title="Search">
       {(_, data) => (
         <>
           <header className="view-h">

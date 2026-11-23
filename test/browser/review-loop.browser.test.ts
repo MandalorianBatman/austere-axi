@@ -625,12 +625,20 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
         await page.waitForSelector("[role=dialog].confirm");
       };
       // The composer locks when the page is archived (at 390 px the presence label is not shown).
-      const locked = (on: boolean) =>
-        page.waitForFunction(
+      const locked = async (on: boolean) => {
+        // Narrow, the composer is in the notes sheet: open it to look, then close it.
+        const sheet = viewport.width <= 860;
+        if (sheet) await page.locator(".dock").click();
+        await page.waitForFunction(
           (on) =>
             document.querySelector<HTMLTextAreaElement>(".composer textarea")?.disabled === on,
           on,
         );
+        if (sheet) {
+          await page.keyboard.press("Escape");
+          await page.locator(".panel").waitFor({ state: "detached" });
+        }
+      };
       await ask();
       const dialog = page.locator("[role=dialog].confirm");
       assert.equal(await dialog.locator("h2").textContent(), "Archive this copy (main)?");
@@ -870,10 +878,16 @@ test("Explore hides the conversation and gives the page the full width; Annotate
           file,
           text: `reply ${viewport.name} ${i}\n${"line\n".repeat(4)}`,
         });
-      await page.waitForSelector(`.log :text("${last}")`, { state: "attached" });
+      if (viewport.width > 860)
+        await page.waitForSelector(`.log :text("${last}")`, { state: "attached" });
 
       await page.keyboard.press("ControlOrMeta+i");
       await page.waitForSelector(`${conversation}:visible`);
+      if (viewport.width <= 860) {
+        // Narrow, the log is in the notes sheet: open it to see the latest reply.
+        await page.locator(".dock").click();
+        await page.waitForSelector(`.log :text("${last}")`, { state: "attached" });
+      }
       assert.equal(
         await frameWidth(),
         annotateWidth,

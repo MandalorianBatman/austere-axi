@@ -95,7 +95,11 @@ export function ProjectsSidebar({
               const holdsCurrent = !expanded && list.some((pg) => isCurrent(pg, currentId));
               return (
                 <SidebarMenuItem key={p.id} className="proj">
-                  <SidebarMenuButton asChild isActive={isSelected || holdsCurrent} className="pl-7">
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isSelected || holdsCurrent}
+                    className="ml-7 w-[calc(100%-1.75rem)] pl-2"
+                  >
                     <a
                       className="proj-link"
                       href={projectHref(p.id)}
@@ -107,7 +111,7 @@ export function ProjectsSidebar({
                     </a>
                   </SidebarMenuButton>
                   <SidebarMenuAction
-                    className="proj-toggle left-1 right-auto"
+                    className="proj-toggle top-1 left-0.5 right-auto size-6 w-6 after:hidden"
                     aria-expanded={expanded}
                     aria-label={`${expanded ? "Hide" : "Show"} the pages of ${p.name}`}
                     onClick={() => onToggle(p.id)}

@@ -20,7 +20,10 @@ type Ask =
       kind: "confirm";
       text: string;
       danger: boolean;
+      title: string;
+      action: string;
       opener: Element | null;
+      heading: Element | null;
       done: (ok: boolean) => void;
     }
   | {
@@ -28,23 +31,47 @@ type Ask =
       text: string;
       value: string;
       opener: Element | null;
+      heading: Element | null;
       done: (value: string | null) => void;
     };
 
 const useAsk = create<{ ask: Ask | null }>(() => ({ ask: null }));
 
-export function confirmDialog(text: string, danger = false): Promise<boolean> {
+/** What the ask's own heading looks like, when the opener has gone and focus needs a landmark. */
+function headingOf(opener: Element | null): Element | null {
+  const section = opener?.closest("section[aria-labelledby]");
+  const id = section?.getAttribute("aria-labelledby");
+  return id ? document.getElementById(id) : null;
+}
+
+/** `title` and `action` name the question and its yes button; the default is a plain "Are you sure?" / "Continue". */
+export function confirmDialog(
+  text: string,
+  danger = false,
+  { title = "Are you sure?", action = "Continue" }: { title?: string; action?: string } = {},
+): Promise<boolean> {
+  const opener = document.activeElement;
   return new Promise((resolve) =>
     useAsk.setState({
-      ask: { kind: "confirm", text, danger, opener: document.activeElement, done: resolve },
+      ask: {
+        kind: "confirm",
+        text,
+        danger,
+        title,
+        action,
+        opener,
+        heading: headingOf(opener),
+        done: resolve,
+      },
     }),
   );
 }
 
 export function promptDialog(text: string, value: string): Promise<string | null> {
+  const opener = document.activeElement;
   return new Promise((resolve) =>
     useAsk.setState({
-      ask: { kind: "prompt", text, value, opener: document.activeElement, done: resolve },
+      ask: { kind: "prompt", text, value, opener, heading: headingOf(opener), done: resolve },
     }),
   );
 }
@@ -72,10 +99,16 @@ export function HubDialogs(): ReactElement | null {
     <Dialog open onOpenChange={(open) => open || close()}>
       <DialogContent
         showCloseButton={false}
-        // Radix returns focus to a trigger; there is none here, so it goes back to what asked.
+        // Radix returns focus to a trigger; there is none here, so it goes back to what asked, else to the
+        // heading of the section it sat in, else to the view.
         onCloseAutoFocus={(e) => {
           e.preventDefault();
-          if (ask.opener instanceof HTMLElement && ask.opener.isConnected) ask.opener.focus();
+          const back = [ask.opener, ask.heading].find((el) => el?.isConnected);
+          const target = back ?? document.getElementById("content");
+          if (target instanceof HTMLElement) {
+            if (target !== ask.opener) target.tabIndex = -1;
+            target.focus();
+          }
         }}
       >
         <form
@@ -86,7 +119,7 @@ export function HubDialogs(): ReactElement | null {
           }}
         >
           <DialogHeader>
-            <DialogTitle>{ask.kind === "confirm" ? "Are you sure?" : "Rename"}</DialogTitle>
+            <DialogTitle>{ask.kind === "confirm" ? ask.title : "Rename"}</DialogTitle>
             <DialogDescription>{ask.text}</DialogDescription>
           </DialogHeader>
           {ask.kind === "prompt" ? (
@@ -105,7 +138,7 @@ export function HubDialogs(): ReactElement | null {
               type="submit"
               variant={ask.kind === "confirm" && ask.danger ? "destructive" : "default"}
             >
-              {ask.kind === "confirm" ? "Continue" : "Save"}
+              {ask.kind === "confirm" ? ask.action : "Save"}
             </Button>
           </DialogFooter>
         </form>

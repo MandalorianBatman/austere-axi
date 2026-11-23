@@ -186,9 +186,9 @@ export const useReview = create<ReviewState>()(() => initial);
 export const S = useReview.getState;
 export const set = useReview.setState;
 
-export const isNarrow = (): boolean => window.matchMedia("(max-width: 860px)").matches;
+export const isNarrow = (): boolean => window.matchMedia("(width <= 860px)").matches;
 
-/** The notes sheet on a narrow screen: open or closed, kept for the tab (`sheet-open` on <html> follows it). */
+/** The notes sheet on a narrow screen: open or closed, kept for the tab. */
 export function setSheet(open: boolean): void {
   set({ sheetOpen: open });
   SS.set(`austere:sheet:${SID}`, open);

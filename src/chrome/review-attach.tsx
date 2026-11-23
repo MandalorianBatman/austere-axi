@@ -476,8 +476,8 @@ export function AttachPill(): ReactElement {
           >
             <span className="attach-dot" />
             <span className="attach-label">
-              Agent: <span className="attach-detail">{detail}</span>
-              <span className="attach-short">{on ? "On" : "Off"}</span>
+              {/* One label, so the accessible name is the visible text (a hidden second label is not part of it). */}
+              Agent: <span className="attach-detail">{narrow && on ? "On" : detail}</span>
             </span>
             <Icon name="chevronDown" size={12} width={2} cls="attach-caret" />
           </Button>

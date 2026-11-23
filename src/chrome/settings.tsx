@@ -31,12 +31,13 @@ import { plural, when } from "./format.ts";
 import { tilde } from "./hub-env.ts";
 import { get, send } from "./hub-http.ts";
 import { useLoad } from "./hub-load.ts";
-import { Empty, ViewLink } from "./hub-parts.tsx";
+import { Empty, ViewLink, ViewSkeleton } from "./hub-parts.tsx";
 import { reload } from "./hub-store.ts";
 import { fail, say } from "./hub-toast.ts";
 import { confirmDialog, promptDialog } from "./hub-dialog.tsx";
 import { Icon, ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
+import { Alert, AlertDescription } from "@/chrome/ui/alert";
 import { Button as UiButton } from "@/chrome/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/chrome/ui/form";
 import { Input } from "@/chrome/ui/input";
@@ -237,7 +238,7 @@ function Part({
   const id = `set-h-${key}`;
   return (
     <section className={`set-part${cls ? ` ${cls}` : ""}`} aria-labelledby={id}>
-      <h3 id={id}>
+      <h3 id={id} tabIndex={-1}>
         {title}
         {count == null ? null : <span className="n">{` · ${count}`}</span>}
       </h3>
@@ -293,7 +294,7 @@ function Button({
   label,
   children,
 }: {
-  onClick: () => unknown;
+  onClick: (from: HTMLElement) => unknown;
   cls?: string;
   label?: string;
   children: ReactNode;
@@ -315,7 +316,7 @@ function Button({
       size="sm"
       className={danger && variant === "link" ? "text-destructive" : undefined}
       aria-label={label}
-      onClick={() => void onClick()}
+      onClick={(e) => void onClick(e.currentTarget)}
     >
       {children}
     </UiButton>
@@ -369,14 +370,34 @@ const NOTES: [string, string][] = [
   ["auto", "Send notes straight to the agent"],
 ];
 
-/** Run a change, say how it went, and read again; true when the server took it. */
-type Act = <T>(route: string, body: object, ok: (data: T) => string) => Promise<boolean>;
+/**
+ * Run a change, say how it went, and read again; true when the server took it. `leaving` is the row the change
+ * removes: focus moves to a neighbour (or the section heading) before it unmounts, so it never falls to <body>.
+ */
+type Act = <T>(
+  route: string,
+  body: object,
+  ok: (data: T) => string,
+  leaving?: Element | null,
+) => Promise<boolean>;
 
-const act: Act = async (route, body, ok) => {
+function focusAround(row: Element): void {
+  const control = "button:not(:disabled), a[href], [role=combobox]";
+  for (const near of [row.nextElementSibling, row.previousElementSibling]) {
+    const target = near?.querySelector<HTMLElement>(control);
+    if (target) return target.focus();
+  }
+  row.closest("section")?.querySelector<HTMLElement>("h3")?.focus();
+}
+
+const act: Act = async (route, body, ok, leaving) => {
   const r = await send<never>(route, body);
   if (r.ok) say(ok(r.data));
   else fail(r.error);
-  if (r.ok) reload();
+  if (r.ok) {
+    if (leaving) focusAround(leaving);
+    reload();
+  }
   return r.ok;
 };
 
@@ -408,8 +429,9 @@ function RequestRow({
     .join(" · ");
   const { isSubmitting } = form.formState;
   const notes = useNotesMode(defaultMode, (m) => form.setValue("mode", m));
+  const row = useRef<HTMLLIElement>(null);
   return (
-    <li className="set-ask" data-request={q.id}>
+    <li ref={row} className="set-ask" data-request={q.id}>
       <Avatar name={q.name} />
       <div className="set-who">
         <span className="row-title">{q.name}</span>
@@ -425,6 +447,7 @@ function RequestRow({
               { ...scopeBody(v.scope), auto: notes.chosen(v.mode) },
               (d) =>
                 `${q.name} is in: ${d.device?.reaches ?? "approved"}. The browser that asked opens the page by itself.`,
+              row.current,
             );
           })}
         >
@@ -445,11 +468,12 @@ function RequestRow({
             {isSubmitting ? "Approving…" : "Approve"}
           </UiButton>
           <Button
-            onClick={() =>
+            onClick={(from) =>
               act(
                 `/hub/api/people/requests/${q.id}/deny`,
                 {},
                 () => `Denied ${q.name}. That browser may ask again.`,
+                from.closest("li"),
               )
             }
           >
@@ -457,11 +481,16 @@ function RequestRow({
           </Button>
           <Button
             cls="btn ghost danger"
-            onClick={() =>
+            onClick={async (from) =>
+              (await confirmDialog(`${q.name}'s browser can no longer ask for access.`, true, {
+                title: `Block ${q.name}?`,
+                action: "Block",
+              })) &&
               act(
                 `/hub/api/people/requests/${q.id}/block`,
                 {},
                 () => `Blocked ${q.name}'s browser: it can no longer ask.`,
+                from.closest("li"),
               )
             }
           >
@@ -522,9 +551,14 @@ function LinkRow({ l }: { l: AccessSummary }) {
           </Button>
         ) : null}
         <Button
-          label={`Cancel ${l.name}'s link`}
-          onClick={() =>
-            act(`/hub/api/people/${l.id}/revoke`, {}, () => `Cancelled ${l.name}'s link.`)
+          label={`Cancel link for ${l.name}`}
+          onClick={(from) =>
+            act(
+              `/hub/api/people/${l.id}/revoke`,
+              {},
+              () => `Cancelled ${l.name}'s link.`,
+              from.closest("li"),
+            )
           }
         >
           Cancel link
@@ -592,12 +626,13 @@ function DeviceRow({ d, projects }: { d: AccessSummary; projects: ProjectSummary
         <Button
           cls="btn text danger"
           label={`Revoke ${d.name}`}
-          onClick={async () =>
+          onClick={async (from) =>
             (await confirmDialog(`Revoke ${d.name}? Their open pages stop at once.`, true)) &&
             act(
               `/hub/api/people/${d.id}/revoke`,
               {},
               () => `Revoked ${d.name}. Their open pages stopped.`,
+              from.closest("li"),
             )
           }
         >
@@ -1015,7 +1050,7 @@ function ProjectRow({ p, gone }: { p: ProjectSummary; gone: Set<string> }) {
                 {p.roots.length > 1 || missing ? (
                   <Button
                     cls={missing ? "btn" : "btn text"}
-                    label={`Forget the folder ${root}`}
+                    label={`${missing ? "Forget the missing folder" : "Forget"} ${root}`}
                     onClick={async () =>
                       (!missing ||
                         (await confirmDialog(
@@ -1087,14 +1122,49 @@ async function loadSettings(_: null, signal: AbortSignal): Promise<Loaded> {
   return { settings, access, asks, projects: projectList.projects, pages: pageList.pages };
 }
 
-export function SettingsView(): ReactElement | null {
+export function SettingsView(): ReactElement {
   const { loaded, error } = useLoad(null, loadSettings);
-  if (error) return <p className="error">{error}</p>;
-  if (!loaded) return null;
-  return <SettingsPage {...loaded.data} />;
+  if (!loaded && !error) return <ViewSkeleton />;
+  return <SettingsPage data={loaded?.data ?? null} error={error} />;
 }
 
-function SettingsPage({ settings, access, asks, projects, pages }: Loaded): ReactElement {
+function SettingsPage({
+  data,
+  error,
+}: {
+  data: Loaded | null;
+  error: string | null;
+}): ReactElement {
+  const alert = error ? (
+    <Alert variant="destructive">
+      <AlertDescription>
+        <p>{error}</p>
+        <UiButton type="button" variant="outline" size="sm" onClick={() => reload()}>
+          Try again
+        </UiButton>
+      </AlertDescription>
+    </Alert>
+  ) : null;
+  if (!data)
+    return (
+      <div className="set-page">
+        <div className="set-top">
+          <h1>Settings</h1>
+        </div>
+        {alert}
+      </div>
+    );
+  return <SettingsBody {...data} alert={alert} />;
+}
+
+function SettingsBody({
+  settings,
+  access,
+  asks,
+  projects,
+  pages,
+  alert,
+}: Loaded & { alert: ReactNode }): ReactElement {
   const defaultMode = settings.review.auto ? "auto" : "hold";
   const net = settings.network;
   const waiting = asks.waiting.length;
@@ -1124,6 +1194,7 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
           own invites.
         </p>
       </div>
+      {alert}
       <nav className="set-nav" aria-label="Settings sections">
         {/* In-page jumps without a fragment: a fragment change is a popstate, and the shell would read the view again. */}
         {PARTS.map((p) => {

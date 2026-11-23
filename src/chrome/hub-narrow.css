@@ -109,7 +109,7 @@
   }
   .chip,
   .t-copies .chip,
-  details.more > summary {
+  .more-trigger {
     min-height: 36px;
   }
 }

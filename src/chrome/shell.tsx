@@ -264,6 +264,9 @@ function Hub(): ReactElement {
 
   return (
     <SidebarProvider className="hub" {...side}>
+      <a className="skip-link" href="#content">
+        Skip to content
+      </a>
       <Sidebar id="side" aria-label="Projects and views" className="side">
         <SidebarHeader className="gap-3 p-3">
           <div className="brand flex items-center gap-2.5 px-2">

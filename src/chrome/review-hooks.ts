@@ -11,7 +11,7 @@ export function useNow(every = 30_000): number {
   return now;
 }
 
-/** A class on <html> while `on` holds: the page's CSS reads state from it (`is-archived`, `exploring`, `sheet-open`). */
+/** A class on <html> while `on` holds: the page's CSS reads state from it (`is-archived`, `exploring`). */
 export function useRootClass(name: string, on: boolean): void {
   useEffect(() => {
     document.documentElement.classList.toggle(name, on);
@@ -51,7 +51,7 @@ export function useFetchJson<T>(url: string | null): Loaded<T> {
   return state.url === url ? state.result : { status: "loading" };
 }
 
-const NARROW = "(max-width: 860px)";
+const NARROW = "(width <= 860px)";
 
 /** Whether the screen is narrow (a phone): the notes are a sheet under the page, and History and the others are popovers. */
 export function useNarrow(): boolean {
