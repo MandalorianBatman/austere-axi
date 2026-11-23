@@ -190,11 +190,11 @@ export const chromeFontsPlugin: Plugin = {
   },
 };
 
-// src/chrome/tailwind.css is Tailwind v4 input: run it through PostCSS and hand esbuild plain CSS.
+// src/chrome/tailwind-hub.css and tailwind-review.css are Tailwind v4 input: run them through PostCSS and hand esbuild plain CSS.
 export const tailwindPlugin: Plugin = {
   name: "austere-tailwind",
   setup(build) {
-    build.onLoad({ filter: /chrome[\\/]tailwind\.css$/ }, async (args) => {
+    build.onLoad({ filter: /chrome[\\/]tailwind(-hub|-review)?\.css$/ }, async (args) => {
       const [{ default: postcss }, { default: tailwindcss }] = await Promise.all([
         import("postcss"),
         import("@tailwindcss/postcss"),

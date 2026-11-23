@@ -1,15 +1,14 @@
-/* Tailwind v4 for the hub: utilities for the shadcn primitives in ui/ (never edited) and the hub's own markup.
-   Layers sit below unlayered CSS, so hub.css and settings.css still win where they style the same element.
-   The review chrome (chrome.css) does not load this file. */
+/* Tailwind v4 base shared by the hub (tailwind-hub.css) and the review page (tailwind-review.css): theme, preflight,
+   and shadcn's color names mapped to tokens.css. Each entry adds its own `@source`, so a page gets only the utilities
+   its own markup uses. Layers sit below unlayered CSS, so hub.css, settings.css and chrome.css still win where they
+   style the same element. */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/preflight.css" layer(base);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
-
-@source "./";
 
 /* One token source: shadcn's color names are Tailwind theme colors that point at tokens.css. No shadcn
    variable is defined under a name tokens.css already uses (`--muted`, `--accent` mean other things there). */

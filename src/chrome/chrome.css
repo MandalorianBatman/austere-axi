@@ -1,6 +1,7 @@
 /* The review page (chrome.ts), after the redesign's Review artboards. Tokens in tokens.css; the bar's
    crumbs, the copy switcher and the Go to page switcher in nav.css. */
 @import "./tokens.css";
+@import "./tailwind-review.css";
 @import "./nav.css";
 
 :root {
@@ -967,6 +968,25 @@ code {
   border: 0;
   background: var(--bg-page);
 }
+#content:focus {
+  outline: none;
+}
+/* The first tab stop: hidden until it has focus, then over the bar. */
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+.skip-link:focus {
+  transform: none;
+}
 .scrim {
   display: none;
 }
@@ -1139,6 +1159,12 @@ html.exploring .hist {
   margin: 4px 0 6px;
   padding-left: 20px;
 }
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
 .md pre {
   margin: 6px 0;
   padding: 8px 10px;
@@ -1157,6 +1183,7 @@ html.exploring .hist {
 }
 .md a {
   color: var(--accent);
+  text-decoration: underline;
 }
 .md a:hover {
   color: var(--accent-hover);

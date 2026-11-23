@@ -480,6 +480,7 @@ const $ = <E extends Element = HTMLElement>(sel: string, root: ParentNode = docu
   root.querySelector(sel) as E;
 
 document.body.innerHTML = `
+<a class="skip-link" href="#content">Skip to the page</a>
 <div class="app">
   <header class="bar">
     <div class="bar-start">
@@ -522,7 +523,7 @@ document.body.innerHTML = `
     <button type="button" class="icon-btn since-x" data-since="dismiss" aria-label="Dismiss"></button>
   </div>
   <div class="main">
-    <section class="stage">
+    <section class="stage" id="content" tabindex="-1" aria-label="Page under review">
       <div class="subbar">
         <div class="seg" role="group" aria-label="Mode">
           <button type="button" data-mode="annotate" aria-pressed="false" title="Click anything to comment on it (⌘/Ctrl+I)"><span class="seg-label">Annotate</span></button>

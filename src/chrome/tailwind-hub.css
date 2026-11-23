@@ -1,0 +1,5 @@
+/* The hub's Tailwind entry: the shared base (tailwind.css) and the utilities of everything in this folder except the review page. */
+@import "./tailwind.css";
+
+@source "./";
+@source not "./review-*";
