@@ -1,0 +1,6 @@
+/* The review page's Tailwind entry: the shared base (tailwind.css) and the utilities of its own components and the
+   shadcn primitives it uses (ui/ is never edited, so list what the page imports). */
+@import "./tailwind.css";
+
+@source "./review-*.tsx";
+@source "./ui/{badge,button,dialog,form,input,label,popover,radio-group,scroll-area,select,skeleton,tabs,textarea,tooltip}.tsx";

@@ -108,9 +108,19 @@ async function ownerPage(
   const context = await browser.newContext({
     viewport: { width, height: width > 500 ? 900 : 844 },
   });
+  // A DOM method that hands back a value (some browsers do) must not break a component: React takes what an effect
+  // returns for its cleanup. Made to return one here, so a one-line effect body that leaks it fails on any Chrome.
+  await context.addInitScript(() => {
+    Element.prototype.scrollIntoView = function () {
+      return {} as unknown as undefined;
+    };
+    HTMLElement.prototype.focus = function () {
+      return {} as unknown as undefined;
+    };
+  });
   const page = await context.newPage();
   const problems: string[] = [];
-  page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+  page.on("pageerror", (e) => problems.push(`pageerror: ${e.stack ?? e.message}`));
   page.on("console", (m) => {
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
   });
@@ -300,7 +310,23 @@ test(
 
       fakeMode("charlie", "ok");
       await page.click(".attach-run .run-retry");
-      await page.locator(".msg.agent", { hasText: "Patched it." }).waitFor({ timeout: 15_000 });
+      try {
+        await page.locator(".msg.agent", { hasText: "Patched it." }).waitFor({ timeout: 15_000 });
+      } catch (err) {
+        // Say what the page showed: a CI-only failure leaves nothing else to go on.
+        const seen = await page
+          .evaluate(() => ({
+            html: document.documentElement.className,
+            log: document.querySelector(".log")?.textContent?.slice(0, 600),
+            run: document.querySelector(".run-state")?.textContent,
+            popover: !!document.querySelector(".attach-pop"),
+            body: document.body.children.length,
+          }))
+          .catch((e) => String(e));
+        throw new Error(
+          `${(err as Error).message}\npage: ${JSON.stringify(seen)}\nproblems: ${JSON.stringify(problems)}`,
+        );
+      }
       await page.locator(".run-mark.done").waitFor();
       assert.equal(await page.locator(".run-mark.start").count(), 2);
       assert.deepEqual(problems, []);
@@ -342,16 +368,17 @@ test("a Copilot page shows fork disabled with its reason", { skip: posixOnly }, 
     const answered = page.waitForResponse(
       (r) => r.url().endsWith("/attach") && r.request().method() === "POST",
     );
-    await page.selectOption(".attach-select", "copilot");
+    await page.click(".attach-select");
+    await page.getByRole("option", { name: "copilot" }).click();
     assert.equal((await answered).status(), 200);
-    const fork = page.locator('input[name="attach-mode"][value="fork"]');
+    const fork = page.locator('[role=radio][value="fork"]');
     assert.ok(await fork.isDisabled(), "fork is disabled");
     assert.match(
       (await fork.locator("xpath=..").getAttribute("title")) ?? "",
       /Copilot CLI has no fork/,
     );
     assert.match(await page.locator(".attach-reason").innerText(), /Fork: Copilot CLI has no fork/);
-    assert.ok(await page.locator('input[name="attach-mode"][value="same"]').isEnabled());
+    assert.ok(await page.locator('[role=radio][value="same"]').isEnabled());
     // Copilot has no grant here: the popover names the command that gives it.
     assert.match(
       await page.locator(".attach-grant code").innerText(),

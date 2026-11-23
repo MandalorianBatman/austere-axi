@@ -4,7 +4,7 @@
 //          └─▶ sandboxed iframe running dist/austere.js, fed over the review bridge
 //   click in the frame ──▶ "annotate" message ──▶ the text `austere-axi poll` would print
 //
-// The page plays the part of the review chrome (src/chrome/chrome.ts): it answers the
+// The page plays the part of the review chrome (src/chrome/review-frame.ts): it answers the
 // frame's "hello" with "init", pushes edits as "source" messages so the frame re-renders
 // in place, and receives the queued annotations.
 import { createParser } from "@openuidev/lang-core";

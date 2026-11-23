@@ -538,10 +538,13 @@ test("with no agent listening the reviewer can still send; Send & finish and Don
     await page.click(".menu-btn");
     await page.click('[data-cmd="archive"]');
     // One copy: the dialog offers no "every copy".
-    await page.waitForSelector("dialog.confirm[open]");
-    assert.equal(await page.locator("dialog.confirm h2").textContent(), "Archive this page?");
-    assert.equal(await page.locator('dialog.confirm [data-archive="every"]').count(), 0);
-    await page.click('dialog.confirm [data-archive="this"]');
+    await page.waitForSelector("[role=dialog].confirm");
+    assert.equal(
+      await page.locator("[role=dialog].confirm h2").textContent(),
+      "Archive this page?",
+    );
+    assert.equal(await page.locator('[role=dialog].confirm [data-archive="every"]').count(), 0);
+    await page.click('[role=dialog].confirm [data-archive="this"]');
     await page.waitForSelector(".presence:has-text('Page archived')");
     assert.equal(await page.locator(".composer textarea").isDisabled(), true);
     assert.equal(await page.locator(".archived-note").count(), 1);
@@ -622,7 +625,7 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
       const ask = async () => {
         await page.click(".menu-btn");
         await page.click('[data-cmd="archive"]');
-        await page.waitForSelector("dialog.confirm[open]");
+        await page.waitForSelector("[role=dialog].confirm");
       };
       // The composer locks when the page is archived (at 390 px the presence label is not shown).
       const locked = (on: boolean) =>
@@ -632,7 +635,7 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
           on,
         );
       await ask();
-      const dialog = page.locator("dialog.confirm");
+      const dialog = page.locator("[role=dialog].confirm");
       assert.equal(await dialog.locator("h2").textContent(), "Archive this copy (main)?");
       const text = String(await dialog.textContent());
       assert.match(
@@ -654,15 +657,15 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
 
       // Cancel archives nothing; Escape neither.
       await dialog.locator("button", { hasText: "Cancel" }).click();
-      assert.equal(await page.locator("dialog.confirm").count(), 0);
+      assert.equal(await page.locator("[role=dialog].confirm").count(), 0);
       await ask();
       await page.keyboard.press("Escape");
-      assert.equal(await page.locator("dialog.confirm").count(), 0);
+      assert.equal(await page.locator("[role=dialog].confirm").count(), 0);
       assert.equal(await archived(main), false);
 
       // This copy only: the other one stays open.
       await ask();
-      await page.click('dialog.confirm [data-archive="this"]');
+      await page.click('[role=dialog].confirm [data-archive="this"]');
       await locked(true);
       assert.equal(await archived(main), true);
       assert.equal(await archived(feat), false, "the copy in the other worktree stays open");
@@ -690,7 +693,7 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
 
       // Every copy.
       await ask();
-      await page.click('dialog.confirm [data-archive="every"]');
+      await page.click('[role=dialog].confirm [data-archive="every"]');
       await locked(true);
       assert.equal(await archived(feat), true, "every copy is archived");
 
@@ -876,7 +879,7 @@ test("Explore hides the conversation and gives the page the full width; Annotate
       );
       if (viewport.width > 860) {
         const gap = await page
-          .locator(".log")
+          .locator('.log [data-slot="scroll-area-viewport"]')
           .evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
         assert.ok(gap < 2, `${viewport.name}: log scrolled to the latest reply (gap ${gap}px)`);
       }
@@ -887,7 +890,7 @@ test("Explore hides the conversation and gives the page the full width; Annotate
   }
 });
 
-test("the queue numbers its notes and brings a new one into view; the Agent panel takes what it covers out of the tab order; the mode buttons say which is on", async (t) => {
+test("the queue numbers its notes and brings a new one into view; History takes what it covers out of the tab order; the mode buttons say which is on", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const file = path.join(WORK, "queue-panel.html");
   fs.writeFileSync(
@@ -938,24 +941,26 @@ test("the queue numbers its notes and brings a new one into view; the Agent pane
     assert.deepEqual(await numbers(), ["1", "2", "3", "4", "5"]);
     assert.ok((await scroll()).top > 0, "the list did not jump back to its first note");
 
-    // The Agent panel lies over the queue and the composer: they take no focus until Notes is back.
+    // The Agent popover hangs from its pill and covers nothing. History lies over the queue and the composer:
+    // they take no focus until Notes is back.
     const inert = () =>
       page
         .locator(".panel > .log, .panel > .queue, .panel > .composer")
         .evaluateAll((els) => els.map((el) => (el as HTMLElement).inert));
+    const selected = (tab: string) =>
+      page.locator(`.panel-tab[data-tab="${tab}"]`).getAttribute("aria-selected");
     await page.click('.panel-tab[data-tab="agent"]');
     await page.locator(".attach-pop").waitFor({ state: "visible" });
-    assert.equal(
-      await page.locator('.panel-tab[data-tab="agent"]').getAttribute("aria-current"),
-      "true",
-    );
+    assert.equal(await selected("agent"), "true");
+    assert.deepEqual(await inert(), [false, false, false]);
+    await page.click('.panel-tab[data-tab="history"]');
+    await page.locator(".attach-pop").waitFor({ state: "hidden" });
+    await page.locator(".hist").waitFor({ state: "visible" });
+    assert.equal(await selected("history"), "true");
     assert.deepEqual(await inert(), [true, true, true]);
     await page.click('.panel-tab[data-tab="notes"]');
-    await page.locator(".attach-pop").waitFor({ state: "hidden" });
-    assert.equal(
-      await page.locator('.panel-tab[data-tab="notes"]').getAttribute("aria-current"),
-      "true",
-    );
+    await page.locator(".hist").waitFor({ state: "hidden" });
+    assert.equal(await selected("notes"), "true");
     assert.deepEqual(await inert(), [false, false, false]);
 
     await page.keyboard.press("ControlOrMeta+i");

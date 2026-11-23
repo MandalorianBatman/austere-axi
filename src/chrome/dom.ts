@@ -1,4 +1,4 @@
-// The DOM helper shared by the review chrome (chrome.ts) and its owner navigation (nav.ts). The hub (shell.tsx, settings.tsx) is React.
+// The DOM helper for the owner navigation (nav.ts), the one part of the review chrome that is not React yet.
 
 export type AttrValue = string | boolean | null | undefined | ((e: Event) => unknown);
 export type Child = Node | string | number | null | undefined | false;
