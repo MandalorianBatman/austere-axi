@@ -30,14 +30,14 @@ import {
   SID,
   SS,
   UNREACHABLE,
-  VIEWER,
   failure,
   str,
 } from "./review-env.ts";
-import { addToQueue, anchorLabel, flatForm, itemQuote } from "./review-notes.ts";
+import { addToQueue } from "./review-notes.ts";
+import { mergeEntries, putRunMark } from "./review-transcript.ts";
 import { getSync, mine, refreshPending, sendWhenDue, setSync, settle } from "./review-outbox.ts";
 import { setRoster, presenceView } from "./review-presence.ts";
-import { heldAction } from "./review-send.ts";
+
 import { S, isNarrow, set, setSheet, useReview } from "./review-store.ts";
 import type { ReviewState } from "./review-store.ts";
 import type {
@@ -46,13 +46,11 @@ import type {
   AttachInfo,
   AttachModeId,
   ChangedEvent,
-  ChromeMessage,
   Entry,
   FrameMessage,
   HistoryData,
   Mode,
   PresenceEvent,
-  QueueItem,
   RunEvent,
   RunMark,
   RunSummary,
@@ -94,8 +92,6 @@ const state = new Proxy({} as ReviewState, {
     return true;
   },
 });
-/** The owner's Conversation entries for runs (RLM-346), by `<run id>:start|end`: from the `run` events and `/runs`, never stored. */
-const runMarks = new Map<string, RunMark>();
 
 // ── markup ──
 
@@ -193,7 +189,6 @@ if (HOSTED) {
 
 const frame = $<HTMLIFrameElement>(".frame");
 setFrame(frame);
-const log = $(".log");
 
 // A hosted shell names no page (austere-cloud keeps the title from anyone without access): the
 // asset-token answer and the frame bring the real one.
@@ -219,75 +214,6 @@ setRoster(presence);
 window.addEventListener("pagehide", () => presence.leave());
 
 $(".file").title = BOOT.file || "";
-
-// ── tiny markdown for agent replies ──
-
-function esc(s: unknown): string {
-  return String(s).replace(
-    /[&<>"']/g,
-    (c) =>
-      (
-        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<
-          string,
-          string
-        >
-      )[c],
-  );
-}
-function inline(s: string): string {
-  return esc(s)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
-    .replace(
-      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener">$1</a>',
-    );
-}
-function markdown(src: unknown): string {
-  const lines = String(src).replace(/\r\n/g, "\n").split("\n");
-  const out: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (/^```/.test(line)) {
-      const buf: string[] = [];
-      i++;
-      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
-      i++;
-      out.push(`<pre><code>${esc(buf.join("\n"))}</code></pre>`);
-      continue;
-    }
-    if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
-      const ordered = /^\s*\d+\./.test(line);
-      const buf: string[] = [];
-      while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i]))
-        buf.push(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, ""));
-      out.push(
-        `<${ordered ? "ol" : "ul"}>${buf.map((b) => `<li>${inline(b)}</li>`).join("")}</${ordered ? "ol" : "ul"}>`,
-      );
-      continue;
-    }
-    if (/^#{1,6}\s+/.test(line)) {
-      out.push(`<p><strong>${inline(line.replace(/^#+\s+/, ""))}</strong></p>`);
-      i++;
-      continue;
-    }
-    if (!line.trim()) {
-      i++;
-      continue;
-    }
-    const buf: string[] = [];
-    while (
-      i < lines.length &&
-      lines[i].trim() &&
-      !/^```|^\s*([-*]|\d+\.)\s+|^#{1,6}\s/.test(lines[i])
-    )
-      buf.push(lines[i++]);
-    out.push(`<p>${buf.map(inline).join("<br>")}</p>`);
-  }
-  return out.join("");
-}
 
 // ── frame bridge ──
 
@@ -342,7 +268,6 @@ window.addEventListener("message", (e) => {
     case "errors":
       state.parserErrors = (d.errors || []).filter((x) => x.severity !== "warning");
       state.errorsRevision = state.revision;
-      renderLog();
       reportRenderErrors();
       break;
     case "runtime-error":
@@ -355,7 +280,6 @@ window.addEventListener("message", (e) => {
       ) {
         state.runtimeErrors = [...state.runtimeErrors, error];
         state.errorsRevision = state.revision;
-        renderLog();
         reportRenderErrors();
       }
       break;
@@ -430,312 +354,7 @@ function reportRenderErrors() {
     );
     // A stale report (an older revision) reached no one; the new render reports its own errors.
     state.renderReport = reply && !reply.stale ? "sent" : reply ? null : "failed";
-    renderLog();
   }, 500);
-}
-
-/** One bad item shows a marker instead of aborting the whole panel render. */
-function itemBody(item: QueueItem, held: boolean): HTMLElement {
-  try {
-    return renderItem(item, held);
-  } catch {
-    return h(
-      "div",
-      { class: "item" },
-      h("div", { class: "note", text: "This note could not be displayed." }),
-    );
-  }
-}
-
-function renderItem(item: QueueItem, held: boolean): HTMLElement {
-  const a = anchorLabel(item);
-  const wrap = h("div", { class: `item kind-${item.kind}` });
-  if (a.text) {
-    const anchor = h(
-      "button",
-      {
-        type: "button",
-        class: "anchor",
-        title: item.kind === "annotation" ? "Show in the page" : "",
-        onclick: () => {
-          if (item.kind === "annotation" || item.kind === "render-error") {
-            post({ type: "reveal", id: item.target || item.statement });
-            if (isNarrow()) setSheet(false);
-          }
-        },
-      },
-      h("span", { class: "anchor-icon", text: a.icon }),
-      h("span", { class: "anchor-text", text: a.text }),
-      a.sub ? h("span", { class: "anchor-sub", text: a.sub }) : null,
-    );
-    wrap.append(anchor);
-  }
-  // What the agent receives on release: within the path above the leaf, the whole detail, the whole quote.
-  if (held && item.kind === "annotation") {
-    const within = (Array.isArray(item.path) ? item.path : [])
-      .slice(0, -1)
-      .filter((p) => typeof p === "string" && p !== "root");
-    if (within.length)
-      wrap.append(h("div", { class: "anchor-sub", text: `within ${within.join(" > ")}` }));
-    if (item.detail && typeof item.detail === "object")
-      wrap.append(h("div", { class: "anchor-sub", text: flatForm(item.detail).join(" · ") }));
-  }
-  const quote = str(itemQuote(item));
-  if (quote)
-    wrap.append(
-      h("blockquote", { text: held || quote.length <= 260 ? quote : quote.slice(0, 259) + "…" }),
-    );
-  const noteText = item.kind === "message" ? item.text : item.note;
-  if (noteText) wrap.append(h("div", { class: "note", text: noteText }));
-  return wrap;
-}
-
-function fmtTime(ms: number | undefined): string {
-  if (!ms) return "";
-  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-/** "You" for the viewer's own notes, otherwise the author's name; the owner's notes read "Owner" to a reviewer. */
-function whoLabel(entry: Entry): string {
-  if (OWNER) return entry.author || "You";
-  return entry.author === state.viewerName ? "You" : entry.author || "Owner";
-}
-
-function receipt(entry: Entry): HTMLElement | null {
-  // Hosted notes have no delivery receipts: the owner's agent sees them after a sync.
-  if (HOSTED) {
-    if (entry.pending) return h("div", { class: "receipt" }, h("em", { text: "Sending…" }));
-    return entry.author === state.viewerName
-      ? h("div", { class: "receipt" }, h("em", { text: "Sent to the page owner" }))
-      : null;
-  }
-  if (entry.held) {
-    const row = h(
-      "div",
-      { class: "receipt held" },
-      h("span", {
-        class: "held-label",
-        text: OWNER ? "Held · not sent to the agent" : "Waiting for the owner to send it on",
-      }),
-    );
-    if (OWNER) {
-      row.append(
-        h("button", {
-          type: "button",
-          class: "btn tiny primary",
-          text: "Send",
-          onclick: () => heldAction("release", [entry.id]),
-        }),
-        h("button", {
-          type: "button",
-          class: "btn tiny ghost",
-          text: "Discard",
-          onclick: () => heldAction("discard", [entry.id]),
-        }),
-      );
-    }
-    return row;
-  }
-  const steps: [string, number | undefined][] = [
-    ["Seen", entry.seenAt],
-    ["Working", entry.workAt],
-    ["Done", entry.doneAt],
-  ];
-  const row = h("div", { class: "receipt" });
-  for (const [label, at] of steps) {
-    row.append(
-      h("span", {
-        class: at ? "on" : "",
-        title: at ? `${label} ${fmtTime(at)}` : `Not ${label.toLowerCase()} yet`,
-        text: label,
-      }),
-    );
-  }
-  if (entry.seenAt && entry.seenBy)
-    row.append(h("em", { text: `Delivered to ${entry.seenBy} ${fmtTime(entry.seenAt)}` }));
-  else if (!entry.seenAt) {
-    row.append(
-      h("em", {
-        text:
-          state.presence === "listening" || state.wake?.state === "idle"
-            ? ""
-            : state.wake?.state === "busy"
-              ? "Queued · agent busy"
-              : state.unread
-                ? `waiting for the agent (${state.unread} not answered yet)`
-                : "waiting for the agent",
-      }),
-    );
-  }
-  return row;
-}
-
-let lastLogCount = 0;
-function renderLog(scrollToEnd = false) {
-  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-  log.textContent = "";
-  const issues = [...state.parserErrors, ...state.runtimeErrors];
-  if (issues.length) {
-    const sent = OWNER && state.renderReport === "sent";
-    const head = `Render issues (${issues.length})${sent ? " · sent to the agent" : ""}`;
-    const box = h("div", { class: "issues" }, h("div", { class: "issues-head", text: head }));
-    for (const err of issues.slice(0, 8)) {
-      box.append(
-        h(
-          "div",
-          { class: "issue" },
-          h(
-            "div",
-            { class: "issue-text" },
-            err.statementId ? h("code", { text: err.statementId }) : null,
-            " ",
-            err.message,
-          ),
-          // Once the owner's page has sent it to the agent (reportRenderErrors), there is nothing to queue.
-          state.archived || sent
-            ? null
-            : h("button", {
-                type: "button",
-                class: "btn tiny",
-                text: "Queue fix",
-                onclick: () =>
-                  addToQueue({
-                    kind: "render-error",
-                    statement: err.statementId,
-                    target: err.statementId,
-                    message: err.message,
-                    note: "Fix this render error.",
-                  }),
-              }),
-        ),
-      );
-    }
-    log.append(box);
-  }
-  if (state.more) {
-    log.append(
-      h("button", {
-        type: "button",
-        class: "btn tiny ghost load-earlier",
-        text: "Load earlier messages",
-        onclick: loadEarlier,
-      }),
-    );
-  }
-  // Hosted: notes waiting for their ack follow the conversation.
-  const pending = state.pending.map((o): Entry => ({
-    id: `out:${o.m.clientId}:${o.m.n}`,
-    role: "user",
-    author: state.viewerName,
-    items: o.m.args.items,
-    at: o.at,
-    pending: true,
-  }));
-  const entries = pending.length ? [...state.transcript, ...pending] : state.transcript;
-  if (!entries.length) {
-    log.append(
-      h(
-        "div",
-        { class: "empty" },
-        h("strong", { text: "Nothing sent yet" }),
-        h("p", {
-          text: `Click a card, a table cell, a box in a diagram or a line of a diff, or select some text, and say what should change. Notes wait below until you send them together, ${HOSTED ? "and the page owner gets them." : "and the agent changes only the parts you pointed at."}`,
-        }),
-      ),
-    );
-  }
-  // The owner's run marks (RLM-346) sit among the entries by time; with older entries not loaded yet, older marks wait too.
-  const since = state.more ? (entries[0]?.at ?? 0) : 0;
-  const marks = OWNER ? [...runMarks.values()].filter((m) => m.at >= since) : [];
-  const rows: (Entry | RunMark)[] = marks.length
-    ? [...entries, ...marks].sort((a, b) => a.at - b.at)
-    : entries;
-  for (const entry of rows) {
-    if ("tone" in entry) {
-      log.append(
-        h(
-          "div",
-          { class: `run-mark ${entry.tone}` },
-          h("span", { text: entry.text }),
-          h("time", { text: fmtTime(entry.at) }),
-        ),
-      );
-    } else if (entry.role === "agent") {
-      log.append(
-        h(
-          "div",
-          { class: "msg agent" },
-          h("div", { class: "who", text: `Agent · ${fmtTime(entry.at)}` }),
-          h("div", { class: "md", html: markdown(entry.text) }),
-        ),
-      );
-    } else {
-      // A Done is an empty final batch: it has no bubble, only the line below.
-      if (entry.items?.length || !entry.end) {
-        const n = entry.items?.length ?? 0;
-        const who = n ? `${whoLabel(entry)} sent ${n} note${n === 1 ? "" : "s"}` : whoLabel(entry);
-        const bubble = h(
-          "div",
-          { class: `msg user${entry.held ? " held" : ""}` },
-          h("div", { class: "who", text: `${who} · ${fmtTime(entry.at)}` }),
-        );
-        for (const it of entry.items || []) bubble.append(itemBody(it, !!entry.held));
-        const r = receipt(entry);
-        if (r) bubble.append(r);
-        log.append(bubble);
-      }
-      if (entry.end) {
-        log.append(
-          h("div", {
-            class: "final-note",
-            title: fmtTime(entry.at),
-            text: OWNER
-              ? "You told the agent this was your last note. Notes you add later wait until an agent checks."
-              : "The owner told the agent this was their last note. Notes added later wait until an agent checks.",
-          }),
-        );
-      }
-    }
-  }
-  const heldCount = OWNER ? state.transcript.filter((e) => e.held).length : 0;
-  if (heldCount) {
-    log.append(
-      h(
-        "div",
-        { class: "held-bar" },
-        h("span", { text: `${heldCount} held from teammates` }),
-        h("button", {
-          type: "button",
-          class: "btn tiny primary",
-          text: "Send all",
-          onclick: () =>
-            heldAction(
-              "release",
-              state.transcript.filter((e) => e.held).map((e) => e.id),
-            ),
-        }),
-        h("button", {
-          type: "button",
-          class: "btn tiny ghost",
-          text: "Discard all",
-          onclick: () => heldAction("discard"),
-        }),
-      ),
-    );
-  }
-  if (state.archived) {
-    log.append(
-      h("div", {
-        class: "archived-note",
-        text: OWNER
-          ? "This page is archived. Unarchive it from the ⋯ menu to add notes."
-          : "The owner archived this page. Ask them to reopen it if you have more notes.",
-      }),
-    );
-  }
-  const count = rows.length + state.queue.length;
-  if (scrollToEnd || atBottom || count !== lastLogCount) log.scrollTop = log.scrollHeight;
-  lastLogCount = count;
 }
 
 // ── mode, presence, changes ──
@@ -744,11 +363,7 @@ function setMode(mode: string | undefined) {
   state.mode = mode === "explore" ? "explore" : "annotate";
   LS.set("austere:mode", state.mode);
   // Explore uses the page alone: the conversation panel (and, on narrow screens, its sheet and dock) steps aside.
-  // A hidden log has no layout, so it could not follow new messages: show the latest when it returns.
-  const html = document.documentElement;
-  const wasExploring = html.classList.contains("exploring");
-  html.classList.toggle("exploring", state.mode === "explore");
-  if (wasExploring && state.mode === "annotate") log.scrollTop = log.scrollHeight;
+  document.documentElement.classList.toggle("exploring", state.mode === "explore");
   // An archived page takes no notes: the frame is in Explore, and the switch says so.
   const shown: Mode = state.archived ? "explore" : state.mode;
   $(".subbar-hint").textContent = state.archived
@@ -1506,7 +1121,7 @@ function ago(ms: number): string {
 function addRunMarks(run: RunSummary, message?: string) {
   const what = [run.harness, run.mode, run.model].filter(Boolean).join(" · ");
   if (run.started_at)
-    runMarks.set(`${run.id}:start`, {
+    putRunMark(`${run.id}:start`, {
       id: run.id,
       at: run.started_at,
       text: `Agent run started${what ? ` · ${what}` : ""}`,
@@ -1526,7 +1141,7 @@ function addRunMarks(run: RunSummary, message?: string) {
         : run.status === "stopped"
           ? { text: `Agent run stopped${took}`, tone: "stopped" }
           : { text: "Agent run interrupted: the server restarted", tone: "stopped" };
-  runMarks.set(`${run.id}:end`, { id: run.id, at: run.ended_at, ...end });
+  putRunMark(`${run.id}:end`, { id: run.id, at: run.ended_at, ...end });
 }
 
 async function loadAttach() {
@@ -1551,7 +1166,6 @@ async function loadRunMarks() {
   } catch {
     return;
   }
-  renderLog();
 }
 
 function renderAttach() {
@@ -2156,39 +1770,6 @@ function showPackNotice(packs: string[] | undefined) {
   notice.hidden = false;
 }
 
-function mergeEntries(entries: Entry[]) {
-  const next = [...state.transcript];
-  for (const e of entries) {
-    const i = next.findIndex((x) => x.id === e.id);
-    if (e.discarded) {
-      if (i >= 0) next.splice(i, 1);
-    } else if (i >= 0) next[i] = e;
-    else next.push(e);
-  }
-  state.transcript = next.sort((a, b) => a.at - b.at);
-}
-
-/** The page starts with the latest entries; older ones load on request. */
-async function loadEarlier() {
-  const first = state.transcript[0];
-  if (!first) return;
-  try {
-    const r = await fetch(`${BASE}/transcript?before=${encodeURIComponent(first.id)}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const d: { entries?: Entry[]; more?: boolean } = await r.json();
-    const known = new Set(state.transcript.map((e) => e.id));
-    state.transcript = [
-      ...(d.entries || []).filter((e) => !e.discarded && !known.has(e.id)),
-      ...state.transcript,
-    ];
-    state.more = !!d.more;
-    const fromBottom = log.scrollHeight - log.scrollTop;
-    renderLog();
-    log.scrollTop = log.scrollHeight - fromBottom;
-  } catch (err) {
-    set({ composerError: `Could not load earlier messages: ${(err as Error).message}` });
-  }
-}
 
 let es: EventSource | null = null;
 let disconnectedAt = 0;
@@ -2246,7 +1827,6 @@ function connect() {
       attach.run = d.run;
       attach.message = d.message ?? "";
       addRunMarks(d.run, d.message);
-      renderLog();
       renderRunState();
       // A run that ended may have registered a session (A18): the popover's list changes.
       if (ended) void loadAttach();
@@ -2287,12 +1867,11 @@ function connect() {
       if (state.frameReady) post({ type: "source", program: d.program });
     }
     renderPresence();
-    renderLog();
+    state.loaded = true;
     setMode(state.mode);
   });
   source.addEventListener("transcript", (e) => {
     mergeEntries((JSON.parse(e.data) as { entries?: Entry[] }).entries || []);
-    renderLog();
     renderDock();
   });
   source.addEventListener("presence", (e) => {
@@ -2304,7 +1883,6 @@ function connect() {
     state.unread = d.unread || 0;
     setMode(state.mode);
     renderPresence();
-    renderLog();
   });
   source.addEventListener("changed", (e) => {
     const d: ChangedEvent = JSON.parse(e.data);
@@ -2325,7 +1903,6 @@ function connect() {
       state.program = d.program;
       post({ type: "source", program: d.program });
     }
-    renderLog();
   });
   source.addEventListener("server", (e) => {
     const d: { state: string } = JSON.parse(e.data);
@@ -2552,7 +2129,7 @@ function applyChanges(changes: ReceivedChanges) {
   }
   mergeEntries(entries);
   cursor = changes.cursor;
-  renderLog();
+  state.loaded = true;
   renderDock();
 }
 
@@ -2656,19 +2233,15 @@ if (nav) {
 }
 // What is still drawn by hand follows the store: the Conversation, the dock and the Notes tab's count.
 useReview.subscribe((s, prev) => {
-  if (s.queue !== prev.queue) {
-    $(".tab-count").textContent = s.queue.length ? String(s.queue.length) : "";
-    renderDock();
-    renderLog(s.queue.length > prev.queue.length);
-  } else if (s.pending !== prev.pending) renderLog(true);
-  if (s.sheetOpen && !prev.sheetOpen) setTimeout(() => (log.scrollTop = log.scrollHeight), 50);
+  if (s.queue === prev.queue) return;
+  $(".tab-count").textContent = s.queue.length ? String(s.queue.length) : "";
+  renderDock();
 });
 if (state.queue.length) $(".tab-count").textContent = String(state.queue.length);
 setMode(state.mode);
 if (isNarrow() && state.sheetOpen) setSheet(true);
 refreshPending();
 renderPresence();
-renderLog();
 renderDock();
 if (HOSTED) startHosted();
 else {

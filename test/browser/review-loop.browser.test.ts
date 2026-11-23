@@ -876,7 +876,7 @@ test("Explore hides the conversation and gives the page the full width; Annotate
       );
       if (viewport.width > 860) {
         const gap = await page
-          .locator(".log")
+          .locator('.log [data-slot="scroll-area-viewport"]')
           .evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
         assert.ok(gap < 2, `${viewport.name}: log scrolled to the latest reply (gap ${gap}px)`);
       }

@@ -2,7 +2,15 @@
 // draw; the server events, the frame and the hosted socket write them through `set`. Anything that needs a
 // cleanup (timers, requests that may arrive late) is an effect in the component that owns it.
 import { create } from "zustand";
-import type { Entry, Mode, OutboxEntry, QueueItem, RenderIssue, WakeInfo } from "./review-types.ts";
+import type {
+  Entry,
+  Mode,
+  OutboxEntry,
+  QueueItem,
+  RenderIssue,
+  RunMark,
+  WakeInfo,
+} from "./review-types.ts";
 import { LS, SID, SS, HOSTED, VIEWER } from "./review-env.ts";
 
 export interface ReviewState {
@@ -21,7 +29,11 @@ export interface ReviewState {
   rateLimit: number | null;
   /** Hosted: the outbox could not be saved, so a reload would lose its notes. */
   outboxUnsaved: boolean;
+  /** False until the server's first answer: the Conversation shows a skeleton, not "Nothing sent yet". */
+  loaded: boolean;
   transcript: Entry[];
+  /** The owner's Conversation entries for agent runs (RLM-346), by `<run id>:start|end`: from the `run` events and `/runs`, never stored. */
+  runMarks: Record<string, RunMark>;
   presence: string;
   /** When the agent took the notes it works on, by this browser's clock; null when no agent has them. */
   since: number | null;
@@ -70,7 +82,9 @@ const initial: ReviewState = {
   pending: [],
   rateLimit: null,
   outboxUnsaved: false,
+  loaded: false,
   transcript: [],
+  runMarks: {},
   presence: "idle",
   since: null,
   wake: null,

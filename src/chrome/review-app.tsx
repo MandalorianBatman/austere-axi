@@ -7,6 +7,7 @@ import type { Shape } from "./icons.ts";
 import { BASE, HOSTED, OWNER } from "./review-env.ts";
 import { useBanner } from "./review-banner.ts";
 import { Composer } from "./review-composer.tsx";
+import { Log } from "./review-log.tsx";
 import { Queue } from "./review-queue.tsx";
 import { Button } from "@/chrome/ui/button";
 import { TooltipProvider } from "@/chrome/ui/tooltip";
@@ -256,7 +257,7 @@ function App(): ReactElement {
                 <Icon name="chevronDown" size={20} width={2} />
               </button>
             </div>
-            <div className="log" />
+            <Log />
             <Queue />
             <Composer />
           </aside>

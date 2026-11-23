@@ -1076,15 +1076,28 @@ html.exploring .hist {
   display: none;
   margin-left: auto;
 }
+/* The Conversation scrolls in a shadcn ScrollArea: the viewport is what moves. */
 .log {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 16px 12px;
+}
+.log [data-slot="scroll-area-viewport"] {
+  overscroll-behavior: contain;
+}
+/* Radix wraps the content in a table so it can measure it; a table does not wrap long lines. */
+.log [data-slot="scroll-area-viewport"] > div {
+  display: block !important;
+}
+.log-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overscroll-behavior: contain;
+  padding: 16px 12px;
+}
+.log-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .empty {
   display: flex;
