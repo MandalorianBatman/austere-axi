@@ -177,9 +177,14 @@ function Toggle({
   return (
     <Switch
       checked={shown}
-      disabled={disabled || pending}
+      disabled={disabled}
+      // Not `disabled` while the POST runs: a disabled control loses focus. It stays focusable and says it is busy.
+      aria-disabled={pending || undefined}
+      aria-busy={pending || undefined}
+      className={pending ? "opacity-50" : undefined}
       aria-describedby={describedBy}
       onCheckedChange={async (checked) => {
+        if (pending) return;
         setShown(checked);
         setPending(true);
         try {

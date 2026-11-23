@@ -505,6 +505,33 @@ test("settings: a switch the server refused goes back, with an error toast; unto
     assert.equal((await call<{ on: boolean }>("GET", "/api/settings/cloud")).data.on, false);
     // It can be tried again.
     assert.ok(await cloud.isEnabled());
+    // Focus stays on the switch during the POST and after it, and Space works again.
+    await page.route(
+      "**/hub/api/settings/cloud",
+      async (route) => {
+        await new Promise((r) => setTimeout(r, 500));
+        await route.continue();
+      },
+      { times: 1 },
+    );
+    const focused = () =>
+      page.evaluate(() => document.activeElement?.getAttribute("role") === "switch");
+    await cloud.focus();
+    await page.keyboard.press("Space");
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[data-slot="cloud"] [role=switch]')?.getAttribute("aria-busy") ===
+        "true",
+    );
+    assert.ok(await focused(), "focus stays on the switch during the POST");
+    await page.locator("[data-sonner-toast]", { hasText: "Cloud features are on" }).waitFor();
+    await page.waitForFunction(
+      () => !document.querySelector('[data-slot="cloud"] [role=switch]')?.hasAttribute("aria-busy"),
+    );
+    assert.ok(await focused(), "focus stays on the switch after it");
+    await page.keyboard.press("Space");
+    await page.locator("[data-sonner-toast]", { hasText: "Cloud features are off" }).waitFor();
+    assert.equal(await cloud.isChecked(), false, "a second Space toggles again");
     // The browser logs the request it was told to fail: expected.
     problems.splice(0, problems.length, ...problems.filter((p) => !p.includes("Failed to load")));
 

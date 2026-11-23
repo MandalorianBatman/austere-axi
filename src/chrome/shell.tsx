@@ -315,9 +315,9 @@ function Hub(): ReactElement {
       <DrawerWatch />
       <SidebarInset className="main min-w-0">
         <TopBar />
-        <main className="content" id="content" tabIndex={-1}>
+        <div className="content" id="content" tabIndex={-1}>
           <Content />
-        </main>
+        </div>
         <TabBar />
       </SidebarInset>
       <Toaster theme="dark" position="bottom-right" />
