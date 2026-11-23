@@ -7,9 +7,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 /** The harnesses a caller can be detected from. The adapters (RLM-344) run only some of them. */
-export type CallerHarness = "omp" | "copilot" | "dsh";
+export type CallerHarness = "omp" | "copilot" | "opencode" | "dsh";
 
-export const CALLER_HARNESSES: readonly CallerHarness[] = ["omp", "copilot", "dsh"];
+export const CALLER_HARNESSES: readonly CallerHarness[] = ["omp", "copilot", "opencode", "dsh"];
 
 /** The agent session a command runs in. */
 export interface Caller {
@@ -23,6 +23,8 @@ export interface Caller {
 const ENV: Record<CallerHarness, { id: string; file?: string }> = {
   omp: { id: "PI_SESSION_ID", file: "PI_SESSION_FILE" },
   copilot: { id: "COPILOT_AGENT_SESSION_ID" },
+  // Set by our OpenCode plugin (src/harness/opencode.ts): OpenCode itself names no session there.
+  opencode: { id: "OPENCODE_SESSION_ID" },
   dsh: { id: "DSH_SESSION_ID" },
 };
 

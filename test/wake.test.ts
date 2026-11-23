@@ -1,5 +1,5 @@
-// Push delivery (RLM-447, RLM-452): the server's wake-poll and wake-ack routes, and the omp and
-// Copilot extensions' client against a real server with a fake harness (idle or busy, and what it was sent).
+// Push delivery (RLM-447, RLM-452, RLM-451): the server's wake-poll and wake-ack routes, and the omp,
+// Copilot and OpenCode extensions' client against a real server with a fake harness (idle or busy, and what it was sent).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -12,6 +12,7 @@ import { copilotWake } from "../src/harness/copilot.ts";
 import type { CopilotEvent } from "../src/harness/copilot.ts";
 import { ompWake } from "../src/harness/omp.ts";
 import type { HostApi, HostContext } from "../src/harness/omp.ts";
+import { opencodeWake } from "../src/harness/opencode.ts";
 import { quote } from "../src/cli/paths.ts";
 import { ownerHeaders } from "./owner.ts";
 import { freePort } from "./port.ts";
@@ -346,5 +347,72 @@ test("the Copilot extension is busy from a turn's start to session.idle, and wak
     assert.equal(h.sent.length, 1, "delivered once");
   } finally {
     h.client.stop();
+  }
+});
+
+/** A fake OpenCode process: the bus events the plugin hears, and the prompts it started. */
+function fakeOpenCode() {
+  const sent: { id: string; text: string }[] = [];
+  const { hooks, sessions } = opencodeWake(
+    {
+      session: {
+        promptAsync: async ({ path: p, body }) => (
+          sent.push({ id: p.id, text: body.parts[0].text }),
+          {}
+        ),
+      },
+    },
+    ENV,
+  );
+  const status = (sessionID: string, type: string) =>
+    hooks.event({ event: { type: "session.status", properties: { sessionID, status: { type } } } });
+  return { sent, hooks, sessions, status };
+}
+
+test("the OpenCode plugin names the root session to bash, and wakes that idle session once", async () => {
+  const h = fakeOpenCode();
+  const file = page("opencode.html");
+  try {
+    // A subagent's bash names the session that started it.
+    await h.hooks.event({
+      event: {
+        type: "session.created",
+        properties: { info: { id: "ses_sub", parentID: "ses_oc1" } },
+      },
+    });
+    const env: Record<string, string> = {};
+    await h.hooks["shell.env"]({ cwd: WORK, sessionID: "ses_sub" }, { env });
+    assert.equal(env.OPENCODE_SESSION_ID, "ses_oc1");
+
+    // A turn runs `austere-axi open`; the session ends it idle.
+    await h.status("ses_oc1", "busy");
+    const id = await openAs(file, "ses_oc1", "opencode");
+    await h.hooks["tool.execute.after"](
+      { tool: "bash", sessionID: "ses_oc1", args: { command: `austere-axi ${file}` } },
+      {},
+    );
+    await h.status("ses_oc1", "idle");
+    await until("the client to activate", () => h.sessions.get("ses_oc1")?.client.active ?? false);
+    assert.equal(h.sessions.has("ses_sub"), false, "a subagent's session is not watched");
+
+    // A new turn; the subagent's idle is not the root's.
+    await h.status("ses_oc1", "busy");
+    await h.status("ses_sub", "idle");
+    await send(id, "busy note");
+    // Real time, as above: the absence of a turn is the point, over more than two 1 s ticks.
+    await new Promise((r) => setTimeout(r, 2500));
+    assert.equal(h.sent.length, 0, "never folds into a running turn");
+
+    const idleAt = Date.now();
+    await h.status("ses_oc1", "idle");
+    await until("the wake", () => h.sent.length > 0, 8_000);
+    assert.ok(Date.now() - idleAt < 4000, `woken ${Date.now() - idleAt} ms after idle`);
+    assert.equal(h.sent[0].id, "ses_oc1");
+    assert.ok(h.sent[0].text.includes(`austere-axi feedback ${quote(file)}`), h.sent[0].text);
+    // The wake counts as busy until OpenCode says otherwise: no second turn.
+    await new Promise((r) => setTimeout(r, 2500));
+    assert.equal(h.sent.length, 1, "delivered once");
+  } finally {
+    for (const w of h.sessions.values()) w.client.stop();
   }
 });

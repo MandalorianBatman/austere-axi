@@ -96,7 +96,7 @@ const file: ArgSchema = {
 const session: ArgSchema = {
   type: "string",
   description:
-    "Optional: the agent session you run in, as <harness>:<id> (omp, copilot, dsh), when your harness does not set PI_SESSION_ID, COPILOT_AGENT_SESSION_ID or DSH_SESSION_ID. Stays on this machine.",
+    "Optional: the agent session you run in, as <harness>:<id> (omp, copilot, opencode, dsh), when your harness does not set PI_SESSION_ID, COPILOT_AGENT_SESSION_ID, OPENCODE_SESSION_ID or DSH_SESSION_ID. Stays on this machine.",
 };
 const withSession = (a: ToolArgs): string[] =>
   typeof a.session === "string" ? ["--session", a.session] : [];

@@ -11,6 +11,7 @@
 //   sync.mjs         hosted-page sync protocol ("austere-axi/sync"), zod bundled
 //   harness/omp.js   the omp / Pi extension that wakes an idle agent session (RLM-447); .js, which omp's extensions/ folder loads
 //   harness/copilot/extension.mjs   the same for Copilot CLI (RLM-452); link the folder into ~/.copilot/extensions/
+//   harness/opencode.js   the same for OpenCode (RLM-451); link it into ~/.config/opencode/plugins/
 import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
@@ -193,11 +194,13 @@ async function buildCli() {
 }
 
 // The harness extensions that wake an idle agent session: loaded by the harness, node builtins only.
-// omp / Pi (Bun) loads a .js file; Copilot CLI loads `<name>/extension.mjs` and provides its SDK.
+// omp / Pi (Bun) loads a .js file; Copilot CLI loads `<name>/extension.mjs` and provides its SDK;
+// OpenCode (Bun) loads `*.js` and `*.ts` from its plugins/ folders.
 async function buildHarness() {
   const builds = [
     { entry: "src/harness/omp.ts", out: "harness/omp.js" },
     { entry: "src/harness/copilot-extension.ts", out: "harness/copilot/extension.mjs" },
+    { entry: "src/harness/opencode-plugin.ts", out: "harness/opencode.js" },
   ];
   for (const b of builds) {
     const out = path.join(DIST, b.out);

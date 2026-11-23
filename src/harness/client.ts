@@ -19,7 +19,7 @@ import path from "node:path";
 /** What the client needs of its harness's session. */
 export interface WakeHost {
   /** The harness name the server knows sessions under (caller.ts). */
-  harness: "omp" | "copilot";
+  harness: "omp" | "copilot" | "opencode";
   /** The session's id, as the harness's environment names it to austere-axi commands. */
   sessionId(): string;
   /** Not in a turn, and nothing queued to start one. */
