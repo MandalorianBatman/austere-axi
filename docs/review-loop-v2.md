@@ -382,7 +382,7 @@ Observed on Sid's machine on 2026-11-16, in scratch folders under `/dev/shm/spik
 | Copilot CLI | fork | unavailable: no flag, and `-p "/fork"` does nothing. The popover disables it and says why. | |
 | Copilot CLI | new | `copilot --session-id <uuid we mint> --model <m or auto> --no-ask-user --output-format json [--max-ai-credits n] <extra>` | the minted UUID; the last line's `sessionId` confirms it |
 
-Caller detection (RLM-343): omp `PI_SESSION_ID` and `PI_SESSION_FILE`; Copilot CLI `COPILOT_AGENT_SESSION_ID` (no session file).
+Caller detection (RLM-343): omp `PI_SESSION_ID` and `PI_SESSION_FILE`; Copilot CLI `COPILOT_AGENT_SESSION_ID` (no session file). OpenCode sets no session variable; the austere-axi OpenCode plugin sets `OPENCODE_SESSION_ID` in the bash tool's environment (RLM-451).
 
 Exit codes are not enough. A denied tool call still ends with exit 0, so "no reply posted" stays a failure condition (RLM-345, `reason = no_reply`).
 

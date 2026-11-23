@@ -289,7 +289,8 @@ NOTES
   check warns when an Architecture diagram will not fit the page.
   check --render needs Chrome, Chromium or Edge (or CHROME_PATH).
   open, patch, poll, reply and feedback print \`session:\`, the agent session they ran in: from the
-  harness's environment (omp PI_SESSION_ID, Copilot CLI COPILOT_AGENT_SESSION_ID, dsh DSH_SESSION_ID)
+  harness's environment (omp PI_SESSION_ID, Copilot CLI COPILOT_AGENT_SESSION_ID, OpenCode
+  OPENCODE_SESSION_ID from the austere-axi plugin, dsh DSH_SESSION_ID)
   or --session <harness>:<id>. Session ids stay on this machine; \`${BIN} sessions list\` shows them.
   With attach on, a note the owner sends or releases starts the attached harness headless
   (\`${BIN} run list\`); limits in <state dir>/attach.json. A run gets AUSTERE_AXI_RUN_ID.
@@ -305,7 +306,7 @@ ENV
 
 /** `--session` on the commands that register their caller (RLM-343). */
 const SESSION_FLAG =
-  "the agent session this runs in, as <harness>:<id> (omp, copilot, dsh), when the harness's environment does not name it; the id stays on this machine";
+  "the agent session this runs in, as <harness>:<id> (omp, copilot, opencode, dsh), when the harness's environment does not name it; the id stays on this machine";
 
 /**
  * Every command: usage line, one-line summary, the flags it accepts (name → help) and an example.
