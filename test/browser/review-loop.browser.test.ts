@@ -538,10 +538,10 @@ test("with no agent listening the reviewer can still send; Send & finish and Don
     await page.click(".menu-btn");
     await page.click('[data-cmd="archive"]');
     // One copy: the dialog offers no "every copy".
-    await page.waitForSelector("dialog.confirm[open]");
-    assert.equal(await page.locator("dialog.confirm h2").textContent(), "Archive this page?");
-    assert.equal(await page.locator('dialog.confirm [data-archive="every"]').count(), 0);
-    await page.click('dialog.confirm [data-archive="this"]');
+    await page.waitForSelector("[role=dialog].confirm");
+    assert.equal(await page.locator("[role=dialog].confirm h2").textContent(), "Archive this page?");
+    assert.equal(await page.locator('[role=dialog].confirm [data-archive="every"]').count(), 0);
+    await page.click('[role=dialog].confirm [data-archive="this"]');
     await page.waitForSelector(".presence:has-text('Page archived')");
     assert.equal(await page.locator(".composer textarea").isDisabled(), true);
     assert.equal(await page.locator(".archived-note").count(), 1);
@@ -622,7 +622,7 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
       const ask = async () => {
         await page.click(".menu-btn");
         await page.click('[data-cmd="archive"]');
-        await page.waitForSelector("dialog.confirm[open]");
+        await page.waitForSelector("[role=dialog].confirm");
       };
       // The composer locks when the page is archived (at 390 px the presence label is not shown).
       const locked = (on: boolean) =>
@@ -632,7 +632,7 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
           on,
         );
       await ask();
-      const dialog = page.locator("dialog.confirm");
+      const dialog = page.locator("[role=dialog].confirm");
       assert.equal(await dialog.locator("h2").textContent(), "Archive this copy (main)?");
       const text = String(await dialog.textContent());
       assert.match(
@@ -654,15 +654,15 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
 
       // Cancel archives nothing; Escape neither.
       await dialog.locator("button", { hasText: "Cancel" }).click();
-      assert.equal(await page.locator("dialog.confirm").count(), 0);
+      assert.equal(await page.locator("[role=dialog].confirm").count(), 0);
       await ask();
       await page.keyboard.press("Escape");
-      assert.equal(await page.locator("dialog.confirm").count(), 0);
+      assert.equal(await page.locator("[role=dialog].confirm").count(), 0);
       assert.equal(await archived(main), false);
 
       // This copy only: the other one stays open.
       await ask();
-      await page.click('dialog.confirm [data-archive="this"]');
+      await page.click('[role=dialog].confirm [data-archive="this"]');
       await locked(true);
       assert.equal(await archived(main), true);
       assert.equal(await archived(feat), false, "the copy in the other worktree stays open");
@@ -690,7 +690,7 @@ test("a page with two copies: the dialog names this copy, its unanswered notes a
 
       // Every copy.
       await ask();
-      await page.click('dialog.confirm [data-archive="every"]');
+      await page.click('[role=dialog].confirm [data-archive="every"]');
       await locked(true);
       assert.equal(await archived(feat), true, "every copy is archived");
 

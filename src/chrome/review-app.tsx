@@ -6,8 +6,16 @@ import { Icon, ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
 import { BASE, HOSTED, OWNER } from "./review-env.ts";
 import { useBanner } from "./review-banner.ts";
-import { ChangesButton, HistoryButton, PresencePill, Revision, SinceBar } from "./review-bar.tsx";
+import {
+  ChangesButton,
+  HistoryButton,
+  PresencePill,
+  Revision,
+  ShareButton,
+  SinceBar,
+} from "./review-bar.tsx";
 import { useHighlightSync } from "./review-changes.ts";
+import { Dialogs } from "./review-dialogs.tsx";
 import { Composer } from "./review-composer.tsx";
 import { useHistoryFeed } from "./review-history.ts";
 import { HistoryPanel } from "./review-history-panel.tsx";
@@ -22,10 +30,6 @@ const DOTS: Shape[] = [5, 12, 19].map((cx): Shape => [
   "circle",
   { cx, cy: 12, r: 1.6, fill: "currentColor", stroke: "none" },
 ]);
-const LINK: Shape[] = [
-  ["path", { d: "M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" }],
-  ["path", { d: "M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" }],
-];
 const LOGO: Shape[] = [
   ["rect", { x: 1.5, y: 1.5, width: 21, height: 21, rx: 5, className: "logo-box" }],
   ["path", { d: "M6.75 17.25 12 6l5.25 11.25M8.6 13.5h6.8", className: "logo-a" }],
@@ -104,12 +108,7 @@ function App(): ReactElement {
               </div>
             ) : null}
             <PresencePill />
-            {OWNER ? (
-              <button type="button" className="btn share-btn" title="A named link for one teammate's device">
-                <ShapeIcon shapes={LINK} size={14} width={1.9} />
-                Share
-              </button>
-            ) : null}
+            {OWNER ? <ShareButton /> : null}
             {OWNER_BAR ? (
               <button
                 type="button"
@@ -192,6 +191,7 @@ function App(): ReactElement {
         </header>
         <Banner />
         {OWNER ? <OwnerEffects /> : null}
+        {OWNER ? <Dialogs /> : null}
         <div className="notice" hidden />
         {OWNER ? <SinceBar /> : null}
         <div className="main">

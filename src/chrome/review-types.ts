@@ -282,3 +282,15 @@ export interface ShareMade {
   auto: boolean;
   expiresAt: number;
 }
+
+/** What the Share dialog offers (GET /share): the project the page is in, whether a teammate could reach this machine. */
+export interface ShareOffer {
+  project: { id: string; name: string } | null;
+  remote: boolean;
+  auto?: boolean;
+}
+
+/** A question the owner is asked in a dialog. */
+export type Ask =
+  | { kind: "archive"; plan: ArchivePlan; done: (every: boolean | null) => void }
+  | { kind: "share"; offer: ShareOffer };

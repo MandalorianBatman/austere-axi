@@ -16,7 +16,7 @@ import { installNav } from "./nav.ts";
 import { icon } from "./icons.ts";
 import { LOADER_TAG, packedTag } from "../shared/standalone.ts";
 import { mountApp } from "./review-app.tsx";
-import { bannerText, flash, reload, showBanner } from "./review-banner.ts";
+import { flash, reload, showBanner } from "./review-banner.ts";
 import type { BannerAction } from "./review-banner.ts";
 import { post, setFrame } from "./review-bridge.ts";
 import { copyAgentPrompt, copyText, loadAgentPrompt } from "./review-clipboard.ts";
@@ -29,13 +29,12 @@ import {
   OWNER,
   SID,
   SS,
-  UNREACHABLE,
-  failure,
   str,
 } from "./review-env.ts";
 import { addToQueue } from "./review-notes.ts";
 import { postHighlight } from "./review-changes.ts";
 import { closePanel, openHistory, sendHistoryCounts } from "./review-history.ts";
+import { archivePage, openShare, unarchivePage } from "./review-page.ts";
 import { mergeEntries, putRunMark } from "./review-transcript.ts";
 import { getSync, mine, refreshPending, sendWhenDue, setSync, settle } from "./review-outbox.ts";
 import { setRoster, presenceView } from "./review-presence.ts";
@@ -43,7 +42,6 @@ import { setRoster, presenceView } from "./review-presence.ts";
 import { S, isNarrow, set, setSheet, useReview } from "./review-store.ts";
 import type { ReviewState } from "./review-store.ts";
 import type {
-  ArchivePlan,
   AttachChange,
   AttachInfo,
   AttachModeId,
@@ -55,7 +53,6 @@ import type {
   RunEvent,
   RunMark,
   RunSummary,
-  ShareMade,
   SnapshotEvent,
 } from "./review-types.ts";
 
@@ -443,276 +440,10 @@ menuPop.addEventListener("click", async (e) => {
     await downloadStandalone();
     menuPop.hidden = true;
   }
-  if (cmd === "share") await sharePage();
+  if (cmd === "share") await openShare();
   if (cmd === "archive") await archivePage();
   if (cmd === "unarchive") await unarchivePage();
 });
-
-$(".share-btn")?.addEventListener("click", () => void sharePage());
-
-/** Shows why archive or unarchive failed; the next attempt that works takes it away, and leaves any other banner alone. */
-let archiveError = "";
-function showArchiveError(text: string) {
-  archiveError = text;
-  showBanner(text);
-}
-function clearArchiveError() {
-  if (archiveError && bannerText() === archiveError) showBanner("");
-  archiveError = "";
-}
-
-/**
- * Asks before archiving: which copy goes, the unanswered notes that go with it, and the copies of the page
- * (its other worktrees) that stay open. Resolves to null (cancel), false (this copy) or true (every copy).
- */
-function askArchive(plan: ArchivePlan): Promise<boolean | null> {
-  const several = plan.others.length > 0;
-  const waiting = plan.archived[0]?.unanswered ?? 0;
-  const { promise, resolve } = Promise.withResolvers<boolean | null>();
-  const dialog = h("dialog", { class: "confirm", "aria-labelledby": "confirm-title" });
-  const answer = (v: boolean | null) => {
-    dialog.close();
-    dialog.remove();
-    resolve(v);
-  };
-  dialog.addEventListener("cancel", (e) => {
-    e.preventDefault();
-    answer(null);
-  });
-  const parts = [
-    h("h2", {
-      id: "confirm-title",
-      text: several ? `Archive this copy (${plan.copy})?` : "Archive this page?",
-    }),
-    h("p", {
-      text: several
-        ? "This copy leaves the hub's lists and no one can add notes to it until you unarchive it."
-        : "It leaves the hub's lists and no one can add notes until you unarchive it.",
-    }),
-    waiting
-      ? h("p", {
-          text:
-            waiting === 1
-              ? "1 unanswered note goes with it: it is kept, but leaves the hub's counts."
-              : `${waiting} unanswered notes go with it: they are kept, but leave the hub's counts.`,
-        })
-      : null,
-    several
-      ? h("p", {
-          text: plan.others.length === 1 ? "This copy stays open:" : "These copies stay open:",
-        })
-      : null,
-    several
-      ? h(
-          "ul",
-          {},
-          plan.others.map((c) =>
-            h("li", {
-              title: c.file,
-              text: c.unanswered
-                ? `${c.copy} · ${c.unanswered} unanswered note${c.unanswered === 1 ? "" : "s"}`
-                : c.copy,
-            }),
-          ),
-        )
-      : null,
-    h(
-      "div",
-      { class: "confirm-actions" },
-      h("button", {
-        type: "button",
-        class: "btn ghost",
-        text: "Cancel",
-        onclick: () => answer(null),
-      }),
-      several
-        ? h("button", {
-            type: "button",
-            class: "btn",
-            "data-archive": "every",
-            text: "Archive every copy",
-            onclick: () => answer(true),
-          })
-        : null,
-      h("button", {
-        type: "button",
-        class: "btn primary",
-        "data-archive": "this",
-        text: several ? "Archive this copy" : "Archive page",
-        onclick: () => answer(false),
-      }),
-    ),
-  ];
-  dialog.append(...parts.filter((el) => el !== null));
-  document.body.append(dialog);
-  dialog.showModal();
-  return promise;
-}
-
-async function archivePage() {
-  const r = await fetch(`${BASE}/archive`).catch(() => null);
-  if (!r) return showArchiveError(UNREACHABLE);
-  if (!r.ok) return showArchiveError(`Could not archive this page: ${await failure(r)}`);
-  const every = await askArchive((await r.json()) as ArchivePlan);
-  if (every === null) return;
-  const done = await fetch(`${BASE}/archive`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ every }),
-  }).catch(() => null);
-  if (!done) return showArchiveError(UNREACHABLE);
-  if (!done.ok) return showArchiveError(`Could not archive this page: ${await failure(done)}`);
-  clearArchiveError();
-}
-
-async function unarchivePage() {
-  const r = await fetch(`${BASE}/unarchive`, { method: "POST" }).catch(() => null);
-  if (!r) return showArchiveError(UNREACHABLE);
-  if (!r.ok) return showArchiveError(`Could not unarchive this page: ${await failure(r)}`);
-  clearArchiveError();
-}
-
-// ── share (RLM-397): a named link for one teammate's device; the owner's only ──
-
-/** The Share dialog: name, what it reaches, hold or auto; then the link with a Copy button. */
-async function sharePage() {
-  const r = await fetch(`${BASE}/share`).catch(() => null);
-  if (!r) return showBanner(UNREACHABLE);
-  if (!r.ok) return showBanner(`Could not share this page: ${await failure(r)}`);
-  const offer = (await r.json()) as {
-    project: { id: string; name: string } | null;
-    remote: boolean;
-    auto?: boolean;
-  };
-  const dialog = h("dialog", { class: "confirm share", "aria-labelledby": "share-title" });
-  const close = () => {
-    dialog.close();
-    dialog.remove();
-  };
-  dialog.addEventListener("cancel", (e) => {
-    e.preventDefault();
-    close();
-  });
-  const option = (group: string, value: string, label: string, checked: boolean) =>
-    h(
-      "label",
-      { class: "share-opt" },
-      h("input", { type: "radio", name: group, value, checked }),
-      h("span", { text: label }),
-    );
-  const name = h("input", {
-    type: "text",
-    name: "name",
-    maxlength: "40",
-    required: true,
-    placeholder: "Their name",
-    "aria-label": "Name",
-    autocomplete: "off",
-  });
-  const error = h("p", { class: "share-error", role: "alert", hidden: true });
-  const create = h("button", { type: "submit", class: "btn primary", text: "Create link" });
-  const form = h(
-    "form",
-    { class: "share-form" },
-    h("h2", { id: "share-title", text: "Share with one person" }),
-    h("p", {
-      text: "The first browser that opens the link becomes their device, and the link stops working. An unopened link expires in 7 days.",
-    }),
-    name,
-    h(
-      "fieldset",
-      {},
-      h("legend", { text: "They can review" }),
-      option("scope", "page", "This page", true),
-      offer.project
-        ? option("scope", "project", `Every page in ${offer.project.name}`, false)
-        : null,
-      option("scope", "all", "Every page", false),
-    ),
-    h(
-      "fieldset",
-      {},
-      h("legend", { text: "Their notes" }),
-      option("mode", "hold", "Wait for me to send them on", !offer.auto),
-      option("mode", "auto", "Go straight to the agent", Boolean(offer.auto)),
-    ),
-    offer.remote
-      ? null
-      : h("p", {
-          class: "share-error",
-          text: "No tailnet address is up here, so a teammate could not open a link. Start Tailscale, or set AUSTERE_AXI_HOST.",
-        }),
-    error,
-    h(
-      "div",
-      { class: "confirm-actions" },
-      h("button", { type: "button", class: "btn ghost", text: "Cancel", onclick: close }),
-      create,
-    ),
-  );
-  // An untouched notes choice is the saved default: leave it to the server, which holds the notes where an attached agent rules auto out.
-  // A click counts too: clicking the radio that is already selected fires no `change`, and it is still the owner's choice.
-  let modeTouched = false;
-  const touch = (e: Event): void => {
-    if ((e.target as HTMLInputElement).name === "mode") modeTouched = true;
-  };
-  form.addEventListener("change", touch);
-  form.addEventListener("click", touch);
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const data = new FormData(form);
-    create.disabled = true;
-    const done = await fetch(`${BASE}/share`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      // The project the dialog offered: the server refuses the share if the page has moved since.
-      body: JSON.stringify({
-        name: String(data.get("name") || ""),
-        scope: String(data.get("scope") || "page"),
-        project: offer.project?.id,
-        auto: modeTouched ? data.get("mode") === "auto" : undefined,
-      }),
-    }).catch(() => null);
-    create.disabled = false;
-    if (!done || !done.ok) {
-      error.textContent = done ? await failure(done) : UNREACHABLE;
-      error.hidden = false;
-      return;
-    }
-    const made = (await done.json()) as ShareMade;
-    const field = h("input", {
-      type: "text",
-      class: "share-link",
-      readonly: true,
-      value: made.link,
-      "aria-label": "Link",
-    });
-    form.replaceChildren(
-      h("h2", { id: "share-title", text: `Link for ${made.name}` }),
-      h("p", {
-        text: `Reaches ${made.reaches}. ${made.auto ? "Their notes go straight to the agent." : "Their notes wait for you."} Works once, until ${new Date(made.expiresAt).toLocaleString()} if nobody opens it. Send it only to ${made.name}.`,
-      }),
-      field,
-      h(
-        "div",
-        { class: "confirm-actions" },
-        h("button", {
-          type: "button",
-          class: "btn",
-          "data-share": "copy",
-          text: "Copy link",
-          onclick: () => copyText(made.link, "Link"),
-        }),
-        h("button", { type: "button", class: "btn primary", text: "Done", onclick: close }),
-      ),
-    );
-    field.select();
-  });
-  dialog.append(form);
-  document.body.append(dialog);
-  dialog.showModal();
-  name.focus();
-}
 
 // ── attach: the Agent pill (RLM-346; the owner's only, never on a reviewer's or a hosted page) ──
 

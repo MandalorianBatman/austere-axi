@@ -3,6 +3,7 @@
 // cleanup (timers, requests that may arrive late) is an effect in the component that owns it.
 import { create } from "zustand";
 import type {
+  Ask,
   Entry,
   HistoryData,
   Mode,
@@ -76,6 +77,8 @@ export interface ReviewState {
   /** Revisions the owner has not seen since they last looked, and whether they dismissed the strip about them. */
   sinceCount: number;
   sinceDismissed: boolean;
+  /** The dialog the owner is answering, if any. */
+  ask: Ask | null;
   /** Hosted: why nothing more can be sent (the page is gone, or the invite no longer works). */
   lockout: string | null;
   /** Hosted: the invite's name; null on an unlisted page without a valid invite; undefined until the service answers. */
@@ -128,6 +131,7 @@ const initial: ReviewState = {
   historyTick: 0,
   sinceCount: 0,
   sinceDismissed: false,
+  ask: null,
   lockout: null,
   inviteName: undefined,
   viewerName: HOSTED ? "" : VIEWER.name,

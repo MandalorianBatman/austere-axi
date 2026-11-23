@@ -1390,79 +1390,20 @@ html.exploring .hist {
   color: var(--faint);
   padding: 6px;
 }
-.confirm {
-  width: min(480px, calc(100vw - 32px));
-  box-sizing: border-box;
-  padding: 18px 20px;
-  border: 1px solid var(--line-2);
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--text);
-}
-.confirm::backdrop {
-  background: rgba(0, 0, 0, 0.55);
-}
-.confirm h2 {
-  margin: 0 0 8px;
-  font-size: 15px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.confirm p,
+/* The owner's dialogs (shadcn Dialog): the pieces it does not style. */
 .confirm ul {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: 13px;
-}
-.confirm ul {
-  padding-left: 18px;
-  color: var(--text);
   overflow-wrap: anywhere;
-}
-.confirm-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 14px;
-}
-.share fieldset {
-  margin: 10px 0 0;
-  padding: 0;
-  border: 0;
-}
-.share legend {
-  margin-bottom: 4px;
-  color: var(--muted);
-  font-size: 12px;
 }
 .share-opt {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 3px 0;
-  font-size: 13px;
-}
-.share input[type="text"] {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--line-2);
-  background: var(--bg-3);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-}
-.share input[type="text"]:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 .share-link {
   font-family: var(--font-mono);
 }
-.share .share-error {
-  margin-top: 8px;
+.share-error {
   color: var(--red);
 }
 

@@ -249,16 +249,16 @@ test("Share from the page menu: copy the link, open it in a second browser, and 
     await owner.waitForSelector(".composer textarea");
     await owner.click(".menu-btn");
     await owner.click('[data-cmd="share"]');
-    await owner.waitForSelector("dialog.share[open]");
-    await owner.fill("dialog.share input[name=name]", "Cleo");
-    await owner.click("dialog.share button[type=submit]");
-    await owner.waitForSelector("dialog.share .share-link");
-    await owner.click('dialog.share [data-share="copy"]');
+    await owner.waitForSelector("[role=dialog].share");
+    await owner.fill("[role=dialog].share input[name=name]", "Cleo");
+    await owner.click("[role=dialog].share button[type=submit]");
+    await owner.waitForSelector("[role=dialog].share .share-link");
+    await owner.click('[role=dialog].share [data-share="copy"]');
     await owner.waitForSelector(".banner:has-text('Link copied.')");
     const link = await owner.evaluate(() => navigator.clipboard.readText());
     assert.match(link, new RegExp(`/s/${session.id}\\?invite=[A-Za-z0-9_-]{32,}$`));
     assert.equal(
-      await owner.inputValue("dialog.share .share-link"),
+      await owner.inputValue("[role=dialog].share .share-link"),
       link,
       "the dialog shows the link it copied",
     );
@@ -271,7 +271,7 @@ test("Share from the page menu: copy the link, open it in a second browser, and 
     await guest.click(".composer .send");
     await guest.waitForSelector(".msg.user.held");
 
-    await owner.click("dialog.share >> text=Done");
+    await owner.click("[role=dialog].share >> text=Done");
     await owner.waitForSelector(".held-bar");
     assert.match(await owner.locator(".msg.user.held .who").last().innerText(), /^Cleo/);
 

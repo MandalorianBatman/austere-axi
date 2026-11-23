@@ -2,10 +2,12 @@
 import type { ReactElement } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { plural } from "./format.ts";
-import { Icon } from "./icon.tsx";
+import { Icon, ShapeIcon } from "./icon.tsx";
+import type { Shape } from "./icons.ts";
 import { shownChanges, toggleHighlight } from "./review-changes.ts";
 import { useNow } from "./review-hooks.ts";
 import { closePanel, openHistory } from "./review-history.ts";
+import { openShare } from "./review-page.ts";
 import { presenceView } from "./review-presence.ts";
 import { set, useReview } from "./review-store.ts";
 import { Button } from "@/chrome/ui/button";
@@ -123,5 +125,27 @@ export function SinceBar(): ReactElement {
         <Icon name="close" size={14} width={2} />
       </Button>
     </div>
+  );
+}
+
+const LINK: Shape[] = [
+  ["path", { d: "M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" }],
+  ["path", { d: "M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" }],
+];
+
+/** A named link for one teammate's device (the owner's). */
+export function ShareButton(): ReactElement {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="share-btn"
+      title="A named link for one teammate's device"
+      onClick={() => void openShare()}
+    >
+      <ShapeIcon shapes={LINK} size={14} width={1.9} />
+      Share
+    </Button>
   );
 }
