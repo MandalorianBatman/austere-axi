@@ -165,17 +165,13 @@ section.set:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   gap: calc(var(--spacing) * 6);
-  align-items: stretch;
+  align-items: start;
 }
 .set-col {
   display: flex;
   flex-direction: column;
   gap: calc(var(--spacing) * 6);
   min-width: 0;
-}
-/* The two columns end on the same line: the last card of the shorter one takes the slack. */
-.set-col > section.set:last-child {
-  flex: 1;
 }
 .set-foot {
   display: flex;
@@ -205,11 +201,22 @@ section.set:focus-visible {
   gap: calc(var(--spacing) * 1);
 }
 .switch {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: calc(var(--spacing) * 3);
   min-height: var(--control-h);
+}
+/* The whole row toggles the switch: the label's hit area covers the row; the name stays the title. */
+.switch label::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.switch [data-slot="switch"] {
+  position: relative;
+  z-index: 10;
 }
 .set-switch-text {
   flex: 1;

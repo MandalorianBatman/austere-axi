@@ -1703,7 +1703,8 @@ span.anchor {
   .attach-input,
   .attach-select,
   textarea.edit {
-    font-size: var(--fs-md);
+    /* iOS zooms a focused field under 16 px: an exception to the type scale. */
+    font-size: 16px;
   }
   .composer-row > button {
     flex: 1;

@@ -168,7 +168,8 @@ function TopBar(): ReactElement {
   const { isMobile, setOpenMobile, openMobile } = useSidebar();
   return (
     <header className="top sticky top-0 z-5 flex items-center justify-between gap-2 border-b bg-background px-3 py-1.5 md:border-b-0">
-      <Tooltip>
+      {/* No tooltip on a phone: the trigger is the drawer's toggle and the tooltip layer swallows the first Esc. */}
+      <Tooltip open={isMobile ? false : undefined}>
         <TooltipTrigger asChild>
           <SidebarTrigger
             className="side-toggle"

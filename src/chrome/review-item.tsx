@@ -66,7 +66,7 @@ function Edit({ item, text }: { item: QueueItem; text: string }): ReactElement {
   return (
     <Textarea
       ref={ref}
-      className="edit min-h-0 text-[length:var(--fs)]"
+      className="edit min-h-0 text-[length:var(--fs)] max-xs:text-[16px]"
       rows={2}
       aria-label="Edit the note"
       defaultValue={text}

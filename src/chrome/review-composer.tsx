@@ -171,7 +171,7 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
                     rows={2}
                     aria-label="A note about the whole page"
                     placeholder={s.archived ? "Page archived" : "Add a note about the whole page"}
-                    className="composer-input min-h-[60px] max-h-40 resize-y bg-[var(--bg-3)] text-[length:var(--fs)] md:text-[length:var(--fs)]"
+                    className="composer-input min-h-[60px] max-h-40 resize-y bg-[var(--bg-3)] text-[length:var(--fs)] md:text-[length:var(--fs)] max-xs:text-[16px]"
                     disabled={locked}
                     readOnly={s.sending}
                     aria-disabled={s.sending || undefined}
