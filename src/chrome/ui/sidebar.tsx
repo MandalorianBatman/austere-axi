@@ -187,6 +187,12 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
+          // austere-axi: the Sheet is controlled and has no Radix Trigger to give focus back to, so a close (Escape,
+          // the scrim, a link) would leave it on <body>. Give it to the sidebar's trigger instead.
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            document.querySelector<HTMLElement>('[data-sidebar="trigger"]')?.focus()
+          }}
           className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
           style={
             {

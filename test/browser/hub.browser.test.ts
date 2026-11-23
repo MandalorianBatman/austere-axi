@@ -690,13 +690,17 @@ test("review page, phone width: the sidebar is a sheet with a scrim; Escape clos
     await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
     const sheet = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
     assert.equal(await sheet.count(), 0, "starts closed whatever the saved choice");
-    await page.getByRole("button", { name: /Toggle the projects sidebar/ }).click();
+    const trigger = page.getByRole("button", { name: /Toggle the projects sidebar/ });
+    await trigger.focus();
+    await page.keyboard.press("Enter");
     await sheet.waitFor();
     await sheet.getByRole("link", { name: "Waiting page" }).waitFor();
     assert.equal(await page.locator('[data-slot="sheet-overlay"]').count(), 1, "a scrim");
     await shot(page, "review-sidebar-390");
     await page.keyboard.press("Escape");
     await sheet.waitFor({ state: "detached" });
+    // Keyboard: focus goes back to the trigger the sheet was opened from, not to <body>.
+    await page.waitForFunction(() => document.activeElement?.matches('[data-sidebar="trigger"]'));
     assert.deepEqual(problems, []);
   } finally {
     await context.close();
