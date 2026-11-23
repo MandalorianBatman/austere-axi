@@ -69,3 +69,8 @@ export async function failure(r: Response): Promise<string> {
   const d = (await r.json().catch(() => ({}))) as { error?: string };
   return d.error || `error ${r.status}`;
 }
+
+/** Apple platforms write the shortcut modifier as ⌘, the rest as Ctrl. */
+const APPLE = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+/** A shortcut as this platform writes it: `shortcut("K")` is "⌘K" on a Mac, "Ctrl K" elsewhere. */
+export const shortcut = (key: string): string => (APPLE ? `⌘${key}` : `Ctrl ${key}`);

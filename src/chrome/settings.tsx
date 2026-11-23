@@ -491,6 +491,7 @@ function RequestRow({
             aria-disabled={isSubmitting || undefined}
             aria-busy={isSubmitting || undefined}
             className={isSubmitting ? "opacity-50" : undefined}
+            aria-label={`${isSubmitting ? "Approving" : "Approve"} ${q.name}`}
           >
             {isSubmitting ? "Approving…" : "Approve"}
           </UiButton>
@@ -505,6 +506,7 @@ function RequestRow({
                 () => `Denied ${q.name}. That browser may ask again.`,
               )
             }
+            aria-label={`Deny ${q.name}`}
           >
             Deny
           </UiButton>
@@ -524,6 +526,7 @@ function RequestRow({
                 () => `Blocked ${q.name}'s browser: it can no longer ask.`,
               )
             }
+            aria-label={`Block ${q.name}`}
           >
             Block
           </UiButton>
@@ -573,6 +576,7 @@ function LinkRow({ l }: { l: AccessSummary }) {
             variant="outline"
             size="sm"
             onClick={() => copy(l.link as string, `${l.name}'s link`)}
+            aria-label={`Copy link for ${l.name}`}
           >
             Copy link
           </UiButton>
@@ -590,6 +594,7 @@ function LinkRow({ l }: { l: AccessSummary }) {
                   `${l.name}'s link now works once and expires in 7 days. Send the new link; the old one stopped.`,
               )
             }
+            aria-label={`Make single-use for ${l.name}`}
           >
             Make single-use
           </UiButton>
@@ -879,7 +884,13 @@ const FROM: Record<string, string> = {
 };
 
 const tailscaleSchema = z.object({
-  login: z.string().check(z.trim(), z.minLength(1, "Enter a Tailscale login."), z.maxLength(200)),
+  login: z
+    .string()
+    .check(
+      z.trim(),
+      z.minLength(1, "Enter a Tailscale login."),
+      z.maxLength(200, "At most 200 characters."),
+    ),
   name: z.string().check(z.trim(), z.maxLength(40, "At most 40 characters.")),
   scope: z.string(),
   mode: z.string(),
@@ -1083,22 +1094,31 @@ function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
 function DefaultMode({ value, children }: { value: string; children: ReactNode }) {
   const [shown, setShown] = useState(value);
   const [seen, setSeen] = useState(value);
+  const saved = useRef(value);
+  const timer = useRef<number | undefined>(undefined);
+  saved.current = value;
   if (seen !== value) {
     setSeen(value);
     setShown(value);
   }
+  useEffect(() => () => window.clearTimeout(timer.current), []);
   return (
     <RadioGroup
       asChild
       value={shown}
       onValueChange={(v) => {
         setShown(v);
-        // The server did not take it: the saved choice stays selected, and the other can be chosen again.
-        void act<ProjectActionResult>(
-          "/hub/api/settings/review",
-          { auto: v === "auto" },
-          (d) => d.message,
-        ).then((ok) => ok || setShown(value));
+        // Arrow keys move the choice one option at a time: save where the owner stops, not on every key.
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => {
+          if (v === saved.current) return;
+          // The server did not take it: the saved choice stays selected, and the other can be chosen again.
+          void act<ProjectActionResult>(
+            "/hub/api/settings/review",
+            { auto: v === "auto" },
+            (d) => d.message,
+          ).then((ok) => ok || setShown(saved.current));
+        }, 400);
       }}
     >
       {children}
@@ -1479,6 +1499,7 @@ function SettingsBody({
                     type="button"
                     variant="outline"
                     size="sm"
+                    aria-label="Copy share address"
                     onClick={() => copy(net.share!.url, "The address")}
                   >
                     Copy

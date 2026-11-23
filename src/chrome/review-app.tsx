@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
 import { ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
-import { HOSTED, OWNER } from "./review-env.ts";
+import { HOSTED, OWNER, shortcut } from "./review-env.ts";
 import { AttachPill } from "./review-attach.tsx";
 import { useAttachFeed } from "./review-attach.ts";
 import { useBanner } from "./review-banner.ts";
@@ -36,7 +36,7 @@ import { useSidebarOpen } from "./side-state.ts";
 import { Button } from "@/chrome/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/chrome/ui/sheet";
 import { SidebarProvider, SidebarTrigger } from "@/chrome/ui/sidebar";
-import { TooltipProvider } from "@/chrome/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/chrome/ui/tooltip";
 
 const LOGO: Shape[] = [
   ["rect", { x: 1.5, y: 1.5, width: 21, height: 21, rx: 5, className: "logo-box" }],
@@ -133,12 +133,16 @@ function App(): ReactElement {
         <header className="bar">
           <div className="bar-start">
             {OWNER_BAR ? (
-              <SidebarTrigger
-                className="side-toggle flex-none"
-                aria-controls="side"
-                aria-label="Toggle the projects sidebar (Ctrl/⌘ B)"
-                title="Toggle the projects sidebar (Ctrl/⌘ B)"
-              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarTrigger
+                    className="side-toggle flex-none"
+                    aria-controls="side"
+                    aria-label={`Toggle the projects sidebar (${shortcut("B")})`}
+                  />
+                </TooltipTrigger>
+                <TooltipContent>{`Toggle the projects sidebar (${shortcut("B")})`}</TooltipContent>
+              </Tooltip>
             ) : null}
             {OWNER_BAR ? (
               <Button

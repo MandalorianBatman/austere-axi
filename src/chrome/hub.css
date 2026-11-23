@@ -606,8 +606,8 @@ code.target {
   font-weight: 500;
 }
 .st .st-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border: 0;
   background: currentColor;
 }

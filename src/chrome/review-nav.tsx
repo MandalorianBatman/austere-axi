@@ -5,6 +5,8 @@ import type { ReactElement, ReactNode } from "react";
 import { ChevronDown, ChevronLeft, FileText, GitBranch, Search } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/chrome/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/chrome/ui/tooltip";
+import { shortcut } from "./review-env.ts";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -55,13 +57,13 @@ export function Crumbs(): ReactElement {
           <BreadcrumbLink
             href={project ? `/?project=${encodeURIComponent(project.id)}` : "/"}
             title={project ? `${name} in the hub` : undefined}
-            className="inline-flex max-w-[180px] min-w-0 items-center rounded-sm max-[860px]:max-w-[22vw] max-[480px]:size-[var(--touch)] max-[480px]:max-w-none max-[480px]:justify-center max-[480px]:rounded-md max-[480px]:text-secondary-foreground"
+            className="inline-flex max-w-[180px] min-w-0 items-center rounded-sm max-[860px]:max-w-[22vw] max-xs:size-[var(--touch)] max-xs:max-w-none max-xs:justify-center max-xs:rounded-md max-xs:text-secondary-foreground"
           >
-            <ChevronLeft aria-hidden="true" className="hidden size-5 flex-none max-[480px]:block" />
-            <span className="truncate max-[480px]:sr-only">{name}</span>
+            <ChevronLeft aria-hidden="true" className="hidden size-5 flex-none max-xs:block" />
+            <span className="truncate max-xs:sr-only">{name}</span>
           </BreadcrumbLink>
         </BreadcrumbItem>
-        <BreadcrumbSeparator className="max-[480px]:hidden">/</BreadcrumbSeparator>
+        <BreadcrumbSeparator className="max-xs:hidden">/</BreadcrumbSeparator>
       </BreadcrumbList>
     </Breadcrumb>
   );
@@ -82,7 +84,7 @@ export function CopySwitcher(): ReactElement | null {
           type="button"
           variant="outline"
           size="sm"
-          className="max-w-48 flex-none font-mono text-[length:var(--fs-xs)] max-[860px]:max-w-24 max-[480px]:hidden"
+          className="max-w-48 flex-none font-mono text-[length:var(--fs-xs)] max-[860px]:max-w-24 max-xs:hidden"
           aria-label={`Worktree copy: ${shown}`}
           title="The same page in another worktree"
         >
@@ -112,17 +114,21 @@ export function CopySwitcher(): ReactElement | null {
 /** The header's Go to page button (the ⋯ menu has the same command). */
 export function GotoButton(): ReactElement {
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className="icon-btn goto-btn"
-      aria-label="Go to page (Ctrl K)"
-      title="Go to page (Ctrl K)"
-      onClick={() => openSwitcher()}
-    >
-      <Search />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="icon-btn goto-btn"
+          aria-label={`Go to page (${shortcut("K")})`}
+          onClick={() => openSwitcher()}
+        >
+          <Search />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{`Go to page (${shortcut("K")})`}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -208,7 +214,7 @@ function Row({ item, words }: { item: Item; words: string[] }): ReactElement {
       ) : null}
       <kbd
         aria-hidden="true"
-        className={cn(kbd, "hidden max-[480px]:!hidden group-data-[selected=true]:inline-block")}
+        className={cn(kbd, "hidden max-xs:!hidden group-data-[selected=true]:inline-block")}
       >
         Enter
       </kbd>
@@ -249,7 +255,7 @@ function Switcher(): ReactElement {
       description="Search the pages and parts of every project"
       showCloseButton={false}
       onCloseAutoFocus={restoreFocus}
-      className="top-[12vh] max-h-[70vh] translate-y-0 gap-0 sm:max-w-[620px] max-[480px]:top-2 max-[480px]:max-h-[calc(100dvh-16px)] max-[480px]:max-w-[calc(100%-16px)]"
+      className="top-[12vh] max-h-[70vh] translate-y-0 gap-0 sm:max-w-[620px] max-xs:top-2 max-xs:max-h-[calc(100dvh-16px)] max-xs:max-w-[calc(100%-16px)]"
     >
       {/* The server ranks the matches: cmdk's own filter would drop a part whose title lacks the words. */}
       <Command shouldFilter={false} loop className="max-h-[inherit]">
@@ -295,20 +301,20 @@ function Switcher(): ReactElement {
             ) : null;
           })}
         </CommandList>
-        <div className="flex flex-none flex-wrap items-center gap-x-4 gap-y-2 border-t bg-card px-4 py-2.5 text-xs text-muted-foreground max-[480px]:py-0">
-          <span className="flex items-center gap-1 max-[480px]:hidden">
+        <div className="flex flex-none flex-wrap items-center gap-x-4 gap-y-2 border-t bg-card px-4 py-2.5 text-xs text-muted-foreground max-xs:py-0">
+          <span className="flex items-center gap-1 max-xs:hidden">
             <kbd className={kbd}>↑</kbd>
             <kbd className={kbd}>↓</kbd> to move
           </span>
-          <span className="flex items-center gap-1 max-[480px]:hidden">
+          <span className="flex items-center gap-1 max-xs:hidden">
             <kbd className={kbd}>Enter</kbd> to open
           </span>
-          <span className="flex items-center gap-1 max-[480px]:hidden">
+          <span className="flex items-center gap-1 max-xs:hidden">
             <kbd className={kbd}>Esc</kbd> to close
           </span>
           <a
             href="/"
-            className="ml-auto inline-flex items-center rounded-sm text-secondary-foreground hover:text-foreground hover:underline max-[480px]:min-h-[var(--touch)]"
+            className="ml-auto inline-flex items-center rounded-sm text-secondary-foreground hover:text-foreground hover:underline max-xs:min-h-[var(--touch)]"
           >
             Open the hub
           </a>

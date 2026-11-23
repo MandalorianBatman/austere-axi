@@ -76,12 +76,18 @@
 }
 
 /* ── the section menu: pills ── */
+/* One row that scrolls sideways when the pills do not fit, so a pill never wraps alone onto a second row. */
 .set-nav {
   display: flex;
-  flex-wrap: wrap;
   gap: calc(var(--spacing) * 2);
+  overflow-x: auto;
+  padding: calc(var(--spacing) * 0.5);
+  margin: calc(var(--spacing) * -0.5);
+  scrollbar-width: thin;
 }
 .set-nav a {
+  flex: none;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: calc(var(--spacing) * 1.5);
@@ -159,13 +165,17 @@ section.set:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   gap: calc(var(--spacing) * 6);
-  align-items: start;
+  align-items: stretch;
 }
 .set-col {
   display: flex;
   flex-direction: column;
   gap: calc(var(--spacing) * 6);
   min-width: 0;
+}
+/* The two columns end on the same line: the last card of the shorter one takes the slack. */
+.set-col > section.set:last-child {
+  flex: 1;
 }
 .set-foot {
   display: flex;

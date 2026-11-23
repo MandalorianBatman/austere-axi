@@ -19,6 +19,7 @@ import { Toaster } from "@/chrome/ui/sonner";
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/chrome/ui/sidebar";
 import { HubDialogs } from "./hub-dialog.tsx";
 import { Button } from "@/chrome/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/chrome/ui/tooltip";
 
 function useCounts(): { needsYou: number; waiting: number } {
   const needsYou = useHub((s) => s.projects.reduce((n, p) => n + p.needs_you, 0));
@@ -156,16 +157,27 @@ function DrawerWatch(): null {
   return null;
 }
 
+/** Apple platforms say ⌘ for the sidebar's shortcut; the others Ctrl. */
+const SIDEBAR_KEYS =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+    ? "⌘B"
+    : "Ctrl+B";
+
 /** The top bar: the sidebar's toggle (Ctrl+B too), and on a narrow screen a way to its search. */
 function TopBar(): ReactElement {
   const { isMobile, setOpenMobile, openMobile } = useSidebar();
   return (
     <header className="top sticky top-0 z-5 flex items-center justify-between gap-2 border-b bg-background px-3 py-1.5 md:border-b-0">
-      <SidebarTrigger
-        className="side-toggle"
-        aria-controls="side"
-        aria-label="Toggle the sidebar"
-      />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <SidebarTrigger
+            className="side-toggle"
+            aria-controls="side"
+            aria-label="Toggle the sidebar"
+          />
+        </TooltipTrigger>
+        <TooltipContent>{`Toggle sidebar (${SIDEBAR_KEYS})`}</TooltipContent>
+      </Tooltip>
       {isMobile ? (
         <Button
           type="button"
