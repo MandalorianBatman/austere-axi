@@ -12,6 +12,7 @@ import { InboxView, NotesView, PagesView, RunsView, SearchView } from "./hub-vie
 import { Icon } from "./icon.tsx";
 import { ProjectsSidebar } from "./projects-sidebar.tsx";
 import { SettingsView } from "./settings.tsx";
+import { useSidebarOpen } from "./side-state.ts";
 import { VIEWS, go, start, toUrl, toggleProject, useHub } from "./hub-store.ts";
 import { Toaster } from "@/chrome/ui/sonner";
 import {
@@ -206,41 +207,16 @@ function Content(): ReactElement | null {
   }
 }
 
-/**
- * The drawer follows navigation: it closes when the view or filter changes, and focus goes back to the toggle
- * (Radix has no trigger to return it to).
- */
+/** The drawer follows navigation: it closes when the view or filter changes. (Focus goes back to the toggle: ui/sidebar.tsx.) */
 function DrawerWatch(): null {
-  const { openMobile, setOpenMobile } = useSidebar();
+  const { setOpenMobile } = useSidebar();
   const state = useHub((s) => s.state);
   const seen = useRef(state);
-  const wasOpen = useRef(false);
   useEffect(() => {
     if (state === seen.current) return;
     seen.current = state;
     setOpenMobile(false);
   }, [state, setOpenMobile]);
-  useEffect(() => {
-    const closed = wasOpen.current && !openMobile;
-    const inside = !!document.activeElement?.closest('[data-mobile="true"]');
-    wasOpen.current = openMobile;
-    if (!closed) return;
-    // Radix unmounts the Sheet after its exit animation, and only then does focus fall to <body>.
-    // Wait for the Sheet to leave the DOM, then give focus back to the toggle (if it had been inside).
-    let frame = 0;
-    let tries = 0;
-    const settle = (): void => {
-      if (document.querySelector('[data-mobile="true"]') && tries++ < 120) {
-        frame = requestAnimationFrame(settle);
-        return;
-      }
-      if (!document.activeElement || document.activeElement === document.body)
-        document.querySelector<HTMLElement>(".side-toggle")?.focus();
-    };
-    if (inside || !document.activeElement || document.activeElement === document.body)
-      frame = requestAnimationFrame(settle);
-    return () => cancelAnimationFrame(frame);
-  }, [openMobile]);
   return null;
 }
 
@@ -278,6 +254,7 @@ function Hub(): ReactElement {
   const projects = useHub((s) => s.projects);
   const sidePages = useHub((s) => s.sidePages);
   const closedProjects = useHub((s) => s.closedProjects);
+  const side = useSidebarOpen(true);
 
   useEffect(() => {
     const label =
@@ -286,7 +263,7 @@ function Hub(): ReactElement {
   }, [state.view]);
 
   return (
-    <SidebarProvider className="hub">
+    <SidebarProvider className="hub" {...side}>
       <Sidebar id="side" aria-label="Projects and views" className="side">
         <SidebarHeader className="gap-3 p-3">
           <div className="brand flex items-center gap-2.5 px-2">

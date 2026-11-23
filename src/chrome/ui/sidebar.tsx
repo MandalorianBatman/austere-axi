@@ -25,8 +25,6 @@ import {
   TooltipTrigger,
 } from "@/chrome/ui/tooltip"
 
-const SIDEBAR_COOKIE_NAME = "sidebar_state"
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
@@ -55,6 +53,7 @@ function useSidebar() {
 
 function SidebarProvider({
   defaultOpen = true,
+  breakpoint,
   open: openProp,
   onOpenChange: setOpenProp,
   className,
@@ -63,10 +62,12 @@ function SidebarProvider({
   ...props
 }: React.ComponentProps<"div"> & {
   defaultOpen?: boolean
+  /** austere-axi: the width (px) under which the sidebar is a Sheet; 768 when unset. */
+  breakpoint?: number
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
-  const isMobile = useIsMobile()
+  const isMobile = useIsMobile(breakpoint)
   const [openMobile, setOpenMobile] = React.useState(false)
 
   // This is the internal state of the sidebar.
@@ -81,9 +82,8 @@ function SidebarProvider({
       } else {
         _setOpen(openState)
       }
-
-      // This sets the cookie to keep the sidebar state.
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+      // austere-axi: shadcn writes a `sidebar_state` cookie here; the owner's choice is kept in localStorage
+      // instead (side-state.ts), through `open` and `onOpenChange`.
     },
     [setOpenProp, open]
   )
@@ -187,6 +187,12 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
+          // austere-axi: the Sheet is controlled and has no Radix Trigger to give focus back to, so a close (Escape,
+          // the scrim, a link) would leave it on <body>. Give it to the sidebar's trigger instead.
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            document.querySelector<HTMLElement>('[data-sidebar="trigger"]')?.focus()
+          }}
           className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
           style={
             {
@@ -228,6 +234,8 @@ function Sidebar({
       />
       <div
         data-slot="sidebar-container"
+        // austere-axi: a closed offcanvas sidebar sits off screen; it must not keep Tab stops or be read out.
+        inert={state === "collapsed" && collapsible === "offcanvas"}
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
           side === "left"

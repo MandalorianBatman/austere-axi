@@ -146,6 +146,11 @@ function onMessage(e: MessageEvent): void {
       // Ctrl/Cmd+K pressed inside the frame (sent only when init said the owner has a switcher).
       toggleSwitcher();
       break;
+    case "toggle-sidebar":
+      // Ctrl/Cmd+B pressed inside the frame: the sidebar's own shortcut (ui/sidebar.tsx) answers it, wide or narrow.
+      if (OWNER && !HOSTED)
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true }));
+      break;
     case "history":
       // The popover's History (n) on a statement: the owner's only, and only a statement name is taken from the frame.
       if (OWNER && !HOSTED && typeof d.id === "string") openHistory(d.id.slice(0, 200));

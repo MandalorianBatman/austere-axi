@@ -28,6 +28,8 @@ The search box at the top of the sidebar (on a phone, the search button in the t
 
 The owner's review header has a breadcrumb, **project /** title, back to the hub (filtered to that project), and, on a page with copies in several worktrees, a list that opens the same page in another copy. On a phone the breadcrumb is a back arrow and the list is left out for room: the hub's chips and the quick switcher open the other copies. **Ctrl+K** (**⌘K** on a Mac; anywhere on the page, the composer and the page itself too), or **Go to page…** in the `⋯` menu, opens a quick switcher: pages you opened lately first, then type to find pages and parts. **Next page with unanswered notes** in the `⋯` menu goes to the next page in the inbox with notes no agent answered, at the copy that has them. A reviewer's page, and a hosted page, has none of this.
 
+The owner's review page has the hub's projects sidebar beside the page: every project with its pages, this page marked, a click opens another. The button at the left of the header, or **Ctrl+B** (**⌘B** on a Mac; the page itself too), opens or folds it; it starts folded, and the choice is kept in the browser and shared with the hub (the hub's own sidebar starts open). Under 1100 px wide, and on a phone, it opens over the page, with a scrim. A reviewer's page and a hosted page have none of it.
+
 ### Settings
 
 **Settings** (`/?view=settings`) is the owner's page for this local server: hosted pages keep their own invites (`publish --invite`). Its count in the sidebar is the people waiting for access. Every setting on it has a terminal form, named on the page, so nothing is lost without it; what runs a command (`server install`, `adapter set`, `trigger add`) stays at a terminal.

@@ -41,7 +41,9 @@ export type AnnotatorMessage =
   | { type: "toggle-mode" }
   | { type: "history"; id: string }
   // Ctrl/Cmd+K inside the frame, for the owner's quick switcher (only after init said the chrome has one).
-  | { type: "quick-switch" };
+  | { type: "quick-switch" }
+  // Ctrl/Cmd+B inside the frame, for the owner's projects sidebar (same condition).
+  | { type: "toggle-sidebar" };
 
 /** Ids of the statements that reference `id` (shared/statements.ts referencesTo). */
 export type RefsTo = (map: StatementMap, id: string) => string[];
@@ -53,7 +55,7 @@ export interface AnnotatorOptions {
 
 export interface Annotator {
   setMode(next: unknown): void;
-  /** Whether Ctrl/Cmd+K in the frame goes to the chrome (the owner's quick switcher) instead of the browser. */
+  /** Whether Ctrl/Cmd+K and Ctrl/Cmd+B in the frame go to the chrome (the owner's quick switcher and sidebar) instead of the browser. */
   setQuickSwitch(on: boolean): void;
   /** How many revisions changed each statement (the owner's history); a statement with earlier versions gets a History button in its popover. */
   setHistory(counts: Record<string, number>): void;
@@ -640,6 +642,14 @@ export function createAnnotator({ post, lookup }: AnnotatorOptions): Annotator {
     ) {
       e.preventDefault();
       post({ type: "quick-switch" });
+    } else if (
+      quickSwitch &&
+      (e.metaKey || e.ctrlKey) &&
+      !e.altKey &&
+      (e.key === "b" || e.key === "B")
+    ) {
+      e.preventDefault();
+      post({ type: "toggle-sidebar" });
     }
   });
   window.addEventListener(

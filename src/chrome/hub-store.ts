@@ -12,6 +12,7 @@ import type {
 } from "../shared/hub-api.ts";
 import type { IconName } from "./icons.ts";
 import { get } from "./hub-http.ts";
+import { CLOSED_PROJECTS, store, stored } from "./side-state.ts";
 
 export type View = "inbox" | "pages" | "notes" | "runs" | "settings" | "search";
 export const VIEWS: { id: Exclude<View, "search">; label: string; icon: IconName }[] = [
@@ -25,23 +26,6 @@ const isView = (v: string | null): v is Exclude<View, "search"> => VIEWS.some((x
 
 /** The view the hub opened on last (RLM-358). */
 const LAST_VIEW = "austere:hub:view";
-const CLOSED_PROJECTS = "austere:hub:closed-projects";
-
-function stored<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw == null ? fallback : (JSON.parse(raw) as T);
-  } catch {
-    return fallback;
-  }
-}
-function store(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // private mode or full: the hub still works, it just forgets
-  }
-}
 
 export interface State {
   view: View;

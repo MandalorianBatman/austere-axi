@@ -41,6 +41,13 @@ code {
   display: block;
 }
 
+.review-shell {
+  background: var(--bg-2);
+}
+.review-shell > .app {
+  flex: 1;
+  min-width: 0;
+}
 .app {
   display: flex;
   flex-direction: column;

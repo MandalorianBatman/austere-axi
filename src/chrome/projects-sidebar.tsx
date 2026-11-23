@@ -36,6 +36,8 @@ export interface ProjectsSidebarProps {
   onToggle(id: string): void;
   /** Where a page opens; the default is the hub's. */
   pageHref?(page: { open_id: string }): string;
+  /** The page open now (the review page): the id of any of its copies. It is marked, and its project too while folded. */
+  currentId?: string;
 }
 
 const NeedsDot = (): ReactElement => (
@@ -45,6 +47,9 @@ const NeedsDot = (): ReactElement => (
     aria-label="Needs you"
   />
 );
+
+const isCurrent = (p: ShellPage, id: string | undefined): boolean =>
+  !!id && (p.id === id || p.open_id === id || p.copies.some((c) => c.id === id));
 
 const hubOpen = (p: { open_id: string }): string => `/hub/open/${p.open_id}`;
 
@@ -58,6 +63,7 @@ export function ProjectsSidebar({
   onSelect,
   onToggle,
   pageHref = hubOpen,
+  currentId,
 }: ProjectsSidebarProps): ReactElement {
   const byProject = new Map<string, ShellPage[]>();
   for (const p of pages) {
@@ -86,9 +92,10 @@ export function ProjectsSidebar({
               const isSelected = selected === p.id || selected === p.name;
               const expanded = !collapsed.includes(p.id);
               const list = byProject.get(p.id) ?? [];
+              const holdsCurrent = !expanded && list.some((pg) => isCurrent(pg, currentId));
               return (
                 <SidebarMenuItem key={p.id} className="proj">
-                  <SidebarMenuButton asChild isActive={isSelected} className="pl-7">
+                  <SidebarMenuButton asChild isActive={isSelected || holdsCurrent} className="pl-7">
                     <a
                       className="proj-link"
                       href={projectHref(p.id)}
@@ -123,42 +130,50 @@ export function ProjectsSidebar({
                   ) : null}
                   {expanded && list.length ? (
                     <SidebarMenuSub className="proj-pages">
-                      {list.map((pg) => (
-                        <SidebarMenuSubItem key={pg.id}>
-                          <SidebarMenuSubButton
-                            asChild
-                            className={pg.needs_you ? "need text-foreground" : undefined}
-                          >
-                            <a href={pageHref(pg)} title={pg.rel_path}>
-                              <span className="pg-title truncate">{titleOf(pg)}</span>
-                              {pg.needs_you ? (
-                                <NeedsDot />
-                              ) : pg.unanswered ? (
-                                <span
-                                  className="ml-auto text-[11px] text-muted-foreground"
-                                  title={plural(pg.unanswered, "unanswered note")}
-                                >
-                                  {pg.unanswered}
-                                </span>
-                              ) : null}
-                            </a>
-                          </SidebarMenuSubButton>
-                          {pg.copies.length > 1 ? (
-                            <div className="mini-chips flex flex-wrap gap-1 py-0.5">
-                              {pg.copies.map((c) => (
-                                <a
-                                  key={c.id}
-                                  className={`mini-chip rounded-full border px-2 font-mono text-[11px] leading-[18px] ${c.unanswered ? "waiting border-[var(--amber-pill)] text-[var(--amber)]" : "text-muted-foreground"}`}
-                                  href={pageHref({ open_id: c.id })}
-                                  title={`${c.label} · ${c.file}`}
-                                >
-                                  {middle(c.label, 18)}
-                                </a>
-                              ))}
-                            </div>
-                          ) : null}
-                        </SidebarMenuSubItem>
-                      ))}
+                      {list.map((pg) => {
+                        const here = isCurrent(pg, currentId);
+                        return (
+                          <SidebarMenuSubItem key={pg.id}>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={here}
+                              className={pg.needs_you ? "need text-foreground" : undefined}
+                            >
+                              <a
+                                href={pageHref(pg)}
+                                title={pg.rel_path}
+                                aria-current={here ? "page" : undefined}
+                              >
+                                <span className="pg-title truncate">{titleOf(pg)}</span>
+                                {pg.needs_you ? (
+                                  <NeedsDot />
+                                ) : pg.unanswered ? (
+                                  <span
+                                    className="ml-auto text-[11px] text-muted-foreground"
+                                    title={plural(pg.unanswered, "unanswered note")}
+                                  >
+                                    {pg.unanswered}
+                                  </span>
+                                ) : null}
+                              </a>
+                            </SidebarMenuSubButton>
+                            {pg.copies.length > 1 ? (
+                              <div className="mini-chips flex flex-wrap gap-1 py-0.5">
+                                {pg.copies.map((c) => (
+                                  <a
+                                    key={c.id}
+                                    className={`mini-chip rounded-full border px-2 font-mono text-[11px] leading-[18px] ${c.unanswered ? "waiting border-[var(--amber-pill)] text-[var(--amber)]" : "text-muted-foreground"}`}
+                                    href={pageHref({ open_id: c.id })}
+                                    title={`${c.label} · ${c.file}`}
+                                  >
+                                    {middle(c.label, 18)}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : null}
+                          </SidebarMenuSubItem>
+                        );
+                      })}
                     </SidebarMenuSub>
                   ) : null}
                 </SidebarMenuItem>
