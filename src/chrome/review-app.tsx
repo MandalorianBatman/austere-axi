@@ -134,7 +134,7 @@ function App(): ReactElement {
           <div className="bar-start">
             {OWNER_BAR ? (
               <SidebarTrigger
-                className="side-toggle size-9 flex-none"
+                className="side-toggle flex-none"
                 aria-controls="side"
                 aria-label="Toggle the projects sidebar (Ctrl/⌘ B)"
                 title="Toggle the projects sidebar (Ctrl/⌘ B)"
@@ -144,8 +144,8 @@ function App(): ReactElement {
               <Button
                 asChild
                 variant="ghost"
-                size="icon"
-                className="bar-home size-9 flex-none [&_svg]:size-6"
+                size="icon-sm"
+                className="bar-home flex-none [&_svg]:size-6"
                 title="Back to the hub"
               >
                 <a href="/" aria-label="Back to the hub">
@@ -202,7 +202,7 @@ function App(): ReactElement {
           </PanelBoundary>
         ) : null}
         <div className="main">
-          <section className="stage" id="content" tabIndex={-1} aria-label="Page under review">
+          <main className="stage" id="content" tabIndex={-1} aria-label="Page under review">
             <div className="subbar">
               <PanelBoundary name="The mode switch">
                 <ModeSwitch />
@@ -218,7 +218,7 @@ function App(): ReactElement {
             <PanelBoundary name="The page">
               <Frame />
             </PanelBoundary>
-          </section>
+          </main>
           {narrow ? (
             // A phone: the notes are a bottom sheet. Closed, it is not in the page at all; open, it holds focus.
             <Sheet open={sheetOpen} onOpenChange={setSheet}>

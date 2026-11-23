@@ -77,6 +77,7 @@ function Receipt({ entry }: { entry: Entry }): ReactElement | null {
           title={at ? `${label} ${fmtTime(at)}` : `Not ${label.toLowerCase()} yet`}
         >
           {label}
+          <span className="sr-only">{at ? ` ${fmtTime(at)}` : " not yet"}</span>
         </span>
       ))}
       {entry.seenAt && entry.seenBy ? (

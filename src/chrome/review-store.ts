@@ -37,6 +37,8 @@ export interface ReviewState {
   sending: boolean;
   /** The composer's error line: a refused send, the outbox's rate limit and unsaved-copy notices. */
   composerError: string;
+  /** The error is a refused send: the composer offers Try again. */
+  composerRetry: boolean;
   /** Hosted: the notes still waiting for their ack, for the reviewer this page is now. */
   pending: OutboxEntry[];
   /** Hosted: when a note refused with `rate_limited` is sent again, epoch ms. */
@@ -130,6 +132,7 @@ const initial: ReviewState = {
   editing: null,
   sending: false,
   composerError: "",
+  composerRetry: false,
   pending: [],
   rateLimit: null,
   outboxUnsaved: false,

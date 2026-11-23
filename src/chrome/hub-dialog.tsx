@@ -30,6 +30,7 @@ type Ask =
       kind: "prompt";
       text: string;
       value: string;
+      maxLength: number;
       opener: Element | null;
       heading: Element | null;
       done: (value: string | null) => void;
@@ -67,11 +68,24 @@ export function confirmDialog(
   );
 }
 
-export function promptDialog(text: string, value: string): Promise<string | null> {
+/** A name to type; an empty one is refused in the dialog, and `maxLength` caps what can be typed. */
+export function promptDialog(
+  text: string,
+  value: string,
+  { maxLength = 80 }: { maxLength?: number } = {},
+): Promise<string | null> {
   const opener = document.activeElement;
   return new Promise((resolve) =>
     useAsk.setState({
-      ask: { kind: "prompt", text, value, opener, heading: headingOf(opener), done: resolve },
+      ask: {
+        kind: "prompt",
+        text,
+        value,
+        maxLength,
+        opener,
+        heading: headingOf(opener),
+        done: resolve,
+      },
     }),
   );
 }
@@ -79,9 +93,11 @@ export function promptDialog(text: string, value: string): Promise<string | null
 export function HubDialogs(): ReactElement | null {
   const ask = useAsk((s) => s.ask);
   const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [seen, setSeen] = useState<Ask | null>(null);
   if (ask !== seen) {
     setSeen(ask);
+    setError(null);
     if (ask?.kind === "prompt") setText(ask.value);
   }
   if (!ask) return null;
@@ -92,7 +108,10 @@ export function HubDialogs(): ReactElement | null {
   };
   const accept = (): void => {
     if (ask.kind === "confirm") ask.done(true);
-    else ask.done(text);
+    else if (!text.trim()) {
+      setError("Enter a name.");
+      return;
+    } else ask.done(text);
     useAsk.setState({ ask: null });
   };
   return (
@@ -123,12 +142,25 @@ export function HubDialogs(): ReactElement | null {
             <DialogDescription>{ask.text}</DialogDescription>
           </DialogHeader>
           {ask.kind === "prompt" ? (
-            <Input
-              autoFocus
-              aria-label={ask.text}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-            />
+            <div className="grid gap-2">
+              <Input
+                autoFocus
+                aria-label={ask.text}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "prompt-error" : undefined}
+                maxLength={ask.maxLength}
+                value={text}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  setError(null);
+                }}
+              />
+              {error ? (
+                <p id="prompt-error" role="alert" className="text-xs text-destructive">
+                  {error}
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={close}>

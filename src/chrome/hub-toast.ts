@@ -3,7 +3,7 @@ import { toast } from "sonner";
 
 export interface SayOptions {
   action?: { label: string; onClick: () => unknown };
-  /** How long it stays, in ms; a link the owner has to copy needs longer than the default. */
+  /** How long it stays, in ms; a link the owner has to copy needs longer than the default. A toast with a button stays 10 s: the keyboard reaches it only with Alt+T. */
   duration?: number;
 }
 
@@ -15,7 +15,7 @@ let latest = 0;
 
 const asToast = ({ action, duration }: SayOptions) => ({
   id: STATUS,
-  duration,
+  duration: duration ?? (action ? 10_000 : undefined),
   // The toast stays until `onClick` has answered: a failed Undo replaces it, a good one clears it.
   action: action && {
     label: action.label,

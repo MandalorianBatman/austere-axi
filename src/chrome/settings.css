@@ -1,9 +1,11 @@
 /* Settings (settings.tsx), inside the hub shell: the Hub-Settings artboard. Tokens in tokens.css.
-   Generic hub classes (.btn, code, .meta, .summary, .empty) are restyled here only under .set-page. */
+   Generic hub classes (code, .meta, .summary, .empty) are restyled here only under .set-page.
+   Controls (button, input, select, label) are the shadcn components: no native-element rules here.
+   Spacing is Tailwind's 4px step (`--spacing`): layout gaps 1 2 3 4 6 8 12, inside a control also 0.5 1.5 2.5. */
 .set-page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: calc(var(--spacing) * 6);
   min-width: 0;
 }
 .set-page section {
@@ -14,7 +16,7 @@
 }
 .set-top {
   display: grid;
-  gap: 4px;
+  gap: calc(var(--spacing) * 1);
 }
 .set-top h1 {
   margin: 0;
@@ -34,6 +36,7 @@
 }
 .set-page .empty {
   margin: 0;
+  padding: 0;
   color: var(--faint);
 }
 .set-page code {
@@ -64,25 +67,26 @@
   font-size: var(--fs-sm);
   font-weight: 600;
 }
+.set-req {
+  color: var(--muted);
+  font-weight: 400;
+}
 .warn {
   color: var(--amber);
-}
-.set-page .error {
-  color: var(--red);
 }
 
 /* ── the section menu: pills ── */
 .set-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: calc(var(--spacing) * 2);
 }
 .set-nav a {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 12px;
+  gap: calc(var(--spacing) * 1.5);
+  height: var(--control-h);
+  padding: 0 calc(var(--spacing) * 3);
   border: 1px solid var(--line);
   border-radius: var(--pill);
   color: var(--text-3);
@@ -108,39 +112,39 @@ section.set {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--bg-2);
-  scroll-margin-top: 12px;
+  scroll-margin-top: calc(var(--spacing) * 3);
+}
+/* A section jumped to from the menu takes focus (tabindex -1) so the next Tab goes into it; the card needs no ring. */
+section.set:focus-visible {
+  outline: none;
 }
 .set-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 16px 20px;
+  gap: calc(var(--spacing) * 3);
+  padding: calc(var(--spacing) * 4);
 }
 .set-head-text {
   flex: 1 1 260px;
   display: grid;
-  gap: 2px;
+  gap: calc(var(--spacing) * 1);
   min-width: 0;
 }
 .set-head h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 .set-part,
 .set-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: calc(var(--spacing) * 2);
   min-width: 0;
-  padding: 16px 20px;
+  padding: calc(var(--spacing) * 4);
   border-top: 1px solid var(--line);
-}
-.set-block {
-  gap: 6px;
-  padding: 14px 20px;
 }
 .set-part > h3 {
   margin: 0;
@@ -154,13 +158,13 @@ section.set {
 .set-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
-  gap: 24px;
+  gap: calc(var(--spacing) * 6);
   align-items: start;
 }
 .set-col {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: calc(var(--spacing) * 6);
   min-width: 0;
 }
 .set-foot {
@@ -168,62 +172,40 @@ section.set {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 20px;
+  gap: calc(var(--spacing) * 3);
+  padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
   border-top: 1px solid var(--line);
   color: var(--muted);
 }
 
 /* ── controls ── */
-.set-page select,
-.set-page input[type="text"] {
-  height: var(--control-h);
-  max-width: 100%;
-  padding: 0 8px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--radius);
-  background: var(--bg-2);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs);
-}
-.set-page input[type="text"] {
-  background: var(--bg-3);
-}
-.set-page input[type="text"]::placeholder {
-  color: var(--faint);
-}
-.set-page select:disabled {
-  color: var(--faint);
-}
 .set-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: calc(var(--spacing) * 2);
 }
 .set-actions a {
-  font-size: 12.5px;
+  font-size: var(--fs);
 }
 
-/* A checkbox drawn as a switch: a track with a knob, on when the knob is right and the track is accent. */
+/* A switch row: its label and state text on the left, the switch on the right. */
 .switches {
   display: grid;
-  gap: 4px;
+  gap: calc(var(--spacing) * 1);
 }
 .switch {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  min-height: 30px;
-  cursor: pointer;
+  gap: calc(var(--spacing) * 3);
+  min-height: var(--control-h);
 }
 .set-switch-text {
   flex: 1;
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: calc(var(--spacing) * 1);
 }
 
 /* ── forms: new link, Tailscale login, local-network address ── */
@@ -231,21 +213,19 @@ section.set {
 .login-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 10px;
+  gap: calc(var(--spacing) * 3);
   align-items: end;
 }
 .set-form {
   display: grid;
-  gap: 8px;
+  gap: calc(var(--spacing) * 2);
 }
 .field {
   display: grid;
   /* A select is as wide as its longest option unless its column may shrink. */
   grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
+  gap: calc(var(--spacing) * 1);
   min-width: 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
 }
 
 /* ── People: requests, links, devices ── */
@@ -260,27 +240,27 @@ ul.plain {
   list-style: none;
 }
 ul.set-asks {
-  gap: 10px;
+  gap: calc(var(--spacing) * 3);
 }
 .set-ask {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: calc(var(--spacing) * 3);
+  padding: calc(var(--spacing) * 3);
   border-radius: var(--radius-md);
   background: var(--surface);
 }
-.set-ask select {
-  height: var(--control-h);
+.set-ask > [data-slot="alert"] {
+  flex: 1 0 100%;
 }
 .set-avatar {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--control-h);
+  height: var(--control-h);
   border-radius: var(--pill);
   background: var(--line-2);
   color: var(--text);
@@ -294,14 +274,14 @@ ul.set-asks {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--spacing) * 1);
 }
 .set-line {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 10px 0;
+  gap: calc(var(--spacing) * 3);
+  padding: calc(var(--spacing) * 3) 0;
 }
 .set-line:first-child {
   padding-top: 0;
@@ -325,24 +305,24 @@ ul.set-asks {
       96px,
       0.8fr
     ) minmax(96px, 0.9fr) minmax(170px, 1.3fr);
-  gap: 14px;
+  gap: calc(var(--spacing) * 3);
 }
 .set-dev-head {
-  padding: 0 0 8px;
+  padding: 0 0 calc(var(--spacing) * 2);
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .set-dev {
   align-items: center;
-  padding: 10px 0;
+  padding: calc(var(--spacing) * 3) 0;
   border-top: 1px solid var(--line);
 }
 .set-cell {
   display: grid;
-  gap: 1px;
+  gap: calc(var(--spacing) * 1);
   min-width: 0;
   color: var(--text-2);
   overflow-wrap: anywhere;
@@ -364,13 +344,10 @@ ul.set-asks {
 }
 .set-dev .set-actions {
   justify-content: flex-end;
-  gap: 6px 12px;
-  font-size: 12.5px;
+  gap: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
 }
-.set-dev .set-actions select {
+.set-dev .set-actions [data-slot="select-trigger"] {
   width: 100%;
-  height: 28px;
-  font-size: var(--fs-sm);
 }
 @container (max-width: 760px) {
   .set-dev-head {
@@ -378,14 +355,14 @@ ul.set-asks {
   }
   .set-dev {
     grid-template-columns: minmax(0, 1fr);
-    gap: 3px;
-    padding: 12px 0;
+    gap: calc(var(--spacing) * 1);
+    padding: calc(var(--spacing) * 3) 0;
   }
   .set-dev .set-cell {
     display: block;
   }
   .set-dev .set-cell .meta {
-    margin-left: 6px;
+    margin-left: calc(var(--spacing) * 1.5);
   }
   .set-lbl {
     position: static;
@@ -397,23 +374,23 @@ ul.set-asks {
   }
   .set-dev .set-actions {
     justify-content: flex-start;
-    margin-top: 6px;
+    margin-top: calc(var(--spacing) * 2);
   }
-  .set-dev .set-actions select {
+  .set-dev .set-actions [data-slot="select-trigger"] {
     width: auto;
   }
 }
 
 /* ── Network ── */
 ul.plain {
-  gap: 6px;
+  gap: calc(var(--spacing) * 2);
 }
 .set-addrs li,
 .share-addr {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: calc(var(--spacing) * 2);
   min-width: 0;
 }
 .set-addrs code,
@@ -425,24 +402,24 @@ ul.plain {
   font-size: var(--fs-sm);
 }
 .set-pill {
-  padding: 1px 8px;
+  padding: calc(var(--spacing) * 0.5) calc(var(--spacing) * 2);
   border-radius: var(--pill);
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
 .set-block.setting {
-  gap: 8px;
+  gap: calc(var(--spacing) * 2);
 }
 .set-cmd {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(var(--spacing) * 2);
   min-width: 0;
-  margin-top: 2px;
-  padding: 6px 6px 6px 12px;
-  border-radius: var(--radius);
+  padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 1.5) calc(var(--spacing) * 1.5)
+    calc(var(--spacing) * 3);
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 .set-cmd code {
@@ -453,14 +430,17 @@ ul.plain {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.set-lan-address {
+  color: var(--text);
+}
 
 /* ── Review defaults ── */
 fieldset.modes {
   display: grid;
-  gap: 10px;
+  gap: calc(var(--spacing) * 3);
   min-width: 0;
   margin: 0;
-  padding: 14px 20px;
+  padding: calc(var(--spacing) * 4);
   border: 0;
   border-top: 1px solid var(--line);
 }
@@ -475,7 +455,7 @@ fieldset.modes legend {
 .set-opt {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 1px 10px;
+  gap: calc(var(--spacing) * 0.5) calc(var(--spacing) * 2.5);
   align-items: start;
 }
 .set-opt label {
@@ -487,13 +467,13 @@ fieldset.modes legend {
   grid-column: 2;
 }
 ul.set-viewing {
-  gap: 8px;
+  gap: calc(var(--spacing) * 2);
 }
 ul.set-viewing li {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 8px;
+  gap: calc(var(--spacing) * 2);
   min-width: 0;
 }
 ul.set-viewing .meta {
@@ -504,9 +484,9 @@ ul.set-viewing .meta {
 dl.facts {
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr);
-  gap: 8px 14px;
+  gap: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
   margin: 0;
-  padding: 14px 20px;
+  padding: calc(var(--spacing) * 4);
   border-top: 1px solid var(--line);
 }
 dl.facts dt {
@@ -521,19 +501,19 @@ dl.facts dd {
 
 /* ── Projects ── */
 ul.set-flush > li.set-line {
-  padding: 12px 20px;
+  padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
   border-top: 1px solid var(--line);
 }
 ul.folders {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 14px;
+  gap: calc(var(--spacing) * 1) calc(var(--spacing) * 3);
 }
 ul.folders li {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: calc(var(--spacing) * 2);
   min-width: 0;
 }
 ul.folders code {
@@ -545,50 +525,53 @@ ul.folders code {
   font-size: var(--fs-xs);
 }
 .set-page p.same {
-  margin-top: 4px;
+  margin-top: calc(var(--spacing) * 1);
 }
 
-/* ── narrow screens: tighter cards, 44px touch targets ── */
-@media (max-width: 767px) {
+/* ── narrow screens ── */
+@media (width < 768px) {
   .set-page {
-    gap: 16px;
+    gap: calc(var(--spacing) * 4);
   }
+  .new-link,
+  .login-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .set-opt {
+    align-items: center;
+  }
+  dl.facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: calc(var(--spacing) * 1);
+  }
+  dl.facts dd {
+    margin-bottom: calc(var(--spacing) * 2);
+  }
+}
+
+/* Phones: cards 12px, and every control a 44px touch target (shadcn buttons, fields, triggers). */
+@media (width <= 480px) {
   .set-head,
   .set-part,
   .set-block,
   .set-foot,
   fieldset.modes,
-  dl.facts,
-  ul.set-flush > li.set-line {
-    padding-left: 14px;
-    padding-right: 14px;
+  dl.facts {
+    padding: calc(var(--spacing) * 3);
   }
-  .set-ask {
-    padding: 12px;
+  ul.set-flush > li.set-line {
+    padding: calc(var(--spacing) * 3);
   }
   .set-nav a,
-  .set-page select,
-  .set-page input[type="text"],
   .switch,
-  .set-opt label {
+  .set-opt label,
+  .set-page [data-slot="button"],
+  .set-page [data-slot="select-trigger"],
+  .set-page [data-slot="input"] {
     min-height: var(--touch);
-  }
-  .set-page select,
-  .set-page input[type="text"] {
-    height: auto;
-  }
-  .set-opt {
-    align-items: center;
   }
   .set-opt label {
     display: flex;
     align-items: center;
-  }
-  dl.facts {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
-  }
-  dl.facts dd {
-    margin-bottom: 8px;
   }
 }

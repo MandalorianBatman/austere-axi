@@ -1,8 +1,7 @@
 /* The hub shell (shell.tsx): sidebar, Inbox · Pages · Notes · Runs, the phone tab bar. Tokens in tokens.css. */
 :root {
-  --side-w: 248px;
   --content-w: 1040px; /* the main column, padding included */
-  --tabbar-h: 66px; /* the phone tab bar (hub-narrow.css), padding included */
+  --tabbar-h: calc(var(--spacing) * 16.5); /* the phone tab bar (shell.tsx), padding included */
 }
 
 * {
@@ -42,44 +41,10 @@ em.gone {
   flex: none;
 }
 
-/* ── sidebar ── */
-.logo {
-  flex: none;
-}
-.logo-ground {
-  fill: var(--surface);
-}
-.logo-edge {
-  fill: none;
-  stroke: var(--line-3);
-}
-.logo-a {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 2.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* a search field: the sidebar's, and the Notes filter's */
-.count {
-  flex: none;
-  color: var(--muted);
-  font-size: 11px;
-  text-align: center;
-}
-.tabbar .count.need {
-  min-width: 22px;
-  padding: 1px 7px;
-  border-radius: var(--pill);
-  background: var(--amber-pill);
-  color: var(--amber);
-  font-weight: 600;
-}
 .dot {
   flex: none;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: var(--pill);
   background: var(--faint);
 }
@@ -101,8 +66,8 @@ em.gone {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
-  padding: 9px 16px;
+  gap: calc(var(--spacing) * 1) calc(var(--spacing) * 2);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 4);
   background: var(--surface);
 }
 .proj-row h2 {
@@ -120,36 +85,23 @@ em.gone {
   flex-basis: 100%;
   margin: 0;
 }
-.tabbar {
-  display: none;
-}
-.content {
-  /* A flex item of the inset: without min-width 0 it grows to its widest table row instead of scrolling or stacking. */
-  width: 100%;
-  min-width: 0;
-  max-width: var(--content-w);
-  margin: 0 auto;
-  padding: 32px 32px 56px;
-}
-.content:focus {
-  outline: none;
-}
+/* .content's own utilities are on its element (shell.tsx); a flex item of the inset needs min-width 0 there. */
 .view-h {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(var(--spacing) * 1);
 }
 .view-h.split {
   flex-direction: row;
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
+  gap: calc(var(--spacing) * 4);
 }
 .view-h.split > .view-h-text {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(var(--spacing) * 1);
 }
 h1 {
   margin: 0;
@@ -164,7 +116,7 @@ h1 q {
 }
 .summary,
 .notes-filter {
-  margin: 0 0 6px;
+  margin: 0 0 calc(var(--spacing) * 2);
   color: var(--muted);
 }
 .view-h .summary {
@@ -175,28 +127,28 @@ h1 q {
   font-weight: 500;
 }
 .view-h + .notes-filter {
-  margin-top: 12px;
+  margin-top: calc(var(--spacing) * 3);
 }
 section {
-  margin-top: 28px;
+  margin-top: calc(var(--spacing) * 6);
 }
-h2 {
+.content h2 {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: calc(var(--spacing) * 2);
   align-items: baseline;
-  margin: 0 0 10px;
+  margin: 0 0 calc(var(--spacing) * 2);
   font-size: var(--fs);
   font-weight: 600;
 }
-h2 .n {
+.content h2 .n {
   color: var(--muted);
   font-weight: 600;
 }
-h2 a {
+.content h2 a {
   color: var(--text);
 }
-h2 small {
+.content h2 small {
   color: var(--faint);
   font-weight: 400;
   font-size: var(--fs-sm);
@@ -206,9 +158,8 @@ h2 small {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 0 4px;
+  gap: calc(var(--spacing) * 2);
+  margin-bottom: calc(var(--spacing) * 2);
 }
 .sec-h h2 {
   margin: 0;
@@ -222,7 +173,7 @@ h2 small {
   font-size: var(--fs-sm);
 }
 p.same {
-  margin: 0 0 6px;
+  margin: 0 0 calc(var(--spacing) * 2);
   color: var(--muted);
   font-size: var(--fs-sm);
   overflow-wrap: anywhere;
@@ -231,20 +182,15 @@ p.same code {
   color: var(--text);
 }
 .empty {
-  margin: 6px 0;
-  padding: 0 4px;
+  margin: calc(var(--spacing) * 2) 0;
   color: var(--faint);
-}
-.error {
-  color: var(--red);
 }
 b.open {
   color: var(--amber);
   font-weight: 600;
 }
 .foot {
-  margin: 14px 0 0;
-  padding: 0 4px;
+  margin: calc(var(--spacing) * 3) 0 0;
   color: var(--faint);
   font-size: var(--fs-sm);
 }
@@ -253,8 +199,6 @@ code {
   font-size: var(--fs-xs);
   overflow-wrap: anywhere;
 }
-
-/* ── buttons ── */
 
 /* ── lists: a bordered card of rows ── */
 .rows,
@@ -277,22 +221,6 @@ code {
 .table li {
   border-top: 1px solid var(--line);
 }
-.row {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
-}
-.card .row {
-  border-bottom: 0;
-}
-.row-main {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
 .row-title {
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -314,42 +242,17 @@ code {
   white-space: nowrap;
 }
 .row-actions {
-  flex: none;
   display: flex;
-  gap: 6px;
 }
 
-/* inbox and search rows */
-.page-row {
-  flex-wrap: wrap;
-  gap: 14px;
-  padding: 14px 16px;
-}
-.page-row .row-main {
-  flex: 1 1 240px;
-  display: flex;
-  flex-direction: column;
-}
+/* inbox and search rows: the row's own layout is on its element (hub-parts.tsx PageRow) */
 .page-row .row-title {
   color: var(--text);
-  font-size: 14px;
 }
 .page-row .row-title:hover {
   color: var(--accent-hover);
 }
-.page-row .row-actions {
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
 .tile {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius);
   color: var(--faint);
 }
 .tile.amber {
@@ -368,24 +271,14 @@ code {
   background: var(--surface-2);
   color: var(--muted);
 }
-.page-row.quiet {
-  align-items: center;
-  padding-block: 8px;
-}
-.page-row.quiet .row-main {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-}
 .page-row.quiet .row-title {
   font-weight: 500;
 }
 .why {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-top: 3px;
+  gap: calc(var(--spacing) * 1);
+  margin-top: calc(var(--spacing) * 1);
 }
 .why li {
   color: var(--muted);
@@ -406,15 +299,12 @@ code {
 .previews {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
+  gap: calc(var(--spacing) * 2);
+  margin-top: calc(var(--spacing) * 2);
 }
 .previews li {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 .quote {
@@ -436,8 +326,8 @@ code.target {
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+  gap: calc(var(--spacing) * 2);
+  margin-top: calc(var(--spacing) * 2);
 }
 .chip-label {
   min-width: 0;
@@ -454,18 +344,6 @@ code.target {
 .chip.waiting .chip-note {
   color: var(--amber);
 }
-.more-trigger {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  padding: 0 10px;
-  border: 1px dashed var(--line-3);
-  border-radius: var(--pill);
-  background: none;
-  color: var(--accent);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
 .more[data-state="open"] {
   flex-basis: 100%;
 }
@@ -474,14 +352,14 @@ code.target {
   display: none;
 }
 .more > .chips {
-  margin: 8px 0 0;
+  margin: calc(var(--spacing) * 2) 0 0;
 }
 
 /* ── tables: Pages and Runs ── */
 .table {
   /* Tailwind has a `.table` utility (display: table) that is generated from this class name: say block. */
   display: block;
-  margin-top: 24px;
+  margin-top: calc(var(--spacing) * 6);
   container-type: inline-size;
 }
 .table ul {
@@ -490,9 +368,9 @@ code.target {
   padding: 0;
 }
 .thead {
-  padding: 10px 16px;
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 4);
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -509,30 +387,26 @@ code.target {
 .trow {
   display: grid;
   grid-template-columns: var(--cols);
-  gap: 16px;
+  gap: calc(var(--spacing) * 4);
   align-items: center;
 }
 .trow {
-  padding: 10px 16px;
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 4);
 }
 .t-page {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: calc(var(--spacing) * 2);
   min-width: 0;
 }
 .t-page .dot {
   width: 8px;
   height: 8px;
-  margin-top: 6px;
-}
-.trow .row-main {
-  gap: 2px;
+  margin-top: calc(var(--spacing) * 1.5);
 }
 .trow .row-title {
   display: block;
   color: var(--text);
-  font-size: 13.5px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -552,14 +426,10 @@ code.target {
 .t-copies .chips {
   margin: 0;
 }
-.t-copies .chip {
-  min-height: 24px;
-  padding: 0 9px;
-}
 .t-notes {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--spacing) * 1);
   min-width: 0;
 }
 .t-count {
@@ -592,18 +462,18 @@ code.target {
 .run {
   display: grid;
   grid-template-columns: var(--cols);
-  gap: 14px;
+  gap: calc(var(--spacing) * 4);
   align-items: center;
 }
 .run {
-  padding: 11px 16px;
+  padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
 }
 .rstat {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: calc(var(--spacing) * 2);
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 500;
 }
 .st-dot {
@@ -634,12 +504,11 @@ code.target {
 .run-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--spacing) * 1);
   min-width: 0;
 }
 .run-main > :first-child {
   color: var(--text);
-  font-size: 13.5px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -682,7 +551,7 @@ code.target {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 12px;
+    gap: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
   }
   .t-page,
   .run-main {
@@ -691,10 +560,10 @@ code.target {
   .t-copies,
   .t-notes {
     flex: 1 1 100%;
-    padding-left: 18px;
+    padding-left: calc(var(--spacing) * 4);
   }
   .trow > .when {
-    padding-left: 18px;
+    padding-left: calc(var(--spacing) * 4);
   }
   .trow .row-actions {
     margin-left: auto;
@@ -712,27 +581,27 @@ code.target {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin: 20px 0 0;
+  gap: calc(var(--spacing) * 2);
+  margin: calc(var(--spacing) * 4) 0 0;
 }
 .notes.card,
 .content > .card {
-  margin-top: 20px;
+  margin-top: calc(var(--spacing) * 4);
 }
 .note {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 6px 16px;
-  padding: 14px 16px;
+  gap: calc(var(--spacing) * 2) calc(var(--spacing) * 4);
+  padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
 }
 .st {
   flex: none;
   width: 104px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding-top: 2px;
+  gap: calc(var(--spacing) * 1.5);
+  padding-top: calc(var(--spacing) * 0.5);
   font-size: var(--fs-sm);
   font-weight: 500;
 }
@@ -753,7 +622,7 @@ code.target {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: calc(var(--spacing) * 2);
 }
 .note-main > a {
   color: var(--text);
@@ -763,13 +632,12 @@ code.target {
 }
 .note .quote {
   margin: 0;
-  font-size: 13.5px;
 }
 .note .meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: calc(var(--spacing) * 1) calc(var(--spacing) * 2);
   color: var(--faint);
 }
 .note b.by {
@@ -783,8 +651,8 @@ code.target {
   color: var(--accent-hover);
 }
 .note code.target {
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
+  padding: calc(var(--spacing) * 0.5) calc(var(--spacing) * 1.5);
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text-2);
 }
@@ -792,12 +660,12 @@ code.target {
   margin-left: auto;
 }
 .part {
-  padding: 12px 16px;
+  padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
 }
 .part > a {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--spacing) * 1);
 }
 .part-title {
   color: var(--text);
@@ -807,22 +675,13 @@ code.target {
   color: var(--text-2);
 }
 
-/* The shadcn Sidebar's width is the hub's. */
-.hub {
-  --sidebar-width: var(--side-w);
-}
-[data-sidebar="sidebar"] a:not(.all-projects),
-[data-sidebar="sidebar"] a:not(.all-projects):hover {
-  color: inherit;
-}
-
 /* The first tab stop: hidden until it has focus, then over the bar. */
 .skip-link {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  top: calc(var(--spacing) * 2);
+  left: calc(var(--spacing) * 2);
   z-index: 100;
-  padding: 8px 12px;
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
   border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-ink);

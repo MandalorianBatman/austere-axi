@@ -42,7 +42,7 @@ import {
 } from "./review-nav.ts";
 import type { Item } from "./review-nav.ts";
 
-const kbd = "rounded-sm border px-1.5 font-mono text-[10.5px] leading-[1.6] text-muted-foreground";
+const kbd = "rounded-sm border px-1.5 font-mono text-2xs leading-normal text-muted-foreground";
 
 /** The breadcrumb `Hub / ` before the title: the project's name once the hub has answered. On a phone, a back arrow. */
 export function Crumbs(): ReactElement {
@@ -55,7 +55,7 @@ export function Crumbs(): ReactElement {
           <BreadcrumbLink
             href={project ? `/?project=${encodeURIComponent(project.id)}` : "/"}
             title={project ? `${name} in the hub` : undefined}
-            className="inline-flex max-w-[180px] min-w-0 items-center rounded-xs max-[860px]:max-w-[22vw] max-[480px]:size-[var(--touch)] max-[480px]:max-w-none max-[480px]:justify-center max-[480px]:rounded-md max-[480px]:text-secondary-foreground"
+            className="inline-flex max-w-[180px] min-w-0 items-center rounded-sm max-[860px]:max-w-[22vw] max-[480px]:size-[var(--touch)] max-[480px]:max-w-none max-[480px]:justify-center max-[480px]:rounded-md max-[480px]:text-secondary-foreground"
           >
             <ChevronLeft aria-hidden="true" className="hidden size-5 flex-none max-[480px]:block" />
             <span className="truncate max-[480px]:sr-only">{name}</span>
@@ -170,7 +170,7 @@ function Row({ item, words }: { item: Item; words: string[] }): ReactElement {
       className="group min-h-12 gap-3 px-2.5 py-1"
     >
       {item.kind === "part" ? (
-        <span className="max-w-35 flex-none truncate rounded-xs bg-muted px-1.5 py-px font-mono text-[11px] text-secondary-foreground">
+        <span className="max-w-35 flex-none truncate rounded-sm bg-muted px-1.5 py-px font-mono text-2xs text-secondary-foreground">
           {item.chip}
         </span>
       ) : item.state ? (
@@ -184,13 +184,13 @@ function Row({ item, words }: { item: Item; words: string[] }): ReactElement {
         <FileText aria-hidden="true" className="flex-none" />
       )}
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className={cn("truncate text-[13.5px]", item.kind !== "part" && "font-medium")}>
+        <span className={cn("truncate text-sm", item.kind !== "part" && "font-medium")}>
           {item.kind === "part" ? <Marked text={item.title} words={words} /> : item.title}
         </span>
         <span
           className={cn(
-            "truncate text-[length:var(--fs-sm)] text-muted-foreground",
-            item.kind !== "part" && "font-mono text-[length:var(--fs-xs)]",
+            "truncate text-xs text-muted-foreground",
+            item.kind !== "part" && "font-mono text-2xs",
           )}
         >
           {item.sub}
@@ -199,7 +199,7 @@ function Row({ item, words }: { item: Item; words: string[] }): ReactElement {
       {item.meta ? (
         <span
           className={cn(
-            "max-w-[38%] flex-none truncate text-[length:var(--fs-sm)] whitespace-nowrap sm:max-w-none",
+            "max-w-[38%] flex-none truncate text-xs whitespace-nowrap sm:max-w-none",
             item.meta.changed ? "text-[var(--amber)]" : "text-muted-foreground",
           )}
         >
@@ -221,7 +221,8 @@ function Switcher(): ReactElement {
   const [query, setQuery] = useState("");
   const [recent] = useState(recentItems);
   /** The answer for one text: the list shows nothing older than the text in the field. */
-  const [answer, setAnswer] = useState<{ q: string; items: Item[] } | null>(null);
+  const [answer, setAnswer] = useState<{ q: string; items: Item[]; failed: boolean } | null>(null);
+  const [tries, setTries] = useState(0);
   const q = query.trim();
   const searching = q !== "" && answer?.q !== q;
   const items = !q ? recent : answer?.q === q ? answer.items : [];
@@ -230,14 +231,15 @@ function Switcher(): ReactElement {
     const ctl = new AbortController();
     const timer = setTimeout(() => {
       void search(q, ctl.signal).then((found) => {
-        if (!ctl.signal.aborted) setAnswer({ q, items: found ?? [] });
+        if (!ctl.signal.aborted) setAnswer({ q, items: found ?? [], failed: found === null });
       });
     }, 150);
     return () => {
       clearTimeout(timer);
       ctl.abort();
     };
-  }, [q]);
+  }, [q, tries]);
+  const failed = answer?.q === q && answer.failed;
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   return (
     <CommandDialog
@@ -259,11 +261,28 @@ function Switcher(): ReactElement {
         />
         <CommandList className="max-h-none flex-1 p-2">
           <CommandEmpty>
-            {searching
-              ? "Searching…"
-              : q
-                ? "Nothing matches."
-                : "No other page opened lately. Type to search every page."}
+            {searching ? (
+              "Searching…"
+            ) : failed ? (
+              <span className="flex flex-col items-center gap-2">
+                Could not reach austere-axi.
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setAnswer(null);
+                    setTries((n) => n + 1);
+                  }}
+                >
+                  Try again
+                </Button>
+              </span>
+            ) : q ? (
+              "Nothing matches."
+            ) : (
+              "No other page opened lately. Type to search every page."
+            )}
           </CommandEmpty>
           {GROUPS.map(([kind, heading]) => {
             const rows = items.filter((it) => it.kind === kind);
@@ -276,7 +295,7 @@ function Switcher(): ReactElement {
             ) : null;
           })}
         </CommandList>
-        <div className="flex flex-none flex-wrap items-center gap-x-3.5 gap-y-1.5 border-t bg-card px-4 py-2.5 text-[length:var(--fs-sm)] text-muted-foreground max-[480px]:py-0">
+        <div className="flex flex-none flex-wrap items-center gap-x-4 gap-y-2 border-t bg-card px-4 py-2.5 text-xs text-muted-foreground max-[480px]:py-0">
           <span className="flex items-center gap-1 max-[480px]:hidden">
             <kbd className={kbd}>↑</kbd>
             <kbd className={kbd}>↓</kbd> to move
@@ -289,7 +308,7 @@ function Switcher(): ReactElement {
           </span>
           <a
             href="/"
-            className="ml-auto inline-flex items-center rounded-xs text-secondary-foreground hover:text-foreground hover:underline max-[480px]:min-h-[var(--touch)]"
+            className="ml-auto inline-flex items-center rounded-sm text-secondary-foreground hover:text-foreground hover:underline max-[480px]:min-h-[var(--touch)]"
           >
             Open the hub
           </a>

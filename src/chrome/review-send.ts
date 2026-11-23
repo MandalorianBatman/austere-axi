@@ -17,7 +17,7 @@ export async function sendAll(end = false): Promise<void> {
   if (end && !OWNER) return;
   if (!items.length && !end) return void composerInput.current?.focus();
   if (HOSTED) return sendHosted(items);
-  set({ sending: true, composerError: "" });
+  set({ sending: true, composerError: "", composerRetry: false });
   try {
     const r = await fetch(`${BASE}/send`, {
       method: "POST",
@@ -25,14 +25,21 @@ export async function sendAll(end = false): Promise<void> {
       body: JSON.stringify({ items, end }),
     });
     const data: { error?: string; entry?: Entry } = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    if (!r.ok)
+      throw new Error(data.error || `The agent service answered ${r.status}`, { cause: "http" });
     setQueue([]);
     set({ draft: "" });
     const entry = data.entry;
     if (entry && !S().transcript.some((e) => e.id === entry.id))
       set({ transcript: [...S().transcript, entry] });
   } catch (err) {
-    set({ composerError: `Not sent: ${(err as Error).message}. Your notes are still queued.` });
+    set({
+      composerError:
+        err instanceof Error && err.cause === "http"
+          ? `Not sent: ${err.message}. Your notes are kept.`
+          : "Couldn't reach the agent. Your notes are kept.",
+      composerRetry: true,
+    });
   } finally {
     set({ sending: false });
   }

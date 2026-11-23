@@ -81,7 +81,7 @@ export function PanelHead(): ReactElement {
       <Button
         type="button"
         variant="ghost"
-        size="icon"
+        size="icon-sm"
         className="sheet-close"
         aria-label="Close the notes"
         onClick={() => setSheet(false)}

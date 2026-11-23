@@ -20,6 +20,7 @@ import {
 import { useReview } from "./review-store.ts";
 import type { AttachInfo, RunSummary } from "./review-types.ts";
 import { Button } from "@/chrome/ui/button";
+import { Label } from "@/chrome/ui/label";
 import { Input } from "@/chrome/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/chrome/ui/toggle-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/chrome/ui/popover";
@@ -148,11 +149,11 @@ function SessionChoice({
   disabled: boolean;
 }): ReactElement {
   return (
-    <label className="attach-radio attach-session">
+    <Label className="attach-radio attach-session font-normal">
       <RadioGroupItem value={value} disabled={disabled} />
       <span>{label}</span>
       {meta ? <small>{meta}</small> : null}
-    </label>
+    </Label>
   );
 }
 
@@ -223,14 +224,14 @@ function Settings({ info }: { info: AttachInfo }): ReactElement {
         aria-label="Attach"
         value={pageState}
         onValueChange={(next) => next && void saveAttach({ state: next as typeof pageState })}
-        className="w-full gap-0.5 rounded-lg border bg-muted p-[3px]"
+        className="w-full gap-0.5 rounded-lg border bg-muted p-0.5"
       >
         {STATES.map(([value, label]) => (
           <ToggleGroupItem
             key={value}
             value={value}
             data-attach={value}
-            className="h-[30px] flex-1 !rounded-md px-2 text-[12.5px] font-medium text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+            className="h-8 flex-1 !rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
             // An auto page may not end up on (Q3, A17): neither by On nor by going back to a project default that is on.
             disabled={
               busy ||
@@ -263,14 +264,12 @@ function Settings({ info }: { info: AttachInfo }): ReactElement {
             const cap = caps?.[m.id];
             const reason = cap && !cap.ok ? cap.reason : null;
             return (
-              <label
-                key={m.id}
-                className={`attach-radio${reason ? " disabled" : ""}`}
-                title={reason || m.hint}
-              >
+              <Label key={m.id} className={`attach-radio font-normal${reason ? " disabled" : ""}`}>
                 <RadioGroupItem value={m.id} disabled={fieldsOff || !!reason} />
                 <span>{m.label}</span>
-              </label>
+                {/* What the mode does, or why it is unavailable: text, not a hover title. */}
+                <small>{reason || m.hint}</small>
+              </Label>
             );
           })}
         </RadioGroup>
@@ -423,8 +422,7 @@ function Body(): ReactElement {
             type="button"
             variant="ghost"
             size="icon-sm"
-            className="attach-close"
-            aria-label="Close"
+            aria-label="Close the agent panel"
             onClick={closeAttach}
           >
             <Icon name="close" size={16} width={1.8} />

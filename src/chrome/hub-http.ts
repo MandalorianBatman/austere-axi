@@ -1,10 +1,14 @@
 // How the hub talks to /hub/api. The server answers only the owner (the cookie); this page holds no secret.
-import type { ArchiveResult } from "../shared/hub-api.ts";
-
 export class Refused extends Error {}
 
 export async function get<T>(route: string, signal?: AbortSignal): Promise<T> {
-  const r = await fetch(route, { headers: { accept: "application/json" }, signal });
+  let r: Response;
+  try {
+    r = await fetch(route, { headers: { accept: "application/json" }, signal });
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    throw new Error(UNREACHABLE);
+  }
   if (r.status === 403)
     throw new Refused(
       "This browser is not signed in as the owner. Run `austere-axi hub open` to sign in again.",
@@ -13,25 +17,13 @@ export async function get<T>(route: string, signal?: AbortSignal): Promise<T> {
   return (await r.json()) as T;
 }
 
-export async function post(route: string, body: object = {}): Promise<ArchiveResult | null> {
-  try {
-    const r = await fetch(route, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    return r.ok ? ((await r.json()) as ArchiveResult) : null;
-  } catch {
-    return null;
-  }
-}
-
 export const UNREACHABLE =
   "Could not reach austere-axi. Check that it is still running, then reload.";
+/** Why a read failed: what the server said (a refusal, an HTTP status), else that it could not be reached. */
 export const errorText = (err: unknown): string =>
-  err instanceof Refused ? err.message : UNREACHABLE;
+  err instanceof Error ? err.message : UNREACHABLE;
 
-/** POST for Settings: the answer, or the server's error text (or why it could not be reached). */
+/** POST: the answer, or the server's error text (or why it could not be reached). */
 export async function send<T>(
   route: string,
   body: object = {},

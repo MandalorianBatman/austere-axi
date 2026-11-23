@@ -33,7 +33,10 @@ export async function loadEarlier(): Promise<void> {
       more: !!d.more,
     });
   } catch (err) {
-    set({ composerError: `Could not load earlier messages: ${(err as Error).message}` });
+    set({
+      composerError: `Could not load earlier messages: ${(err as Error).message}`,
+      composerRetry: false,
+    });
   }
 }
 

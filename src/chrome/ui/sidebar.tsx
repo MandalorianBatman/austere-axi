@@ -88,18 +88,25 @@ function SidebarProvider({
     [setOpenProp, open]
   )
 
-  // Helper to toggle the sidebar.
+  // Helper to toggle the sidebar. austere-axi: a collapsing desktop sidebar goes `inert`; keep the focus that is inside it.
   const toggleSidebar = React.useCallback(() => {
-    return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
-  }, [isMobile, setOpen, setOpenMobile])
+    if (isMobile) return setOpenMobile((open) => !open)
+    const active = document.activeElement
+    if (open && active instanceof HTMLElement && active.closest('[data-slot="sidebar-container"]')) {
+      document.querySelector<HTMLElement>('[data-sidebar="trigger"]')?.focus()
+    }
+    return setOpen((open) => !open)
+  }, [isMobile, open, setOpen, setOpenMobile])
 
-  // Adds a keyboard shortcut to toggle the sidebar.
+  // Adds a keyboard shortcut to toggle the sidebar. austere-axi: not while typing in a field.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
         event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
         (event.metaKey || event.ctrlKey)
       ) {
+        const t = event.target
+        if (t instanceof HTMLElement && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName))) return
         event.preventDefault()
         toggleSidebar()
       }
@@ -182,8 +189,10 @@ function Sidebar({
 
   if (isMobile) {
     return (
-      <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
+      <Sheet open={openMobile} onOpenChange={setOpenMobile}>
         <SheetContent
+          id={props.id}
+          aria-describedby={undefined}
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
@@ -202,8 +211,7 @@ function Sidebar({
           side={side}
         >
           <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+            <SheetTitle>{props["aria-label"] ?? "Sidebar"}</SheetTitle>
           </SheetHeader>
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>
@@ -266,15 +274,17 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, isMobile, open, openMobile } = useSidebar()
 
   return (
     <Button
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
       variant="ghost"
-      size="icon"
-      className={cn("size-7", className)}
+      size="icon-sm"
+      aria-expanded={isMobile ? openMobile : open}
+      aria-keyshortcuts="Control+B Meta+B"
+      className={className}
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()

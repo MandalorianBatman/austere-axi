@@ -1021,8 +1021,9 @@ test("phone: Pages does not scroll sideways, the drawer closes after a pick, a d
     await page.click(".side-toggle");
     const drawer = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
     await drawer.waitFor();
-    await drawer.locator('a[data-view="notes"]').click();
-    await page.waitForURL(/view=notes/);
+    // The views live in the tab bar on a phone: the drawer's own links are the projects.
+    await drawer.locator(".proj-link").click();
+    await page.waitForURL(/project=/);
     await drawer.waitFor({ state: "detached" });
     const onToggle = () =>
       page.evaluate(() => document.activeElement?.classList.contains("side-toggle"));
@@ -1033,12 +1034,12 @@ test("phone: Pages does not scroll sideways, the drawer closes after a pick, a d
     await page.keyboard.press("Escape");
     await drawer.waitFor({ state: "detached" });
     await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
-    // Keyboard pick: focus the Runs link in the drawer, Enter.
+    // Keyboard pick: focus the "All" link in the drawer, Enter.
     await page.keyboard.press("Enter");
     await drawer.waitFor();
-    await drawer.locator('a[data-view="runs"]').focus();
+    await drawer.locator(".all-projects").focus();
     await page.keyboard.press("Enter");
-    await page.waitForURL(/view=runs/);
+    await page.waitForURL((u) => !u.search.includes("project="));
     await drawer.waitFor({ state: "detached" });
     await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
     assert.ok(await onToggle());

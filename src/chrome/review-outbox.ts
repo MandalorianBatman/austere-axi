@@ -176,7 +176,10 @@ export function settle(ack: AckFrame): void {
   showOutboxNotice();
   if (ack.error) {
     for (const item of done.m.args.items) addToQueue({ ...item });
-    set({ composerError: `Not sent: ${ack.error.message}. Your notes are back in the queue.` });
+    set({
+      composerError: `Couldn't send: ${ack.error.message}. Your notes are back in the queue.`,
+      composerRetry: true,
+    });
   }
   refreshPending();
 }

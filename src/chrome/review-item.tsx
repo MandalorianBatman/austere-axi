@@ -31,21 +31,27 @@ function Anchor({ item }: { item: QueueItem }): ReactElement | null {
   const a = anchorLabel(item);
   if (!a.text) return null;
   const reveal = item.kind === "annotation" || item.kind === "render-error";
+  const parts = (
+    <>
+      <span className="anchor-icon">{a.icon}</span>
+      <span className="anchor-text">{a.text}</span>
+      {a.sub ? <span className="anchor-sub">{a.sub}</span> : null}
+    </>
+  );
+  // Only an annotation or a render error has something to show in the page: the rest is a label, not a button.
+  if (!reveal) return <span className="anchor">{parts}</span>;
   return (
     <Button
       type="button"
       variant="ghost"
-      className="anchor"
+      className="anchor h-auto justify-start whitespace-normal"
       title={item.kind === "annotation" ? "Show in the page" : ""}
       onClick={() => {
-        if (!reveal) return;
         post({ type: "reveal", id: item.target || item.statement });
         if (isNarrow()) setSheet(false);
       }}
     >
-      <span className="anchor-icon">{a.icon}</span>
-      <span className="anchor-text">{a.text}</span>
-      {a.sub ? <span className="anchor-sub">{a.sub}</span> : null}
+      {parts}
     </Button>
   );
 }

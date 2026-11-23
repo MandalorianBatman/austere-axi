@@ -224,7 +224,7 @@ function ShareDialog({
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="sr-only">Name</FormLabel>
+                    <FormLabel>Their name</FormLabel>
                     <FormControl>
                       <Input
                         {...field}
@@ -232,7 +232,7 @@ function ShareDialog({
                         maxLength={40}
                         required
                         autoFocus
-                        placeholder="Their name"
+                        placeholder="For example, Ana"
                         autoComplete="off"
                       />
                     </FormControl>
@@ -278,8 +278,8 @@ function ShareDialog({
                         touched.current = true;
                       }}
                     >
-                      <Choice value="hold">Wait for me to send them on</Choice>
-                      <Choice value="auto">Go straight to the agent</Choice>
+                      <Choice value="hold">Hold notes for me</Choice>
+                      <Choice value="auto">Send notes straight to the agent</Choice>
                     </RadioGroup>
                   </fieldset>
                 )}

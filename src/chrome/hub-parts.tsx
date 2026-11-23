@@ -2,12 +2,12 @@
 import { Fragment, useRef, useState } from "react";
 import { Collapsible } from "radix-ui";
 import type { ReactElement, ReactNode } from "react";
-import type { InboxPage, ShellCopy, ShellPage } from "../shared/hub-api.ts";
+import type { ArchiveResult, InboxPage, ShellCopy, ShellPage } from "../shared/hub-api.ts";
 import { joinText, middle, plural, titleOf, when } from "./format.ts";
 import { Icon } from "./icon.tsx";
 import { tilde } from "./hub-env.ts";
 import type { IconName } from "./icons.ts";
-import { UNREACHABLE, openLink, post } from "./hub-http.ts";
+import { openLink, send } from "./hub-http.ts";
 import { go, reload, toUrl, useHub } from "./hub-store.ts";
 import { clearSay, fail, say } from "./hub-toast.ts";
 import { Badge } from "@/chrome/ui/badge";
@@ -130,7 +130,7 @@ function Chip({ c }: { c: ShellCopy }): ReactElement {
     <Badge
       asChild
       variant="outline"
-      className={`chip min-h-[26px] max-w-full gap-1.5 px-2.5 text-[var(--text-2)]${c.unanswered ? " waiting" : ""}${c.missing ? " gone border-dashed" : ""}`}
+      className={`chip min-h-6 max-w-full gap-1.5 px-2.5 text-[var(--text-2)] max-xs:min-h-9${c.unanswered ? " waiting" : ""}${c.missing ? " gone border-dashed" : ""}`}
     >
       <a href={openLink(c.id)} title={`${c.label} · ${c.file}`} data-copy={c.id}>
         <Icon name="branch" size={12} width={2} />
@@ -152,7 +152,7 @@ export function Chips({ copies, least = 2 }: { copies: ShellCopy[]; least?: numb
       ))}
       {rest.length ? (
         <Collapsible.Root className="more">
-          <Collapsible.Trigger className="more-trigger">
+          <Collapsible.Trigger className="inline-flex min-h-6 items-center rounded-md border border-dashed border-[var(--line-3)] px-2.5 text-xs text-primary max-xs:min-h-9">
             <span className="more-open">Show fewer</span>
             <span className="more-closed">+{rest.length} more</span>
           </Collapsible.Trigger>
@@ -230,7 +230,7 @@ function NotePreview({ notes }: { notes: InboxPage["notes"] }) {
   return (
     <ul className="previews">
       {notes.map((n, i) => (
-        <li key={i}>
+        <li key={i} className={`flex flex-col gap-1${i ? " max-xs:hidden" : ""}`}>
           <span className="quote">{n.text || "(no text)"}</span>
           <span className="by">
             {joined([
@@ -341,7 +341,7 @@ export function ArchiveButton({
         <Button
           type="button"
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           ref={btn}
           aria-label={label}
           disabled={busy}
@@ -357,11 +357,12 @@ export function ArchiveButton({
 
 /** Archive or unarchive a page's copies and offer the way back; false when the server did not take it. */
 async function flip(p: ShellPage, action: "archive" | "unarchive"): Promise<boolean> {
-  const done = await post(`/hub/api/page/${p.open_id}/${action}`);
-  if (!done) {
-    fail(`Could not ${action} ${titleOf(p)}. ${UNREACHABLE}`);
+  const res = await send<ArchiveResult>(`/hub/api/page/${p.open_id}/${action}`);
+  if (!res.ok) {
+    fail(`Could not ${action} ${titleOf(p)}. ${res.error}`);
     return false;
   }
+  const done = res.data;
   const undo = action === "archive" ? "unarchive" : "archive";
   // Every message this change has put up: a good Undo clears them, never another page's message.
   const mine: number[] = [];
@@ -369,9 +370,12 @@ async function flip(p: ShellPage, action: "archive" | "unarchive"): Promise<bool
     label: "Undo",
     // Exactly the copies the action changed: a copy archived before stays archived.
     onClick: async (): Promise<void> => {
-      if (!(await post(`/hub/api/page/${p.open_id}/${undo}`, { ids: done.ids }))) {
+      const back = await send<ArchiveResult>(`/hub/api/page/${p.open_id}/${undo}`, {
+        ids: done.ids,
+      });
+      if (!back.ok) {
         // Keep the way back: the owner can try again once austere-axi answers.
-        mine.push(fail(`Could not undo. ${UNREACHABLE}`, { action: undoAction }));
+        mine.push(fail(`Could not undo. ${back.error}`, { action: undoAction }));
         return;
       }
       clearSay(mine);
@@ -393,23 +397,35 @@ export function PageRow({
   showProject = false,
   notes = [],
   archivedView = false,
+  card = false,
 }: {
   p: ShellPage;
   showProject?: boolean;
   notes?: InboxPage["notes"];
   archivedView?: boolean;
+  /** On a phone the row is a card of its own (the Inbox); elsewhere it stays a row of the list. */
+  card?: boolean;
 }): ReactElement {
   const main = p.copies.find((c) => c.id === p.open_id) ?? p.copies[0];
   const facts = joined([...stateWords(p), ...counts(p)]);
   const [name, tone] = tileOf(p);
   const time = when(p.activity);
+  const quiet = p.group === "quiet";
   return (
-    <li className={`row page-row ${p.group}`} data-page={p.id}>
-      <span className={`tile ${tone}`} aria-hidden="true">
+    <li
+      className={`row page-row ${p.group} flex flex-wrap gap-3 px-4 max-xs:p-3 ${quiet ? "items-center py-2 max-xs:py-2" : "items-start py-3"}${card ? " max-xs:rounded-lg max-xs:border max-xs:border-[var(--line)] max-xs:bg-[var(--bg-2)]" : ""}`}
+      data-page={p.id}
+    >
+      <span
+        className={`tile ${tone} flex size-8 shrink-0 items-center justify-center rounded-md max-xs:size-9`}
+        aria-hidden="true"
+      >
         <Icon name={name} size={16} width={1.8} />
       </span>
-      <div className="row-main">
-        <a className="row-title" href={openLink(p.open_id)} title={main?.file ?? ""}>
+      <div
+        className={`row-main flex min-w-0 flex-[1_1_15rem] ${quiet ? "flex-row flex-wrap items-baseline gap-x-3 gap-y-1" : "flex-col gap-1"}`}
+      >
+        <a className="row-title max-xs:text-md" href={openLink(p.open_id)} title={main?.file ?? ""}>
           {titleOf(p)}
         </a>
         <span className="path">{showProject ? `${p.project} / ${p.rel_path}` : p.rel_path}</span>
@@ -418,7 +434,7 @@ export function PageRow({
         <NotePreview notes={notes} />
         <Chips copies={p.copies} />
       </div>
-      <div className="row-actions">
+      <div className="row-actions ml-auto shrink-0 items-center gap-2 max-xs:basis-full max-xs:justify-end">
         {time ? <span className="when">{time}</span> : null}
         <NextStep p={p} />
         <ArchiveButton p={p} archivedView={archivedView} />

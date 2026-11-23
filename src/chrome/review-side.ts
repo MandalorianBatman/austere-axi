@@ -8,18 +8,21 @@ import type {
   ShellPage,
 } from "../shared/hub-api.ts";
 import { get } from "./hub-http.ts";
+import type { SideStatus } from "./views.ts";
 import { CLOSED_PROJECTS, store, stored } from "./side-state.ts";
 
 interface SideState {
   projects: ProjectSummary[];
   pages: ShellPage[];
   closed: string[];
+  status: SideStatus;
 }
 
 export const useSide = create<SideState>()(() => ({
   projects: [],
   pages: [],
   closed: stored<string[]>(CLOSED_PROJECTS, []),
+  status: "loading",
 }));
 
 export function toggleClosed(id: string): void {
@@ -30,15 +33,17 @@ export function toggleClosed(id: string): void {
   useSide.setState({ closed: next });
 }
 
-/** Reads the lists again. A failure leaves the old ones: the sidebar is a convenience, the review is the page. */
+/** Reads the lists again. A failure leaves the old ones and says so in `status`: the sidebar is a convenience, the review is the page. */
 export async function loadSide(signal: AbortSignal): Promise<void> {
   try {
     const [p, pg] = await Promise.all([
       get<ProjectsResponse>("/hub/api/projects", signal),
       get<PagesResponse>("/hub/api/pages", signal),
     ]);
-    if (!signal.aborted) useSide.setState({ projects: p.projects, pages: pg.pages });
+    if (!signal.aborted)
+      useSide.setState({ projects: p.projects, pages: pg.pages, status: "ready" });
   } catch {
-    // not signed in as the owner, or the server is gone: the sidebar stays as it was
+    // not signed in as the owner, or the server is gone: the sidebar keeps what it had
+    if (!signal.aborted) useSide.setState({ status: "error" });
   }
 }
