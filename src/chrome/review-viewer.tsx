@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import { Icon } from "./icon.tsx";
 import { ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
-import { BOOT, HOSTED, OWNER } from "./review-env.ts";
+import { BOOT, HOSTED, OWNER, shortcut } from "./review-env.ts";
 import { archivePage, openShare, unarchivePage } from "./review-page.ts";
 import { copyAgentPrompt, copyText, loadAgentPrompt } from "./review-clipboard.ts";
 import { post, setFrame } from "./review-bridge.ts";
@@ -64,6 +64,13 @@ export function ModeSwitch(): ReactElement {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && (e.key === "i" || e.key === "I")) {
+        // Typing: Ctrl/⌘+I is the field's (italic, or nothing), not the page mode's.
+        const t = e.target;
+        if (
+          t instanceof HTMLElement &&
+          (t.isContentEditable || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement)
+        )
+          return;
         e.preventDefault();
         setMode(S().mode === "annotate" ? "explore" : "annotate");
       }
@@ -72,7 +79,7 @@ export function ModeSwitch(): ReactElement {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
   const item =
-    "h-[26px] gap-1.5 !rounded-md px-2.5 text-[12.5px] font-medium text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-secondary data-[state=on]:font-semibold data-[state=on]:text-foreground data-[state=on]:[&_svg]:text-primary max-[480px]:size-[var(--touch)] max-[480px]:px-0 max-[480px]:[&_svg]:size-5";
+    "h-6 gap-1.5 !rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-secondary data-[state=on]:font-semibold data-[state=on]:text-foreground data-[state=on]:[&_svg]:text-primary max-xs:size-[var(--touch)] max-xs:px-0 max-xs:[&_svg]:size-5";
   return (
     <>
       <ToggleGroup
@@ -81,7 +88,7 @@ export function ModeSwitch(): ReactElement {
         value={shown}
         // Clicking the chosen item again would clear it: a mode is always on.
         onValueChange={(next) => next && setMode(next as Mode)}
-        className="gap-0.5 rounded-lg border bg-card p-[3px] max-[480px]:flex-none max-[480px]:bg-muted max-[480px]:p-0.5"
+        className="gap-0.5 rounded-lg border bg-card p-0.5 max-xs:flex-none max-xs:bg-muted max-xs:p-0.5"
       >
         <ToggleGroupItem
           value="annotate"
@@ -90,21 +97,21 @@ export function ModeSwitch(): ReactElement {
           title={
             archived
               ? "The page is archived: it takes no notes"
-              : "Click anything to comment on it (⌘/Ctrl+I)"
+              : `Click anything to comment on it (${shortcut("I")})`
           }
           className={item}
         >
           <Icon name="annotate" size={14} width={1.9} />
-          <span className="max-[480px]:sr-only">Annotate</span>
+          <span className="max-xs:sr-only">Annotate</span>
         </ToggleGroupItem>
         <ToggleGroupItem
           value="explore"
           data-mode="explore"
-          title="Use the page normally: tabs, forms, links (⌘/Ctrl+I)"
+          title={`Use the page normally: tabs, forms, links (${shortcut("I")})`}
           className={item}
         >
           <Icon name="explore" size={14} width={1.9} />
-          <span className="max-[480px]:sr-only">Explore</span>
+          <span className="max-xs:sr-only">Explore</span>
         </ToggleGroupItem>
       </ToggleGroup>
       <span className="subbar-hint">
@@ -142,7 +149,7 @@ export function Frame(): ReactElement {
   );
 }
 
-const ITEM = "max-[480px]:min-h-[var(--touch)]";
+const ITEM = "max-xs:min-h-[var(--touch)]";
 
 /** The ⋯ menu. Choosing an item closes it; the share note and a download in progress keep it open. */
 export function MoreMenu(): ReactElement {
@@ -180,12 +187,12 @@ export function MoreMenu(): ReactElement {
             <DropdownMenuItem
               data-cmd="goto"
               className={ITEM}
-              title="Pages and parts of every project (Ctrl/Cmd+K)"
+              title={`Pages and parts of every project (${shortcut("K")})`}
               // After the menu has closed and given its focus back, as the dialog takes focus.
               onSelect={() => setTimeout(() => openSwitcher(trigger.current), 0)}
             >
               Go to page…
-              <DropdownMenuShortcut>Ctrl K</DropdownMenuShortcut>
+              <DropdownMenuShortcut>{shortcut("K")}</DropdownMenuShortcut>
             </DropdownMenuItem>
             <DropdownMenuItem
               data-cmd="next-unanswered"
@@ -245,7 +252,7 @@ export function MoreMenu(): ReactElement {
             className="max-w-75 cursor-text px-2.5 py-2 text-[length:var(--fs-sm)] leading-[1.45] text-muted-foreground"
           >
             Only the owner can share this page. To invite someone, they run
-            <code className="my-1 block text-[11px] whitespace-nowrap text-foreground select-all">
+            <code className="my-1 block text-2xs whitespace-nowrap text-foreground select-all">
               austere-axi publish &lt;file&gt; --invite "Name"
             </code>
             which prints a link for that person.
@@ -309,15 +316,26 @@ export function HostedFoot(): ReactElement | null {
   const [reason, setReason] = useState("");
   const [status, setStatus] = useState("");
   const [done, setDone] = useState(false);
-  // Opening the box puts the cursor in it.
+  const [sending, setSending] = useState(false);
+  const openButton = useRef<HTMLButtonElement>(null);
+  const doneText = useRef<HTMLSpanElement>(null);
+  const wasOpen = useRef(false);
+  // Opening the box puts the cursor in it; closing it (Cancel) gives the keyboard back to Report.
   useEffect(() => {
     if (open) document.getElementById("austere-report")?.focus();
+    else if (wasOpen.current) openButton.current?.focus();
+    wasOpen.current = open;
   }, [open]);
+  // A sent report replaces the Report button: the keyboard goes to the thanks, which is announced.
+  useEffect(() => {
+    if (done) doneText.current?.focus();
+  }, [done]);
   if (!HOSTED) return null;
   const report = HOSTED.report;
   const send = async (): Promise<void> => {
     const text = reason.trim();
-    if (!text || !report) return;
+    if (!text || !report || sending) return;
+    setSending(true);
     setStatus("Sending…");
     try {
       const invite = getInvite();
@@ -331,10 +349,17 @@ export function HostedFoot(): ReactElement | null {
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setReason("");
+      setStatus("");
       setOpen(false);
       setDone(true);
     } catch (err) {
-      setStatus(`Not sent: ${(err as Error).message}`);
+      setStatus(
+        err instanceof Error && err.message.startsWith("HTTP ")
+          ? `The service answered ${err.message.slice(5)}. Your report is still here: try again.`
+          : "Couldn't reach the service. Your report is still here: try again.",
+      );
+    } finally {
+      setSending(false);
     }
   };
   return (
@@ -357,11 +382,13 @@ export function HostedFoot(): ReactElement | null {
             onChange={(e) => setReason(e.target.value)}
           />
           <div className="report-row">
-            <span className="report-status">{status}</span>
+            <span className="report-status" role="status">
+              {status}
+            </span>
             <Button type="button" size="xs" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" size="xs">
+            <Button type="submit" size="xs" disabled={!reason.trim() || sending}>
               Send report
             </Button>
           </div>
@@ -379,12 +406,15 @@ export function HostedFoot(): ReactElement | null {
           <>
             <span aria-hidden="true">·</span>
             {done ? (
-              <span className="report-done">Reported. Thank you.</span>
+              <span className="report-done" role="status" tabIndex={-1} ref={doneText}>
+                Reported. Thank you.
+              </span>
             ) : (
               <Button
                 type="button"
                 variant="link"
                 size="xs"
+                ref={openButton}
                 className="report-open h-auto p-0 font-[inherit] text-muted-foreground no-underline hover:text-foreground hover:underline"
                 onClick={() => {
                   setOpen(true);

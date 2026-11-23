@@ -32,24 +32,62 @@ import {
   stateWords,
 } from "./hub-parts.tsx";
 import { Icon } from "./icon.tsx";
+import { Alert, AlertDescription, AlertTitle } from "@/chrome/ui/alert";
 import { Button } from "@/chrome/ui/button";
+import { Label } from "@/chrome/ui/label";
 import { Input } from "@/chrome/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/chrome/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/chrome/ui/tabs";
-import { go, useHub } from "./hub-store.ts";
+import { go, reload, useHub } from "./hub-store.ts";
 
-/** The loaded answer, or its error; nothing while the first read is on its way. */
+/** The loaded answer, or its error; nothing while the first read is on its way. An error never replaces the h1: `title` stands in for it, and a failed refresh shows above the answer already on screen. */
+/** Selector of what takes focus when the Notes filter form remounts after a changed filter. */
+let refocusFilter: string | null = null;
+
 function Loaded<A, T>({
   result,
+  title,
   children,
 }: {
   result: { loaded: { args: A; data: T } | null; error: string | null };
+  title: string;
   children: (args: A, data: T) => ReactNode;
 }): ReactElement | null {
-  if (result.error) return <p className="error">{result.error}</p>;
-  if (!result.loaded) return <ViewSkeleton />;
-  return <>{children(result.loaded.args, result.loaded.data)}</>;
+  const alert = result.error ? (
+    <Alert variant="destructive" className="mb-4">
+      <AlertTitle>Could not load {title}</AlertTitle>
+      <AlertDescription>
+        <p>{result.error}</p>
+        <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={reload}>
+          Try again
+        </Button>
+      </AlertDescription>
+    </Alert>
+  ) : null;
+  if (!result.loaded)
+    return result.error ? (
+      <>
+        <header className="view-h">
+          <h1>{title}</h1>
+        </header>
+        {alert}
+      </>
+    ) : (
+      <ViewSkeleton />
+    );
+  return (
+    <>
+      {alert}
+      {children(result.loaded.args, result.loaded.data)}
+    </>
+  );
 }
+
+const NO_PAGES = (
+  <>
+    No pages yet. Run <code>austere-axi open &lt;file&gt;</code> and the page shows up here.
+  </>
+);
 
 // ── Inbox ──
 
@@ -83,9 +121,9 @@ function Group({
 
 function InboxRows({ list, showProject }: { list: InboxPage[]; showProject: boolean }) {
   return (
-    <ul className="rows card">
+    <ul className="rows flex flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--bg-2)] [&>li+li]:border-t [&>li+li]:border-[var(--line)] max-xs:gap-2 max-xs:overflow-visible max-xs:rounded-none max-xs:border-0 max-xs:bg-transparent">
       {list.map((p) => (
-        <PageRow key={p.id} p={p} showProject={showProject} notes={p.notes} />
+        <PageRow key={p.id} p={p} showProject={showProject} notes={p.notes} card />
       ))}
     </ul>
   );
@@ -97,7 +135,7 @@ export function InboxView(): ReactElement {
     get<InboxResponse>(`/hub/api/inbox${query({ project: a.project })}`, signal),
   );
   return (
-    <Loaded result={result}>
+    <Loaded result={result} title="Inbox">
       {(a, data) => {
         const all = data.needs_you.length + data.waiting_on_agent.length + data.quiet.length;
         if (!all)
@@ -107,11 +145,7 @@ export function InboxView(): ReactElement {
                 <h1>Inbox</h1>
               </header>
               <ProjectFilter asked={a.project} project={data.project} />
-              <Empty>
-                {a.project
-                  ? "Nothing is open for review in this project."
-                  : "No pages yet. Open one for review with austere-axi and it shows up here."}
-              </Empty>
+              <Empty>{a.project ? "Nothing is open for review in this project." : NO_PAGES}</Empty>
             </>
           );
         const waiting = data.waiting_on_agent.length;
@@ -229,30 +263,32 @@ function TableRow({ p, archivedView }: { p: ShellPage; archivedView: boolean }) 
         ? "live"
         : "idle";
   return (
-    <li className={`row page-row trow ${p.group}`} data-page={p.id}>
-      <div className="t-page">
+    <li className={`row page-row trow ${p.group}`} data-page={p.id} role="row">
+      <div className="t-page" role="cell">
         <span
           className={`dot ${dot}`}
           role="img"
           aria-label={p.failed ? "Agent run failed" : (GROUP_LABEL[p.group] ?? p.group)}
         />
-        <div className="row-main">
+        <div className="row-main flex min-w-0 flex-[1_1_15rem] flex-col gap-1">
           <a className="row-title" href={openLink(p.open_id)} title={main?.file ?? ""}>
             {titleOf(p)}
           </a>
           <span className="path">{p.rel_path}</span>
         </div>
       </div>
-      <div className="t-copies">
+      <div className="t-copies" role="cell">
         <Chips copies={p.copies} least={1} />
       </div>
-      <div className="t-notes">
+      <div className="t-notes" role="cell">
         {count.length ? <span className="t-count">{count}</span> : null}
         <NotesLine p={p} />
         {words.length ? <span className="meta">{words}</span> : null}
       </div>
-      <span className="when">{when(p.activity)}</span>
-      <div className="row-actions">
+      <span className="when" role="cell">
+        {when(p.activity)}
+      </span>
+      <div className="row-actions shrink-0 items-center gap-2" role="cell">
         <ArchiveButton p={p} archivedView={archivedView} />
       </div>
     </li>
@@ -267,7 +303,7 @@ export function PagesView(): ReactElement {
     get<PagesResponse>(`/hub/api/pages${query({ project: a.project, view: a.pagesView })}`, signal),
   );
   return (
-    <Loaded result={result}>
+    <Loaded result={result} title="Pages">
       {(a, data) => {
         const { counts } = data;
         const unanswered = data.pages.reduce((n, p) => n + p.unanswered, 0);
@@ -318,8 +354,7 @@ export function PagesView(): ReactElement {
             ),
           );
           let body: ReactNode;
-          if (counts.everything === 0 && !a.project)
-            body = "No pages yet. Open one for review with austere-axi and it shows up here.";
+          if (counts.everything === 0 && !a.project) body = NO_PAGES;
           else if (a.pagesView === "archived")
             body = (
               <>
@@ -359,13 +394,19 @@ export function PagesView(): ReactElement {
         const archivedView = a.pagesView === "archived";
         return wrap(
           <>
-            <div className={`table card pages-table${archivedView ? " archived" : ""}`}>
-              <div className="thead" aria-hidden="true">
+            <div
+              className={`table card pages-table${archivedView ? " archived" : ""}`}
+              role="table"
+              aria-label="Pages"
+            >
+              <div className="thead" role="row">
                 {["Page", "Copies", "Notes", "Last activity", ""].map((t, i) => (
-                  <span key={i}>{t}</span>
+                  <span key={i} role="columnheader">
+                    {t || <span className="sr-only">Actions</span>}
+                  </span>
                 ))}
               </div>
-              <ul className="rows">
+              <ul className="rows" role="rowgroup">
                 {[...byProject].map(([id, list]) => {
                   const pinfo = info.get(id);
                   const roots = pinfo?.roots ?? [];
@@ -375,28 +416,30 @@ export function PagesView(): ReactElement {
                     : "";
                   return (
                     <ProjectRows key={id}>
-                      <li className="proj-row">
-                        <h2>
-                          <ViewLink next={{ project: id }}>{list[0].project}</ViewLink>
-                        </h2>
-                        {where ? (
-                          <small className="path" title={roots.join("\n")}>
-                            {where}
-                          </small>
-                        ) : null}
-                        {waiting ? (
-                          <span
-                            className={`proj-wait${list.some((p) => p.needs_you) ? " need" : ""}`}
-                          >
-                            {waiting} unanswered
-                          </span>
-                        ) : null}
-                        {pinfo?.same_as ? (
-                          <p className="same">
-                            Same repository as project {pinfo.same_as.name}:{" "}
-                            <code>{pinfo.same_as.merge}</code>
-                          </p>
-                        ) : null}
+                      <li className="proj-row" role="row">
+                        <div className="contents" role="cell">
+                          <h2>
+                            <ViewLink next={{ project: id }}>{list[0].project}</ViewLink>
+                          </h2>
+                          {where ? (
+                            <small className="path" title={roots.join("\n")}>
+                              {where}
+                            </small>
+                          ) : null}
+                          {waiting ? (
+                            <span
+                              className={`proj-wait${list.some((p) => p.needs_you) ? " need" : ""}`}
+                            >
+                              {waiting} unanswered
+                            </span>
+                          ) : null}
+                          {pinfo?.same_as ? (
+                            <p className="same">
+                              Same repository as project {pinfo.same_as.name}:{" "}
+                              <code>{pinfo.same_as.merge}</code>
+                            </p>
+                          ) : null}
+                        </div>
                       </li>
                       {list.map((p) => (
                         <TableRow key={p.id} p={p} archivedView={archivedView} />
@@ -443,7 +486,7 @@ export function NotesView(): ReactElement {
     get<NotesResponse>(`/hub/api/notes${query(a)}`, signal),
   );
   return (
-    <Loaded result={result}>
+    <Loaded result={result} title="Notes">
       {(a, data) => {
         const waiting = data.notes.filter((n) => n.status !== "addressed").length;
         const filtered = a.q || a.project || a.author || a.device || a.status;
@@ -458,6 +501,12 @@ export function NotesView(): ReactElement {
             <form
               // The filters the URL names; typing is the form's own until it is submitted.
               key={JSON.stringify([a.q, a.status, a.author])}
+              ref={(el) => {
+                // The remount that follows a changed filter drops focus: put it back.
+                if (!el || !refocusFilter) return;
+                el.querySelector<HTMLElement>(refocusFilter)?.focus();
+                refocusFilter = null;
+              }}
               className="filters flex flex-wrap items-center gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -468,8 +517,17 @@ export function NotesView(): ReactElement {
                 };
                 // Reviewer names are the picker's values after a prefix, so a reviewer named "all" is not "everyone".
                 const author = pick("author").replace(/^a:/, "");
+                const q = String(f.get("q") ?? "");
+                if (
+                  JSON.stringify([q, pick("status"), author]) !==
+                  JSON.stringify([a.q, a.status, a.author])
+                )
+                  refocusFilter =
+                    document.activeElement?.getAttribute("name") === "q"
+                      ? "input[name=q]"
+                      : "button[type=submit]";
                 go(null, {
-                  q: String(f.get("q") ?? ""),
+                  q,
                   status: pick("status"),
                   author,
                 });
@@ -491,8 +549,11 @@ export function NotesView(): ReactElement {
                   aria-label="Search notes"
                 />
               </div>
+              <Label htmlFor="notes-status" className="text-muted-foreground">
+                Status
+              </Label>
               <Select name="status" defaultValue={a.status || ALL}>
-                <SelectTrigger aria-label="Status" className="min-w-32">
+                <SelectTrigger id="notes-status" className="min-w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -502,20 +563,25 @@ export function NotesView(): ReactElement {
                 </SelectContent>
               </Select>
               {data.authors.length ? (
-                <Select name="author" defaultValue={a.author ? `a:${a.author}` : ALL}>
-                  <SelectTrigger aria-label="Author" className="min-w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>Everyone</SelectItem>
-                    <SelectItem value="a:owner">Owner</SelectItem>
-                    {data.authors.map((x) => (
-                      <SelectItem key={x} value={`a:${x}`}>
-                        {x}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <>
+                  <Label htmlFor="notes-author" className="text-muted-foreground">
+                    Author
+                  </Label>
+                  <Select name="author" defaultValue={a.author ? `a:${a.author}` : ALL}>
+                    <SelectTrigger id="notes-author" className="min-w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>Everyone</SelectItem>
+                      <SelectItem value="a:owner">Owner</SelectItem>
+                      {data.authors.map((x) => (
+                        <SelectItem key={x} value={`a:${x}`}>
+                          {x}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
               ) : null}
               <Button type="submit">Filter</Button>
             </form>
@@ -533,7 +599,18 @@ export function NotesView(): ReactElement {
                 ))}
               </ul>
             ) : (
-              <Empty>{filtered ? "No notes match." : "No notes yet."}</Empty>
+              <Empty>
+                {filtered ? (
+                  <>
+                    No notes match.{" "}
+                    <ViewLink next={{ q: "", status: "", author: "", device: "", project: "" }}>
+                      Clear the filters
+                    </ViewLink>
+                  </>
+                ) : (
+                  "No notes yet. Notes you write on a page show up here."
+                )}
+              </Empty>
             )}
           </>
         );
@@ -593,12 +670,12 @@ function Run({ r }: { r: RunItem }) {
       ? `${Math.max(1, Math.round((r.ended_at - r.started_at) / 1000))} s`
       : "";
   return (
-    <li className={`run ${r.status}`}>
-      <span className={`rstat ${r.status}`}>
+    <li className={`run ${r.status}`} role="row">
+      <span className={`rstat ${r.status}`} role="cell">
         <span className="st-dot" aria-hidden="true" />
         {RUN_STATUS[r.status] ?? r.status}
       </span>
-      <div className="run-main">
+      <div className="run-main" role="cell">
         {r.artifact_id ? (
           <a href={openLink(r.artifact_id)} title={r.file ?? ""}>
             {r.title || basename(r.file ?? r.artifact_id)}
@@ -608,9 +685,15 @@ function Run({ r }: { r: RunItem }) {
         )}
         {r.reason ? <span className="run-why">{r.reason.replace(/_/g, " ")}</span> : null}
       </div>
-      <span className="agent">{joinText([r.harness, r.mode])}</span>
-      <span className="when">{when(r.started_at)}</span>
-      <span className="took">{took}</span>
+      <span className="agent" role="cell">
+        {joinText([r.harness, r.mode])}
+      </span>
+      <span className="when" role="cell">
+        {when(r.started_at)}
+      </span>
+      <span className="took" role="cell">
+        {took}
+      </span>
     </li>
   );
 }
@@ -621,7 +704,7 @@ export function RunsView(): ReactElement {
     get<HubRunsResponse>(`/hub/api/runs${query({ project: a.project })}`, signal),
   );
   return (
-    <Loaded result={result}>
+    <Loaded result={result} title="Runs">
       {(a, data) => (
         <>
           <header className="view-h">
@@ -632,13 +715,15 @@ export function RunsView(): ReactElement {
           </header>
           <ProjectFilter asked={a.project} project={data.project} />
           {data.runs.length ? (
-            <div className="table card runs-table">
-              <div className="thead" aria-hidden="true">
+            <div className="table card runs-table" role="table" aria-label="Runs">
+              <div className="thead" role="row">
                 {["Status", "Page", "Agent", "Started", "Took"].map((t) => (
-                  <span key={t}>{t}</span>
+                  <span key={t} role="columnheader">
+                    {t}
+                  </span>
                 ))}
               </div>
-              <ul className="runs">
+              <ul className="runs" role="rowgroup">
                 {data.runs.map((r, i) => (
                   <Run key={`${r.artifact_id}:${r.started_at}:${i}`} r={r} />
                 ))}
@@ -646,7 +731,8 @@ export function RunsView(): ReactElement {
             </div>
           ) : (
             <Empty>
-              No runs yet. Turn an agent on in a page's Agent menu and the owner's notes start one.
+              No runs yet. Turn an agent on in a page's Agent menu, then write a note there and it
+              starts one.
             </Empty>
           )}
         </>
@@ -674,39 +760,52 @@ export function SearchView(): ReactElement {
   const result = useLoad({ q }, (a, signal) =>
     get<SearchResponse>(`/hub/api/search${query({ q: a.q })}`, signal),
   );
+  const { loaded } = result;
   return (
-    <Loaded result={result}>
-      {(_, data) => (
-        <>
-          <header className="view-h">
-            <h1>
-              Search: <q>{data.q}</q>
-            </h1>
-          </header>
-          <Section title="Pages" count={data.pages.length}>
-            {data.pages.length ? (
-              <ul className="rows card">
-                {data.pages.map((p) => (
-                  <PageRow key={p.id} p={p} showProject />
-                ))}
-              </ul>
-            ) : (
-              <Empty>No page title, path or project matches.</Empty>
-            )}
-          </Section>
-          <Section title="Parts" count={data.parts.length}>
-            {data.parts.length ? (
-              <ul className="parts card">
-                {data.parts.map((hit, i) => (
-                  <Part key={`${hit.artifact_id}:${hit.statement}:${i}`} hit={hit} />
-                ))}
-              </ul>
-            ) : (
-              <Empty>No part of a page says that.</Empty>
-            )}
-          </Section>
-        </>
-      )}
-    </Loaded>
+    <>
+      <p role="status" className="sr-only">
+        {loaded
+          ? `${plural(loaded.data.pages.length, "page")}, ${plural(loaded.data.parts.length, "part")} match`
+          : ""}
+      </p>
+      <Loaded result={result} title="Search">
+        {(_, data) => (
+          <>
+            <header className="view-h">
+              <h1>
+                Search: <q>{data.q}</q>
+              </h1>
+            </header>
+            <Section title="Pages" count={data.pages.length}>
+              {data.pages.length ? (
+                <ul className="rows card">
+                  {data.pages.map((p) => (
+                    <PageRow key={p.id} p={p} showProject />
+                  ))}
+                </ul>
+              ) : (
+                <Empty>No page title, path or project matches.</Empty>
+              )}
+            </Section>
+            <Section title="Parts" count={data.parts.length}>
+              {data.parts.length ? (
+                <ul className="parts card">
+                  {data.parts.map((hit, i) => (
+                    <Part key={`${hit.artifact_id}:${hit.statement}:${i}`} hit={hit} />
+                  ))}
+                </ul>
+              ) : (
+                <Empty>
+                  No part of a page says that.{" "}
+                  <ViewLink next={{ view: "notes", q: loaded?.args.q ?? "" }}>
+                    Search the notes instead
+                  </ViewLink>
+                </Empty>
+              )}
+            </Section>
+          </>
+        )}
+      </Loaded>
+    </>
   );
 }

@@ -37,6 +37,8 @@ export interface ReviewState {
   sending: boolean;
   /** The composer's error line: a refused send, the outbox's rate limit and unsaved-copy notices. */
   composerError: string;
+  /** The error is a refused send: the composer offers Try again. */
+  composerRetry: boolean;
   /** Hosted: the notes still waiting for their ack, for the reviewer this page is now. */
   pending: OutboxEntry[];
   /** Hosted: when a note refused with `rate_limited` is sent again, epoch ms. */
@@ -130,6 +132,7 @@ const initial: ReviewState = {
   editing: null,
   sending: false,
   composerError: "",
+  composerRetry: false,
   pending: [],
   rateLimit: null,
   outboxUnsaved: false,
@@ -186,9 +189,9 @@ export const useReview = create<ReviewState>()(() => initial);
 export const S = useReview.getState;
 export const set = useReview.setState;
 
-export const isNarrow = (): boolean => window.matchMedia("(max-width: 860px)").matches;
+export const isNarrow = (): boolean => window.matchMedia("(width <= 860px)").matches;
 
-/** The notes sheet on a narrow screen: open or closed, kept for the tab (`sheet-open` on <html> follows it). */
+/** The notes sheet on a narrow screen: open or closed, kept for the tab. */
 export function setSheet(open: boolean): void {
   set({ sheetOpen: open });
   SS.set(`austere:sheet:${SID}`, open);

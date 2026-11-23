@@ -418,7 +418,7 @@ test("review header: breadcrumb to the hub, copy switcher keeps the path, Ctrl+K
       "the back arrow is the phone's breadcrumb",
     );
     // The copy switcher lists both worktrees; the other one has the same rel_path.
-    await page.getByRole("button", { name: "Copy of this page (worktree)" }).click();
+    await page.getByRole("button", { name: /^Worktree copy: / }).click();
     assert.deepEqual((await page.getByRole("menuitemradio").allInnerTexts()).sort(), [
       "feat",
       "main",
@@ -725,7 +725,7 @@ test("a reviewer's page shows none of it, and the hub refuses the reviewer", asy
     await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
     for (const sel of [
       '[aria-label="Breadcrumb"]',
-      '[aria-label="Copy of this page (worktree)"]',
+      '[aria-label^="Worktree copy: "]',
       '[aria-label="Go to page (Ctrl K)"]',
       '[data-cmd="goto"]',
       '[data-cmd="next-unanswered"]',
@@ -989,6 +989,37 @@ test("the review page under the hosted chrome's CSP: ⋯ menu, Share dialog, sid
   }
 });
 
+test("phone: every text field is at least 16 px, so iOS does not zoom on focus", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context } = await ownerTab(390);
+  let seen = 0;
+  try {
+    for (const url of ["/?view=notes", "/?view=settings", `/s/${ids.waiting}`]) {
+      await page.goto(`http://127.0.0.1:${port}${url}`);
+      await page.waitForTimeout(1200);
+      if (url.startsWith("/s/")) await page.click(".dock");
+      await page.locator("input:visible, textarea:visible").first().waitFor();
+      const fields = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("input:not([type=hidden]), textarea")]
+          .filter((e) => e.getBoundingClientRect().width > 0)
+          .map((e) => ({
+            el: `${e.tagName.toLowerCase()}#${e.id || e.className}`.slice(0, 50),
+            px: parseFloat(getComputedStyle(e).fontSize),
+          })),
+      );
+      seen += fields.length;
+      assert.deepEqual(
+        fields.filter((f) => f.px < 16),
+        [],
+        `fields under 16 px on ${url}`,
+      );
+    }
+    assert.ok(seen >= 3, "the test found the fields");
+  } finally {
+    await context.close();
+  }
+});
+
 test("phone: Pages does not scroll sideways, the drawer closes after a pick, a dialog returns focus", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const { page, context, problems } = await ownerTab(390);
@@ -1021,8 +1052,9 @@ test("phone: Pages does not scroll sideways, the drawer closes after a pick, a d
     await page.click(".side-toggle");
     const drawer = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
     await drawer.waitFor();
-    await drawer.locator('a[data-view="notes"]').click();
-    await page.waitForURL(/view=notes/);
+    // The views live in the tab bar on a phone: the drawer's own links are the projects.
+    await drawer.locator(".proj-link").click();
+    await page.waitForURL(/project=/);
     await drawer.waitFor({ state: "detached" });
     const onToggle = () =>
       page.evaluate(() => document.activeElement?.classList.contains("side-toggle"));
@@ -1033,12 +1065,12 @@ test("phone: Pages does not scroll sideways, the drawer closes after a pick, a d
     await page.keyboard.press("Escape");
     await drawer.waitFor({ state: "detached" });
     await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
-    // Keyboard pick: focus the Runs link in the drawer, Enter.
+    // Keyboard pick: focus the "All" link in the drawer, Enter.
     await page.keyboard.press("Enter");
     await drawer.waitFor();
-    await drawer.locator('a[data-view="runs"]').focus();
+    await drawer.locator(".all-projects").focus();
     await page.keyboard.press("Enter");
-    await page.waitForURL(/view=runs/);
+    await page.waitForURL((u) => !u.search.includes("project="));
     await drawer.waitFor({ state: "detached" });
     await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
     assert.ok(await onToggle());

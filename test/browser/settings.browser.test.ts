@@ -111,11 +111,11 @@ async function choose(scope: Locator | Page, trigger: string, option: string | R
   await page.getByRole("option", { name: option }).click();
 }
 
-/** The in-page dialog that replaced confirm() and prompt(): fill the box when there is one, then take the default button. */
+/** The in-page dialog that replaced confirm() and prompt(): fill the box when there is one, then take its submit button (named by the verb: Revoke, Block, Save...). */
 async function answer(page: Page, text?: string) {
   const dialog = page.getByRole("dialog");
   if (text !== undefined) await dialog.getByRole("textbox").fill(text);
-  await dialog.getByRole("button", { name: /^(Continue|Save)$/ }).click();
+  await dialog.locator("button[type=submit]").click();
 }
 
 before(async () => {
@@ -225,7 +225,7 @@ test("settings: every section loads; a request is approved; a link is made; the 
       (
         await page
           .locator(".views li", { has: page.locator('a[data-view="settings"]') })
-          .locator(".count")
+          .locator('.count [aria-hidden="true"]')
           .innerText()
       ).trim(),
       "1",
@@ -289,7 +289,7 @@ test("settings: every section loads; a request is approved; a link is made; the 
     await page.locator("[data-link]", { hasText: "Cy" }).waitFor();
 
     // Review defaults: straight to the agent, then a share that does not say takes it.
-    await part(page, "review").getByLabel("Send them straight to the agent").check();
+    await part(page, "review").getByLabel("Send notes straight to the agent").check();
     await page.locator("[data-sonner-toast]", { hasText: "go straight to the agent" }).waitFor();
     const made = await call<{ auto: boolean }>("POST", "/api/share", {
       file: path.join(SHOP, "docs", "plan.html"),
@@ -441,7 +441,7 @@ test("the page's Share with the default auto and attach on: untouched it holds t
 
     await share("Hal");
     await page
-      .locator("[role=dialog].share label", { hasText: "Go straight to the agent" })
+      .locator("[role=dialog].share label", { hasText: "Send notes straight to the agent" })
       .click();
     await page.click("[role=dialog].share button[type=submit]");
     await page.locator("[role=dialog].share .share-error[role=alert]").waitFor();
@@ -475,14 +475,14 @@ test("settings forms: a bad entry says why beside the field, Enter submits, the 
     await form.getByText("Enter their name.").waitFor();
     assert.equal(asked, 0, "nothing sent while the form is invalid");
     // Keyboard: type a name, Enter. The button is off and says so until the server answers.
-    await form.getByLabel("Their name").fill("Gus");
-    await form.getByLabel("Their name").press("Enter");
+    await form.getByLabel("Name").fill("Gus");
+    await form.getByLabel("Name").press("Enter");
     await form.getByRole("button", { name: "Creating…" }).waitFor();
     assert.ok(await form.getByRole("button", { name: "Creating…" }).isDisabled());
     await page.locator("[data-sonner-toast]", { hasText: "Link for Gus" }).waitFor();
     await page.locator("[data-link]", { hasText: "Gus" }).waitFor();
     assert.equal(asked, 1);
-    assert.equal(await form.getByLabel("Their name").inputValue(), "", "the form starts over");
+    assert.equal(await form.getByLabel("Name").inputValue(), "", "the form starts over");
     assert.deepEqual(problems, []);
   } finally {
     await context.close();
@@ -540,7 +540,7 @@ test("settings: a switch the server refused goes back, with an error toast; unto
     // The saved default moves to auto: the new-link form, not touched, shows it too.
     const notes = page.locator(".new-link").getByRole("combobox", { name: "Their notes" });
     assert.match(await notes.innerText(), /Hold notes/);
-    await part(page, "review").getByLabel("Send them straight to the agent").check();
+    await part(page, "review").getByLabel("Send notes straight to the agent").check();
     await page.locator("[data-sonner-toast]", { hasText: "go straight to the agent" }).waitFor();
     await page.waitForFunction(() =>
       /Send notes straight/.test(

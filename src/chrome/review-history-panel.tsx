@@ -77,7 +77,7 @@ function Revisions(): ReactElement {
             <Button
               type="button"
               variant="ghost"
-              className="hist-pick"
+              className="hist-pick h-auto justify-start whitespace-normal"
               aria-pressed={picked === r.rev}
               onClick={() => pick(r)}
             >
@@ -153,16 +153,23 @@ export function HistoryPanel(): ReactElement {
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
   const statement = useReview((s) => s.historyFor);
+  const title = useRef<HTMLSpanElement>(null);
+  // Opening History puts the keyboard in it, on its title; Tab then reaches Close and the revisions.
+  useEffect(() => {
+    if (open) title.current?.focus();
+  }, [open]);
   return (
-    <div className="hist" role="dialog" aria-label="History" hidden={!open}>
+    <div className="hist" role="dialog" aria-labelledby="hist-title" hidden={!open}>
       <div className="hist-head">
-        <span className="hist-title">{statement ? `History · ${statement}` : "History"}</span>
+        <span className="hist-title" id="hist-title" tabIndex={-1} ref={title}>
+          {statement ? `History · ${statement}` : "History"}
+        </span>
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
           className="hist-close"
-          aria-label="Close"
+          aria-label="Close History"
           onClick={closeHistory}
         >
           <Icon name="close" size={16} width={1.8} />

@@ -8,7 +8,7 @@ import { closePanel, openHistory } from "./review-history.ts";
 import { swipe, useNarrow, useNow } from "./review-hooks.ts";
 import { OWNER, SID, SS } from "./review-env.ts";
 import { presenceView } from "./review-presence.ts";
-import { isNarrow, set, setSheet, useReview } from "./review-store.ts";
+import { set, setSheet, useReview } from "./review-store.ts";
 import { Button } from "@/chrome/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/chrome/ui/tabs";
 
@@ -81,7 +81,7 @@ export function PanelHead(): ReactElement {
       <Button
         type="button"
         variant="ghost"
-        size="icon"
+        size="icon-sm"
         className="sheet-close"
         aria-label="Close the notes"
         onClick={() => setSheet(false)}
@@ -111,6 +111,7 @@ export function Dock(): ReactElement {
     })),
   );
   const now = useNow();
+  const open = useReview((r) => r.sheetOpen);
   const parts = [s.queued ? `${s.queued} note${s.queued === 1 ? "" : "s"} ready` : "Notes"];
   if (s.last?.role === "agent" && s.last.at > s.seenAt) parts.push("new reply");
   // On a phone the header hides the presence: the dock carries its label (none when an attached agent's pill says it).
@@ -131,6 +132,9 @@ export function Dock(): ReactElement {
       variant="ghost"
       className="dock"
       ref={ref}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-controls={open ? "notes-sheet" : undefined}
       onClick={() => {
         const at = Date.now();
         SS.set(`austere:seen:${SID}`, at);
@@ -149,24 +153,6 @@ export function Dock(): ReactElement {
       <Icon name="chevronDown" size={16} width={2} cls="dock-caret" />
     </Button>
   );
-}
-
-/** Taps outside the sheet close it. */
-export function Scrim(): ReactElement {
-  return <div className="scrim" onClick={() => setSheet(false)} />;
-}
-
-/** Escape closes the sheet on a phone. */
-export function useSheetEscape(): void {
-  const open = useReview((s) => s.sheetOpen);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape" && isNarrow()) setSheet(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
 }
 
 /** Whether History covers the notes, the queue and the composer (a wide screen): they take no focus then. */

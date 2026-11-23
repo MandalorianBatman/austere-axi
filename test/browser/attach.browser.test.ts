@@ -374,7 +374,8 @@ test("a Copilot page shows fork disabled with its reason", { skip: posixOnly }, 
     const fork = page.locator('[role=radio][value="fork"]');
     assert.ok(await fork.isDisabled(), "fork is disabled");
     assert.match(
-      (await fork.locator("xpath=..").getAttribute("title")) ?? "",
+      // The reason is text beside the option now, not a hover title.
+      await fork.locator("xpath=..").innerText(),
       /Copilot CLI has no fork/,
     );
     assert.match(await page.locator(".attach-reason").innerText(), /Fork: Copilot CLI has no fork/);

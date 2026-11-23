@@ -10,19 +10,10 @@ import type {
   ProjectsResponse,
   ShellPage,
 } from "../shared/hub-api.ts";
-import type { IconName } from "./icons.ts";
+import { isView } from "./views.ts";
+import type { SideStatus, View } from "./views.ts";
 import { get } from "./hub-http.ts";
 import { CLOSED_PROJECTS, store, stored } from "./side-state.ts";
-
-export type View = "inbox" | "pages" | "notes" | "runs" | "settings" | "search";
-export const VIEWS: { id: Exclude<View, "search">; label: string; icon: IconName }[] = [
-  { id: "inbox", label: "Inbox", icon: "inbox" },
-  { id: "pages", label: "Pages", icon: "file" },
-  { id: "notes", label: "Notes", icon: "message" },
-  { id: "runs", label: "Runs", icon: "terminal" },
-  { id: "settings", label: "Settings", icon: "sliders" },
-];
-const isView = (v: string | null): v is Exclude<View, "search"> => VIEWS.some((x) => x.id === v);
 
 /** The view the hub opened on last (RLM-358). */
 const LAST_VIEW = "austere:hub:view";
@@ -83,6 +74,8 @@ interface Hub {
   previous: View;
   projects: ProjectSummary[];
   sidePages: ShellPage[];
+  /** Whether the sidebar's lists have been read, are on their way, or could not be. */
+  sideStatus: SideStatus;
   /** Access requests waiting for the owner (RLM-398): a count on Settings. */
   waitingPeople: number;
   /** Projects the owner folded: they show their pages until then. */
@@ -98,6 +91,7 @@ export const useHub = create<Hub>(() => ({
   previous: initial.view === "search" ? "inbox" : initial.view,
   projects: [],
   sidePages: [],
+  sideStatus: "loading",
   waitingPeople: 0,
   closedProjects: stored<string[]>(CLOSED_PROJECTS, []),
   version: 0,
@@ -153,9 +147,14 @@ export async function loadSide(): Promise<void> {
       get<AccessRequestsResponse>("/hub/api/people/requests", mine.signal),
     ]);
     if (mine.signal.aborted) return;
-    set({ projects: p.projects, sidePages: pages.pages, waitingPeople: asks.waiting.length });
+    set({
+      projects: p.projects,
+      sidePages: pages.pages,
+      sideStatus: "ready",
+      waitingPeople: asks.waiting.length,
+    });
   } catch {
-    // the main view says why
+    if (!mine.signal.aborted) set({ sideStatus: "error" });
   }
 }
 

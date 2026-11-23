@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
 import { ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
-import { HOSTED, OWNER } from "./review-env.ts";
+import { HOSTED, OWNER, shortcut } from "./review-env.ts";
 import { AttachPill } from "./review-attach.tsx";
 import { useAttachFeed } from "./review-attach.ts";
 import { useBanner } from "./review-banner.ts";
@@ -23,19 +23,20 @@ import { Dialogs } from "./review-dialogs.tsx";
 import { useFrameMessages } from "./review-frame.ts";
 import { useHistoryFeed } from "./review-history.ts";
 import { HistoryPanel } from "./review-history-panel.tsx";
-import { useRootClass } from "./review-hooks.ts";
+import { useNarrow, useRootClass } from "./review-hooks.ts";
 import { Log } from "./review-log.tsx";
 import { GotoButton, OwnerNav } from "./review-nav.tsx";
 import { setViewers } from "./review-presence.ts";
 import { Queue } from "./review-queue.tsx";
-import { Dock, PanelHead, Scrim, useCovered, useSheetEscape } from "./review-tabs.tsx";
-import { useReview } from "./review-store.ts";
+import { Dock, PanelHead, useCovered } from "./review-tabs.tsx";
+import { setSheet, useReview } from "./review-store.ts";
 import { Frame, HostedFoot, ModeSwitch, MoreMenu, Notice, TitleBlock } from "./review-viewer.tsx";
 import { ReviewSidebar, SideData } from "./review-sidebar.tsx";
 import { useSidebarOpen } from "./side-state.ts";
 import { Button } from "@/chrome/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/chrome/ui/sheet";
 import { SidebarProvider, SidebarTrigger } from "@/chrome/ui/sidebar";
-import { TooltipProvider } from "@/chrome/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/chrome/ui/tooltip";
 
 const LOGO: Shape[] = [
   ["rect", { x: 1.5, y: 1.5, width: 21, height: 21, rx: 5, className: "logo-box" }],
@@ -95,34 +96,60 @@ function App(): ReactElement {
     "is-archived",
     useReview((s) => s.archived),
   );
-  useRootClass(
-    "sheet-open",
-    useReview((s) => s.sheetOpen),
-  );
-  useSheetEscape();
   useHighlightSync();
   useFrameMessages();
   // On a wide screen History lies over the notes, the queue and the composer: what is covered takes no focus.
   const covered = useCovered();
+  const narrow = useNarrow();
+  // Explore hides the conversation, and so the sheet with it.
+  const sheetOpen = useReview((s) => s.sheetOpen && s.mode !== "explore");
+  const history = OWNER ? (
+    <PanelBoundary name="The history">
+      <HistoryPanel />
+    </PanelBoundary>
+  ) : null;
+  const panel = (
+    <>
+      <PanelBoundary name="The panel tabs">
+        <PanelHead />
+      </PanelBoundary>
+      <PanelBoundary name="The conversation">
+        <Log inert={covered} />
+      </PanelBoundary>
+      <PanelBoundary name="The queue">
+        <Queue inert={covered} />
+      </PanelBoundary>
+      <PanelBoundary name="The note box">
+        <Composer inert={covered} />
+      </PanelBoundary>
+      <PanelBoundary name="The page footer">
+        <HostedFoot />
+      </PanelBoundary>
+    </>
+  );
   const page = (
     <>
       <div className="app">
         <header className="bar">
           <div className="bar-start">
             {OWNER_BAR ? (
-              <SidebarTrigger
-                className="side-toggle size-9 flex-none"
-                aria-controls="side"
-                aria-label="Toggle the projects sidebar (Ctrl/⌘ B)"
-                title="Toggle the projects sidebar (Ctrl/⌘ B)"
-              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarTrigger
+                    className="side-toggle flex-none"
+                    aria-controls="side"
+                    aria-label={`Toggle the projects sidebar (${shortcut("B")})`}
+                  />
+                </TooltipTrigger>
+                <TooltipContent>{`Toggle the projects sidebar (${shortcut("B")})`}</TooltipContent>
+              </Tooltip>
             ) : null}
             {OWNER_BAR ? (
               <Button
                 asChild
                 variant="ghost"
-                size="icon"
-                className="bar-home size-9 flex-none [&_svg]:size-6"
+                size="icon-sm"
+                className="bar-home flex-none [&_svg]:size-6"
                 title="Back to the hub"
               >
                 <a href="/" aria-label="Back to the hub">
@@ -179,7 +206,7 @@ function App(): ReactElement {
           </PanelBoundary>
         ) : null}
         <div className="main">
-          <section className="stage" id="content" tabIndex={-1} aria-label="Page under review">
+          <main className="stage" id="content" tabIndex={-1} aria-label="Page under review">
             <div className="subbar">
               <PanelBoundary name="The mode switch">
                 <ModeSwitch />
@@ -195,30 +222,33 @@ function App(): ReactElement {
             <PanelBoundary name="The page">
               <Frame />
             </PanelBoundary>
-          </section>
-          <Scrim />
-          <aside className="panel" aria-label="Review panel">
-            <PanelBoundary name="The panel tabs">
-              <PanelHead />
-            </PanelBoundary>
-            <PanelBoundary name="The conversation">
-              <Log inert={covered} />
-            </PanelBoundary>
-            <PanelBoundary name="The queue">
-              <Queue inert={covered} />
-            </PanelBoundary>
-            <PanelBoundary name="The note box">
-              <Composer inert={covered} />
-            </PanelBoundary>
-            <PanelBoundary name="The page footer">
-              <HostedFoot />
-            </PanelBoundary>
-          </aside>
-          {OWNER ? (
-            <PanelBoundary name="The history">
-              <HistoryPanel />
-            </PanelBoundary>
-          ) : null}
+          </main>
+          {narrow ? (
+            // A phone: the notes are a bottom sheet. Closed, it is not in the page at all; open, it holds focus.
+            <Sheet open={sheetOpen} onOpenChange={setSheet}>
+              <SheetContent
+                side="bottom"
+                showCloseButton={false}
+                id="notes-sheet"
+                className="panel"
+                aria-describedby={undefined}
+                onCloseAutoFocus={(ev) => {
+                  ev.preventDefault();
+                  document.querySelector<HTMLElement>(".dock")?.focus();
+                }}
+              >
+                <SheetTitle className="sr-only">Review notes</SheetTitle>
+                {panel}
+                {/* History is a popover over the page: while the sheet holds focus it has to live inside it. */}
+                {sheetOpen ? history : null}
+              </SheetContent>
+            </Sheet>
+          ) : (
+            <aside className="panel" aria-label="Review panel">
+              {panel}
+            </aside>
+          )}
+          {narrow && sheetOpen ? null : history}
         </div>
       </div>
     </>

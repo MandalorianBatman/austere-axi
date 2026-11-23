@@ -9,6 +9,7 @@ import type {
   SYNC_VERSION,
   Viewer,
 } from "austere-axi/sync";
+import { buttonVariants } from "@/chrome/ui/button";
 
 /** Other viewers' last click, as the frame draws it (`presence` bridge message). */
 export interface FocusMark {
@@ -194,13 +195,14 @@ export class Presence {
       const chip = document.createElement("button");
       chip.dataset.viewer = p.viewer.id;
       chip.type = "button";
-      chip.className = `viewer ${p.status}`;
+      chip.className = `${buttonVariants({ variant: "ghost", size: "icon-sm" })} viewer ${p.status}`;
       chip.style.setProperty("--viewer", p.viewer.colour);
       chip.textContent = [...p.viewer.name][0]?.toUpperCase() ?? "?";
       const label = `${p.viewer.name} · ${STATUS_TEXT[p.status]}${p.focus ? " · click to see where" : ""}`;
       chip.title = label;
       chip.setAttribute("aria-label", label);
-      chip.disabled = !p.focus;
+      // Nothing to reveal: the chip still takes focus, so a keyboard user can read its status.
+      if (!p.focus) chip.setAttribute("aria-disabled", "true");
       chip.addEventListener("click", () => p.focus && this.host.reveal(p.focus));
       return chip;
     });

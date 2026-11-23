@@ -31,11 +31,6 @@ code {
   font-family: var(--font-mono);
   font-size: 0.92em;
 }
-/* The focus ring of the controls that are not shadcn's (those draw their own: data-slot). */
-:where(button, a, textarea, input, select, summary):where(:not([data-slot])):focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
 .icon {
   flex: none;
   display: block;
@@ -70,7 +65,7 @@ code {
   flex: 1 1 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 .bar-home .logo-box {
@@ -85,13 +80,13 @@ code {
 .bar-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 .title {
   margin: 0;
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -133,13 +128,13 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: var(--control-h);
   padding: 0 10px;
   border: 1px solid var(--line-3);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -242,7 +237,7 @@ code {
 .viewer:first-child {
   margin-left: 0;
 }
-.viewer:disabled {
+.viewer[aria-disabled="true"] {
   cursor: default;
 }
 .viewer.self {
@@ -276,9 +271,9 @@ code {
   width: var(--control-h);
   height: var(--control-h);
   padding: 0;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 18px;
+  font-size: var(--fs-md);
   line-height: 1;
 }
 .icon-btn:hover {
@@ -328,9 +323,6 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.attach-short {
-  display: none;
-}
 .attach-dot {
   flex: none;
   width: 8px;
@@ -364,7 +356,7 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--amber);
   white-space: nowrap;
 }
@@ -398,7 +390,7 @@ code {
 .attach-loading {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: 12px;
   padding: 16px;
 }
 .attach-head {
@@ -409,10 +401,6 @@ code {
 }
 .attach-head strong {
   font-weight: 600;
-}
-.attach-close {
-  width: 28px;
-  height: 28px;
 }
 .attach-note,
 .attach-hint {
@@ -438,11 +426,11 @@ code {
 .attach-radio {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 8px;
   min-height: 34px;
-  padding: 7px 10px;
+  padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 .attach-radio:hover {
@@ -477,7 +465,7 @@ code {
   min-height: var(--control-h);
   padding: 0 10px;
   border: 1px solid var(--line-2);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: var(--bg-3);
   color: var(--text);
   font: inherit;
@@ -496,7 +484,7 @@ code {
   gap: 6px;
   padding: 8px 10px;
   border: 1px solid var(--amber-pill);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: var(--amber-soft);
   color: var(--amber);
   font-size: var(--fs-sm);
@@ -513,7 +501,7 @@ code {
   flex: 1;
   min-width: 0;
   padding: 4px 6px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--text);
   font-size: var(--fs-xs);
@@ -522,7 +510,7 @@ code {
 }
 .attach-error {
   color: var(--red);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
 }
 .attach-run-slot:empty {
   display: none;
@@ -531,7 +519,7 @@ code {
 .attach-run {
   display: grid;
   gap: 8px;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid var(--line-3);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -583,13 +571,13 @@ code {
   gap: 8px;
   padding: 2px 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-align: center;
 }
 .run-mark time {
   flex: none;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 .run-mark.failed {
   color: var(--red);
@@ -619,14 +607,14 @@ code {
   background: var(--bg-3);
   color: var(--amber);
   border-bottom: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   text-align: center;
   overflow-wrap: anywhere;
 }
 .notice[hidden] {
   display: none;
 }
-@media (max-width: 860px) {
+@media (width <= 860px) {
   .notice {
     white-space: nowrap;
     overflow: hidden;
@@ -642,12 +630,12 @@ code {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: 6px 8px;
   padding: 6px 12px;
   background: var(--bg-3);
   color: var(--amber);
   border-bottom: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 500;
 }
 .since[hidden] {
@@ -711,7 +699,7 @@ code {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 12px;
+  padding: 12px 12px;
 }
 .hist-since,
 .hist-empty {
@@ -780,7 +768,7 @@ code {
   overflow: auto;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: var(--bg-3);
   font: var(--fs-xs)/1.55 var(--font-mono);
   white-space: pre-wrap;
@@ -811,7 +799,7 @@ code {
   align-items: center;
   gap: 6px 12px;
   min-height: var(--sub-h);
-  padding: 5px 12px;
+  padding: 4px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--bg-3);
 }
@@ -835,10 +823,10 @@ code {
   display: none;
 }
 .hist-btn {
-  height: 28px;
+  height: var(--control-h);
   gap: 6px;
   padding: 0 12px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   font-size: var(--fs);
 }
 /* shadcn sizes a button's icon at 16px; these two were drawn at 14 and 13. */
@@ -874,7 +862,7 @@ code {
   left: 8px;
   z-index: 100;
   padding: 8px 12px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
@@ -883,16 +871,12 @@ code {
 .skip-link:focus {
   transform: none;
 }
-.scrim {
-  display: none;
-}
 /* Explore mode: the artifact takes the full width; the conversation returns on Annotate. */
 html.exploring .main {
   grid-template-columns: minmax(0, 1fr);
   padding-bottom: 0;
 }
 html.exploring .panel,
-html.exploring .scrim,
 html.exploring .dock {
   display: none;
 }
@@ -937,7 +921,7 @@ html.exploring .hist {
   height: 30px;
   padding: 0 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-3);
   font-size: var(--fs);
@@ -1006,7 +990,7 @@ html.exploring .hist {
 .log-loading {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .empty {
   display: flex;
@@ -1039,7 +1023,7 @@ html.exploring .hist {
 }
 .msg.user .item {
   position: relative;
-  padding: 10px 12px 10px 42px;
+  padding: 10px 12px 10px 48px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -1076,7 +1060,7 @@ html.exploring .hist {
 .md ul,
 .md ol {
   margin: 4px 0 6px;
-  padding-left: 20px;
+  padding-left: 16px;
 }
 .md ul {
   list-style: disc;
@@ -1087,14 +1071,14 @@ html.exploring .hist {
 .md pre {
   margin: 6px 0;
   padding: 8px 10px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: var(--bg-3);
   overflow-x: auto;
 }
 .md code {
   background: var(--surface-3);
   padding: 1px 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .md pre code {
   background: none;
@@ -1108,6 +1092,9 @@ html.exploring .hist {
   color: var(--accent-hover);
 }
 /* A note's target: its statement as a chip, then the kind of part. */
+span.anchor {
+  cursor: default;
+}
 .anchor {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1132,7 +1119,7 @@ html.exploring .hist {
 .anchor-text {
   max-width: 100%;
   padding: 1px 6px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: var(--surface-3);
   color: var(--text-2);
   font: 500 11px/1.5 var(--font-mono);
@@ -1157,10 +1144,10 @@ html.exploring .hist {
 .item blockquote {
   margin: 6px 0 0;
   padding: 6px 10px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--bg-3);
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   overflow-wrap: anywhere;
 }
 .note {
@@ -1172,9 +1159,9 @@ html.exploring .hist {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: 4px 8px;
   padding: 0 4px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--faint);
 }
 .receipt span::before {
@@ -1233,7 +1220,7 @@ html.exploring .hist {
 .q-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 8px 10px 12px;
   border: 1px solid var(--line-2);
   border-radius: var(--radius-md);
@@ -1278,7 +1265,7 @@ html.exploring .hist {
   gap: 8px;
   align-items: flex-start;
   justify-content: space-between;
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
 }
 .issue + .issue {
@@ -1294,7 +1281,7 @@ html.exploring .hist {
 .archived-note,
 .final-note {
   text-align: center;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--faint);
   padding: 6px;
 }
@@ -1306,7 +1293,7 @@ html.exploring .hist {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 0;
+  padding: 4px 0;
 }
 .share-link {
   font-family: var(--font-mono);
@@ -1320,7 +1307,7 @@ html.exploring .hist {
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding: 12px;
   border-top: 1px solid var(--line);
   background: var(--bg-2);
@@ -1331,32 +1318,13 @@ html.exploring .hist {
   justify-content: space-between;
   gap: 8px;
 }
-@media (min-width: 861px) {
-  .composer-row .send,
-  .composer-row .send-end {
-    height: 34px;
-    font-size: var(--fs);
-  }
-  .composer-row .send {
-    gap: 8px;
-    padding: 0 14px;
-    font-weight: 600;
-  }
-  .composer-row .send-end {
-    padding: 0 12px;
-    font-weight: 500;
-  }
-}
 .composer-hint {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--faint);
 }
 .composer-error {
+  padding: 8px 12px;
   font-size: var(--fs-sm);
-  color: var(--red);
-}
-.composer-error[hidden] {
-  display: none;
 }
 .composer-listen {
   display: flex;
@@ -1401,7 +1369,7 @@ html.exploring .hist {
   padding: 10px 12px;
   border-top: 1px solid var(--line);
   background: var(--surface);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 .name-ask[hidden],
@@ -1414,22 +1382,6 @@ html.exploring .hist {
   align-items: center;
   gap: 6px;
 }
-.report-box textarea {
-  flex: 1;
-  min-width: 0;
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--line-2);
-  background: var(--bg-3);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  outline: none;
-  resize: vertical;
-}
-.report-box textarea:focus {
-  border-color: var(--accent);
-}
 .report-status {
   margin-right: auto;
   color: var(--red);
@@ -1439,9 +1391,9 @@ html.exploring .hist {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 14px 9px;
+  padding: 8px 12px 8px;
   border-top: 1px solid var(--line);
-  font-size: 11.5px;
+  font-size: var(--fs-xs);
   color: var(--faint);
 }
 .hosted-foot a {
@@ -1458,7 +1410,7 @@ html.exploring .hist {
 }
 
 /* ── narrow screens: full-bleed artifact + notes sheet ── */
-@media (max-width: 860px) {
+@media (width <= 860px) {
   .bar {
     gap: 8px;
     padding: 0 6px 0 8px;
@@ -1486,12 +1438,6 @@ html.exploring .hist {
   .attach-pill {
     padding: 0 10px;
   }
-  .attach-pill.on .attach-detail {
-    display: none;
-  }
-  .attach-pill.on .attach-short {
-    display: inline;
-  }
   .hist {
     position: fixed;
     left: 8px;
@@ -1516,43 +1462,21 @@ html.exploring .hist {
     grid-template-columns: 1fr;
     padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom));
   }
+  /* The notes sheet is a shadcn Sheet (side="bottom"); its content carries the panel class. */
   .panel {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 30;
+    gap: 0;
     height: min(78dvh, 640px);
     border-left: 0;
     border-top: 1px solid var(--line-3);
-    border-radius: 18px 18px 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     box-shadow: var(--shadow-pop);
-    transform: translateY(105%);
-    transition: transform 0.22s ease-out;
     padding-bottom: env(safe-area-inset-bottom);
-  }
-  html.sheet-open .panel {
-    transform: none;
-  }
-  .scrim {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 25;
-    background: rgba(0, 0, 0, 0.6);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s;
-  }
-  html.sheet-open .scrim {
-    opacity: 1;
-    pointer-events: auto;
   }
   /* The sheet's grip, above its tabs. */
   .panel-head {
     position: relative;
     gap: 4px;
-    padding: 14px 8px 8px;
+    padding: 12px 8px 8px;
   }
   .panel-head::before {
     content: "";
@@ -1567,14 +1491,11 @@ html.exploring .hist {
   }
   .panel-tab {
     height: var(--touch);
-    padding: 0 14px;
+    padding: 0 12px;
     border-radius: var(--radius-md);
   }
   .sheet-close {
     display: inline-flex;
-    width: var(--touch);
-    height: var(--touch);
-    border-radius: var(--radius-md);
   }
   .composer-hint {
     display: none;
@@ -1590,12 +1511,12 @@ html.exploring .hist {
     padding: 0 16px env(safe-area-inset-bottom);
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 8px;
     border: 0;
     border-top: 1px solid var(--line-2);
     background: var(--bg-2);
     color: var(--text);
-    font-size: 13.5px;
+    font-size: var(--fs);
     font-weight: 500;
     cursor: pointer;
   }
@@ -1719,7 +1640,7 @@ html.exploring .hist {
   }
   .bar-title .title {
     min-width: 0;
-    font-size: 15px;
+    font-size: var(--fs-md);
   }
   .attach-pill {
     height: var(--touch);
@@ -1782,18 +1703,17 @@ html.exploring .hist {
   .attach-input,
   .attach-select,
   textarea.edit {
+    /* iOS zooms a focused field under 16 px: an exception to the type scale. */
     font-size: 16px;
   }
   .composer-row > button {
     flex: 1;
-    height: 48px;
-    border-radius: var(--radius-lg);
   }
   .composer-row .send {
     flex: 1.2;
   }
   .copy-prompt {
-    min-height: 32px;
+    min-height: var(--control-h);
   }
   .composer textarea {
     min-height: 66px;
@@ -1804,7 +1724,7 @@ html.exploring .hist {
     border-radius: var(--radius-lg);
   }
   .q-num {
-    margin-top: 7px;
+    margin-top: 8px;
   }
   .q-actions {
     position: absolute;
@@ -1826,5 +1746,16 @@ html.exploring .hist {
   }
   .attach-radio {
     min-height: var(--touch);
+  }
+}
+
+/* Phone: the composer and the sheet close button take a thumb. */
+@media (width <= 480px) {
+  .composer-row > button {
+    height: var(--touch);
+  }
+  .sheet-close {
+    width: var(--touch);
+    height: var(--touch);
   }
 }

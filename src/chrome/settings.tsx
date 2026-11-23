@@ -4,7 +4,7 @@
 // terminal. Every setting here has a CLI form too; the hints name it.
 // Drawn from the Hub-Settings artboard: each part is a card, People across the top, Network beside Review
 // defaults, Cloud and About, Projects below.
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import type { Control, FieldValues, Path } from "react-hook-form";
@@ -31,15 +31,17 @@ import { plural, when } from "./format.ts";
 import { tilde } from "./hub-env.ts";
 import { get, send } from "./hub-http.ts";
 import { useLoad } from "./hub-load.ts";
-import { Empty, ViewLink } from "./hub-parts.tsx";
+import { Empty, ViewLink, ViewSkeleton } from "./hub-parts.tsx";
 import { reload } from "./hub-store.ts";
 import { fail, say } from "./hub-toast.ts";
 import { confirmDialog, promptDialog } from "./hub-dialog.tsx";
 import { Icon, ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
+import { Alert, AlertDescription } from "@/chrome/ui/alert";
 import { Button as UiButton } from "@/chrome/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/chrome/ui/form";
 import { Input } from "@/chrome/ui/input";
+import { Label } from "@/chrome/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/chrome/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/chrome/ui/select";
 import { Switch } from "@/chrome/ui/switch";
@@ -80,11 +82,14 @@ function SelectField<T extends FieldValues>({
   ariaLabel,
   onUserChange,
   placeholder,
+  size,
 }: {
   control: Control<T>;
   name: Path<T>;
   label?: string;
   options: Option[];
+  /** `sm` (32px) in a row of row actions; the default (36px) in a form. */
+  size?: "sm" | "default";
   /** What a screen reader hears when there is no visible label. */
   ariaLabel?: string;
   /** The owner chose (not a refresh that moved the value). */
@@ -107,7 +112,7 @@ function SelectField<T extends FieldValues>({
             }}
           >
             <FormControl>
-              <SelectTrigger aria-label={ariaLabel ?? label} className="w-full min-w-0">
+              <SelectTrigger size={size} aria-label={ariaLabel ?? label} className="w-full min-w-0">
                 <SelectValue placeholder={placeholder} />
               </SelectTrigger>
             </FormControl>
@@ -131,11 +136,14 @@ function TextField<T extends FieldValues>({
   control,
   name,
   label,
+  mark,
   ...input
 }: {
   control: Control<T>;
   name: Path<T>;
   label: string;
+  /** Says on screen, and to a screen reader, whether the field must be filled. */
+  mark: "required" | "optional";
 } & Omit<React.ComponentProps<typeof Input>, "name" | "value" | "onChange" | "onBlur" | "ref">) {
   return (
     <FormField
@@ -143,9 +151,12 @@ function TextField<T extends FieldValues>({
       name={name}
       render={({ field }) => (
         <FormItem className="field">
-          <FormLabel>{label}</FormLabel>
+          <FormLabel>
+            {label}
+            <span className="set-req">{` (${mark})`}</span>
+          </FormLabel>
           <FormControl>
-            <Input {...input} {...field} aria-label={input["aria-label"] ?? label} />
+            <Input {...input} {...field} aria-required={mark === "required" || undefined} />
           </FormControl>
           <FormMessage />
         </FormItem>
@@ -156,11 +167,14 @@ function TextField<T extends FieldValues>({
 
 /** A switch the server decides: its answer shows, and a read that changes it redraws the switch. */
 function Toggle({
+  id,
   on,
   disabled,
   describedBy,
   onChange,
 }: {
+  /** The id its `Label` points at. */
+  id: string;
   on: boolean;
   disabled?: boolean;
   describedBy?: string;
@@ -176,6 +190,7 @@ function Toggle({
   }
   return (
     <Switch
+      id={id}
       checked={shown}
       disabled={disabled}
       // Not `disabled` while the POST runs: a disabled control loses focus. It stays focusable and says it is busy.
@@ -212,7 +227,9 @@ function CardHead({
   return (
     <div className="set-head">
       <div className="set-head-text">
-        <h2 id={`set-${id}-h`}>{title}</h2>
+        <h2 id={`set-${id}-h`} tabIndex={-1}>
+          {title}
+        </h2>
         <p className="summary">{about}</p>
       </div>
       {action}
@@ -237,7 +254,7 @@ function Part({
   const id = `set-h-${key}`;
   return (
     <section className={`set-part${cls ? ` ${cls}` : ""}`} aria-labelledby={id}>
-      <h3 id={id}>
+      <h3 id={id} tabIndex={-1}>
         {title}
         {count == null ? null : <span className="n">{` · ${count}`}</span>}
       </h3>
@@ -283,42 +300,6 @@ function Command({ cmd }: { cmd: string }) {
         Copy
       </UiButton>
     </div>
-  );
-}
-
-/** A button: `cls` says how it looks (`btn` outline, `btn ghost`, `btn primary`, `btn text` a link-like word, `danger` red). */
-function Button({
-  onClick,
-  cls = "btn ghost",
-  label,
-  children,
-}: {
-  onClick: () => unknown;
-  cls?: string;
-  label?: string;
-  children: ReactNode;
-}) {
-  const danger = cls.includes("danger");
-  const variant = cls.includes("text")
-    ? "link"
-    : danger
-      ? "destructive"
-      : cls.includes("primary")
-        ? "default"
-        : cls.includes("ghost")
-          ? "ghost"
-          : "outline";
-  return (
-    <UiButton
-      type="button"
-      variant={variant}
-      size="sm"
-      className={danger && variant === "link" ? "text-destructive" : undefined}
-      aria-label={label}
-      onClick={() => void onClick()}
-    >
-      {children}
-    </UiButton>
   );
 }
 
@@ -369,16 +350,67 @@ const NOTES: [string, string][] = [
   ["auto", "Send notes straight to the agent"],
 ];
 
-/** Run a change, say how it went, and read again; true when the server took it. */
-type Act = <T>(route: string, body: object, ok: (data: T) => string) => Promise<boolean>;
+/**
+ * Run a change, say how it went, and read again: null when the server took it, else its error. `leaving` is the row
+ * the change removes: focus moves to a neighbour (or the section heading) before it unmounts, so it never falls to <body>.
+ */
+async function run<T>(
+  route: string,
+  body: object,
+  ok: (data: T) => string,
+  leaving?: Element | null,
+): Promise<string | null> {
+  const r = await send<T>(route, body);
+  if (!r.ok) return r.error;
+  say(ok(r.data));
+  if (leaving) focusAround(leaving);
+  reload();
+  return null;
+}
 
-const act: Act = async (route, body, ok) => {
-  const r = await send<never>(route, body);
-  if (r.ok) say(ok(r.data));
-  else fail(r.error);
-  if (r.ok) reload();
-  return r.ok;
+/** `run` for a button with no form: a failure is a toast; true when the server took it. */
+type Act = <T>(
+  route: string,
+  body: object,
+  ok: (data: T) => string,
+  leaving?: Element | null,
+) => Promise<boolean>;
+
+const act: Act = async (route, body, ok, leaving) => {
+  const error = await run(route, body, ok, leaving);
+  if (error !== null) fail(error);
+  return error === null;
 };
+
+function focusAround(row: Element): void {
+  const control = "button:not(:disabled), a[href], [role=combobox]";
+  for (const near of [row.nextElementSibling, row.previousElementSibling]) {
+    const target = near?.querySelector<HTMLElement>(control);
+    if (target) return target.focus();
+  }
+  row.closest("section")?.querySelector<HTMLElement>("h3, h2")?.focus();
+}
+
+/** A submit that is already running ignores the next one: the button stays focusable (aria-disabled), not `disabled`. */
+async function once(busy: { current: boolean }, submit: () => Promise<void>): Promise<void> {
+  if (busy.current) return;
+  busy.current = true;
+  try {
+    await submit();
+  } finally {
+    busy.current = false;
+  }
+}
+
+/** A form's server error, in the same place and role in every form. */
+function FormError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <Alert variant="destructive">
+      <AlertDescription>{message}</AlertDescription>
+    </Alert>
+  );
+}
 
 const askSchema = z.object({ scope: z.string(), mode: z.string() });
 
@@ -408,8 +440,16 @@ function RequestRow({
     .join(" · ");
   const { isSubmitting } = form.formState;
   const notes = useNotesMode(defaultMode, (m) => form.setValue("mode", m));
+  const row = useRef<HTMLLIElement>(null);
+  const busy = useRef(false);
+  /** The row's changes: a failure shows inline, in the row, not as a toast that goes away. */
+  const post = async <T,>(route: string, body: object, ok: (data: T) => string): Promise<void> => {
+    form.clearErrors("root");
+    const error = await run<T>(route, body, ok, row.current);
+    if (error !== null) form.setError("root", { message: error });
+  };
   return (
-    <li className="set-ask" data-request={q.id}>
+    <li ref={row} className="set-ask" data-request={q.id}>
       <Avatar name={q.name} />
       <div className="set-who">
         <span className="row-title">{q.name}</span>
@@ -419,65 +459,93 @@ function RequestRow({
       <Form {...form}>
         <form
           className="set-actions"
-          onSubmit={form.handleSubmit(async (v) => {
-            await act<{ device?: AccessSummary }>(
-              `/hub/api/people/requests/${q.id}/approve`,
-              { ...scopeBody(v.scope), auto: notes.chosen(v.mode) },
-              (d) =>
-                `${q.name} is in: ${d.device?.reaches ?? "approved"}. The browser that asked opens the page by itself.`,
-            );
-          })}
+          onSubmit={form.handleSubmit((v) =>
+            once(busy, () =>
+              post<{ device?: AccessSummary }>(
+                `/hub/api/people/requests/${q.id}/approve`,
+                { ...scopeBody(v.scope), auto: notes.chosen(v.mode) },
+                (d) =>
+                  `${q.name} is in: ${d.device?.reaches ?? "approved"}. The browser that asked opens the page by itself.`,
+              ),
+            ),
+          )}
         >
           <SelectField
             control={form.control}
             name="scope"
+            size="sm"
             ariaLabel={`What ${q.name} can review`}
             options={scopeOptions(projects, Boolean(q.file), q.project)}
           />
           <SelectField
             control={form.control}
             name="mode"
+            size="sm"
             onUserChange={notes.touch}
             ariaLabel={`Where ${q.name}'s notes go`}
             options={NOTES}
           />
-          <UiButton type="submit" size="sm" disabled={isSubmitting}>
+          <UiButton
+            type="submit"
+            size="sm"
+            aria-disabled={isSubmitting || undefined}
+            aria-busy={isSubmitting || undefined}
+            className={isSubmitting ? "opacity-50" : undefined}
+            aria-label={`${isSubmitting ? "Approving" : "Approve"} ${q.name}`}
+          >
             {isSubmitting ? "Approving…" : "Approve"}
           </UiButton>
-          <Button
+          <UiButton
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() =>
-              act(
+              post(
                 `/hub/api/people/requests/${q.id}/deny`,
                 {},
                 () => `Denied ${q.name}. That browser may ask again.`,
               )
             }
+            aria-label={`Deny ${q.name}`}
           >
             Deny
-          </Button>
-          <Button
-            cls="btn ghost danger"
-            onClick={() =>
-              act(
+          </UiButton>
+          <UiButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
+            onClick={async () =>
+              (await confirmDialog(`${q.name}'s browser can no longer ask for access.`, true, {
+                title: `Block ${q.name}?`,
+                action: "Block",
+              })) &&
+              post(
                 `/hub/api/people/requests/${q.id}/block`,
                 {},
                 () => `Blocked ${q.name}'s browser: it can no longer ask.`,
               )
             }
+            aria-label={`Block ${q.name}`}
           >
             Block
-          </Button>
+          </UiButton>
         </form>
       </Form>
+      <FormError message={form.formState.errors.root?.message} />
     </li>
   );
 }
 
 function SwitchBox({ label, on, project }: { label: string; on: boolean; project: string | null }) {
+  const id = useId();
   return (
-    <label className="switch">
-      <span className="set-switch-text">{label}</span>
+    <div className="switch">
+      <Label htmlFor={id} className="min-w-0 flex-1 leading-normal">
+        {label}
+      </Label>
       <Toggle
+        id={id}
         on={on}
         onChange={(checked) =>
           act(
@@ -488,7 +556,7 @@ function SwitchBox({ label, on, project }: { label: string; on: boolean; project
           )
         }
       />
-    </label>
+    </div>
   );
 }
 
@@ -503,12 +571,21 @@ function LinkRow({ l }: { l: AccessSummary }) {
       </div>
       <div className="set-actions">
         {l.link ? (
-          <Button cls="btn" onClick={() => copy(l.link as string, `${l.name}'s link`)}>
+          <UiButton
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => copy(l.link as string, `${l.name}'s link`)}
+            aria-label={`Copy link for ${l.name}`}
+          >
             Copy link
-          </Button>
+          </UiButton>
         ) : null}
         {l.reusable ? (
-          <Button
+          <UiButton
+            type="button"
+            variant="ghost"
+            size="sm"
             onClick={() =>
               act<AccessSummary>(
                 `/hub/api/people/${l.id}/single-use`,
@@ -517,18 +594,27 @@ function LinkRow({ l }: { l: AccessSummary }) {
                   `${l.name}'s link now works once and expires in 7 days. Send the new link; the old one stopped.`,
               )
             }
+            aria-label={`Make single-use for ${l.name}`}
           >
             Make single-use
-          </Button>
+          </UiButton>
         ) : null}
-        <Button
-          label={`Cancel ${l.name}'s link`}
-          onClick={() =>
-            act(`/hub/api/people/${l.id}/revoke`, {}, () => `Cancelled ${l.name}'s link.`)
+        <UiButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label={`Cancel link for ${l.name}`}
+          onClick={(e) =>
+            act(
+              `/hub/api/people/${l.id}/revoke`,
+              {},
+              () => `Cancelled ${l.name}'s link.`,
+              e.currentTarget.closest("li"),
+            )
           }
         >
           Cancel link
-        </Button>
+        </UiButton>
       </div>
     </li>
   );
@@ -555,8 +641,8 @@ function Cell({
 
 function DeviceRow({ d, projects }: { d: AccessSummary; projects: ProjectSummary[] }) {
   const rename = async (): Promise<void> => {
-    const name = await promptDialog(`New name for ${d.name}`, d.name);
-    if (name && name.trim() && name.trim() !== d.name)
+    const name = await promptDialog(`New name for ${d.name}`, d.name, { maxLength: 40 });
+    if (name && name.trim() !== d.name)
       await act<AccessSummary>(
         `/hub/api/people/${d.id}/rename`,
         { name: name.trim() },
@@ -586,23 +672,39 @@ function DeviceRow({ d, projects }: { d: AccessSummary; projects: ProjectSummary
         >
           {`Notes by ${d.name}`}
         </ViewLink>
-        <Button cls="btn text" label={`Rename ${d.name}`} onClick={rename}>
+        <UiButton
+          type="button"
+          variant="link"
+          size="sm"
+          aria-label={`Rename ${d.name}`}
+          onClick={rename}
+        >
           Rename
-        </Button>
-        <Button
-          cls="btn text danger"
-          label={`Revoke ${d.name}`}
-          onClick={async () =>
-            (await confirmDialog(`Revoke ${d.name}? Their open pages stop at once.`, true)) &&
-            act(
-              `/hub/api/people/${d.id}/revoke`,
-              {},
-              () => `Revoked ${d.name}. Their open pages stopped.`,
-            )
-          }
+        </UiButton>
+        <UiButton
+          type="button"
+          variant="link"
+          size="sm"
+          className="text-destructive"
+          aria-label={`Revoke ${d.name}`}
+          onClick={async (e) => {
+            const row = e.currentTarget.closest("li");
+            return (
+              (await confirmDialog("Their open pages stop at once.", true, {
+                title: `Revoke ${d.name}?`,
+                action: "Revoke",
+              })) &&
+              act(
+                `/hub/api/people/${d.id}/revoke`,
+                {},
+                () => `Revoked ${d.name}. Their open pages stopped.`,
+                row,
+              )
+            );
+          }}
         >
           Revoke
-        </Button>
+        </UiButton>
         {/* One choice, applied at once: no submit. The placeholder comes back with the next read. */}
         <Select
           key={d.reaches}
@@ -660,6 +762,7 @@ function NewLinkForm({
     defaultValues: { name: "", page: pages[0]?.open_id ?? "", scope: "", mode: defaultMode },
   });
   const notes = useNotesMode(defaultMode, (m) => form.setValue("mode", m));
+  const busy = useRef(false);
   const pageId = useWatch({ control: form.control, name: "page" });
   const scope = useWatch({ control: form.control, name: "scope" });
   const chosen = pages.find((x) => x.open_id === pageId);
@@ -696,35 +799,37 @@ function NewLinkForm({
       <Form {...form}>
         <form
           className="new-link"
-          onSubmit={form.handleSubmit(async (v) => {
-            const r = await send<ShareResponse>("/hub/api/people/share", {
-              page: v.page,
-              name: v.name,
-              ...scopeBody(valid ? v.scope : first),
-              auto: notes.chosen(v.mode),
-            });
-            if (!r.ok) return form.setError("root", { message: r.error });
-            const made = r.data;
-            notes.untouch();
-            form.reset({ name: "", page: v.page, scope: "", mode: defaultMode });
-            // The new link is listed under "Links nobody has opened yet" once Settings reads again; the toast keeps it at hand.
-            say(
-              `Link for ${made.name}, reaching ${made.reaches}: ${made.link} — works once, until ${new Date(made.expiresAt).toLocaleString()} if nobody opens it. Send it only to ${made.name}.`,
-              {
-                action: { label: "Copy link", onClick: () => copy(made.link, "The link") },
-                duration: 30_000,
-              },
-            );
-            reload();
-          })}
+          onSubmit={form.handleSubmit((v) =>
+            once(busy, async () => {
+              const r = await send<ShareResponse>("/hub/api/people/share", {
+                page: v.page,
+                name: v.name,
+                ...scopeBody(valid ? v.scope : first),
+                auto: notes.chosen(v.mode),
+              });
+              if (!r.ok) return form.setError("root", { message: r.error });
+              const made = r.data;
+              notes.untouch();
+              form.reset({ name: "", page: v.page, scope: "", mode: defaultMode });
+              // The new link is listed under "Links nobody has opened yet" once Settings reads again; the toast keeps it at hand.
+              say(
+                `Link for ${made.name}, reaching ${made.reaches}: ${made.link} — works once, until ${new Date(made.expiresAt).toLocaleString()} if nobody opens it. Send it only to ${made.name}.`,
+                {
+                  action: { label: "Copy link", onClick: () => copy(made.link, "The link") },
+                  duration: 30_000,
+                },
+              );
+              reload();
+            }),
+          )}
         >
           <TextField
             control={form.control}
             name="name"
             label="Name"
+            mark="required"
             maxLength={40}
             placeholder="Their name"
-            aria-label="Their name"
             autoComplete="off"
           />
           <SelectField
@@ -747,16 +852,17 @@ function NewLinkForm({
             options={NOTES}
             onUserChange={notes.touch}
           />
-          <UiButton type="submit" disabled={isSubmitting}>
+          <UiButton
+            type="submit"
+            aria-disabled={isSubmitting || undefined}
+            aria-busy={isSubmitting || undefined}
+            className={isSubmitting ? "opacity-50" : undefined}
+          >
             {isSubmitting ? "Creating…" : "Create link"}
           </UiButton>
         </form>
       </Form>
-      {form.formState.errors.root ? (
-        <p className="error" role="alert">
-          {form.formState.errors.root.message}
-        </p>
-      ) : null}
+      <FormError message={form.formState.errors.root?.message} />
     </div>
   );
 }
@@ -778,7 +884,13 @@ const FROM: Record<string, string> = {
 };
 
 const tailscaleSchema = z.object({
-  login: z.string().check(z.trim(), z.minLength(1, "Enter a Tailscale login."), z.maxLength(200)),
+  login: z
+    .string()
+    .check(
+      z.trim(),
+      z.minLength(1, "Enter a Tailscale login."),
+      z.maxLength(200, "At most 200 characters."),
+    ),
   name: z.string().check(z.trim(), z.maxLength(40, "At most 40 characters.")),
   scope: z.string(),
   mode: z.string(),
@@ -807,6 +919,7 @@ function TailscaleNames({
     : "Off: the server does not listen on Tailscale here, so nobody is named by it. A reviewer is known by the device you let in.";
   const { isSubmitting } = form.formState;
   const notes = useNotesMode(defaultMode, (m) => form.setValue("mode", m));
+  const busy = useRef(false);
   return (
     <>
       <span className="set-title">Names from Tailscale</span>
@@ -818,28 +931,30 @@ function TailscaleNames({
         <form
           className="login-form"
           data-form="tailscale-login"
-          onSubmit={form.handleSubmit(async (v) => {
-            const ok = await act<AccessSummary>(
-              "/hub/api/people/tailscale",
-              {
-                login: v.login,
-                name: v.name || undefined,
-                ...scopeBody(v.scope),
-                auto: notes.chosen(v.mode),
-              },
-              (d) =>
-                `${d.verifiedLogin ?? d.name} is in on any of their Tailscale devices: ${d.reaches}. Listed under Devices; Revoke there.`,
-            );
-            if (ok) {
+          onSubmit={form.handleSubmit((v) =>
+            once(busy, async () => {
+              const error = await run<AccessSummary>(
+                "/hub/api/people/tailscale",
+                {
+                  login: v.login,
+                  name: v.name || undefined,
+                  ...scopeBody(v.scope),
+                  auto: notes.chosen(v.mode),
+                },
+                (d) =>
+                  `${d.verifiedLogin ?? d.name} is in on any of their Tailscale devices: ${d.reaches}. Listed under Devices; Revoke there.`,
+              );
+              if (error !== null) return form.setError("root", { message: error });
               notes.untouch();
               form.reset({ login: "", name: "", scope: v.scope, mode: defaultMode });
-            }
-          })}
+            }),
+          )}
         >
           <TextField
             control={form.control}
             name="login"
             label="Tailscale login"
+            mark="required"
             maxLength={200}
             placeholder="ana@example.com"
             autoComplete="off"
@@ -848,9 +963,9 @@ function TailscaleNames({
             control={form.control}
             name="name"
             label="Name"
+            mark="optional"
             maxLength={40}
             placeholder="Name to show (default: the login)"
-            aria-label="Name to show"
             autoComplete="off"
           />
           <SelectField
@@ -866,11 +981,18 @@ function TailscaleNames({
             options={NOTES}
             onUserChange={notes.touch}
           />
-          <UiButton type="submit" variant="outline" disabled={isSubmitting}>
+          <UiButton
+            type="submit"
+            variant="outline"
+            aria-disabled={isSubmitting || undefined}
+            aria-busy={isSubmitting || undefined}
+            className={isSubmitting ? "opacity-50" : undefined}
+          >
             {isSubmitting ? "Letting in…" : "Let in"}
           </UiButton>
         </form>
       </Form>
+      <FormError message={form.formState.errors.root?.message} />
     </>
   );
 }
@@ -898,17 +1020,26 @@ function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
       : `on, but this computer does not have ${lan.address} now`;
   return (
     <>
-      <label className="switch">
-        <span className="set-switch-text">
-          <span className="set-title">Local network</span>
-          <span className="meta">{`Listen on the local network: ${state}`}</span>
-        </span>
+      <div className="switch">
+        <div className="set-switch-text">
+          <Label htmlFor="set-lan" className="set-title leading-normal">
+            Local network
+          </Label>
+          <span className="meta" id="set-lan-state">{`Listen on the local network: ${state}`}</span>
+        </div>
         <Toggle
+          id="set-lan"
           on={on}
           disabled={!options.length}
-          describedBy="lan-warn"
+          describedBy="set-lan-state lan-warn"
           onChange={async (checked, undo) => {
-            if (checked && !(await confirmDialog(`Listen on ${chosen}? ${LAN_WARNING}`)))
+            if (
+              checked &&
+              !(await confirmDialog(LAN_WARNING, false, {
+                title: `Listen on ${chosen}?`,
+                action: "Listen",
+              }))
+            )
               return undo();
             return act<ProjectActionResult>(
               "/hub/api/settings/network",
@@ -917,24 +1048,35 @@ function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
             );
           }}
         />
-      </label>
+      </div>
       {options.length ? (
         <div className="login-form">
-          <label className="field">
-            <span>Address</span>
-            <Select name="lan-address" value={chosen} onValueChange={setPicked} disabled={on}>
-              <SelectTrigger aria-label="Address on the local network" className="w-full min-w-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map(([v, text]) => (
-                  <SelectItem key={v} value={v}>
-                    {text}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
+          <div className="field">
+            {on ? (
+              <>
+                <span className="set-label">Address</span>
+                <code className="set-lan-address">
+                  {options.find(([a]) => a === chosen)?.[1] ?? chosen}
+                </code>
+              </>
+            ) : (
+              <>
+                <Label htmlFor="set-lan-address">Address</Label>
+                <Select name="lan-address" value={chosen} onValueChange={setPicked}>
+                  <SelectTrigger id="set-lan-address" className="w-full min-w-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {options.map(([v, text]) => (
+                      <SelectItem key={v} value={v}>
+                        {text}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+          </div>
         </div>
       ) : (
         <span className="meta">This computer is on no local network.</span>
@@ -952,22 +1094,31 @@ function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
 function DefaultMode({ value, children }: { value: string; children: ReactNode }) {
   const [shown, setShown] = useState(value);
   const [seen, setSeen] = useState(value);
+  const saved = useRef(value);
+  const timer = useRef<number | undefined>(undefined);
+  saved.current = value;
   if (seen !== value) {
     setSeen(value);
     setShown(value);
   }
+  useEffect(() => () => window.clearTimeout(timer.current), []);
   return (
     <RadioGroup
       asChild
       value={shown}
       onValueChange={(v) => {
         setShown(v);
-        // The server did not take it: the saved choice stays selected, and the other can be chosen again.
-        void act<ProjectActionResult>(
-          "/hub/api/settings/review",
-          { auto: v === "auto" },
-          (d) => d.message,
-        ).then((ok) => ok || setShown(value));
+        // Arrow keys move the choice one option at a time: save where the owner stops, not on every key.
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => {
+          if (v === saved.current) return;
+          // The server did not take it: the saved choice stays selected, and the other can be chosen again.
+          void act<ProjectActionResult>(
+            "/hub/api/settings/review",
+            { auto: v === "auto" },
+            (d) => d.message,
+          ).then((ok) => ok || setShown(saved.current));
+        }, 400);
       }}
     >
       {children}
@@ -980,7 +1131,7 @@ function ModeOption({ value, text, about }: { value: string; text: string; about
   return (
     <div className="set-opt">
       <RadioGroupItem value={value} id={id} aria-describedby={`${id}-d`} />
-      <label htmlFor={id}>{text}</label>
+      <Label htmlFor={id}>{text}</Label>
       <span className="meta" id={`${id}-d`}>
         {about}
       </span>
@@ -991,7 +1142,7 @@ function ModeOption({ value, text, about }: { value: string; text: string; about
 function ProjectRow({ p, gone }: { p: ProjectSummary; gone: Set<string> }) {
   const rename = async (): Promise<void> => {
     const name = await promptDialog(`New name for ${p.name}`, p.name);
-    if (name && name.trim() && name.trim() !== p.name)
+    if (name && name.trim() !== p.name)
       await act<ProjectActionResult>(
         `/hub/api/projects/${p.id}/rename`,
         { name: name.trim() },
@@ -1013,24 +1164,31 @@ function ProjectRow({ p, gone }: { p: ProjectSummary; gone: Set<string> }) {
                 <code title={root}>{tilde(root)}</code>
                 {missing ? <span className="set-gone">folder is gone</span> : null}
                 {p.roots.length > 1 || missing ? (
-                  <Button
-                    cls={missing ? "btn" : "btn text"}
-                    label={`Forget the folder ${root}`}
-                    onClick={async () =>
-                      (!missing ||
-                        (await confirmDialog(
-                          `${root} is gone. Forget it and archive its pages? Their notes are kept.`,
-                          true,
-                        ))) &&
-                      act<ProjectActionResult>(
-                        `/hub/api/projects/${p.id}/forget-root`,
-                        { root, drop: missing },
-                        (d) => d.message,
-                      )
-                    }
+                  <UiButton
+                    type="button"
+                    variant={missing ? "outline" : "link"}
+                    size="sm"
+                    aria-label={`${missing ? "Forget the missing folder" : "Forget"} ${root}`}
+                    onClick={async (e) => {
+                      const row = e.currentTarget.closest("li");
+                      return (
+                        (!missing ||
+                          (await confirmDialog(
+                            `${root} is gone. Forgetting it archives its pages. Their notes are kept.`,
+                            true,
+                            { title: "Forget missing folder?", action: "Forget folder" },
+                          ))) &&
+                        act<ProjectActionResult>(
+                          `/hub/api/projects/${p.id}/forget-root`,
+                          { root, drop: missing },
+                          (d) => d.message,
+                          row,
+                        )
+                      );
+                    }}
                   >
                     {missing ? "Forget the missing folder" : "Forget"}
-                  </Button>
+                  </UiButton>
                 ) : null}
               </li>
             );
@@ -1039,28 +1197,43 @@ function ProjectRow({ p, gone }: { p: ProjectSummary; gone: Set<string> }) {
         {p.same_as ? (
           <p className="same">
             {`Same repository as ${p.same_as.name}. `}
-            <Button
-              onClick={async () =>
-                (await confirmDialog(
-                  `Move the folders and pages of ${p.name} into ${p.same_as!.name}? ${p.name} goes away.`,
-                  true,
-                )) &&
-                act<ProjectActionResult>(
-                  `/hub/api/projects/${p.same_as!.id}/merge`,
-                  { from: p.id },
-                  (d) => d.message,
-                )
-              }
+            <UiButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={async (e) => {
+                const row = e.currentTarget.closest("li");
+                const into = p.same_as!;
+                return (
+                  (await confirmDialog(
+                    `The folders and pages of ${p.name} move into ${into.name}. ${p.name} goes away.`,
+                    true,
+                    { title: `Merge ${p.name} into ${into.name}?`, action: "Merge" },
+                  )) &&
+                  act<ProjectActionResult>(
+                    `/hub/api/projects/${into.id}/merge`,
+                    { from: p.id },
+                    (d) => d.message,
+                    row,
+                  )
+                );
+              }}
             >
               {`Merge into ${p.same_as.name}`}
-            </Button>
+            </UiButton>
           </p>
         ) : null}
       </div>
       <div className="set-actions">
-        <Button label={`Rename ${p.name}`} onClick={rename}>
+        <UiButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label={`Rename ${p.name}`}
+          onClick={rename}
+        >
           Rename
-        </Button>
+        </UiButton>
       </div>
     </li>
   );
@@ -1087,14 +1260,49 @@ async function loadSettings(_: null, signal: AbortSignal): Promise<Loaded> {
   return { settings, access, asks, projects: projectList.projects, pages: pageList.pages };
 }
 
-export function SettingsView(): ReactElement | null {
+export function SettingsView(): ReactElement {
   const { loaded, error } = useLoad(null, loadSettings);
-  if (error) return <p className="error">{error}</p>;
-  if (!loaded) return null;
-  return <SettingsPage {...loaded.data} />;
+  if (!loaded && !error) return <ViewSkeleton />;
+  return <SettingsPage data={loaded?.data ?? null} error={error} />;
 }
 
-function SettingsPage({ settings, access, asks, projects, pages }: Loaded): ReactElement {
+function SettingsPage({
+  data,
+  error,
+}: {
+  data: Loaded | null;
+  error: string | null;
+}): ReactElement {
+  const alert = error ? (
+    <Alert variant="destructive">
+      <AlertDescription>
+        <p>{error}</p>
+        <UiButton type="button" variant="outline" size="sm" onClick={() => reload()}>
+          Try again
+        </UiButton>
+      </AlertDescription>
+    </Alert>
+  ) : null;
+  if (!data)
+    return (
+      <div className="set-page">
+        <div className="set-top">
+          <h1>Settings</h1>
+        </div>
+        {alert}
+      </div>
+    );
+  return <SettingsBody {...data} alert={alert} />;
+}
+
+function SettingsBody({
+  settings,
+  access,
+  asks,
+  projects,
+  pages,
+  alert,
+}: Loaded & { alert: ReactNode }): ReactElement {
   const defaultMode = settings.review.auto ? "auto" : "hold";
   const net = settings.network;
   const waiting = asks.waiting.length;
@@ -1124,6 +1332,7 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
           own invites.
         </p>
       </div>
+      {alert}
       <nav className="set-nav" aria-label="Settings sections">
         {/* In-page jumps without a fragment: a fragment change is a popstate, and the shell would read the view again. */}
         {PARTS.map((p) => {
@@ -1136,7 +1345,12 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
               aria-label={n ? `${p.label}, ${n} waiting` : undefined}
               onClick={(e) => {
                 e.preventDefault();
-                document.getElementById(`set-${p.id}`)?.scrollIntoView({ block: "start" });
+                // The section takes focus too, so the next Tab goes into it, not on to the next pill.
+                const section = document.getElementById(`set-${p.id}`);
+                if (!section) return;
+                section.tabIndex = -1;
+                section.scrollIntoView({ block: "start" });
+                section.focus({ preventScroll: true });
               }}
             >
               {p.label}
@@ -1184,7 +1398,7 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
               ))}
             </ul>
           ) : (
-            <Empty>None.</Empty>
+            <Empty>None yet. Make one under New link.</Empty>
           )}
         </Part>
         <Part id="devices" title="Devices with access" count={access.devices.length}>
@@ -1202,7 +1416,9 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
               </ul>
             </div>
           ) : (
-            <Empty>No device has access yet.</Empty>
+            <Empty>
+              No device has access yet. Approve a request above, or make a link under New link.
+            </Empty>
           )}
         </Part>
         <Part id="new-link" title="New link" count={null}>
@@ -1279,9 +1495,15 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
               {net.share ? (
                 <>
                   <code>{net.share.url}</code>
-                  <Button cls="btn" onClick={() => copy(net.share!.url, "The address")}>
+                  <UiButton
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-label="Copy share address"
+                    onClick={() => copy(net.share!.url, "The address")}
+                  >
                     Copy
-                  </Button>
+                  </UiButton>
                   <span className="meta">{FROM[net.share.from]}</span>
                 </>
               ) : (
@@ -1337,12 +1559,12 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
                 <legend>A new reviewer's notes</legend>
                 <ModeOption
                   value="hold"
-                  text="Hold them for me"
+                  text="Hold notes for me"
                   about="You read each note and decide which ones the agent gets"
                 />
                 <ModeOption
                   value="auto"
-                  text="Send them straight to the agent"
+                  text="Send notes straight to the agent"
                   about="Not available on pages an agent is attached to"
                 />
               </fieldset>
@@ -1376,14 +1598,17 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
               }
             />
             <div className="set-block setting" data-slot="cloud">
-              <label className="switch">
-                <span className="set-switch-text">
-                  <span className="set-title">Cloud features</span>
+              <div className="switch">
+                <div className="set-switch-text">
+                  <Label htmlFor="set-cloud-on" className="set-title leading-normal">
+                    Cloud features
+                  </Label>
                   <span className="meta" id="set-cloud-state">
                     {c.on ? `On: talks to ${c.service}.` : "Off: only local features work."}
                   </span>
-                </span>
+                </div>
                 <Toggle
+                  id="set-cloud-on"
                   on={c.on}
                   describedBy="set-cloud-state"
                   onChange={async (checked, undo) => {
@@ -1391,8 +1616,9 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
                       !checked &&
                       c.published &&
                       !(await confirmDialog(
-                        `Turn cloud features off? Pages published from this machine (${c.published}) stay up on the service, but their notes stop reaching you here until you turn cloud back on.`,
+                        `Pages published from this machine (${c.published}) stay up on the service, but their notes stop reaching you here until you turn cloud back on.`,
                         true,
+                        { title: "Turn cloud features off?", action: "Turn off" },
                       ))
                     )
                       return undo();
@@ -1403,7 +1629,7 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
                     );
                   }}
                 />
-              </label>
+              </div>
               {c.account ? <span className="meta">{`Signed in as ${c.account}.`}</span> : null}
               {c.published ? (
                 <span className="meta">
@@ -1459,7 +1685,9 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
           </ul>
         ) : (
           <div className="set-block">
-            <Empty>No projects yet.</Empty>
+            <Empty>
+              <Words text="No projects yet. Open a page with `austere-axi open <file>` and its project appears here." />
+            </Empty>
           </div>
         )}
         <div className="missing set-foot">
@@ -1468,7 +1696,10 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
               <span>
                 {`${plural(settings.missing, "page")} opened for review ${settings.missing === 1 ? "has" : "have"} a file that is gone. Archiving keeps ${settings.missing === 1 ? "its" : "their"} notes.`}
               </span>
-              <Button
+              <UiButton
+                type="button"
+                variant="outline"
+                size="sm"
                 onClick={() =>
                   act<ProjectActionResult>(
                     "/hub/api/projects/archive-missing",
@@ -1478,7 +1709,7 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
                 }
               >
                 Archive missing pages
-              </Button>
+              </UiButton>
             </Fragment>
           ) : (
             <span>No page opened for review has a missing file.</span>

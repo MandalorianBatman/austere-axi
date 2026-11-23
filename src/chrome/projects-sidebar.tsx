@@ -1,19 +1,30 @@
 // The projects sidebar: every project with its pages, foldable, with the counts that need the owner.
 // shadcn's Sidebar parts, so it must sit inside a <SidebarProvider>; the rest is props (data in, callbacks
-// out; no store, no page globals), so the hub mounts it today and the review page can mount it later.
-import type { MouseEvent, ReactElement } from "react";
+// out; no store, no page globals). `AppSidebar` is the whole sidebar (name, search, views, projects): the hub and
+// the review page both mount it.
+import type { ComponentProps, MouseEvent, ReactElement, ReactNode } from "react";
 import type { ProjectSummary, ShellPage } from "../shared/hub-api.ts";
 import { ChevronRight } from "lucide-react";
 import { middle, plural, titleOf } from "./format.ts";
+import { Icon } from "./icon.tsx";
+import { VIEWS } from "./views.ts";
+import type { SideStatus, View } from "./views.ts";
+import { Alert, AlertDescription, AlertTitle } from "@/chrome/ui/alert";
+import { Button } from "@/chrome/ui/button";
 import {
+  Sidebar,
+  SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInput,
   SidebarMenu,
   SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSkeleton,
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
@@ -38,11 +49,15 @@ export interface ProjectsSidebarProps {
   pageHref?(page: { open_id: string }): string;
   /** The page open now (the review page): the id of any of its copies. It is marked, and its project too while folded. */
   currentId?: string;
+  /** Whether the lists are on their way or could not be read; with projects already shown, an error is not shown. */
+  status?: SideStatus;
+  /** Read the lists again (the error's Retry). */
+  onRetry?(): void;
 }
 
 const NeedsDot = (): ReactElement => (
   <span
-    className="size-[7px] shrink-0 rounded-full bg-[var(--amber)]"
+    className="size-2 shrink-0 rounded-full bg-[var(--amber)]"
     role="img"
     aria-label="Needs you"
   />
@@ -64,6 +79,8 @@ export function ProjectsSidebar({
   onToggle,
   pageHref = hubOpen,
   currentId,
+  status = "ready",
+  onRetry,
 }: ProjectsSidebarProps): ReactElement {
   const byProject = new Map<string, ShellPage[]>();
   for (const p of pages) {
@@ -95,7 +112,11 @@ export function ProjectsSidebar({
               const holdsCurrent = !expanded && list.some((pg) => isCurrent(pg, currentId));
               return (
                 <SidebarMenuItem key={p.id} className="proj">
-                  <SidebarMenuButton asChild isActive={isSelected || holdsCurrent} className="pl-7">
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isSelected || holdsCurrent}
+                    className="ml-7 w-[calc(100%-1.75rem)] pl-2 text-sidebar-foreground"
+                  >
                     <a
                       className="proj-link"
                       href={projectHref(p.id)}
@@ -107,7 +128,7 @@ export function ProjectsSidebar({
                     </a>
                   </SidebarMenuButton>
                   <SidebarMenuAction
-                    className="proj-toggle left-1 right-auto"
+                    className="proj-toggle top-1 left-0.5 right-auto size-6 w-6 after:hidden"
                     aria-expanded={expanded}
                     aria-label={`${expanded ? "Hide" : "Show"} the pages of ${p.name}`}
                     onClick={() => onToggle(p.id)}
@@ -117,11 +138,9 @@ export function ProjectsSidebar({
                     />
                   </SidebarMenuAction>
                   {p.unanswered ? (
-                    <SidebarMenuBadge
-                      className={p.needs_you ? "text-[var(--amber)]" : undefined}
-                      title={plural(p.unanswered, "unanswered note")}
-                    >
-                      {p.unanswered}
+                    <SidebarMenuBadge className={p.needs_you ? "text-[var(--amber)]" : undefined}>
+                      <span aria-hidden="true">{p.unanswered}</span>
+                      <span className="sr-only">{plural(p.unanswered, "unanswered note")}</span>
                     </SidebarMenuBadge>
                   ) : p.needs_you ? (
                     <SidebarMenuBadge>
@@ -148,21 +167,21 @@ export function ProjectsSidebar({
                                 {pg.needs_you ? (
                                   <NeedsDot />
                                 ) : pg.unanswered ? (
-                                  <span
-                                    className="ml-auto text-[11px] text-muted-foreground"
-                                    title={plural(pg.unanswered, "unanswered note")}
-                                  >
-                                    {pg.unanswered}
+                                  <span className="ml-auto text-2xs text-muted-foreground">
+                                    <span aria-hidden="true">{pg.unanswered}</span>
+                                    <span className="sr-only">
+                                      {plural(pg.unanswered, "unanswered note")}
+                                    </span>
                                   </span>
                                 ) : null}
                               </a>
                             </SidebarMenuSubButton>
                             {pg.copies.length > 1 ? (
-                              <div className="mini-chips flex flex-wrap gap-1 py-0.5">
+                              <div className="mini-chips flex flex-wrap gap-1.5 py-0.5">
                                 {pg.copies.map((c) => (
                                   <a
                                     key={c.id}
-                                    className={`mini-chip rounded-full border px-2 font-mono text-[11px] leading-[18px] ${c.unanswered ? "waiting border-[var(--amber-pill)] text-[var(--amber)]" : "text-muted-foreground"}`}
+                                    className={`mini-chip inline-flex min-h-6 items-center rounded-sm border px-2 font-mono text-2xs ${c.unanswered ? "waiting border-[var(--amber-pill)] text-[var(--amber)]" : "text-muted-foreground"}`}
                                     href={pageHref({ open_id: c.id })}
                                     title={`${c.label} · ${c.file}`}
                                   >
@@ -179,11 +198,165 @@ export function ProjectsSidebar({
                 </SidebarMenuItem>
               );
             })
+          ) : status === "loading" ? (
+            <li role="status" aria-busy="true" className="flex flex-col gap-1">
+              <span className="sr-only">Loading projects</span>
+              {[0, 1, 2].map((i) => (
+                <SidebarMenuSkeleton key={i} />
+              ))}
+            </li>
+          ) : status === "error" ? (
+            <li>
+              <Alert variant="destructive" className="px-3 py-2">
+                <AlertTitle>Could not load projects</AlertTitle>
+                <AlertDescription>
+                  <p>Could not reach austere-axi.</p>
+                  {onRetry ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="mt-2"
+                      onClick={onRetry}
+                    >
+                      Retry
+                    </Button>
+                  ) : null}
+                </AlertDescription>
+              </Alert>
+            </li>
           ) : (
-            <li className="side-empty px-2 py-1 text-sm text-muted-foreground">No projects yet.</li>
+            <li className="side-empty px-2 py-1 text-sm text-muted-foreground">
+              No projects yet. Open a page with <code>austere-axi open &lt;file&gt;</code>.
+            </li>
           )}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
+  );
+}
+
+/** The austere-axi mark: decorative, the name beside it is the link's text. */
+function LogoMark(): ReactElement {
+  return (
+    <svg className="logo shrink-0" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+      <rect className="fill-[var(--surface)]" width="32" height="32" rx="7" />
+      <rect
+        className="fill-none stroke-[var(--line-3)]"
+        x="1"
+        y="1"
+        width="30"
+        height="30"
+        rx="6"
+      />
+      <path
+        className="fill-none stroke-[var(--accent)] stroke-[2.6] [stroke-linecap:round] [stroke-linejoin:round]"
+        d="M9 23 16 8l7 15M11.5 18h9"
+      />
+    </svg>
+  );
+}
+
+/** The sidebar's search box; the page decides what typing and submitting do. */
+export function SearchField(props: ComponentProps<typeof SidebarInput>): ReactElement {
+  return (
+    <div className="relative">
+      <Icon
+        name="search"
+        size={15}
+        width={1.8}
+        cls="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
+      />
+      <SidebarInput
+        type="search"
+        name="q"
+        className="pl-8"
+        placeholder="Search pages, parts"
+        aria-label="Search pages and parts"
+        autoComplete="off"
+        {...props}
+      />
+    </div>
+  );
+}
+
+export interface AppSidebarProps {
+  /** The build's version, shown beside the name; "" where the page does not know it. */
+  version: string;
+  /** The view the page is on; "" where there is none (the review page). */
+  view: View | "";
+  viewHref(view: Exclude<View, "search">): string;
+  onView?(e: MouseEvent, view: Exclude<View, "search">): void;
+  /** Pages that need the owner (Inbox) and people waiting for access (Settings). */
+  counts: { inbox: number; settings: number };
+  /** The search box: a live one on the hub, a form to the hub's search on the review page. */
+  search: ReactNode;
+  projects: ProjectsSidebarProps;
+}
+
+const needsTitle = (n: number): string => `${plural(n, "page needs", "pages need")} you`;
+const waitingTitle = (n: number): string => `${plural(n, "person asks", "people ask")} for access`;
+
+/** The one sidebar of both surfaces: name and search, the views, then the projects. */
+export function AppSidebar({
+  version,
+  view,
+  viewHref,
+  onView,
+  counts,
+  search,
+  projects,
+}: AppSidebarProps): ReactElement {
+  return (
+    <Sidebar id="side" aria-label="Projects" role="complementary" className="side">
+      <SidebarHeader className="gap-3 p-3">
+        <div className="brand flex items-center gap-2 px-2">
+          <LogoMark />
+          <a href="/?view=inbox" className="flex-1 text-sm font-semibold text-foreground">
+            austere-axi
+          </a>
+          {version ? (
+            <small className="font-mono text-2xs text-[var(--faint)]">{version}</small>
+          ) : null}
+        </div>
+        {search}
+      </SidebarHeader>
+      <SidebarContent className="px-1">
+        {/* A phone has the views in its tab bar (the hub); the drawer keeps search and projects. */}
+        <SidebarMenu className="views max-xs:hidden" aria-label="Views">
+          {VIEWS.map((v) => {
+            const n = v.id === "inbox" ? counts.inbox : v.id === "settings" ? counts.settings : 0;
+            return (
+              <SidebarMenuItem key={v.id}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={view === v.id}
+                  className="text-sidebar-foreground"
+                >
+                  <a
+                    href={viewHref(v.id)}
+                    data-view={v.id}
+                    aria-current={view === v.id ? "page" : undefined}
+                    onClick={onView && ((e) => onView(e, v.id))}
+                  >
+                    <Icon name={v.icon} />
+                    <span className="label">{v.label}</span>
+                  </a>
+                </SidebarMenuButton>
+                {n ? (
+                  <SidebarMenuBadge className="count need rounded-full bg-[var(--amber-pill)] px-2 text-[var(--amber)]">
+                    <span aria-hidden="true">{n}</span>
+                    <span className="sr-only">
+                      {v.id === "inbox" ? needsTitle(n) : waitingTitle(n)}
+                    </span>
+                  </SidebarMenuBadge>
+                ) : null}
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+        <ProjectsSidebar {...projects} />
+      </SidebarContent>
+    </Sidebar>
   );
 }

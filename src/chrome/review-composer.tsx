@@ -1,6 +1,8 @@
 // The note box at the foot of the panel: the whole-page note, Send, and what Send does now.
 import { useEffect } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import * as z from "zod/mini";
 import { useShallow } from "zustand/react/shallow";
 import type { ReactElement } from "react";
 import { LoaderCircle } from "lucide-react";
@@ -11,48 +13,70 @@ import { useNow } from "./review-hooks.ts";
 import { sendAll, composerInput } from "./review-send.ts";
 import { notesGoToAgent, presenceView, getRoster } from "./review-presence.ts";
 import { set, useReview } from "./review-store.ts";
+import { Alert } from "@/chrome/ui/alert";
 import { Badge } from "@/chrome/ui/badge";
 import { Button } from "@/chrome/ui/button";
-import { Form, FormControl, FormField, FormItem, FormMessage } from "@/chrome/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/chrome/ui/form";
 import { Input } from "@/chrome/ui/input";
-import { Label } from "@/chrome/ui/label";
 import { Textarea } from "@/chrome/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/chrome/ui/tooltip";
 
 const UNSAVED_WARNING =
   "This browser could not keep a copy of your note: keep this tab open until it shows “Sent to the page owner”.";
 
+const nameSchema = z.object({
+  name: z
+    .string()
+    .check(
+      z.trim(),
+      z.minLength(1, "Enter your name so the owner knows who wrote these notes."),
+      z.maxLength(NAME_MAX),
+    ),
+});
+
 /** Hosted, unlisted page without an invite: the reviewer names themself once, before the first send. */
 function NameAsk(): ReactElement | null {
   const asking = useReview((s) => s.askName);
+  const form = useForm({ resolver: zodResolver(nameSchema), defaultValues: { name: "" } });
   if (!HOSTED || !asking) return null;
   return (
-    <form
-      className="name-ask"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const input = e.currentTarget.elements.namedItem("name") as HTMLInputElement;
-        const name = input.value.trim().slice(0, NAME_MAX);
-        if (!name) return input.focus();
-        LS.set("austere:name", name);
-        set({ viewerName: name, askName: false });
-        getRoster()?.rename();
-        void sendAll(false);
-      }}
-    >
-      <Label htmlFor="austere-name">Your name, shown with your notes</Label>
-      <div className="name-row">
-        <Input
-          id="austere-name"
+    <Form {...form}>
+      <form
+        className="name-ask"
+        noValidate
+        onSubmit={form.handleSubmit(({ name }) => {
+          LS.set("austere:name", name);
+          set({ viewerName: name, askName: false });
+          getRoster()?.rename();
+          void sendAll(false);
+        })}
+      >
+        <FormField
+          control={form.control}
           name="name"
-          autoFocus
-          maxLength={NAME_MAX}
-          autoComplete="name"
-          placeholder="Name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Your name, shown with your notes (required)</FormLabel>
+              <div className="name-row">
+                <FormControl>
+                  <Input
+                    {...field}
+                    autoFocus
+                    required
+                    aria-required="true"
+                    maxLength={NAME_MAX}
+                    autoComplete="name"
+                    placeholder="Name"
+                  />
+                </FormControl>
+                <Button type="submit">Continue</Button>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
         />
-        <Button type="submit">Continue</Button>
-      </div>
-    </form>
+      </form>
+    </Form>
   );
 }
 
@@ -91,6 +115,7 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
       inviteName: r.inviteName,
       viewerName: r.viewerName,
       composerError: r.composerError,
+      composerRetry: r.composerRetry,
       outboxUnsaved: r.outboxUnsaved,
       rateLimit: r.rateLimit,
       connected: r.connected,
@@ -104,7 +129,8 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
   const now = useNow();
   const n = s.queued;
   const view = presenceView(s, now);
-  const locked = s.archived || !!s.lockout || s.sending;
+  // While a send is in flight the controls stay in the tab order (readOnly, aria-disabled): `disabled` would drop focus to <body>.
+  const locked = s.archived || !!s.lockout;
   const empty = !n && !s.draft.trim();
   const alreadyDone = empty && !!s.lastNote?.end && !s.lastNote.items?.length;
   // The store holds the draft (Send, Done and the dock read it); the form follows it, so a send that clears it clears the box.
@@ -119,11 +145,6 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
     if (showSaved && OWNER) void loadAgentPrompt();
   }, [showSaved]);
   const error = [s.composerError, s.outboxUnsaved ? UNSAVED_WARNING : ""].filter(Boolean).join(" ");
-  // A refused send or an outbox notice is the note's error.
-  useEffect(() => {
-    if (error) form.setError("note", { type: "server", message: error });
-    else form.clearErrors("note");
-  }, [error, form]);
   return (
     <>
       <NameAsk />
@@ -150,8 +171,10 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
                     rows={2}
                     aria-label="A note about the whole page"
                     placeholder={s.archived ? "Page archived" : "Add a note about the whole page"}
-                    className="composer-input min-h-[60px] max-h-40 resize-y bg-[var(--bg-3)] text-[length:var(--fs)] md:text-[length:var(--fs)]"
+                    className="composer-input min-h-[60px] max-h-40 resize-y bg-[var(--bg-3)] text-[length:var(--fs)] md:text-[length:var(--fs)] max-xs:text-[16px]"
                     disabled={locked}
+                    readOnly={s.sending}
+                    aria-disabled={s.sending || undefined}
                     onChange={(e) => {
                       field.onChange(e);
                       set({ draft: e.target.value });
@@ -169,17 +192,35 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
                     }}
                   />
                 </FormControl>
-                <FormMessage className="composer-error" role="alert" />
               </FormItem>
             )}
           />
+          {/* A refused send is the form's, not the note's: the text is fine, the service was not. */}
+          {error ? (
+            <Alert variant="destructive" className="composer-error">
+              <div className="col-start-2 flex items-center justify-between gap-2">
+                <span>{error}</span>
+                {s.composerRetry ? (
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    onClick={() => void sendAll(false)}
+                  >
+                    Try again
+                  </Button>
+                ) : null}
+              </div>
+            </Alert>
+          ) : null}
           <div className="composer-row">
             {OWNER ? (
               <Button
                 type="button"
                 variant="outline"
                 className="send-end"
-                disabled={s.archived || s.sending || alreadyDone}
+                disabled={s.archived || alreadyDone}
+                aria-disabled={s.sending || undefined}
                 title={
                   alreadyDone
                     ? "You already told the agent you have no more notes"
@@ -187,7 +228,9 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
                       ? "Tell the agent you have no more notes"
                       : "Send these notes and tell the agent it can stop listening. You can still add notes later."
                 }
-                onClick={() => void sendAll(true)}
+                onClick={() => {
+                  if (!s.sending) void sendAll(true);
+                }}
               >
                 {empty ? "Done" : "Send & finish"}
               </Button>
@@ -196,6 +239,10 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
               type="submit"
               className="send"
               disabled={locked || (!!HOSTED && s.inviteName === undefined)}
+              aria-disabled={s.sending || undefined}
+              onClick={(e) => {
+                if (s.sending) e.preventDefault();
+              }}
             >
               {s.sending ? (
                 <>
