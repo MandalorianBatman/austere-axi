@@ -46,7 +46,9 @@ export function ModeSwitch(): ReactElement {
   const archived = useReview((s) => s.archived);
   const shown: Mode = archived ? "explore" : mode;
   // The frame follows the switch.
-  useEffect(() => post({ type: "mode", mode: shown }), [shown]);
+  useEffect(() => {
+    post({ type: "mode", mode: shown });
+  }, [shown]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && (e.key === "i" || e.key === "I")) {

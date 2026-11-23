@@ -52,7 +52,9 @@ function Anchor({ item }: { item: QueueItem }): ReactElement | null {
 function Edit({ item, text }: { item: QueueItem; text: string }): ReactElement {
   const ref = useRef<HTMLTextAreaElement>(null);
   const cancelled = useRef(false);
-  useEffect(() => ref.current?.focus(), []);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
   return (
     <Textarea
       ref={ref}

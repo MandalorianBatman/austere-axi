@@ -167,7 +167,10 @@ function RunCard(): ReactElement | null {
   const message = useReview((s) => s.runMessage);
   const log = useReview((s) => s.runLog);
   const logRef = useRef<HTMLPreElement>(null);
-  useEffect(() => logRef.current?.scrollIntoView({ block: "nearest" }), [log]);
+  // The effect returns nothing: a returned value would be taken for its cleanup.
+  useEffect(() => {
+    logRef.current?.scrollIntoView({ block: "nearest" });
+  }, [log]);
   if (!run) return null;
   const why = runWhy(run, message);
   return (

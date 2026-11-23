@@ -108,6 +108,16 @@ async function ownerPage(
   const context = await browser.newContext({
     viewport: { width, height: width > 500 ? 900 : 844 },
   });
+  // A DOM method that hands back a value (some browsers do) must not break a component: React takes what an effect
+  // returns for its cleanup. Made to return one here, so a one-line effect body that leaks it fails on any Chrome.
+  await context.addInitScript(() => {
+    Element.prototype.scrollIntoView = function () {
+      return {} as unknown as undefined;
+    };
+    HTMLElement.prototype.focus = function () {
+      return {} as unknown as undefined;
+    };
+  });
   const page = await context.newPage();
   const problems: string[] = [];
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.stack ?? e.message}`));

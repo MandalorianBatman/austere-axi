@@ -92,7 +92,9 @@ export function useHistoryFeed(): void {
   }, [revision, tick, entered]);
   const hist = useReview((s) => s.hist);
   // The frame learns which statements have earlier versions; a frame that reloads asks again when it is ready.
-  useEffect(sendHistoryCounts, [hist]);
+  useEffect(() => {
+    sendHistoryCounts();
+  }, [hist]);
 }
 
 /** The History panel, over the notes: every revision, or one statement's earlier texts. */
