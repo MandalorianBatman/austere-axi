@@ -110,7 +110,7 @@ async function ownerPage(
   });
   const page = await context.newPage();
   const problems: string[] = [];
-  page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+  page.on("pageerror", (e) => problems.push(`pageerror: ${e.stack ?? e.message}`));
   page.on("console", (m) => {
     if (m.type() === "error") problems.push(`console error: ${m.text()}`);
   });
