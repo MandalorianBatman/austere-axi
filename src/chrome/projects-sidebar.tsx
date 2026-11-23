@@ -308,7 +308,7 @@ export function AppSidebar({
   projects,
 }: AppSidebarProps): ReactElement {
   return (
-    <Sidebar id="side" aria-label="Projects" className="side">
+    <Sidebar id="side" aria-label="Projects" role="complementary" className="side">
       <SidebarHeader className="gap-3 p-3">
         <div className="brand flex items-center gap-2 px-2">
           <LogoMark />

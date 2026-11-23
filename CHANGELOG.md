@@ -4,6 +4,15 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Changed
+
+- **UI/UX polish pass on the hub, Settings and the review page** (RLM-453). One type scale (11/12/13/15/22 px; Tailwind `text-xs`/`text-sm`/`text-md` now point at it, so there is no 14 px), one radius scale (`--radius-sm/md/lg` = 6/8/12 px, a pill only for status badges), one button scale (24 / 32 / 36 px, 44 px on a phone) and spacing on the 4 px grid. `rem` is 16 px on the hub too (shadcn parts were 19% smaller there). Dialogs are 480 px wide and their titles left-aligned. One projects sidebar on the hub and the review page. `hub-narrow.css` is gone: the phone layout is responsive Tailwind classes. Breakpoints are range queries (`width <= 860px`), so a fractional width at browser zoom no longer falls between two blocks.
+- **Contrast and focus.** Primary and destructive buttons had 1.8:1 and 2.2:1 text (an unlayered reset beat the Tailwind classes); they are 8.7:1 and 7.7:1. The `dark:` utilities of the shadcn parts now apply (they matched a `.dark` class nothing set), field, switch and radio edges are 3:1 or more, toasts have a background, and every control has one 2 px accent focus ring.
+- **Keyboard and screen reader.** On a phone the notes are a bottom `Sheet` (closed it is out of the tab order, open it traps focus and gives it back to the dock). The composer keeps focus while it sends. The hub has a skip link. Focus goes to the next row, or the page heading, when the focused row goes away (archive, Approve/Deny/Revoke, a link in the content). Share's radio groups are fieldsets, accessible names contain their visible text, count badges and receipt times have text, the review page has a `<main>`, History takes focus when it opens, and Ctrl/Cmd+I and Ctrl/Cmd+B ignore typing. The shortcut shows as ⌘K on a Mac.
+- **Forms and states.** Errors are an `Alert` with Try again (the page heading stays), loading is a skeleton, empty states name the next step (`austere-axi open <file>`), confirm dialogs name the verb ("Revoke Ana?"), a failed send says so in words and offers Retry, required fields are marked, and "Block" asks first. The notes setting reads "Hold notes for me" / "Send notes straight to the agent" everywhere. The undo toast stays 10 s.
+- Removed `next-themes` (the chrome is dark only) and the unused `ui/checkbox.tsx`. Gzip size: `chrome.js` 258,687 bytes (256,909 at 0.18.0), `shell.js` 186,753 (183,398). Code-splitting would cut it but needs the hosted Worker to proxy more asset paths.
+- For anyone who scripts the chrome: the notes sheet exists in the DOM only while it is open at 860 px and narrower; the copy switcher's name is "Worktree copy: <label>"; the hub's views are not in the phone drawer (the tab bar has them).
+
 ## 0.18.0 (2026-11-23)
 
 Upgrading from 0.17: see [Upgrading to 0.18](docs/upgrading-to-0.18.md).
