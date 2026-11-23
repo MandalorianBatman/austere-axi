@@ -833,8 +833,20 @@ test(
     await say(id, "fix");
     const waiting = await runIn(id, "waiting_for_session");
     assert.equal(waiting.agent_session_id, "as-live");
-    await sleep(500);
-    assert.equal(runsOf(id)[0].status, "waiting_for_session");
+    // The server re-queues a waiting run every recheck and parks it again a moment later, in two
+    // statements of its own process: a read can land between them. So hold the run to "has not
+    // started" over the whole window, not to one snapshot of "waiting".
+    const end = Date.now() + 500;
+    while (Date.now() < end) {
+      const runs = runsOf(id);
+      assert.equal(runs.length, 1);
+      assert.ok(
+        ["queued", "waiting_for_session"].includes(runs[0].status),
+        `run left the wait: ${runs[0].status}`,
+      );
+      assert.equal(runs[0].started_at, null);
+      await sleep(25);
+    }
     live.kill();
     const run = await runIn(id, "done", "failed");
     assert.equal(run.status, "done", `reason ${run.reason}`);
