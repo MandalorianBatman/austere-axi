@@ -6,20 +6,11 @@ import { post, getFrame } from "./review-bridge.ts";
 import { postHighlight } from "./review-changes.ts";
 import { openHistory, sendHistoryCounts } from "./review-history.ts";
 import { loadHostedFrame } from "./review-hosted.ts";
+import { frameReady, toggleSwitcher } from "./review-nav.ts";
 import { addToQueue } from "./review-notes.ts";
 import { getRoster } from "./review-presence.ts";
 import { S, set, setMode } from "./review-store.ts";
 import type { FrameMessage } from "./review-types.ts";
-
-/** What the owner's header navigation (nav.ts) offers the frame: the quick switcher, and outlining a search hit. */
-export interface FrameNav {
-  frameReady(): void;
-  toggleSwitcher(): void;
-}
-let nav: FrameNav | null = null;
-export const setNav = (n: FrameNav | null): void => {
-  nav = n;
-};
 
 export function loadFrame(): void {
   set({ frameReady: false });
@@ -98,7 +89,7 @@ function onMessage(e: MessageEvent): void {
       // The old frame's note box is gone, whether or not its blur arrived.
       getRoster()?.setWriting("note", false);
       // A search hit opened the page at one of its parts: outline it once the frame has rendered.
-      nav?.frameReady();
+      frameReady();
       break;
     case "annotate":
       addToQueue(d.item);
@@ -153,7 +144,7 @@ function onMessage(e: MessageEvent): void {
       break;
     case "quick-switch":
       // Ctrl/Cmd+K pressed inside the frame (sent only when init said the owner has a switcher).
-      nav?.toggleSwitcher();
+      toggleSwitcher();
       break;
     case "history":
       // The popover's History (n) on a statement: the owner's only, and only a statement name is taken from the frame.

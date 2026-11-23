@@ -1,5 +1,4 @@
 // The icons of icons.ts (the review page's and the hub's, drawn from the redesign) as React elements.
-// icons.ts stays: the review chrome (chrome.ts, nav.ts) builds the same shapes as DOM.
 import { createElement } from "react";
 import type { ReactElement } from "react";
 import { ICONS } from "./icons.ts";

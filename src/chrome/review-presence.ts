@@ -74,3 +74,11 @@ export const setRoster = (p: Presence): void => {
   roster = p;
 };
 export const getRoster = (): Presence | null => roster;
+
+/** The header's chips element, set by the page bar as it mounts: a retried panel draws a new one, which the roster fills. */
+let viewers: HTMLElement | null = null;
+export const getViewers = (): HTMLElement | null => viewers;
+export function setViewers(el: HTMLElement | null): void {
+  viewers = el;
+  if (el) roster?.chipsMoved();
+}

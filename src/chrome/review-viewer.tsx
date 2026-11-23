@@ -1,6 +1,6 @@
 // What frames the artifact: the title, the mode switch, the ⋯ menu, the notice about third-party packs, the iframe
 // itself, and a hosted page's footer with its report box.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { Icon } from "./icon.tsx";
 import { ShapeIcon } from "./icon.tsx";
@@ -12,9 +12,19 @@ import { post, setFrame } from "./review-bridge.ts";
 import { loadFrame } from "./review-frame.ts";
 import { downloadStandalone, getInvite } from "./review-hosted.ts";
 import { openHistory } from "./review-history.ts";
+import { CopySwitcher, Crumbs } from "./review-nav.tsx";
+import { nextUnanswered, openSwitcher } from "./review-nav.ts";
 import { S, set, setMode, useReview } from "./review-store.ts";
 import type { Mode } from "./review-types.ts";
 import { Button } from "@/chrome/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/chrome/ui/toggle-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/chrome/ui/dropdown-menu";
 import { Label } from "@/chrome/ui/label";
 import { Textarea } from "@/chrome/ui/textarea";
 
@@ -32,10 +42,12 @@ export function TitleBlock(): ReactElement {
   }, [title]);
   return (
     <div className="bar-title">
+      {OWNER ? <Crumbs /> : null}
       <h1 className="title">{title}</h1>
       <span className="file" title={BOOT.file || ""}>
         {OWNER ? BOOT.name : name ? `reviewing as ${name}` : ""}
       </span>
+      {OWNER ? <CopySwitcher /> : null}
     </div>
   );
 }
@@ -59,37 +71,42 @@ export function ModeSwitch(): ReactElement {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+  const item =
+    "h-[26px] gap-1.5 !rounded-md px-2.5 text-[12.5px] font-medium text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-secondary data-[state=on]:font-semibold data-[state=on]:text-foreground data-[state=on]:[&_svg]:text-primary max-[480px]:size-[var(--touch)] max-[480px]:px-0 max-[480px]:[&_svg]:size-5";
   return (
     <>
-      <div className="seg" role="group" aria-label="Mode">
-        <button
-          type="button"
+      <ToggleGroup
+        type="single"
+        aria-label="Mode"
+        value={shown}
+        // Clicking the chosen item again would clear it: a mode is always on.
+        onValueChange={(next) => next && setMode(next as Mode)}
+        className="gap-0.5 rounded-lg border bg-card p-[3px] max-[480px]:flex-none max-[480px]:bg-muted max-[480px]:p-0.5"
+      >
+        <ToggleGroupItem
+          value="annotate"
           data-mode="annotate"
-          className={shown === "annotate" ? "on" : undefined}
-          aria-pressed={shown === "annotate"}
           disabled={archived}
           title={
             archived
               ? "The page is archived: it takes no notes"
               : "Click anything to comment on it (⌘/Ctrl+I)"
           }
-          onClick={() => setMode("annotate")}
+          className={item}
         >
           <Icon name="annotate" size={14} width={1.9} />
-          <span className="seg-label">Annotate</span>
-        </button>
-        <button
-          type="button"
+          <span className="max-[480px]:sr-only">Annotate</span>
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="explore"
           data-mode="explore"
-          className={shown === "explore" ? "on" : undefined}
-          aria-pressed={shown === "explore"}
           title="Use the page normally: tabs, forms, links (⌘/Ctrl+I)"
-          onClick={() => setMode("explore")}
+          className={item}
         >
           <Icon name="explore" size={14} width={1.9} />
-          <span className="seg-label">Explore</span>
-        </button>
-      </div>
+          <span className="max-[480px]:sr-only">Explore</span>
+        </ToggleGroupItem>
+      </ToggleGroup>
       <span className="subbar-hint">
         {archived
           ? "The page is archived: it takes no notes"
@@ -125,127 +142,164 @@ export function Frame(): ReactElement {
   );
 }
 
-/** The ⋯ menu. Clicks on its items close it; the share note and a download in progress keep it open. */
+const ITEM = "max-[480px]:min-h-[var(--touch)]";
+
+/** The ⋯ menu. Choosing an item closes it; the share note and a download in progress keep it open. */
 export function MoreMenu(): ReactElement {
   const open = useReview((s) => s.menuOpen);
   const unlisted = useReview((s) => s.unlisted);
   const archived = useReview((s) => s.archived);
   const exporting = useReview((s) => s.exporting);
-  useEffect(() => {
-    const close = (): void => set({ menuOpen: false });
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, []);
-  const onCommand = async (e: React.MouseEvent<HTMLDivElement>): Promise<void> => {
-    const cmd =
-      e.target instanceof Element
-        ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd
-        : undefined;
-    // The share note stays open so its command can be selected.
-    if (!cmd) return e.stopPropagation();
-    if (cmd === "copy-path") await copyText(BOOT.file, "File path");
-    // Hosted, the URL without its fragment: the invite token is already out of the address bar.
-    if (cmd === "copy-link")
-      await copyText(
-        HOSTED ? location.origin + location.pathname : S().links?.remote || location.href,
-        HOSTED ? "Page link" : "Review link",
-      );
-    if (cmd === "copy-agent-prompt") await copyAgentPrompt();
-    if (cmd === "history") openHistory();
-    if (cmd === "reload") loadFrame();
-    if (cmd === "export" && HOSTED) {
-      // The menu stays open on "Preparing download…" until the file is saved or the banner says why not.
-      e.stopPropagation();
-      await downloadStandalone();
-      set({ menuOpen: false });
-    }
-    if (cmd === "share") await openShare();
-    if (cmd === "archive") await archivePage();
-    if (cmd === "unarchive") await unarchivePage();
-  };
+  const trigger = useRef<HTMLButtonElement>(null);
   return (
-    <div className="menu">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="icon-btn menu-btn"
-        aria-label="More"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={(e) => {
-          e.stopPropagation();
-          set({ menuOpen: !open });
-          if (!open && OWNER) void loadAgentPrompt();
-        }}
-      >
-        <ShapeIcon shapes={DOTS} size={16} />
-      </Button>
-      <div className="menu-pop" hidden={!open} onClick={(e) => void onCommand(e)}>
+    <DropdownMenu
+      // Not modal: the page stays live behind the menu, and a click on it both closes the menu and does its work.
+      modal={false}
+      open={open}
+      onOpenChange={(next) => {
+        set({ menuOpen: next });
+        if (next && OWNER) void loadAgentPrompt();
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <Button
+          ref={trigger}
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="icon-btn menu-btn"
+          aria-label="More"
+        >
+          <ShapeIcon shapes={DOTS} size={16} />
+        </Button>
+      </DropdownMenuTrigger>
+      {/* No exit animation: the menu is gone when a choice is made, so a click on ⋯ right after a choice opens it again (during an exit animation the menu still counts that click as outside). */}
+      <DropdownMenuContent align="end" className="min-w-55 data-[state=closed]:animate-none!">
         {OWNER ? (
-          <button type="button" data-cmd="copy-path">
-            Copy file path
-          </button>
+          <>
+            <DropdownMenuItem
+              data-cmd="goto"
+              className={ITEM}
+              title="Pages and parts of every project (Ctrl/Cmd+K)"
+              // After the menu has closed and given its focus back, as the dialog takes focus.
+              onSelect={() => setTimeout(() => openSwitcher(trigger.current), 0)}
+            >
+              Go to page…
+              <DropdownMenuShortcut>Ctrl K</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-cmd="next-unanswered"
+              className={ITEM}
+              title="The next page in the hub's inbox with notes no agent answered"
+              onSelect={() => void nextUnanswered()}
+            >
+              Next page with unanswered notes
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-cmd="copy-path"
+              className={ITEM}
+              onSelect={() => void copyText(BOOT.file, "File path")}
+            >
+              Copy file path
+            </DropdownMenuItem>
+          </>
         ) : null}
-        {OWNER || HOSTED ? (
-          <button type="button" data-cmd="copy-link" hidden={!!HOSTED && !unlisted}>
+        {(OWNER || HOSTED) && !(HOSTED && !unlisted) ? (
+          <DropdownMenuItem
+            data-cmd="copy-link"
+            className={ITEM}
+            // Hosted, the URL without its fragment: the invite token is already out of the address bar.
+            onSelect={() =>
+              void copyText(
+                HOSTED ? location.origin + location.pathname : S().links?.remote || location.href,
+                HOSTED ? "Page link" : "Review link",
+              )
+            }
+          >
             {HOSTED ? "Copy page link" : "Copy review link"}
-          </button>
+          </DropdownMenuItem>
         ) : null}
         {OWNER ? (
-          <button type="button" data-cmd="share" title="A named link for one teammate's device">
+          <DropdownMenuItem
+            data-cmd="share"
+            className={ITEM}
+            title="A named link for one teammate's device"
+            onSelect={() => void openShare()}
+          >
             Share…
-          </button>
+          </DropdownMenuItem>
         ) : null}
         {OWNER ? (
-          <button
-            type="button"
+          <DropdownMenuItem
             data-cmd="copy-agent-prompt"
+            className={ITEM}
             title="A prompt that tells your agent to poll this page for feedback"
+            onSelect={() => void copyAgentPrompt()}
           >
             Copy agent prompt
-          </button>
+          </DropdownMenuItem>
         ) : null}
-        {HOSTED ? (
-          <div className="menu-note" data-share-note hidden={unlisted !== false}>
+        {HOSTED && unlisted === false ? (
+          <div
+            data-share-note
+            className="max-w-75 cursor-text px-2.5 py-2 text-[length:var(--fs-sm)] leading-[1.45] text-muted-foreground"
+          >
             Only the owner can share this page. To invite someone, they run
-            <code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for
-            that person.
+            <code className="my-1 block text-[11px] whitespace-nowrap text-foreground select-all">
+              austere-axi publish &lt;file&gt; --invite "Name"
+            </code>
+            which prints a link for that person.
           </div>
         ) : null}
         {OWNER ? (
-          <button
-            type="button"
+          <DropdownMenuItem
             data-cmd="history"
+            className={ITEM}
             title="Every version of this page, and what changed since you last looked"
+            onSelect={() => openHistory()}
           >
             History…
-          </button>
+          </DropdownMenuItem>
         ) : null}
-        <button type="button" data-cmd="reload">
+        <DropdownMenuItem data-cmd="reload" className={ITEM} onSelect={() => loadFrame()}>
           Reload page
-        </button>
+        </DropdownMenuItem>
         {HOSTED ? (
-          <button type="button" data-cmd="export" disabled={exporting}>
+          <DropdownMenuItem
+            data-cmd="export"
+            className={ITEM}
+            disabled={exporting}
+            // The menu stays open on "Preparing download…" until the file is saved or the banner says why not.
+            onSelect={(e) => {
+              e.preventDefault();
+              void downloadStandalone().then(() => set({ menuOpen: false }));
+            }}
+          >
             {exporting ? "Preparing download…" : "Download standalone HTML"}
-          </button>
+          </DropdownMenuItem>
         ) : OWNER ? (
-          <a data-cmd="export" href={`${BOOT.hosted?.base ?? `/s/${BOOT.id}`}/export`}>
-            Download standalone HTML
-          </a>
+          <DropdownMenuItem asChild className={ITEM}>
+            <a data-cmd="export" href={`${BOOT.hosted?.base ?? `/s/${BOOT.id}`}/export`}>
+              Download standalone HTML
+            </a>
+          </DropdownMenuItem>
         ) : null}
-        {OWNER ? (
-          <button type="button" data-cmd="archive" hidden={archived}>
+        {OWNER && !archived ? (
+          <DropdownMenuItem data-cmd="archive" className={ITEM} onSelect={() => void archivePage()}>
             Archive page
-          </button>
+          </DropdownMenuItem>
         ) : null}
-        {OWNER ? (
-          <button type="button" data-cmd="unarchive" hidden={!archived}>
+        {OWNER && archived ? (
+          <DropdownMenuItem
+            data-cmd="unarchive"
+            className={ITEM}
+            onSelect={() => void unarchivePage()}
+          >
             Unarchive page
-          </button>
+          </DropdownMenuItem>
         ) : null}
-      </div>
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -327,16 +381,18 @@ export function HostedFoot(): ReactElement | null {
             {done ? (
               <span className="report-done">Reported. Thank you.</span>
             ) : (
-              <button
+              <Button
                 type="button"
-                className="link-btn report-open"
+                variant="link"
+                size="xs"
+                className="report-open h-auto p-0 font-[inherit] text-muted-foreground no-underline hover:text-foreground hover:underline"
                 onClick={() => {
                   setOpen(true);
                   setStatus("");
                 }}
               >
                 Report
-              </button>
+              </Button>
             )}
           </>
         ) : null}

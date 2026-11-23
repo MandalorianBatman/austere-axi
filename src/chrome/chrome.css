@@ -1,8 +1,6 @@
-/* The review page (review-*.tsx), after the redesign's Review artboards. Tokens in tokens.css; the bar's
-   crumbs, the copy switcher and the Go to page switcher in nav.css. */
+/* The review page (review-*.tsx), after the redesign's Review artboards. Tokens in tokens.css. */
 @import "./tokens.css";
 @import "./tailwind-review.css";
-@import "./nav.css";
 
 :root {
   --panel-w: 384px;
@@ -68,18 +66,6 @@ code {
   gap: 10px;
   min-width: 0;
 }
-.bar-home {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius);
-}
-.bar-home:hover {
-  background: var(--surface);
-}
 .bar-home .logo-box {
   fill: var(--surface);
   stroke: var(--line-3);
@@ -131,45 +117,6 @@ code {
   font-weight: 600;
 }
 
-/* Annotate / Explore, in the bar above the page. The attach popover's On / Off / default uses it too. */
-.seg {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--bg-2);
-}
-.seg button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-3);
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.seg button:hover {
-  color: var(--text);
-}
-.seg button.on {
-  background: var(--surface-2);
-  color: var(--text);
-  font-weight: 600;
-}
-.seg button[data-mode="annotate"].on .icon {
-  color: var(--accent);
-}
-.seg button:disabled {
-  color: var(--faint);
-  cursor: not-allowed;
-}
 /* "3 changed": outlines what changed, until switched off. */
 .changes[hidden] {
   display: none;
@@ -331,64 +278,6 @@ code {
   background: var(--surface);
   color: var(--text);
 }
-.menu {
-  position: relative;
-}
-.menu-pop {
-  position: absolute;
-  right: 0;
-  top: 40px;
-  z-index: 20;
-  min-width: 220px;
-  padding: 6px;
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  border: 1px solid var(--line-3);
-  box-shadow: var(--shadow-pop);
-  display: grid;
-}
-.menu-pop[hidden] {
-  display: none;
-}
-.menu-pop button,
-.menu-pop a {
-  text-align: left;
-  border: 0;
-  background: transparent;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  text-decoration: none;
-  font-size: var(--fs);
-  cursor: pointer;
-}
-.menu-pop button:hover,
-.menu-pop a:hover {
-  background: var(--surface-2);
-}
-.menu-pop .danger {
-  color: var(--red);
-}
-.menu-pop button:disabled {
-  color: var(--muted);
-  cursor: progress;
-}
-.menu-note {
-  max-width: 300px;
-  padding: 8px 10px;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  line-height: 1.45;
-  cursor: text;
-}
-.menu-note code {
-  display: block;
-  margin: 4px 0;
-  font-size: 11px;
-  white-space: nowrap;
-  color: var(--text);
-  user-select: all;
-}
 
 /* ── the Agent pill and its panel (RLM-346, owner only) ── */
 .attach {
@@ -524,25 +413,6 @@ code {
   color: var(--muted);
   font-size: var(--fs-sm);
   line-height: 1.45;
-}
-.attach-state {
-  display: flex;
-  border-radius: var(--radius-md);
-  background: var(--bg-3);
-}
-.attach-state button {
-  flex: 1 1 auto;
-  height: 30px;
-  padding: 0 8px;
-  border-radius: 7px;
-}
-.attach-state button.on {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.attach-state button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 .attach-field {
   margin: 0;
@@ -1567,22 +1437,13 @@ html.exploring .hist {
   font-size: 11.5px;
   color: var(--faint);
 }
-.hosted-foot a,
-.link-btn {
+.hosted-foot a {
   color: var(--muted);
   text-decoration: none;
 }
-.hosted-foot a:hover,
-.link-btn:hover {
+.hosted-foot a:hover {
   color: var(--text);
   text-decoration: underline;
-}
-.link-btn {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  cursor: pointer;
 }
 
 .dock {
@@ -1838,7 +1699,7 @@ html.exploring .hist {
 }
 
 /* A phone (Phone-Review, Phone-Annotate, Phone-Notes). The title keeps its room; the crumbs are a 44 px
-   back chevron to the hub (nav.css). The mode switch, the notes and Send sit in one bar at the bottom,
+   back chevron to the hub (Crumbs in review-nav.tsx). The mode switch, the notes and Send sit in one bar at the bottom,
    and every control is a 44 px target. */
 @media (max-width: 480px) {
   :root {
@@ -1865,13 +1726,6 @@ html.exploring .hist {
     width: var(--touch);
     border-radius: var(--radius-md);
   }
-  .menu-pop {
-    top: 48px;
-  }
-  .menu-pop button,
-  .menu-pop a {
-    min-height: var(--touch);
-  }
   .subbar {
     position: fixed;
     left: 0;
@@ -1888,30 +1742,6 @@ html.exploring .hist {
   }
   .subbar-end {
     display: none;
-  }
-  .seg {
-    flex: none;
-    padding: 2px;
-    border-radius: var(--radius-lg);
-    background: var(--bg-3);
-  }
-  .seg button {
-    width: var(--touch);
-    height: var(--touch);
-    padding: 0;
-    border-radius: var(--radius-md);
-  }
-  .seg button .icon {
-    width: 20px;
-    height: 20px;
-  }
-  .seg-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   html.exploring .main {
     padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom));

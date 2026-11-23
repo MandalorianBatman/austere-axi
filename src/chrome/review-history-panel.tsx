@@ -74,8 +74,9 @@ function Revisions(): ReactElement {
           : [...r.changed, ...r.removed.map((n) => `${n} (deleted)`)];
         return (
           <div className="hist-row" key={r.rev}>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               className="hist-pick"
               aria-pressed={picked === r.rev}
               onClick={() => pick(r)}
@@ -93,7 +94,7 @@ function Revisions(): ReactElement {
                   {`${noteLine(r.cause[0]).slice(0, 140)}${r.cause.length > 1 ? ` (+${r.cause.length - 1} more)` : ""}`}
                 </span>
               ) : null}
-            </button>
+            </Button>
           </div>
         );
       })}
