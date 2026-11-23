@@ -1,4 +1,4 @@
-/* The review page (chrome.ts), after the redesign's Review artboards. Tokens in tokens.css; the bar's
+/* The review page (review-*.tsx), after the redesign's Review artboards. Tokens in tokens.css; the bar's
    crumbs, the copy switcher and the Go to page switcher in nav.css. */
 @import "./tokens.css";
 @import "./tailwind-review.css";
@@ -1419,62 +1419,6 @@ html.exploring .hist {
   color: var(--red);
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1px solid var(--line-3);
-  background: var(--surface-2);
-  color: var(--text);
-  border-radius: var(--radius);
-  padding: 7px 12px;
-  font-size: var(--fs);
-  font-weight: 600;
-  line-height: 1.2;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.btn:hover {
-  border-color: var(--line-3);
-  background: var(--surface-3);
-}
-.btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-.btn.primary:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-.btn.primary:disabled {
-  opacity: 1;
-  background: var(--surface-2);
-  border-color: var(--surface-2);
-  color: var(--faint);
-}
-.btn.ghost {
-  background: transparent;
-  border-color: var(--line-2);
-  color: var(--text-2);
-  font-weight: 500;
-}
-.btn.ghost:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-.btn.tiny {
-  padding: 3px 8px;
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  border-radius: var(--radius-sm);
-}
-
 /* The whole-page note, Send and finish, Send N notes, and who takes them. */
 .composer {
   flex: none;
@@ -1990,7 +1934,7 @@ html.exploring .hist {
     right: 0;
     margin: 0;
   }
-  .q-actions .icon-btn {
+  .q-actions button {
     width: var(--touch);
     height: var(--touch);
     border-radius: var(--radius-md);
@@ -2001,9 +1945,6 @@ html.exploring .hist {
   }
   .q-item > .item > :first-child:not(.anchor) {
     margin-right: calc(2 * var(--touch) - 8px);
-  }
-  .btn.tiny {
-    min-height: 32px;
   }
   .attach-radio {
     min-height: var(--touch);

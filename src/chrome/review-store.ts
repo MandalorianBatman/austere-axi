@@ -15,9 +15,19 @@ import type {
   RunSummary,
   WakeInfo,
 } from "./review-types.ts";
-import { LS, SID, SS, HOSTED, VIEWER } from "./review-env.ts";
+import { BOOT, HOSTED, LS, SID, SS, VIEWER } from "./review-env.ts";
 
 export interface ReviewState {
+  /** The page's title: the shell's, then the frame's or (hosted) the asset-token answer's. */
+  title: string;
+  /** The third-party packs the page runs: their code could forge notes and errors, so the reviewer is told. */
+  packs: string[];
+  /** Hosted: whether the page is unlisted (anyone with the plain link may open it); null until the service says. */
+  unlisted: boolean | null;
+  /** Hosted: "Download standalone HTML" is being built. */
+  exporting: boolean;
+  /** The ⋯ menu is open. */
+  menuOpen: boolean;
   mode: Mode;
   queue: QueueItem[];
   /** The text of the whole-page note box. */
@@ -109,6 +119,11 @@ export interface ReviewState {
 }
 
 const initial: ReviewState = {
+  title: BOOT.title,
+  packs: [],
+  unlisted: null,
+  exporting: false,
+  menuOpen: false,
   mode: LS.get<Mode>("austere:mode", "annotate"),
   queue: LS.get<QueueItem[]>(`austere:queue:${SID}`, []),
   draft: "",
@@ -183,4 +198,21 @@ export function setSheet(open: boolean): void {
 export function setQueue(queue: QueueItem[]): void {
   set({ queue });
   LS.set(`austere:queue:${SID}`, queue);
+}
+
+/**
+ * Explore uses the page alone: the conversation panel (and, on narrow screens, its sheet and dock) steps aside. The class
+ * is on <html> before the panels draw, so a panel that comes back already has its layout.
+ */
+function explore(mode: Mode): void {
+  document.documentElement.classList.toggle("exploring", mode === "explore");
+}
+explore(initial.mode);
+
+/** Annotate (click a part to comment on it) or Explore (use the page normally); kept for the browser. */
+export function setMode(mode: string | undefined): void {
+  const next: Mode = mode === "explore" ? "explore" : "annotate";
+  explore(next);
+  set({ mode: next });
+  LS.set("austere:mode", next);
 }

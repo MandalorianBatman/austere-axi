@@ -240,15 +240,20 @@ export function Log({ inert }: { inert?: boolean }): ReactElement {
     else if (follow.current || count !== prev.count) vp.scrollTop = vp.scrollHeight;
     fromEnd.current = vp.scrollHeight - vp.scrollTop;
   });
-  // A log that was hidden (Explore) or closed (the sheet) has no layout to follow new messages: show the latest when it returns.
+  // A log that was hidden (Explore) has no layout to follow new messages: show the latest as it comes back.
+  useLayoutEffect(() => {
+    const vp = viewport();
+    if (vp && s.mode !== "explore") vp.scrollTop = vp.scrollHeight;
+  }, [s.mode]);
+  // The sheet on a phone slides in: the latest once it has.
   useEffect(() => {
-    if (s.mode === "explore") return;
+    if (!s.sheetOpen) return;
     const t = window.setTimeout(() => {
       const vp = viewport();
       if (vp) vp.scrollTop = vp.scrollHeight;
     }, 50);
     return () => window.clearTimeout(t);
-  }, [s.mode, s.sheetOpen]);
+  }, [s.sheetOpen]);
 
   return (
     <ScrollArea className="log" ref={root} inert={inert}>

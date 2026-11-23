@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
 import { Icon, ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
-import { BASE, HOSTED, OWNER } from "./review-env.ts";
+import { HOSTED, OWNER } from "./review-env.ts";
 import { AttachPill } from "./review-attach.tsx";
 import { useAttachFeed } from "./review-attach.ts";
 import { useBanner } from "./review-banner.ts";
@@ -17,8 +17,9 @@ import {
   SinceBar,
 } from "./review-bar.tsx";
 import { useHighlightSync } from "./review-changes.ts";
-import { Dialogs } from "./review-dialogs.tsx";
 import { Composer } from "./review-composer.tsx";
+import { Dialogs } from "./review-dialogs.tsx";
+import { useFrameMessages } from "./review-frame.ts";
 import { useHistoryFeed } from "./review-history.ts";
 import { HistoryPanel } from "./review-history-panel.tsx";
 import { useRootClass } from "./review-hooks.ts";
@@ -26,13 +27,10 @@ import { Log } from "./review-log.tsx";
 import { Queue } from "./review-queue.tsx";
 import { Dock, PanelHead, Scrim, useCovered, useSheetEscape } from "./review-tabs.tsx";
 import { useReview } from "./review-store.ts";
+import { Frame, HostedFoot, ModeSwitch, MoreMenu, Notice, TitleBlock } from "./review-viewer.tsx";
 import { Button } from "@/chrome/ui/button";
 import { TooltipProvider } from "@/chrome/ui/tooltip";
 
-const DOTS: Shape[] = [5, 12, 19].map((cx): Shape => [
-  "circle",
-  { cx, cy: 12, r: 1.6, fill: "currentColor", stroke: "none" },
-]);
 const LOGO: Shape[] = [
   ["rect", { x: 1.5, y: 1.5, width: 21, height: 21, rx: 5, className: "logo-box" }],
   ["path", { d: "M6.75 17.25 12 6l5.25 11.25M8.6 13.5h6.8", className: "logo-a" }],
@@ -41,6 +39,7 @@ const LOGO: Shape[] = [
 // The owner's own controls: a hosted viewer, or a reviewer on the local server, has none of them (RLM-265, RLM-322).
 const OWNER_BAR = OWNER && !HOSTED;
 
+/** What the page says above the frame: a notice with its buttons, and short confirmations. */
 function Banner(): ReactElement {
   const { text, actions } = useBanner();
   return (
@@ -61,7 +60,7 @@ function Banner(): ReactElement {
   );
 }
 
-/** What the owner's page does on its own while it is open: keeps the history current. */
+/** What the owner's page does on its own while it is open: keeps the history and the agent setting current. */
 function OwnerEffects(): null {
   useHistoryFeed();
   useAttachFeed();
@@ -69,11 +68,11 @@ function OwnerEffects(): null {
 }
 
 function App(): ReactElement {
-  const archived = useReview((s) => s.archived);
-  useRootClass("is-archived", archived);
+  useRootClass("is-archived", useReview((s) => s.archived));
   useRootClass("sheet-open", useReview((s) => s.sheetOpen));
   useSheetEscape();
   useHighlightSync();
+  useFrameMessages();
   // On a wide screen History lies over the notes, the queue and the composer: what is covered takes no focus.
   const covered = useCovered();
   return (
@@ -89,10 +88,7 @@ function App(): ReactElement {
                 <ShapeIcon shapes={LOGO} size={24} />
               </a>
             ) : null}
-            <div className="bar-title">
-              <h1 className="title" />
-              <span className="file" />
-            </div>
+            <TitleBlock />
           </div>
           <div className="bar-right">
             <ChangesButton />
@@ -110,112 +106,25 @@ function App(): ReactElement {
                 <Icon name="search" size={16} width={1.8} />
               </button>
             ) : null}
-            <div className="menu">
-              <button type="button" className="icon-btn menu-btn" aria-label="More">
-                <ShapeIcon shapes={DOTS} size={16} />
-              </button>
-              <div className="menu-pop" hidden>
-                {OWNER ? (
-                  <button type="button" data-cmd="copy-path">
-                    Copy file path
-                  </button>
-                ) : null}
-                {OWNER || HOSTED ? (
-                  <button type="button" data-cmd="copy-link" hidden={!!HOSTED}>
-                    {HOSTED ? "Copy page link" : "Copy review link"}
-                  </button>
-                ) : null}
-                {OWNER ? (
-                  <button type="button" data-cmd="share" title="A named link for one teammate's device">
-                    Share…
-                  </button>
-                ) : null}
-                {OWNER ? (
-                  <button
-                    type="button"
-                    data-cmd="copy-agent-prompt"
-                    title="A prompt that tells your agent to poll this page for feedback"
-                  >
-                    Copy agent prompt
-                  </button>
-                ) : null}
-                {HOSTED ? (
-                  <div className="menu-note" data-share-note hidden>
-                    Only the owner can share this page. To invite someone, they run
-                    <code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.
-                  </div>
-                ) : null}
-                {OWNER ? (
-                  <button
-                    type="button"
-                    data-cmd="history"
-                    title="Every version of this page, and what changed since you last looked"
-                  >
-                    History…
-                  </button>
-                ) : null}
-                <button type="button" data-cmd="reload">
-                  Reload page
-                </button>
-                {HOSTED ? (
-                  <button type="button" data-cmd="export">
-                    Download standalone HTML
-                  </button>
-                ) : OWNER ? (
-                  <a data-cmd="export" href={`${BASE}/export`}>
-                    Download standalone HTML
-                  </a>
-                ) : null}
-                {OWNER ? (
-                  <button type="button" data-cmd="archive" hidden={archived}>
-                    Archive page
-                  </button>
-                ) : null}
-                {OWNER ? (
-                  <button type="button" data-cmd="unarchive" hidden={!archived}>
-                    Unarchive page
-                  </button>
-                ) : null}
-              </div>
-            </div>
+            <MoreMenu />
           </div>
         </header>
         <Banner />
         {OWNER ? <OwnerEffects /> : null}
         {OWNER ? <Dialogs /> : null}
-        <div className="notice" hidden />
+        <Notice />
         {OWNER ? <SinceBar /> : null}
         <div className="main">
           <section className="stage" id="content" tabIndex={-1} aria-label="Page under review">
             <div className="subbar">
-              <div className="seg" role="group" aria-label="Mode">
-                <button
-                  type="button"
-                  data-mode="annotate"
-                  aria-pressed="false"
-                  title="Click anything to comment on it (⌘/Ctrl+I)"
-                >
-                  <Icon name="annotate" size={14} width={1.9} />
-                  <span className="seg-label">Annotate</span>
-                </button>
-                <button
-                  type="button"
-                  data-mode="explore"
-                  aria-pressed="false"
-                  title="Use the page normally: tabs, forms, links (⌘/Ctrl+I)"
-                >
-                  <Icon name="explore" size={14} width={1.9} />
-                  <span className="seg-label">Explore</span>
-                </button>
-              </div>
-              <span className="subbar-hint" />
+              <ModeSwitch />
               <div className="subbar-end">
                 {OWNER ? <Revision /> : null}
                 {OWNER ? <HistoryButton /> : null}
               </div>
               <Dock />
             </div>
-            <iframe className="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-forms" />
+            <Frame />
           </section>
           <Scrim />
           <aside className="panel" aria-label="Review panel">
@@ -223,6 +132,7 @@ function App(): ReactElement {
             <Log inert={covered} />
             <Queue inert={covered} />
             <Composer inert={covered} />
+            <HostedFoot />
           </aside>
           {OWNER ? <HistoryPanel /> : null}
         </div>

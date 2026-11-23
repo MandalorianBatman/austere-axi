@@ -7,7 +7,7 @@ Status: implemented in 0.5.0 (RLM-272). sid.kasat settled all decisions (Q1–Q2
 On a page served through a reverse proxy (`<proxy host>/s/<id>`), the reviewer could not add notes once no agent was listening. The cause is in how a review ends, not in storage:
 
 1. When every tab is closed, `poll` returns `browser_disconnected` (`src/cli/server.ts` `armGrace`). The hint for that status (`src/cli/main.ts:291`) tells the agent to ask the user whether to end the review, and agents usually end it.
-2. Ending locks the composer (`src/chrome/chrome.ts:529-531`), and the server answers `/send` with 409.
+2. Ending locks the composer (`src/chrome/review-composer.tsx`, `locked`), and the server answers `/send` with 409.
 3. Separately, the server exits after 30 minutes with no poll and no open tab, unless the hub is on (`server.ts:969-974`). Behind a proxy, the page then stops working.
 
 Two weaknesses in delivery sit underneath:

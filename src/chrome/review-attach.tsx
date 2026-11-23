@@ -28,8 +28,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/chrome/ui/skeleton";
 
 /** The time a running run has taken, counting up each second. */
-function Elapsed({ since }: { since: number }): ReactElement {
-  return <span className="run-elapsed">{clock(useNow(1000) - since)}</span>;
+function Elapsed({ since }: { since: number | null }): ReactElement {
+  const now = useNow(1000);
+  return <span className="run-elapsed">{clock(now - (since ?? now))}</span>;
 }
 
 /** The run's state in words. */
@@ -42,7 +43,7 @@ function RunLabel({ run }: { run: RunSummary }): ReactElement {
     case "running":
       return (
         <span className="run-label">
-          Running <Elapsed since={run.started_at ?? Date.now()} />
+          Running <Elapsed since={run.started_at} />
         </span>
       );
     case "failed":
