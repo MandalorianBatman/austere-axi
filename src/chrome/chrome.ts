@@ -5,320 +5,61 @@
 // <script type="application/json" id="austere-boot">.
 
 import "./zod-jitless.ts";
-import { LIMITS, SYNC_VERSION, mutation, parseServerFrame, syncProtocols } from "../shared/sync.ts";
-import type {
-  AckFrame,
-  AddNoteArgs,
-  ClientPresence,
-  Mutation,
-  NoteAnnotation,
-  NoteItem,
-  PageRow,
-  ReceivedChanges,
-  ReceivedFrame,
-} from "../shared/sync.ts";
+import { SYNC_VERSION, parseServerFrame, syncProtocols } from "../shared/sync.ts";
+import type { ClientPresence, PageRow, ReceivedChanges, ReceivedFrame } from "../shared/sync.ts";
 import { Presence } from "./presence.ts";
 import { openSyncSocket } from "./sync-socket.ts";
-import type { SyncClose, SyncSocket } from "./sync-socket.ts";
+import type { SyncClose } from "./sync-socket.ts";
 import { h } from "./dom.ts";
 import type { Child } from "./dom.ts";
 import { installNav } from "./nav.ts";
-import { icon, svgIcon } from "./icons.ts";
-import type { Shape } from "./icons.ts";
+import { icon } from "./icons.ts";
 import { LOADER_TAG, packedTag } from "../shared/standalone.ts";
-
-type Mode = "annotate" | "explore";
-
-/** The boot object the server hands the page. */
-interface Boot {
-  id: string;
-  title: string;
-  name: string;
-  file: string;
-  version?: string;
-  artifactUrl?: string;
-  hosted?: { base?: string; report?: string; publishedAt?: number; signIn?: string } | null;
-  viewer?: { role: string; name: string; auto?: boolean };
-}
-
-/** A queued note. Items come from the frame (untrusted), localStorage or the server. */
-interface QueueItem {
-  kind: string;
-  qid?: string;
-  target?: string;
-  component?: string;
-  note?: string;
-  text?: string;
-  selection?: string;
-  excerpt?: string;
-  message?: string;
-  statement?: string;
-  detail?: { part?: unknown; row?: unknown; column?: unknown; [key: string]: unknown };
-  form?: Record<string, unknown>;
-  path?: unknown;
-}
-
-/** A transcript entry: an agent reply or a batch of notes. */
-interface Entry {
-  id: string;
-  role: string;
-  at: number;
-  text?: string;
-  author?: string;
-  items?: QueueItem[];
-  held?: boolean;
-  end?: boolean;
-  seenAt?: number;
-  /** The harness of the agent session a wake handed the note to (RLM-447). */
-  seenBy?: string;
-  workAt?: number;
-  doneAt?: number;
-  discarded?: boolean;
-  /** Hosted: a note still waiting for its ack. */
-  pending?: boolean;
-}
-
-/** A parser or render error the frame reports. */
-interface RenderIssue {
-  statementId?: string;
-  message: string;
-  severity?: string;
-}
-
-/** Messages the frame posts over the review bridge. Frame code is untrusted. */
-type FrameMessage = { austere: 1 } & (
-  | { type: "hello" }
-  | { type: "ready"; title?: string }
-  | { type: "annotate" | "action"; item: unknown }
-  | { type: "errors"; errors?: RenderIssue[] }
-  | { type: "runtime-error"; error?: RenderIssue }
-  | { type: "state"; state: unknown }
-  | { type: "scroll"; y?: number }
-  | { type: "changes"; ids?: unknown }
-  | { type: "toggle-mode" }
-  | { type: "quick-switch" }
-  | { type: "focus"; id?: unknown }
-  | { type: "writing"; on?: unknown }
-  | { type: "open-url"; url: unknown }
-  | { type: "history"; id?: unknown }
-);
-
-/** Messages the chrome posts to the frame. */
-type ChromeMessage =
-  | { type: "init"; mode: Mode; state: unknown; scrollY: number; quickSwitch: boolean }
-  | { type: "reveal"; id: string | undefined }
-  | { type: "mode"; mode: Mode }
-  | { type: "highlight"; ids: string[]; scroll: boolean }
-  | { type: "presence"; marks: { statement: string; name: string; colour: string }[] }
-  | { type: "history-counts"; counts: Record<string, number> }
-  | { type: "source"; program: string };
-
-interface SessionInfo {
-  archived?: boolean;
-  unread?: number;
-}
-
-/** A copy of the page in `/archive`'s answer (ArchiveCopy in src/cli/hub.ts). */
-interface ArchiveCopy {
-  file: string;
-  copy: string;
-  unanswered: number;
-}
-
-/** `/archive`: this copy's label, the copies archiving takes and the copies that stay open (ArchivePlan in src/cli/hub.ts). */
-interface ArchivePlan {
-  copy: string;
-  archived: ArchiveCopy[];
-  others: ArchiveCopy[];
-}
-
-interface SnapshotEvent {
-  transcript?: Entry[];
-  presence: string;
-  /** While an agent has the notes: when it took them, by the server's clock (`now`). */
-  since?: number;
-  now: number;
-  session: SessionInfo;
-  more?: boolean;
-  links: { remote?: string } | null;
-  version?: string;
-  thirdPartyPacks?: string[];
-  program: string;
-  revision: number;
-  wake?: WakeInfo;
-}
-
-interface PresenceEvent extends SessionInfo {
-  presence: string;
-  since?: number;
-  now: number;
-  wake?: WakeInfo;
-}
-
-/** An agent session a note would wake (RLM-447): now (`idle`), or once its turn ends (`busy`). WakeStatus in src/cli/wake.ts. */
-interface WakeInfo {
-  harness: string;
-  state: "idle" | "busy";
-}
-
-interface ChangedEvent {
-  program: string;
-  revision: number;
-  shellChanged?: boolean;
-  thirdPartyPacks?: string[];
-}
-
-/** A run of the attached agent, as the server sums it up (RunSummary in src/cli/dispatch.ts). */
-interface RunSummary {
-  id: string;
-  status:
-    | "queued"
-    | "waiting_for_session"
-    | "running"
-    | "done"
-    | "failed"
-    | "stopped"
-    | "interrupted";
-  reason: string | null;
-  mode: string | null;
-  harness: string | null;
-  model: string | null;
-  started_at: number | null;
-  ended_at: number | null;
-}
-
-/** The owner's `run` event. */
-interface RunEvent {
-  run: RunSummary;
-  message?: string;
-  tail?: string[];
-}
-
-/** A run's start or end in the Conversation panel. */
-interface RunMark {
-  id: string;
-  at: number;
-  text: string;
-  tone: "start" | "done" | "failed" | "stopped";
-}
-
-type AttachModeId = "same" | "fork" | "new";
-type Capability = { ok: true } | { ok: false; reason: string };
-
-/** A row of attach_settings. */
-interface AttachRow {
-  state: "on" | "off" | "inherit";
-  mode: AttachModeId | null;
-  session: string | null;
-  harness: string | null;
-  model: string | null;
-}
-
-/** GET /s/:id/attach (AttachInfo in src/cli/server.ts). */
-interface AttachInfo {
-  effective: {
-    state: "on" | "off";
-    source: "page" | "project" | "default";
-    mode: AttachModeId;
-    session: string;
-    harness: string;
-    model: string | null;
-  };
-  page: AttachRow | null;
-  project: { name: string; setting: AttachRow | null } | null;
-  target: { mode: AttachModeId; harness: string; session: string | null };
-  author: { id: string; harness: string; short: string } | null;
-  sessions: {
-    id: string;
-    harness: string;
-    short: string;
-    roles: string[];
-    lastSeen: number;
-    liveness: string;
-  }[];
-  harnesses: Record<
-    string,
-    {
-      found: boolean;
-      capabilities: Record<AttachModeId | "model", Capability>;
-      writeGrant: boolean;
-      grantCommand?: string;
-      models?: string[];
-    }
-  >;
-  run: RunSummary | null;
-  sessionFileSize: number | null;
-  warnings: string[];
-  auto: string | null;
-}
-
-/** What the popover changes: the state, or one field of the page's own row. */
-interface AttachChange {
-  state?: AttachRow["state"];
-  mode?: AttachModeId;
-  session?: string;
-  harness?: string;
-  model?: string | null;
-}
-
-interface ItemOptions {
-  queued?: boolean;
-  held?: boolean;
-}
-
-const BOOT: Boot =
-  (window as Window & { __AUSTERE__?: Boot }).__AUSTERE__ ??
-  JSON.parse(document.getElementById("austere-boot")?.textContent || "{}");
-const SID = BOOT.id;
-// Hosted mode (austere-cloud, docs/hosted-share-links.md): a reviewer page that syncs over the
-// page's WebSocket instead of the local event stream and has no owner controls.
-const HOSTED = BOOT.hosted || null;
-const BASE = BOOT.hosted?.base ?? `/s/${SID}`;
-const VIEWER = BOOT.viewer || { role: "owner", name: "" };
-const OWNER = !HOSTED && VIEWER.role === "owner";
-const NAME_MAX = LIMITS.nameChars;
-const LS = {
-  get<T>(key: string, fallback: T): T {
-    try {
-      const v = localStorage.getItem(key);
-      return v == null ? fallback : JSON.parse(v);
-    } catch {
-      return fallback;
-    }
-  },
-  set(key: string, value: unknown) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // storage full or blocked; state stays in memory
-    }
-  },
-  remove(key: string) {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      // blocked storage
-    }
-  },
-};
-const SS = {
-  get<T = unknown>(key: string): T | null {
-    try {
-      return JSON.parse(sessionStorage.getItem(key) || "null");
-    } catch {
-      return null;
-    }
-  },
-  /** False when the write failed (blocked storage, quota). */
-  set(key: string, value: unknown): boolean {
-    try {
-      sessionStorage.setItem(key, JSON.stringify(value));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
+import { mountApp } from "./review-app.tsx";
+import { bannerText, flash, reload, showBanner } from "./review-banner.ts";
+import type { BannerAction } from "./review-banner.ts";
+import { post, setFrame } from "./review-bridge.ts";
+import { copyAgentPrompt, copyText, loadAgentPrompt } from "./review-clipboard.ts";
+import {
+  BASE,
+  BOOT,
+  HOSTED,
+  LS,
+  NAME_MAX,
+  OWNER,
+  SID,
+  SS,
+  UNREACHABLE,
+  VIEWER,
+  failure,
+  str,
+} from "./review-env.ts";
+import { addToQueue, anchorLabel, flatForm, itemQuote } from "./review-notes.ts";
+import { getSync, mine, refreshPending, sendWhenDue, setSync, settle } from "./review-outbox.ts";
+import { setRoster, presenceView } from "./review-presence.ts";
+import { heldAction } from "./review-send.ts";
+import { S, isNarrow, set, setSheet, useReview } from "./review-store.ts";
+import type { ReviewState } from "./review-store.ts";
+import type {
+  ArchivePlan,
+  AttachChange,
+  AttachInfo,
+  AttachModeId,
+  ChangedEvent,
+  ChromeMessage,
+  Entry,
+  FrameMessage,
+  HistoryData,
+  Mode,
+  PresenceEvent,
+  QueueItem,
+  RunEvent,
+  RunMark,
+  RunSummary,
+  ShareMade,
+  SnapshotEvent,
+  StatementVersion,
+} from "./review-types.ts";
 
 // Hosted pages are invite-only by default (Q16). An invite link carries its token in the fragment,
 // `#i=<token>`, which never reaches the server: keep it for this page and take it out of the address
@@ -343,133 +84,16 @@ if (HOSTED) {
     if (new URLSearchParams(location.hash.slice(1)).has("i")) location.reload();
   });
 }
-// Hosted: the invite's name from the asset-token answer; null on an unlisted page without a valid
-// invite (the reviewer names themself once, with the prompt); undefined until the service answers.
-let inviteName: string | null | undefined;
-// The local server names invited reviewers; a hosted reviewer is named once the service answers.
-let viewerName: string = HOSTED ? "" : VIEWER.name;
 
-// Hosted: notes go out as `addNote` mutations over the page's socket. A note stays in the outbox
-// (sessionStorage) until its ack and is re-sent after a reconnect or a reload, under its own key.
-interface OutboxEntry {
-  m: Mutation<"addNote">;
-  at: number;
-  /** Who sent it (`sender()`): a note is only ever re-sent by that same reviewer. */
-  as: string;
-  /** Epoch ms before which it must not be sent again (a `rate_limited` answer's `retryAfter`). */
-  retryAt?: number;
-}
-// New notes are numbered under a clientId made for this page load and kept only in memory, with a
-// counter from 1. Nothing about it is read back from storage, so a duplicated tab (which copies
-// sessionStorage) or a failed write can never number two different notes with the same (clientId, n).
-let CLIENT = "";
-if (HOSTED) {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  CLIENT = btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-const OUTBOX_KEY = `austere:outbox:${SID}`;
-const savedOutbox = SS.get<unknown>(OUTBOX_KEY);
-// Saved notes keep the (clientId, n) they were numbered with by an earlier load: re-sent under their
-// own key, they are applied once (also when a duplicated tab re-sends the same ones). They are kept
-// for every reviewer this tab has been, but sent and shown only for the current one (`mine`).
-const outbox: OutboxEntry[] = Array.isArray(savedOutbox)
-  ? (savedOutbox as OutboxEntry[]).filter(
-      (o) =>
-        o?.m?.name === "addNote" &&
-        typeof o.as === "string" &&
-        typeof o.m.clientId === "string" &&
-        /^[A-Za-z0-9_-]{8,64}$/.test(o.m.clientId) &&
-        Number.isInteger(o.m.n) &&
-        o.m.n > 0 &&
-        (o.retryAt === undefined || typeof o.retryAt === "number"),
-    )
-  : [];
-/**
- * The reviewer this page sends as: the invite's name (the service names the note by it), or the
- * open link (the note carries its own self-declared name). Known once the asset token is traded.
- */
-function sender(): string {
-  return inviteName ? `invite:${inviteName}` : "open";
-}
-/** The outbox notes of the reviewer this page is now: another reviewer's notes are never sent under this one's socket. */
-function mine(): OutboxEntry[] {
-  const as = sender();
-  return outbox.filter((o) => o.as === as);
-}
-let clientN = 0;
-// The outbox could not be saved: a reload before the acks would lose those notes, so the composer says so.
-let outboxUnsaved = false;
-// A note is waiting out a `rate_limited` answer: the composer says when it goes again.
-let rateLimited: string | null = null;
-/** The one pending timed re-send per waiting note. */
-const retryTimers = new Map<OutboxEntry, number>();
-let sync: SyncSocket | null = null;
-// Hosted: why nothing more can be sent (the page is gone, or the invite no longer works).
-let lockout: string | null = null;
-
-const state: {
-  mode: Mode;
-  queue: QueueItem[];
-  transcript: Entry[];
-  presence: string;
-  /** When the agent took the notes it works on, by this browser's clock; null when no agent has them. */
-  since: number | null;
-  /** An agent session a note would wake; null when none would. */
-  wake: WakeInfo | null;
-  archived: boolean;
-  unread: number;
-  more: boolean;
-  program: string | null;
-  revision: number;
-  // The revision the current render errors belong to, and whether the agent got them.
-  errorsRevision: number;
-  renderReport: "sent" | "failed" | null;
-  // The page uses third-party packs: their code could forge errors, so none are sent on their own.
-  thirdParty: boolean;
-  frameReady: boolean;
-  scrollY: number;
-  parserErrors: RenderIssue[];
-  runtimeErrors: RenderIssue[];
-  changes: string[];
-  /** The owner's: statements changed by the revisions since they last looked (RLM-352). */
-  sinceChanges: string[];
-  highlight: boolean;
-  sheetOpen: boolean;
-  sending: boolean;
-  connected: boolean;
-  editing: string | null | undefined;
-  links: { remote?: string } | null;
-} = {
-  mode: LS.get<Mode>("austere:mode", "annotate"),
-  queue: LS.get<QueueItem[]>(`austere:queue:${SID}`, []),
-  transcript: [],
-  presence: "idle",
-  since: null,
-  wake: null,
-  archived: false,
-  unread: 0,
-  more: false,
-  program: null,
-  revision: 0,
-  errorsRevision: 0,
-  renderReport: null,
-  thirdParty: false,
-  frameReady: false,
-  scrollY: 0,
-  parserErrors: [],
-  runtimeErrors: [],
-  changes: [],
-  sinceChanges: [],
-  highlight: false,
-  sheetOpen: SS.get(`austere:sheet:${SID}`) === true,
-  sending: false,
-  connected: false,
-  editing: null,
-  links: null,
-};
+// The panels that React draws read the store (review-store.ts); the code that is still plain DOM reads and writes it
+// as `state`. Each panel that moves takes its fields out of the code below.
+const state = new Proxy({} as ReviewState, {
+  get: (_, key: string) => S()[key as keyof ReviewState],
+  set: (_, key: string, value: unknown) => {
+    set({ [key]: value });
+    return true;
+  },
+});
 /** The owner's Conversation entries for runs (RLM-346), by `<run id>:start|end`: from the `run` events and `/runs`, never stored. */
 const runMarks = new Map<string, RunMark>();
 
@@ -479,201 +103,15 @@ const runMarks = new Map<string, RunMark>();
 const $ = <E extends Element = HTMLElement>(sel: string, root: ParentNode = document): E =>
   root.querySelector(sel) as E;
 
-document.body.innerHTML = `
-<a class="skip-link" href="#content">Skip to the page</a>
-<div class="app">
-  <header class="bar">
-    <div class="bar-start">
-      <div class="bar-title"><h1 class="title"></h1><span class="file"></span></div>
-    </div>
-    <div class="bar-right">
-      <button type="button" class="changes" aria-pressed="false" hidden></button>
-      <span class="viewers" role="group" aria-label="On this page" hidden></span>
-      <div class="attach">
-        <button type="button" class="attach-pill" aria-haspopup="dialog" aria-expanded="false" title="Attach an agent to this page"><span class="attach-dot"></span><span class="attach-label">Agent: <span class="attach-detail">Off</span><span class="attach-short">Off</span></span></button>
-        <span class="run-state" hidden></span>
-      </div>
-      <span class="presence"></span>
-      <button type="button" class="btn share-btn" title="A named link for one teammate's device">Share</button>
-      <button type="button" class="icon-btn goto-btn" aria-label="Go to page (Ctrl K)" title="Go to page (Ctrl K)" hidden></button>
-      <div class="menu">
-        <button type="button" class="icon-btn menu-btn" aria-label="More"></button>
-        <div class="menu-pop" hidden>
-          <button type="button" data-cmd="copy-path">Copy file path</button>
-          <button type="button" data-cmd="copy-link"${HOSTED ? " hidden" : ""}>${HOSTED ? "Copy page link" : "Copy review link"}</button>
-          <button type="button" data-cmd="share" title="A named link for one teammate's device">Share…</button>
-          <button type="button" data-cmd="copy-agent-prompt" title="A prompt that tells your agent to poll this page for feedback">Copy agent prompt</button>
-          ${HOSTED ? '<div class="menu-note" data-share-note hidden>Only the owner can share this page. To invite someone, they run<code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.</div>' : ""}
-          <button type="button" data-cmd="history" title="Every version of this page, and what changed since you last looked">History…</button>
-          <button type="button" data-cmd="reload">Reload page</button>
-          ${HOSTED ? '<button type="button" data-cmd="export">Download standalone HTML</button>' : `<a data-cmd="export" href="${BASE}/export">Download standalone HTML</a>`}
-          <button type="button" data-cmd="archive">Archive page</button>
-          <button type="button" data-cmd="unarchive">Unarchive page</button>
-        </div>
-      </div>
-    </div>
-  </header>
-  <div class="banner" hidden></div>
-  <div class="notice" hidden></div>
-  <div class="since" role="status" hidden>
-    <span class="since-dot" aria-hidden="true"></span>
-    <span class="since-text"></span>
-    <button type="button" class="btn tiny" data-since="show" aria-pressed="false">Outline them</button>
-    <button type="button" class="btn tiny ghost" data-since="history">History</button>
-    <button type="button" class="icon-btn since-x" data-since="dismiss" aria-label="Dismiss"></button>
-  </div>
-  <div class="main">
-    <section class="stage" id="content" tabindex="-1" aria-label="Page under review">
-      <div class="subbar">
-        <div class="seg" role="group" aria-label="Mode">
-          <button type="button" data-mode="annotate" aria-pressed="false" title="Click anything to comment on it (⌘/Ctrl+I)"><span class="seg-label">Annotate</span></button>
-          <button type="button" data-mode="explore" aria-pressed="false" title="Use the page normally: tabs, forms, links (⌘/Ctrl+I)"><span class="seg-label">Explore</span></button>
-        </div>
-        <span class="subbar-hint"></span>
-        <div class="subbar-end">
-          <span class="rev" hidden></span>
-          <button type="button" class="btn ghost hist-btn" aria-expanded="false" title="Every version of this page, and what changed since you last looked">History</button>
-        </div>
-        <button type="button" class="dock"></button>
-      </div>
-      <iframe class="frame" title="Artifact" sandbox="allow-scripts allow-popups allow-forms"></iframe>
-    </section>
-    <div class="scrim"></div>
-    <aside class="panel" aria-label="Review panel">
-      <div class="panel-head">
-        <div class="panel-tabs" role="group" aria-label="Review panel views">
-          <button type="button" class="panel-tab" data-tab="notes" aria-current="true">Notes <span class="tab-count"></span></button>
-          <button type="button" class="panel-tab" data-tab="agent">Agent <span class="tab-dot" role="img" aria-label="Agent not listening"></span></button>
-          <button type="button" class="panel-tab" data-tab="history">History</button>
-        </div>
-        <button type="button" class="icon-btn sheet-close" aria-label="Close the notes"></button>
-      </div>
-      <div class="log"></div>
-      <section class="queue" aria-label="Ready to send" hidden>
-        <div class="queue-head"><span class="queue-title"></span><span class="queue-sub">Sent together, in this order</span></div>
-        <ol class="queue-list"></ol>
-      </section>
-      <form class="composer" aria-label="Send notes">
-        <textarea rows="2" aria-label="A note about the whole page" placeholder="Add a note about the whole page"></textarea>
-        <div class="composer-row">
-          <button type="button" class="btn ghost send-end">Done</button>
-          <button type="submit" class="btn primary send">Send</button>
-        </div>
-        <span class="composer-hint">Enter sends · Shift+Enter newline</span>
-        <div class="composer-error" hidden></div>
-        <div class="composer-listen" hidden><span class="composer-dot" aria-hidden="true"></span><span>An agent is listening and takes your notes as soon as you send</span></div>
-        <div class="composer-presence" hidden><span>Saved. The agent gets them the next time it checks.</span><button type="button" class="btn tiny copy-prompt">Copy agent prompt</button></div>
-      </form>
-    </aside>
-    <div class="hist" role="dialog" aria-label="History" hidden>
-      <div class="hist-head"><span class="hist-title"></span><button type="button" class="icon-btn hist-close" aria-label="Close"></button></div>
-      <div class="hist-body"></div>
-    </div>
-    <div class="attach-pop" role="dialog" aria-label="Agent on this page" hidden></div>
-  </div>
-</div>`;
-
-// Hosted viewers keep the download and, on an unlisted page, the page link; the rest is the local owner's.
-// RLM-265 (#29) made OWNER false for every hosted viewer, and this list then took export and copy-link
-// from all of them (RLM-322).
-if (!OWNER) {
-  const ownerOnly = [
-    '[data-cmd="history"]',
-    ".since",
-    ".hist",
-    '[data-cmd="copy-path"]',
-    '[data-cmd="copy-agent-prompt"]',
-    ".copy-prompt",
-    '[data-cmd="share"]',
-    '[data-cmd="archive"]',
-    '[data-cmd="unarchive"]',
-    ".send-end",
-    ".attach",
-    ".attach-pop",
-    ".share-btn",
-    ".goto-btn",
-    ".rev",
-    ".hist-btn",
-    '[data-tab="agent"]',
-    '[data-tab="history"]',
-  ];
-  if (!HOSTED) ownerOnly.push('[data-cmd="copy-link"]', '[data-cmd="export"]');
-  for (const sel of ownerOnly) $(sel)?.remove();
-}
-
-// The markup's icons (icons.ts): decorative beside a text label, named by the button's aria-label when alone.
-const DOTS: Shape[] = [5, 12, 19].map((cx): Shape => [
-  "circle",
-  { cx, cy: 12, r: 1.6, fill: "currentColor", stroke: "none" },
-]);
-const LINK: Shape[] = [
-  ["path", { d: "M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" }],
-  ["path", { d: "M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" }],
-];
-const LOGO: Shape[] = [
-  ["rect", { x: 1.5, y: 1.5, width: 21, height: 21, rx: 5, class: "logo-box" }],
-  ["path", { d: "M6.75 17.25 12 6l5.25 11.25M8.6 13.5h6.8", class: "logo-a" }],
-];
-for (const b of document.querySelectorAll<HTMLButtonElement>(".seg [data-mode]"))
-  b.prepend(icon(b.dataset.mode === "explore" ? "explore" : "annotate", { size: 14, width: 1.9 }));
-$(".menu-btn").append(svgIcon(DOTS, { size: 16 }));
-$(".sheet-close").append(icon("chevronDown", { size: 20, width: 2 }));
-$(".attach-pill")?.append(icon("chevronDown", { size: 12, width: 2, cls: "attach-caret" }));
-$(".share-btn")?.prepend(svgIcon(LINK, { size: 14, width: 1.9 }));
-$(".hist-btn")?.prepend(icon("clock", { size: 13, width: 1.9 }));
-$(".since-x")?.append(icon("close", { size: 14, width: 2 }));
-$(".hist-close")?.append(icon("close", { size: 16, width: 1.8 }));
-if (OWNER && !HOSTED)
-  $(".bar-start").prepend(
-    h(
-      "a",
-      { class: "bar-home", href: "/", "aria-label": "Back to the hub", title: "Back to the hub" },
-      svgIcon(LOGO, { size: 24 }),
-    ),
-  );
+mountApp();
 
 function renderViewer() {
   if (OWNER) return;
-  $(".file").textContent = viewerName ? `reviewing as ${viewerName}` : "";
-  const hint =
-    HOSTED || VIEWER.auto ? "Enter sends" : "the owner sends your notes on · Enter sends";
-  $(".composer-hint").textContent = viewerName ? `Posting as ${viewerName} · ${hint}` : hint;
+  const name = state.viewerName;
+  $(".file").textContent = name ? `reviewing as ${name}` : "";
 }
 
-// Hosted: the name prompt shown before the first send, and the footer.
-const nameForm = HOSTED
-  ? h(
-      "form",
-      { class: "name-ask", hidden: true },
-      h("label", { for: "austere-name", text: "Your name, shown with your notes" }),
-      h(
-        "div",
-        { class: "name-row" },
-        h("input", {
-          id: "austere-name",
-          maxlength: String(NAME_MAX),
-          autocomplete: "name",
-          placeholder: "Name",
-        }),
-        h("button", { type: "submit", class: "btn primary", text: "Continue" }),
-      ),
-    )
-  : null;
-if (nameForm) {
-  $(".composer").before(nameForm);
-  nameForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const input = $<HTMLInputElement>("input", nameForm);
-    const name = input.value.trim().slice(0, NAME_MAX);
-    if (!name) return input.focus();
-    viewerName = name;
-    LS.set("austere:name", name);
-    nameForm.hidden = true;
-    renderViewer();
-    presence.rename();
-    sendAll(false);
-  });
-}
+// Hosted: the report box and the footer.
 
 const reportForm: HTMLFormElement | null = HOSTED?.report
   ? h(
@@ -734,7 +172,7 @@ if (HOSTED) {
           "content-type": "application/json",
           ...(invite ? { "X-Austere-Invite": invite } : {}),
         };
-        const r = await fetch(HOSTED.report as string, {
+        const r = await fetch(HOSTED?.report as string, {
           method: "POST",
           headers,
           body: JSON.stringify({ reason }),
@@ -754,9 +192,8 @@ if (HOSTED) {
 }
 
 const frame = $<HTMLIFrameElement>(".frame");
+setFrame(frame);
 const log = $(".log");
-const textarea = $<HTMLTextAreaElement>(".composer textarea");
-const banner = $(".banner");
 
 // A hosted shell names no page (austere-cloud keeps the title from anyone without access): the
 // asset-token answer and the frame bring the real one.
@@ -776,10 +213,9 @@ const presence = new Presence({
   chips: $(".viewers"),
   showFocus: (marks) => post({ type: "presence", marks }),
   reveal: (id) => post({ type: "reveal", id }),
-  name: () => viewerName || undefined,
+  name: () => state.viewerName || undefined,
 });
-textarea.addEventListener("focus", () => presence.setWriting("composer", true));
-textarea.addEventListener("blur", () => presence.setWriting("composer", false));
+setRoster(presence);
 window.addEventListener("pagehide", () => presence.leave());
 
 $(".file").title = BOOT.file || "";
@@ -855,10 +291,6 @@ function markdown(src: unknown): string {
 
 // ── frame bridge ──
 
-function post(msg: ChromeMessage) {
-  frame.contentWindow?.postMessage({ austere: 1, ...msg }, "*");
-}
-
 function loadFrame() {
   state.frameReady = false;
   // Hosted: the frame's URL carries a short-lived asset token, traded again on every load.
@@ -921,7 +353,7 @@ window.addEventListener("message", (e) => {
           (x) => x.statementId === error.statementId && x.message === error.message,
         )
       ) {
-        state.runtimeErrors.push(error);
+        state.runtimeErrors = [...state.runtimeErrors, error];
         state.errorsRevision = state.revision;
         renderLog();
         reportRenderErrors();
@@ -972,40 +404,7 @@ function openExternal(url: unknown) {
   window.open(u.href, "_blank", "noopener");
 }
 
-// ── queue ──
-
-function saveQueue() {
-  LS.set(`austere:queue:${SID}`, state.queue);
-}
-
-function addToQueue(raw: unknown) {
-  if (
-    state.archived ||
-    !raw ||
-    typeof raw !== "object" ||
-    typeof (raw as { kind?: unknown }).kind !== "string"
-  )
-    return;
-  // Frame code is untrusted: the item is rendered here and saved to localStorage, so its text fields must be strings.
-  const fields = raw as Record<string, unknown>;
-  for (const k of [
-    "target",
-    "component",
-    "note",
-    "text",
-    "selection",
-    "excerpt",
-    "message",
-    "statement",
-  ])
-    if (k in fields) fields[k] = str(fields[k]);
-  const item = raw as QueueItem;
-  item.qid = `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-  state.queue.push(item);
-  saveQueue();
-  renderLog(true);
-  renderDock();
-}
+// ── render errors ──
 
 // The owner's page sends render failures to the agent on its own, so the agent never has to look
 // at the page to learn it is broken. Each report carries the revision its errors came from; the
@@ -1035,55 +434,10 @@ function reportRenderErrors() {
   }, 500);
 }
 
-function removeFromQueue(qid: string | undefined) {
-  state.queue = state.queue.filter((q) => q.qid !== qid);
-  saveQueue();
-  renderLog();
-  renderDock();
-}
-
-function anchorLabel(item: QueueItem): {
-  icon: string;
-  text: string | undefined;
-  sub: string | undefined;
-} {
-  if (item.kind === "annotation") return { icon: "✎", text: item.target, sub: item.component };
-  if (item.kind === "action") return { icon: "↗", text: item.message, sub: "button" };
-  if (item.kind === "render-error")
-    return { icon: "!", text: item.statement || "page", sub: "render issue" };
-  return { icon: "", text: "", sub: "" };
-}
-
-function flatForm(obj: object | null | undefined, prefix = ""): string[] {
-  const parts: string[] = [];
-  for (const [k, v] of Object.entries(obj || {})) {
-    if (v && typeof v === "object" && !Array.isArray(v)) parts.push(...flatForm(v, ""));
-    else parts.push(`${prefix}${k}: ${Array.isArray(v) ? v.join(", ") : v}`);
-  }
-  return parts;
-}
-
-const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
-
-function itemQuote(item: QueueItem): unknown {
-  if (item.selection) return item.selection;
-  if (item.detail?.part)
-    return item.excerpt ? `${item.detail.part}  ${item.excerpt}` : item.detail.part;
-  if (item.detail?.column) {
-    const where = [item.detail.row && `row ${item.detail.row}`, `column ${item.detail.column}`]
-      .filter(Boolean)
-      .join(", ");
-    return item.excerpt ? `${item.excerpt}  (${where})` : where;
-  }
-  if (item.kind === "action" && item.form) return flatForm(item.form).join(" · ");
-  if (item.kind === "render-error") return item.message;
-  return item.excerpt || "";
-}
-
 /** One bad item shows a marker instead of aborting the whole panel render. */
-function itemBody(item: QueueItem, opts: ItemOptions = {}): HTMLElement {
+function itemBody(item: QueueItem, held: boolean): HTMLElement {
   try {
-    return renderItem(item, opts);
+    return renderItem(item, held);
   } catch {
     return h(
       "div",
@@ -1093,7 +447,7 @@ function itemBody(item: QueueItem, opts: ItemOptions = {}): HTMLElement {
   }
 }
 
-function renderItem(item: QueueItem, { queued, held }: ItemOptions = {}): HTMLElement {
+function renderItem(item: QueueItem, held: boolean): HTMLElement {
   const a = anchorLabel(item);
   const wrap = h("div", { class: `item kind-${item.kind}` });
   if (a.text) {
@@ -1132,34 +486,7 @@ function renderItem(item: QueueItem, { queued, held }: ItemOptions = {}): HTMLEl
       h("blockquote", { text: held || quote.length <= 260 ? quote : quote.slice(0, 259) + "…" }),
     );
   const noteText = item.kind === "message" ? item.text : item.note;
-  if (queued && state.editing === item.qid) {
-    const ta = h("textarea", { class: "edit", rows: "2" });
-    ta.value = noteText || "";
-    const save = () => {
-      const v = ta.value.trim();
-      if (item.kind === "message") {
-        if (!v) return removeFromQueue(item.qid);
-        item.text = v;
-      } else item.note = v;
-      state.editing = null;
-      saveQueue();
-      renderLog();
-    };
-    ta.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        save();
-      } else if (e.key === "Escape") {
-        state.editing = null;
-        renderLog();
-      }
-    });
-    ta.addEventListener("blur", save);
-    wrap.append(ta);
-    setTimeout(() => ta.focus(), 0);
-  } else if (noteText) {
-    wrap.append(h("div", { class: "note", text: noteText }));
-  }
+  if (noteText) wrap.append(h("div", { class: "note", text: noteText }));
   return wrap;
 }
 
@@ -1171,26 +498,14 @@ function fmtTime(ms: number | undefined): string {
 /** "You" for the viewer's own notes, otherwise the author's name; the owner's notes read "Owner" to a reviewer. */
 function whoLabel(entry: Entry): string {
   if (OWNER) return entry.author || "You";
-  return entry.author === viewerName ? "You" : entry.author || "Owner";
-}
-
-async function heldAction(kind: string, ids?: string[]) {
-  try {
-    await fetch(`${BASE}/${kind}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(ids ? { ids } : { all: true }),
-    });
-  } catch {
-    composerError("Could not reach the server. Try again.");
-  }
+  return entry.author === state.viewerName ? "You" : entry.author || "Owner";
 }
 
 function receipt(entry: Entry): HTMLElement | null {
   // Hosted notes have no delivery receipts: the owner's agent sees them after a sync.
   if (HOSTED) {
     if (entry.pending) return h("div", { class: "receipt" }, h("em", { text: "Sending…" }));
-    return entry.author === viewerName
+    return entry.author === state.viewerName
       ? h("div", { class: "receipt" }, h("em", { text: "Sent to the page owner" }))
       : null;
   }
@@ -1308,10 +623,10 @@ function renderLog(scrollToEnd = false) {
     );
   }
   // Hosted: notes waiting for their ack follow the conversation.
-  const pending = mine().map((o): Entry => ({
+  const pending = state.pending.map((o): Entry => ({
     id: `out:${o.m.clientId}:${o.m.n}`,
     role: "user",
-    author: viewerName,
+    author: state.viewerName,
     items: o.m.args.items,
     at: o.at,
     pending: true,
@@ -1364,7 +679,7 @@ function renderLog(scrollToEnd = false) {
           { class: `msg user${entry.held ? " held" : ""}` },
           h("div", { class: "who", text: `${who} · ${fmtTime(entry.at)}` }),
         );
-        for (const it of entry.items || []) bubble.append(itemBody(it, { held: !!entry.held }));
+        for (const it of entry.items || []) bubble.append(itemBody(it, !!entry.held));
         const r = receipt(entry);
         if (r) bubble.append(r);
         log.append(bubble);
@@ -1408,7 +723,6 @@ function renderLog(scrollToEnd = false) {
       ),
     );
   }
-  renderQueue(scrollToEnd);
   if (state.archived) {
     log.append(
       h("div", {
@@ -1422,242 +736,7 @@ function renderLog(scrollToEnd = false) {
   const count = rows.length + state.queue.length;
   if (scrollToEnd || atBottom || count !== lastLogCount) log.scrollTop = log.scrollHeight;
   lastLogCount = count;
-  renderComposer();
 }
-
-/** "Ready to send": the queued notes, numbered in the order they go out, each with Edit and Remove. */
-function renderQueue(scrollToEnd = false) {
-  const box = $(".queue");
-  const list = $(".queue-list", box);
-  const n = state.queue.length;
-  // The list scrolls by itself: a redraw (Edit, Remove) keeps its place, a new note is brought into view.
-  const top = list.scrollTop;
-  list.textContent = "";
-  box.hidden = !n;
-  $(".queue-title", box).textContent = `Ready to send · ${n}`;
-  state.queue.forEach((item, i) => {
-    const el = itemBody(item, { queued: true });
-    el.classList.add("q");
-    list.append(
-      h(
-        "li",
-        { class: "q-item" },
-        h("span", { class: "q-num", "aria-hidden": "true", text: String(i + 1) }),
-        el,
-        h(
-          "div",
-          { class: "q-actions" },
-          h(
-            "button",
-            {
-              type: "button",
-              class: "icon-btn q-edit",
-              "aria-label": `Edit note ${i + 1}`,
-              title: "Edit",
-              onclick: () => {
-                state.editing = item.qid;
-                renderLog();
-              },
-            },
-            icon("pencil", { size: 14, width: 1.8 }),
-          ),
-          h(
-            "button",
-            {
-              type: "button",
-              class: "icon-btn q-remove",
-              "aria-label": `Remove note ${i + 1}`,
-              title: "Remove",
-              onclick: () => removeFromQueue(item.qid),
-            },
-            icon("close", { size: 14, width: 1.8 }),
-          ),
-        ),
-      ),
-    );
-  });
-  list.scrollTop = scrollToEnd ? list.scrollHeight : top;
-}
-
-// ── composer / sending ──
-
-function renderComposer() {
-  const archived = state.archived;
-  const n = state.queue.length;
-  textarea.disabled = archived || !!lockout || state.sending;
-  // Hosted: nothing goes out until the service has said who this reviewer is.
-  $<HTMLButtonElement>(".send").disabled =
-    archived || !!lockout || state.sending || (!!HOSTED && inviteName === undefined);
-  const sendEnd = $<HTMLButtonElement>(".send-end");
-  if (sendEnd) {
-    // With nothing typed or queued the button only tells the agent there are no more notes (an empty final batch).
-    const empty = !n && !textarea.value.trim();
-    const lastNote = state.transcript.findLast((e) => e.role === "user" && !e.held);
-    const alreadyDone = empty && !!lastNote?.end && !lastNote.items?.length;
-    sendEnd.disabled = archived || state.sending || alreadyDone;
-    sendEnd.textContent = empty ? "Done" : "Send & finish";
-    sendEnd.title = alreadyDone
-      ? "You already told the agent you have no more notes"
-      : empty
-        ? "Tell the agent you have no more notes"
-        : "Send these notes and tell the agent it can stop listening. You can still add notes later.";
-  }
-  $(".send").replaceChildren(
-    state.sending ? "Sending…" : n ? `Send ${n} note${n === 1 ? "" : "s"}` : "Send",
-    ...(state.sending ? [] : [icon("arrowRight", { size: 14, width: 2.1 })]),
-  );
-  textarea.placeholder = archived ? "Page archived" : "Add a note about the whole page";
-  $(".tab-count").textContent = n ? String(n) : "";
-}
-
-function composerError(text: string) {
-  const el = $(".composer-error");
-  el.textContent = text || "";
-  el.hidden = !text;
-}
-
-async function sendAll(end = false) {
-  if (state.sending || state.archived) return;
-  const text = textarea.value.trim();
-  const items: QueueItem[] = state.queue.map(({ qid, ...rest }) => rest);
-  if (text) items.push({ kind: "message", text });
-  if (end && !OWNER) return;
-  // Done (end with nothing typed or queued) goes out as an empty final batch.
-  if (!items.length && !end) {
-    textarea.focus();
-    return;
-  }
-  if (HOSTED) return sendHosted(items);
-  state.sending = true;
-  composerError("");
-  renderComposer();
-  try {
-    const r = await fetch(`${BASE}/send`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ items, end }),
-    });
-    const data: { error?: string; entry?: Entry } = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-    state.queue = [];
-    saveQueue();
-    textarea.value = "";
-    const entry = data.entry;
-    if (entry && !state.transcript.some((e) => e.id === entry.id)) state.transcript.push(entry);
-  } catch (err) {
-    composerError(`Not sent: ${(err as Error).message}. Your notes are still queued.`);
-  } finally {
-    state.sending = false;
-    renderLog(true);
-    renderDock();
-  }
-}
-
-/**
- * The service takes messages and annotations only (NoteItem): a button press goes as a message,
- * a render issue as an annotation on its statement. Fields the frame gave as anything but strings are dropped.
- */
-function toNoteItem(item: QueueItem): NoteItem {
-  if (item.kind === "message") return { kind: "message", text: str(item.text) };
-  if (item.kind === "action")
-    return {
-      kind: "message",
-      text: [str(item.message), item.form ? flatForm(item.form).join(" · ") : ""]
-        .filter(Boolean)
-        .join(" · "),
-    };
-  const out: NoteAnnotation = { kind: "annotation" };
-  const target = item.kind === "render-error" ? item.statement : item.target;
-  if (typeof target === "string" && target) out.target = target;
-  for (const k of ["component", "selection", "excerpt", "note"] as const) {
-    const v = item[k];
-    if (typeof v === "string" && v) out[k] = v;
-  }
-  if (item.kind === "render-error" && typeof item.message === "string") out.excerpt = item.message;
-  if (Array.isArray(item.path))
-    out.path = item.path.filter((p): p is string => typeof p === "string");
-  const d = item.detail;
-  if (d && typeof d === "object") {
-    const detail: NonNullable<NoteAnnotation["detail"]> = {};
-    for (const k of ["part", "row", "column"] as const)
-      if (typeof d[k] === "string") detail[k] = d[k];
-    if (Number.isInteger(d.rowIndex)) detail.rowIndex = d.rowIndex as number;
-    if (Object.keys(detail).length) out.detail = detail;
-  }
-  return out;
-}
-
-/** Hosted: queues the batch as one `addNote` and sends it if the socket is open; the ack settles it. */
-const UNSAVED_WARNING =
-  "This browser could not keep a copy of your note: keep this tab open until it shows “Sent to the page owner”.";
-
-/** The composer's outbox notice: a rate-limit wait and the unsaved-copy warning, each while it holds. */
-function showOutboxNotice() {
-  composerError([rateLimited, outboxUnsaved ? UNSAVED_WARNING : ""].filter(Boolean).join(" "));
-}
-
-/**
- * Sends an outbox note now, or, while it waits out `retryAfter`, once its deadline passes. One
- * timer per note: a reconnect or a second refusal never schedules an earlier or a second send.
- */
-function sendWhenDue(entry: OutboxEntry) {
-  const wait = (entry.retryAt ?? 0) - Date.now();
-  if (wait <= 0) {
-    delete entry.retryAt;
-    sync?.send(entry.m);
-    return;
-  }
-  if (retryTimers.has(entry)) return;
-  retryTimers.set(
-    entry,
-    window.setTimeout(() => {
-      retryTimers.delete(entry);
-      if (outbox.includes(entry) && entry.as === sender()) sendWhenDue(entry);
-    }, wait),
-  );
-}
-
-function sendHosted(queued: QueueItem[]) {
-  if (lockout || inviteName === undefined) return;
-  // Only an unlisted page without an invite takes a self-declared name; an invite names its reviewer.
-  if (inviteName === null && !viewerName && nameForm) {
-    nameForm.hidden = false;
-    $("input", nameForm).focus();
-    return;
-  }
-  const items = queued.map(toNoteItem);
-  const bytes = new TextEncoder().encode(JSON.stringify(items)).length;
-  if (bytes > LIMITS.noteItemsBytes) {
-    composerError(
-      `Too long to send: ${bytes} bytes, the limit is ${LIMITS.noteItemsBytes}. Shorten or remove a note.`,
-    );
-    return;
-  }
-  const args: AddNoteArgs = inviteName === null ? { items, name: viewerName } : { items };
-  const m = mutation("addNote", args, { clientId: CLIENT, n: ++clientN });
-  outbox.push({ m, at: Date.now(), as: sender() });
-  outboxUnsaved = !SS.set(OUTBOX_KEY, outbox);
-  sync?.send(m);
-  state.queue = [];
-  saveQueue();
-  textarea.value = "";
-  showOutboxNotice();
-  renderLog(true);
-  renderDock();
-}
-
-$(".composer").addEventListener("submit", (e) => {
-  e.preventDefault();
-  sendAll(false);
-});
-$(".send-end")?.addEventListener("click", () => sendAll(true));
-textarea.addEventListener("input", renderComposer);
-textarea.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
-    sendAll(false);
-  }
-});
 
 // ── mode, presence, changes ──
 
@@ -1698,66 +777,17 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-/** How long ago the agent took the notes: "4 min", "1 h 5 min"; "" under a minute. */
-function agentFor(): string {
-  const min = state.since == null ? 0 : Math.floor((Date.now() - state.since) / 60_000);
-  if (min < 1) return "";
-  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ""}`;
-}
-
 function renderPresence() {
+  const view = presenceView(S(), Date.now());
   const el = $(".presence");
-  let label: string;
-  let cls: string;
-  const took = agentFor();
-  if (state.archived) [label, cls] = ["Page archived", "ended"];
-  else if (lockout) [label, cls] = [lockout, "ended"];
-  else if (!state.connected) [label, cls] = ["Reconnecting…", "off"];
-  else if (HOSTED) [label, cls] = ["Shared page", "hosted"];
-  else if (state.presence === "listening") [label, cls] = ["Agent listening", "listening"];
-  else if (state.presence === "working")
-    [label, cls] = [took ? `Agent working (${took})` : "Agent working", "working"];
-  else if (state.presence === "stale")
-    [label, cls] = [
-      took ? `Took your notes ${took} ago, no reply yet` : "Took your notes, no reply yet",
-      "stale",
-    ];
-  else if (state.wake?.state === "idle")
-    [label, cls] = [`Agent idle in ${state.wake.harness} · Send wakes it`, "listening"];
-  else if (state.wake?.state === "busy")
-    [label, cls] = [`Agent busy in ${state.wake.harness} · notes wait for its turn`, "busy"];
-  else [label, cls] = ["Agent not listening", "idle"];
-  if (cls === "idle" && state.unread) label += ` · ${state.unread} not answered yet`;
-  // With an agent attached, "not listening" says nothing: the Agent pill tells what runs.
-  const attached = cls === "idle" && attach.info?.effective.state === "on";
-  el.className = `presence ${cls}${attached ? " attached" : ""}`;
-  el.textContent = label;
+  el.className = `presence ${view.cls}${view.attached ? " attached" : ""}`;
+  el.textContent = view.label;
+  el.title = view.title;
   const dot = document.querySelector(".tab-dot");
   if (dot) {
-    dot.setAttribute("class", `tab-dot ${cls}`);
-    dot.setAttribute("aria-label", label);
+    dot.setAttribute("class", `tab-dot ${view.cls}`);
+    dot.setAttribute("aria-label", view.label);
   }
-  // Only someone whose notes go straight to an agent is told it takes them; a held reviewer's wait for the owner.
-  $(".composer-listen").hidden = cls !== "listening" || !(OWNER || VIEWER.auto === true);
-  el.title =
-    cls === "idle"
-      ? "Your notes are kept and reach the agent the next time it polls."
-      : cls === "working"
-        ? "The agent has your last batch."
-        : cls === "stale"
-          ? "The agent took your last notes. It has not replied or changed the page for a while."
-          : cls === "hosted"
-            ? "Notes go to the page owner. Replies show up here as they are posted."
-            : cls === "busy"
-              ? "The agent session that worked on this page is in a turn. Your notes start its next turn when this one ends."
-              : state.wake
-                ? "The agent session that worked on this page is idle. Send starts a turn in it."
-                : "";
-  // Nobody listens: what Send does now, and for the owner the way to start an agent.
-  const line = $(".composer-presence");
-  const show = cls === "idle" && !attached && (OWNER || VIEWER.auto === true);
-  if (show && line.hidden && OWNER) void loadAgentPrompt();
-  line.hidden = !show;
   document.documentElement.classList.toggle("is-archived", state.archived);
   if (OWNER) {
     $('[data-cmd="archive"]').hidden = state.archived;
@@ -1769,7 +799,6 @@ function renderPresence() {
 setInterval(() => {
   if (state.presence === "working" || state.presence === "stale") renderPresence();
 }, 30_000);
-$(".copy-prompt")?.addEventListener("click", () => void copyAgentPrompt());
 
 /** What the control outlines: the last turn's changes and, for the owner, everything since they last looked. */
 function shownChanges(): string[] {
@@ -1802,31 +831,6 @@ $(".changes").addEventListener("click", () => {
 });
 
 // ── history (RLM-352): what changed since the owner last looked, every version, a part's earlier texts, restore ──
-
-/** A revision in `/history`'s answer (revisionLog in src/cli/history.ts). */
-interface HistoryRevision {
-  rev: number;
-  at: number;
-  source: string;
-  changed: string[];
-  removed: string[];
-  created?: number;
-  cause: { author: string; target: string | null; text: string }[];
-  by?: string;
-}
-interface HistoryData {
-  head: number;
-  viewed: number;
-  revisions: HistoryRevision[];
-}
-/** One earlier text of a statement, in `/history?statement=`'s answer. */
-interface StatementVersion {
-  rev: number;
-  at: number;
-  source: string;
-  text: string | null;
-  cause: { author: string; target: string | null; text: string }[];
-}
 
 let hist: HistoryData | null = null;
 
@@ -2110,31 +1114,6 @@ if (OWNER && !HOSTED) {
 
 const menuPop = $(".menu-pop");
 
-/**
- * The agent prompt, fetched when the menu opens (the file may have been published since the page
- * opened) so a click can copy it at once: Firefox allows a legacy copy only inside the click itself.
- */
-let agentPrompt: Promise<string> | null = null;
-let agentPromptText: string | null = null;
-function loadAgentPrompt(): Promise<string> {
-  agentPromptText = null;
-  const p = fetch(`${BASE}/agent-prompt`).then((r) => {
-    if (!r.ok) throw new Error(String(r.status));
-    return r.text();
-  });
-  agentPrompt = p;
-  p.then(
-    (t) => {
-      if (agentPrompt === p) agentPromptText = t;
-    },
-    () => {
-      // A failed fetch must not stay cached: the next click asks again.
-      if (agentPrompt === p) agentPrompt = null;
-    },
-  );
-  return p;
-}
-
 $(".menu-btn").addEventListener("click", (e) => {
   e.stopPropagation();
   menuPop.hidden = !menuPop.hidden;
@@ -2142,65 +1121,6 @@ $(".menu-btn").addEventListener("click", (e) => {
   if (!menuPop.hidden && OWNER) void loadAgentPrompt();
 });
 document.addEventListener("click", () => (menuPop.hidden = true));
-
-/** A short confirmation in the banner that goes away by itself. */
-function flash(text: string) {
-  showBanner(text);
-  setTimeout(() => {
-    if (banner.textContent === text) showBanner("");
-  }, 4000);
-}
-
-/** Copies through a hidden textarea. Works where `navigator.clipboard` does not exist, but only while a click is being handled. */
-function copyLegacy(text: string): boolean {
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.setAttribute("readonly", "");
-  ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
-  // A modal dialog makes everything outside it inert: copy from inside the open one.
-  (document.querySelector("dialog[open]") ?? document.body).append(ta);
-  ta.select();
-  let ok = false;
-  try {
-    ok = document.execCommand("copy");
-  } catch {
-    // refused
-  }
-  ta.remove();
-  return ok;
-}
-
-/**
- * Copies `text` and says so. `navigator.clipboard` is there only in a secure context (https or
- * localhost), and the review page is often opened at an http tailnet address, where it is undefined:
- * the legacy copy covers that. When nothing can copy, the text is shown to copy by hand.
- */
-async function copyText(text: string, what: string): Promise<void> {
-  let ok = false;
-  if (navigator.clipboard?.writeText) {
-    ok = await navigator.clipboard.writeText(text).then(
-      () => true,
-      () => false,
-    );
-  }
-  if (!ok) ok = copyLegacy(text);
-  if (ok) return flash(`${what} copied.`);
-  window.prompt(`Your browser blocked copying. Copy ${what.toLowerCase()} from here:`, text);
-}
-
-async function copyAgentPrompt() {
-  let text = agentPromptText;
-  if (text == null) {
-    try {
-      text = await (agentPrompt ?? loadAgentPrompt());
-    } catch {
-      return showBanner(
-        "Could not get the agent prompt from austere-axi. Check that it is still running.",
-      );
-    }
-  }
-  await copyText(text, "Agent prompt");
-}
 
 menuPop.addEventListener("click", async (e) => {
   const cmd =
@@ -2232,14 +1152,6 @@ menuPop.addEventListener("click", async (e) => {
 
 $(".share-btn")?.addEventListener("click", () => void sharePage());
 
-/** The server's reason for a failed request, else its status. */
-async function failure(r: Response): Promise<string> {
-  const d = (await r.json().catch(() => ({}))) as { error?: string };
-  return d.error || `error ${r.status}`;
-}
-
-const UNREACHABLE = "Could not reach austere-axi. Check that it is still running.";
-
 /** Shows why archive or unarchive failed; the next attempt that works takes it away, and leaves any other banner alone. */
 let archiveError = "";
 function showArchiveError(text: string) {
@@ -2247,7 +1159,7 @@ function showArchiveError(text: string) {
   showBanner(text);
 }
 function clearArchiveError() {
-  if (archiveError && banner.textContent === archiveError) showBanner("");
+  if (archiveError && bannerText() === archiveError) showBanner("");
   archiveError = "";
 }
 
@@ -2363,15 +1275,6 @@ async function unarchivePage() {
 }
 
 // ── share (RLM-397): a named link for one teammate's device; the owner's only ──
-
-/** What POST /share answers (ShareResponse in src/cli/server.ts). */
-interface ShareMade {
-  name: string;
-  link: string;
-  reaches: string;
-  auto: boolean;
-  expiresAt: number;
-}
 
 /** The Share dialog: name, what it reaches, hold or auto; then the link with a Copy button. */
 async function sharePage() {
@@ -2665,6 +1568,7 @@ function renderAttach() {
   attachPill.title = on
     ? `Agent attached: ${detail}. A note you send starts it.`
     : "Attach an agent to this page";
+  state.attachOn = on;
   renderPresence();
   renderRunState();
   if (attachPop && !attachPop.hidden) renderAttachPop();
@@ -3169,15 +2073,6 @@ if (attachPill && attachPop) {
 
 // ── mobile sheet ──
 
-function isNarrow(): boolean {
-  return window.matchMedia("(max-width: 860px)").matches;
-}
-function setSheet(open: boolean) {
-  state.sheetOpen = open;
-  SS.set(`austere:sheet:${SID}`, open);
-  document.documentElement.classList.toggle("sheet-open", open);
-  if (open) setTimeout(() => (log.scrollTop = log.scrollHeight), 50);
-}
 function renderDock() {
   const dock = $(".dock");
   const n = state.queue.length;
@@ -3261,25 +2156,16 @@ function showPackNotice(packs: string[] | undefined) {
   notice.hidden = false;
 }
 
-function showBanner(text: string, actions: HTMLElement[] = []) {
-  banner.textContent = "";
-  if (!text) {
-    banner.hidden = true;
-    return;
-  }
-  banner.append(h("span", { text }), ...actions);
-  banner.hidden = false;
-}
-
 function mergeEntries(entries: Entry[]) {
+  const next = [...state.transcript];
   for (const e of entries) {
-    const i = state.transcript.findIndex((x) => x.id === e.id);
+    const i = next.findIndex((x) => x.id === e.id);
     if (e.discarded) {
-      if (i >= 0) state.transcript.splice(i, 1);
-    } else if (i >= 0) state.transcript[i] = e;
-    else state.transcript.push(e);
+      if (i >= 0) next.splice(i, 1);
+    } else if (i >= 0) next[i] = e;
+    else next.push(e);
   }
-  state.transcript.sort((a, b) => a.at - b.at);
+  state.transcript = next.sort((a, b) => a.at - b.at);
 }
 
 /** The page starts with the latest entries; older ones load on request. */
@@ -3300,7 +2186,7 @@ async function loadEarlier() {
     renderLog();
     log.scrollTop = log.scrollHeight - fromBottom;
   } catch (err) {
-    composerError(`Could not load earlier messages: ${(err as Error).message}`);
+    set({ composerError: `Could not load earlier messages: ${(err as Error).message}` });
   }
 }
 
@@ -3323,14 +2209,7 @@ function connect() {
       if (!state.connected && Date.now() - disconnectedAt > 3500) {
         showBanner(
           "Lost the austere-axi server. Run any austere-axi command to restart it; this page reconnects on its own.",
-          [
-            h("button", {
-              type: "button",
-              class: "btn tiny",
-              text: "Reload",
-              onclick: () => location.reload(),
-            }),
-          ],
+          [reload()],
         );
       }
     }, 4000);
@@ -3384,14 +2263,7 @@ function connect() {
     state.more = !!d.more;
     state.links = d.links;
     if (d.version && d.version !== BOOT.version) {
-      showBanner("austere-axi was updated. This page is running the previous version.", [
-        h("button", {
-          type: "button",
-          class: "btn tiny",
-          text: "Reload",
-          onclick: () => location.reload(),
-        }),
-      ]);
+      showBanner("austere-axi was updated. This page is running the previous version.", [reload()]);
     }
     showPackNotice(d.thirdPartyPacks);
     state.thirdParty = !!d.thirdPartyPacks?.length;
@@ -3481,13 +2353,11 @@ let cursor = 0;
 let ownerView = false;
 
 /** Nothing more can be sent: say why in the presence label and the banner, and stop syncing. */
-function lock(label: string, message: string, actions: HTMLElement[] = []) {
-  lockout = label;
-  state.connected = false;
-  sync?.stop();
+function lock(label: string, message: string, actions: BannerAction[] = []) {
+  set({ lockout: label, connected: false });
+  getSync()?.stop();
   showBanner(message, actions);
   renderPresence();
-  renderComposer();
 }
 
 /** Locks on an answer that means this reviewer cannot get in (403) or the page is gone (404, 410). */
@@ -3500,7 +2370,7 @@ function refused(status: number): boolean {
       !HOSTED.signIn.startsWith("//")
         ? HOSTED.signIn
         : null;
-    const actions = signIn ? [h("a", { class: "btn tiny", href: signIn, text: "Sign in" })] : [];
+    const actions: BannerAction[] = signIn ? [{ label: "Sign in", href: signIn }] : [];
     const orSignIn = signIn ? " Or sign in with the account the owner shared it with." : "";
     if (ownerView)
       lock(
@@ -3566,29 +2436,28 @@ async function loadHostedFrame(): Promise<boolean> {
   if (answer && refused(answer.status)) return false;
   if (!answer?.token) {
     showBanner(`Could not load this page${answer ? ` (HTTP ${answer.status})` : ""}.`, [
-      h("button", {
-        type: "button",
-        class: "btn tiny",
-        text: "Retry",
-        onclick: () => startHosted(),
-      }),
+      { label: "Retry", onClick: () => void startHosted() },
     ]);
     return false;
   }
   if (typeof answer.title === "string" && answer.title.trim()) showTitle(answer.title.trim());
   ownerView = !!answer.owner;
-  inviteName = answer.name ?? null;
-  if (inviteName) viewerName = inviteName;
+  const inviteName = answer.name ?? null;
+  if (inviteName) set({ inviteName, viewerName: inviteName });
   else {
     // An unlisted page answered without a name: the stored invite is not valid here, so stop sending it.
     if (invite) {
       invite = null;
       LS.remove(INVITE_KEY);
     }
-    viewerName = String(LS.get("austere:name", "") || "").slice(0, NAME_MAX);
+    set({
+      inviteName,
+      viewerName: String(LS.get("austere:name", "") || "").slice(0, NAME_MAX),
+    });
   }
+  // The notes waiting for an ack are the ones of the reviewer this page now is.
+  refreshPending();
   renderViewer();
-  renderComposer();
   frame.src = `${BOOT.artifactUrl ?? `${BASE}/a/`}${answer.token}/`;
   return true;
 }
@@ -3692,14 +2561,7 @@ function applyPage(row: PageRow) {
   if (row.deleted) return lock("Page removed", "The owner removed this page.");
   publishedAt ??= row.publishedAt;
   if (row.publishedAt !== publishedAt) {
-    showBanner("New version, reload", [
-      h("button", {
-        type: "button",
-        class: "btn tiny",
-        text: "Reload",
-        onclick: () => location.reload(),
-      }),
-    ]);
+    showBanner("New version, reload", [reload()]);
   }
   showPackNotice(row.packs.map((p) => p.name));
   renderShare(row.unlisted);
@@ -3715,59 +2577,19 @@ function renderShare(unlisted: boolean) {
   $("[data-share-note]").hidden = unlisted;
 }
 
-/**
- * An ack settles one queued note. `rate_limited` keeps it in the outbox and sends the same mutation
- * again after `retryAfter` (the service does not store that answer). Any other error puts its items
- * back in the queue to be edited and sent again.
- */
-function settle(ack: AckFrame) {
-  const i = outbox.findIndex((o) => o.m.clientId === ack.clientId && o.m.n === ack.n);
-  if (i < 0) return;
-  if (ack.error?.code === "rate_limited") {
-    const entry = outbox[i];
-    const wait = Math.max(1, ack.error.retryAfter ?? 5);
-    // The deadline is saved with the note, so a reconnect or a reload waits it out too.
-    entry.retryAt = Date.now() + wait * 1000;
-    outboxUnsaved = !SS.set(OUTBOX_KEY, outbox);
-    rateLimited = `Too many notes for now: sending again in ${wait} s.`;
-    showOutboxNotice();
-    sendWhenDue(entry);
-    return;
-  }
-  const [done] = outbox.splice(i, 1);
-  // Saved again, or every note acked: nothing is left to lose on a reload.
-  const saved = SS.set(OUTBOX_KEY, outbox);
-  if (outboxUnsaved && (saved || !outbox.length)) outboxUnsaved = false;
-  if (!outbox.some((o) => o.retryAt)) rateLimited = null;
-  showOutboxNotice();
-  if (ack.error) {
-    for (const item of done.m.args.items) addToQueue({ ...item });
-    composerError(`Not sent: ${ack.error.message}. Your notes are back in the queue.`);
-  }
-  renderLog();
-  renderDock();
-}
-
 function onSyncFrame(frame: ReceivedFrame) {
   if (frame.t === "changes") applyChanges(frame);
   else if (frame.t === "ack") settle(frame);
   // `forbidden` and `upgrade_required` come before the server closes the socket: onSyncClose says why.
   else if (frame.t === "error" && frame.code !== "forbidden" && frame.code !== "upgrade_required")
-    composerError(frame.message);
+    set({ composerError: frame.message });
 }
 
 function onSyncClose(close: SyncClose, retrying: boolean) {
   state.connected = false;
-  if (!retrying && !lockout) {
+  if (!retrying && !state.lockout) {
     if (close.error?.code === "upgrade_required") {
-      lock("Update needed", "This page needs a newer review page. Reload to get it.", [
-        h("button", {
-          type: "button",
-          class: "btn tiny",
-          text: "Reload",
-          onclick: () => location.reload(),
-        }),
-      ]);
+      lock("Update needed", "This page needs a newer review page. Reload to get it.", [reload()]);
     } else if (close.code === 1000 && !close.error)
       lock("Page removed", "This page is no longer available.");
     // `forbidden` and close 1008: the invite was revoked or expired, or the page is no longer unlisted.
@@ -3784,20 +2606,20 @@ const RETRY_CHECK_MS = 5_000;
 
 async function startHosted() {
   showBanner("");
-  if (!(await loadHostedFrame()) || sync) return;
+  if (!(await loadHostedFrame()) || getSync()) return;
   const socket = openSyncSocket({
     url: `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${BASE}/sync`,
     protocols: () => syncProtocols(invite ? { invite } : {}),
     // A refused handshake shows no status to the page: ask the asset-token route why.
     mayRetry: async (close) => {
-      if (lockout) return false;
+      if (state.lockout) return false;
       if (close.opened) return true;
       // A stalled check must not hold up the next attempt: past 5 s it counts as offline, and the socket retries.
       const answer = await requestAssetToken(AbortSignal.timeout(RETRY_CHECK_MS)).catch(() => null);
       return !(answer && refused(answer.status));
     },
   });
-  sync = socket;
+  setSync(socket);
   socket.onOpen(() => {
     state.connected = true;
     socket.send({ v: SYNC_VERSION, t: "pull", after: cursor });
@@ -3828,15 +2650,23 @@ const nav =
         openAttach,
       })
     : null;
-const gotoBtn = document.querySelector<HTMLButtonElement>(".goto-btn");
-if (gotoBtn && nav) {
-  gotoBtn.append(icon("search", { size: 16, width: 1.8 }));
-  gotoBtn.hidden = false;
+if (nav) {
   // After this click has reached the document, as the menu's Go to page does.
-  gotoBtn.addEventListener("click", () => setTimeout(() => nav.toggleSwitcher(), 0));
-} else gotoBtn?.remove();
+  $(".goto-btn").addEventListener("click", () => setTimeout(() => nav.toggleSwitcher(), 0));
+}
+// What is still drawn by hand follows the store: the Conversation, the dock and the Notes tab's count.
+useReview.subscribe((s, prev) => {
+  if (s.queue !== prev.queue) {
+    $(".tab-count").textContent = s.queue.length ? String(s.queue.length) : "";
+    renderDock();
+    renderLog(s.queue.length > prev.queue.length);
+  } else if (s.pending !== prev.pending) renderLog(true);
+  if (s.sheetOpen && !prev.sheetOpen) setTimeout(() => (log.scrollTop = log.scrollHeight), 50);
+});
+if (state.queue.length) $(".tab-count").textContent = String(state.queue.length);
 setMode(state.mode);
 if (isNarrow() && state.sheetOpen) setSheet(true);
+refreshPending();
 renderPresence();
 renderLog();
 renderDock();
