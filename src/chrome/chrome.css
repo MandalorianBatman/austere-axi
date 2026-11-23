@@ -817,8 +817,9 @@ code {
 .hist-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
+}
+.hist-list,
+.hist-loading {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1076,17 +1077,17 @@ html.exploring .hist {
   display: none;
   margin-left: auto;
 }
-/* The Conversation scrolls in a shadcn ScrollArea: the viewport is what moves. */
-.log {
-  flex: 1;
-  min-height: 0;
-}
-.log [data-slot="scroll-area-viewport"] {
+/* Panels scroll in shadcn ScrollAreas: the viewport is what moves, and it keeps its scroll to itself. */
+[data-slot="scroll-area-viewport"] {
   overscroll-behavior: contain;
 }
 /* Radix wraps the content in a table so it can measure it; a table does not wrap long lines. */
-.log [data-slot="scroll-area-viewport"] > div {
+[data-slot="scroll-area-viewport"] > div {
   display: block !important;
+}
+.log {
+  flex: 1;
+  min-height: 0;
 }
 .log-body {
   display: flex;

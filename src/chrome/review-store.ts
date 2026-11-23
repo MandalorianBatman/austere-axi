@@ -4,6 +4,7 @@
 import { create } from "zustand";
 import type {
   Entry,
+  HistoryData,
   Mode,
   OutboxEntry,
   QueueItem,
@@ -62,6 +63,19 @@ export interface ReviewState {
   links: { remote?: string } | null;
   /** Whether an agent is attached to this page (the Agent pill's setting), for the presence label. */
   attachOn: boolean;
+  /** Which view the panel shows: the notes, or the Agent or History panel that opens over them. */
+  panel: "notes" | "agent" | "history";
+  /** The History panel: one statement's earlier texts, or (null) every revision. */
+  historyFor: string | null;
+  /** The owner's history, kept current by useHistoryFeed; null until the first answer. */
+  hist: HistoryData | null;
+  /** The last ask for the history failed. */
+  histError: boolean;
+  /** Moves when something asks for a fresh history. */
+  historyTick: number;
+  /** Revisions the owner has not seen since they last looked, and whether they dismissed the strip about them. */
+  sinceCount: number;
+  sinceDismissed: boolean;
   /** Hosted: why nothing more can be sent (the page is gone, or the invite no longer works). */
   lockout: string | null;
   /** Hosted: the invite's name; null on an unlisted page without a valid invite; undefined until the service answers. */
@@ -107,6 +121,13 @@ const initial: ReviewState = {
   connected: false,
   links: null,
   attachOn: false,
+  panel: "notes",
+  historyFor: null,
+  hist: null,
+  histError: false,
+  historyTick: 0,
+  sinceCount: 0,
+  sinceDismissed: false,
   lockout: null,
   inviteName: undefined,
   viewerName: HOSTED ? "" : VIEWER.name,

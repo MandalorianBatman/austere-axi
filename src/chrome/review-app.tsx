@@ -6,8 +6,11 @@ import { Icon, ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
 import { BASE, HOSTED, OWNER } from "./review-env.ts";
 import { useBanner } from "./review-banner.ts";
+import { ChangesButton, HistoryButton, PresencePill, Revision, SinceBar } from "./review-bar.tsx";
+import { useHighlightSync } from "./review-changes.ts";
 import { Composer } from "./review-composer.tsx";
-import { PresencePill } from "./review-bar.tsx";
+import { useHistoryFeed } from "./review-history.ts";
+import { HistoryPanel } from "./review-history-panel.tsx";
 import { useRootClass } from "./review-hooks.ts";
 import { Log } from "./review-log.tsx";
 import { Queue } from "./review-queue.tsx";
@@ -51,8 +54,15 @@ function Banner(): ReactElement {
   );
 }
 
+/** What the owner's page does on its own while it is open: keeps the history current. */
+function OwnerEffects(): null {
+  useHistoryFeed();
+  return null;
+}
+
 function App(): ReactElement {
   useRootClass("is-archived", useReview((s) => s.archived));
+  useHighlightSync();
   return (
     <TooltipProvider>
       <a className="skip-link" href="#content">
@@ -72,7 +82,7 @@ function App(): ReactElement {
             </div>
           </div>
           <div className="bar-right">
-            <button type="button" className="changes" aria-pressed="false" hidden />
+            <ChangesButton />
             <span className="viewers" role="group" aria-label="On this page" hidden />
             {OWNER ? (
               <div className="attach">
@@ -181,22 +191,9 @@ function App(): ReactElement {
           </div>
         </header>
         <Banner />
+        {OWNER ? <OwnerEffects /> : null}
         <div className="notice" hidden />
-        {OWNER ? (
-          <div className="since" role="status" hidden>
-            <span className="since-dot" aria-hidden="true" />
-            <span className="since-text" />
-            <button type="button" className="btn tiny" data-since="show" aria-pressed="false">
-              Outline them
-            </button>
-            <button type="button" className="btn tiny ghost" data-since="history">
-              History
-            </button>
-            <button type="button" className="icon-btn since-x" data-since="dismiss" aria-label="Dismiss">
-              <Icon name="close" size={14} width={2} />
-            </button>
-          </div>
-        ) : null}
+        {OWNER ? <SinceBar /> : null}
         <div className="main">
           <section className="stage" id="content" tabIndex={-1} aria-label="Page under review">
             <div className="subbar">
@@ -222,18 +219,8 @@ function App(): ReactElement {
               </div>
               <span className="subbar-hint" />
               <div className="subbar-end">
-                {OWNER ? <span className="rev" hidden /> : null}
-                {OWNER ? (
-                  <button
-                    type="button"
-                    className="btn ghost hist-btn"
-                    aria-expanded="false"
-                    title="Every version of this page, and what changed since you last looked"
-                  >
-                    <Icon name="clock" size={13} width={1.9} />
-                    History
-                  </button>
-                ) : null}
+                {OWNER ? <Revision /> : null}
+                {OWNER ? <HistoryButton /> : null}
               </div>
               <button type="button" className="dock" />
             </div>
@@ -265,17 +252,7 @@ function App(): ReactElement {
             <Queue />
             <Composer />
           </aside>
-          {OWNER ? (
-            <div className="hist" role="dialog" aria-label="History" hidden>
-              <div className="hist-head">
-                <span className="hist-title" />
-                <button type="button" className="icon-btn hist-close" aria-label="Close">
-                  <Icon name="close" size={16} width={1.8} />
-                </button>
-              </div>
-              <div className="hist-body" />
-            </div>
-          ) : null}
+          {OWNER ? <HistoryPanel /> : null}
           {OWNER ? <div className="attach-pop" role="dialog" aria-label="Agent on this page" hidden /> : null}
         </div>
       </div>
