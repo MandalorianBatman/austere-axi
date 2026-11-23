@@ -9,6 +9,7 @@ The [project README](../README.md) says what austere-axi is and how to start. Th
 | [Install and quick start](install.md) | The commands your agent runs, the setup skill, the Claude Code plugin, and the MCP server for Claude Desktop, Cursor and Codex |
 | [How it works](how-it-works.md) | What the agent writes (OpenUI Lang), the review loop, the comparison with lavish-axi, and what is not in v1 |
 | [Upgrading to 0.12](upgrading-to-0.12.md) | Removed commands, flags and poll statuses and what replaces them, closed pages that become archived, and how to upgrade a server your own unit runs |
+| [Upgrading to 0.18](upgrading-to-0.18.md) | The chrome is React on shadcn/Tailwind: changed class names and roles, removed `dom.ts` and `nav.ts`, and the projects sidebar's defaults |
 | [CLI reference](cli.md) | Every command, the review rules, and the environment variables |
 | [Components and packs](components-and-packs.md) | Finding components, installing packs, the trust list, private registries |
 | [Writing a pack](writing-a-pack.md) | From scaffold to `npm publish` |

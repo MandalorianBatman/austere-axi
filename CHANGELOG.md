@@ -6,6 +6,8 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## 0.18.0 (2026-11-23)
 
+Upgrading from 0.17: see [Upgrading to 0.18](docs/upgrading-to-0.18.md).
+
 ### Added
 
 - **A collapsible projects sidebar on the review page** (RLM-442). The owner on the local server sees the hub's sidebar (projects and their pages, with the counts that need you) beside the page, with this page marked; a click opens another page. The trigger in the review header, or Ctrl/Cmd+B, folds it, also when the focus is in the artifact (the frame hands the key over, as it does Ctrl/Cmd+K). The choice is kept in `localStorage` (`austere:sidebar-open`) and is shared with the hub; the folded projects are the hub's too. On the review page it starts folded until you open it (the hub's starts open); a saved choice wins on both. Wide screens (1100 px and up): it pushes the page and the artifact frame takes the room back. Under 1100 px (the review header needs the room; the hub's breakpoint stays 768 px): a sheet over the page with a scrim. A folded sidebar is `inert`, so it has no Tab stop (this fixes the hub's too), and the skip link stays the first stop. Reviewers and hosted pages do not get it: `/hub/api/*` answers the owner only.
