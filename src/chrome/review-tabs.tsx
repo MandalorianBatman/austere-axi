@@ -44,17 +44,27 @@ export function PanelTabs(): ReactElement {
       }}
     >
       <TabsList variant="line" className="panel-tabs" aria-label="Review panel views">
-        <TabsTrigger value="notes" className="panel-tab" data-tab="notes">
+        <TabsTrigger value="notes" className="panel-tab" data-tab="notes" aria-controls={undefined}>
           Notes <span className="tab-count">{s.queued ? String(s.queued) : ""}</span>
         </TabsTrigger>
         {OWNER ? (
-          <TabsTrigger value="agent" className="panel-tab" data-tab="agent">
+          <TabsTrigger
+            value="agent"
+            className="panel-tab"
+            data-tab="agent"
+            aria-controls={undefined}
+          >
             Agent{" "}
             <span className={`tab-dot ${presence.cls}`} role="img" aria-label={presence.label} />
           </TabsTrigger>
         ) : null}
         {OWNER ? (
-          <TabsTrigger value="history" className="panel-tab" data-tab="history">
+          <TabsTrigger
+            value="history"
+            className="panel-tab"
+            data-tab="history"
+            aria-controls={undefined}
+          >
             History
           </TabsTrigger>
         ) : null}

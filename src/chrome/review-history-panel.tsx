@@ -8,7 +8,7 @@ import { BASE } from "./review-env.ts";
 import { post } from "./review-bridge.ts";
 import { postHighlight } from "./review-changes.ts";
 import { isoTime } from "./review-format.ts";
-import { closePanel, restoreStatement } from "./review-history.ts";
+import { closeHistory, restoreStatement } from "./review-history.ts";
 import { useFetchJson } from "./review-hooks.ts";
 import { useReview } from "./review-store.ts";
 import type { HistoryRevision, StatementVersion } from "./review-types.ts";
@@ -143,6 +143,14 @@ function Versions({ name }: { name: string }): ReactElement {
 
 export function HistoryPanel(): ReactElement {
   const open = useReview((s) => s.panel === "history");
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && !e.defaultPrevented) closeHistory();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   const statement = useReview((s) => s.historyFor);
   return (
     <div className="hist" role="dialog" aria-label="History" hidden={!open}>
@@ -154,7 +162,7 @@ export function HistoryPanel(): ReactElement {
           size="icon-sm"
           className="hist-close"
           aria-label="Close"
-          onClick={closePanel}
+          onClick={closeHistory}
         >
           <Icon name="close" size={16} width={1.8} />
         </Button>

@@ -1,5 +1,5 @@
 // The owner's two questions: archive this page (which copies go), and share it with one person (a named link).
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -24,10 +24,16 @@ import { RadioGroup, RadioGroupItem } from "@/chrome/ui/radio-group";
 
 const close = (): void => set({ ask: null });
 
-/** Radix gives focus back to a trigger; these dialogs open from a menu item that has closed, so it goes to the menu's button. */
-function giveFocusBack(e: Event): void {
-  e.preventDefault();
-  document.querySelector<HTMLElement>(".menu-btn")?.focus();
+/**
+ * Radix gives focus back to a trigger; these dialogs have none. Focus goes to what had it when the dialog was asked for
+ * (the bar's Share button); a menu item has closed by then, so it goes to the menu's button instead.
+ */
+function giveFocusBack(opener: HTMLElement | null): (e: Event) => void {
+  return (e) => {
+    e.preventDefault();
+    const shown = opener?.isConnected && opener.getClientRects().length > 0;
+    (shown ? opener : document.querySelector<HTMLElement>(".menu-btn"))?.focus();
+  };
 }
 
 const count = (n: number): string => `${n} unanswered note${n === 1 ? "" : "s"}`;
@@ -36,9 +42,11 @@ const count = (n: number): string => `${n} unanswered note${n === 1 ? "" : "s"}`
 function ArchiveDialog({
   plan,
   done,
+  opener,
 }: {
   plan: ArchivePlan;
   done: (every: boolean | null) => void;
+  opener: HTMLElement | null;
 }): ReactElement {
   const several = plan.others.length > 0;
   const waiting = plan.archived[0]?.unanswered ?? 0;
@@ -48,7 +56,11 @@ function ArchiveDialog({
   };
   return (
     <Dialog open onOpenChange={(open) => open || answer(null)}>
-      <DialogContent className="confirm" showCloseButton={false} onCloseAutoFocus={giveFocusBack}>
+      <DialogContent
+        className="confirm"
+        showCloseButton={false}
+        onCloseAutoFocus={giveFocusBack(opener)}
+      >
         <DialogHeader>
           <DialogTitle>
             {several ? `Archive this copy (${plan.copy})?` : "Archive this page?"}
@@ -120,7 +132,13 @@ function Choice({ value, children }: { value: string; children: string }): React
 }
 
 /** The Share dialog: name, what it reaches, hold or auto; then the link with a Copy button. */
-function ShareDialog({ offer }: { offer: ShareOffer }): ReactElement {
+function ShareDialog({
+  offer,
+  opener,
+}: {
+  offer: ShareOffer;
+  opener: HTMLElement | null;
+}): ReactElement {
   const [made, setMade] = useState<ShareMade | null>(null);
   const [error, setError] = useState("");
   // An untouched notes choice is the saved default: leave it to the server, which holds the notes where an attached agent rules auto out.
@@ -131,6 +149,12 @@ function ShareDialog({ offer }: { offer: ShareOffer }): ReactElement {
     defaultValues: { name: "", scope: "page", mode: offer.auto ? "auto" : "hold" },
   });
   const link = useRef<HTMLInputElement>(null);
+  // The link is focused and selected once it is on screen (the form that had focus is gone), for a copy by hand.
+  useEffect(() => {
+    if (!made) return;
+    link.current?.focus();
+    link.current?.select();
+  }, [made]);
   const { isSubmitting } = form.formState;
   const submit = form.handleSubmit(async (v) => {
     setError("");
@@ -147,15 +171,13 @@ function ShareDialog({ offer }: { offer: ShareOffer }): ReactElement {
     }).catch(() => null);
     if (!r || !r.ok) return setError(r ? await failure(r) : UNREACHABLE);
     setMade((await r.json()) as ShareMade);
-    // The link is selected once it is on screen, for a copy by hand.
-    queueMicrotask(() => link.current?.select());
   });
   return (
     <Dialog open onOpenChange={(open) => open || close()}>
       <DialogContent
         className="confirm share"
         showCloseButton={false}
-        onCloseAutoFocus={giveFocusBack}
+        onCloseAutoFocus={giveFocusBack(opener)}
       >
         {made ? (
           <>
@@ -288,8 +310,8 @@ export function Dialogs(): ReactElement | null {
   const ask = useReview((s) => s.ask);
   if (!ask) return null;
   return ask.kind === "archive" ? (
-    <ArchiveDialog plan={ask.plan} done={ask.done} />
+    <ArchiveDialog plan={ask.plan} done={ask.done} opener={ask.opener} />
   ) : (
-    <ShareDialog offer={ask.offer} />
+    <ShareDialog offer={ask.offer} opener={ask.opener} />
   );
 }

@@ -6,7 +6,7 @@ import { Icon, ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
 import { shownChanges, toggleHighlight } from "./review-changes.ts";
 import { useNow } from "./review-hooks.ts";
-import { closePanel, openHistory } from "./review-history.ts";
+import { closeHistory, openHistory } from "./review-history.ts";
 import { openShare } from "./review-page.ts";
 import { presenceView } from "./review-presence.ts";
 import { set, useReview } from "./review-store.ts";
@@ -87,7 +87,7 @@ export function HistoryButton(): ReactElement {
       className="hist-btn"
       aria-expanded={open}
       title="Every version of this page, and what changed since you last looked"
-      onClick={() => (open ? closePanel() : openHistory())}
+      onClick={() => (open ? closeHistory() : openHistory())}
     >
       <Icon name="clock" size={13} width={1.9} />
       History

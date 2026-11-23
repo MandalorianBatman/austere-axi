@@ -97,11 +97,23 @@ export function useHistoryFeed(): void {
 
 /** The History panel, over the notes: every revision, or one statement's earlier texts. */
 export function openHistory(statement: string | null = null): void {
+  if (S().panel !== "history")
+    opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   set({ panel: "history", historyFor: statement });
   reloadHistory();
 }
 
+/** What had focus when History opened (the History tab or button): focus goes back to it when History closes. */
+let opener: HTMLElement | null = null;
+
 export const closePanel = (): void => set({ panel: "notes" });
+
+/** Closes History from inside it (Esc, Close, a restore): focus returns to what opened it, if that is still there. */
+export function closeHistory(): void {
+  closePanel();
+  if (opener?.isConnected) opener.focus();
+  opener = null;
+}
 
 /** Puts one statement back as it was in an earlier revision. */
 export async function restoreStatement(name: string, rev: number): Promise<void> {
@@ -113,7 +125,7 @@ export async function restoreStatement(name: string, rev: number): Promise<void>
   if (!r) return showBanner(UNREACHABLE);
   if (!r.ok) return showBanner(`Could not restore ${name}: ${await failure(r)}`);
   const done = (await r.json().catch(() => ({}))) as { unchanged?: boolean };
-  closePanel();
+  closeHistory();
   flash(
     done.unchanged
       ? `${name} already reads as it did in revision ${rev}.`

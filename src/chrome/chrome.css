@@ -25,6 +25,10 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
+/* The shorthand above sets 13px on <html> too, which would shrink every rem (shadcn's sizes are in rem): rem stays 16px. */
+html {
+  font-size: 16px;
+}
 code {
   font-family: var(--font-mono);
   font-size: 0.92em;
@@ -121,6 +125,10 @@ code {
 .share-btn {
   flex: none;
   height: var(--control-h);
+  gap: 6px;
+  padding: 0 12px;
+  font-size: var(--fs);
+  font-weight: 600;
 }
 
 /* Annotate / Explore, in the bar above the page. The attach popover's On / Off / default uses it too. */
@@ -951,9 +959,19 @@ code {
 }
 .hist-btn {
   height: 28px;
-  padding: 0 10px;
+  gap: 6px;
+  padding: 0 12px;
   border-radius: 7px;
-  font-size: 12.5px;
+  font-size: var(--fs);
+}
+/* shadcn sizes a button's icon at 16px; these two were drawn at 14 and 13. */
+.share-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.hist-btn svg {
+  width: 13px;
+  height: 13px;
 }
 .hist-btn[aria-expanded="true"] {
   border-color: var(--line-3);
@@ -1045,6 +1063,7 @@ html.exploring .hist {
   border-radius: 7px;
   background: transparent;
   color: var(--text-3);
+  font-size: var(--fs);
   font-weight: 500;
   cursor: pointer;
 }
@@ -1434,6 +1453,20 @@ html.exploring .hist {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+.composer-row .send,
+.composer-row .send-end {
+  height: 34px;
+  font-size: var(--fs);
+}
+.composer-row .send {
+  gap: 8px;
+  padding: 0 14px;
+  font-weight: 600;
+}
+.composer-row .send-end {
+  padding: 0 12px;
+  font-weight: 500;
 }
 .composer-hint {
   font-size: 11px;

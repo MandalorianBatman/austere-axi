@@ -292,5 +292,10 @@ export interface ShareOffer {
 
 /** A question the owner is asked in a dialog. */
 export type Ask =
-  | { kind: "archive"; plan: ArchivePlan; done: (every: boolean | null) => void }
-  | { kind: "share"; offer: ShareOffer };
+  | {
+      kind: "archive";
+      plan: ArchivePlan;
+      done: (every: boolean | null) => void;
+      opener: HTMLElement | null;
+    }
+  | { kind: "share"; offer: ShareOffer; opener: HTMLElement | null };

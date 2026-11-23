@@ -5,7 +5,7 @@ import type { ReactElement, ReactNode } from "react";
 import { Icon } from "./icon.tsx";
 import { copyText } from "./review-clipboard.ts";
 import { ago, bytes, clock } from "./review-format.ts";
-import { useNow } from "./review-hooks.ts";
+import { useNarrow, useNow } from "./review-hooks.ts";
 import {
   ACTIVE,
   MODES,
@@ -437,7 +437,11 @@ function Body(): ReactElement {
 }
 
 /** The Agent pill and its run state; the popover hangs from the pill. */
+/** From the pill's foot to the foot of the panel's tabs (the bar's 52 px and the tabs' 45 px, less the pill's own). */
+const TABS_CLEAR = 60;
+
 export function AttachPill(): ReactElement {
+  const narrow = useNarrow();
   const info = useReview((s) => s.attachInfo);
   const run = useReview((s) => s.run);
   const open = useReview((s) => s.panel === "agent");
@@ -473,6 +477,15 @@ export function AttachPill(): ReactElement {
           className="attach-pop"
           align="end"
           collisionPadding={8}
+          // On a wide screen the panel's tabs sit under the pill: hang below them, so the popover covers none.
+          sideOffset={narrow ? 4 : TABS_CLEAR}
+          // Opened by Enter, the key's own click would land on the first control it finds: focus the popover itself,
+          // once the key is released.
+          onOpenAutoFocus={(ev) => {
+            ev.preventDefault();
+            const el = ev.currentTarget as HTMLElement;
+            setTimeout(() => el.focus(), 0);
+          }}
           aria-label="Agent on this page"
           // The panel's tabs change the view themselves: a press on one is not an outside click that closes the popover
           // it has just opened (a tab takes focus when pressed).
