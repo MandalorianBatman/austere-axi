@@ -154,8 +154,8 @@ test("Enter on the Agent tab opens the popover and focus lands inside it", async
     await page.focus('.panel-tab[data-tab="agent"]');
     await page.keyboard.press("Enter");
     await page.locator(".attach-pop").waitFor({ state: "visible" });
-    // The key's own click must not reach the popover's controls: give it time, then look again.
-    await page.waitForTimeout(300);
+    // Focus moves in once the key is released; the key's own click must not have closed the popover by then.
+    await page.waitForFunction(() => !!document.activeElement?.closest(".attach-pop"));
     assert.ok(await page.locator(".attach-pop").isVisible(), "the popover stays open");
     assert.equal(
       await page.locator('.panel-tab[data-tab="agent"]').getAttribute("aria-selected"),
@@ -267,6 +267,28 @@ test("at 1280 px the Agent popover leaves the Notes, Agent and History tabs free
         b.y + b.height > pop.y;
       assert.ok(!overlap, `${tab} tab ${JSON.stringify(b)} under popover ${JSON.stringify(pop)}`);
     }
+  } finally {
+    await context.close();
+  }
+});
+
+test("at 390 px Send and Done are at least 44 px high", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context } = await ownerPage(writePage("touch"), 390);
+  try {
+    for (const sel of [".composer .send", ".composer .send-end"]) {
+      await page.locator(sel).waitFor({ state: "attached" });
+      const box = await page.locator(sel).evaluate((el) => el.getBoundingClientRect().height);
+      assert.ok(box >= 44, `${sel} is ${box}px high`);
+    }
+    const copy = await page
+      .locator(".copy-prompt")
+      .evaluate((el) => el.getBoundingClientRect().height);
+    assert.ok(copy >= 32, `Copy agent prompt is ${copy}px high`);
+    const note = await page
+      .locator(".composer textarea")
+      .evaluate((el) => el.getBoundingClientRect().height);
+    assert.ok(note >= 66, `the note box is ${note}px high`);
   } finally {
     await context.close();
   }

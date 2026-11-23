@@ -1454,19 +1454,21 @@ html.exploring .hist {
   justify-content: space-between;
   gap: 8px;
 }
-.composer-row .send,
-.composer-row .send-end {
-  height: 34px;
-  font-size: var(--fs);
-}
-.composer-row .send {
-  gap: 8px;
-  padding: 0 14px;
-  font-weight: 600;
-}
-.composer-row .send-end {
-  padding: 0 12px;
-  font-weight: 500;
+@media (min-width: 861px) {
+  .composer-row .send,
+  .composer-row .send-end {
+    height: 34px;
+    font-size: var(--fs);
+  }
+  .composer-row .send {
+    gap: 8px;
+    padding: 0 14px;
+    font-weight: 600;
+  }
+  .composer-row .send-end {
+    padding: 0 12px;
+    font-weight: 500;
+  }
 }
 .composer-hint {
   font-size: 11px;
@@ -1952,6 +1954,12 @@ html.exploring .hist {
   }
   .composer-row .send {
     flex: 1.2;
+  }
+  .copy-prompt {
+    min-height: 32px;
+  }
+  .composer textarea {
+    min-height: 66px;
   }
   /* The actions take the card's first line only: the note below them has the card's width. */
   .q-item {
