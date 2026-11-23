@@ -76,7 +76,15 @@ function Edit({ item, text }: { item: QueueItem; text: string }): ReactElement {
   );
 }
 
-function ItemView({ item, queued, held }: { item: QueueItem; queued?: boolean; held?: boolean }): ReactElement {
+function ItemView({
+  item,
+  queued,
+  held,
+}: {
+  item: QueueItem;
+  queued?: boolean;
+  held?: boolean;
+}): ReactElement {
   const editing = useReview((s) => queued === true && s.editing === item.qid);
   // What the agent receives on release: within the path above the leaf, the whole detail, the whole quote.
   const within =
@@ -97,7 +105,11 @@ function ItemView({ item, queued, held }: { item: QueueItem; queued?: boolean; h
       {quote ? (
         <blockquote>{held || quote.length <= 260 ? quote : `${quote.slice(0, 259)}…`}</blockquote>
       ) : null}
-      {editing ? <Edit item={item} text={text} /> : text ? <div className="note">{text}</div> : null}
+      {editing ? (
+        <Edit item={item} text={text} />
+      ) : text ? (
+        <div className="note">{text}</div>
+      ) : null}
     </div>
   );
 }

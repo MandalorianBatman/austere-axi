@@ -21,7 +21,12 @@ import type {
 let disconnectedAt = 0;
 
 /** The agent's state as the server reports it, the same in a snapshot and in a `presence` event. */
-function agentState(d: { presence: string; since?: number; now: number; wake?: SnapshotEvent["wake"] }): void {
+function agentState(d: {
+  presence: string;
+  since?: number;
+  now: number;
+  wake?: SnapshotEvent["wake"];
+}): void {
   set({
     presence: d.presence,
     since: d.since == null ? null : d.since + (Date.now() - d.now),
@@ -96,7 +101,10 @@ export function connect(): void {
     // On a newer revision the held errors describe an old program: the new render reports its own.
     // The same program on a newer revision (only the page shell changed) renders the same errors.
     if (s.program === null || d.revision === s.revision || d.program === s.program) {
-      set({ revision: d.revision, ...(d.revision !== s.revision ? { errorsRevision: d.revision } : {}) });
+      set({
+        revision: d.revision,
+        ...(d.revision !== s.revision ? { errorsRevision: d.revision } : {}),
+      });
       reportRenderErrors();
     } else set({ revision: d.revision, parserErrors: [], runtimeErrors: [], renderReport: null });
     if (s.program === null) set({ program: d.program });

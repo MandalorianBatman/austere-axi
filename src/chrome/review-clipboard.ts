@@ -34,7 +34,9 @@ function copyLegacy(text: string): boolean {
   ta.setAttribute("readonly", "");
   ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
   // A modal dialog makes everything outside it inert: copy from inside the open one.
-  (document.querySelector("dialog[open], [role=dialog][data-state=open]") ?? document.body).append(ta);
+  (document.querySelector("dialog[open], [role=dialog][data-state=open]") ?? document.body).append(
+    ta,
+  );
   ta.select();
   let ok = false;
   try {

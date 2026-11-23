@@ -83,7 +83,12 @@ function RunButtons({ run }: { run: RunSummary }): ReactElement | null {
         >
           View log
         </Button>
-        <Button type="button" size="xs" className="run-retry" onClick={() => void runAction("retry")}>
+        <Button
+          type="button"
+          size="xs"
+          className="run-retry"
+          onClick={() => void runAction("retry")}
+        >
           Retry
         </Button>
       </>
@@ -206,8 +211,8 @@ function Settings({ info }: { info: AttachInfo }): ReactElement {
   return (
     <>
       <p className="attach-note">
-        When on, a note you send or release starts the agent: it reads the notes, patches the page and
-        replies.
+        When on, a note you send or release starts the agent: it reads the notes, patches the page
+        and replies.
       </p>
       <div className="seg attach-state" role="group" aria-label="Attach">
         {STATES.map(([value, label]) => (
@@ -300,12 +305,18 @@ function Settings({ info }: { info: AttachInfo }): ReactElement {
           ) : null}
         </RadioGroup>
         {!info.sessions.length ? (
-          <div className="attach-hint">No agent session has opened, patched or polled this page yet.</div>
+          <div className="attach-hint">
+            No agent session has opened, patched or polled this page yet.
+          </div>
         ) : null}
       </Field>
 
       <Field legend="Harness (for a new session)">
-        <Select value={e.harness} disabled={fieldsOff} onValueChange={(harness) => void saveAttach({ harness })}>
+        <Select
+          value={e.harness}
+          disabled={fieldsOff}
+          onValueChange={(harness) => void saveAttach({ harness })}
+        >
           <SelectTrigger className="attach-select w-full" aria-label="Harness">
             <SelectValue />
           </SelectTrigger>
@@ -356,7 +367,12 @@ function Settings({ info }: { info: AttachInfo }): ReactElement {
           </span>
           <span className="attach-cmd">
             <code>{grant}</code>
-            <Button type="button" size="xs" variant="outline" onClick={() => void copyText(grant, "Command")}>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              onClick={() => void copyText(grant, "Command")}
+            >
               Copy
             </Button>
           </span>
@@ -439,7 +455,11 @@ export function AttachPill(): ReactElement {
             type="button"
             className={`attach-pill${on ? " on" : ""}`}
             data-run={showRun ? run.status : ""}
-            title={on ? `Agent attached: ${detail}. A note you send starts it.` : "Attach an agent to this page"}
+            title={
+              on
+                ? `Agent attached: ${detail}. A note you send starts it.`
+                : "Attach an agent to this page"
+            }
           >
             <span className="attach-dot" />
             <span className="attach-label">
@@ -457,7 +477,8 @@ export function AttachPill(): ReactElement {
           // The panel's tabs change the view themselves: a press on one is not an outside click that closes the popover
           // it has just opened (a tab takes focus when pressed).
           onInteractOutside={(ev) => {
-            if (ev.target instanceof Element && ev.target.closest(".panel-tab")) ev.preventDefault();
+            if (ev.target instanceof Element && ev.target.closest(".panel-tab"))
+              ev.preventDefault();
           }}
         >
           <Body />

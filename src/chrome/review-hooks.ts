@@ -51,7 +51,6 @@ export function useFetchJson<T>(url: string | null): Loaded<T> {
   return state.url === url ? state.result : { status: "loading" };
 }
 
-
 const NARROW = "(max-width: 860px)";
 
 /** Whether the screen is narrow (a phone): the notes are a sheet under the page, and History and the others are popovers. */

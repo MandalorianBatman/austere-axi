@@ -61,8 +61,7 @@ function RetryBadge({ until }: { until: number }): ReactElement {
     <Tooltip>
       <TooltipTrigger asChild>
         <Badge variant="secondary" className="composer-retry" tabIndex={0}>
-          Too many notes ·{" "}
-          {left > 0 ? `sending again in ${left} s` : "sending again…"}
+          Too many notes · {left > 0 ? `sending again in ${left} s` : "sending again…"}
         </Badge>
       </TooltipTrigger>
       <TooltipContent>This note is kept and goes out again by itself.</TooltipContent>
@@ -72,7 +71,8 @@ function RetryBadge({ until }: { until: number }): ReactElement {
 
 function hint(viewerName: string): string {
   if (OWNER) return "Enter sends · Shift+Enter newline";
-  const base = HOSTED || VIEWER.auto ? "Enter sends" : "the owner sends your notes on · Enter sends";
+  const base =
+    HOSTED || VIEWER.auto ? "Enter sends" : "the owner sends your notes on · Enter sends";
   return viewerName ? `Posting as ${viewerName} · ${base}` : base;
 }
 
@@ -166,10 +166,7 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
         <div className="composer-error" role="alert" hidden={!error}>
           {error}
         </div>
-        <div
-          className="composer-listen"
-          hidden={view.cls !== "listening" || !notesGoToAgent()}
-        >
+        <div className="composer-listen" hidden={view.cls !== "listening" || !notesGoToAgent()}>
           <span className="composer-dot" aria-hidden="true" />
           <span>An agent is listening and takes your notes as soon as you send</span>
         </div>

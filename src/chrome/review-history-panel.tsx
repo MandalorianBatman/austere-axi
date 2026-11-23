@@ -161,7 +161,9 @@ export function HistoryPanel(): ReactElement {
       </div>
       {open ? (
         <ScrollArea className="hist-body">
-          <div className="hist-list">{statement ? <Versions name={statement} /> : <Revisions />}</div>
+          <div className="hist-list">
+            {statement ? <Versions name={statement} /> : <Revisions />}
+          </div>
         </ScrollArea>
       ) : null}
     </div>

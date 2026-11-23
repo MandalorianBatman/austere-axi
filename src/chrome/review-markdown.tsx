@@ -13,8 +13,7 @@ function inline(text: string): ReactNode[] {
       out.push(<code key={`c${i}`}>{part.slice(1, -1)}</code>);
       return;
     }
-    const re =
-      /\*\*([^*]+)\*\*|(^|[^*])\*([^*\n]+)\*|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+    const re = /\*\*([^*]+)\*\*|(^|[^*])\*([^*\n]+)\*|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
     let last = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(part))) {
@@ -75,7 +74,11 @@ export function Markdown({ source }: { source: unknown }): ReactElement {
     } else if (!line.trim()) i++;
     else {
       const buf: string[] = [];
-      while (i < lines.length && lines[i].trim() && !/^```|^\s*([-*]|\d+\.)\s+|^#{1,6}\s/.test(lines[i]))
+      while (
+        i < lines.length &&
+        lines[i].trim() &&
+        !/^```|^\s*([-*]|\d+\.)\s+|^#{1,6}\s/.test(lines[i])
+      )
         buf.push(lines[i++]);
       blocks.push(
         <p key={key}>

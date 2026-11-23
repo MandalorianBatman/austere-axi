@@ -37,7 +37,11 @@ export function PresencePill(): ReactElement {
 /** "N changed": outlines on the page what the last turn (and, for the owner, everything since they looked) changed. */
 export function ChangesButton(): ReactElement {
   const s = useReview(
-    useShallow((r) => ({ changes: r.changes, sinceChanges: r.sinceChanges, highlight: r.highlight })),
+    useShallow((r) => ({
+      changes: r.changes,
+      sinceChanges: r.sinceChanges,
+      highlight: r.highlight,
+    })),
   );
   const shown = shownChanges(s);
   return (
@@ -94,7 +98,11 @@ export function HistoryButton(): ReactElement {
 /** Revisions made while the owner was away, with the way to see what they changed. */
 export function SinceBar(): ReactElement {
   const s = useReview(
-    useShallow((r) => ({ count: r.sinceCount, dismissed: r.sinceDismissed, highlight: r.highlight })),
+    useShallow((r) => ({
+      count: r.sinceCount,
+      dismissed: r.sinceDismissed,
+      highlight: r.highlight,
+    })),
   );
   return (
     <div className="since" role="status" hidden={!s.count || s.dismissed}>
@@ -110,7 +118,13 @@ export function SinceBar(): ReactElement {
       >
         Outline them
       </Button>
-      <Button type="button" size="xs" variant="ghost" data-since="history" onClick={() => openHistory()}>
+      <Button
+        type="button"
+        size="xs"
+        variant="ghost"
+        data-since="history"
+        onClick={() => openHistory()}
+      >
         History
       </Button>
       <Button

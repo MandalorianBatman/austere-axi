@@ -136,7 +136,9 @@ export function MoreMenu(): ReactElement {
   }, []);
   const onCommand = async (e: React.MouseEvent<HTMLDivElement>): Promise<void> => {
     const cmd =
-      e.target instanceof Element ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd : undefined;
+      e.target instanceof Element
+        ? e.target.closest<HTMLElement>("[data-cmd]")?.dataset.cmd
+        : undefined;
     // The share note stays open so its command can be selected.
     if (!cmd) return e.stopPropagation();
     if (cmd === "copy-path") await copyText(BOOT.file, "File path");
@@ -205,7 +207,8 @@ export function MoreMenu(): ReactElement {
         {HOSTED ? (
           <div className="menu-note" data-share-note hidden={unlisted !== false}>
             Only the owner can share this page. To invite someone, they run
-            <code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for that person.
+            <code>austere-axi publish &lt;file&gt; --invite "Name"</code>which prints a link for
+            that person.
           </div>
         ) : null}
         {OWNER ? (
@@ -309,7 +312,11 @@ export function HostedFoot(): ReactElement | null {
         </form>
       ) : null}
       <footer className="hosted-foot">
-        <a href="https://github.com/MandalorianBatman/austere-axi" target="_blank" rel="noopener noreferrer">
+        <a
+          href="https://github.com/MandalorianBatman/austere-axi"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           Made with austere-axi
         </a>
         {report ? (

@@ -50,11 +50,7 @@ export function PanelTabs(): ReactElement {
         {OWNER ? (
           <TabsTrigger value="agent" className="panel-tab" data-tab="agent">
             Agent{" "}
-            <span
-              className={`tab-dot ${presence.cls}`}
-              role="img"
-              aria-label={presence.label}
-            />
+            <span className={`tab-dot ${presence.cls}`} role="img" aria-label={presence.label} />
           </TabsTrigger>
         ) : null}
         {OWNER ? (

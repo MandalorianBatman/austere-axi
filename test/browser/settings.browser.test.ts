@@ -440,7 +440,9 @@ test("the page's Share with the default auto and attach on: untouched it holds t
     await page.locator("[role=dialog].share", { hasText: "Their notes wait for you." }).waitFor();
 
     await share("Hal");
-    await page.locator("[role=dialog].share label", { hasText: "Go straight to the agent" }).click();
+    await page
+      .locator("[role=dialog].share label", { hasText: "Go straight to the agent" })
+      .click();
     await page.click("[role=dialog].share button[type=submit]");
     await page.locator("[role=dialog].share .share-error[role=alert]").waitFor();
     assert.match(

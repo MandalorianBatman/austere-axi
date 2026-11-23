@@ -68,8 +68,14 @@ function OwnerEffects(): null {
 }
 
 function App(): ReactElement {
-  useRootClass("is-archived", useReview((s) => s.archived));
-  useRootClass("sheet-open", useReview((s) => s.sheetOpen));
+  useRootClass(
+    "is-archived",
+    useReview((s) => s.archived),
+  );
+  useRootClass(
+    "sheet-open",
+    useReview((s) => s.sheetOpen),
+  );
   useSheetEscape();
   useHighlightSync();
   useFrameMessages();

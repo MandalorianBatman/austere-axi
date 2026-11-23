@@ -207,16 +207,14 @@ export function Log({ inert }: { inert?: boolean }): ReactElement {
   const entries = s.pending.length
     ? [
         ...s.transcript,
-        ...s.pending.map(
-          (o): Entry => ({
-            id: `out:${o.m.clientId}:${o.m.n}`,
-            role: "user",
-            author: s.viewerName,
-            items: o.m.args.items,
-            at: o.at,
-            pending: true,
-          }),
-        ),
+        ...s.pending.map((o): Entry => ({
+          id: `out:${o.m.clientId}:${o.m.n}`,
+          role: "user",
+          author: s.viewerName,
+          items: o.m.args.items,
+          at: o.at,
+          pending: true,
+        })),
       ]
     : s.transcript;
   // The owner's run marks sit among the entries by time; with older entries not loaded yet, older marks wait too.
@@ -234,7 +232,11 @@ export function Log({ inert }: { inert?: boolean }): ReactElement {
     if (!vp) return;
     const prev = last.current;
     last.current = { count, first: entries[0]?.id };
-    if (prev.first !== undefined && entries[0]?.id !== prev.first && entries.some((e) => e.id === prev.first))
+    if (
+      prev.first !== undefined &&
+      entries[0]?.id !== prev.first &&
+      entries.some((e) => e.id === prev.first)
+    )
       // Older entries were put in front: the reader stays where they were.
       vp.scrollTop = vp.scrollHeight - fromEnd.current;
     else if (follow.current || count !== prev.count) vp.scrollTop = vp.scrollHeight;
@@ -298,7 +300,12 @@ export function Log({ inert }: { inert?: boolean }): ReactElement {
             <Button size="xs" type="button" onClick={() => void heldAction("release", heldIds)}>
               Send all
             </Button>
-            <Button size="xs" type="button" variant="outline" onClick={() => void heldAction("discard")}>
+            <Button
+              size="xs"
+              type="button"
+              variant="outline"
+              onClick={() => void heldAction("discard")}
+            >
               Discard all
             </Button>
           </div>

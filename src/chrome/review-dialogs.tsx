@@ -152,7 +152,11 @@ function ShareDialog({ offer }: { offer: ShareOffer }): ReactElement {
   });
   return (
     <Dialog open onOpenChange={(open) => open || close()}>
-      <DialogContent className="confirm share" showCloseButton={false} onCloseAutoFocus={giveFocusBack}>
+      <DialogContent
+        className="confirm share"
+        showCloseButton={false}
+        onCloseAutoFocus={giveFocusBack}
+      >
         {made ? (
           <>
             <DialogHeader>

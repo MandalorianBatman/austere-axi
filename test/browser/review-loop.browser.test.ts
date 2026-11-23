@@ -539,7 +539,10 @@ test("with no agent listening the reviewer can still send; Send & finish and Don
     await page.click('[data-cmd="archive"]');
     // One copy: the dialog offers no "every copy".
     await page.waitForSelector("[role=dialog].confirm");
-    assert.equal(await page.locator("[role=dialog].confirm h2").textContent(), "Archive this page?");
+    assert.equal(
+      await page.locator("[role=dialog].confirm h2").textContent(),
+      "Archive this page?",
+    );
     assert.equal(await page.locator('[role=dialog].confirm [data-archive="every"]').count(), 0);
     await page.click('[role=dialog].confirm [data-archive="this"]');
     await page.waitForSelector(".presence:has-text('Page archived')");
