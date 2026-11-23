@@ -4,6 +4,8 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+## 0.19.0 (2026-11-23)
+
 ### Changed
 
 - **UI/UX polish pass on the hub, Settings and the review page** (RLM-453). One type scale (11/12/13/15/22 px; Tailwind `text-xs`/`text-sm`/`text-md` now point at it, so there is no 14 px), one radius scale (`--radius-sm/md/lg` = 6/8/12 px, a pill only for status badges), one button scale (24 / 32 / 36 px, 44 px on a phone) and spacing on the 4 px grid. `rem` is 16 px on the hub too (shadcn parts were 19% smaller there). Dialogs are 480 px wide and their titles left-aligned. One projects sidebar on the hub and the review page. `hub-narrow.css` is gone: the phone layout is responsive Tailwind classes. Breakpoints are range queries (`width <= 860px`), so a fractional width at browser zoom no longer falls between two blocks.
