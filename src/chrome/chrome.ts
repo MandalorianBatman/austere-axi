@@ -14,7 +14,7 @@ import { loadFrame } from "./review-frame.ts";
 import { startHosted } from "./review-hosted.ts";
 import { startNav } from "./review-nav.ts";
 import { refreshPending } from "./review-outbox.ts";
-import { setRoster } from "./review-presence.ts";
+import { getViewers, setRoster } from "./review-presence.ts";
 import { S } from "./review-store.ts";
 
 mountApp();
@@ -23,7 +23,7 @@ mountApp();
 // transport calls connect/handle/disconnect: the page socket when hosted, the server's relay locally.
 const presence = new Presence({
   // The page bar's boundary may have shown its fallback: the chips then have nowhere to go, and nothing else fails.
-  chips: document.querySelector<HTMLElement>(".viewers") ?? document.createElement("div"),
+  chips: getViewers,
   showFocus: (marks) => post({ type: "presence", marks }),
   reveal: (id) => post({ type: "reveal", id }),
   name: () => S().viewerName || undefined,

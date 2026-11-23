@@ -136,7 +136,7 @@ async function setState(page: Page, state: "on" | "off" | "inherit") {
   const answered = page.waitForResponse(
     (r) => r.url().endsWith("/attach") && r.request().method() === "POST",
   );
-  await page.click(`.attach-state [data-attach="${state}"]`);
+  await page.click(`[data-attach="${state}"]`);
   assert.equal((await answered).status(), 200);
 }
 

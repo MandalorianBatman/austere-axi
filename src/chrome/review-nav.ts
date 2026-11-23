@@ -17,9 +17,24 @@ interface NavState {
 
 export const useNav = create<NavState>()(() => ({ page: null, switcher: false }));
 
-export const openSwitcher = (): void => useNav.setState({ switcher: true });
+/** What had focus when the switcher opened: the dialog has no trigger, so it gives focus back to this. */
+let returnFocus: Element | null = null;
+
+export function openSwitcher(from?: Element | null): void {
+  if (useNav.getState().switcher) return;
+  returnFocus = from ?? document.activeElement;
+  useNav.setState({ switcher: true });
+}
 export const closeSwitcher = (): void => useNav.setState({ switcher: false });
-export const toggleSwitcher = (): void => useNav.setState((s) => ({ switcher: !s.switcher }));
+export const toggleSwitcher = (): void =>
+  useNav.getState().switcher ? closeSwitcher() : openSwitcher();
+
+/** The switcher has closed: focus what had it (the frame, a button, the ⋯ menu's button). */
+export function restoreFocus(event: Event): void {
+  event.preventDefault();
+  if (returnFocus instanceof HTMLElement && returnFocus.isConnected) returnFocus.focus();
+  returnFocus = null;
+}
 
 /** The statement a search hit opened this page at, outlined once the frame has rendered. */
 let part: string | null = null;

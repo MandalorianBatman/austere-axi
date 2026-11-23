@@ -1,6 +1,6 @@
 // What frames the artifact: the title, the mode switch, the ⋯ menu, the notice about third-party packs, the iframe
 // itself, and a hosted page's footer with its report box.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { Icon } from "./icon.tsx";
 import { ShapeIcon } from "./icon.tsx";
@@ -150,6 +150,7 @@ export function MoreMenu(): ReactElement {
   const unlisted = useReview((s) => s.unlisted);
   const archived = useReview((s) => s.archived);
   const exporting = useReview((s) => s.exporting);
+  const trigger = useRef<HTMLButtonElement>(null);
   return (
     <DropdownMenu
       // Not modal: the page stays live behind the menu, and a click on it both closes the menu and does its work.
@@ -162,6 +163,7 @@ export function MoreMenu(): ReactElement {
     >
       <DropdownMenuTrigger asChild>
         <Button
+          ref={trigger}
           type="button"
           variant="ghost"
           size="icon"
@@ -180,7 +182,7 @@ export function MoreMenu(): ReactElement {
               className={ITEM}
               title="Pages and parts of every project (Ctrl/Cmd+K)"
               // After the menu has closed and given its focus back, as the dialog takes focus.
-              onSelect={() => setTimeout(openSwitcher, 0)}
+              onSelect={() => setTimeout(() => openSwitcher(trigger.current), 0)}
             >
               Go to page…
               <DropdownMenuShortcut>Ctrl K</DropdownMenuShortcut>

@@ -18,8 +18,8 @@ export interface FocusMark {
 }
 
 export interface PresenceHost {
-  /** The chips go here. */
-  chips: HTMLElement;
+  /** The chips go here: the page bar's element as it is now (null while the bar's panel shows its fallback). */
+  chips(): HTMLElement | null;
   /** Draws these marks in the frame, replacing the previous ones. */
   showFocus(marks: FocusMark[]): void;
   /** Scrolls the frame to a statement. */
@@ -178,13 +178,18 @@ export class Presence {
     return chip;
   }
 
+  /** The chips' element was drawn again (a panel that failed was retried): fill the new one. */
+  chipsMoved(): void {
+    this.render();
+  }
+
   private render(): void {
+    const host = this.host.chips();
+    if (!host) return this.redraw();
     // Chips are rebuilt on every change: keep the keyboard on the same viewer's chip.
     const active = document.activeElement;
     const focusedId =
-      active instanceof HTMLElement && this.host.chips.contains(active)
-        ? active.dataset.viewer
-        : undefined;
+      active instanceof HTMLElement && host.contains(active) ? active.dataset.viewer : undefined;
     const chips = this.others().map((p) => {
       const chip = document.createElement("button");
       chip.dataset.viewer = p.viewer.id;
@@ -201,9 +206,9 @@ export class Presence {
     });
     // This viewer's own entry, as the server named it (the name the composer posts under).
     const me = this.self ? this.roster.get(this.self) : undefined;
-    this.host.chips.replaceChildren(...(me ? [this.selfChip(me)] : []), ...chips);
+    host.replaceChildren(...(me ? [this.selfChip(me)] : []), ...chips);
     chips.find((c) => c.dataset.viewer === focusedId)?.focus();
-    this.host.chips.hidden = !me && !chips.length;
+    host.hidden = !me && !chips.length;
     this.redraw();
   }
 }

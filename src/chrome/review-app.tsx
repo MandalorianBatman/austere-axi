@@ -26,6 +26,7 @@ import { HistoryPanel } from "./review-history-panel.tsx";
 import { useRootClass } from "./review-hooks.ts";
 import { Log } from "./review-log.tsx";
 import { GotoButton, OwnerNav } from "./review-nav.tsx";
+import { setViewers } from "./review-presence.ts";
 import { Queue } from "./review-queue.tsx";
 import { Dock, PanelHead, Scrim, useCovered, useSheetEscape } from "./review-tabs.tsx";
 import { useReview } from "./review-store.ts";
@@ -111,7 +112,13 @@ function App(): ReactElement {
           <div className="bar-right">
             <PanelBoundary name="The page bar">
               <ChangesButton />
-              <span className="viewers" role="group" aria-label="On this page" hidden />
+              <span
+                className="viewers"
+                role="group"
+                aria-label="On this page"
+                ref={setViewers}
+                hidden
+              />
               {OWNER ? <AttachPill /> : null}
               <PresencePill />
               {OWNER ? <ShareButton /> : null}

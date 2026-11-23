@@ -35,6 +35,7 @@ import {
   openSwitcher,
   openUrl,
   recentItems,
+  restoreFocus,
   search,
   toggleSwitcher,
   useNav,
@@ -117,7 +118,7 @@ export function GotoButton(): ReactElement {
       className="icon-btn goto-btn"
       aria-label="Go to page (Ctrl K)"
       title="Go to page (Ctrl K)"
-      onClick={openSwitcher}
+      onClick={() => openSwitcher()}
     >
       <Search />
     </Button>
@@ -244,6 +245,7 @@ function Switcher(): ReactElement {
       title="Go to page"
       description="Search the pages and parts of every project"
       showCloseButton={false}
+      onCloseAutoFocus={restoreFocus}
       className="top-[12vh] max-h-[70vh] translate-y-0 gap-0 sm:max-w-[620px] max-[480px]:top-2 max-[480px]:max-h-[calc(100dvh-16px)] max-[480px]:max-w-[calc(100%-16px)]"
     >
       {/* The server ranks the matches: cmdk's own filter would drop a part whose title lacks the words. */}

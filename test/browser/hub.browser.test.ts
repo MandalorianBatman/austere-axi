@@ -489,6 +489,59 @@ test("review header: breadcrumb to the hub, copy switcher keeps the path, Ctrl+K
   }
 });
 
+test("the quick switcher gives focus back where it was: a button, the frame, the ⋯ menu", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab();
+  try {
+    await page.goto(`http://127.0.0.1:${port}/s/${ids.plan}`);
+    await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
+    const switcher = page.getByRole("dialog", { name: "Go to page" });
+    const active = () =>
+      page.evaluate(
+        () =>
+          document.activeElement?.getAttribute("aria-label") ||
+          document.activeElement?.className ||
+          document.activeElement?.tagName,
+      );
+    const roundTrip = async (open: () => Promise<void>): Promise<string | undefined> => {
+      await open();
+      await switcher.waitFor();
+      await page.keyboard.press("Escape");
+      await switcher.waitFor({ state: "detached" });
+      // Focus comes back a tick after the dialog has gone.
+      await page.waitForFunction(() => document.activeElement !== document.body);
+      return active();
+    };
+
+    // A button.
+    await page.locator(".goto-btn").focus();
+    assert.match(String(await roundTrip(() => page.keyboard.press("Control+k"))), /Go to page/);
+
+    // The frame.
+    await page
+      .frameLocator(".frame")
+      .locator("body")
+      .click({ position: { x: 5, y: 5 } });
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.tagName),
+      "IFRAME",
+      "focus is in the frame",
+    );
+    await roundTrip(() => page.keyboard.press("Control+k"));
+    assert.equal(await page.evaluate(() => document.activeElement?.tagName), "IFRAME");
+
+    // The ⋯ menu's Go to page…: focus returns to the ⋯ button the menu had given it back to.
+    const opened = async () => {
+      await page.click(".menu-btn");
+      await page.click('[data-cmd="goto"]');
+    };
+    assert.equal(await roundTrip(opened), "More");
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test("a reviewer's page shows none of it, and the hub refuses the reviewer", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const made = await call<{ link: string }>("POST", "/api/share", {

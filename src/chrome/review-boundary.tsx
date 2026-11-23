@@ -20,7 +20,11 @@ export class PanelBoundary extends Component<Props, { error: Error | null }> {
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error(`austere: ${this.props.name} failed to draw`, error, info.componentStack);
+    console.error(
+      `austere: ${this.props.name} failed to draw: ${error.message}`,
+      error,
+      info.componentStack,
+    );
   }
 
   override render(): ReactElement {
@@ -31,7 +35,7 @@ export class PanelBoundary extends Component<Props, { error: Error | null }> {
         <TriangleAlert aria-hidden="true" />
         <AlertTitle>{this.props.name} could not be drawn</AlertTitle>
         <AlertDescription>
-          <p className="break-words">{error.message}</p>
+          <p>Something went wrong. The rest of the page still works.</p>
           <Button
             type="button"
             size="xs"

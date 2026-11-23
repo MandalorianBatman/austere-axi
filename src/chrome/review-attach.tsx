@@ -223,7 +223,7 @@ function Settings({ info }: { info: AttachInfo }): ReactElement {
         aria-label="Attach"
         value={pageState}
         onValueChange={(next) => next && void saveAttach({ state: next as typeof pageState })}
-        className="attach-state w-full gap-0.5 rounded-lg border bg-muted p-[3px]"
+        className="w-full gap-0.5 rounded-lg border bg-muted p-[3px]"
       >
         {STATES.map(([value, label]) => (
           <ToggleGroupItem
