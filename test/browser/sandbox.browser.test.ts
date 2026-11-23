@@ -199,7 +199,7 @@ test("a new-window link in the frame opens through the chrome, outside the sandb
     await page.goto(`http://127.0.0.1:${port}/s/${session.id}?key=${ownerKey(STATE)}`);
     const frame = (await (await page.waitForSelector("iframe.frame")).contentFrame()) as Frame;
     await frame.waitForSelector("#ext");
-    await page.click('.seg button[data-mode="explore"]');
+    await page.click('button[data-mode="explore"]');
     const popupP = context.waitForEvent("page", { timeout: 5000 });
     await frame.click("#ext");
     const popup = await popupP;

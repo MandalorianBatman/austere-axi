@@ -3,4 +3,4 @@
 @import "./tailwind.css";
 
 @source "./review-*.tsx";
-@source "./ui/{alert,badge,breadcrumb,button,command,dialog,dropdown-menu,form,input,label,popover,radio-group,scroll-area,select,skeleton,tabs,textarea,tooltip}.tsx";
+@source "./ui/{alert,badge,breadcrumb,button,command,dialog,dropdown-menu,form,input,label,popover,radio-group,scroll-area,select,skeleton,tabs,textarea,toggle,toggle-group,tooltip}.tsx";

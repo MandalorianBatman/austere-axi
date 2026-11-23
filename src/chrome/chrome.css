@@ -66,18 +66,6 @@ code {
   gap: 10px;
   min-width: 0;
 }
-.bar-home {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius);
-}
-.bar-home:hover {
-  background: var(--surface);
-}
 .bar-home .logo-box {
   fill: var(--surface);
   stroke: var(--line-3);
@@ -129,45 +117,6 @@ code {
   font-weight: 600;
 }
 
-/* Annotate / Explore, in the bar above the page. The attach popover's On / Off / default uses it too. */
-.seg {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--bg-2);
-}
-.seg button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-3);
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.seg button:hover {
-  color: var(--text);
-}
-.seg button.on {
-  background: var(--surface-2);
-  color: var(--text);
-  font-weight: 600;
-}
-.seg button[data-mode="annotate"].on .icon {
-  color: var(--accent);
-}
-.seg button:disabled {
-  color: var(--faint);
-  cursor: not-allowed;
-}
 /* "3 changed": outlines what changed, until switched off. */
 .changes[hidden] {
   display: none;
@@ -464,25 +413,6 @@ code {
   color: var(--muted);
   font-size: var(--fs-sm);
   line-height: 1.45;
-}
-.attach-state {
-  display: flex;
-  border-radius: var(--radius-md);
-  background: var(--bg-3);
-}
-.attach-state button {
-  flex: 1 1 auto;
-  height: 30px;
-  padding: 0 8px;
-  border-radius: 7px;
-}
-.attach-state button.on {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.attach-state button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 .attach-field {
   margin: 0;
@@ -1507,22 +1437,13 @@ html.exploring .hist {
   font-size: 11.5px;
   color: var(--faint);
 }
-.hosted-foot a,
-.link-btn {
+.hosted-foot a {
   color: var(--muted);
   text-decoration: none;
 }
-.hosted-foot a:hover,
-.link-btn:hover {
+.hosted-foot a:hover {
   color: var(--text);
   text-decoration: underline;
-}
-.link-btn {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  cursor: pointer;
 }
 
 .dock {
@@ -1821,30 +1742,6 @@ html.exploring .hist {
   }
   .subbar-end {
     display: none;
-  }
-  .seg {
-    flex: none;
-    padding: 2px;
-    border-radius: var(--radius-lg);
-    background: var(--bg-3);
-  }
-  .seg button {
-    width: var(--touch);
-    height: var(--touch);
-    padding: 0;
-    border-radius: var(--radius-md);
-  }
-  .seg button .icon {
-    width: 20px;
-    height: 20px;
-  }
-  .seg-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   html.exploring .main {
     padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom));

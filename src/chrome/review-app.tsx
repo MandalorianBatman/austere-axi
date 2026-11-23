@@ -92,9 +92,17 @@ function App(): ReactElement {
         <header className="bar">
           <div className="bar-start">
             {OWNER_BAR ? (
-              <a className="bar-home" href="/" aria-label="Back to the hub" title="Back to the hub">
-                <ShapeIcon shapes={LOGO} size={24} />
-              </a>
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="bar-home size-9 flex-none [&_svg]:size-6"
+                title="Back to the hub"
+              >
+                <a href="/" aria-label="Back to the hub">
+                  <ShapeIcon shapes={LOGO} size={24} />
+                </a>
+              </Button>
             ) : null}
             <PanelBoundary name="The page title">
               <TitleBlock />

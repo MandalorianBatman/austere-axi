@@ -21,6 +21,7 @@ import { useReview } from "./review-store.ts";
 import type { AttachInfo, RunSummary } from "./review-types.ts";
 import { Button } from "@/chrome/ui/button";
 import { Input } from "@/chrome/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/chrome/ui/toggle-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/chrome/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/chrome/ui/radio-group";
 import { ScrollArea } from "@/chrome/ui/scroll-area";
@@ -217,14 +218,19 @@ function Settings({ info }: { info: AttachInfo }): ReactElement {
         When on, a note you send or release starts the agent: it reads the notes, patches the page
         and replies.
       </p>
-      <div className="seg attach-state" role="group" aria-label="Attach">
+      <ToggleGroup
+        type="single"
+        aria-label="Attach"
+        value={pageState}
+        onValueChange={(next) => next && void saveAttach({ state: next as typeof pageState })}
+        className="attach-state w-full gap-0.5 rounded-lg border bg-muted p-[3px]"
+      >
         {STATES.map(([value, label]) => (
-          <button
-            type="button"
+          <ToggleGroupItem
             key={value}
-            data-state={value}
-            className={pageState === value ? "on" : undefined}
-            aria-pressed={pageState === value}
+            value={value}
+            data-attach={value}
+            className="h-[30px] flex-1 !rounded-md px-2 text-[12.5px] font-medium text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
             // An auto page may not end up on (Q3, A17): neither by On nor by going back to a project default that is on.
             disabled={
               busy ||
@@ -232,12 +238,11 @@ function Settings({ info }: { info: AttachInfo }): ReactElement {
                 pageState !== value &&
                 (value === "on" || (value === "inherit" && projectText === "on")))
             }
-            onClick={() => void saveAttach({ state: value })}
           >
             {label}
-          </button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
       <p className="attach-note">
         {own
           ? `Project default${info.project ? ` (${info.project.name})` : ""}: ${projectText}.`
@@ -458,8 +463,9 @@ export function AttachPill(): ReactElement {
     <div className="attach">
       <Popover open={open} onOpenChange={(next) => (next ? openAttach() : closeAttach())}>
         <PopoverTrigger asChild>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             className={`attach-pill${on ? " on" : ""}`}
             data-run={showRun ? run.status : ""}
             title={
@@ -474,7 +480,7 @@ export function AttachPill(): ReactElement {
               <span className="attach-short">{on ? "On" : "Off"}</span>
             </span>
             <Icon name="chevronDown" size={12} width={2} cls="attach-caret" />
-          </button>
+          </Button>
         </PopoverTrigger>
         <PopoverContent
           className="attach-pop"

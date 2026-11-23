@@ -7,6 +7,7 @@ import { anchorLabel, flatForm, itemQuote, saveEdit } from "./review-notes.ts";
 import { post } from "./review-bridge.ts";
 import { isNarrow, set, setSheet, useReview } from "./review-store.ts";
 import type { QueueItem } from "./review-types.ts";
+import { Button } from "@/chrome/ui/button";
 import { Textarea } from "@/chrome/ui/textarea";
 
 /** One bad item shows a marker instead of taking the whole panel down. */
@@ -31,8 +32,9 @@ function Anchor({ item }: { item: QueueItem }): ReactElement | null {
   if (!a.text) return null;
   const reveal = item.kind === "annotation" || item.kind === "render-error";
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       className="anchor"
       title={item.kind === "annotation" ? "Show in the page" : ""}
       onClick={() => {
@@ -44,7 +46,7 @@ function Anchor({ item }: { item: QueueItem }): ReactElement | null {
       <span className="anchor-icon">{a.icon}</span>
       <span className="anchor-text">{a.text}</span>
       {a.sub ? <span className="anchor-sub">{a.sub}</span> : null}
-    </button>
+    </Button>
   );
 }
 

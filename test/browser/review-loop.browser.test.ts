@@ -549,11 +549,8 @@ test("with no agent listening the reviewer can still send; Send & finish and Don
     assert.equal(await page.locator(".composer textarea").isDisabled(), true);
     assert.equal(await page.locator(".archived-note").count(), 1);
     // The frame is in Explore, and the switch shows it: Annotate is off and cannot be picked.
-    assert.equal(await page.locator('.seg [data-mode="annotate"]').isDisabled(), true);
-    assert.match(
-      String(await page.locator('.seg [data-mode="explore"]').getAttribute("class")),
-      /\bon\b/,
-    );
+    assert.equal(await page.locator('[data-mode="annotate"]').isDisabled(), true);
+    assert.equal(await page.locator('[data-mode="explore"]').getAttribute("aria-checked"), "true");
 
     await page.click(".menu-btn");
     await page.click('[data-cmd="unarchive"]');
@@ -827,7 +824,7 @@ test("Explore hides the conversation and gives the page the full width; Annotate
     const frameWidth = () =>
       page.locator("iframe.frame").evaluate((el) => el.getBoundingClientRect().width);
     try {
-      await page.click('.seg button[data-mode="annotate"]');
+      await page.click('button[data-mode="annotate"]');
       assert.equal(
         await page.locator(conversation).isVisible(),
         true,
@@ -835,7 +832,7 @@ test("Explore hides the conversation and gives the page the full width; Annotate
       );
       const annotateWidth = await frameWidth();
 
-      await page.click('.seg button[data-mode="explore"]');
+      await page.click('button[data-mode="explore"]');
       assert.equal(
         await page.locator(".panel").isVisible(),
         false,
@@ -900,9 +897,9 @@ test("the queue numbers its notes and brings a new one into view; History takes 
   const { context, page, frame, problems } = await openReview(file, { width: 1280, height: 640 });
   const pressed = () =>
     page
-      .locator(".seg [data-mode]")
+      .locator("[data-mode]")
       .evaluateAll((els) =>
-        els.map((el) => `${(el as HTMLElement).dataset.mode}:${el.getAttribute("aria-pressed")}`),
+        els.map((el) => `${(el as HTMLElement).dataset.mode}:${el.getAttribute("aria-checked")}`),
       );
   const list = page.locator(".queue-list");
   const numbers = () => list.locator(".q-num").allInnerTexts();

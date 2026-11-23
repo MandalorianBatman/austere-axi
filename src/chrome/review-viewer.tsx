@@ -17,6 +17,7 @@ import { nextUnanswered, openSwitcher } from "./review-nav.ts";
 import { S, set, setMode, useReview } from "./review-store.ts";
 import type { Mode } from "./review-types.ts";
 import { Button } from "@/chrome/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/chrome/ui/toggle-group";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,37 +71,42 @@ export function ModeSwitch(): ReactElement {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
+  const item =
+    "h-[26px] gap-1.5 !rounded-md px-2.5 text-[12.5px] font-medium text-muted-foreground hover:bg-transparent hover:text-foreground data-[state=on]:bg-secondary data-[state=on]:font-semibold data-[state=on]:text-foreground data-[state=on]:[&_svg]:text-primary max-[480px]:size-[var(--touch)] max-[480px]:px-0 max-[480px]:[&_svg]:size-5";
   return (
     <>
-      <div className="seg" role="group" aria-label="Mode">
-        <button
-          type="button"
+      <ToggleGroup
+        type="single"
+        aria-label="Mode"
+        value={shown}
+        // Clicking the chosen item again would clear it: a mode is always on.
+        onValueChange={(next) => next && setMode(next as Mode)}
+        className="gap-0.5 rounded-lg border bg-card p-[3px] max-[480px]:flex-none max-[480px]:bg-muted max-[480px]:p-0.5"
+      >
+        <ToggleGroupItem
+          value="annotate"
           data-mode="annotate"
-          className={shown === "annotate" ? "on" : undefined}
-          aria-pressed={shown === "annotate"}
           disabled={archived}
           title={
             archived
               ? "The page is archived: it takes no notes"
               : "Click anything to comment on it (⌘/Ctrl+I)"
           }
-          onClick={() => setMode("annotate")}
+          className={item}
         >
           <Icon name="annotate" size={14} width={1.9} />
-          <span className="seg-label">Annotate</span>
-        </button>
-        <button
-          type="button"
+          <span className="max-[480px]:sr-only">Annotate</span>
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="explore"
           data-mode="explore"
-          className={shown === "explore" ? "on" : undefined}
-          aria-pressed={shown === "explore"}
           title="Use the page normally: tabs, forms, links (⌘/Ctrl+I)"
-          onClick={() => setMode("explore")}
+          className={item}
         >
           <Icon name="explore" size={14} width={1.9} />
-          <span className="seg-label">Explore</span>
-        </button>
-      </div>
+          <span className="max-[480px]:sr-only">Explore</span>
+        </ToggleGroupItem>
+      </ToggleGroup>
       <span className="subbar-hint">
         {archived
           ? "The page is archived: it takes no notes"
@@ -373,16 +379,18 @@ export function HostedFoot(): ReactElement | null {
             {done ? (
               <span className="report-done">Reported. Thank you.</span>
             ) : (
-              <button
+              <Button
                 type="button"
-                className="link-btn report-open"
+                variant="link"
+                size="xs"
+                className="report-open h-auto p-0 font-[inherit] text-muted-foreground no-underline hover:text-foreground hover:underline"
                 onClick={() => {
                   setOpen(true);
                   setStatus("");
                 }}
               >
                 Report
-              </button>
+              </Button>
             )}
           </>
         ) : null}

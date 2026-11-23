@@ -126,8 +126,9 @@ export function Dock(): ReactElement {
     el.classList.add("pulse");
   }, [s.pulse]);
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       className="dock"
       ref={ref}
       onClick={() => {
@@ -146,7 +147,7 @@ export function Dock(): ReactElement {
         )}
       </span>
       <Icon name="chevronDown" size={16} width={2} cls="dock-caret" />
-    </button>
+    </Button>
   );
 }
 
