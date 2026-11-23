@@ -394,16 +394,11 @@ document.addEventListener("keydown", (e) => {
 
 function renderPresence() {
   const view = presenceView(S(), Date.now());
-  const el = $(".presence");
-  el.className = `presence ${view.cls}${view.attached ? " attached" : ""}`;
-  el.textContent = view.label;
-  el.title = view.title;
   const dot = document.querySelector(".tab-dot");
   if (dot) {
     dot.setAttribute("class", `tab-dot ${view.cls}`);
     dot.setAttribute("aria-label", view.label);
   }
-  document.documentElement.classList.toggle("is-archived", state.archived);
   if (OWNER) {
     $('[data-cmd="archive"]').hidden = state.archived;
     $('[data-cmd="unarchive"]').hidden = !state.archived;
@@ -1695,13 +1690,8 @@ function renderDock() {
   if (last?.role === "agent" && last.at > (SS.get<number>(`austere:seen:${SID}`) || 0))
     parts.push("new reply");
   // On a phone the header hides the presence: the dock carries its label (none when an attached agent's pill says it).
-  const p = $(".presence");
-  const label = p.classList.contains("attached")
-    ? null
-    : h("span", {
-        class: `dock-presence ${p.className.replace("presence", "").trim()}`,
-        text: p.textContent || "",
-      });
+  const p = presenceView(S(), Date.now());
+  const label = p.attached ? null : h("span", { class: `dock-presence ${p.cls}`, text: p.label });
   dock.replaceChildren(
     h("span", { class: "dock-grip" }),
     h(

@@ -7,8 +7,11 @@ import type { Shape } from "./icons.ts";
 import { BASE, HOSTED, OWNER } from "./review-env.ts";
 import { useBanner } from "./review-banner.ts";
 import { Composer } from "./review-composer.tsx";
+import { PresencePill } from "./review-bar.tsx";
+import { useRootClass } from "./review-hooks.ts";
 import { Log } from "./review-log.tsx";
 import { Queue } from "./review-queue.tsx";
+import { useReview } from "./review-store.ts";
 import { Button } from "@/chrome/ui/button";
 import { TooltipProvider } from "@/chrome/ui/tooltip";
 
@@ -49,6 +52,7 @@ function Banner(): ReactElement {
 }
 
 function App(): ReactElement {
+  useRootClass("is-archived", useReview((s) => s.archived));
   return (
     <TooltipProvider>
       <a className="skip-link" href="#content">
@@ -89,7 +93,7 @@ function App(): ReactElement {
                 <span className="run-state" hidden />
               </div>
             ) : null}
-            <span className="presence" />
+            <PresencePill />
             {OWNER ? (
               <button type="button" className="btn share-btn" title="A named link for one teammate's device">
                 <ShapeIcon shapes={LINK} size={14} width={1.9} />

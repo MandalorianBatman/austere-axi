@@ -9,3 +9,10 @@ export function useNow(every = 30_000): number {
   }, [every]);
   return now;
 }
+
+/** A class on <html> while `on` holds: the page's CSS reads state from it (`is-archived`, `exploring`, `sheet-open`). */
+export function useRootClass(name: string, on: boolean): void {
+  useEffect(() => {
+    document.documentElement.classList.toggle(name, on);
+  }, [name, on]);
+}
