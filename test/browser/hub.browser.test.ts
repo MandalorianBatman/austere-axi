@@ -118,7 +118,7 @@ async function ownerTab(
 }
 
 const group = (page: Page, name: string) =>
-  page.locator("section.group", { has: page.locator("h2", { hasText: name }) });
+  page.locator("section.inbox-group", { has: page.locator("h2", { hasText: name }) });
 const rowTitles = async (page: Page, name: string): Promise<string[]> =>
   (await group(page, name).locator(".row-title").allInnerTexts()).map((t) => t.trim());
 
@@ -685,6 +685,24 @@ test("phone: Pages does not scroll sideways, the drawer closes after a pick, a d
     await drawer.locator('a[data-view="notes"]').click();
     await page.waitForURL(/view=notes/);
     await drawer.waitFor({ state: "detached" });
+    const onToggle = () =>
+      page.evaluate(() => document.activeElement?.classList.contains("side-toggle"));
+    await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
+    // Esc: focus goes back to the toggle once the sheet is gone.
+    await page.click(".side-toggle");
+    await drawer.waitFor();
+    await page.keyboard.press("Escape");
+    await drawer.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
+    // Keyboard pick: focus the Runs link in the drawer, Enter.
+    await page.keyboard.press("Enter");
+    await drawer.waitFor();
+    await drawer.locator('a[data-view="runs"]').focus();
+    await page.keyboard.press("Enter");
+    await page.waitForURL(/view=runs/);
+    await drawer.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.activeElement?.classList.contains("side-toggle"));
+    assert.ok(await onToggle());
 
     // Dialog: Esc gives focus back to the button that asked.
     await page.goto(`http://127.0.0.1:${port}/?view=settings`);
@@ -702,5 +720,25 @@ test("phone: Pages does not scroll sideways, the drawer closes after a pick, a d
     assert.deepEqual(problems, []);
   } finally {
     await context.close();
+  }
+});
+
+test("Pages: the three filter tabs sit on one line, at desktop and tablet width", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  for (const width of [1280, 768]) {
+    const { page, context, problems } = await ownerTab(width);
+    try {
+      await page.goto(`http://127.0.0.1:${port}/?view=pages`);
+      await page.getByRole("tablist", { name: "Which pages" }).waitFor();
+      const ys = await page
+        .getByRole("tab")
+        .evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      await shot(page, `hub-pages-${width}`);
+      assert.equal(ys.length, 3);
+      assert.equal(new Set(ys).size, 1, `tabs share one y at ${width}px: ${ys}`);
+      assert.deepEqual(problems, []);
+    } finally {
+      await context.close();
+    }
   }
 });

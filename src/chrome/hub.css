@@ -153,7 +153,7 @@ em.gone {
   justify-content: space-between;
   gap: 16px;
 }
-.view-h.split > div {
+.view-h.split > .view-h-text {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -170,7 +170,7 @@ h1 q {
   font-weight: 400;
 }
 .summary,
-.filter {
+.notes-filter {
   margin: 0 0 6px;
   color: var(--muted);
 }
@@ -181,7 +181,7 @@ h1 q {
   color: var(--amber);
   font-weight: 500;
 }
-.view-h + .filter {
+.view-h + .notes-filter {
   margin-top: 12px;
 }
 section {
@@ -220,7 +220,7 @@ h2 small {
 .sec-h h2 {
   margin: 0;
 }
-.group.needs h2 .n {
+.inbox-group.needs h2 .n {
   color: var(--amber);
 }
 .sec-h .hint {

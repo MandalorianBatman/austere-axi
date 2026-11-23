@@ -79,7 +79,7 @@ export function ProjectFilter({ project }: { project: { name: string; id: string
   const asked = useHub((s) => s.state.project);
   if (!asked) return null;
   return (
-    <p className="filter">
+    <p className="notes-filter">
       Project {project?.name ? tilde(project.name) : asked} ·{" "}
       <ViewLink next={{ project: "" }}>all projects</ViewLink>
     </p>

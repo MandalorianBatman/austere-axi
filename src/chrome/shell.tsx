@@ -218,13 +218,25 @@ function DrawerWatch(): null {
     setOpenMobile(false);
   }, [state, setOpenMobile]);
   useEffect(() => {
-    if (
-      wasOpen.current &&
-      !openMobile &&
-      (!document.activeElement || document.activeElement === document.body)
-    )
-      document.querySelector<HTMLElement>(".side-toggle")?.focus();
+    const closed = wasOpen.current && !openMobile;
+    const inside = !!document.activeElement?.closest('[data-mobile="true"]');
     wasOpen.current = openMobile;
+    if (!closed) return;
+    // Radix unmounts the Sheet after its exit animation, and only then does focus fall to <body>.
+    // Wait for the Sheet to leave the DOM, then give focus back to the toggle (if it had been inside).
+    let frame = 0;
+    let tries = 0;
+    const settle = (): void => {
+      if (document.querySelector('[data-mobile="true"]') && tries++ < 120) {
+        frame = requestAnimationFrame(settle);
+        return;
+      }
+      if (!document.activeElement || document.activeElement === document.body)
+        document.querySelector<HTMLElement>(".side-toggle")?.focus();
+    };
+    if (inside || !document.activeElement || document.activeElement === document.body)
+      frame = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(frame);
   }, [openMobile]);
   return null;
 }

@@ -70,7 +70,7 @@
   .view-h .summary {
     font-size: var(--fs);
   }
-  .group .rows.card {
+  .inbox-group .rows.card {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -79,14 +79,14 @@
     background: transparent;
     overflow: visible;
   }
-  .group .rows.card > .page-row {
+  .inbox-group .rows.card > .page-row {
     gap: 12px;
     padding: 14px;
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
     background: var(--bg-2);
   }
-  .group .rows.card > .page-row.quiet {
+  .inbox-group .rows.card > .page-row.quiet {
     padding-block: 10px;
   }
   .page-row .tile {

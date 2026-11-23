@@ -141,7 +141,7 @@ export function InboxView(): ReactElement {
               title="Needs you"
               count={data.needs_you.length}
               hint="The agent changed the page, a teammate's notes wait for you, or a run failed"
-              cls="group needs"
+              cls="inbox-group needs"
             >
               {data.needs_you.length ? (
                 <InboxRows list={data.needs_you} showProject={showProject} />
@@ -155,7 +155,7 @@ export function InboxView(): ReactElement {
               title="Waiting on agent"
               count={waiting}
               hint="Notes no agent has answered yet, and who takes them"
-              cls="group waiting"
+              cls="inbox-group waiting"
             >
               {waiting ? (
                 <InboxRows list={data.waiting_on_agent} showProject={showProject} />
@@ -167,7 +167,7 @@ export function InboxView(): ReactElement {
               title="Quiet"
               count={data.quiet.length}
               hint="Open for review, nothing waiting"
-              cls="group quiet"
+              cls="inbox-group quiet"
             >
               {data.quiet.length ? (
                 <InboxRows list={data.quiet} showProject={showProject} />
@@ -275,7 +275,7 @@ export function PagesView(): ReactElement {
         const head = (
           <>
             <header className="view-h split">
-              <div>
+              <div className="view-h-text">
                 <h1>Pages</h1>
                 <p className="summary">
                   {joinText([
@@ -518,7 +518,7 @@ export function NotesView(): ReactElement {
             </form>
             <ProjectFilter project={data.project} />
             {data.device ? (
-              <p className="filter">
+              <p className="notes-filter">
                 Device {data.device.name} ({data.device.id}) ·{" "}
                 <ViewLink next={{ device: "" }}>everyone</ViewLink>
               </p>
