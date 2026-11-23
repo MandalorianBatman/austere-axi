@@ -843,9 +843,14 @@ test("Explore hides the conversation and gives the page the full width; Annotate
         false,
         `${viewport.name}: dock hidden in Explore`,
       );
+      // The projects sidebar (owner, wide screens) keeps its column: the page takes all the rest.
+      const sidebar = page.locator('[data-slot="sidebar-gap"]');
+      const column = (await sidebar.count())
+        ? await sidebar.evaluate((el) => el.getBoundingClientRect().width)
+        : 0;
       assert.equal(
         await frameWidth(),
-        viewport.width,
+        viewport.width - column,
         `${viewport.name}: page takes the full width in Explore`,
       );
 

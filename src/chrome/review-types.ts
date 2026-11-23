@@ -71,6 +71,7 @@ export type FrameMessage = { austere: 1 } & (
   | { type: "changes"; ids?: unknown }
   | { type: "toggle-mode" }
   | { type: "quick-switch" }
+  | { type: "toggle-sidebar" }
   | { type: "focus"; id?: unknown }
   | { type: "writing"; on?: unknown }
   | { type: "open-url"; url: unknown }

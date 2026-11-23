@@ -31,7 +31,10 @@ import { Queue } from "./review-queue.tsx";
 import { Dock, PanelHead, Scrim, useCovered, useSheetEscape } from "./review-tabs.tsx";
 import { useReview } from "./review-store.ts";
 import { Frame, HostedFoot, ModeSwitch, MoreMenu, Notice, TitleBlock } from "./review-viewer.tsx";
+import { ReviewSidebar, SideData } from "./review-sidebar.tsx";
+import { useSidebarOpen } from "./side-state.ts";
 import { Button } from "@/chrome/ui/button";
+import { SidebarProvider, SidebarTrigger } from "@/chrome/ui/sidebar";
 import { TooltipProvider } from "@/chrome/ui/tooltip";
 
 const LOGO: Shape[] = [
@@ -70,6 +73,20 @@ function OwnerEffects(): null {
   return null;
 }
 
+/** The owner's page sits beside the projects sidebar (wide: it pushes the page; narrow: a sheet over it). */
+function WithSidebar({ children }: { children: ReactElement }): ReactElement {
+  const side = useSidebarOpen();
+  return (
+    <SidebarProvider className="review-shell min-h-0" {...side}>
+      <PanelBoundary name="The projects sidebar">
+        <SideData />
+        <ReviewSidebar />
+      </PanelBoundary>
+      {children}
+    </SidebarProvider>
+  );
+}
+
 function App(): ReactElement {
   useRootClass(
     "is-archived",
@@ -84,14 +101,22 @@ function App(): ReactElement {
   useFrameMessages();
   // On a wide screen History lies over the notes, the queue and the composer: what is covered takes no focus.
   const covered = useCovered();
-  return (
-    <TooltipProvider>
+  const page = (
+    <>
       <a className="skip-link" href="#content">
         Skip to the page
       </a>
       <div className="app">
         <header className="bar">
           <div className="bar-start">
+            {OWNER_BAR ? (
+              <SidebarTrigger
+                className="side-toggle size-9 flex-none"
+                aria-controls="side"
+                aria-label="Toggle the projects sidebar (Ctrl B)"
+                title="Toggle the projects sidebar (Ctrl B)"
+              />
+            ) : null}
             {OWNER_BAR ? (
               <Button
                 asChild
@@ -196,8 +221,9 @@ function App(): ReactElement {
           ) : null}
         </div>
       </div>
-    </TooltipProvider>
+    </>
   );
+  return <TooltipProvider>{OWNER_BAR ? <WithSidebar>{page}</WithSidebar> : page}</TooltipProvider>;
 }
 
 /** Draws the page into the body, at once: the code that boots after this finds the markup there. */

@@ -12,6 +12,7 @@ import { InboxView, NotesView, PagesView, RunsView, SearchView } from "./hub-vie
 import { Icon } from "./icon.tsx";
 import { ProjectsSidebar } from "./projects-sidebar.tsx";
 import { SettingsView } from "./settings.tsx";
+import { useSidebarOpen } from "./side-state.ts";
 import { VIEWS, go, start, toUrl, toggleProject, useHub } from "./hub-store.ts";
 import { Toaster } from "@/chrome/ui/sonner";
 import {
@@ -278,6 +279,7 @@ function Hub(): ReactElement {
   const projects = useHub((s) => s.projects);
   const sidePages = useHub((s) => s.sidePages);
   const closedProjects = useHub((s) => s.closedProjects);
+  const side = useSidebarOpen();
 
   useEffect(() => {
     const label =
@@ -286,7 +288,7 @@ function Hub(): ReactElement {
   }, [state.view]);
 
   return (
-    <SidebarProvider className="hub">
+    <SidebarProvider className="hub" {...side}>
       <Sidebar id="side" aria-label="Projects and views" className="side">
         <SidebarHeader className="gap-3 p-3">
           <div className="brand flex items-center gap-2.5 px-2">
