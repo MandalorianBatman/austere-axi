@@ -300,7 +300,23 @@ test(
 
       fakeMode("charlie", "ok");
       await page.click(".attach-run .run-retry");
-      await page.locator(".msg.agent", { hasText: "Patched it." }).waitFor({ timeout: 15_000 });
+      try {
+        await page.locator(".msg.agent", { hasText: "Patched it." }).waitFor({ timeout: 15_000 });
+      } catch (err) {
+        // Say what the page showed: a CI-only failure leaves nothing else to go on.
+        const seen = await page
+          .evaluate(() => ({
+            html: document.documentElement.className,
+            log: document.querySelector(".log")?.textContent?.slice(0, 600),
+            run: document.querySelector(".run-state")?.textContent,
+            popover: !!document.querySelector(".attach-pop"),
+            body: document.body.children.length,
+          }))
+          .catch((e) => String(e));
+        throw new Error(
+          `${(err as Error).message}\npage: ${JSON.stringify(seen)}\nproblems: ${JSON.stringify(problems)}`,
+        );
+      }
       await page.locator(".run-mark.done").waitFor();
       assert.equal(await page.locator(".run-mark.start").count(), 2);
       assert.deepEqual(problems, []);
