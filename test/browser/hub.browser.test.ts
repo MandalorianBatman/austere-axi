@@ -36,21 +36,14 @@ function call<T>(
   body?: unknown,
   headers: Record<string, string> = { "x-austere-key": KEY },
 ): Promise<{ status: number; data: T }> {
-  const { promise, resolve, reject } = Promise.withResolvers<{
-    status: number;
-    data: T;
-  }>();
+  const { promise, resolve, reject } = Promise.withResolvers<{ status: number; data: T }>();
   const r = http.request(
     {
       host: "127.0.0.1",
       port,
       method,
       path: route,
-      headers: {
-        "content-type": "application/json",
-        host: `127.0.0.1:${port}`,
-        ...headers,
-      },
+      headers: { "content-type": "application/json", host: `127.0.0.1:${port}`, ...headers },
     },
     (res) => {
       let data = "";
@@ -75,11 +68,7 @@ const asOwner = (): Record<string, string> => ({
 });
 
 function cli(args: string[], input = ""): string {
-  const r = spawnSync(process.execPath, [CLI, ...args], {
-    env,
-    input,
-    encoding: "utf8",
-  });
+  const r = spawnSync(process.execPath, [CLI, ...args], { env, input, encoding: "utf8" });
   assert.equal(r.status, 0, `${args.join(" ")}: ${r.stdout}${r.stderr}`);
   return r.stdout;
 }
@@ -99,9 +88,7 @@ detail = TextContent("${text}")
 }
 
 async function open(file: string): Promise<string> {
-  const r = await call<{ session: { id: string } }>("POST", "/api/open", {
-    file,
-  });
+  const r = await call<{ session: { id: string } }>("POST", "/api/open", { file });
   return r.data.session.id;
 }
 
@@ -135,9 +122,7 @@ async function ownerTab(
 const crumbLink = (page: Page, name: string) =>
   page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name });
 const group = (page: Page, name: string) =>
-  page.locator("section.inbox-group", {
-    has: page.locator("h2", { hasText: name }),
-  });
+  page.locator("section.inbox-group", { has: page.locator("h2", { hasText: name }) });
 const rowTitles = async (page: Page, name: string): Promise<string[]> =>
   (await group(page, name).locator(".row-title").allInnerTexts()).map((t) => t.trim());
 
@@ -227,12 +212,7 @@ before(async () => {
           `/s/${id}/send`,
           {
             items: [
-              {
-                kind: "annotation",
-                target: "detail",
-                component: "TextContent",
-                note: "say more",
-              },
+              { kind: "annotation", target: "detail", component: "TextContent", note: "say more" },
             ],
           },
           asOwner(),
@@ -250,18 +230,8 @@ after(async () => {
     server.kill();
     await exited;
   }
-  fs.rmSync(STATE, {
-    recursive: true,
-    force: true,
-    maxRetries: 20,
-    retryDelay: 100,
-  });
-  fs.rmSync(WORK, {
-    recursive: true,
-    force: true,
-    maxRetries: 20,
-    retryDelay: 100,
-  });
+  fs.rmSync(STATE, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 test("the inbox: needs you, waiting on agent, quiet; archive and undo; a chip opens its copy; keyboard", async (t) => {
@@ -281,9 +251,7 @@ test("the inbox: needs you, waiting on agent, quiet; archive and undo; a chip op
     assert.deepEqual(await rowTitles(page, "Quiet"), ["Quiet page"]);
     const needs = group(page, "Needs you").locator(".row").first();
     assert.match(await needs.locator(".why").innerText(), /Changed since you looked: 1 revision/);
-    const waiting = group(page, "Waiting on agent").locator(".row", {
-      hasText: "Waiting page",
-    });
+    const waiting = group(page, "Waiting on agent").locator(".row", { hasText: "Waiting page" });
     assert.match(
       await waiting.locator(".why").innerText(),
       /1 unanswered note · nobody is taking them/,
@@ -312,9 +280,7 @@ test("the inbox: needs you, waiting on agent, quiet; archive and undo; a chip op
     );
     assert.ok(!listed.data.pages.some((p) => p.title === "Quiet page"), "archived in hub.db");
     // A failed Undo keeps the button beside the error; the retry brings the row back.
-    await page.route("**/hub/api/page/*/unarchive", (route) => route.abort(), {
-      times: 1,
-    });
+    await page.route("**/hub/api/page/*/unarchive", (route) => route.abort(), { times: 1 });
     await page.locator("[data-sonner-toast]").getByRole("button", { name: "Undo" }).click();
     await page.locator("[data-sonner-toast]", { hasText: "Could not undo." }).waitFor();
     // The browser logs the aborted request it was told to fail: expected, not a page error.
@@ -587,8 +553,42 @@ test("review page: the projects sidebar marks this page, collapses, stays collap
     const trigger = page.getByRole("button", {
       name: /Toggle the projects sidebar/,
     });
+    // The artifact is what the owner came for: with no saved choice the sidebar starts folded.
+    assert.equal(await side.getAttribute("data-state"), "collapsed");
+    assert.equal(await page.evaluate(() => localStorage.getItem("austere:sidebar-open")), null);
+    // Folded, it is off screen and takes no Tab stop; the skip link is the first stop.
+    const tabStops = async (n: number): Promise<{ skip: boolean; inSidebar: boolean }[]> => {
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      const stops = [];
+      for (let i = 0; i < n; i++) {
+        await page.keyboard.press("Tab");
+        stops.push(
+          await page.evaluate(() => ({
+            skip: !!document.activeElement?.classList.contains("skip-link"),
+            inSidebar: !!document.activeElement?.closest('[data-slot="sidebar-container"]'),
+          })),
+        );
+      }
+      return stops;
+    };
+    let stops = await tabStops(14);
+    assert.equal(stops[0].skip, true, "the skip link is the first Tab stop");
+    assert.equal(
+      stops.some((s) => s.inSidebar),
+      false,
+      "no Tab stop in the folded sidebar",
+    );
+    await trigger.click();
+    await page
+      .locator('[data-slot="sidebar"][data-state="expanded"]')
+      .waitFor({ state: "attached" });
+    await side.getByRole("link", { name: "Waiting page" }).waitFor();
+    // The open state is saved: on a fresh load it is open, and Tab still starts at the skip link.
+    await page.reload();
     await side.getByRole("link", { name: "Waiting page" }).waitFor();
     assert.equal(await side.getAttribute("data-state"), "expanded");
+    stops = await tabStops(1);
+    assert.equal(stops[0].skip, true, "the skip link is first with the sidebar open too");
     assert.match(
       await side.locator('a[aria-current="page"]').innerText(),
       /Checkout plan/,
@@ -650,6 +650,32 @@ test("review page: the projects sidebar marks this page, collapses, stays collap
     // Another page opens from the list.
     await side.getByRole("link", { name: "Waiting page" }).click();
     await page.waitForURL(`**/s/${ids.waiting}`);
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test("review page at 1024 px: the sidebar is a sheet over the page, not a column; the hub keeps its column", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab(1024);
+  try {
+    // Saved open on both pages: the review page still has no room for a column.
+    await page.evaluate(() => localStorage.setItem("austere:sidebar-open", "true"));
+    await page.reload();
+    await page.locator('[data-slot="sidebar-gap"]').waitFor({ state: "attached" });
+    await page.goto(`http://127.0.0.1:${port}/s/${ids.plan}`);
+    await page.frameLocator(".frame").locator('[data-oui-id="intro"]').waitFor();
+    assert.equal(await page.locator('[data-slot="sidebar-gap"]').count(), 0, "no column");
+    const frame = (): Promise<number> =>
+      page.locator(".frame").evaluate((f) => f.getBoundingClientRect().width);
+    const before = await frame();
+    await page.getByRole("button", { name: /Toggle the projects sidebar/ }).click();
+    const sheet = page.locator('[data-sidebar="sidebar"][data-mobile="true"]');
+    await sheet.getByRole("link", { name: "Waiting page" }).waitFor();
+    assert.equal(await frame(), before, "the page keeps its width under the sheet");
+    await page.keyboard.press("Escape");
+    await sheet.waitFor({ state: "detached" });
     assert.deepEqual(problems, []);
   } finally {
     await context.close();
@@ -926,14 +952,15 @@ test("the review page under the hosted chrome's CSP: ⋯ menu, Share dialog, sid
         await dialog.waitFor({ state: "detached" });
         // The sidebar, wide: it collapses and opens again, the page follows.
         const side = page.locator('[data-slot="sidebar"]');
-        await side.getByRole("link", { name: "Waiting page" }).waitFor();
-        await page.getByRole("button", { name: /Toggle the projects sidebar/ }).click();
-        await page
-          .locator('[data-slot="sidebar"][data-state="collapsed"]')
-          .waitFor({ state: "attached" });
-        await page.getByRole("button", { name: /Toggle the projects sidebar/ }).click();
+        const toggle = page.getByRole("button", { name: /Toggle the projects sidebar/ });
+        await toggle.click();
         await page
           .locator('[data-slot="sidebar"][data-state="expanded"]')
+          .waitFor({ state: "attached" });
+        await side.getByRole("link", { name: "Waiting page" }).waitFor();
+        await toggle.click();
+        await page
+          .locator('[data-slot="sidebar"][data-state="collapsed"]')
           .waitFor({ state: "attached" });
       } else {
         // The sidebar, narrow: a sheet at the left edge, full height, over a scrim.

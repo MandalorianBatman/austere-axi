@@ -279,7 +279,7 @@ function Hub(): ReactElement {
   const projects = useHub((s) => s.projects);
   const sidePages = useHub((s) => s.sidePages);
   const closedProjects = useHub((s) => s.closedProjects);
-  const side = useSidebarOpen();
+  const side = useSidebarOpen(true);
 
   useEffect(() => {
     const label =

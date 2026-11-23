@@ -22,12 +22,15 @@ export function store(key: string, value: unknown): void {
   }
 }
 
-/** The props for a `<SidebarProvider>`: open as the owner left it (open the first time), and kept when it changes. */
-export function useSidebarOpen(): {
+/**
+ * The props for a `<SidebarProvider>`: open as the owner left it, else `fallback` (the hub opens it; the review page,
+ * where the artifact is what the owner came for, folds it), and kept when it changes.
+ */
+export function useSidebarOpen(fallback: boolean): {
   open: boolean;
   onOpenChange(open: boolean): void;
 } {
-  const [open, setOpen] = useState(() => stored<boolean>(SIDEBAR_OPEN, true) !== false);
+  const [open, setOpen] = useState(() => stored<boolean>(SIDEBAR_OPEN, fallback));
   const onOpenChange = useCallback((next: boolean) => {
     setOpen(next);
     store(SIDEBAR_OPEN, next);

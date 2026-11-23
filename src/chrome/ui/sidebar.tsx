@@ -53,6 +53,7 @@ function useSidebar() {
 
 function SidebarProvider({
   defaultOpen = true,
+  breakpoint,
   open: openProp,
   onOpenChange: setOpenProp,
   className,
@@ -61,10 +62,12 @@ function SidebarProvider({
   ...props
 }: React.ComponentProps<"div"> & {
   defaultOpen?: boolean
+  /** austere-axi: the width (px) under which the sidebar is a Sheet; 768 when unset. */
+  breakpoint?: number
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
-  const isMobile = useIsMobile()
+  const isMobile = useIsMobile(breakpoint)
   const [openMobile, setOpenMobile] = React.useState(false)
 
   // This is the internal state of the sidebar.
@@ -225,6 +228,8 @@ function Sidebar({
       />
       <div
         data-slot="sidebar-container"
+        // austere-axi: a closed offcanvas sidebar sits off screen; it must not keep Tab stops or be read out.
+        inert={state === "collapsed" && collapsible === "offcanvas"}
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
           side === "left"
