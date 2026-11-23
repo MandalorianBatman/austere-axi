@@ -4,6 +4,8 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+## 0.20.0 (2026-11-23)
+
 ### Added
 
 - **Push delivery for OpenCode.** The same wake for an open, idle OpenCode session (1.19.5; OpenCode 2 is not needed): `ln -s "$(npm root -g)/austere-axi/dist/harness/opencode.js" ~/.config/opencode/plugins/austere-wake.js`. OpenCode names no session to its bash tool, so the plugin sets `OPENCODE_SESSION_ID` there (the root session when a subagent runs the command), and `austere-axi` reads it as the `opencode` harness. It follows each session's `session.status` events, wakes an idle one with `session.promptAsync`, and does nothing for a session the server knows no page for. (RLM-451)
