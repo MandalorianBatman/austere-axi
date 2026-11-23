@@ -4,7 +4,7 @@
 // terminal. Every setting here has a CLI form too; the hints name it.
 // Drawn from the Hub-Settings artboard: each part is a card, People across the top, Network beside Review
 // defaults, Cloud and About, Projects below.
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import type { Control, FieldValues, Path } from "react-hook-form";
@@ -33,7 +33,7 @@ import { get, send } from "./hub-http.ts";
 import { useLoad } from "./hub-load.ts";
 import { Empty, ViewLink } from "./hub-parts.tsx";
 import { reload } from "./hub-store.ts";
-import { say } from "./hub-toast.ts";
+import { fail, say } from "./hub-toast.ts";
 import { confirmDialog, promptDialog } from "./hub-dialog.tsx";
 import { Icon, ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
@@ -78,6 +78,8 @@ function SelectField<T extends FieldValues>({
   label,
   options,
   ariaLabel,
+  onUserChange,
+  placeholder,
 }: {
   control: Control<T>;
   name: Path<T>;
@@ -85,6 +87,9 @@ function SelectField<T extends FieldValues>({
   options: Option[];
   /** What a screen reader hears when there is no visible label. */
   ariaLabel?: string;
+  /** The owner chose (not a refresh that moved the value). */
+  onUserChange?: () => void;
+  placeholder?: string;
 }) {
   return (
     <FormField
@@ -93,10 +98,17 @@ function SelectField<T extends FieldValues>({
       render={({ field }) => (
         <FormItem className="field">
           {label ? <FormLabel>{label}</FormLabel> : null}
-          <Select name={field.name} value={field.value} onValueChange={field.onChange}>
+          <Select
+            name={field.name}
+            value={field.value}
+            onValueChange={(v) => {
+              onUserChange?.();
+              field.onChange(v);
+            }}
+          >
             <FormControl>
               <SelectTrigger aria-label={ariaLabel ?? label} className="w-full min-w-0">
-                <SelectValue />
+                <SelectValue placeholder={placeholder} />
               </SelectTrigger>
             </FormControl>
             <SelectContent>
@@ -152,11 +164,12 @@ function Toggle({
   on: boolean;
   disabled?: boolean;
   describedBy?: string;
-  /** Called with the new state; `undo` puts the switch back (a confirmation said no). */
+  /** Called with the new state; `undo` puts the switch back (a confirmation said no). Resolve to `false` when the server did not take the change: the switch goes back to what the server has. */
   onChange: (checked: boolean, undo: () => void) => unknown;
 }) {
   const [shown, setShown] = useState(on);
   const [seen, setSeen] = useState(on);
+  const [pending, setPending] = useState(false);
   if (seen !== on) {
     setSeen(on);
     setShown(on);
@@ -164,11 +177,16 @@ function Toggle({
   return (
     <Switch
       checked={shown}
-      disabled={disabled}
+      disabled={disabled || pending}
       aria-describedby={describedBy}
-      onCheckedChange={(checked) => {
+      onCheckedChange={async (checked) => {
         setShown(checked);
-        void onChange(checked, () => setShown(!checked));
+        setPending(true);
+        try {
+          if ((await onChange(checked, () => setShown(!checked))) === false) setShown(!checked);
+        } finally {
+          setPending(false);
+        }
       }}
     />
   );
@@ -235,7 +253,10 @@ function Avatar({ name }: { name: string }) {
 
 function copy(text: string, what: string): void {
   // No Clipboard API over plain HTTP on a network address: show the text instead of doing nothing.
-  if (!navigator.clipboard) return say(`Copy it by hand: ${text}`);
+  if (!navigator.clipboard) {
+    say(`Copy it by hand: ${text}`);
+    return;
+  }
   void navigator.clipboard.writeText(text).then(
     () => say(`${what} is copied.`),
     () => say(`Copy it by hand: ${text}`),
@@ -296,9 +317,25 @@ function Button({
   );
 }
 
-/** The notes mode to send: the owner's choice when they changed it, else nothing, so the server applies the saved default itself (and holds the notes where an attached agent rules auto out). */
-function chosenAuto(dirty: boolean, mode: string): boolean | undefined {
-  return dirty ? mode === "auto" : undefined;
+/**
+ * The notes selector of a form: it shows the saved default until the owner chooses, and follows the default when
+ * Settings reads again with a new one. A choice the owner made stays, even when it equals the old default.
+ * `chosen` is what to send: the owner's choice, else nothing, so the server applies the saved default itself.
+ */
+function useNotesMode(defaultMode: string, setMode: (mode: string) => void) {
+  const touched = useRef(false);
+  useEffect(() => {
+    if (!touched.current) setMode(defaultMode);
+  }, [defaultMode, setMode]);
+  return {
+    touch: () => {
+      touched.current = true;
+    },
+    untouch: () => {
+      touched.current = false;
+    },
+    chosen: (mode: string): boolean | undefined => (touched.current ? mode === "auto" : undefined),
+  };
 }
 
 /** Who a scope reaches, as a select: this page (when there is one), a project, or every page. */
@@ -332,7 +369,8 @@ type Act = <T>(route: string, body: object, ok: (data: T) => string) => Promise<
 
 const act: Act = async (route, body, ok) => {
   const r = await send<never>(route, body);
-  say(r.ok ? ok(r.data) : r.error);
+  if (r.ok) say(ok(r.data));
+  else fail(r.error);
   if (r.ok) reload();
   return r.ok;
 };
@@ -363,7 +401,8 @@ function RequestRow({
   ]
     .filter(Boolean)
     .join(" · ");
-  const { isSubmitting, dirtyFields } = form.formState;
+  const { isSubmitting } = form.formState;
+  const notes = useNotesMode(defaultMode, (m) => form.setValue("mode", m));
   return (
     <li className="set-ask" data-request={q.id}>
       <Avatar name={q.name} />
@@ -378,7 +417,7 @@ function RequestRow({
           onSubmit={form.handleSubmit(async (v) => {
             await act<{ device?: AccessSummary }>(
               `/hub/api/people/requests/${q.id}/approve`,
-              { ...scopeBody(v.scope), auto: chosenAuto(Boolean(dirtyFields.mode), v.mode) },
+              { ...scopeBody(v.scope), auto: notes.chosen(v.mode) },
               (d) =>
                 `${q.name} is in: ${d.device?.reaches ?? "approved"}. The browser that asked opens the page by itself.`,
             );
@@ -393,6 +432,7 @@ function RequestRow({
           <SelectField
             control={form.control}
             name="mode"
+            onUserChange={notes.touch}
             ariaLabel={`Where ${q.name}'s notes go`}
             options={NOTES}
           />
@@ -435,7 +475,7 @@ function SwitchBox({ label, on, project }: { label: string; on: boolean; project
       <Toggle
         on={on}
         onChange={(checked) =>
-          void act(
+          act(
             "/hub/api/people/requests/switch",
             project ? { on: checked, project } : { on: checked },
             () =>
@@ -614,6 +654,7 @@ function NewLinkForm({
     resolver: zodResolver(linkSchema),
     defaultValues: { name: "", page: pages[0]?.open_id ?? "", scope: "", mode: defaultMode },
   });
+  const notes = useNotesMode(defaultMode, (m) => form.setValue("mode", m));
   const pageId = useWatch({ control: form.control, name: "page" });
   const scope = useWatch({ control: form.control, name: "scope" });
   const chosen = pages.find((x) => x.open_id === pageId);
@@ -628,6 +669,11 @@ function NewLinkForm({
   useEffect(() => {
     if (!valid) form.setValue("scope", first);
   }, [valid, first, form]);
+  // A read that removed the chosen page does not hand the choice to another page: the owner picks again.
+  const gone = pageId !== "" && !chosen;
+  useEffect(() => {
+    if (gone) form.setValue("page", "");
+  }, [gone, form]);
   if (!reachable)
     return (
       <Empty>
@@ -639,7 +685,7 @@ function NewLinkForm({
     return (
       <Empty>No page is open for review yet. Open one, then share it here or from its menu.</Empty>
     );
-  const { isSubmitting, dirtyFields } = form.formState;
+  const { isSubmitting } = form.formState;
   return (
     <div className="set-form">
       <Form {...form}>
@@ -650,10 +696,11 @@ function NewLinkForm({
               page: v.page,
               name: v.name,
               ...scopeBody(valid ? v.scope : first),
-              auto: chosenAuto(Boolean(dirtyFields.mode), v.mode),
+              auto: notes.chosen(v.mode),
             });
             if (!r.ok) return form.setError("root", { message: r.error });
             const made = r.data;
+            notes.untouch();
             form.reset({ name: "", page: v.page, scope: "", mode: defaultMode });
             // The new link is listed under "Links nobody has opened yet" once Settings reads again; the toast keeps it at hand.
             say(
@@ -679,6 +726,7 @@ function NewLinkForm({
             control={form.control}
             name="page"
             label="Page"
+            placeholder="Choose a page"
             options={pages.map((p) => [p.open_id, `${p.title || p.rel_path} · ${p.project}`])}
           />
           <SelectField
@@ -687,7 +735,13 @@ function NewLinkForm({
             label="They can review"
             options={options}
           />
-          <SelectField control={form.control} name="mode" label="Their notes" options={NOTES} />
+          <SelectField
+            control={form.control}
+            name="mode"
+            label="Their notes"
+            options={NOTES}
+            onUserChange={notes.touch}
+          />
           <UiButton type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Creating…" : "Create link"}
           </UiButton>
@@ -746,7 +800,8 @@ function TailscaleNames({
   const status = on
     ? "On: a reviewer who comes in over Tailscale is named by Tailscale (login and device, shown as verified). Asked only for connections to this server's Tailscale address, never from a header."
     : "Off: the server does not listen on Tailscale here, so nobody is named by it. A reviewer is known by the device you let in.";
-  const { isSubmitting, dirtyFields } = form.formState;
+  const { isSubmitting } = form.formState;
+  const notes = useNotesMode(defaultMode, (m) => form.setValue("mode", m));
   return (
     <>
       <span className="set-title">Names from Tailscale</span>
@@ -765,12 +820,15 @@ function TailscaleNames({
                 login: v.login,
                 name: v.name || undefined,
                 ...scopeBody(v.scope),
-                auto: chosenAuto(Boolean(dirtyFields.mode), v.mode),
+                auto: notes.chosen(v.mode),
               },
               (d) =>
                 `${d.verifiedLogin ?? d.name} is in on any of their Tailscale devices: ${d.reaches}. Listed under Devices; Revoke there.`,
             );
-            if (ok) form.reset({ login: "", name: "", scope: v.scope, mode: defaultMode });
+            if (ok) {
+              notes.untouch();
+              form.reset({ login: "", name: "", scope: v.scope, mode: defaultMode });
+            }
           })}
         >
           <TextField
@@ -796,7 +854,13 @@ function TailscaleNames({
             label="They can review"
             options={reach}
           />
-          <SelectField control={form.control} name="mode" label="Their notes" options={NOTES} />
+          <SelectField
+            control={form.control}
+            name="mode"
+            label="Their notes"
+            options={NOTES}
+            onUserChange={notes.touch}
+          />
           <UiButton type="submit" variant="outline" disabled={isSubmitting}>
             {isSubmitting ? "Letting in…" : "Let in"}
           </UiButton>
@@ -841,7 +905,7 @@ function LocalNetworkBlock({ lan }: { lan: LocalNetwork }) {
           onChange={async (checked, undo) => {
             if (checked && !(await confirmDialog(`Listen on ${chosen}? ${LAN_WARNING}`)))
               return undo();
-            await act<ProjectActionResult>(
+            return act<ProjectActionResult>(
               "/hub/api/settings/network",
               { lan: checked ? chosen : null },
               (d) => d.message,
@@ -893,11 +957,12 @@ function DefaultMode({ value, children }: { value: string; children: ReactNode }
       value={shown}
       onValueChange={(v) => {
         setShown(v);
+        // The server did not take it: the saved choice stays selected, and the other can be chosen again.
         void act<ProjectActionResult>(
           "/hub/api/settings/review",
           { auto: v === "auto" },
           (d) => d.message,
-        );
+        ).then((ok) => ok || setShown(value));
       }}
     >
       {children}
@@ -1326,7 +1391,7 @@ function SettingsPage({ settings, access, asks, projects, pages }: Loaded): Reac
                       ))
                     )
                       return undo();
-                    await act<ProjectActionResult>(
+                    return act<ProjectActionResult>(
                       "/hub/api/settings/cloud",
                       { on: checked },
                       (d) => d.message,

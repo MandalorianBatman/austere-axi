@@ -173,8 +173,11 @@ function SearchBox(): ReactElement {
             setText(e.target.value);
             const asked = e.target.value.trim();
             clearTimeout(timer.current);
+            // A move to another view (a click, Back) before the pause is over cancels this search.
+            const typedAt = useHub.getState().state;
             timer.current = window.setTimeout(() => {
               const { state, previous } = useHub.getState();
+              if (state !== typedAt) return;
               if (asked) go(null, { view: "search", q: asked }, state.view !== "search");
               else if (state.view === "search") go(null, { view: previous, q: "" });
             }, 200);

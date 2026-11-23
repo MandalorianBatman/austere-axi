@@ -106,7 +106,7 @@ export function InboxView(): ReactElement {
               <header className="view-h">
                 <h1>Inbox</h1>
               </header>
-              <ProjectFilter project={data.project} />
+              <ProjectFilter asked={a.project} project={data.project} />
               <Empty>
                 {a.project
                   ? "Nothing is open for review in this project."
@@ -136,7 +136,7 @@ export function InboxView(): ReactElement {
                 ])}
               </p>
             </header>
-            <ProjectFilter project={data.project} />
+            <ProjectFilter asked={a.project} project={data.project} />
             <Group
               title="Needs you"
               count={data.needs_you.length}
@@ -292,20 +292,21 @@ export function PagesView(): ReactElement {
                 ))}
               </TabsList>
             </header>
-            <ProjectFilter project={data.project} />
+            <ProjectFilter asked={a.project} project={data.project} />
           </>
         );
         // Manual activation: arrow keys move focus, Enter or Space picks (one history entry per choice).
         // The tab panel is what the tabs control: the list under the header.
         const wrap = (body: ReactNode) => (
           <Tabs
-            value={a.pagesView}
+            // The filter the owner chose last, not the one on screen: choosing it again while a read is on its way starts a new read.
+            value={pagesView}
             activationMode="manual"
             className="block"
             onValueChange={(id) => go(null, { pagesView: id as PagesView })}
           >
             {head}
-            <TabsContent value={a.pagesView}>{body}</TabsContent>
+            <TabsContent value={pagesView}>{body}</TabsContent>
           </Tabs>
         );
         if (!data.pages.length) {
@@ -465,10 +466,12 @@ export function NotesView(): ReactElement {
                   const x = String(f.get(name) ?? "");
                   return x === ALL ? "" : x;
                 };
+                // Reviewer names are the picker's values after a prefix, so a reviewer named "all" is not "everyone".
+                const author = pick("author").replace(/^a:/, "");
                 go(null, {
                   q: String(f.get("q") ?? ""),
                   status: pick("status"),
-                  author: pick("author"),
+                  author,
                 });
               }}
             >
@@ -499,15 +502,15 @@ export function NotesView(): ReactElement {
                 </SelectContent>
               </Select>
               {data.authors.length ? (
-                <Select name="author" defaultValue={a.author || ALL}>
+                <Select name="author" defaultValue={a.author ? `a:${a.author}` : ALL}>
                   <SelectTrigger aria-label="Author" className="min-w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={ALL}>Everyone</SelectItem>
-                    <SelectItem value="owner">Owner</SelectItem>
+                    <SelectItem value="a:owner">Owner</SelectItem>
                     {data.authors.map((x) => (
-                      <SelectItem key={x} value={x}>
+                      <SelectItem key={x} value={`a:${x}`}>
                         {x}
                       </SelectItem>
                     ))}
@@ -516,7 +519,7 @@ export function NotesView(): ReactElement {
               ) : null}
               <Button type="submit">Filter</Button>
             </form>
-            <ProjectFilter project={data.project} />
+            <ProjectFilter asked={a.project} project={data.project} />
             {data.device ? (
               <p className="notes-filter">
                 Device {data.device.name} ({data.device.id}) ·{" "}
@@ -619,7 +622,7 @@ export function RunsView(): ReactElement {
   );
   return (
     <Loaded result={result}>
-      {(_, data) => (
+      {(a, data) => (
         <>
           <header className="view-h">
             <h1>Runs</h1>
@@ -627,7 +630,7 @@ export function RunsView(): ReactElement {
               Agent runs your notes started on pages where the agent is on, newest first
             </p>
           </header>
-          <ProjectFilter project={data.project} />
+          <ProjectFilter asked={a.project} project={data.project} />
           {data.runs.length ? (
             <div className="table card runs-table">
               <div className="thead" aria-hidden="true">

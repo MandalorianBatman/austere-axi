@@ -8,7 +8,7 @@ import { tilde } from "./hub-env.ts";
 import type { IconName } from "./icons.ts";
 import { UNREACHABLE, openLink, post } from "./hub-http.ts";
 import { go, reload, toUrl, useHub } from "./hub-store.ts";
-import { fail, say } from "./hub-toast.ts";
+import { clearSay, fail, say } from "./hub-toast.ts";
 import { Badge } from "@/chrome/ui/badge";
 import { Button } from "@/chrome/ui/button";
 import { Skeleton } from "@/chrome/ui/skeleton";
@@ -75,8 +75,14 @@ export function Section({
   );
 }
 
-export function ProjectFilter({ project }: { project: { name: string; id: string } | null }) {
-  const asked = useHub((s) => s.state.project);
+/** `asked`: the project the answer was read for, not the one the URL names now (a newer read may be on its way). */
+export function ProjectFilter({
+  asked,
+  project,
+}: {
+  asked: string;
+  project: { name: string; id: string } | null;
+}) {
   if (!asked) return null;
   return (
     <p className="notes-filter">
@@ -331,22 +337,26 @@ async function flip(p: ShellPage, action: "archive" | "unarchive"): Promise<bool
     return false;
   }
   const undo = action === "archive" ? "unarchive" : "archive";
+  // Every message this change has put up: a good Undo clears them, never another page's message.
+  const mine: number[] = [];
   const undoAction = {
     label: "Undo",
     // Exactly the copies the action changed: a copy archived before stays archived.
     onClick: async (): Promise<void> => {
       if (!(await post(`/hub/api/page/${p.open_id}/${undo}`, { ids: done.ids }))) {
         // Keep the way back: the owner can try again once austere-axi answers.
-        fail(`Could not undo. ${UNREACHABLE}`, { action: undoAction });
+        mine.push(fail(`Could not undo. ${UNREACHABLE}`, { action: undoAction }));
         return;
       }
-      say("");
+      clearSay(mine);
       reload();
     },
   };
-  say(`${action === "archive" ? "Archived" : "Unarchived"} ${titleOf(p)}.`, {
-    action: undoAction,
-  });
+  mine.push(
+    say(`${action === "archive" ? "Archived" : "Unarchived"} ${titleOf(p)}.`, {
+      action: undoAction,
+    }),
+  );
   // Counts, groups and empty states change with the row: read the views again (the status line stays).
   reload();
   return true;

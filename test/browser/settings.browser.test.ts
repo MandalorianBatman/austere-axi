@@ -486,3 +486,41 @@ test("settings forms: a bad entry says why beside the field, Enter submits, the 
     await context.close();
   }
 });
+
+test("settings: a switch the server refused goes back, with an error toast; untouched notes fields follow a new default", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab();
+  try {
+    const cloud = part(page, "cloud").locator('[data-slot="cloud"]').getByRole("switch");
+    assert.equal(await cloud.isChecked(), false);
+    await page.route("**/hub/api/settings/cloud", (route) => route.abort(), { times: 1 });
+    await cloud.click();
+    await page.locator("[data-sonner-toast]", { hasText: "Could not reach austere-axi" }).waitFor();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-slot="cloud"] [role=switch]')
+          ?.getAttribute("aria-checked") === "false",
+    );
+    assert.equal((await call<{ on: boolean }>("GET", "/api/settings/cloud")).data.on, false);
+    // It can be tried again.
+    assert.ok(await cloud.isEnabled());
+    // The browser logs the request it was told to fail: expected.
+    problems.splice(0, problems.length, ...problems.filter((p) => !p.includes("Failed to load")));
+
+    // The saved default moves to auto: the new-link form, not touched, shows it too.
+    const notes = page.locator(".new-link").getByRole("combobox", { name: "Their notes" });
+    assert.match(await notes.innerText(), /Hold notes/);
+    await part(page, "review").getByLabel("Send them straight to the agent").check();
+    await page.locator("[data-sonner-toast]", { hasText: "go straight to the agent" }).waitFor();
+    await page.waitForFunction(() =>
+      /Send notes straight/.test(
+        document.querySelector('.new-link [role=combobox][aria-label="Their notes"]')
+          ?.textContent ?? "",
+      ),
+    );
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
+  }
+});

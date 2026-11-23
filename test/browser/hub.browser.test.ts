@@ -713,9 +713,8 @@ test("phone: Pages does not scroll sideways, the drawer closes after a pick, a d
     await page.getByRole("dialog").waitFor();
     await page.keyboard.press("Escape");
     await page.getByRole("dialog").waitFor({ state: "detached" });
-    assert.equal(
-      await page.evaluate(() => document.activeElement?.getAttribute("aria-label")),
-      "Rename shop",
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute("aria-label") === "Rename shop",
     );
     assert.deepEqual(problems, []);
   } finally {
@@ -740,5 +739,66 @@ test("Pages: the three filter tabs sit on one line, at desktop and tablet width"
     } finally {
       await context.close();
     }
+  }
+});
+
+test("stale reads: choosing the shown tab again wins; a search typed before a click does not replace the view; one Undo keeps another's", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context, problems } = await ownerTab();
+  try {
+    // Pages: Everything (slow), then Open again before it answers. The last choice is what shows.
+    await page.goto(`http://127.0.0.1:${port}/?view=pages`);
+    await page.getByRole("tablist", { name: "Which pages" }).waitFor();
+    await page.route(
+      (url) => url.pathname === "/hub/api/pages" && url.searchParams.get("view") === "all",
+      async (route) => {
+        await new Promise((r) => setTimeout(r, 700));
+        await route.continue();
+      },
+    );
+    await page.getByRole("tab", { name: /Everything/ }).click();
+    await page.getByRole("tab", { name: /Open/ }).click();
+    await page.waitForTimeout(1200);
+    assert.equal(
+      (await page.locator("[role=tab][data-state=active]").innerText()).trim().split(/\s+/)[0],
+      "Open",
+    );
+    assert.doesNotMatch(page.url(), /all=1/);
+
+    // Search: type, then click Pages inside the 200 ms pause. Pages stays.
+    await page.goto(`http://127.0.0.1:${port}/?view=inbox`);
+    await group(page, "Quiet").waitFor();
+    await page.getByRole("searchbox", { name: "Search pages and parts" }).fill("plan");
+    await page.locator(".views a[data-view=pages]").click();
+    await page.waitForTimeout(600);
+    assert.match(page.url(), /view=pages/);
+    assert.doesNotMatch(page.url(), /view=search/);
+
+    // Undo: archive one page, start its slow Undo, archive another meanwhile. The second Undo stays.
+    await page.goto(`http://127.0.0.1:${port}/?view=inbox`);
+    await group(page, "Quiet").waitFor();
+    await page.getByRole("button", { name: "Archive Quiet page" }).click();
+    await page.locator("[data-sonner-toast]", { hasText: "Archived Quiet page." }).waitFor();
+    await page.route("**/hub/api/page/*/unarchive", async (route) => {
+      await new Promise((r) => setTimeout(r, 700));
+      await route.continue();
+    });
+    await page.locator("[data-sonner-toast]").getByRole("button", { name: "Undo" }).click();
+    await page.getByRole("button", { name: "Archive Waiting page" }).click();
+    await page.locator("[data-sonner-toast]", { hasText: "Archived Waiting page." }).waitFor();
+    await page.waitForTimeout(1200);
+    assert.ok(
+      await page
+        .locator("[data-sonner-toast]", { hasText: "Archived Waiting page." })
+        .getByRole("button", { name: "Undo" })
+        .isVisible(),
+      "the second page's Undo is still there",
+    );
+    // Put the state back for the tests after this one.
+    await page.locator("[data-sonner-toast]").getByRole("button", { name: "Undo" }).click();
+    await page.getByRole("link", { name: "Waiting page" }).first().waitFor();
+    assert.deepEqual(problems, []);
+  } finally {
+    await context.close();
   }
 });
