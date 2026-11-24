@@ -487,13 +487,63 @@ span.austere-filetree-toggle {
 /* Wide diagrams scroll inside their own box instead of shrinking text past
    legibility or pushing the page sideways. */
 .austere-arch-scroll {
+  --arch-fade-start: #000;
+  --arch-fade-end: #000;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0 0 2px;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--austere-muted) transparent;
+  padding: 0 0 6px;
 }
-.austere-arch-scroll.is-cut {
-  -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
-  mask-image: linear-gradient(to right, #000 88%, transparent);
+.austere-arch-scroll.is-cut-start {
+  --arch-fade-start: transparent;
+}
+.austere-arch-scroll.is-cut-end {
+  --arch-fade-end: transparent;
+}
+.austere-arch-scroll.is-cut-start,
+.austere-arch-scroll.is-cut-end {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    var(--arch-fade-start),
+    #000 24px,
+    #000 calc(100% - 24px),
+    var(--arch-fade-end)
+  );
+  mask-image: linear-gradient(
+    to right,
+    var(--arch-fade-start),
+    #000 24px,
+    #000 calc(100% - 24px),
+    var(--arch-fade-end)
+  );
+}
+.austere-arch-scroll:focus-visible {
+  outline: 2px solid var(--austere-accent);
+  /* Inside the border box: the edge mask would clip a ring drawn outside it. */
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.austere-arch-cue {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--austere-muted);
+  text-align: center;
+}
+@media print {
+  .austere-arch-scroll {
+    overflow: visible;
+    padding: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .austere-arch-svg {
+    min-width: 0 !important;
+  }
+  .austere-arch-cue {
+    display: none;
+  }
 }
 .austere-arch-svg {
   display: block;

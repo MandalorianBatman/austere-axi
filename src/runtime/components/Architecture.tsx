@@ -161,10 +161,14 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
   const [room, setRoom] = useState<number | null>(null);
   // A diagram wider than its box scrolls; fade the cut edge so that shows.
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [fade, setFade] = useState(false);
+  const [cut, setCut] = useState({ start: false, end: false });
+  const [regionName, setRegionName] = useState("Architecture diagram");
   const checkCut = () => {
     const el = scrollRef.current;
-    if (el) setFade(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    if (!el) return;
+    const start = el.scrollLeft > 4;
+    const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+    setCut((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
   };
   useLayoutEffect(() => {
     const el = boxRef.current;
@@ -220,6 +224,14 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(checkCut, [layout]);
+  // The scroll box is named from the title of the Card it sits in.
+  useEffect(() => {
+    const title = boxRef.current
+      ?.closest(".openui-card")
+      ?.querySelector(".openui-header-top-left")
+      ?.textContent?.trim();
+    setRegionName(title || "Architecture diagram");
+  }, [layout]);
 
   return (
     <div className={`austere-arch-box${wide ? " is-wide" : ""}`} ref={boxRef}>
@@ -228,7 +240,15 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
           <strong>Diagram failed to lay out.</strong> {error}
         </div>
       ) : layout ? (
-        <Drawing layout={layout} uid={uid} fade={fade} scrollRef={scrollRef} checkCut={checkCut} />
+        <Drawing
+          layout={layout}
+          uid={uid}
+          cut={cut}
+          boxWidth={room ?? 0}
+          regionName={regionName}
+          scrollRef={scrollRef}
+          checkCut={checkCut}
+        />
       ) : null}
     </div>
   );
@@ -237,12 +257,14 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
 interface DrawingProps {
   layout: Layout;
   uid: string;
-  fade: boolean;
+  cut: { start: boolean; end: boolean };
+  boxWidth: number;
+  regionName: string;
   scrollRef: RefObject<HTMLDivElement | null>;
   checkCut: () => void;
 }
 
-function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
+function Drawing({ layout, uid, cut, boxWidth, regionName, scrollRef, checkCut }: DrawingProps) {
   const byId = new Map(layout.nodes.map((n) => [n.id, n]));
   const kinds = [...new Set(layout.nodes.map((n) => n.kind))];
   // A tone overrides the style's colour, so a toned main-path edge stays out
@@ -256,8 +278,10 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
     layout.nodes.some((n) => n.tone === "danger") || layout.edges.some((e) => e.tone === "danger");
   const W = layout.width;
   const H = layout.height;
-  // Shrink to fit down to the legible scale, then scroll.
-  const minWidth = Math.round(Math.min(W, Math.max(320, W * LEGIBLE_SCALE)));
+  // Shrink to fit down to the legible scale, then scroll. The floor is never
+  // wider than the diagram, and never narrower than its box, so a diagram that
+  // fits at the legible scale does not scroll.
+  const minWidth = Math.round(Math.min(W, Math.max(boxWidth, W * LEGIBLE_SCALE)));
   // Part names: "From → To", plus the label when two edges join the same pair.
   const pairs = new Map<string, number>();
   for (const e of layout.edges)
@@ -270,9 +294,12 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
   return (
     <figure className="austere-arch">
       <div
-        className={`austere-arch-scroll${fade ? " is-cut" : ""}`}
+        className={`austere-arch-scroll${cut.start ? " is-cut-start" : ""}${cut.end ? " is-cut-end" : ""}`}
         ref={scrollRef}
         onScroll={checkCut}
+        role="region"
+        aria-label={regionName}
+        tabIndex={0}
       >
         <svg
           className="austere-arch-svg"
@@ -423,6 +450,11 @@ function Drawing({ layout, uid, fade, scrollRef, checkCut }: DrawingProps) {
           ))}
         </svg>
       </div>
+      {cut.start || cut.end ? (
+        <p className="austere-arch-cue" aria-hidden="true">
+          {cut.start ? "← " : ""}Scroll sideways for more{cut.end ? " →" : ""}
+        </p>
+      ) : null}
       {kinds.length > 1 || groupKinds.length || risky || styles.some((s) => s !== "solid") ? (
         <figcaption className="austere-arch-legend">
           {kinds.map((k) => {
