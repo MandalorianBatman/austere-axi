@@ -4,6 +4,8 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+## 0.21.0 (2026-11-24)
+
 ### Added
 
 - **Architecture diagrams that scroll sideways are easier to see, reach and print.** A fade shows on each cut edge and a short cue under the diagram shows only while part is hidden; the scroll box takes focus (named from its Card title, ←/→ scroll it), keeps a thin scrollbar and does not trigger back-swipe. The width floor is the box width, so a diagram that fits at the legible scale no longer scrolls (the stacked-lanes case lost 18px of clipping at 360px). Print drops the fades and cue and scales the whole diagram to the page. (RLM-463)
