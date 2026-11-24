@@ -4,12 +4,14 @@ import type { ReactNode, RefObject, SVGProps } from "react";
 import {
   Cloud,
   Database,
+  Maximize2,
   Globe,
   Inbox,
   Monitor,
   Server,
   ShieldCheck,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { RendererArgs } from "../../../types/pack.d.ts";
@@ -190,7 +192,16 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const { layout, error } = useMemo((): { layout: Layout | null; error: string | null } => {
+  // Expand: the same Drawing, in a modal dialog at its natural size. The inline
+  // figure gives way while it is open, so each part id exists once.
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const expandRef = useRef<HTMLButtonElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [inlineHeight, setInlineHeight] = useState(0);
+  const { layout, error } = useMemo((): {
+    layout: Layout | null;
+    error: string | null;
+  } => {
     if (room === null) return { layout: null, error: null };
     try {
       return { layout: layoutModel(model, room), error: null };
@@ -198,6 +209,41 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
       return { layout: null, error: errorText(err) };
     }
   }, [model, room]);
+  // As wide as the diagram wants: left-to-right, or lanes as columns.
+  const fullLayout = useMemo((): Layout | null => {
+    if (!expanded || error) return null;
+    try {
+      return layoutModel(model, Number.MAX_SAFE_INTEGER);
+    } catch {
+      return null;
+    }
+  }, [model, expanded, error]);
+  const expand = () => {
+    const figure = boxRef.current?.querySelector(".austere-arch");
+    setInlineHeight(figure instanceof HTMLElement ? figure.offsetHeight : 0);
+    setExpanded(true);
+  };
+  const collapse = () => dialogRef.current?.close();
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!expanded || !dialog) return undefined;
+    if (!dialog.open) dialog.showModal();
+    // A modal dialog makes everything outside it inert, and draws above any
+    // z-index. The annotate layer (hover box, note) moves in so it stays usable.
+    const ui = document.querySelector("body > .austere-ui");
+    if (ui) dialog.appendChild(ui);
+    return () => {
+      if (ui) document.body.appendChild(ui);
+      if (dialog.open) dialog.close();
+    };
+  }, [expanded]);
+  useEffect(() => {
+    if (!expanded) return undefined;
+    // Rotating the phone resizes the dialog, not the inline box.
+    window.addEventListener("resize", checkCut);
+    return () => window.removeEventListener("resize", checkCut);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
   // Known before measuring (it does not depend on the width), so the page can
   // widen first and the diagram is measured in the wider column.
   const wide = useMemo(() => {
@@ -223,7 +269,7 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
   }, [problemKey, statementId]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(checkCut, [layout]);
+  useLayoutEffect(checkCut, [layout, fullLayout]);
   // The scroll box is named from the title of the Card it sits in.
   useEffect(() => {
     const title = boxRef.current
@@ -240,15 +286,70 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
           <strong>Diagram failed to lay out.</strong> {error}
         </div>
       ) : layout ? (
-        <Drawing
-          layout={layout}
-          uid={uid}
-          cut={cut}
-          boxWidth={room ?? 0}
-          regionName={regionName}
-          scrollRef={scrollRef}
-          checkCut={checkCut}
-        />
+        <>
+          <div className="austere-arch-tools">
+            <button
+              type="button"
+              className="austere-arch-expand"
+              ref={expandRef}
+              onClick={expand}
+              aria-haspopup="dialog"
+              aria-label={`Expand ${regionName}`}
+            >
+              <Maximize2 size={15} aria-hidden="true" />
+              Expand
+            </button>
+          </div>
+          {expanded ? (
+            <div style={{ height: inlineHeight }} aria-hidden="true" />
+          ) : (
+            <Drawing
+              layout={layout}
+              uid={uid}
+              cut={cut}
+              boxWidth={room ?? 0}
+              regionName={regionName}
+              scrollRef={scrollRef}
+              checkCut={checkCut}
+            />
+          )}
+          <dialog
+            ref={dialogRef}
+            className="austere-arch-dialog"
+            aria-label={regionName}
+            onClose={() => {
+              setExpanded(false);
+              expandRef.current?.focus();
+            }}
+          >
+            {expanded && fullLayout ? (
+              <>
+                <div className="austere-arch-dialog-bar">
+                  <span className="austere-arch-dialog-title">{regionName}</span>
+                  <button
+                    type="button"
+                    className="austere-arch-expand"
+                    onClick={collapse}
+                    aria-label="Close"
+                  >
+                    <X size={18} aria-hidden="true" />
+                    Close
+                  </button>
+                </div>
+                <Drawing
+                  full
+                  layout={fullLayout}
+                  uid={uid}
+                  cut={cut}
+                  boxWidth={fullLayout.width}
+                  regionName={regionName}
+                  scrollRef={scrollRef}
+                  checkCut={checkCut}
+                />
+              </>
+            ) : null}
+          </dialog>
+        </>
       ) : null}
     </div>
   );
@@ -262,9 +363,20 @@ interface DrawingProps {
   regionName: string;
   scrollRef: RefObject<HTMLDivElement | null>;
   checkCut: () => void;
+  /** In the Expand dialog: natural size, scrolling both ways. */
+  full?: boolean;
 }
 
-function Drawing({ layout, uid, cut, boxWidth, regionName, scrollRef, checkCut }: DrawingProps) {
+function Drawing({
+  layout,
+  uid,
+  cut,
+  boxWidth,
+  regionName,
+  scrollRef,
+  checkCut,
+  full,
+}: DrawingProps) {
   const byId = new Map(layout.nodes.map((n) => [n.id, n]));
   const kinds = [...new Set(layout.nodes.map((n) => n.kind))];
   // A tone overrides the style's colour, so a toned main-path edge stays out
@@ -292,7 +404,7 @@ function Drawing({ layout, uid, cut, boxWidth, regionName, scrollRef, checkCut }
   };
 
   return (
-    <figure className="austere-arch">
+    <figure className={`austere-arch${full ? " is-full" : ""}`}>
       <div
         className={`austere-arch-scroll${cut.start ? " is-cut-start" : ""}${cut.end ? " is-cut-end" : ""}`}
         ref={scrollRef}
