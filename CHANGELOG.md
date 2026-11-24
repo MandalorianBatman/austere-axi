@@ -8,6 +8,7 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ### Added
 
+- **Expand an architecture diagram to full size.** An Expand button above each diagram opens a modal `<dialog>` over the artifact frame (no Fullscreen API, which the review iframe blocks). The diagram shows at 1.0 in its natural layout (left-to-right, or lanes as columns) and scrolls both ways; Esc or Close returns focus to the button. It is the same rendered diagram, so part ids stay unique, and Annotate works inside it. (RLM-464)
 - **Architecture diagrams that scroll sideways are easier to see, reach and print.** A fade shows on each cut edge and a short cue under the diagram shows only while part is hidden; the scroll box takes focus (named from its Card title, ←/→ scroll it), keeps a thin scrollbar and does not trigger back-swipe. The width floor is the box width, so a diagram that fits at the legible scale no longer scrolls (the stacked-lanes case lost 18px of clipping at 360px). Print drops the fades and cue and scales the whole diagram to the page. (RLM-463)
 - **The review server in a container.** A `Dockerfile` (the npm package on `node:24-bookworm-slim`) and a `compose.yaml` run `server --persist` on Linux with the host's network and PIDs, as the host user, with the state dir and page folders mounted at their host paths, so the host's CLI uses it as any running server. No coding agent or Tailscale in the image: attach runs, triggers and tailnet review need `server install` on the host. See [Docker](docs/docker.md). (RLM-460)
 
