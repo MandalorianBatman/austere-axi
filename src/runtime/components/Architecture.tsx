@@ -190,10 +190,7 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const { layout, error } = useMemo((): {
-    layout: Layout | null;
-    error: string | null;
-  } => {
+  const { layout, error } = useMemo((): { layout: Layout | null; error: string | null } => {
     if (room === null) return { layout: null, error: null };
     try {
       return { layout: layoutModel(model, room), error: null };

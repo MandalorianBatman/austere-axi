@@ -162,6 +162,23 @@ test("a wide architecture scrolls in a named, focusable region with a cue only w
         assert.equal(await scroll.getAttribute("role"), "region");
         assert.equal(await scroll.getAttribute("aria-label"), title);
         await scroll.focus();
+        // The ring must sit inside the masked box, or a cut edge would hide it.
+        if (before.end) {
+          const ring = await scroll.evaluate((el) => {
+            const cs = getComputedStyle(el);
+            return {
+              style: cs.outlineStyle,
+              width: parseFloat(cs.outlineWidth),
+              offset: parseFloat(cs.outlineOffset),
+              masked: cs.maskImage !== "none",
+            };
+          });
+          assert.equal(ring.masked, true);
+          assert.ok(
+            ring.style !== "none" && ring.width >= 2 && ring.offset <= 0,
+            `${width}px: focus ring is drawn outside the masked box`,
+          );
+        }
         assert.equal(await scroll.evaluate((el) => el === el.ownerDocument.activeElement), true);
         if (before.end) {
           await scroll.press("ArrowRight");
