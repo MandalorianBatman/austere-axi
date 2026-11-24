@@ -4,6 +4,10 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Added
+
+- **The review server in a container.** A `Dockerfile` (the npm package on `node:24-bookworm-slim`) and a `compose.yaml` run `server --persist` on Linux with the host's network and PIDs, as the host user, with the state dir and page folders mounted at their host paths, so the host's CLI uses it as any running server. No coding agent or Tailscale in the image: attach runs, triggers and tailnet review need `server install` on the host. See [Docker](docs/docker.md). (RLM-460)
+
 ## 0.20.0 (2026-11-23)
 
 ### Added

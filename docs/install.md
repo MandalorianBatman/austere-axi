@@ -31,6 +31,8 @@ The skills never install anything: an agent without the `austere-axi` command te
 
 Without a global install, you can still point an agent at the CLI through npx (`-y` skips the npm prompt): `npx -y austere-axi --help`.
 
+To run the server in a container instead of `server install`, see [Docker](docker.md).
+
 ### Claude Code plugin
 
 Bundles the `austere` skill (and `/austere`), the `austere-setup` skill and the MCP server:
