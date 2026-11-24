@@ -1,0 +1,10 @@
+.git
+node_modules
+dist
+_site
+scratch
+.dev
+bench/node_modules
+bench/results
+*.export.html
+.DS_Store

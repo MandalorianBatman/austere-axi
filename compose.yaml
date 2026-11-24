@@ -1,0 +1,23 @@
+# The austere-axi review server, always on, in a container (docs/docker.md).
+#   export AUSTERE_UID=$(id -u) AUSTERE_GID=$(id -g) AUSTERE_AXI_WORKSPACE=$HOME/src
+#   docker compose up -d --build
+services:
+  austere-axi:
+    build: .
+    image: austere-axi:local
+    restart: unless-stopped
+    init: true
+    # The server binds to loopback only, and /api/* answers loopback callers only: the host's
+    # CLI reaches it on the host's 127.0.0.1. Host PIDs: the CLI checks the pid in server.lock.
+    network_mode: host
+    pid: host
+    # The host user: owner.key and hub.db stay readable by the host's CLI, pages writable by the agent.
+    user: "${AUSTERE_UID:-1000}:${AUSTERE_GID:-1000}"
+    environment:
+      AUSTERE_AXI_STATE_DIR: ${HOME}/.austere-axi
+      AUSTERE_AXI_PORT: ${AUSTERE_AXI_PORT:-4388}
+    # Same paths as on the host: the server checks its state dir by path and reads pages at the
+    # absolute paths the CLI sends.
+    volumes:
+      - ${HOME}/.austere-axi:${HOME}/.austere-axi
+      - ${AUSTERE_AXI_WORKSPACE:?set AUSTERE_AXI_WORKSPACE to the folder your pages live under}:${AUSTERE_AXI_WORKSPACE}

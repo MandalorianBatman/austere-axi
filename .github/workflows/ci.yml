@@ -39,6 +39,28 @@ jobs:
       - if: matrix.os == 'ubuntu-latest' && matrix.node == 24
         run: npm run format:check
 
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: docker build -t austere-axi:ci .
+      # The image's server answers on the host's loopback, as docs/docker.md runs it.
+      - shell: bash
+        run: |
+          state="$RUNNER_TEMP/austere-state"
+          mkdir -p "$state"
+          docker run -d --name austere --network host --pid host --user "$(id -u):$(id -g)" \
+            -e AUSTERE_AXI_STATE_DIR="$state" -e AUSTERE_AXI_PORT=4391 \
+            -v "$state:$state" austere-axi:ci
+          for i in $(seq 60); do
+            curl -fsS http://127.0.0.1:4391/api/health && exit 0
+            sleep 1
+          done
+          docker logs austere
+          exit 1
+
   browser:
     runs-on: ubuntu-latest
     steps:
