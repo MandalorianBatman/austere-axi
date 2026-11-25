@@ -9,6 +9,7 @@ import barComparison from "./BarComparison.md";
 import lineTrend from "./LineTrend.md";
 import scatterPlot from "./ScatterPlot.md";
 import databaseSchema from "./DatabaseSchema.md";
+import { ARCHITECTURE_RECIPES } from "./architecture.ts";
 
 export const RECIPES: Recipe[] = [
   {
@@ -124,4 +125,5 @@ dbHolds = Relation(dbOrders, dbItems, "1:N", "order_items.order_id → orders.id
 dbOfProduct = Relation(dbProducts, dbItems, "1:N", "order_items.product_id → products.id, on delete restrict")`,
     ],
   },
+  ...ARCHITECTURE_RECIPES,
 ];
