@@ -2,9 +2,11 @@
 // a map of statement lines say about the program. No Node APIs, so the CLI and the
 // website playground (in the browser) run the very same validation.
 import type { ElementNode, ParseResult } from "@openuidev/react-lang";
+import { normalizeProgram } from "./program-strings.ts";
 import { splitStatements } from "./statements.ts";
 import { architectureNotes } from "../runtime/components/_architecture-model.ts";
 import { FLOWCHART, STATE_MACHINE, flowNotes } from "../runtime/components/_flow-model.ts";
+import { EDGE_STYLES, EDGE_TONES, NODE_TONES } from "../runtime/components/_architecture-model.ts";
 import { ORG_CHART, TREE } from "../runtime/components/_tree-model.ts";
 import { CLASS_DIAGRAM, ER_DIAGRAM } from "../runtime/components/_data-model.ts";
 import type { ComponentLimit } from "../../types/catalog.d.ts";
@@ -54,6 +56,32 @@ function elementsOf(root: unknown, typeName: string): ElementNode[] {
   return out;
 }
 
+/** A State of kind "initial" or "final" is drawn as a dot: a detail (and a real state's label) never shows. */
+function stateNotes(props: Record<string, unknown>): { code: string; message: string }[] {
+  const kind = props.kind;
+  if ((kind !== "initial" && kind !== "final") || !props.detail) return [];
+  return [
+    {
+      code: "state-dot",
+      message: `State "${String(props.label)}" has kind "${kind}", so it is drawn as a dot and its detail is not shown. A box with a name is a normal State; draw the start as State("start", "initial") with a Transition to it.`,
+    },
+  ];
+}
+
+const STYLE_WORDS = new Set([...NODE_TONES, ...EDGE_STYLES, ...EDGE_TONES]);
+
+/** Node's fourth argument is a chip's text; a style word there ("emphasis") prints as the chip. */
+function nodeNotes(props: Record<string, unknown>): { code: string; message: string }[] {
+  const tag = typeof props.tag === "string" ? props.tag.trim().toLowerCase() : "";
+  if (!tag || !STYLE_WORDS.has(tag as never)) return [];
+  return [
+    {
+      code: "node-tag",
+      message: `Node tag "${props.tag}" prints as a chip with that word. The tag is the fourth argument, tone the fifth: write Node(label, kind, detail, null, "${tag}") to colour the box, or drop the tag.`,
+    },
+  ];
+}
+
 // Parser errors that mean the arguments do not fit the component's signature.
 const SIGNATURE_CODES = new Set([
   "type-mismatch",
@@ -76,7 +104,7 @@ export function checkProgram(
   const warnings: CheckEntry[] = [];
   let parsed: ParseResult;
   try {
-    parsed = parser().parse(program);
+    parsed = parser().parse(normalizeProgram(program));
   } catch (err) {
     errors.push({
       code: "parse-failed",
@@ -145,6 +173,8 @@ export function checkProgram(
     ["OrgChart", (props) => flowNotes(props, ORG_CHART)],
     ["ERDiagram", (props) => flowNotes(props, ER_DIAGRAM)],
     ["ClassDiagram", (props) => flowNotes(props, CLASS_DIAGRAM)],
+    ["State", stateNotes],
+    ["Node", nodeNotes],
   ];
   for (const [component, notes] of notesFor) {
     const diagrams = new Set<string | undefined>();

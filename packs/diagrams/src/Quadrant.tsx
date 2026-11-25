@@ -2,7 +2,8 @@ import React from "react";
 import { z } from "zod";
 import { austereComponent, DiagramFrame } from "austere-axi/pack";
 import type { RendererArgs } from "austere-axi/pack";
-import { QUAD, buildQuadrant } from "./_shape-model.ts";
+import { buildQuadrant } from "./_shape-model.ts";
+import { PHONE_ROOM } from "./_quantity-model.ts";
 import type { QuadItem } from "./_shape-model.ts";
 import { Hit, T } from "./_shape-view.tsx";
 import { useProblems } from "./_matrix-view.tsx";
@@ -59,12 +60,13 @@ function ItemView({ item }: { item: QuadItem }) {
 function QuadrantView({ props, statementId }: RendererArgs<QuadrantProps>) {
   const model = React.useMemo(() => buildQuadrant(props), [props]);
   useProblems(model.problems, "quadrant", "Quadrant", statementId);
-  const { x0, x1, y0, y1, w, h } = QUAD;
-  const cx = (x0 + x1) / 2;
-  const cy = (y0 + y1) / 2;
   return (
     <DiagramFrame className="dg-quadrant" name="Quadrant">
-      {() => {
+      {({ room }) => {
+        const view = room < PHONE_ROOM ? buildQuadrant(props, true) : model;
+        const { x0, x1, y0, y1, w, h } = view.geo;
+        const cx = (x0 + x1) / 2;
+        const cy = (y0 + y1) / 2;
         if (!model.items.length) {
           return {
             error: (
@@ -82,7 +84,7 @@ function QuadrantView({ props, statementId }: RendererArgs<QuadrantProps>) {
               className="dg-qd-svg"
               viewBox={`0 0 ${w} ${h}`}
               role="img"
-              aria-label={`Quadrant of ${model.yAxis || "y"} against ${model.xAxis || "x"}: ${model.items.map((i) => i.label).join(", ")}`}
+              aria-label={`Quadrant of ${view.yAxis || "y"} against ${view.xAxis || "x"}: ${view.items.map((i) => i.label).join(", ")}`}
             >
               <rect className="dg-qd-plot" x={x0} y={y0} width={x1 - x0} height={y1 - y0} />
               <line className="dg-qd-axis" x1={x0} y1={cy} x2={x1 - 6} y2={cy} />
@@ -96,12 +98,12 @@ function QuadrantView({ props, statementId }: RendererArgs<QuadrantProps>) {
                 points={`${cx - 5},${y0 + 12} ${cx},${y0} ${cx + 5},${y0 + 12}`}
               />
               <T className="dg-qd-axis-name" x={x1} y={y1 + 24} textAnchor="end">
-                {model.xAxis.toUpperCase()}
+                {view.xAxis.toUpperCase()}
               </T>
               <T className="dg-qd-axis-name" x={cx} y={y0 - 12} textAnchor="middle">
-                {model.yAxis.toUpperCase()}
+                {view.yAxis.toUpperCase()}
               </T>
-              {model.quadrants.map((name, i) =>
+              {view.quadrants.map((name, i) =>
                 name ? (
                   <T
                     key={i}
@@ -115,7 +117,7 @@ function QuadrantView({ props, statementId }: RendererArgs<QuadrantProps>) {
                   </T>
                 ) : null,
               )}
-              {model.items.map((item) => (
+              {view.items.map((item) => (
                 <ItemView key={item.id} item={item} />
               ))}
             </svg>

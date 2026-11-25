@@ -12,7 +12,14 @@ import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
 import customComponents from "austere:components";
 import type { EntryDetails } from "../../types/catalog.d.ts";
 import type { AustereComponent } from "../../types/pack.d.ts";
-import { EXTENDED, REMOVED, STOCK_GROUPS, STOCK_RENDERERS, STOCK_UNTAGGED } from "./stock.ts";
+import {
+  EXTENDED,
+  REMOVED,
+  STOCK_GROUPS,
+  STOCK_PROPS,
+  STOCK_RENDERERS,
+  STOCK_UNTAGGED,
+} from "./stock.ts";
 import { CONTENT_SLOTS } from "./define.ts";
 import { CORE_DETAILS } from "./guides/index.ts";
 import { storingShownDefault } from "./overrides/FieldDefaults.tsx";
@@ -34,6 +41,79 @@ function definitionOf(c: AustereComponent): DefinedComponent {
 
 function messageOf(err: unknown): unknown {
   return err && typeof err === "object" && "message" in err ? err.message : undefined;
+}
+
+/**
+ * A Button with no variant is secondary: the prompt writes "primary" on the one action that decides,
+ * so a page with two actions shows one primary, not two equal blue ones. A button that does not
+ * say "primary" also no longer blocks on form validation (stock validates only primary buttons).
+ */
+function quietButton<P extends { variant?: string }>(
+  Comp: ComponentRenderer<P>,
+): ComponentRenderer<P> {
+  function QuietButton(props: ComponentRenderProps<P>) {
+    return React.createElement(Comp, {
+      ...props,
+      props: { ...props.props, variant: props.props.variant ?? "secondary" },
+    });
+  }
+  return QuietButton;
+}
+
+/**
+ * Stock charts take their colours from one hue family and cap a bar at 16 px, so series look alike and
+ * bars look like needles. The stock renderer builds the chart element; props that the stock schema
+ * leaves out of its call (palette, bar cap, a scatter's axis titles) are set on that element.
+ */
+const CHART_PALETTE = ["#7fa7ff", "#74d3a0", "#f2c46d", "#e08a5b", "#c4a7ff", "#5fb4e6"];
+const CHART_STYLE: Record<string, Record<string, unknown>> = {
+  BarChart: { customPalette: CHART_PALETTE, maxBarWidth: 44, barRadius: 3 },
+  HorizontalBarChart: { customPalette: CHART_PALETTE },
+  LineChart: { customPalette: CHART_PALETTE },
+  AreaChart: { customPalette: CHART_PALETTE },
+  ScatterChart: { customPalette: CHART_PALETTE },
+};
+function styledChart<
+  P extends { xLabel?: unknown; yLabel?: unknown; series?: unknown; datasets?: unknown },
+>(Comp: ComponentRenderer<P>, style: Record<string, unknown>): ComponentRenderer<P> {
+  // The stock renderer calls no hooks: it maps props to one chart element, which gets the extras.
+  function StyledChart(props: ComponentRenderProps<P>) {
+    const el = (Comp as (p: ComponentRenderProps<P>) => React.ReactElement | null)(props);
+    if (!React.isValidElement(el)) return el;
+    const labels: Record<string, unknown> = {};
+    if (typeof props.props.xLabel === "string") labels.xAxisLabel = props.props.xLabel;
+    if (typeof props.props.yLabel === "string") labels.yAxisLabel = props.props.yLabel;
+    // One colour per series, in order: the chart spreads a longer palette over its series.
+    const count = [props.props.series, props.props.datasets].find(Array.isArray)?.length;
+    const palette = count ? CHART_PALETTE.slice(0, Math.max(count, 2)) : CHART_PALETTE;
+    const extra: Record<string, unknown> = { ...style, customPalette: palette, ...labels };
+    return React.cloneElement(el as React.ReactElement<Record<string, unknown>>, extra);
+  }
+  return StyledChart;
+}
+
+/**
+ * A Table on a phone shows each row as a block of label/value lines (see "Table on a phone" in
+ * austere.css), so no column sits off-screen. The stock table is drawn as it is; each cell then gets
+ * its column's heading in `data-label`, which the CSS prints before the cell.
+ */
+function stackedTable<P>(Comp: ComponentRenderer<P>): ComponentRenderer<P> {
+  function StackedTable(props: ComponentRenderProps<P>) {
+    const box = React.useRef<HTMLDivElement>(null);
+    React.useLayoutEffect(() => {
+      const table = box.current?.querySelector("table");
+      if (!table) return;
+      const labels = [...table.querySelectorAll("thead th")].map((th) => th.textContent ?? "");
+      for (const row of table.querySelectorAll("tbody tr"))
+        [...row.children].forEach((td, i) => td.setAttribute("data-label", labels[i] ?? ""));
+    });
+    return React.createElement(
+      "div",
+      { ref: box, className: "austere-table" },
+      React.createElement(Comp, props),
+    );
+  }
+  return StackedTable;
 }
 
 /** Wrap a renderer so its DOM carries the statement name it came from. */
@@ -207,12 +287,28 @@ export function buildLibrary(
   ]);
   // Tagged components get their statement name in the DOM; form fields stay untagged but may store their shown default.
   const overrides = Object.values(curated.components).flatMap((c) => {
-    const stock = STOCK_RENDERERS[c.name] || c.component;
+    const stock =
+      STOCK_RENDERERS[c.name] ||
+      (c.name === "Button"
+        ? quietButton(c.component)
+        : c.name === "Table"
+          ? stackedTable(c.component)
+          : c.name in CHART_STYLE
+            ? styledChart(c.component, CHART_STYLE[c.name])
+            : c.component);
     const renderer = storingShownDefault(c.name, stock);
-    if (untagged.has(c.name) && renderer === stock) return [];
+    if (untagged.has(c.name) && renderer === c.component && !(c.name in STOCK_PROPS)) return [];
     const component = untagged.has(c.name) ? renderer : tagged(renderer, c.name);
+    const own = (STOCK_PROPS as Record<string, { props: typeof c.props; description: string }>)[
+      c.name
+    ];
     return [
-      defineComponent({ name: c.name, props: c.props, description: c.description, component }),
+      defineComponent({
+        name: c.name,
+        props: own?.props ?? c.props,
+        description: own?.description ?? c.description,
+        component,
+      }),
     ];
   });
   const final = curated.extend({ components: { override: overrides } });

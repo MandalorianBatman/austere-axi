@@ -2,7 +2,7 @@ import React from "react";
 import { z } from "zod";
 import { austereComponent, DiagramFrame } from "austere-axi/pack";
 import type { RendererArgs } from "austere-axi/pack";
-import { RADAR, buildRadar } from "./_quantity-model.ts";
+import { PHONE_ROOM, buildRadar } from "./_quantity-model.ts";
 import { T } from "./_shape-view.tsx";
 import { useProblems } from "./_matrix-view.tsx";
 import guide from "./Radar.md";
@@ -32,7 +32,8 @@ function RadarView({ props, statementId }: RendererArgs<RadarProps>) {
   useProblems(model.problems, "radar", "Radar", statementId);
   return (
     <DiagramFrame className="dg-radar" name="Radar chart">
-      {() => {
+      {({ room }) => {
+        const view = room < PHONE_ROOM ? buildRadar(props, true) : model;
         if (model.axes.length < 3 || !model.series.length) {
           return {
             error: (
@@ -45,14 +46,14 @@ function RadarView({ props, statementId }: RendererArgs<RadarProps>) {
             ),
           };
         }
-        const { cx, cy } = RADAR;
-        const ordered = [...model.series].sort((a, b) => Number(a.focus) - Number(b.focus));
+        const { cx, cy } = view.geo;
+        const ordered = [...view.series].sort((a, b) => Number(a.focus) - Number(b.focus));
         const pts = (list: [number, number][]) => list.map((p) => `${p[0]},${p[1]}`).join(" ");
         return {
-          width: RADAR.w,
+          width: view.geo.w,
           caption: (
             <ul className="dg-rd-legend" aria-label="Entities">
-              {model.series.map((s) => (
+              {view.series.map((s) => (
                 <li
                   key={s.id}
                   className={`c-${s.index % 5}${s.focus ? " is-focal" : ""}`}
@@ -64,29 +65,29 @@ function RadarView({ props, statementId }: RendererArgs<RadarProps>) {
                 </li>
               ))}
               <li className="dg-rd-scale">
-                Scale 0 to {model.rings[4].text}
-                {model.unit ? ` ${model.unit}` : ""}; the outer ring is the best score.
+                Scale 0 to {view.rings[4].text}
+                {view.unit ? ` ${view.unit}` : ""}; the outer ring is the best score.
               </li>
             </ul>
           ),
           content: (
             <svg
               className="dg-rd-svg"
-              viewBox={`0 0 ${RADAR.w} ${RADAR.h}`}
+              viewBox={`0 0 ${view.geo.w} ${view.geo.h}`}
               role="img"
-              aria-label={`Radar chart of ${model.series.map((s) => s.name).join(", ")} on ${model.axes.map((a) => a.label).join(", ")}`}
+              aria-label={`Radar chart of ${view.series.map((s) => s.name).join(", ")} on ${view.axes.map((a) => a.label).join(", ")}`}
             >
-              {model.rings.map((ring, i) => (
+              {view.rings.map((ring, i) => (
                 <polygon
                   key={i}
                   className={`dg-rd-ring${i === 4 ? " is-outer" : ""}`}
                   points={pts(ring.points)}
                 />
               ))}
-              {model.axes.map((a, i) => (
+              {view.axes.map((a, i) => (
                 <line key={i} className="dg-rd-spoke" x1={cx} y1={cy} x2={a.sx} y2={a.sy} />
               ))}
-              {model.rings.map((ring, i) => (
+              {view.rings.map((ring, i) => (
                 <T
                   key={i}
                   className="dg-rd-tick"
@@ -97,7 +98,7 @@ function RadarView({ props, statementId }: RendererArgs<RadarProps>) {
                   {ring.text}
                 </T>
               ))}
-              {model.axes.map((a, i) => (
+              {view.axes.map((a, i) => (
                 <T key={i} className="dg-rd-axis" x={a.lx} y={a.ly} textAnchor={a.anchor}>
                   {a.name}
                 </T>

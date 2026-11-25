@@ -2,7 +2,7 @@ import React from "react";
 import { z } from "zod";
 import { austereComponent, DiagramFrame } from "austere-axi/pack";
 import type { RendererArgs } from "austere-axi/pack";
-import { POLAR, buildPolar } from "./_quantity-model.ts";
+import { PHONE_ROOM, buildPolar } from "./_quantity-model.ts";
 import { T } from "./_shape-view.tsx";
 import { useProblems } from "./_matrix-view.tsx";
 import guide from "./PolarChart.md";
@@ -20,7 +20,8 @@ function PolarView({ props, statementId }: RendererArgs<PolarProps>) {
   useProblems(model.problems, "polar", "PolarChart", statementId);
   return (
     <DiagramFrame className="dg-polar" name="Polar chart">
-      {() => {
+      {({ room }) => {
+        const view = room < PHONE_ROOM ? buildPolar(props, true) : model;
         if (model.categories.length < 3) {
           return {
             error: (
@@ -31,28 +32,28 @@ function PolarView({ props, statementId }: RendererArgs<PolarProps>) {
             ),
           };
         }
-        const { cx, cy, R } = POLAR;
-        const peak = model.categories.reduce(
+        const { cx, cy, R } = view.geo;
+        const peak = view.categories.reduce(
           (best, c) => ((c.value ?? -1) > (best.value ?? -1) ? c : best),
-          model.categories[0],
+          view.categories[0],
         );
         return {
-          width: POLAR.w,
+          width: view.geo.w,
           caption: (
             <p className="dg-note">
-              Ray length is the value, from 0 at the centre to {model.rings[4].text}
-              {model.unit ? ` ${model.unit}` : ""} at the outer ring. Categories run clockwise from
+              Ray length is the value, from 0 at the centre to {view.rings[4].text}
+              {view.unit ? ` ${view.unit}` : ""} at the outer ring. Categories run clockwise from
               the top.
             </p>
           ),
           content: (
             <svg
               className="dg-pl-svg"
-              viewBox={`0 0 ${POLAR.w} ${POLAR.h}`}
+              viewBox={`0 0 ${view.geo.w} ${view.geo.h}`}
               role="img"
-              aria-label={`Polar chart, clockwise from the top: ${model.categories.map((c) => `${c.label} ${c.valueText}`).join(", ")}. Largest: ${peak.label}.`}
+              aria-label={`Polar chart, clockwise from the top: ${view.categories.map((c) => `${c.label} ${c.valueText}`).join(", ")}. Largest: ${peak.label}.`}
             >
-              {model.rings.map((ring, i) => (
+              {view.rings.map((ring, i) => (
                 <circle
                   key={i}
                   className={`dg-pl-ring${i === 4 ? " is-outer" : ""}`}
@@ -61,10 +62,10 @@ function PolarView({ props, statementId }: RendererArgs<PolarProps>) {
                   r={ring.r}
                 />
               ))}
-              {model.categories.map((c, i) => (
+              {view.categories.map((c, i) => (
                 <line key={`s${i}`} className="dg-pl-spoke" x1={cx} y1={cy} x2={c.sx} y2={c.sy} />
               ))}
-              {model.rings.map((ring, i) => (
+              {view.rings.map((ring, i) => (
                 <T
                   key={`t${i}`}
                   className="dg-pl-tick"
@@ -75,7 +76,7 @@ function PolarView({ props, statementId }: RendererArgs<PolarProps>) {
                   {ring.text}
                 </T>
               ))}
-              {model.categories.map((c, i) => (
+              {view.categories.map((c, i) => (
                 <g key={`c${i}`} className={`dg-pl-cat${c.focus ? " is-focal" : ""}`}>
                   <line
                     className="dg-pl-hit"

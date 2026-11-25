@@ -121,7 +121,28 @@ const flag = (v: unknown): boolean => v === true || v === "true";
 
 // ── Quadrant ──
 
-export const QUAD = { w: 640, h: 500, x0: 60, x1: 600, y0: 56, y1: 456 } as const;
+export const QUAD = {
+  w: 640,
+  h: 500,
+  x0: 60,
+  x1: 600,
+  y0: 56,
+  y1: 456,
+  item: 200,
+  corner: 230,
+} as const;
+/** On a phone the plot fills the width, so the figure is drawn at scale 1. */
+export const QUAD_PHONE = {
+  w: 350,
+  h: 430,
+  x0: 30,
+  x1: 340,
+  y0: 44,
+  y1: 392,
+  item: 112,
+  corner: 130,
+} as const;
+export type QuadGeo = typeof QUAD | typeof QUAD_PHONE;
 
 export interface QuadItem {
   id: string;
@@ -146,6 +167,7 @@ export interface QuadModel {
   /** Top left, top right, bottom left, bottom right; "" when not named. */
   quadrants: string[];
   problems: string[];
+  geo: QuadGeo;
 }
 
 const LABEL_SIZE = 12;
@@ -161,9 +183,13 @@ const CANDIDATES: [number, number, "start" | "middle" | "end"][] = [
 ];
 
 /** Quadrant(items, xAxis, yAxis, quadrants?): items placed by x and y (0 to 100), labels placed so none overlaps. */
-export function buildQuadrant(props: Record<string, unknown> | undefined): QuadModel {
+export function buildQuadrant(
+  props: Record<string, unknown> | undefined,
+  phone = false,
+): QuadModel {
   const problems: string[] = [];
-  const { x0, x1, y0, y1 } = QUAD;
+  const geo: QuadGeo = phone ? QUAD_PHONE : QUAD;
+  const { x0, x1, y0, y1 } = geo;
   const cx = (x0 + x1) / 2;
   const cy = (y0 + y1) / 2;
   const items: QuadItem[] = [];
@@ -199,7 +225,7 @@ export function buildQuadrant(props: Record<string, unknown> | undefined): QuadM
       id: part.id,
       named: part.named,
       label,
-      shown: fit(label, 200, LABEL_SIZE),
+      shown: fit(label, geo.item, LABEL_SIZE),
       x,
       y,
       px: x0 + (x / 100) * (x1 - x0),
@@ -211,7 +237,7 @@ export function buildQuadrant(props: Record<string, unknown> | undefined): QuadM
     });
   }
   const names = Array.isArray(props?.quadrants) ? props.quadrants.map((q) => clean(q)) : [];
-  const quadrants = [0, 1, 2, 3].map((i) => fit(names[i] ?? "", 230, 10));
+  const quadrants = [0, 1, 2, 3].map((i) => fit(names[i] ?? "", geo.corner, 10));
   // Space the labels must keep clear: the dots, the quadrant names, the axis lines.
   const taken: Rect[] = items.map((i) => ({
     x0: i.px - 6,
@@ -265,6 +291,7 @@ export function buildQuadrant(props: Record<string, unknown> | undefined): QuadM
     yAxis: fit(clean(props?.yAxis), 200, 10),
     quadrants,
     problems,
+    geo,
   };
 }
 

@@ -71,7 +71,7 @@
   "LoopStep": {"props":["name","detail","writes","focus"],"required":["name"]},
   "MarkDownRenderer": {"props":["textMarkdown","variant"],"required":["textMarkdown"]},
   "Message": {"props":["from","to","label","kind","emphasis"],"required":["from","to"]},
-  "MetricIndicatorInline": {"props":["value","subtext","trend"],"required":["value"]},
+  "MetricIndicatorInline": {"props":["value","subtext","trend","better"],"required":["value"]},
   "Nested": {"props":["levels"],"required":["levels"]},
   "NestedLevel": {"props":["label","note","tone"],"required":["label"]},
   "Node": {"props":["label","kind","detail","tag","tone","row"],"required":["label"]},

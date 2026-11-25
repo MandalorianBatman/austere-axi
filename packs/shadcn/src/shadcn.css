@@ -247,7 +247,8 @@
   height: 11px;
   margin-top: 4px;
   border-radius: 50%;
-  background: var(--austere-queued);
+  /* done is neutral: an event that happened is not a success (a config push, a wrong guess). */
+  background: var(--austere-muted);
 }
 .sh-timeline-item.is-current .sh-timeline-dot {
   background: var(--austere-accent);
