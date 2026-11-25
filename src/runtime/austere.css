@@ -64,7 +64,7 @@ html.austere body > noscript {
 
 /* A page with a lanes diagram too wide for the column gets room for it on a
    big screen. */
-.austere-page:has(.austere-arch-box.is-wide) {
+.austere-page:has(.austere-diagram-box.is-wide) {
   max-width: 1360px;
 }
 
@@ -449,6 +449,172 @@ span.austere-filetree-toggle {
   }
 }
 
+/* ── DiagramFrame (src/runtime/components/_diagram-frame.tsx) ──
+   Wide diagrams scroll inside their own box instead of shrinking text past
+   legibility or pushing the page sideways. */
+.austere-diagram-scroll {
+  --arch-fade-start: #000;
+  --arch-fade-end: #000;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--austere-muted) transparent;
+  padding: 0 0 6px;
+}
+.austere-diagram-scroll.is-cut-start {
+  --arch-fade-start: transparent;
+}
+.austere-diagram-scroll.is-cut-end {
+  --arch-fade-end: transparent;
+}
+.austere-diagram-scroll.is-cut-start,
+.austere-diagram-scroll.is-cut-end {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    var(--arch-fade-start),
+    #000 24px,
+    #000 calc(100% - 24px),
+    var(--arch-fade-end)
+  );
+  mask-image: linear-gradient(
+    to right,
+    var(--arch-fade-start),
+    #000 24px,
+    #000 calc(100% - 24px),
+    var(--arch-fade-end)
+  );
+}
+.austere-diagram-scroll:focus-visible {
+  outline: 2px solid var(--austere-accent);
+  /* Inside the border box: the edge mask would clip a ring drawn outside it. */
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.austere-diagram-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+.austere-diagram-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--austere-muted);
+  font: 500 13px/1 var(--openui-font-body);
+  cursor: pointer;
+}
+.austere-diagram-expand:hover {
+  color: var(--austere-text);
+  background: var(--austere-accent-bg);
+}
+.austere-diagram-expand:focus-visible {
+  outline: 2px solid var(--austere-accent);
+  outline-offset: -2px;
+}
+/* Expand: a modal over the whole artifact frame (no Fullscreen API in the sandboxed iframe). */
+.austere-diagram-dialog {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  box-sizing: border-box;
+  border: 0;
+  background: oklch(0.145 0 0);
+  color: var(--austere-text);
+  overflow: hidden;
+}
+.austere-diagram-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.austere-diagram-dialog::backdrop {
+  background: oklch(0.145 0 0);
+}
+.austere-diagram-dialog-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 0 12px;
+  border-bottom: 1px solid var(--austere-line);
+}
+.austere-diagram-dialog-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 14px/1.2 var(--openui-font-body);
+}
+.austere-diagram.is-full {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.austere-diagram.is-full .austere-diagram-cue,
+.austere-diagram.is-full .austere-arch-legend {
+  padding: 0 12px 8px;
+}
+.austere-diagram.is-full .austere-diagram-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+}
+.austere-diagram-cue {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--austere-muted);
+  text-align: center;
+}
+@media print {
+  .austere-diagram-scroll,
+  .austere-diagram-scroll.is-cut-start,
+  .austere-diagram-scroll.is-cut-end {
+    overflow: visible;
+    padding: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .austere-diagram-canvas {
+    min-width: 0 !important;
+  }
+  .austere-diagram-cue,
+  .austere-diagram-tools {
+    display: none;
+  }
+}
+/* Marks use page coordinates, which mean nothing inside the dialog. */
+.austere-diagram-dialog .austere-mark,
+.austere-diagram-dialog .austere-focus {
+  display: none;
+}
+.austere-diagram {
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+}
+.austere-diagram-canvas {
+  margin: 0 auto;
+}
+.austere-diagram-box {
+  width: 100%;
+  min-width: 0;
+}
+
 /* ── Architecture ── */
 .austere-arch {
   --austere-k-frontend: #5fb4e6;
@@ -459,9 +625,6 @@ span.austere-filetree-toggle {
   --austere-k-cloud: #8fb0ff;
   --austere-k-security: #f08a8a;
   --austere-k-external: #85858f;
-  margin: 0;
-  width: 100%;
-  min-width: 0;
 }
 .austere-arch .k-frontend {
   --k: var(--austere-k-frontend);
@@ -483,156 +646,6 @@ span.austere-filetree-toggle {
 }
 .austere-arch .k-external {
   --k: var(--austere-k-external);
-}
-/* Wide diagrams scroll inside their own box instead of shrinking text past
-   legibility or pushing the page sideways. */
-.austere-arch-scroll {
-  --arch-fade-start: #000;
-  --arch-fade-end: #000;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--austere-muted) transparent;
-  padding: 0 0 6px;
-}
-.austere-arch-scroll.is-cut-start {
-  --arch-fade-start: transparent;
-}
-.austere-arch-scroll.is-cut-end {
-  --arch-fade-end: transparent;
-}
-.austere-arch-scroll.is-cut-start,
-.austere-arch-scroll.is-cut-end {
-  -webkit-mask-image: linear-gradient(
-    to right,
-    var(--arch-fade-start),
-    #000 24px,
-    #000 calc(100% - 24px),
-    var(--arch-fade-end)
-  );
-  mask-image: linear-gradient(
-    to right,
-    var(--arch-fade-start),
-    #000 24px,
-    #000 calc(100% - 24px),
-    var(--arch-fade-end)
-  );
-}
-.austere-arch-scroll:focus-visible {
-  outline: 2px solid var(--austere-accent);
-  /* Inside the border box: the edge mask would clip a ring drawn outside it. */
-  outline-offset: -2px;
-  border-radius: 6px;
-}
-.austere-arch-tools {
-  display: flex;
-  justify-content: flex-end;
-}
-.austere-arch-expand {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--austere-muted);
-  font: 500 13px/1 var(--openui-font-body);
-  cursor: pointer;
-}
-.austere-arch-expand:hover {
-  color: var(--austere-text);
-  background: var(--austere-accent-bg);
-}
-.austere-arch-expand:focus-visible {
-  outline: 2px solid var(--austere-accent);
-  outline-offset: -2px;
-}
-/* Expand: a modal over the whole artifact frame (no Fullscreen API in the sandboxed iframe). */
-.austere-arch-dialog {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
-  margin: 0;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
-    env(safe-area-inset-left);
-  box-sizing: border-box;
-  border: 0;
-  background: oklch(0.145 0 0);
-  color: var(--austere-text);
-  overflow: hidden;
-}
-.austere-arch-dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-.austere-arch-dialog::backdrop {
-  background: oklch(0.145 0 0);
-}
-.austere-arch-dialog-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 4px 0 12px;
-  border-bottom: 1px solid var(--austere-line);
-}
-.austere-arch-dialog-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 600 14px/1.2 var(--openui-font-body);
-}
-.austere-arch.is-full {
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-}
-.austere-arch.is-full .austere-arch-cue,
-.austere-arch.is-full .austere-arch-legend {
-  padding: 0 12px 8px;
-}
-.austere-arch.is-full .austere-arch-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 8px;
-}
-.austere-arch-cue {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--austere-muted);
-  text-align: center;
-}
-@media print {
-  .austere-arch-scroll {
-    overflow: visible;
-    padding: 0;
-    -webkit-mask-image: none;
-    mask-image: none;
-  }
-  .austere-arch-svg {
-    min-width: 0 !important;
-  }
-  .austere-arch-cue,
-  .austere-arch-tools {
-    display: none;
-  }
-}
-/* Marks use page coordinates, which mean nothing inside the dialog. */
-.austere-arch-dialog .austere-mark,
-.austere-arch-dialog .austere-focus {
-  display: none;
 }
 .austere-arch-svg {
   display: block;
@@ -695,10 +708,6 @@ span.austere-filetree-toggle {
   .austere-arch-edge.is-orth .austere-arch-edge-hit {
     stroke-width: 12;
   }
-}
-.austere-arch-box {
-  width: 100%;
-  min-width: 0;
 }
 .austere-arch-edge.s-dashed .austere-arch-edge-line {
   stroke-dasharray: 5 4;

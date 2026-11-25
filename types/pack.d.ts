@@ -123,3 +123,38 @@ export interface RuntimeError {
 }
 
 export declare function reportRuntimeError(err: RuntimeError): void;
+
+/** What the content function of a DiagramFrame returns for one view of the diagram. */
+export interface DiagramContent {
+  /** The drawing (React node), usually one <svg> that fills its width. */
+  content: unknown;
+  /** Natural width in px (the diagram at scale 1.0). Lets the frame shrink it to the legible scale, then scroll. Leave out to size the content yourself. */
+  width?: number;
+  /** Rendered under the scroll box (a legend); not scrolled. */
+  caption?: unknown;
+  /** Shown instead of the drawing, with no Expand button, when nothing can be drawn. */
+  error?: unknown;
+}
+
+export interface DiagramFrameProps {
+  /**
+   * Called with the room the page gives the diagram (px) and whether this is the
+   * Expand dialog (`full`: draw at natural size). Return null to draw nothing.
+   */
+  children: (view: { room: number; full: boolean }) => DiagramContent | null;
+  /** Name of the scroll region and the dialog when the diagram is not in a titled Card. Default "Diagram". */
+  name?: string;
+  /** Extra class on the <figure>. */
+  className?: string;
+  /** Ask the page for the wide column (see wantsWidePage in Architecture). */
+  wide?: boolean;
+  /** Smallest scale (0 to 1) the diagram shrinks to before it scrolls. Default 0.85. */
+  legibleScale?: number;
+}
+
+/**
+ * The frame every diagram sits in: sideways scroll with edge fades and a text cue,
+ * a focusable named region, an Expand button (modal dialog, Esc returns focus),
+ * and print rules. Use it as the renderer's root.
+ */
+export declare function DiagramFrame(props: DiagramFrameProps): unknown;

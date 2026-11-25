@@ -4,6 +4,14 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Added
+
+- **`DiagramFrame` for packs.** The sideways scroll cue and edge fades, the focusable named region, the Expand dialog and the print rules of `Architecture` now live in one component, exported from `austere-axi/pack` (additive; `PACK_API` stays 1). Diagrams in packs get the same behaviour without a copy of that code. See `docs/writing-a-pack.md`. (RLM-468)
+
+### Fixed
+
+- Printing an architecture diagram that was scrolled sideways no longer keeps the edge fade.
+
 ## 0.22.0 (2026-11-24)
 
 ### Added

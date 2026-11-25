@@ -6,6 +6,7 @@
 import type { AustereComponent, PackRegistration, RegisteredPack } from "../../types/pack.d.ts";
 import { austereComponent } from "./define.ts";
 import { assetUrl, reportRuntimeError } from "./env.ts";
+import { DiagramFrame } from "./components/_diagram-frame.ts";
 
 /** Version of this API. A pack built for another major version is refused. */
 export const PACK_API = 1;
@@ -57,4 +58,4 @@ export function onPackRegistered(fn: (pack: RegisteredPack) => void): () => bool
   return () => listeners.delete(fn);
 }
 
-export { austereComponent, assetUrl, reportRuntimeError };
+export { austereComponent, assetUrl, reportRuntimeError, DiagramFrame };
