@@ -4,6 +4,21 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Changed
+
+- **`MetricIndicatorInline(value, subtext?, trend?, better?)`**: `better` (`"up"` default, or `"down"`) says which direction is good, so a cost that fell 24% is green and tickets up 340% are red. The figure in an `OverviewCardItem` is now larger than its label. (RLM-479)
+- **A `Button` with no variant is secondary**, so a form with two actions shows one primary button. Write `"primary"` on the action that decides, as the prompt's examples do. A button that is not primary no longer blocks on form validation. (RLM-479)
+- **Tables on a phone (480 px and under)** show each row as a block of label and value lines, so no column sits off-screen. (RLM-479)
+- **`BarChart`, `LineChart`, `AreaChart`, `ScatterChart` and `HorizontalBarChart`** use one distinct hue for each series (blue, green, amber, orange, violet), bars are up to 44 px wide (16 before), and a scatter prints its axis titles. (RLM-479)
+- **`Radar`, `PolarChart` and `Quadrant` fit the width of a phone** at full size instead of scrolling sideways; labels are cut shorter there. (RLM-479)
+- **Expand** is a slim row (36 px; 44 px on a phone). **`RadioGroup`**: the unselected ring shows on the card and a description sits under its label (also for checkboxes and switches). **`Timeline`**: `done` is neutral grey, not green. **`Architecture`**: a tag chip takes its node's tone; tags and the `Radar`, `PolarChart` and `Waterfall` ticks are 11 px. (RLM-479)
+- `check` warns (`state-dot`) when a `State` of kind `initial` or `final` has a detail, and (`node-tag`) when a `Node` tag is a style word such as `"emphasis"`. (RLM-479)
+- `spec` is ~5,877 tokens against the 5,950 budget (`better` and its description).
+
+### Fixed
+
+- A double-quoted string that spans lines kept `\"` and `\n` literally (a multi-line `CodeBlock` showed backslashes), because the parser reads it with `JSON.parse`, which refuses a raw newline. Programs are normalised before parsing (`src/shared/program-strings.ts`: `check`, `show`, the runtime and the playground). (RLM-479)
+
 ## 0.26.0 (2026-11-25)
 
 ### Added

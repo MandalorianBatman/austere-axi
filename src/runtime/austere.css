@@ -491,17 +491,19 @@ span.austere-filetree-toggle {
   outline-offset: -2px;
   border-radius: 6px;
 }
+/* Expand: one slim row above the figure (36 px; 44 px on a phone, where it is a touch target). */
 .austere-diagram-tools {
   display: flex;
   justify-content: flex-end;
+  margin-bottom: -2px;
 }
 .austere-diagram-expand {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 12px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 10px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -683,8 +685,21 @@ span.austere-filetree-toggle {
 }
 .austere-arch-node-tag text {
   fill: var(--k);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
+}
+/* The chip takes the tone of its node, so a "removed" chip on a danger node is red, not the kind's colour. */
+.austere-arch-node.t-info .austere-arch-node-tag {
+  --k: var(--austere-t-info);
+}
+.austere-arch-node.t-success .austere-arch-node-tag {
+  --k: var(--austere-t-success);
+}
+.austere-arch-node.t-warning .austere-arch-node-tag {
+  --k: var(--austere-t-warning);
+}
+.austere-arch-node.t-danger .austere-arch-node-tag {
+  --k: var(--austere-t-danger);
 }
 .austere-arch-edge-line {
   fill: none;
@@ -1294,4 +1309,109 @@ html.austere-annotating .austere-page :where(a, button, input, select, textarea,
 }
 .austere-toast.out {
   opacity: 0;
+}
+
+/* ── Screen-reader-only text ── */
+.austere-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── KPI card: label small and muted, figure large ── */
+.openui-overview-card__slot--top:has(> .austere-metric-stack) {
+  flex: 1;
+  min-width: 0;
+}
+.austere-metric-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--openui-space-xs);
+  width: 100%;
+}
+.austere-metric-stack > .openui-overview-card__slot--bottom {
+  order: 2;
+}
+.austere-metric-stack > :not(.openui-overview-card__slot--bottom) {
+  order: 1;
+  color: var(--openui-text-neutral-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+.austere-metric-stack .openui-metric-indicator__main-value {
+  font-size: 1.625rem;
+  line-height: 1.15;
+}
+
+/* ── Table on a phone ── */
+@media (max-width: 480px) {
+  .austere-table .openui-table-container {
+    overflow: visible;
+  }
+  .austere-table table,
+  .austere-table tbody {
+    display: block;
+    width: 100%;
+  }
+  .austere-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .austere-table .openui-table-row {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--openui-border-default);
+  }
+  .austere-table .openui-table-cell {
+    display: grid;
+    grid-template-columns: minmax(5.5em, 34%) 1fr;
+    gap: 10px;
+    min-width: 0;
+    padding: 4px 12px;
+    border: 0;
+    text-align: left;
+  }
+  .austere-table .openui-table-cell::before {
+    content: attr(data-label);
+    color: var(--openui-text-neutral-secondary);
+    font-size: 0.75rem;
+    line-height: 1.6;
+  }
+  /* The first cell names the row. */
+  .austere-table .openui-table-cell:first-child {
+    display: block;
+    font-weight: 600;
+  }
+  .austere-table .openui-table-cell:first-child::before {
+    content: none;
+  }
+}
+
+/* ── RadioGroup: a ring that shows on the card, a description that sits under its label ── */
+.austere-page .openui-radio-item-root[data-state="unchecked"] .openui-radio-item-svg-border {
+  stroke: var(--austere-muted);
+}
+.austere-page .openui-radio-item-container {
+  padding-block: 6px;
+}
+.austere-page .openui-radio-item-description,
+.austere-page .openui-checkbox-item-description,
+.austere-page .openui-switch-item-description {
+  margin: 2px 0 0;
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .austere-diagram-expand {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

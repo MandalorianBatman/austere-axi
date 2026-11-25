@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { readArtifact, replaceProgram, rewriteRuntime } from "../src/cli/artifact.ts";
-import { checkHtml, statementLines } from "../src/cli/check.ts";
+import { checkHtml, parseArtifact, statementLines } from "../src/cli/check.ts";
 
 process.env.OPENUI_TELEMETRY_DISABLED = "1";
 const page = (program: string) => `<!doctype html><html><head><title>T &amp; t</title>
@@ -224,4 +224,36 @@ test("an exported copy is flagged: review the source page instead", () => {
   const codes = checkHtml(html).warnings.map((w) => w.code);
   assert.ok(codes.includes("exported-copy"), codes.join(", "));
   assert.ok(!codes.includes("no-runtime-tag"));
+});
+
+test('a multi-line double-quoted string unescapes \\" and \\n like a one-line one', () => {
+  const html = page('root = Stack([a])\na = CodeBlock("{\n  \\"id\\": \\"x\\"\\n}", "json")');
+  const root = parseArtifact(html)?.root as {
+    props: { children: { props: { language: string } }[] };
+  };
+  assert.equal(root.props.children[0].props.language, '{\n  "id": "x"\n}');
+  const comment = parseArtifact(
+    page('root = Stack([a])\n// it\'s a "quote\na = TextContent("ok")'),
+  );
+  assert.equal(
+    checkHtml(page('root = Stack([a])\n// it\'s a "quote\na = TextContent("ok")')).ok,
+    true,
+  );
+  assert.ok(comment);
+});
+
+test("check warns on a dot State with a detail and on a style word used as a Node tag", () => {
+  const r = checkHtml(
+    page(
+      'root = Stack([sm, arch])\nsm = StateMachine([f, i], [t])\nf = State("Follower", "initial", "waits for a leader")\ni = State("Idle")\nt = Transition(f, i, "go")\narch = Architecture([n], [], [])\nn = Node("Edge", "cloud", "ingress", "emphasis")',
+    ),
+  );
+  assert.ok(r.warnings.some((w) => w.code === "state-dot" && w.statement === "f"));
+  assert.ok(r.warnings.some((w) => w.code === "node-tag" && w.statement === "n"));
+  const ok = checkHtml(
+    page(
+      'root = Stack([arch])\narch = Architecture([n], [], [])\nn = Node("Edge", "cloud", "ingress", "new", "strong")',
+    ),
+  );
+  assert.ok(!ok.warnings.some((w) => w.code === "node-tag"));
 });

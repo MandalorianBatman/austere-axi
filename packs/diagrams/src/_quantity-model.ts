@@ -59,7 +59,20 @@ const focusKey = (v: unknown): string => clean(v).toLowerCase();
 
 // ── Radar ──
 
-export const RADAR = { w: 640, h: 500, cx: 320, cy: 244, R: 160 } as const;
+export const RADAR = { w: 640, h: 500, cx: 320, cy: 244, R: 160, label: 130, mid: 200 } as const;
+/** On a phone (the frame's room is under 470 px) the labels sit closer, so the chart fits its width at scale 1. */
+export const RADAR_PHONE = {
+  w: 350,
+  h: 300,
+  cx: 175,
+  cy: 144,
+  R: 84,
+  label: 72,
+  mid: 150,
+} as const;
+/** The room (px) under which a chart uses its phone geometry. */
+export const PHONE_ROOM = 470;
+export type RadarGeo = typeof RADAR | typeof RADAR_PHONE;
 
 export interface RadarSeriesModel {
   id: string;
@@ -91,10 +104,12 @@ export interface RadarModel {
   unit: string;
   rings: { points: [number, number][]; text: string }[];
   problems: string[];
+  geo: RadarGeo;
 }
 
 /** Radar(labels, series, max?, unit?): several entities scored on the same criteria; each RadarSeries is one polygon. */
-export function buildRadar(props: Record<string, unknown> | undefined): RadarModel {
+export function buildRadar(props: Record<string, unknown> | undefined, phone = false): RadarModel {
+  const geo: RadarGeo = phone ? RADAR_PHONE : RADAR;
   const problems: string[] = [];
   const unit = clean(props?.unit);
   let names = (Array.isArray(props?.labels) ? props.labels : []).map(
@@ -139,7 +154,7 @@ export function buildRadar(props: Record<string, unknown> | undefined): RadarMod
     max = 0;
   }
   if (!(max > 0)) max = niceMax(dataMax);
-  const { cx, cy, R } = RADAR;
+  const { cx, cy, R } = geo;
   const at = (i: number, r: number): [number, number] => {
     const a = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(n, 1);
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
@@ -152,7 +167,7 @@ export function buildRadar(props: Record<string, unknown> | undefined): RadarMod
     const [sx, sy] = at(i, R);
     return {
       label,
-      name: fit(label, anchor === "middle" ? 200 : 130, 12),
+      name: fit(label, anchor === "middle" ? geo.mid : geo.label, 12),
       sx,
       sy,
       lx: cx + (R + 14) * cos,
@@ -199,12 +214,23 @@ export function buildRadar(props: Record<string, unknown> | undefined): RadarMod
     unit,
     rings: RINGS.map((f) => ({ points: names.map((_, i) => at(i, R * f)), text: fmtNum(max * f) })),
     problems,
+    geo,
   };
 }
 
 // ── PolarChart ──
 
-export const POLAR = { w: 640, h: 540, cx: 320, cy: 270, R: 170 } as const;
+export const POLAR = { w: 640, h: 540, cx: 320, cy: 270, R: 170, label: 118, mid: 190 } as const;
+export const POLAR_PHONE = {
+  w: 350,
+  h: 380,
+  cx: 175,
+  cy: 190,
+  R: 90,
+  label: 70,
+  mid: 150,
+} as const;
+export type PolarGeo = typeof POLAR | typeof POLAR_PHONE;
 const RINGS = [0.2, 0.4, 0.6, 0.8, 1];
 
 export interface PolarCategory {
@@ -233,10 +259,12 @@ export interface PolarModel {
   unit: string;
   rings: { r: number; text: string }[];
   problems: string[];
+  geo: PolarGeo;
 }
 
 /** PolarChart(labels, values, unit?, focus?, max?): one value for each category, as the length of a ray from the centre. */
-export function buildPolar(props: Record<string, unknown> | undefined): PolarModel {
+export function buildPolar(props: Record<string, unknown> | undefined, phone = false): PolarModel {
+  const geo: PolarGeo = phone ? POLAR_PHONE : POLAR;
   const problems: string[] = [];
   const unit = clean(props?.unit);
   let list = pairs(props?.labels, props?.values, "PolarChart", problems);
@@ -272,7 +300,7 @@ export function buildPolar(props: Record<string, unknown> | undefined): PolarMod
   }
   if (!(max > 0)) max = niceMax(dataMax);
   const n = list.length;
-  const { cx, cy, R } = POLAR;
+  const { cx, cy, R } = geo;
   const focusAt =
     props?.focus == null ? -1 : list.findIndex((e) => focusKey(e.label) === focusKey(props.focus));
   if (props?.focus != null && clean(props.focus) && focusAt < 0) {
@@ -298,7 +326,7 @@ export function buildPolar(props: Record<string, unknown> | undefined): PolarMod
       lx: cx + edge * cos,
       ly: cy + edge * sin + (sin > 0.5 ? 10 : sin < -0.5 ? -14 : -3),
       anchor,
-      name: fit(e.label, anchor === "middle" ? 190 : 118, 12),
+      name: fit(e.label, anchor === "middle" ? geo.mid : geo.label, 12),
       valueText: e.value === null ? "–" : withUnit(e.value, unit),
     };
   });
@@ -308,6 +336,7 @@ export function buildPolar(props: Record<string, unknown> | undefined): PolarMod
     unit,
     rings: RINGS.map((f) => ({ r: R * f, text: fmtNum(max * f) })),
     problems,
+    geo,
   };
 }
 

@@ -7,6 +7,7 @@ import { hasInlineRuntime, readArtifact } from "./artifact.ts";
 import { assetPath } from "./paths.ts";
 import { coreCatalog, mergePackSchemas, packDefining, pagePacks } from "./packs.ts";
 import type { InstalledPack, PagePacks, SpecSchema } from "./packs.ts";
+import { normalizeProgram } from "../shared/program-strings.ts";
 import { splitStatements } from "../shared/statements.ts";
 import { checkProgram } from "../shared/check-program.ts";
 import type { CheckEntry } from "../shared/check-program.ts";
@@ -77,7 +78,7 @@ export function parseArtifact(html: string): { root: unknown; spec: SpecSchema }
   if (art.program == null) return null;
   try {
     const { parser, spec } = packParser(pagePacks(html).installed);
-    return { root: parser.parse(art.program).root, spec };
+    return { root: parser.parse(normalizeProgram(art.program)).root, spec };
   } catch {
     return null;
   }

@@ -144,7 +144,7 @@ export interface ArchitectureNote {
 export const SIZES = {
   label: 13,
   detail: 11,
-  tag: 10,
+  tag: 11,
   edge: 11,
   group: 11,
   nodeMinW: 128,

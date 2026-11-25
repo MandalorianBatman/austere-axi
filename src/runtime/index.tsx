@@ -29,6 +29,7 @@ import type { WantedPack } from "./packs.ts";
 import type { PackRef } from "../shared/packs-meta.ts";
 import { changedStatementIds, referencesTo, statementMap } from "../shared/statements.ts";
 import type { StatementMap } from "../shared/statements.ts";
+import { normalizeProgram } from "../shared/program-strings.ts";
 
 /** A button press queued for the agent. */
 export interface ActionItem {
@@ -369,7 +370,7 @@ function App({ programRef, initialLibrary, bridge, annotator, initialState }: Ap
     <ThemeProvider mode="dark">
       <main className="austere-page">
         <Renderer
-          response={program}
+          response={normalizeProgram(program)}
           library={view.library}
           isStreaming={false}
           onAction={onAction}

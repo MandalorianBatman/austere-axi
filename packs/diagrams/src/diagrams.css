@@ -99,7 +99,7 @@
 .dg-seq-branch-op {
   fill: var(--austere-muted);
   font-family: var(--openui-font-code);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.1em;
 }
 .dg-seq-branch-guard {
@@ -1545,7 +1545,7 @@
 }
 .dg-rd-tick {
   fill: var(--austere-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .dg-rd-axis {
   fill: #ececef;
@@ -1647,7 +1647,7 @@
 }
 .dg-pl-tick {
   fill: var(--austere-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .dg-pl-hit {
   stroke: transparent;
@@ -1693,7 +1693,7 @@
 }
 .dg-wf-tick {
   fill: var(--austere-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .dg-wf-carry {
   stroke: #9a9aa4;
