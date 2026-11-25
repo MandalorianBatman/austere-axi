@@ -380,6 +380,64 @@ code.target {
 .pages-table {
   --cols: minmax(200px, 2.4fr) minmax(160px, 1.5fr) minmax(150px, 1.2fr) 110px 36px;
 }
+/* austere-cloud, below 640px: every control this mode adds is at least 44px high. */
+@media (max-width: 639px) {
+  .cloud-table .t-people button,
+  .account-out {
+    min-height: 44px;
+  }
+  .shared-table .row-title,
+  .cloud-empty a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+/* austere-cloud (RLM-458): Page · People · Notes · Expires, and Page · Owner · Expires. */
+.pages-table.cloud-table {
+  --cols: minmax(200px, 2.4fr) 110px minmax(110px, 0.8fr) minmax(190px, 1.4fr);
+}
+.pages-table.shared-table {
+  --cols: minmax(200px, 2.4fr) minmax(160px, 1.5fr) minmax(190px, 1.4fr);
+}
+.when .soon {
+  color: var(--amber);
+  font-weight: 600;
+}
+.t-people {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cloud-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--spacing) * 3);
+}
+.cloud-empty h2 {
+  margin: 0;
+  color: var(--text);
+}
+.cloud-empty p {
+  margin: 0;
+}
+.cloud-empty .cmd {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-2);
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.cloud-empty .cmd code {
+  user-select: all;
+}
+.cloud-empty .cmd [aria-hidden] {
+  color: var(--faint);
+  user-select: none;
+}
 .pages-table.archived {
   --cols: minmax(180px, 2.4fr) minmax(140px, 1.5fr) minmax(130px, 1.2fr) 110px 96px;
 }
@@ -558,6 +616,7 @@ code.target {
     flex: 1 1 100%;
   }
   .t-copies,
+  .t-people,
   .t-notes {
     flex: 1 1 100%;
     padding-left: calc(var(--spacing) * 4);

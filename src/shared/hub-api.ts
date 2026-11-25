@@ -82,6 +82,8 @@ export interface ShellPage {
   /** A run is queued, waiting or running on a copy with such notes. With attach on and none, the owner's next note starts one. */
   run_active: boolean;
   group: Group;
+  /** Cloud only (RLM-458): what austere-cloud knows of a page. Absent from the local hub's answers. */
+  cloud?: CloudPageFacts;
 }
 
 /** How many pages each view of `pages` shows, for one project. */
@@ -335,4 +337,79 @@ export interface CloudSettings {
 export interface ProjectActionResult {
   ok: true;
   message: string;
+}
+
+// ── Cloud mode (RLM-458): the same shell on austere-cloud's signed-in `/`, over a `/hub/api` the Worker answers. ──
+// The Worker fills a `ShellPage` with what D1 holds and zeros for the rest (no copies, no unanswered notes), so the
+// sidebar and `ProjectsResponse` need no second shape. `GET /hub/api/pages`, `projects` and `search` answer as above;
+// these are the routes only the cloud has. Every route answers the signed-in account, behind the session cookie.
+
+/** The `ProjectSummary.id` of the group for pages published before `project` was sent (or from a CLI that does not send it). */
+export type CloudUngrouped = "~ungrouped";
+
+/** The signed-in account, as the Worker writes it into the page's boot object (`HubBoot.account`). */
+export interface CloudAccount {
+  email: string;
+  /** Empty when the account has no name. */
+  name: string;
+}
+
+/**
+ * What the server writes into the hub page as `window.__AUSTERE_HUB__`. `mode: "cloud"` switches the shell to
+ * the cloud's views (Pages, Shared) and needs `account`.
+ */
+export interface HubBoot {
+  version: string;
+  home: string;
+  sep: string;
+  mode?: "cloud";
+  account?: CloudAccount;
+}
+
+/** What `ShellPage.cloud` carries. */
+export interface CloudPageFacts {
+  /** Epoch ms. */
+  expires_at: number;
+  /** Every note ever added (`pages.notes`), not the unanswered ones. */
+  notes: number;
+  /** Accounts granted besides the owner. */
+  people: number;
+}
+
+/** A page another account granted this one. */
+export interface SharedPage {
+  id: string;
+  title: string | null;
+  /** The owner's name, else email; null when the owner has no account row. */
+  owner: string | null;
+  expires_at: number;
+}
+
+/** GET /hub/api/shared */
+export interface SharedResponse {
+  pages: SharedPage[];
+}
+
+/** One grant: an email that may open the page. */
+export interface PageGrant {
+  email: string;
+  /** Epoch ms. */
+  added_at: number;
+}
+
+/** GET /hub/api/pages/<id>/grants: who may open the page besides its owner. */
+export interface GrantsResponse {
+  owner: string;
+  grants: PageGrant[];
+  /** The most grants a page may hold. */
+  limit: number;
+}
+
+/**
+ * POST /hub/api/pages/<id>/grants {email} and /grants/remove {email}: the grants after the change. `granted` and
+ * `exists` answer a grant, `revoked` a removal (also of an email that had no grant). A refusal is a 400 `{error}`
+ * (not an email, the page is at `limit`); a page that is gone or not the account's is a 404 `{error}`.
+ */
+export interface GrantResult extends GrantsResponse {
+  status: "granted" | "exists" | "revoked";
 }

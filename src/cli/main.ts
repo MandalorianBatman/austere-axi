@@ -22,7 +22,7 @@ import {
   shutdownServer,
   takeServerNote,
 } from "./client.ts";
-import { Hub, hubDbFile, openHubDirect, registerWithHub, unanswered } from "./hub.ts";
+import { Hub, hubDbFile, openHubDirect, placeWithHub, registerWithHub, unanswered } from "./hub.ts";
 import type { ArchiveCopy, ArchivePlan, HubCounts, HubNoteRow, HubPage } from "./hub.ts";
 import { planCopy, parseSource, recordOrigins, originsOf } from "./copy.ts";
 import type { CopyPlan } from "./copy.ts";
@@ -4063,6 +4063,7 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
           );
       }
       r = await cloud.publish(abs, {
+        ...(await placeWithHub(abs)),
         auto: !!flags.auto,
         fresh: !!flags.new,
         unlisted: !!flags.unlisted,

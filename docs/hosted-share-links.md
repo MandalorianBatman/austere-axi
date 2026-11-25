@@ -236,7 +236,7 @@ import type { Mutation, Row } from "austere-axi/sync";
 
 ### Versioning and compatibility
 
-- `v` is the integer protocol version (`SYNC_VERSION`, now 1). Every frame, mutation and row carries it.
+- `v` is the integer protocol version (`SYNC_VERSION`, now 2: v2 added the optional `project` and `relPath` to `publish`). Every frame, mutation and row carries it.
 - `v` below `MIN_SYNC_VERSION` is `upgrade_required`. A higher `v` is read as far as this version knows it.
 - Unknown fields are kept on the parsed value and ignored. A row of an unknown `type` is kept (`skipped` on the parsed `changes` frame), not applied, and its `seq` still counts toward the cursor. A server frame of an unknown `t` is skipped (parses to `null`).
 - The server rejects an unknown mutation or client frame type with `invalid`. The service always deploys before a CLI that sends something new.
@@ -292,7 +292,7 @@ A reviewer session, start to first note:
 
 | Mutation | Sent by | `args` | Effect |
 |---|---|---|---|
-| `publish` | owner | `{ title, cliVersion, html, packs: [{ sha256, name, version }], auto, unlisted, presence }` | Points the page at a new version. `publishedAt` = now, `expiresAt` = now + 30 days. Updates the D1 `pages` index. Counts toward the publish limits. `page` row. |
+| `publish` | owner | `{ title, cliVersion, html, packs: [{ sha256, name, version }], auto, unlisted, presence, project?, relPath? }` | Points the page at a new version. `publishedAt` = now, `expiresAt` = now + 30 days. Updates the D1 `pages` index. Counts toward the publish limits. `page` row. `project` is the local hub's project name for the file and `relPath` its path in that project (sync v2, both optional): The cloud hub groups a page under `project`, and lists one without it as Ungrouped. |
 | `addNote` | reviewer | `{ items, name? }` | New note. `author` = the invite name; on an unlisted page `name`, truncated to 40 characters (`Reviewer` when empty). `state` = `released` on an `auto` page, else `held`. `note` row. |
 | `releaseNote` | owner | `{ note }` | `held` → `released`. Already released or discarded: no change. `note` row. |
 | `discardNote` | owner | `{ note }` | `held` → `discarded`. Already released or discarded: no change. `note` row. |
@@ -300,6 +300,8 @@ A reviewer session, start to first note:
 | `grant` | owner | `{ name, tokenHash, expiresAt }` | Creates invite `name`, or gives it a new token (the old link stops working). `acl` row. |
 | `revoke` | owner | `{ name }` | Revokes invite `name`; its open sockets get `error` `forbidden` and are closed. `acl` row. |
 | `delete` | owner | `{}` | Sends the `page` row with `deleted: true` (and every other field as last published) to every socket, closes them (1000), deletes the page's storage, D1 row and object references. Later handshakes get 404. A page deleted before its first `publish` has no `page` row; its sockets just close. |
+
+**What `publish` tells the cloud about where the file lives (sync v2).** It sends the project's name (the folder or repository name the local hub files the page under) and the page's path in that project, so the owner's cloud hub can group their pages. The cloud keeps both in D1 for the owner's own hub; they are not in the `page` row reviewers receive. The page's Durable Object also keeps each publish's args, `project` and `relPath` included, in its private `ops` log, which never leaves the server. A `publish` with neither keeps the stored values. When hub.db cannot be written, neither is sent, and the page is listed as Ungrouped.
 
 - A mutation sent by the wrong role (`MUTATION_ROLE`) gets `forbidden`. A `note` or `name` that does not exist gets `invalid`.
 - Field rules are the validators in `austere-axi/sync`: hashes are lowercase hex SHA-256, `tokenHash` is base64url SHA-256 (43 characters), invite names are 1–40 characters, `addNote` needs at least one item, times are epoch milliseconds.

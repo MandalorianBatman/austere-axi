@@ -24,7 +24,7 @@ export function middle(text: string, max: number): string {
 }
 
 export const basename = (p: string): string => p.split(/[\\/]/).pop() || p;
-export const titleOf = (p: ShellPage): string => p.title || basename(p.rel_path);
+export const titleOf = (p: ShellPage): string => p.title || basename(p.rel_path) || "Untitled page";
 
 /** The non-empty parts, joined with a middle dot. */
 export const joinText = (parts: (string | null | undefined | false)[]): string =>
