@@ -105,6 +105,16 @@ const figure = flag("figure", false)
         for (let el = svg.parentElement; el; el = el.parentElement)
           if (parseFloat(getComputedStyle(el).borderTopWidth) > 0) return el;
       }
+      // No drawing (a form or a list): the first card, the section that opens the page.
+      for (const el of document.querySelectorAll("main *, body *")) {
+        const r = el.getBoundingClientRect();
+        if (
+          r.width >= 300 &&
+          r.height >= 100 &&
+          parseFloat(getComputedStyle(el).borderTopWidth) > 0
+        )
+          return el;
+      }
       return null;
     })
   : null;
