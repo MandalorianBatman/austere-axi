@@ -791,3 +791,56 @@ test("Architecture lanes: a long path-like label wraps at its separators instead
   assert.equal(l.rankdir, "lanes");
   assert.deepEqual(laneProblems(l), []);
 });
+
+test("Sequence: an Actor missing from the list is added as the last column with a problem; an empty Branch is dropped", async () => {
+  const { buildModel, layoutModel } = await import("../packs/diagrams/src/_sequence-model.ts");
+  const actor = (label: string, statementId: string) => ({ props: { label }, statementId });
+  const a = actor("A", "a");
+  const b = actor("B", "b");
+  const ghost = actor("Ghost", "ghost");
+  const msg = (from: object, to: object, label: string) => ({
+    props: { from, to, label },
+    statementId: label,
+  });
+  const model = buildModel({
+    actors: [a, b],
+    messages: [
+      msg(a, b, "one"),
+      msg(b, ghost, "two"),
+      { props: { op: "alt", guard: "never", messages: [] }, statementId: "empty" },
+      {
+        props: {
+          op: "alt",
+          guard: "ok",
+          messages: [msg(b, a, "three")],
+          elseMessages: [msg(a, a, "four")],
+        },
+        statementId: "br",
+      },
+    ],
+  });
+  assert.deepEqual(
+    model.actors.map((x) => x.id),
+    ["a", "b", "ghost"],
+  );
+  assert.equal(model.problems.length, 2);
+  assert.match(model.problems[0], /ghost, which is not in the actors list/);
+  assert.match(model.problems[1], /Branch empty has no Messages/);
+  assert.deepEqual(
+    model.items.map((i) => i.type),
+    ["message", "message", "branch"],
+  );
+  const layout = layoutModel(model);
+  const ys = layout.messages.map((m) => m.y);
+  assert.deepEqual(
+    ys,
+    [...ys].sort((p, q) => p - q),
+    "messages draw top to bottom in list order",
+  );
+  const [branch] = layout.branches;
+  assert.ok(branch.dividerY !== null && branch.dividerY > layout.messages[2].y);
+  assert.ok(
+    branch.x >= 0 && branch.x + branch.width <= layout.width,
+    "the frame stays inside the diagram",
+  );
+});

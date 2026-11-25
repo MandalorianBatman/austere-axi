@@ -313,3 +313,31 @@ test("a list prop over its catalog limit is a check warning with statement and l
     /limit on items: there is no prop by that name/,
   );
 });
+
+test("a Sequence over 5 actors or 12 messages is a check warning, at the limit it is not", () => {
+  const schema = lib.schema();
+  const limits = Object.fromEntries(
+    lib
+      .catalog("")
+      .components.filter((e) => e.limits)
+      .map((e) => [e.name, e.limits ?? []]),
+  );
+  const sequence = (actors: number, messages: number) => {
+    const names = Array.from({ length: actors }, (_, i) => `a${i}`);
+    const msgs = Array.from({ length: messages }, (_, i) => `m${i}`);
+    return [
+      `seq = Sequence([${names}], [${msgs}])`,
+      ...names.map((n) => `${n} = Actor("${n}")`),
+      ...msgs.map((m) => `${m} = Message(a0, a1, "${m}")`),
+    ].join("\n");
+  };
+  const warnings = (a: number, m: number) =>
+    checkHtml(cardPage("Sequence", sequence(a, m)), { schema, limits }).warnings.filter(
+      (w) => w.code === "limit",
+    );
+  assert.deepEqual(warnings(5, 12), []);
+  const six = warnings(6, 12);
+  assert.equal(six.length, 1);
+  assert.match(six[0].message, /actors has 6 items, over its limit of 5/);
+  assert.match(warnings(5, 13)[0].message, /messages has 13 items, over its limit of 12/);
+});

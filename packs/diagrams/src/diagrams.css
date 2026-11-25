@@ -1,0 +1,137 @@
+/* The diagrams pack. Class prefix dg-; one section for each type. */
+
+/* ── Sequence ── */
+.dg-seq {
+  --dg-k-service: #c4c4cc;
+  --dg-k-external: #85858f;
+  --dg-k-database: #b79cff;
+  --dg-k-user: #5fb4e6;
+}
+.dg-seq-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+  font-family: var(--openui-font-body);
+}
+.dg-seq-lifeline {
+  stroke: #4a4a52;
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+.dg-seq-actor.k-service {
+  --k: var(--dg-k-service);
+}
+.dg-seq-actor.k-external {
+  --k: var(--dg-k-external);
+}
+.dg-seq-actor.k-database {
+  --k: var(--dg-k-database);
+}
+.dg-seq-actor.k-user {
+  --k: var(--dg-k-user);
+}
+.dg-seq-actor-box {
+  fill: #1b1b1f;
+  stroke: var(--k);
+  stroke-opacity: 0.7;
+  stroke-width: 1.3;
+}
+.dg-seq-actor.k-external .dg-seq-actor-box {
+  stroke-dasharray: 5 4;
+}
+.dg-seq-actor-cap {
+  stroke: var(--k);
+  stroke-opacity: 0.7;
+  stroke-width: 1.3;
+}
+.dg-seq-actor-label {
+  fill: #ececef;
+  font-size: 13px;
+  font-weight: 600;
+}
+.dg-seq-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+.dg-seq-message-line {
+  fill: none;
+  stroke: #8b8b94;
+  stroke-width: 1.4;
+  pointer-events: none;
+}
+.dg-seq-message.k-return .dg-seq-message-line,
+.dg-seq-message.k-async .dg-seq-message-line {
+  stroke-dasharray: 5 4;
+}
+.dg-seq-message.is-emphasis .dg-seq-message-line {
+  stroke: var(--austere-accent);
+  stroke-width: 2;
+}
+.dg-seq-message-label {
+  fill: #d6d6dc;
+  font-size: 12px;
+}
+.dg-seq-message.is-emphasis .dg-seq-message-label {
+  fill: var(--austere-accent);
+  font-weight: 600;
+}
+.dg-seq-arrow {
+  fill: #8b8b94;
+}
+.dg-seq-arrow.is-emphasis {
+  fill: var(--austere-accent);
+}
+.dg-seq-arrow.is-open {
+  fill: none;
+  stroke: #8b8b94;
+  stroke-width: 1.4;
+}
+.dg-seq-branch-frame {
+  fill: rgba(255, 255, 255, 0.03);
+  stroke: #5a5a64;
+  stroke-width: 1;
+}
+.dg-seq-branch-tab {
+  fill: #121214;
+  stroke: #5a5a64;
+}
+.dg-seq-branch-op {
+  fill: var(--austere-muted);
+  font-family: var(--openui-font-code);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.dg-seq-branch-guard {
+  fill: #c4c4cc;
+  font-family: var(--openui-font-code);
+  font-size: 11px;
+}
+.dg-seq-branch-divider {
+  stroke: #5a5a64;
+  stroke-dasharray: 4 3;
+}
+.dg-seq-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--austere-muted);
+}
+.dg-seq-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dg-seq-legend-item line {
+  stroke: #8b8b94;
+  stroke-width: 1.6;
+}
+.dg-seq-legend-item.is-dashed line {
+  stroke-dasharray: 5 4;
+}
+.dg-seq-legend-item.is-emphasis line {
+  stroke: var(--austere-accent);
+  stroke-width: 2;
+}

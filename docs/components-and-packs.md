@@ -39,6 +39,7 @@ A page names its packs in the head, so it renders anywhere:
   rollout = Progress(64, "Rows migrated")
   freeze = Calendar("2026-11", ["2026-11-04 Code freeze"])
   ```
+  - `diagrams`: the diagram types that need no graph layout: `Sequence` (`Actor`, `Message`, `Branch`), and more as they ship (see [Diagrams](diagrams.md)). Read-only.
 
 **Trust.** Pack code runs inside your review pages, where notes and button presses also come from. Packs under `@austere-axi/` on npm install directly. Other npm packs and any `.tgz` need `--trust`, so read them first. A local folder counts as your own. A page with third-party packs shows a warning, and `poll` tells the agent.
 

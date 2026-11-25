@@ -1,0 +1,12 @@
+// The diagrams pack, bundled with austere-axi: the diagram types that need no
+// graph layout. One file for each type (Name.tsx, Name.md beside it, a pure
+// _name-model.ts for the parsing and layout), one CSS file for the pack.
+// To add a type: copy Sequence.*, import its components here, append them below.
+import { Sequence, Actor, Message, Branch } from "./Sequence.tsx";
+import css from "./diagrams.css";
+import type { PackModule } from "austere-axi/pack";
+
+export default {
+  components: [Sequence, Actor, Message, Branch],
+  css,
+} satisfies PackModule;

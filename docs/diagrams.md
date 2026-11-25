@@ -23,7 +23,7 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Architecture delta | `Architecture`, before and after | recipe | planned |
 | IT current-state | `Architecture` with lanes | recipe | planned |
 | Flowchart | `Flowchart` | component | planned |
-| Sequence | `Sequence` | component | planned |
+| Sequence | `Sequence` (`Actor`, `Message`, `Branch`) | component | built |
 | State machine | `StateMachine` | component | planned |
 | ER / data model | `ERDiagram` | component | planned |
 | Steps | `Steps` | component | built |
