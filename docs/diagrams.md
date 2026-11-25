@@ -45,7 +45,7 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Bar chart | `BarComparison`: `BarChart` | recipe | built |
 | Waterfall | `Waterfall` | component | planned |
 | Treemap | `Treemap` | component | planned |
-| Heatmap | `Heatmap` | component | planned |
+| Heatmap | `Heatmap` (`HeatRow`) | component | built |
 | Line chart | `LineTrend`: `LineChart` | recipe | built |
 | Gantt | `Gantt`, `GanttTask` | component | planned |
 | Scatter plot | `ScatterPlot`: `ScatterChart` | recipe | built |
@@ -54,7 +54,7 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Medallion | `Architecture` with lanes | recipe | planned |
 | Data flow | `Architecture` with lanes | recipe | planned |
 | DP integration | `Architecture` with lanes | recipe | planned |
-| DP security matrix | `PermissionMatrix` | component | planned |
+| DP security matrix | `PermissionMatrix` (`AccessRow`) | component | built |
 | Sankey | `Sankey` | component | planned |
 | Fishbone | `Fishbone` | component | planned |
 | Wardley map | `WardleyMap` | component | planned |
@@ -67,9 +67,9 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Story map | `StoryMap` (`Story`) | component | built |
 | Database schema | `DatabaseSchema`: `ERDiagram` with typed field lines | recipe | built |
 | SBGN | `Architecture` | recipe | planned |
-| Requirement traceability | `Traceability` | component | planned |
+| Requirement traceability | `Traceability` (`TraceReq`, `TraceItem`) | component | built |
 | Event modeling | `EventModel` (`EventItem`) | component | built |
-| Unit Grid | `UnitGrid` | component | planned |
+| Unit Grid | `UnitGrid` (`UnitShare`) | component | built |
 | Schedule network | `ScheduleNetwork` | component | planned |
 
 Named variants of a type (slopegraph, ridgeline, streamgraph, bump, bubble, beeswarm, box plot, marimekko, dumbbell) are not built. Animation, brand skins, and import from Mermaid, draw.io, Excalidraw or PlantUML are not planned.

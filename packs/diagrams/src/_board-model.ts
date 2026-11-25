@@ -196,7 +196,7 @@ const LABEL_WIDTH = 120;
 const MIN_COLUMN: Record<BoardKind, number> = {
   kanban: 220,
   storymap: 200,
-  journey: 190,
+  journey: 150,
   blueprint: 190,
   event: 190,
 };

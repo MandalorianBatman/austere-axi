@@ -1,4 +1,5 @@
 {
+  "AccessRow": {"props":["resource","grants","hint","focus"],"required":["resource","grants"]},
   "Accordion": {"props":["items"],"required":["items"]},
   "AccordionItem": {"props":["value","trigger","content"],"required":["value","trigger","content"]},
   "Actor": {"props":["label","kind"],"required":["label"]},
@@ -42,6 +43,8 @@
   "Form": {"props":["name","buttons","fields"],"required":["name","buttons","fields"]},
   "FormControl": {"props":["label","input","hint"],"required":["label","input"]},
   "Group": {"props":["label","members","kind"],"required":["label","members"]},
+  "HeatRow": {"props":["label","values","focus"],"required":["label","values"]},
+  "Heatmap": {"props":["columns","rows","unit"],"required":["columns","rows"]},
   "HorizontalBarChart": {"props":["labels","series","variant","xLabel","yLabel"],"required":["labels","series"]},
   "HoverCard": {"props":["text","title","body"],"required":["text","title"]},
   "Icon": {"props":["name","category"],"required":["name"]},
@@ -68,6 +71,7 @@
   "OrgChart": {"props":["people","direction"],"required":["people"]},
   "OverviewCardBlock": {"props":["items","layout","responsive","action","gap"],"required":["items","layout","responsive"]},
   "OverviewCardItem": {"props":["id","top","bottom"],"required":["top"]},
+  "PermissionMatrix": {"props":["roles","rows"],"required":["roles","rows"]},
   "Person": {"props":["name","role","reportsTo","kind","dotted","tone"],"required":["name"]},
   "PieChart": {"props":["labels","values","variant","appearance"],"required":["labels","values"]},
   "Point": {"props":["x","y","z"],"required":["x","y"]},
@@ -105,8 +109,13 @@
   "Timeline": {"props":["items"],"required":["items"]},
   "TimelineItem": {"props":["title","date","detail","state"],"required":["title"]},
   "Tooltip": {"props":["text","tip"],"required":["text","tip"]},
+  "TraceItem": {"props":["id","name","kind","covers"],"required":["id","name","kind","covers"]},
+  "TraceReq": {"props":["id","text","source"],"required":["id","text"]},
+  "Traceability": {"props":["requirements","items"],"required":["requirements","items"]},
   "Transition": {"props":["from","to","event","guard","action"],"required":["from","to"]},
   "Tree": {"props":["nodes","direction"],"required":["nodes"]},
   "TreeNode": {"props":["label","parent","detail","tone"],"required":["label"]},
+  "UnitGrid": {"props":["parts","unit"],"required":["parts"]},
+  "UnitShare": {"props":["name","count","detail"],"required":["name","count"]},
   "UserJourney": {"props":["stages","steps","persona"],"required":["stages","steps"]}
 }

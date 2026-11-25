@@ -45,7 +45,7 @@ function JourneyView({ props, statementId }: RendererArgs<JourneyProps>) {
       legend={
         <p className="dg-b-legend">
           {persona ? <strong>{persona}. </strong> : null}
-          Feeling: 5 delighted, 1 frustrated. The lowest stage is marked.
+          Scale: 1 frustrated to 5 delighted. The lowest stage is marked.
         </p>
       }
     />

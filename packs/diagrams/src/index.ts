@@ -10,6 +10,10 @@ import { StoryMap, Story } from "./StoryMap.tsx";
 import { UserJourney, JourneyStep } from "./UserJourney.tsx";
 import { ServiceBlueprint, BlueprintStep } from "./ServiceBlueprint.tsx";
 import { EventModel, EventItem } from "./EventModel.tsx";
+import { Heatmap, HeatRow } from "./Heatmap.tsx";
+import { PermissionMatrix, AccessRow } from "./PermissionMatrix.tsx";
+import { UnitGrid, UnitShare } from "./UnitGrid.tsx";
+import { Traceability, TraceReq, TraceItem } from "./Traceability.tsx";
 import css from "./diagrams.css";
 import type { PackModule } from "austere-axi/pack";
 
@@ -33,6 +37,15 @@ export default {
     BlueprintStep,
     EventModel,
     EventItem,
+    Heatmap,
+    HeatRow,
+    PermissionMatrix,
+    AccessRow,
+    UnitGrid,
+    UnitShare,
+    Traceability,
+    TraceReq,
+    TraceItem,
   ],
   css,
 } satisfies PackModule;

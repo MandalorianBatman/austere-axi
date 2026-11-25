@@ -51,7 +51,12 @@ function Sentiment({ card }: { card: BoardCard }) {
               />
             ) : null}
           </svg>
-          <span className="dg-b-dot" style={{ top: `${plot(curve.y)}%` }}>
+          <span
+            className="dg-b-dot"
+            style={{ top: `${plot(curve.y)}%` }}
+            role="img"
+            aria-label={`score ${curve.score} of 5`}
+          >
             <span className="dg-b-score">{curve.score}</span>
           </span>
         </>

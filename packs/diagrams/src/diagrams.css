@@ -363,6 +363,11 @@
   content: " " attr(data-over);
 }
 .dg-b-rowlabel {
+  /* At phone width a board scrolls sideways: its row labels stay in view. */
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--austere-surface);
   padding: 10px 4px 0 0;
   color: var(--austere-muted);
   font-size: 11px;
@@ -606,4 +611,325 @@
   margin: 8px 2px 0;
   color: var(--austere-muted);
   font-size: 12px;
+}
+
+/* ── Matrices: Heatmap, PermissionMatrix, Traceability ── */
+.dg-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.dg-mx-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 3px;
+  font-family: var(--openui-font-body);
+  font-size: 13px;
+  table-layout: auto;
+}
+.dg-mx-table th {
+  padding: 6px 8px;
+  color: #ececef;
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+  vertical-align: bottom;
+}
+.dg-mx-table thead th {
+  border-bottom: 1px solid #5a5a64;
+  text-align: center;
+}
+.dg-mx-table thead th.dg-mx-corner,
+.dg-tr-table thead th {
+  text-align: left;
+}
+.dg-mx-table tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 96px;
+  max-width: 180px;
+  background: var(--austere-surface);
+  vertical-align: middle;
+}
+.dg-mx-table td {
+  /* The hidden text is absolute: its box must be this cell, or it widens the page. */
+  position: relative;
+  min-width: 56px;
+  padding: 8px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+.dg-mx-hint {
+  display: block;
+  color: var(--austere-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.dg-mx-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 8px 2px 0;
+  color: var(--austere-muted);
+  font-size: 12px;
+}
+
+/* Heatmap: the number is in the cell; ink flips with the fill so every cell passes 4.5:1. */
+.dg-hm-cell {
+  border-radius: 3px;
+  font-family: var(--openui-font-code);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.dg-hm-cell[data-ink="light"] {
+  color: #fff;
+}
+.dg-hm-cell[data-ink="dark"] {
+  color: #000;
+}
+.dg-hm-cell.is-na {
+  border: 1px dashed var(--austere-line);
+  color: var(--austere-muted);
+  font-weight: 400;
+}
+.dg-hm-cell.is-focal {
+  box-shadow: inset 0 0 0 3px #fff;
+}
+.dg-hm-ramp {
+  display: inline-flex;
+  gap: 2px;
+}
+.dg-hm-ramp i {
+  width: 18px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+/* PermissionMatrix: the word is in the cell; the style only helps the eye. */
+.dg-perm-cell {
+  border: 1px solid var(--austere-line);
+  border-radius: 3px;
+  color: #ececef;
+}
+.dg-perm-cell.l-admin {
+  border-color: rgba(143, 176, 255, 0.5);
+  background: rgba(143, 176, 255, 0.2);
+  font-weight: 700;
+}
+.dg-perm-cell.l-write {
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+}
+.dg-perm-cell.l-read {
+  background: rgba(255, 255, 255, 0.04);
+  color: #c9c9d0;
+}
+.dg-perm-cell.l-none {
+  border-style: dashed;
+  color: var(--austere-muted);
+}
+.dg-perm-cell.l-other {
+  border-style: dotted;
+  font-style: italic;
+}
+.dg-perm-cell.is-focal {
+  border-color: #fff;
+  box-shadow: inset 0 0 0 2px #fff;
+  background: rgba(240, 180, 80, 0.22);
+  font-weight: 700;
+}
+.dg-perm-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.dg-perm-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 12px;
+  border: 1px solid var(--austere-line);
+  border-radius: 2px;
+}
+.dg-perm-swatch.l-admin {
+  border-color: rgba(143, 176, 255, 0.5);
+  background: rgba(143, 176, 255, 0.35);
+}
+.dg-perm-swatch.l-write {
+  background: rgba(255, 255, 255, 0.2);
+}
+.dg-perm-swatch.l-read {
+  background: rgba(255, 255, 255, 0.06);
+}
+.dg-perm-swatch.l-none {
+  border-style: dashed;
+}
+.dg-perm-swatch.is-focal {
+  border-color: #fff;
+  background: rgba(240, 180, 80, 0.4);
+  box-shadow: inset 0 0 0 1px #fff;
+}
+
+/* Traceability: a gap is text and a dashed box, never colour alone. */
+.dg-tr-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--austere-line);
+  text-align: left;
+  vertical-align: top;
+}
+.dg-tr-source {
+  color: var(--austere-muted);
+}
+.dg-tr-code {
+  font-family: var(--openui-font-code);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--austere-accent);
+  overflow-wrap: anywhere;
+}
+.dg-tr-name {
+  overflow-wrap: anywhere;
+}
+.dg-tr-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dg-tr-table td.is-gap {
+  border: 1px dashed #f06060;
+  border-radius: 3px;
+  background: rgba(240, 96, 96, 0.08);
+}
+.dg-tr-gap {
+  color: #f8b4b4;
+  font-weight: 600;
+}
+.dg-tr-gap::before {
+  content: "⚠ ";
+}
+
+/* UnitGrid: 100 squares; each part has a shape and a colour, so grayscale reads too. */
+.dg-ug {
+  --dg-u-0: #8fb0ff;
+  --dg-u-1: #f2c46d;
+  --dg-u-2: #74d3a0;
+  --dg-u-3: #e88fc7;
+  --dg-u-4: #b79cff;
+  --dg-u-5: #5fb4e6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px 28px;
+  padding: 8px 2px;
+  font-family: var(--openui-font-body);
+}
+.dg-ug-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+  width: min(100%, 280px);
+  flex: none;
+}
+.dg-ug-cell {
+  display: block;
+  aspect-ratio: 1;
+}
+.dg-ug-unit,
+.dg-ug-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--u);
+}
+.dg-ug-mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.dg-ug .is-rest {
+  --u: transparent;
+}
+.dg-ug-unit.is-rest {
+  border: 1px solid #4a4a52;
+  background: transparent;
+}
+.dg-ug-mark.is-rest {
+  border: 1px solid #4a4a52;
+  background: transparent;
+}
+.dg-ug .u-0 {
+  --u: var(--dg-u-0);
+}
+.dg-ug .u-1 {
+  --u: var(--dg-u-1);
+  clip-path: circle(50%);
+}
+.dg-ug .u-2 {
+  --u: var(--dg-u-2);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+.dg-ug .u-3 {
+  --u: var(--dg-u-3);
+  clip-path: polygon(50% 4%, 100% 96%, 0 96%);
+}
+.dg-ug .u-4 {
+  --u: var(--dg-u-4);
+  clip-path: polygon(0 20%, 100% 20%, 100% 80%, 0 80%);
+}
+.dg-ug .u-5 {
+  --u: var(--dg-u-5);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
+.dg-ug-legend {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 200px;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dg-ug-legend li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 2px 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.dg-ug-name {
+  flex: 1 1 0;
+  min-width: 0;
+  color: #ececef;
+  overflow-wrap: anywhere;
+}
+.dg-ug-count {
+  flex: none;
+  color: #ececef;
+  font-family: var(--openui-font-code);
+  font-weight: 600;
+}
+.dg-ug-note {
+  flex-basis: 100%;
+  padding-left: 24px;
+  color: var(--austere-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.dg-ug-legend li.is-rest .dg-ug-name,
+.dg-ug-legend li.is-rest .dg-ug-count {
+  color: var(--austere-muted);
+  font-weight: 400;
 }
