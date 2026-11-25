@@ -12,6 +12,14 @@ import {
   summarize,
 } from "../src/runtime/components/_filetree-parse.ts";
 import type { FileEntry, TreeNode } from "../src/runtime/components/_filetree-parse.ts";
+import {
+  FLOWCHART,
+  STATE_MACHINE,
+  buildFlow,
+  flowNotes,
+  layoutFlow,
+} from "../src/runtime/components/_flow-model.ts";
+import type { FlowLaidOutNode } from "../src/runtime/components/_flow-model.ts";
 
 const pick = (e: FileEntry | null): Record<string, unknown> | null =>
   e && {
@@ -843,4 +851,103 @@ test("Sequence: an Actor missing from the list is added as the last column with 
     branch.x >= 0 && branch.x + branch.width <= layout.width,
     "the frame stays inside the diagram",
   );
+});
+
+test("Flowchart: edges attach to the diamond's own outline, a missing step is added with a problem, check flags a bare or 4th exit", async () => {
+  const step = (label: string, statementId: string, kind?: string) => ({
+    props: { label, kind },
+    statementId,
+  });
+  const start = step("Start", "start", "start");
+  const ask = step("Ready?", "ask", "decision");
+  const [a, b, c, d] = ["a", "b", "c", "d"].map((x) => step(x, x));
+  const ghost = step("Ghost", "ghost");
+  const link = (from: object, to: object, label: string | undefined, id: string) => ({
+    props: { from, to, label },
+    statementId: id,
+  });
+  const props = {
+    steps: [start, ask, a, b, c, d],
+    links: [
+      link(start, ask, undefined, "l0"),
+      link(ask, a, "yes", "l1"),
+      link(ask, b, "no", "l2"),
+      link(ask, c, undefined, "l3"),
+      link(ask, d, "maybe", "l4"),
+      link(d, ghost, undefined, "l5"),
+    ],
+  };
+  const model = buildFlow(props, FLOWCHART);
+  assert.equal(model.direction, "down", "a flowchart runs top to bottom unless told otherwise");
+  assert.deepEqual(model.nodes.map((n) => [n.id, n.shape]).slice(-1), [["ghost", "step"]]);
+  assert.match(model.problems[0], /FlowLink l5 uses ghost, which is not in the Flowchart list/);
+  const messages = flowNotes(props, FLOWCHART).map((n) => n.message);
+  assert.ok(messages.some((m) => /"Ready\?" has 4 exits, over 3/.test(m)));
+  assert.ok(messages.some((m) => /"Ready\?" has an exit with no label/.test(m)));
+
+  const layout = layoutFlow(model);
+  assert.ok(layout);
+  const diamond = layout.nodes.find((n) => n.id === "ask");
+  assert.ok(diamond);
+  const cx = diamond.x + diamond.width / 2;
+  const cy = diamond.y + diamond.height / 2;
+  for (const e of layout.edges.filter((x) => x.from === "ask" || x.to === "ask")) {
+    const p = e.from === "ask" ? e.points[0] : e.points[e.points.length - 1];
+    const inside: number =
+      Math.abs(p.x - cx) / (diamond.width / 2) + Math.abs(p.y - cy) / (diamond.height / 2);
+    assert.ok(Math.abs(inside - 1) < 0.01, `${e.id} meets the diamond outline (${inside})`);
+  }
+  // Every line starts and ends on the box of the shape it joins, not in space or inside it.
+  const gap = (n: FlowLaidOutNode, p: { x: number; y: number }): number =>
+    Math.max(n.x - p.x, p.x - (n.x + n.width), n.y - p.y, p.y - (n.y + n.height));
+  for (const e of layout.edges) {
+    const from: FlowLaidOutNode | undefined = layout.nodes.find((n) => n.id === e.from);
+    const to: FlowLaidOutNode | undefined = layout.nodes.find((n) => n.id === e.to);
+    assert.ok(from && to);
+    assert.ok(Math.abs(gap(from, e.points[0])) <= 1 || from.shape === "decision", `${e.id} start`);
+    assert.ok(
+      Math.abs(gap(to, e.points[e.points.length - 1])) <= 1 || to.shape === "decision",
+      `${e.id} end`,
+    );
+  }
+});
+
+test("StateMachine: the label reads event [guard] / action, and check flags a transition with no event except from an initial or into a final state", async () => {
+  const state = (label: string, statementId: string, kind?: string) => ({
+    props: { label, kind },
+    statementId,
+  });
+  const init = state("Start", "init", "initial");
+  const idle = state("Idle", "idle");
+  const busy = state("Busy", "busy");
+  const tr = (
+    from: object,
+    to: object,
+    id: string,
+    event?: string,
+    guard?: string,
+    action?: string,
+  ) => ({
+    props: { from, to, event, guard, action },
+    statementId: id,
+  });
+  const props = {
+    states: [init, idle, busy],
+    transitions: [
+      tr(init, idle, "t0"),
+      tr(idle, busy, "t1", "job", "queue > 0", "lock"),
+      tr(busy, busy, "t2", "tick"),
+      tr(busy, idle, "t3"),
+    ],
+  };
+  const model = buildFlow(props, STATE_MACHINE);
+  assert.equal(model.edges[1].label, "job [queue > 0] / lock");
+  assert.equal(model.edges[0].label, "");
+  const notes = flowNotes(props, STATE_MACHINE).map((n) => n.message);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /1 transition with no event \(Busy → Idle\)/);
+  const layout = layoutFlow(model);
+  assert.ok(layout);
+  assert.ok(layout.edges.every((e) => e.points.length >= 2));
+  assert.ok(layout.edges.find((e) => e.id === "t2")?.labelBox, "a self-transition keeps its label");
 });

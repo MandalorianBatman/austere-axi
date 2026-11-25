@@ -3,7 +3,7 @@ A short ordered method where the order is the point: a rollout plan, an onboardi
 
 ## Not for
 - Events at real dates, where spacing shows elapsed time: Timeline.
-- A route that branches on a decision: Flowchart, when it ships; until then, Architecture with the branches as edges.
+- A route that branches on a decision: Flowchart.
 - Work handed between teams: Swimlane.
 
 ## Limits

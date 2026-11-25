@@ -884,6 +884,30 @@ span.austere-filetree-toggle {
   letter-spacing: 0.03em;
 }
 
+/* ── Flowchart and StateMachine: the Architecture look, with shapes ── */
+.austere-flow .austere-flow-node.s-decision {
+  --k: var(--austere-k-cloud);
+}
+.austere-flow .austere-flow-node.s-start,
+.austere-flow .austere-flow-node.s-end {
+  --k: var(--austere-k-external);
+}
+.austere-flow .austere-flow-node.s-state,
+.austere-flow .austere-flow-node.s-step {
+  --k: var(--austere-k-backend);
+}
+.austere-flow-dot {
+  fill: #ececef;
+}
+.austere-flow-ring {
+  fill: none;
+  stroke: #ececef;
+  stroke-width: 1.5;
+}
+.austere-flow-hit {
+  fill: transparent;
+}
+
 .austere-render-error {
   border: 1px solid rgba(240, 96, 96, 0.35);
   background: var(--austere-del);

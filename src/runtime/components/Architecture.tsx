@@ -505,7 +505,7 @@ const Architecture = austereComponent({
     "System diagram laid out automatically: write no coordinates. Every Node, Edge and Group is its own statement and click target. direction auto (default) runs right when that fits the page legibly, else down; lanes makes each top-level Group a column.",
   notes: [
     "- Architecture for systems: services, stores, queues, trust boundaries. Name every Node, Edge and Group. Over ~15 nodes, use lanes or split the diagram.",
-    "- lanes: for systems split by owner, repo or tier. Groups are the columns, left to right as listed; put every node in one, in reading order (plain groups for a heading without a frame). About 4 columns fit a laptop; wider ones scroll (check warns). Phones get the lanes stacked as bands. Pin row only to put boxes side by side or line them up.",
+    "- lanes: for systems split by owner, repo or tier. Groups are the columns, left to right as listed; put every node in one, in reading order (plain groups for a heading without a frame). About 4 columns fit a laptop; wider ones scroll (check warns). Pin row only to put boxes side by side or line them up.",
   ],
   renderer: ArchitectureView,
   example: [

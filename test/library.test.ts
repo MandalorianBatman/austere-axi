@@ -174,6 +174,8 @@ test("custom components have short descriptions", () => {
   }
 });
 
+const STRESS_NOTES = /^(architecture-layout|flow)$/;
+
 test("the gallery of every example (and of every stress example) passes check without warnings", () => {
   // Examples share one page in the gallery and the browser suite, so their
   // statement names must not collide.
@@ -185,7 +187,7 @@ test("the gallery of every example (and of every stress example) passes check wi
     );
     assert.equal(r.ok, true, `${field}: ${JSON.stringify(r.errors)}`);
     const warnings =
-      field === "stress" ? r.warnings.filter((w) => w.code !== "architecture-layout") : r.warnings;
+      field === "stress" ? r.warnings.filter((w) => !STRESS_NOTES.test(w.code)) : r.warnings;
     assert.deepEqual(warnings, [], `${field} warnings: ${JSON.stringify(r.warnings)}`);
   }
 });
@@ -197,11 +199,9 @@ test("every custom component example and stress example passes check", () => {
       if (!c[field]) continue;
       const r = checkHtml(htmlPage(c.name, examplePage([c], field), "austere.js"), { schema });
       assert.equal(r.ok, true, `${c.name} ${field}: ${JSON.stringify(r.errors)}`);
-      // Stress examples are oversized on purpose; a layout warning is expected there.
+      // Stress examples are oversized and sloppy on purpose; layout and flow warnings are expected there.
       const warnings =
-        field === "stress"
-          ? r.warnings.filter((w) => w.code !== "architecture-layout")
-          : r.warnings;
+        field === "stress" ? r.warnings.filter((w) => !STRESS_NOTES.test(w.code)) : r.warnings;
       assert.deepEqual(warnings, [], `${c.name} ${field} warnings: ${JSON.stringify(r.warnings)}`);
     }
   }
