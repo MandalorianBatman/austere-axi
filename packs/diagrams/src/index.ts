@@ -3,10 +3,12 @@
 // _name-model.ts for the parsing and layout), one CSS file for the pack.
 // To add a type: copy Sequence.*, import its components here, append them below.
 import { Sequence, Actor, Message, Branch } from "./Sequence.tsx";
+import { Nested, NestedLevel } from "./Nested.tsx";
+import { LayerStack, Layer } from "./LayerStack.tsx";
 import css from "./diagrams.css";
 import type { PackModule } from "austere-axi/pack";
 
 export default {
-  components: [Sequence, Actor, Message, Branch],
+  components: [Sequence, Actor, Message, Branch, Nested, NestedLevel, LayerStack, Layer],
   css,
 } satisfies PackModule;

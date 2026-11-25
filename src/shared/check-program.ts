@@ -5,6 +5,7 @@ import type { ElementNode, ParseResult } from "@openuidev/react-lang";
 import { splitStatements } from "./statements.ts";
 import { architectureNotes } from "../runtime/components/_architecture-model.ts";
 import { FLOWCHART, STATE_MACHINE, flowNotes } from "../runtime/components/_flow-model.ts";
+import { ORG_CHART, TREE } from "../runtime/components/_tree-model.ts";
 import type { ComponentLimit } from "../../types/catalog.d.ts";
 
 /** An error or warning `check` reports. */
@@ -128,6 +129,8 @@ export function checkProgram(
     ["Architecture", architectureNotes],
     ["Flowchart", (props) => flowNotes(props, FLOWCHART)],
     ["StateMachine", (props) => flowNotes(props, STATE_MACHINE)],
+    ["Tree", (props) => flowNotes(props, TREE)],
+    ["OrgChart", (props) => flowNotes(props, ORG_CHART)],
   ];
   for (const [component, notes] of notesFor) {
     const diagrams = new Set<string | undefined>();

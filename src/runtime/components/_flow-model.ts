@@ -26,10 +26,14 @@ import type {
 export { NODE_TONES };
 export const FLOW_KINDS = ["step", "decision", "start", "end"] as const;
 export const STATE_KINDS = ["state", "initial", "final"] as const;
+export const ORG_KINDS = ["person", "team", "agent", "gap"] as const;
 export const FLOW_LINK_STYLES = ["dashed", "emphasis"] as const;
 export const FLOW_DIRECTIONS = ["down", "right", "auto"] as const;
 
-export type Shape = (typeof FLOW_KINDS)[number] | (typeof STATE_KINDS)[number];
+export type Shape =
+  | (typeof FLOW_KINDS)[number]
+  | (typeof STATE_KINDS)[number]
+  | (typeof ORG_KINDS)[number];
 export type FlowDirection = (typeof FLOW_DIRECTIONS)[number];
 export type FlowEdgeStyle = "solid" | (typeof FLOW_LINK_STYLES)[number];
 
@@ -61,10 +65,12 @@ export interface FlowModel {
   problems: string[];
 }
 
-/** What differs between the two diagram types. */
+/** What differs between the diagram types. */
 export interface FlowKind {
   /** The component the agent wrote, for messages. */
-  component: "Flowchart" | "StateMachine";
+  component: "Flowchart" | "StateMachine" | "Tree" | "OrgChart";
+  /** What the diagram is called to a reader (the frame's name, the aria label). */
+  title: string;
   /** What its node and edge parts are called, for messages. */
   nodeName: string;
   edgeName: string;
@@ -76,6 +82,12 @@ export interface FlowKind {
   defaultDirection: FlowDirection;
   /** The text of an edge from its props: the answer of a decision, or `event [guard] / action`. */
   edgeLabel: (props: Record<string, unknown>) => string;
+  /** Builds the model itself, for types whose edges are not statements (Tree, OrgChart: a parent link on the child). */
+  build?: (props: FlowInput | null | undefined, kind: FlowKind) => FlowModel;
+  /** A hierarchy: right-angle connectors with no arrowheads, and lines that are not click targets. */
+  hierarchy?: boolean;
+  /** What `check` says about a built model, for types with a `build`. */
+  notes?: (model: FlowModel, kind: FlowKind) => FlowNote[];
 }
 
 function transitionLabel(p: Record<string, unknown>): string {
@@ -87,6 +99,7 @@ function transitionLabel(p: Record<string, unknown>): string {
 
 export const FLOWCHART: FlowKind = {
   component: "Flowchart",
+  title: "Flowchart",
   nodeName: "FlowStep",
   edgeName: "FlowLink",
   nodesProp: "steps",
@@ -99,6 +112,7 @@ export const FLOWCHART: FlowKind = {
 
 export const STATE_MACHINE: FlowKind = {
   component: "StateMachine",
+  title: "State machine",
   nodeName: "State",
   edgeName: "Transition",
   nodesProp: "states",
@@ -109,16 +123,22 @@ export const STATE_MACHINE: FlowKind = {
   edgeLabel: transitionLabel,
 };
 
-interface ElementLike {
+export interface ElementLike {
   props: Record<string, unknown>;
   statementId?: string;
 }
 
-const isElement = (v: unknown): v is ElementLike =>
+export const isElement = (v: unknown): v is ElementLike =>
   !!v && typeof v === "object" && "props" in v && !!v.props && typeof v.props === "object";
-const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
-const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T =>
+export const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
+export const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T =>
   (list as readonly unknown[]).includes(v);
+
+/**
+ * Id of an unnamed node or edge. Statement names are identifiers, so a "#"
+ * cannot collide with one.
+ */
+export const syntheticId = (what: "node" | "edge", n: number): string => `#${what}${n}`;
 
 /**
  * Parsed props → model. Ids are statement names; an inline (unnamed) node or
@@ -126,6 +146,7 @@ const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T =>
  * names but the list leaves out is added, with a problem.
  */
 export function buildFlow(props: FlowInput | null | undefined, kind: FlowKind): FlowModel {
+  if (kind.build) return kind.build(props, kind);
   const problems: string[] = [];
   const nodes = new Map<string, FlowNode>();
   const seenEls = new Map<ElementLike, string>();
@@ -135,7 +156,7 @@ export function buildFlow(props: FlowInput | null | undefined, kind: FlowKind): 
     if (!isElement(el)) return null;
     const seen = seenEls.get(el);
     if (seen !== undefined) return seen;
-    const id = el.statementId || `_node${anon++}`;
+    const id = el.statementId || syntheticId("node", anon++);
     if (!nodes.has(id)) {
       const p = el.props;
       nodes.set(id, {
@@ -160,7 +181,7 @@ export function buildFlow(props: FlowInput | null | undefined, kind: FlowKind): 
   const edgeList = props?.[kind.edgesProp];
   for (const el of Array.isArray(edgeList) ? edgeList : []) {
     if (!isElement(el)) continue;
-    const id = el.statementId || `_edge${anon++}`;
+    const id = el.statementId || syntheticId("edge", anon++);
     if (edgeIds.has(id)) continue;
     const from = addNode(el.props.from);
     const to = addNode(el.props.to);
@@ -374,6 +395,8 @@ export function flowNotes(props: FlowInput | null | undefined, kind: FlowKind): 
           message: `Decision "${n.label}" has ${bare.length === 1 ? "an exit" : "exits"} with no label. Label every exit with its answer.`,
         });
     }
+  } else if (kind.notes) {
+    notes.push(...kind.notes(model, kind));
   } else {
     const bare = model.edges.filter(
       (e) => !e.label && shapeOf(e.from) !== "initial" && shapeOf(e.to) !== "final",
