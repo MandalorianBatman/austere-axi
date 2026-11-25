@@ -398,7 +398,7 @@ function isAncestor(groups: ModelGroup[], ancestorId: string, id: string): boole
 }
 
 /** Detail text: up to two monospace lines; "\n" forces a break. */
-function detailLinesFor(detail: string, width: number): string[] {
+export function detailLinesFor(detail: string, width: number): string[] {
   if (!detail) return [];
   const parts = detail
     .split("\n")
@@ -457,7 +457,12 @@ export function sizeEdgeLabel(label: string): EdgeLabelSize | null {
   return { lines, width, height: 6 + lines.length * 13 };
 }
 
-function runLayout(model: Model, rankdir: "LR" | "TB"): Layout {
+/** Dagre layout of a model. `size` sizes a node's box (Architecture's boxes by default; Flowchart and StateMachine pass their shapes'). */
+export function runLayout(
+  model: Model,
+  rankdir: "LR" | "TB",
+  size: (node: ModelNode) => NodeSize = sizeNode,
+): Layout {
   const g = new dagre.graphlib.Graph({ compound: true, multigraph: true });
   g.setGraph({
     rankdir,
@@ -470,7 +475,7 @@ function runLayout(model: Model, rankdir: "LR" | "TB"): Layout {
   g.setDefaultEdgeLabel(() => ({}));
   const boxes = new Map<string, NodeSize>();
   for (const n of model.nodes) {
-    const box = sizeNode(n);
+    const box = size(n);
     boxes.set(n.id, box);
     g.setNode(n.id, { width: box.width, height: box.height });
   }
