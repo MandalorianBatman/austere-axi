@@ -352,6 +352,8 @@ export const WF = {
   foot: 70,
 } as const;
 
+export type WfGeo = { [K in keyof typeof WF]: number };
+
 export interface WfBar {
   label: string;
   kind: "total" | "up" | "down";
@@ -381,10 +383,13 @@ export interface WfModel {
   w: number;
   h: number;
   problems: string[];
+  geo: WfGeo;
+  /** Set on a phone: the unit the printed values leave out. */
+  unit: string;
 }
 
 /** Waterfall(labels, values, unit?, focus?, subtotal?): first value starts, last ends, the rest are signed steps. */
-export function buildWaterfall(props: Record<string, unknown> | undefined): WfModel {
+export function buildWaterfall(props: Record<string, unknown> | undefined, room?: number): WfModel {
   const problems: string[] = [];
   const unit = clean(props?.unit);
   const all = pairs(props?.labels, props?.values, "Waterfall", problems);
@@ -396,7 +401,17 @@ export function buildWaterfall(props: Record<string, unknown> | undefined): WfMo
       problems.push(`"${e.label}" is 0. A zero step is not drawn; say it in the text.`);
     } else list.push({ label: e.label, value: e.value });
   });
-  const empty: WfModel = { bars: [], carries: [], ticks: [], zeroY: 0, w: 0, h: 0, problems };
+  const empty: WfModel = {
+    bars: [],
+    carries: [],
+    ticks: [],
+    zeroY: 0,
+    w: 0,
+    h: 0,
+    problems,
+    geo: WF,
+    unit: "",
+  };
   if (list.length < 2) return empty;
   if (list.length > 8) {
     problems.push(
@@ -455,21 +470,46 @@ export function buildWaterfall(props: Record<string, unknown> | undefined): WfMo
     }
     return { ...e, from, to };
   });
+  // On a phone the bars share the room, so the whole walk shows at scale 1.
+  const phone = room !== undefined && room < PHONE_ROOM;
+  const geo: WfGeo = phone
+    ? (() => {
+        const pitch = Math.min(
+          100,
+          Math.max(38, Math.floor((room - 44) / Math.max(raw.length, 1))),
+        );
+        return {
+          pitch,
+          bar: Math.round(pitch * 0.62),
+          left: 38,
+          right: 6,
+          top: 24,
+          plot: 210,
+          foot: 70,
+        };
+      })()
+    : WF;
   const lo = Math.min(0, ...raw.flatMap((b) => [b.from, b.to]));
   const hi = Math.max(1e-9, ...raw.flatMap((b) => [b.from, b.to]));
   const step = niceMax((hi - lo) / 4);
   const top = Math.ceil(hi / step) * step;
   const bottom = lo < 0 ? Math.floor(lo / step) * step : 0;
   const span = top - bottom || 1;
-  const yOf = (v: number) => WF.top + ((top - v) / span) * WF.plot;
+  const yOf = (v: number) => geo.top + ((top - v) / span) * geo.plot;
   const n = raw.length;
   const bars = raw.map((b, i): WfBar => {
     const yTop = yOf(Math.max(b.from, b.to));
     const yBottom = yOf(Math.min(b.from, b.to));
     const h = Math.max(2, yBottom - yTop);
     const kind = b.kind0 === "total" ? "total" : b.value >= 0 ? "up" : "down";
-    const x = WF.left + i * WF.pitch + (WF.pitch - WF.bar) / 2;
+    const x = geo.left + i * geo.pitch + (geo.pitch - geo.bar) / 2;
     const valueText = kind === "total" ? withUnit(b.value, unit) : signed(b.value, unit);
+    // On a phone the unit is named under the figure, so a value fits above its narrow bar.
+    const shown = phone
+      ? kind === "total"
+        ? withUnit(b.value, "")
+        : signed(b.value, "")
+      : valueText;
     return {
       label: b.label,
       kind,
@@ -479,16 +519,16 @@ export function buildWaterfall(props: Record<string, unknown> | undefined): WfMo
       x,
       y: yTop,
       h,
-      cx: x + WF.bar / 2,
+      cx: x + geo.bar / 2,
       focus: i === focusAt,
       part: `${b.label}: ${valueText}`,
-      valueText,
-      valueY: kind === "down" && yTop + h + 14 < WF.top + WF.plot ? yTop + h + 14 : yTop - 7,
-      lines: wrapWords(b.label, WF.pitch - 8, 12, 3, false) ?? [b.label],
+      valueText: shown,
+      valueY: kind === "down" && yTop + h + 14 < geo.top + geo.plot ? yTop + h + 14 : yTop - 7,
+      lines: wrapWords(b.label, geo.pitch - 8, 12, 3, false) ?? [b.label],
     };
   });
   const carries = bars.slice(0, -1).map((b, i) => ({
-    x1: b.x + WF.bar,
+    x1: b.x + geo.bar,
     x2: bars[i + 1].x,
     y: yOf(raw[i].kind0 === "total" ? raw[i].value : raw[i].to),
   }));
@@ -501,9 +541,11 @@ export function buildWaterfall(props: Record<string, unknown> | undefined): WfMo
     carries,
     ticks,
     zeroY: yOf(0),
-    w: WF.left + n * WF.pitch + WF.right,
-    h: WF.top + WF.plot + 22 + maxLines * 15 + 10,
+    w: geo.left + n * geo.pitch + geo.right,
+    h: geo.top + geo.plot + 22 + maxLines * 15 + 10,
     problems,
+    geo,
+    unit: phone ? unit : "",
   };
 }
 
@@ -773,6 +815,19 @@ export const SK = {
   gap: 22,
 } as const;
 
+/** On a phone the figure is 350 wide, so the outcome nodes and their values show without scrolling. */
+export const SK_PHONE = {
+  w: 350,
+  h: 400,
+  left: 92,
+  right: 92,
+  top: 16,
+  bottom: 16,
+  bar: 10,
+  gap: 16,
+} as const;
+export type SkGeo = typeof SK | typeof SK_PHONE;
+
 export interface SkNode {
   id: number;
   name: string;
@@ -808,10 +863,11 @@ export interface SkModel {
 }
 
 /** Sankey(sources, targets, values, unit?, focus?): one flow for each position; node height and band width share one scale. */
-export function buildSankey(props: Record<string, unknown> | undefined): SkModel {
+export function buildSankey(props: Record<string, unknown> | undefined, phone = false): SkModel {
+  const SKG: SkGeo = phone ? SK_PHONE : SK;
   const problems: string[] = [];
   const unit = clean(props?.unit);
-  const empty: SkModel = { nodes: [], flows: [], layers: 0, unit, w: SK.w, h: SK.h, problems };
+  const empty: SkModel = { nodes: [], flows: [], layers: 0, unit, w: SKG.w, h: SKG.h, problems };
   const src = Array.isArray(props?.sources) ? props.sources : [];
   const dst = Array.isArray(props?.targets) ? props.targets : [];
   const val = Array.isArray(props?.values) ? props.values : [];
@@ -942,14 +998,14 @@ export function buildSankey(props: Record<string, unknown> | undefined): SkModel
     }
   }
   // One scale for every column.
-  const room = SK.h - SK.top - SK.bottom;
+  const room = SKG.h - SKG.top - SKG.bottom;
   let k = Infinity;
   for (const col of columns) {
     const sum = col.reduce((a, id) => a + value[id], 0);
-    k = Math.min(k, (room - SK.gap * (col.length - 1)) / sum);
+    k = Math.min(k, (room - SKG.gap * (col.length - 1)) / sum);
   }
   const nodes: SkNode[] = [];
-  const plotW = SK.w - SK.left - SK.right;
+  const plotW = SKG.w - SKG.left - SKG.right;
   const focusId =
     props?.focus == null || !clean(props.focus)
       ? -1
@@ -959,14 +1015,14 @@ export function buildSankey(props: Record<string, unknown> | undefined): SkModel
   }
   for (let c = 0; c < layers; c++) {
     const col = columns[c];
-    const height = col.reduce((a, id) => a + value[id] * k, 0) + SK.gap * (col.length - 1);
-    let y = SK.top + (room - height) / 2;
+    const height = col.reduce((a, id) => a + value[id] * k, 0) + SKG.gap * (col.length - 1);
+    let y = SKG.top + (room - height) / 2;
     for (const id of col) {
       const h = Math.max(2, value[id] * k);
-      const x = SK.left + (layers > 1 ? (c * (plotW - SK.bar)) / (layers - 1) : 0);
+      const x = SKG.left + (layers > 1 ? (c * (plotW - SKG.bar)) / (layers - 1) : 0);
       const side: SkNode["side"] =
         c === 0 ? "left" : outSum[id] === 0 || c === layers - 1 ? "right" : "inside";
-      const room1 = side === "inside" ? 150 : SK.left - 18;
+      const room1 = side === "inside" ? (phone ? 84 : 150) : SKG.left - 18;
       nodes[id] = {
         id,
         name: names[id],
@@ -983,7 +1039,7 @@ export function buildSankey(props: Record<string, unknown> | undefined): SkModel
           { text: fit(withUnit(value[id], unit), room1, 12), cls: "value" },
         ],
       };
-      y += h + SK.gap;
+      y += h + SKG.gap;
     }
   }
   // Bands: each node gives its outgoing bands, and takes its incoming ones, in the order of the other end.
@@ -1013,7 +1069,7 @@ export function buildSankey(props: Record<string, unknown> | undefined): SkModel
   const flows: SkFlow[] = alive.map((e) => {
     const key = `${e.from}>${e.to}`;
     const t = Math.max(2, e.value * k);
-    const xs = nodes[e.from].x + SK.bar;
+    const xs = nodes[e.from].x + SKG.bar;
     const xt = nodes[e.to].x;
     const mid = (xs + xt) / 2;
     const y0 = sy.get(key) as number;
@@ -1028,5 +1084,5 @@ export function buildSankey(props: Record<string, unknown> | undefined): SkModel
       part: `${names[e.from]} → ${names[e.to]}: ${withUnit(e.value, unit)}`,
     };
   });
-  return { nodes: nodes.filter(Boolean), flows, layers, unit, w: SK.w, h: SK.h, problems };
+  return { nodes: nodes.filter(Boolean), flows, layers, unit, w: SKG.w, h: SKG.h, problems };
 }

@@ -2,7 +2,7 @@ import React from "react";
 import { z } from "zod";
 import { austereComponent, DiagramFrame } from "austere-axi/pack";
 import type { RendererArgs } from "austere-axi/pack";
-import { WF, buildWaterfall } from "./_quantity-model.ts";
+import { PHONE_ROOM, buildWaterfall } from "./_quantity-model.ts";
 import { T } from "./_shape-view.tsx";
 import { useProblems } from "./_matrix-view.tsx";
 import guide from "./Waterfall.md";
@@ -16,11 +16,12 @@ type WaterfallProps = {
 };
 
 function WaterfallView({ props, statementId }: RendererArgs<WaterfallProps>) {
-  const model = React.useMemo(() => buildWaterfall(props), [props]);
-  useProblems(model.problems, "waterfall", "Waterfall", statementId);
+  const base = React.useMemo(() => buildWaterfall(props), [props]);
+  useProblems(base.problems, "waterfall", "Waterfall", statementId);
   return (
     <DiagramFrame className="dg-waterfall" name="Waterfall chart">
-      {() => {
+      {({ room, full }) => {
+        const model = !full && room < PHONE_ROOM ? buildWaterfall(props, room) : base;
         if (!model.bars.length) {
           return {
             error: (
@@ -31,14 +32,14 @@ function WaterfallView({ props, statementId }: RendererArgs<WaterfallProps>) {
             ),
           };
         }
-        const axisX = WF.left - 6;
-        const rightEdge = model.w - WF.right;
+        const axisX = model.geo.left - 6;
+        const rightEdge = model.w - model.geo.right;
         return {
           width: model.w,
           caption: (
             <p className="dg-note">
               Filled bars rise, hollow bars fall; totals stand on the baseline. A line carries the
-              running total from one bar to the next.
+              running total from one bar to the next.{model.unit ? ` Values in ${model.unit}.` : ""}
             </p>
           ),
           content: (
@@ -72,7 +73,7 @@ function WaterfallView({ props, statementId }: RendererArgs<WaterfallProps>) {
                     className="dg-wf-rect"
                     x={b.x}
                     y={b.y}
-                    width={WF.bar}
+                    width={model.geo.bar}
                     height={b.h}
                     rx={2}
                     data-austere-part={b.part}
@@ -87,7 +88,7 @@ function WaterfallView({ props, statementId }: RendererArgs<WaterfallProps>) {
                       key={k}
                       className="dg-wf-label"
                       x={b.cx}
-                      y={WF.top + WF.plot + 22 + k * 15}
+                      y={model.geo.top + model.geo.plot + 22 + k * 15}
                       textAnchor="middle"
                       data-austere-part={k === 0 ? b.part : undefined}
                     >
