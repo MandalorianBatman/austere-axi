@@ -154,8 +154,8 @@ export const Radar = austereComponent({
   limits: [
     {
       prop: "labels",
-      max: 6,
-      message: "Radar: 6 criteria at most. Split the criteria into two charts, or use a Table.",
+      max: 5,
+      message: "Radar: 5 criteria at most. Split the criteria into two charts, or use a Table.",
     },
     {
       prop: "series",

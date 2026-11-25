@@ -2,7 +2,7 @@
 Events in time order: a release history, an incident timeline, project milestones, a roadmap of what is done and what is next.
 
 ## Not for
-- Tasks with durations that overlap: Gantt, when it ships; until then, a Table with start and end columns.
+- Tasks with durations that overlap: Gantt.
 - An ordered method with no dates: Steps.
 
 ## Limits

@@ -33,6 +33,14 @@ test("reports unknown components with the statement and its line", () => {
   assert.equal(e?.line, statementLines(html).get("b")?.line);
 });
 
+test("an argument error names `components show` for the component's signature", () => {
+  const r = checkHtml(page('root = Stack([a])\na = Waterfall("x", 5)'));
+  assert.equal(r.ok, false);
+  const mismatches = r.errors.filter((x) => x.code === "type-mismatch");
+  assert.ok(mismatches.length);
+  for (const e of mismatches) assert.match(e.message, /austere-axi components show Waterfall/);
+});
+
 test("reports unresolved references and orphans", () => {
   const r = checkHtml(
     page('root = Stack([a, missing])\na = TextContent("x")\nlonely = TextContent("y")'),

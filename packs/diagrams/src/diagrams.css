@@ -1794,8 +1794,9 @@
 .dg-sk-band {
   fill: #a8a8b2;
   fill-opacity: 0.22;
-  stroke: #121214;
-  stroke-width: 0.8px;
+  stroke: #a8a8b2;
+  stroke-opacity: 0.45;
+  stroke-width: 0.6px;
 }
 .dg-sk-band:hover {
   fill-opacity: 0.34;

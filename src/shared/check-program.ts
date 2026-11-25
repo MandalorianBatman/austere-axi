@@ -54,6 +54,14 @@ function elementsOf(root: unknown, typeName: string): ElementNode[] {
   return out;
 }
 
+// Parser errors that mean the arguments do not fit the component's signature.
+const SIGNATURE_CODES = new Set([
+  "type-mismatch",
+  "missing-required",
+  "null-required",
+  "excess-args",
+]);
+
 /** `program` is OpenUI Lang source. */
 export function checkProgram(
   program: string,
@@ -90,7 +98,10 @@ export function checkProgram(
       line: lineOf(e.statementId),
       component: e.component || undefined,
       path: e.path || undefined,
-      message: e.message,
+      message:
+        SIGNATURE_CODES.has(e.code) && e.component
+          ? `${e.message}. Run \`austere-axi components show ${e.component}\` for its signature.`
+          : e.message,
     });
     if (e.severity === "warning") warnings.push(entry);
     else errors.push(entry);

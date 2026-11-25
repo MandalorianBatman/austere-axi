@@ -24,7 +24,7 @@ Reviewing that message is slow:
 
 ## What austere-axi does
 
-The agent puts its answer on a page: sections, tables, diagrams, charts, code changes, and a form for the decision it needs from you.
+The agent puts its answer on a page: sections, tables, diagrams (50 types, from sequence and flow diagrams to boards, matrices and plans), charts, code changes, and a form for the decision it needs from you.
 
 You click the exact thing you want changed and write a note, the way you would comment on a shared document. The agent changes only that part, and the page updates while you watch.
 
@@ -47,6 +47,7 @@ Repeat until it is right. When you are done, press **Done** (or **Send & finish*
 | A summary of what the agent changed | [Pull request summary](https://mandalorianbatman.github.io/austere-axi/gallery/pr-summary.html) |
 | A report on something that went wrong | [Outage postmortem](https://mandalorianbatman.github.io/austere-axi/gallery/incident-postmortem.html) |
 | A plan for the team | [Sprint plan](https://mandalorianbatman.github.io/austere-axi/gallery/sprint-plan.html) |
+| A picture of how something works | [Every diagram type](https://mandalorianbatman.github.io/austere-axi/gallery/diagram-types.html): flows, sequences, data models, boards, matrices, plans and charts |
 
 ## What else it does
 
