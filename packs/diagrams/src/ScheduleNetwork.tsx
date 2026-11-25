@@ -46,6 +46,9 @@ function wrap(text: string, max: number): string[] {
   return [text.slice(0, at), cut(text.slice(at + 1), max)];
 }
 
+/** "weeks" → "week" for a duration of 1. */
+const singular = (unit: string): string => (/[^s]s$/i.test(unit) ? unit.slice(0, -1) : unit);
+
 function BoxView({ b, unit }: { b: NetBox; unit: string }) {
   const t = b.task;
   const { boxW, boxH } = NET;
@@ -66,7 +69,7 @@ function BoxView({ b, unit }: { b: NetBox; unit: string }) {
           </T>
         ))}
         <T className="dg-sn-field" x={b.x + 12} y={row(58)}>
-          {`DUR ${num(t.duration)} ${cut(unit, 8)}`}
+          {`DUR ${num(t.duration)} ${cut(t.duration === 1 ? singular(unit) : unit, 8)}`}
         </T>
         <T className="dg-sn-field" x={b.x + 12} y={row(80)}>{`ES ${num(t.es)}`}</T>
         <T className="dg-sn-field" x={b.x + half} y={row(80)}>{`EF ${num(t.ef)}`}</T>

@@ -30,18 +30,18 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Timeline | `Timeline` | component | built |
 | Git graph | `GitGraph` (`GitCommit`) | component | built |
 | Swimlane | `Swimlane`: `Architecture` with lanes | recipe | built |
-| Quadrant | `Quadrant` | component | planned |
+| Quadrant | `Quadrant` (`QuadrantItem`) | component | built |
 | Radar / Spider | `RadarChart`, or a pack component | component | planned |
 | Polar chart | `RadialChart`, or a pack component | component | planned |
-| Loop | `Loop` | component | planned |
+| Loop | `Loop` (`LoopStep`, `LoopHub`) | component | built |
 | Nested | `Nested` (`NestedLevel`) | component | built |
 | Tree | `Tree` (`TreeNode`) | component | built |
 | Org chart | `OrgChart` (`Person`) | component | built |
 | Layer stack | `LayerStack` (`Layer`) | component | built |
 | Exploded axonometric | none: an illustration with no data model | — | not planned |
 | Axonometric plan | none: an illustration with no data model | — | not planned |
-| Venn | `Venn` | component | planned |
-| Pyramid / funnel | `Pyramid` | component | planned |
+| Venn | `Venn` (`VennSet`, `VennOverlap`) | component | built |
+| Pyramid / funnel | `Pyramid` (`PyramidLayer`) | component | built |
 | Bar chart | `BarComparison`: `BarChart` | recipe | built |
 | Waterfall | `Waterfall` | component | planned |
 | Treemap | `Treemap` | component | planned |
@@ -56,8 +56,8 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | DP integration | `Architecture` with lanes | recipe | planned |
 | DP security matrix | `PermissionMatrix` (`AccessRow`) | component | built |
 | Sankey | `Sankey` | component | planned |
-| Fishbone | `Fishbone` | component | planned |
-| Wardley map | `WardleyMap` | component | planned |
+| Fishbone | `Fishbone` (`FishCause`) | component | built |
+| Wardley map | `WardleyMap` (`WardleyPart`) | component | built |
 | Kanban | `Kanban` (`KanbanCard`) | component | built |
 | User journey | `UserJourney` (`JourneyStep`) | component | built |
 | Service blueprint | `ServiceBlueprint` (`BlueprintStep`) | component | built |

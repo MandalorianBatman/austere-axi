@@ -17,6 +17,12 @@ import { Traceability, TraceReq, TraceItem } from "./Traceability.tsx";
 import { Gantt, GanttTask } from "./Gantt.tsx";
 import { GitGraph, GitCommit } from "./GitGraph.tsx";
 import { ScheduleNetwork, ScheduleTask } from "./ScheduleNetwork.tsx";
+import { Quadrant, QuadrantItem } from "./Quadrant.tsx";
+import { Venn, VennSet, VennOverlap } from "./Venn.tsx";
+import { Pyramid, PyramidLayer } from "./Pyramid.tsx";
+import { Loop, LoopStep, LoopHub } from "./Loop.tsx";
+import { Fishbone, FishCause } from "./Fishbone.tsx";
+import { WardleyMap, WardleyPart } from "./WardleyMap.tsx";
 import css from "./diagrams.css";
 import type { PackModule } from "austere-axi/pack";
 
@@ -55,6 +61,20 @@ export default {
     GitCommit,
     ScheduleNetwork,
     ScheduleTask,
+    Quadrant,
+    QuadrantItem,
+    Venn,
+    VennSet,
+    VennOverlap,
+    Pyramid,
+    PyramidLayer,
+    Loop,
+    LoopStep,
+    LoopHub,
+    Fishbone,
+    FishCause,
+    WardleyMap,
+    WardleyPart,
   ],
   css,
 } satisfies PackModule;
