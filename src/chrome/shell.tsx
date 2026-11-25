@@ -7,19 +7,30 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactElement, RefObject } from "react";
 import { createRoot } from "react-dom/client";
 import { plural } from "./format.ts";
-import { BOOT } from "./hub-env.ts";
+import { BOOT, CLOUD } from "./hub-env.ts";
 import { InboxView, NotesView, PagesView, RunsView, SearchView } from "./hub-views.tsx";
 import { Icon } from "./icon.tsx";
 import { AppSidebar, SearchField } from "./projects-sidebar.tsx";
 import { SettingsView } from "./settings.tsx";
 import { useSidebarOpen } from "./side-state.ts";
 import { go, loadSide, start, toUrl, toggleProject, useHub } from "./hub-store.ts";
-import { VIEWS } from "./views.ts";
+import { CLOUD_VIEWS, VIEWS } from "./views.ts";
+import {
+  AccountFooter,
+  CloudPagesView,
+  CloudSearchView,
+  PeopleDialog,
+  SharedView,
+  pageHref,
+} from "./cloud-views.tsx";
 import { Toaster } from "@/chrome/ui/sonner";
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/chrome/ui/sidebar";
 import { HubDialogs } from "./hub-dialog.tsx";
 import { Button } from "@/chrome/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/chrome/ui/tooltip";
+
+/** The views listed: the local hub's, or on austere-cloud the ones D1 can fill (RLM-458). */
+const SHELL_VIEWS = CLOUD ? CLOUD_VIEWS : VIEWS;
 
 function useCounts(): { needsYou: number; waiting: number } {
   const needsYou = useHub((s) => s.projects.reduce((n, p) => n + p.needs_you, 0));
@@ -39,7 +50,7 @@ function TabBar(): ReactElement {
       aria-label="Views"
       className="fixed inset-x-0 bottom-0 z-15 hidden border-t border-[var(--line)] bg-[var(--bg-2)] px-1.5 pt-1.5 pb-[calc(var(--spacing)*2.5+env(safe-area-inset-bottom))] max-xs:flex"
     >
-      {VIEWS.map((v) => {
+      {SHELL_VIEWS.map((v) => {
         const n = v.id === "inbox" ? needsYou : v.id === "settings" ? waiting : 0;
         return (
           <a
@@ -132,7 +143,9 @@ function Content(): ReactElement | null {
     case "inbox":
       return <InboxView />;
     case "pages":
-      return <PagesView />;
+      return CLOUD ? <CloudPagesView /> : <PagesView />;
+    case "shared":
+      return <SharedView />;
     case "notes":
       return <NotesView />;
     case "runs":
@@ -140,7 +153,7 @@ function Content(): ReactElement | null {
     case "settings":
       return <SettingsView />;
     case "search":
-      return <SearchView />;
+      return CLOUD ? <CloudSearchView /> : <SearchView />;
   }
 }
 
@@ -209,8 +222,8 @@ function Hub(): ReactElement {
 
   useEffect(() => {
     const label =
-      state.view === "search" ? "Search" : VIEWS.find((v) => v.id === state.view)?.label;
-    document.title = `${label} · austere-axi hub`;
+      state.view === "search" ? "Search" : SHELL_VIEWS.find((v) => v.id === state.view)?.label;
+    document.title = `${label} · ${CLOUD ? "austere cloud" : "austere-axi hub"}`;
   }, [state.view]);
 
   return (
@@ -225,6 +238,9 @@ function Hub(): ReactElement {
         onView={(e, v) => go(e, { view: v })}
         counts={{ inbox: counts.needsYou, settings: counts.waiting }}
         search={<SearchBox />}
+        views={SHELL_VIEWS}
+        brand={CLOUD ? { name: "austere cloud", href: "/" } : undefined}
+        footer={CLOUD ? <AccountFooter /> : undefined}
         projects={{
           projects,
           pages: sidePages,
@@ -236,6 +252,17 @@ function Hub(): ReactElement {
           onToggle: toggleProject,
           status: sideStatus,
           onRetry: () => void loadSide(),
+          ...(CLOUD
+            ? {
+                pageHref,
+                service: "austere cloud",
+                empty: (
+                  <>
+                    No pages yet. Run <code>austere-axi publish &lt;file&gt;</code>.
+                  </>
+                ),
+              }
+            : {}),
         }}
       />
       <DrawerWatch />
@@ -256,6 +283,7 @@ function Hub(): ReactElement {
         mobileOffset={{ bottom: "calc(var(--tabbar-h) + var(--spacing) * 2)" }}
       />
       <HubDialogs />
+      {CLOUD ? <PeopleDialog /> : null}
     </SidebarProvider>
   );
 }

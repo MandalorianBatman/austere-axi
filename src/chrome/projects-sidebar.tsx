@@ -8,12 +8,13 @@ import { ChevronRight } from "lucide-react";
 import { middle, plural, titleOf } from "./format.ts";
 import { Icon } from "./icon.tsx";
 import { VIEWS } from "./views.ts";
-import type { SideStatus, View } from "./views.ts";
+import type { NavView, SideStatus, View } from "./views.ts";
 import { Alert, AlertDescription, AlertTitle } from "@/chrome/ui/alert";
 import { Button } from "@/chrome/ui/button";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -53,6 +54,10 @@ export interface ProjectsSidebarProps {
   status?: SideStatus;
   /** Read the lists again (the error's Retry). */
   onRetry?(): void;
+  /** What the sidebar says with no project; the default is the local hub's. */
+  empty?: ReactNode;
+  /** What could not be reached, in the error's words. */
+  service?: string;
 }
 
 const NeedsDot = (): ReactElement => (
@@ -81,6 +86,8 @@ export function ProjectsSidebar({
   currentId,
   status = "ready",
   onRetry,
+  empty,
+  service = "austere-axi",
 }: ProjectsSidebarProps): ReactElement {
   const byProject = new Map<string, ShellPage[]>();
   for (const p of pages) {
@@ -210,7 +217,7 @@ export function ProjectsSidebar({
               <Alert variant="destructive" className="px-3 py-2">
                 <AlertTitle>Could not load projects</AlertTitle>
                 <AlertDescription>
-                  <p>Could not reach austere-axi.</p>
+                  <p>Could not reach {service}.</p>
                   {onRetry ? (
                     <Button
                       type="button"
@@ -227,7 +234,11 @@ export function ProjectsSidebar({
             </li>
           ) : (
             <li className="side-empty px-2 py-1 text-sm text-muted-foreground">
-              No projects yet. Open a page with <code>austere-axi open &lt;file&gt;</code>.
+              {empty ?? (
+                <>
+                  No projects yet. Open a page with <code>austere-axi open &lt;file&gt;</code>.
+                </>
+              )}
             </li>
           )}
         </SidebarMenu>
@@ -285,8 +296,14 @@ export interface AppSidebarProps {
   version: string;
   /** The view the page is on; "" where there is none (the review page). */
   view: View | "";
-  viewHref(view: Exclude<View, "search">): string;
-  onView?(e: MouseEvent, view: Exclude<View, "search">): void;
+  viewHref(view: NavView): string;
+  onView?(e: MouseEvent, view: NavView): void;
+  /** The views listed; the local hub's by default. */
+  views?: typeof VIEWS;
+  /** The name beside the mark and where it goes; the local hub's by default. */
+  brand?: { name: string; href: string };
+  /** Below the projects: the account, on austere-cloud. */
+  footer?: ReactNode;
   /** Pages that need the owner (Inbox) and people waiting for access (Settings). */
   counts: { inbox: number; settings: number };
   /** The search box: a live one on the hub, a form to the hub's search on the review page. */
@@ -306,14 +323,17 @@ export function AppSidebar({
   counts,
   search,
   projects,
+  views = VIEWS,
+  brand = { name: "austere-axi", href: "/?view=inbox" },
+  footer,
 }: AppSidebarProps): ReactElement {
   return (
     <Sidebar id="side" aria-label="Projects" role="complementary" className="side">
       <SidebarHeader className="gap-3 p-3">
         <div className="brand flex items-center gap-2 px-2">
           <LogoMark />
-          <a href="/?view=inbox" className="flex-1 text-sm font-semibold text-foreground">
-            austere-axi
+          <a href={brand.href} className="flex-1 text-sm font-semibold text-foreground">
+            {brand.name}
           </a>
           {version ? (
             <small className="font-mono text-2xs text-[var(--faint)]">{version}</small>
@@ -324,7 +344,7 @@ export function AppSidebar({
       <SidebarContent className="px-1">
         {/* A phone has the views in its tab bar (the hub); the drawer keeps search and projects. */}
         <SidebarMenu className="views max-xs:hidden" aria-label="Views">
-          {VIEWS.map((v) => {
+          {views.map((v) => {
             const n = v.id === "inbox" ? counts.inbox : v.id === "settings" ? counts.settings : 0;
             return (
               <SidebarMenuItem key={v.id}>
@@ -357,6 +377,9 @@ export function AppSidebar({
         </SidebarMenu>
         <ProjectsSidebar {...projects} />
       </SidebarContent>
+      {footer ? (
+        <SidebarFooter className="border-t border-sidebar-border p-3">{footer}</SidebarFooter>
+      ) : null}
     </Sidebar>
   );
 }

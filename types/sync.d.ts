@@ -8,7 +8,7 @@
 // union of string literals (add a field instead). Bump SYNC_VERSION with each addition.
 
 /** Protocol version this module speaks. Every frame, mutation and row carries it as `v`. */
-export declare const SYNC_VERSION: 1;
+export declare const SYNC_VERSION: 2;
 /** Oldest `v` still accepted. A frame below it gets `upgrade_required`. */
 export declare const MIN_SYNC_VERSION: 1;
 /** WebSocket subprotocol both sides must agree on. */
@@ -88,6 +88,10 @@ export interface PublishArgs {
   unlisted: boolean;
   /** Viewers exchange presence frames. */
   presence: boolean;
+  /** The local hub's project name for the file (sync v2, RLM-458): the group the page is listed under on the cloud hub. Absent when the CLI has no project for it. */
+  project?: string;
+  /** The page's path inside its project, `/`-separated (sync v2). */
+  relPath?: string;
 }
 
 export interface AddNoteArgs {

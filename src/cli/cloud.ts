@@ -928,6 +928,9 @@ export interface PublishOptions {
   invite?: string[];
   /** Expiry for the invites named here, epoch ms. */
   expiresAt?: number;
+  /** The local hub's project name for the file, and its path in the project: the cloud hub's group and path. */
+  project?: string;
+  relPath?: string;
 }
 
 /**
@@ -977,6 +980,9 @@ export async function publish(abs: string, opts: PublishOptions = {}): Promise<P
     // Invite-only unless --unlisted (Q16); presence on unless --no-presence (Q17).
     unlisted,
     presence,
+    ...(opts.project !== undefined && opts.relPath !== undefined
+      ? { project: opts.project.slice(0, 200), relPath: opts.relPath.slice(-1000) }
+      : {}),
   };
   const entry: PageEntry = {
     id,

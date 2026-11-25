@@ -1,6 +1,6 @@
 {
   "name": "austere-axi",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Agent-authored review artifacts in OpenUI Lang: a few hundred tokens instead of a whole HTML page, with statement-level annotations fed back to the agent.",
   "keywords": [
     "agent",
@@ -40,6 +40,9 @@
       "types": "./types/sync.d.ts",
       "default": "./dist/sync.mjs"
     },
+    "./hub-api": {
+      "types": "./types/hub-api.d.ts"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -48,6 +51,7 @@
     "test": "node --test test/*.test.ts",
     "test:browser": "node scripts/build.ts packs runtime spec chrome && node --test test/browser/*.test.ts",
     "signatures": "node scripts/signatures.ts",
+    "hub-api-types": "node scripts/hub-api-types.ts",
     "gallery": "node scripts/gallery.ts",
     "site": "node scripts/site.ts",
     "shot": "node scripts/shot.ts",

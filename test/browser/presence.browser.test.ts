@@ -200,7 +200,7 @@ test("hosted chrome presence: roster chips, focus outlines, own focus and status
 
     // Joins with the prompt name.
     assert.deepEqual(await frameFrom("hello"), {
-      v: 1,
+      v: 2,
       t: "hello",
       status: "viewing",
       name: "Ana",
@@ -258,14 +258,14 @@ test("hosted chrome presence: roster chips, focus outlines, own focus and status
     // This viewer's click in Annotate mode is its focus; typing in the note box or the composer is "writing".
     await page.click('[data-mode="annotate"]');
     await page.frameLocator(".frame").locator("text=Intro paragraph").click();
-    assert.deepEqual(await frameFrom("focus"), { v: 1, t: "focus", statement: "intro" });
-    assert.deepEqual(await frameFrom("status"), { v: 1, t: "status", status: "writing" });
+    assert.deepEqual(await frameFrom("focus"), { v: 2, t: "focus", statement: "intro" });
+    assert.deepEqual(await frameFrom("status"), { v: 2, t: "status", status: "writing" });
     await page.keyboard.press("Escape");
-    assert.deepEqual(await frameFrom("status"), { v: 1, t: "status", status: "viewing" });
+    assert.deepEqual(await frameFrom("status"), { v: 2, t: "status", status: "viewing" });
     await page.focus(".composer textarea");
-    assert.deepEqual(await frameFrom("status"), { v: 1, t: "status", status: "writing" });
+    assert.deepEqual(await frameFrom("status"), { v: 2, t: "status", status: "writing" });
     await page.locator(".composer textarea").blur();
-    assert.deepEqual(await frameFrom("status"), { v: 1, t: "status", status: "viewing" });
+    assert.deepEqual(await frameFrom("status"), { v: 2, t: "status", status: "viewing" });
 
     // bye removes the chip and its outline.
     play({ v: 1, t: "bye", viewer: "v-owner" });
@@ -277,12 +277,12 @@ test("hosted chrome presence: roster chips, focus outlines, own focus and status
     socket?.terminate();
     await page.waitForSelector(".viewers", { state: "hidden" });
     assert.deepEqual(await frameFrom("hello", 10_000), {
-      v: 1,
+      v: 2,
       t: "hello",
       status: "viewing",
       name: "Ana",
     });
-    assert.deepEqual(await frameFrom("focus"), { v: 1, t: "focus", statement: "intro" });
+    assert.deepEqual(await frameFrom("focus"), { v: 2, t: "focus", statement: "intro" });
 
     // The page is deleted: the handshake is refused, the shell answers 404, and the chrome stops.
     gone = true;
@@ -306,13 +306,13 @@ test("hosted chrome presence: a first visit joins unnamed, then rejoins under th
     received.length = 0;
     const page = await ctx.newPage();
     await page.goto(`${origin}${BASE}`);
-    assert.deepEqual(await frameFrom("hello"), { v: 1, t: "hello", status: "viewing" });
+    assert.deepEqual(await frameFrom("hello"), { v: 2, t: "hello", status: "viewing" });
     // The name prompt comes with the first send.
     await page.fill(".composer textarea", "hi");
     await page.click(".composer .send");
     await page.fill(".name-ask input", "Cy");
     await page.press(".name-ask input", "Enter");
-    assert.deepEqual(await frameFrom("hello"), { v: 1, t: "hello", status: "viewing", name: "Cy" });
+    assert.deepEqual(await frameFrom("hello"), { v: 2, t: "hello", status: "viewing", name: "Cy" });
   } finally {
     await ctx.close();
   }

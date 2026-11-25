@@ -44,7 +44,7 @@ import { go, reload, useHub } from "./hub-store.ts";
 /** Selector of what takes focus when the Notes filter form remounts after a changed filter. */
 let refocusFilter: string | null = null;
 
-function Loaded<A, T>({
+export function Loaded<A, T>({
   result,
   title,
   children,

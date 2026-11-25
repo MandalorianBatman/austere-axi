@@ -38,7 +38,7 @@ interface Present {
   focus: string | null;
 }
 
-const V: typeof SYNC_VERSION = 1;
+const V: typeof SYNC_VERSION = 2;
 /** `status` doubles as the heartbeat; the server drops a viewer after 60 s of silence. */
 const HEARTBEAT_MS = 25_000;
 const STATUS_TEXT: Record<PresenceStatus, string> = {
