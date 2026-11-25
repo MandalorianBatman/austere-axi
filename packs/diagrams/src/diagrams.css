@@ -1496,6 +1496,10 @@
   stroke: var(--austere-accent);
 }
 .dg-wd-label {
+  stroke: #121214;
+  stroke-width: 4px;
+  paint-order: stroke;
+  stroke-linejoin: round;
   fill: #ececef;
   font-size: 12px;
   font-weight: 600;

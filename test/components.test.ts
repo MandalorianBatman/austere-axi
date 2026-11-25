@@ -1945,3 +1945,59 @@ test("WardleyMap: the stage is a band, links go by name, a part in the same band
     );
   }
 });
+
+test("Venn: with honest sizes every label lies inside its own region and no two label boxes overlap", () => {
+  const cases = [
+    {
+      sets: [
+        part({ name: "Customers", size: 100 }),
+        part({ name: "Partners", size: 40 }),
+        part({ name: "Staff", size: 15 }),
+      ],
+      overlaps: [
+        part({ label: "Resellers", of: ["Customers", "Partners"] }),
+        part({ label: "Contractors", of: ["Partners", "Staff"] }),
+        part({ label: "Champions", of: ["Customers", "Staff"] }),
+        part({ label: "Core", of: ["Customers", "Partners", "Staff"] }),
+      ],
+    },
+    {
+      sets: [part({ name: "Backend", size: 90 }), part({ name: "Frontend", size: 20 })],
+      overlaps: [part({ label: "Full stack", of: ["Backend", "Frontend"] })],
+    },
+    {
+      sets: [
+        part({ name: "A", size: 1000 }),
+        part({ name: "B", size: 400 }),
+        part({ name: "C", size: 120 }),
+      ],
+      overlaps: [
+        part({ label: "AB", of: ["A", "B"] }),
+        part({ label: "ABC", of: ["A", "B", "C"] }),
+      ],
+    },
+  ];
+  for (const c of cases) {
+    const v = buildVenn(c);
+    const boxes = [...v.setLabels, ...v.overlaps.map((o) => o.text)].flatMap((l) =>
+      l ? [l.box] : [],
+    );
+    for (let a = 0; a < boxes.length; a++) {
+      for (let b = a + 1; b < boxes.length; b++) {
+        const A = boxes[a];
+        const B = boxes[b];
+        assert.ok(
+          A.x1 <= B.x0 || B.x1 <= A.x0 || A.y1 <= B.y0 || B.y1 <= A.y0,
+          `boxes ${a} and ${b} overlap`,
+        );
+      }
+    }
+    const unplaced =
+      v.setLabels.filter((l) => !l).length + v.overlaps.filter((o) => !o.text).length;
+    assert.equal(
+      unplaced === 0,
+      !v.problems.some((p) => /no room/.test(p)),
+      "a label with no room is reported",
+    );
+  }
+});

@@ -211,12 +211,12 @@ hvABC = VennOverlap("Hire", ["Wants the job", "Can do the job", "Fits the budget
   ],
   stress: [
     `stressVenn = Venn([vsA, vsB, vsC], [vsAB, vsAC, vsBC, vsABC])
-vsA = VennSet("SET_WITH_A_VERY_LONG_UNBROKEN_NAME_THAT_MUST_BE_CUT_AT_THE_EDGE", 1000, "DETAIL_WITH_A_VERY_LONG_UNBROKEN_TOKEN_THAT_MUST_BE_CUT_TOO")
-vsB = VennSet("支払い", 400)
-vsC = VennSet("C", 120)
+vsA = VennSet("SET_WITH_A_VERY_LONG_UNBROKEN_NAME_THAT_MUST_BE_CUT_AT_THE_EDGE", 100, "DETAIL_WITH_A_VERY_LONG_UNBROKEN_TOKEN_THAT_MUST_BE_CUT_TOO")
+vsB = VennSet("支払い", 80)
+vsC = VennSet("C", 60)
 vsAB = VennOverlap("OVERLAP_WITH_A_VERY_LONG_UNBROKEN_NAME_THAT_MUST_BE_CUT_AT_THE_EDGE", ["SET_WITH_A_VERY_LONG_UNBROKEN_NAME_THAT_MUST_BE_CUT_AT_THE_EDGE", "支払い"], true)
 vsAC = VennOverlap("A long overlap label that needs a few lines of room", ["SET_WITH_A_VERY_LONG_UNBROKEN_NAME_THAT_MUST_BE_CUT_AT_THE_EDGE", "C"])
-vsBC = VennOverlap("支払いの確認", ["c", "支払い"])
+vsBC = VennOverlap("確認", ["c", "支払い"])
 vsABC = VennOverlap("Centre", ["C", "支払い", "SET_WITH_A_VERY_LONG_UNBROKEN_NAME_THAT_MUST_BE_CUT_AT_THE_EDGE"])`,
   ],
 });

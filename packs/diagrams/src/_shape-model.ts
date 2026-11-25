@@ -355,70 +355,67 @@ export function buildVenn(props: Record<string, unknown> | undefined): VennModel
       list.push({ x, y });
     }
   }
-  /** Where a label of a region goes, and how much room it has there. */
-  const room = (mask: number) => {
-    const list = pts.get(mask);
-    if (!list?.length) return null;
-    const mx = list.reduce((a, p) => a + p.x, 0) / list.length;
-    const my = list.reduce((a, p) => a + p.y, 0) / list.length;
-    let at = list[0];
-    let d = Infinity;
-    for (const p of list) {
-      const dd = (p.x - mx) ** 2 + (p.y - my) ** 2;
-      if (dd < d) {
-        d = dd;
-        at = p;
-      }
+  const placed: Rect[] = [];
+  /** True when the whole box lies inside the region `mask` (sampled every 4px along and across it). */
+  const inside = (mask: number, r: Rect): boolean => {
+    for (
+      let x = r.x0;
+      x <= r.x1 + 0.1;
+      x += Math.max(4, (r.x1 - r.x0) / Math.ceil((r.x1 - r.x0) / 4))
+    ) {
+      for (const y of [r.y0, (r.y0 + r.y1) / 2, r.y1]) if (maskAt(x, y) !== mask) return false;
     }
-    const run = (dx: number, dy: number) => {
-      let k = 0;
-      while (maskAt(at.x + dx * STEP * (k + 1), at.y + dy * STEP * (k + 1)) === mask) k++;
-      return k * STEP;
-    };
-    // Narrower of the two sides, so the text stays inside around its centre.
-    const halfW = Math.min(run(1, 0), run(-1, 0));
-    const halfH = Math.min(run(0, 1), run(0, -1));
-    return { x: at.x, y: at.y, w: halfW * 2, h: halfH * 2 };
+    for (const x of [r.x0, r.x1]) {
+      for (let y = r.y0; y <= r.y1; y += 4) if (maskAt(x, y) !== mask) return false;
+    }
+    return true;
   };
+  /** Text for one region, cut to fit inside it and clear of every label placed before; null with a reported problem when it cannot. */
   const place = (
     mask: number,
+    what: string,
     blocks: { text: string; size: number; cls: RegionLine["cls"]; max: number }[],
   ): RegionLabel | null => {
-    const spot = room(mask);
-    if (!spot) return null;
-    const maxLines = Math.max(1, Math.floor((spot.h - 4) / LH));
-    const lines: RegionLine[] = [];
-    for (const b of blocks) {
-      if (!b.text) continue;
-      const left = maxLines - lines.length;
-      if (left <= 0) break;
-      // Never break inside a word for want of room: let the word spill a little.
-      const longest = Math.max(...b.text.split(" ").map((word) => textW(word, b.size)));
-      const maxW = Math.max(46, spot.w - 14, Math.min(longest, 92));
-      for (const text of wrapText(b.text, maxW, b.size, Math.min(b.max, left))) {
-        lines.push({ text, cls: b.cls });
+    const list = pts.get(mask);
+    if (!list?.length) {
+      problems.push(
+        `The region of ${what} is empty: the circles do not overlap there. Change the sizes.`,
+      );
+      return null;
+    }
+    const mx = list.reduce((a, q) => a + q.x, 0) / list.length;
+    const my = list.reduce((a, q) => a + q.y, 0) / list.length;
+    const order = list
+      .map((q) => ({ q, d: (q.x - mx) ** 2 + (q.y - my) ** 2 }))
+      .sort((u, v) => u.d - v.d)
+      .map((u) => u.q);
+    for (const W of [150, 110, 84, 64, 48, 36]) {
+      const lines: RegionLine[] = [];
+      for (const bl of blocks) {
+        if (!bl.text) continue;
+        const room = Math.max(1, 4 - lines.length);
+        for (const text of wrapText(bl.text, W, bl.size, Math.min(bl.max, room))) {
+          lines.push({ text, cls: bl.cls });
+        }
+      }
+      const width = Math.max(...lines.map((l) => textW(l.text, l.cls === "detail" ? 11 : 13)), 12);
+      const height = lines.length * LH;
+      for (const q of order.slice(0, 1500)) {
+        const box: Rect = {
+          x0: q.x - width / 2 - 3,
+          y0: q.y - height / 2 - 2,
+          x1: q.x + width / 2 + 3,
+          y1: q.y + height / 2 + 2,
+        };
+        if (inside(mask, box) && !placed.some((o) => hit(box, o))) {
+          placed.push(box);
+          return { x: q.x, y: q.y, lines, box };
+        }
       }
     }
-    const width = Math.max(...lines.map((l) => textW(l.text, l.cls === "detail" ? 11 : 13)), 20);
-    const height = lines.length * LH;
-    return {
-      x: spot.x,
-      y: spot.y,
-      lines,
-      box: {
-        x0: spot.x - width / 2 - 4,
-        y0: spot.y - height / 2 - 3,
-        x1: spot.x + width / 2 + 4,
-        y1: spot.y + height / 2 + 3,
-      },
-    };
+    problems.push(`There is no room for the label of ${what}. Shorten it, or change the sizes.`);
+    return null;
   };
-  const setLabels = sets.map((s, i) =>
-    place(1 << i, [
-      { text: s.name, size: 13, cls: "name", max: 2 },
-      { text: s.detail, size: 11, cls: "detail", max: 2 },
-    ]),
-  );
 
   const overlaps: VennOverlapModel[] = [];
   const seen = new Set<number>();
@@ -461,9 +458,15 @@ export function buildVenn(props: Record<string, unknown> | undefined): VennModel
       label,
       of,
       focus,
-      text: place(mask, [{ text: label, size: 13, cls: "overlap", max: 3 }]),
+      text: place(mask, `"${label}"`, [{ text: label, size: 13, cls: "overlap", max: 3 }]),
     });
   }
+  const setLabels = sets.map((s, i) =>
+    place(1 << i, `"${s.name}"`, [
+      { text: s.name, size: 13, cls: "name", max: 2 },
+      { text: s.detail, size: 11, cls: "detail", max: 2 },
+    ]),
+  );
   return { sets, setLabels, overlaps, w, h, problems };
 }
 
@@ -667,8 +670,8 @@ export function layoutLoop(props: Record<string, unknown> | undefined): LoopLayo
       focus,
       x: 0,
       y: 0,
-      lines: wrapText(name, sw - 20, 13, detail ? 2 : 3),
-      detailLine: detail ? fit(detail, sw - 20, 11) : "",
+      lines: wrapText(name, sw - 24, 14.5, detail ? 2 : 3),
+      detailLine: detail ? fit(detail, sw - 24, 12) : "",
     };
   });
   const empty: LoopLayout = {
@@ -755,8 +758,8 @@ export function layoutLoop(props: Record<string, unknown> | undefined): LoopLayo
       detail: hd,
       x: -hw / 2,
       y: -hh / 2,
-      lines: wrapText(hn, hw - 24, 14, hd ? 2 : 3),
-      detailLine: hd ? fit(hd, hw - 24, 11) : "",
+      lines: wrapText(hn, hw - 28, 15.5, hd ? 2 : 3),
+      detailLine: hd ? fit(hd, hw - 28, 12) : "",
     };
     steps.forEach((s, k) => {
       const ux = Math.cos(theta(k));
