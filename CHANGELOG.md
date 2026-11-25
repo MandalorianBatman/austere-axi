@@ -4,6 +4,8 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+## 0.25.0 (2026-11-25)
+
 ### Added
 
 - **The hub shell has a cloud mode.** austere-cloud's signed-in `/` can load `chrome/shell.js` with the boot flag `mode: "cloud"` (and `account`): the sidebar, type and colours of the local hub, with the views a hosted account can fill: **Pages** (grouped by project, with an Ungrouped group), **Shared**, search over titles, a **People** dialog (grant and revoke by email) and an account footer with Sign out. Inbox, Notes, Runs and Settings are not shown. The local hub is unchanged. (RLM-458)
