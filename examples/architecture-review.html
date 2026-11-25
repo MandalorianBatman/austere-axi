@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="description" content="Architecture review for a multi-region event mesh: topology, radar trade-off evaluation, waterfall latency breakdown, and cutover plan.">
+<title>Architecture review: multi-region event mesh</title>
+<script src="../dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([overview, topology, tradeoffs, latencyBreakdown, recommendations, decide], "column", "l")
+overview = Card([CardHeader("Architecture review: multi-region event mesh", "Proposal for global event ingestion · RFC-89"), overviewText, overviewCallout])
+overviewText = MarkDownRenderer("We are reviewing the migration of our centralized ingestion tier to a distributed, active-active multi-region event mesh across US-East, EU-West, and APAC.
+
+**Objectives:**
+- Guarantee <120 ms global p95 ingestion latency
+- Zero data loss during regional outages (RPO = 0)
+- Comply with EU data residency while maintaining global stream visibility")
+overviewCallout = Callout("info", "RFC Status: Under Review", "Reviewing topology, data consistency model, and latency budgets before Q1 cutover.")
+topology = Card([CardHeader("Target topology", "Edge ingress routing to regional event brokers with global state sync"), topoDiagram])
+topoDiagram = Architecture([edgeGateway, usMesh, euMesh, apacMesh, globalStore], [eToUs, eToEu, eToApac, syncUsGlobal, syncEuGlobal], [edgeGroup, meshGroup])
+edgeGateway = Node("Anycast Edge", "cloud", "Cloudflare Workers", "emphasis")
+usMesh = Node("US-East Mesh", "backend", "Kafka 3 brokers")
+euMesh = Node("EU-West Mesh", "backend", "Kafka 3 brokers")
+apacMesh = Node("APAC Mesh", "backend", "Kafka 3 brokers")
+globalStore = Node("Global State", "database", "Spanner replica")
+eToUs = Edge(edgeGateway, usMesh, "<20ms", "emphasis")
+eToEu = Edge(edgeGateway, euMesh, "<25ms")
+eToApac = Edge(edgeGateway, apacMesh, "<30ms")
+syncUsGlobal = Edge(usMesh, globalStore, "CDC sync", "dashed")
+syncEuGlobal = Edge(euMesh, globalStore, "CDC sync", "dashed")
+edgeGroup = Group("Ingress", [edgeGateway])
+meshGroup = Group("Regional Meshes", [usMesh, euMesh, apacMesh])
+tradeoffs = Card([CardHeader("Option evaluation", "Comparing mesh designs across architectural criteria"), tradeoffRadar])
+tradeoffRadar = Radar(["Latency", "Durability", "Partition Tolerance", "Ops Cost", "Simplicity"], [meshA, meshB, meshC])
+meshA = RadarSeries("Active-Active Mesh", [9, 9, 8, 5, 6], true)
+meshB = RadarSeries("Dual Ingest", [7, 8, 9, 7, 5])
+meshC = RadarSeries("Central Hub", [5, 9, 4, 9, 9])
+latencyBreakdown = Card([CardHeader("End-to-end p95 latency budget", "Target: <120 ms global p95 ingest"), latencyWaterfall])
+latencyWaterfall = Waterfall(["DNS & TLS", "Edge Auth", "Routing", "Kafka Ack", "MirrorMaker", "Total p95"], [22, 14, 8, 35, 26, 105], "ms", "Kafka Ack")
+recommendations = Card([CardHeader("Proposed decision & rollout"), recTable])
+recTable = Table([Col("Phase", ["1. Canary pilot", "2. Dual publish", "3. Active cutover"]), Col("Regions", ["US-East only", "US + EU", "Global (US, EU, APAC)"]), Col("Rollback Trigger", ["Error rate > 0.1%", "Mirror lag > 500ms", "p95 latency > 150ms"]), Col("Target Date", ["15 Jan", "01 Feb", "15 Feb"])])
+decide = Card([CardHeader("Sign-off & feedback"), decideForm])
+decideForm = Form("arch_review", decideButtons, [decisionField, feedbackField])
+decisionField = FormControl("Decision", RadioGroup("choice", [RadioItem("Active-active mesh", "Deploy global mesh across US, EU, APAC", "mesh"), RadioItem("Dual ingest", "Parallel ingestion to two primary regions", "dual"), RadioItem("Central hub", "Keep single primary with read replicas", "central")]))
+feedbackField = FormControl("Architectural considerations", TextArea("notes", "Add notes or constraints for the infrastructure squad", 2))
+decideButtons = Buttons([Button("Submit review", @ToAssistant("Architecture review submitted"), "primary"), Button("Request meeting")])
+</script>
+</body>
+</html>
