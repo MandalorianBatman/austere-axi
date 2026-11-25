@@ -218,6 +218,14 @@ test("catalog: child lists do not match, keywords rank, lean lists, the chooser 
     "Events in time order, from a release history to a roadmap",
     "a hard-wrapped paragraph is read whole",
   );
+  const crlf = catalogFromSpec(spec, {
+    details: { Timeline: { guide: "## Use for\r\nEvents.\r\n\r\n## Limits\r\n- 12" } },
+  });
+  assert.equal(
+    crlf.components.find((c) => c.name === "Timeline")?.guide,
+    "## Use for\nEvents.\n\n## Limits\n- 12",
+    "a guide checked out with CRLF is stored with LF",
+  );
   assert.equal(
     purposeOf({ guide: "", description: "Shown on hover, e.g. a definition. Static." }),
     "Shown on hover, e.g. a definition",

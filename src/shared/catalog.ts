@@ -18,7 +18,8 @@ export const CATALOG_FORMAT = 1;
 function detailsOf(d: EntryDetails | undefined): EntryDetails {
   const out: EntryDetails = {};
   if (!d) return out;
-  if (d.guide) out.guide = d.guide;
+  // A guide checked out with CRLF (Windows) reads as LF, so `show` prints it as a block.
+  if (d.guide) out.guide = d.guide.replace(/\r\n?/g, "\n");
   if (d.keywords?.length) out.keywords = [...d.keywords];
   if (d.family) out.family = d.family;
   if (d.limits?.length) out.limits = d.limits.map((l) => ({ ...l }));
@@ -229,7 +230,7 @@ export function searchCatalog<E extends CatalogEntry>(
     const name = e.name.toLowerCase();
     const keywords = (e.keywords || []).map((k) => k.toLowerCase());
     const keywordWords = keywords.flatMap(words);
-    const groups = [e.group, ...(e.alsoIn || [])].map((g) => g.toLowerCase());
+    const groups = [e.group, ...(e.alsoIn || [])].flatMap(words);
     const desc = words(e.description);
     const props = words(e.signature.replace(/\b[A-Z][A-Za-z0-9]*\b/g, " "));
     let score = 0;

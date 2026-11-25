@@ -80,11 +80,12 @@ export interface ComponentShow {
   status?: "error";
 }
 
-/** A pack component with the fields a hand-written catalog may leave out (parseCatalog allows that) filled in. */
+/** A pack component with the fields a hand-written catalog may leave out (parseCatalog allows that) filled in, and a CRLF guide read as LF. */
 const filled = <C extends CatalogEntry>(c: C): C => ({
   ...c,
   description: c.description ?? "",
   examples: c.examples ?? [],
+  ...(typeof c.guide === "string" ? { guide: c.guide.replace(/\r\n?/g, "\n") } : {}),
 });
 
 /** Every component an agent can use here: core (with bundled packs) first, then installed packs, then the packs on npm given. */
@@ -272,7 +273,10 @@ export async function searchComponents(words: string[], group?: string): Promise
   }
   const next = [`\`${BIN} components show <Name>\` for examples.`];
   // `show <Name>` returns the first entry by that name, so a pack on npm sharing it with another result or a local component needs --pack.
-  const localNames = new Set(entries.filter((e) => e.source !== "remote").map((e) => e.name));
+  // From every entry, not just the --group ones: `show` looks the name up in all of them.
+  const localNames = new Set(
+    catalog.entries.filter((e) => e.source !== "remote").map((e) => e.name),
+  );
   const listed = [...local, ...npm].map((e) => e.name);
   for (const e of npm) {
     if (
