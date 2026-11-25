@@ -20,8 +20,8 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Upstream type | austere-axi | Kind | Status |
 |---|---|---|---|
 | Architecture | `Architecture` (`Node`, `Edge`, `Group`) | component | built |
-| Architecture delta | `Architecture`, before and after | recipe | planned |
-| IT current-state | `Architecture` with lanes | recipe | planned |
+| Architecture delta | `ArchitectureDelta`: `Architecture` with added, changed and removed tags and tones; before and after in `Tabs` | recipe | built |
+| IT current-state | `ITCurrentState`: `Architecture` with lanes | recipe | built |
 | Flowchart | `Flowchart` (`FlowStep`, `FlowLink`) | component | built |
 | Sequence | `Sequence` (`Actor`, `Message`, `Branch`) | component | built |
 | State machine | `StateMachine` (`State`, `Transition`) | component | built |
@@ -49,11 +49,11 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Line chart | `LineTrend`: `LineChart` | recipe | built |
 | Gantt | `Gantt` (`GanttTask`) | component | built |
 | Scatter plot | `ScatterPlot`: `ScatterChart` | recipe | built |
-| High-Level | `Architecture` with groups | recipe | planned |
-| Process | `Architecture` with lanes | recipe | planned |
-| Medallion | `Architecture` with lanes | recipe | planned |
-| Data flow | `Architecture` with lanes | recipe | planned |
-| DP integration | `Architecture` with lanes | recipe | planned |
+| High-Level | `HighLevel`: `Architecture` with groups | recipe | built |
+| Process | `ProcessMap`: `Architecture` with lanes by actor | recipe | built |
+| Medallion | `Medallion`: `Architecture` with a lane for each tier | recipe | built |
+| Data flow | `DataFlow`: `Architecture` with lanes by role | recipe | built |
+| DP integration | `DPIntegration`: `Architecture` with source, platform and consumer lanes | recipe | built |
 | DP security matrix | `PermissionMatrix` (`AccessRow`) | component | built |
 | Sankey | `Sankey` | component | built |
 | Fishbone | `Fishbone` (`FishCause`) | component | built |
@@ -61,12 +61,12 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Kanban | `Kanban` (`KanbanCard`) | component | built |
 | User journey | `UserJourney` (`JourneyStep`) | component | built |
 | Service blueprint | `ServiceBlueprint` (`BlueprintStep`) | component | built |
-| Deployment | `Architecture` with nested groups | recipe | planned |
-| Dependency graph | `Architecture` | recipe | planned |
+| Deployment | `Deployment`: `Architecture` with nested groups. Limit: a replica count is text in the detail line, with no badge | recipe | built |
+| Dependency graph | `DependencyGraph`: `Architecture`, a fan-in tag and a danger cycle. Limit: the layout picks the ranks; one cycle is marked | recipe | built |
 | UML class | `ClassDiagram` (`ClassBox`, `ClassLink`) | component | built |
 | Story map | `StoryMap` (`Story`) | component | built |
 | Database schema | `DatabaseSchema`: `ERDiagram` with typed field lines | recipe | built |
-| SBGN | `Architecture` | recipe | planned |
+| SBGN | `SBGN`: `Architecture` with species and process nodes. Limit: not SBGN notation, as `Node` has no process square, empty-set or modulation glyph; tags, tones and edge labels say it in words | recipe | built |
 | Requirement traceability | `Traceability` (`TraceReq`, `TraceItem`) | component | built |
 | Event modeling | `EventModel` (`EventItem`) | component | built |
 | Unit Grid | `UnitGrid` (`UnitShare`) | component | built |
