@@ -18,7 +18,7 @@ introText = MarkDownRenderer("Sessions live only in Redis and are lost on failov
 - Keep the `SessionStore` interface unchanged
 - Cut over behind the `sessions_pg` flag")
 kpis = OverviewCardBlock([kpiUsers, kpiP99, kpiCost])
-kpiUsers = OverviewCardItem("users", Text("text", "Forced logouts / mo"), MetricIndicatorInline("38,214", "last 30 days", {direction: "up", value: 12}))
+kpiUsers = OverviewCardItem("users", Text("text", "Forced logouts / mo"), MetricIndicatorInline("38,214", "last 30 days", {direction: "up", value: 12}, "down"))
 kpiP99 = OverviewCardItem("p99", Text("text", "Auth p99"), MetricIndicatorInline("41 ms", "target ≤ 45 ms"))
 kpiCost = OverviewCardItem("cost", Text("text", "Extra storage"), MetricIndicatorInline("$140/mo", "Postgres, 3 replicas"))
 flow = Card([CardHeader("Request path after the change"), flowDiagram])
