@@ -1098,7 +1098,7 @@ test("with the registry down, search returns local results and says npm was not 
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /BarChart\(/);
     assert.match(r.out, /remote: .*unavailable/);
-    r = await cliWith(env, "components", "show", "Sankey");
+    r = await cliWith(env, "components", "show", "Nonesuch");
     assert.equal(r.code, 1);
     assert.match(r.out, /unknown/);
     assert.match(r.out, /remote: .*unavailable/);

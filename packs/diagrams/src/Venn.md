@@ -12,7 +12,8 @@ Where 2 or 3 sets meet: shared traits, "where A meets B", a frame such as desira
 - `VennOverlap(label, of, focus?)`. `of` lists the exact set names: two for a lens, three for the centre. With 3 sets, a pair means "these two and not the third".
 - A region with no `VennOverlap` stays blank. Name the ones that matter.
 - One overlap may have `focus`: the sweet spot. It is tinted.
-- Long text is wrapped to the room in its region, then cut. Keep labels short.
+- Long text is wrapped to the room in its region at spaces, then cut with `…`. Keep labels short.
+- With small sets, use short or fewer overlap labels. When there is no room, the page reports the label as dropped.
 
 ## Usual errors
 - An `of` name that differs from the set name. The overlap is dropped and the page says so.
