@@ -5,7 +5,7 @@ Who owns what: a team, an agent crew, a support escalation map, a routing map fo
 - Generic parent and child (a taxonomy, a module tree): Tree.
 - A process with steps and handoffs in time: Swimlane or Flowchart.
 - Parts of a system and their links: Architecture.
-- Who may do what to which resource: PermissionMatrix.
+- Who may do what to which resource: a Table of roles and access levels (no matrix type yet).
 
 ## Limits
 - 12 nodes. More: an overview chart and one chart for each team.

@@ -150,7 +150,8 @@ function build(spec: HierarchySpec) {
     const edges: FlowEdge[] = [];
     const edge = (id: string, from: string, to: string, style: FlowEdge["style"]) =>
       edges.push({ id, named: false, from, to, label: "", style });
-    for (const id of nodes.keys()) {
+    // dagre places siblings in reverse edge order: add the links last child first so they draw in list order.
+    for (const id of [...nodes.keys()].reverse()) {
       const parent = parentOf.get(id);
       if (parent) edge(`#parent:${id}`, parent, id, "solid");
     }

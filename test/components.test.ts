@@ -1103,3 +1103,32 @@ test("Nested and LayerStack: levels keep their order, a level listed twice is dr
   assert.equal(stack.levels[0].tone, "");
   assert.deepEqual(buildLevels(undefined, LAYER_SPEC).levels, []);
 });
+
+test("Tree and OrgChart: siblings draw in list order, left to right going down and top to bottom going across", () => {
+  const node = (label: string, parent?: object) => ({
+    props: { label, parent },
+    statementId: label,
+  });
+  const root = node("r");
+  const props = { nodes: [root, ...["a", "b", "c"].map((k) => node(k, root))] };
+  for (const [direction, axis] of [
+    ["down", "x"],
+    ["right", "y"],
+  ] as const) {
+    const layout = layoutFlow(buildFlow({ ...props, direction }, TREE));
+    assert.ok(layout);
+    const at = (id: string) => layout.nodes.find((n) => n.id === id)?.[axis] ?? NaN;
+    assert.ok(at("a") < at("b") && at("b") < at("c"), `${direction}: a, b, c in order`);
+  }
+  const person = (name: string, reportsTo?: object) => ({
+    props: { name, reportsTo },
+    statementId: name,
+  });
+  const boss = person("boss");
+  const org = layoutFlow(
+    buildFlow({ people: [boss, ...["a", "b", "c"].map((k) => person(k, boss))] }, ORG_CHART),
+  );
+  assert.ok(org);
+  const x = (id: string) => org.nodes.find((n) => n.id === id)?.x ?? NaN;
+  assert.ok(x("a") < x("b") && x("b") < x("c"));
+});
