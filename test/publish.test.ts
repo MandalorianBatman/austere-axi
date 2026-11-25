@@ -663,6 +663,22 @@ test("publish sends the project and page path the local hub files the file under
   }
 });
 
+test("publish without hub.db access sends neither project nor relPath (RLM-458)", async () => {
+  const state = tmp("austere-publish-nohub-");
+  cloudOn(state);
+  signIn(state);
+  // hub.db is a directory: it cannot be opened, so the file has no placement.
+  fs.mkdirSync(path.join(state, "hub.db"));
+  const file = path.join(WORK, "nohub.html");
+  fs.writeFileSync(file, page('root = Stack([intro])\nintro = TextContent("x")'));
+  const r = await cli(["publish", file], { AUSTERE_AXI_STATE_DIR: state });
+  assert.equal(r.code, 0, r.out);
+  const sent = stub.publishes.at(-1);
+  assert.equal(sent?.title, "Plan");
+  assert.ok(!("project" in (sent ?? {})) && !("relPath" in (sent ?? {})), JSON.stringify(sent));
+  fs.rmSync(state, { recursive: true, force: true });
+});
+
 // ── invites ──
 
 const tokenHash = (token: string) => crypto.createHash("sha256").update(token).digest("base64url");

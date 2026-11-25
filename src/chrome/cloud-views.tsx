@@ -20,8 +20,10 @@ import { Empty, ProjectFilter, ViewLink } from "./hub-parts.tsx";
 import { Loaded } from "./hub-views.tsx";
 import { reload, useHub } from "./hub-store.ts";
 import { Button } from "@/chrome/ui/button";
+import { XIcon } from "lucide-react";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -129,6 +131,7 @@ function People({ page, opener }: { page: { id: string; title: string }; opener:
   return (
     <Dialog open onOpenChange={(open) => open || close()}>
       <DialogContent
+        showCloseButton={false}
         className="max-h-[90vh] overflow-y-auto"
         onCloseAutoFocus={(e) => {
           e.preventDefault();
@@ -136,6 +139,10 @@ function People({ page, opener }: { page: { id: string; title: string }; opener:
           else document.getElementById("content")?.focus();
         }}
       >
+        <DialogClose className="people-close absolute top-2 right-2 inline-flex size-11 items-center justify-center rounded-md opacity-70 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden sm:top-3 sm:right-3 sm:size-9">
+          <XIcon className="size-4" />
+          <span className="sr-only">Close</span>
+        </DialogClose>
         <DialogHeader>
           <DialogTitle>People</DialogTitle>
           <DialogDescription className="break-words">
@@ -160,7 +167,10 @@ function People({ page, opener }: { page: { id: string; title: string }; opener:
             </thead>
             <tbody>
               <tr className="border-t border-[var(--line)]">
-                <th scope="row" className="py-2 pr-2 text-left font-normal break-all">
+                <th
+                  scope="row"
+                  className="py-2 pr-2 text-left font-normal [overflow-wrap:anywhere]"
+                >
                   {data.owner}
                 </th>
                 <td className="py-2 pr-2 whitespace-nowrap">Owner</td>
@@ -169,7 +179,10 @@ function People({ page, opener }: { page: { id: string; title: string }; opener:
               {data.grants.length ? (
                 data.grants.map((g) => (
                   <tr key={g.email} className="border-t border-[var(--line)]">
-                    <th scope="row" className="py-2 pr-2 text-left font-normal break-all">
+                    <th
+                      scope="row"
+                      className="py-2 pr-2 text-left font-normal [overflow-wrap:anywhere]"
+                    >
                       {g.email}
                     </th>
                     <td className="py-2 pr-2 whitespace-nowrap">Added {dateOf(g.added_at)}</td>
@@ -230,7 +243,7 @@ function People({ page, opener }: { page: { id: string; title: string }; opener:
               aria-invalid={invalid ? true : undefined}
               aria-describedby="grant-help"
               onChange={(e) => setEmail(e.target.value)}
-              className="min-w-0 flex-1 max-xs:h-11"
+              className="min-w-0 flex-1 max-xs:h-11 max-xs:flex-none"
             />
             <Button type="submit" disabled={busy || !data} className="max-xs:h-11">
               Grant
@@ -277,7 +290,7 @@ export function AccountFooter(): ReactElement | null {
         ) : null}
       </div>
       <form method="post" action="/auth/logout">
-        <Button type="submit" variant="outline" size="sm" className="w-full">
+        <Button type="submit" variant="outline" size="sm" className="account-out w-full">
           Sign out
         </Button>
       </form>

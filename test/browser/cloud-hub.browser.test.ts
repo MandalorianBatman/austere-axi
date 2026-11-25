@@ -483,6 +483,51 @@ test("no pages: the empty state shows the login and publish commands and the ins
   }
 });
 
+test("below 640px every control the cloud mode adds is at least 44px high", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { page, context } = await tab(390);
+  try {
+    const high = async (sel: string, name: string) => {
+      const boxes = await page
+        .locator(sel)
+        .evaluateAll((els) =>
+          els
+            .filter((e) => (e as HTMLElement).offsetParent !== null)
+            .map((e) => e.getBoundingClientRect().height),
+        );
+      assert.ok(boxes.length, `${name}: none found`);
+      for (const h of boxes) assert.ok(h >= 43.5, `${name} is ${h}px`);
+    };
+    await high(".cloud-table .t-people button", "People button");
+    await page.getByRole("button", { name: "Toggle the sidebar" }).click();
+    await high(".account-out", "Sign out");
+    await page.keyboard.press("Escape");
+    await page
+      .locator(".trow", { hasText: "Checkout plan" })
+      .getByRole("button", { name: /People/ })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "People" });
+    await dialog.getByLabel("Grant access by email").waitFor();
+    // The dialog zooms in; measure once it has settled.
+    await page.waitForTimeout(500);
+    await high("[role=dialog] .people-close", "Close");
+    await high("[role=dialog] input", "Grant input");
+    await high("[role=dialog] button[type=submit]", "Grant");
+    await high("[role=dialog] td button", "Revoke");
+    await page.keyboard.press("Escape");
+    await page.getByRole("link", { name: "Shared" }).last().click();
+    await page.locator(".shared-table .row-title").first().waitFor();
+    await high(".shared-table .row-title", "Shared title link");
+    shared.pages = [];
+    owned = [];
+    await page.goto(page.url().replace("view=shared", "view=pages"));
+    await page.getByRole("heading", { name: "No pages yet." }).waitFor();
+    await high(".cloud-empty a", "Install guide link");
+  } finally {
+    await context.close();
+  }
+});
+
 test("a phone: a two-tab bar, the account in the drawer, no sideways scroll", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const { page, context, problems } = await tab(390);

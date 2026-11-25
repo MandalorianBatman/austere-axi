@@ -1,6 +1,6 @@
 # Hosted pages
 
-`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. Nothing is sent until you run it; after that, the local server keeps your published pages in sync (below). Cloud features are off by default, and publishing needs an account: turn cloud on and sign in first (`cloud on`, then `cloud login`; see [Accounts](#accounts)).
+`publish` uploads a page to [austere-cloud](https://github.com/MandalorianBatman/austere-cloud) and prints one link per invited reviewer. Nothing is sent until you run it. It sends the page and its packs, the project (folder) name and the file's path in the repository, so the cloud hub can group your pages; a page published without them is listed as Ungrouped. after that, the local server keeps your published pages in sync (below). Cloud features are off by default, and publishing needs an account: turn cloud on and sign in first (`cloud on`, then `cloud login`; see [Accounts](#accounts)).
 
 ## Cloud switch
 
