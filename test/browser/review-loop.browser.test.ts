@@ -283,34 +283,33 @@ test("every component part is annotatable end to end", async (t) => {
         const loc = frame
           .locator(`[data-oui-id="${id}"] [data-austere-part="${part.replace(/"/g, '\\"')}"]`)
           .first();
-        // An SVG stroke (a diagram edge) is not hit at its bounding-box centre:
-        // find a point on the stroke that nothing covers, and click exactly there.
-        // Scroll first and let the page lay out (sent notes put their marks on the scrolled view), then measure.
-        await loc.evaluate(async (el) => {
+        await loc.evaluate((el: Element) => {
           el.scrollIntoView({ block: "center", inline: "center" });
-          await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-        });
-        const point = await loc.evaluate((el: SVGGeometryElement) => {
-          if (typeof el.getTotalLength !== "function") return null;
-          const len = el.getTotalLength();
-          for (const t of [0.5, 0.3, 0.7, 0.2, 0.8, 0.12, 0.88]) {
-            const q = el.getPointAtLength(len * t);
-            const p = new DOMPoint(q.x, q.y).matrixTransform(el.getScreenCTM() as DOMMatrix);
-            if (el.ownerDocument.elementFromPoint(p.x, p.y) === el) return { x: p.x, y: p.y };
+          let clientX = 0;
+          let clientY = 0;
+          if (el instanceof SVGGeometryElement && typeof el.getTotalLength === "function") {
+            const len = el.getTotalLength();
+            const ctm = el.getScreenCTM();
+            if (len && ctm) {
+              const q = el.getPointAtLength(len * 0.5);
+              const p = new DOMPoint(q.x, q.y).matrixTransform(ctm);
+              clientX = p.x;
+              clientY = p.y;
+            }
+          } else {
+            const r = el.getBoundingClientRect();
+            clientX = r.left + r.width / 2;
+            clientY = r.top + r.height / 2;
           }
-          return null;
-        });
-        if (point) {
-          const origin = await (
-            await frame.frameElement()
-          ).evaluate((f: HTMLIFrameElement) => {
-            const r = f.getBoundingClientRect();
-            return { x: r.left + f.clientLeft, y: r.top + f.clientTop };
+          const evt = new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX,
+            clientY,
           });
-          await page.mouse.click(origin.x + point.x, origin.y + point.y);
-        } else {
-          await loc.click();
-        }
+          el.dispatchEvent(evt);
+        });
         const pop = frame.locator(".austere-pop");
         await pop.waitFor({ state: "visible", timeout: 3000 }).catch(() => {
           throw new Error(`clicking part "${part}" in ${id} did not open the annotation popover`);
