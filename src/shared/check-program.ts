@@ -6,6 +6,7 @@ import { splitStatements } from "./statements.ts";
 import { architectureNotes } from "../runtime/components/_architecture-model.ts";
 import { FLOWCHART, STATE_MACHINE, flowNotes } from "../runtime/components/_flow-model.ts";
 import { ORG_CHART, TREE } from "../runtime/components/_tree-model.ts";
+import { CLASS_DIAGRAM, ER_DIAGRAM } from "../runtime/components/_data-model.ts";
 import type { ComponentLimit } from "../../types/catalog.d.ts";
 
 /** An error or warning `check` reports. */
@@ -131,6 +132,8 @@ export function checkProgram(
     ["StateMachine", (props) => flowNotes(props, STATE_MACHINE)],
     ["Tree", (props) => flowNotes(props, TREE)],
     ["OrgChart", (props) => flowNotes(props, ORG_CHART)],
+    ["ERDiagram", (props) => flowNotes(props, ER_DIAGRAM)],
+    ["ClassDiagram", (props) => flowNotes(props, CLASS_DIAGRAM)],
   ];
   for (const [component, notes] of notesFor) {
     const diagrams = new Set<string | undefined>();

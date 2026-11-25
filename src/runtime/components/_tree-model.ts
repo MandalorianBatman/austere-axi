@@ -84,6 +84,7 @@ function build(spec: HierarchySpec) {
           label: str(p[spec.labelProp]).trim() || id,
           shape: oneOf(spec.kinds, p.kind) ? p.kind : spec.defaultShape,
           detail: str(p[spec.detailProp]).trim(),
+          lines: [],
           tone: oneOf(NODE_TONES, p.tone) ? p.tone : "",
         });
         queue.push({ id, el });

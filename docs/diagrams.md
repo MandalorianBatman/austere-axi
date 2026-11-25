@@ -25,7 +25,7 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Flowchart | `Flowchart` (`FlowStep`, `FlowLink`) | component | built |
 | Sequence | `Sequence` (`Actor`, `Message`, `Branch`) | component | built |
 | State machine | `StateMachine` (`State`, `Transition`) | component | built |
-| ER / data model | `ERDiagram` | component | planned |
+| ER / data model | `ERDiagram` (`Entity`, `Relation`) | component | built |
 | Steps | `Steps` | component | built |
 | Timeline | `Timeline` | component | built |
 | Git graph | `GitGraph` | component | planned |
@@ -63,9 +63,9 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Service blueprint | `ServiceBlueprint` | component | planned |
 | Deployment | `Architecture` with nested groups | recipe | planned |
 | Dependency graph | `Architecture` | recipe | planned |
-| UML class | `ClassDiagram` | component | planned |
+| UML class | `ClassDiagram` (`ClassBox`, `ClassLink`) | component | built |
 | Story map | `StoryMap` | component | planned |
-| Database schema | a data-model component, with `ERDiagram` | component | planned |
+| Database schema | `DatabaseSchema`: `ERDiagram` with typed field lines | recipe | built |
 | SBGN | `Architecture` | recipe | planned |
 | Requirement traceability | `Traceability` | component | planned |
 | Event modeling | `EventModel` | component | planned |

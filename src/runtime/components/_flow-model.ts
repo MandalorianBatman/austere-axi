@@ -22,6 +22,8 @@ import type {
   NodeTone,
   Point,
 } from "./_architecture-model.ts";
+import { sizeData } from "./_data-parse.ts";
+import type { DataBox, DataShape, EdgeEnds } from "./_data-parse.ts";
 
 export { NODE_TONES };
 export const FLOW_KINDS = ["step", "decision", "start", "end"] as const;
@@ -33,7 +35,8 @@ export const FLOW_DIRECTIONS = ["down", "right", "auto"] as const;
 export type Shape =
   | (typeof FLOW_KINDS)[number]
   | (typeof STATE_KINDS)[number]
-  | (typeof ORG_KINDS)[number];
+  | (typeof ORG_KINDS)[number]
+  | DataShape;
 export type FlowDirection = (typeof FLOW_DIRECTIONS)[number];
 export type FlowEdgeStyle = "solid" | (typeof FLOW_LINK_STYLES)[number];
 
@@ -46,6 +49,8 @@ export interface FlowNode {
   label: string;
   shape: Shape;
   detail: string;
+  /** The lines of text inside a data-model box (fields, members); empty for every other shape. */
+  lines: string[];
   tone: NodeTone | "";
 }
 
@@ -56,6 +61,8 @@ export interface FlowEdge {
   to: string;
   label: string;
   style: FlowEdgeStyle;
+  /** Marks, end text and part name of a data-model relation (set by the kind's `edgeEnds`). */
+  ends?: EdgeEnds;
 }
 
 export interface FlowModel {
@@ -68,7 +75,7 @@ export interface FlowModel {
 /** What differs between the diagram types. */
 export interface FlowKind {
   /** The component the agent wrote, for messages. */
-  component: "Flowchart" | "StateMachine" | "Tree" | "OrgChart";
+  component: "Flowchart" | "StateMachine" | "Tree" | "OrgChart" | "ERDiagram" | "ClassDiagram";
   /** What the diagram is called to a reader (the frame's name, the aria label). */
   title: string;
   /** What its node and edge parts are called, for messages. */
@@ -88,6 +95,16 @@ export interface FlowKind {
   hierarchy?: boolean;
   /** What `check` says about a built model, for types with a `build`. */
   notes?: (model: FlowModel, kind: FlowKind) => FlowNote[];
+  /** The prop that holds a node's name (default "label"). */
+  labelProp?: string;
+  /** The prop that holds a node's lines of text (fields, members), for data-model boxes. */
+  linesProp?: string;
+  /** Data-model relations: the marks at the two ends of an edge, its look, and whether the layout runs it the other way (UML: the parent above). `problem` is reported by `check`. */
+  edgeEnds?: (
+    props: Record<string, unknown>,
+    from: string,
+    to: string,
+  ) => { style: FlowEdgeStyle; swap: boolean; ends: EdgeEnds; problem?: string };
 }
 
 function transitionLabel(p: Record<string, unknown>): string {
@@ -140,6 +157,10 @@ export const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T 
  */
 export const syntheticId = (what: "node" | "edge", n: number): string => `#${what}${n}`;
 
+/** The strings of a list prop; anything else in it is ignored. */
+const linesOf = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
 /**
  * Parsed props → model. Ids are statement names; an inline (unnamed) node or
  * edge gets a synthetic id and is not a separate click target. A node an edge
@@ -162,9 +183,10 @@ export function buildFlow(props: FlowInput | null | undefined, kind: FlowKind): 
       nodes.set(id, {
         id,
         named: !!el.statementId,
-        label: str(p.label).trim() || id,
+        label: str(p[kind.labelProp ?? "label"]).trim() || id,
         shape: oneOf(kind.kinds, p.kind) ? p.kind : kind.defaultShape,
         detail: str(p.detail).trim(),
+        lines: linesOf(p[kind.linesProp ?? ""]),
         tone: oneOf(NODE_TONES, p.tone) ? p.tone : "",
       });
     }
@@ -194,13 +216,20 @@ export function buildFlow(props: FlowInput | null | undefined, kind: FlowKind): 
       );
     }
     edgeIds.add(id);
+    const spec = kind.edgeEnds?.(
+      el.props,
+      nodes.get(from)?.label ?? from,
+      nodes.get(to)?.label ?? to,
+    );
+    if (spec?.problem) problems.push(`${kind.edgeName} ${id}: ${spec.problem}`);
     edges.push({
       id,
       named: !!el.statementId,
-      from,
-      to,
+      from: spec?.swap ? to : from,
+      to: spec?.swap ? from : to,
       label: kind.edgeLabel(el.props),
-      style: oneOf(FLOW_LINK_STYLES, el.props.style) ? el.props.style : "solid",
+      style: spec ? spec.style : oneOf(FLOW_LINK_STYLES, el.props.style) ? el.props.style : "solid",
+      ends: spec?.ends,
     });
   }
 
@@ -220,6 +249,8 @@ const PAD = 14;
 
 export interface ShapeBox extends NodeSize {
   shape: Shape;
+  /** The rows of an entity or class box. */
+  data?: DataBox;
 }
 
 /** Size a node box by its shape. Text stays inside the box; a diamond is sized so its corners clear the text. */
@@ -247,6 +278,14 @@ export function sizeShape(node: FlowNode): ShapeBox {
         labelLines,
       };
     }
+    case "entity":
+    case "class":
+    case "interface":
+    case "abstract":
+    case "enum": {
+      const data = sizeData(node.label, node.lines, node.shape);
+      return { ...none, shape: node.shape, width: data.width, height: data.height, data };
+    }
     default: {
       const natural = Math.max(
         textWidth(node.label, LABEL),
@@ -266,12 +305,17 @@ export function sizeShape(node: FlowNode): ShapeBox {
 
 export interface FlowLaidOutNode extends LaidOutNode {
   shape: Shape;
+  data?: DataBox;
+}
+
+export interface FlowLaidOutEdge extends LaidOutEdge {
+  ends?: EdgeEnds;
 }
 
 export interface FlowLayout {
   rankdir: string;
   nodes: FlowLaidOutNode[];
-  edges: LaidOutEdge[];
+  edges: FlowLaidOutEdge[];
   width: number;
   height: number;
 }
@@ -318,16 +362,22 @@ function runFlow(model: FlowModel, rankdir: "LR" | "TB"): FlowLayout {
     direction: "auto",
     problems: [],
   };
-  const layout = runLayout(asModel, rankdir, (n) => sizeShape(shapes.get(n.id) as FlowNode));
+  const boxes = new Map<string, ShapeBox>();
+  const layout = runLayout(asModel, rankdir, (n) => {
+    const box = sizeShape(shapes.get(n.id) as FlowNode);
+    boxes.set(n.id, box);
+    return box;
+  });
   const nodes: FlowLaidOutNode[] = layout.nodes.map((n) => ({
     ...n,
     shape: (shapes.get(n.id) as FlowNode).shape,
+    data: boxes.get(n.id)?.data,
   }));
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const edges = layout.edges.map((e, i): LaidOutEdge => {
-    const style = model.edges[i].style;
+  const edges = layout.edges.map((e, i): FlowLaidOutEdge => {
+    const { style, ends } = model.edges[i];
     const pts = e.points;
-    if (e.from === e.to || pts.length < 2) return { ...e, style };
+    if (e.from === e.to || pts.length < 2) return { ...e, style, ends };
     const points = [...pts];
     points[0] = clip(byId.get(e.from) as FlowLaidOutNode, pts[0], pts[1]);
     points[points.length - 1] = clip(
@@ -335,7 +385,7 @@ function runFlow(model: FlowModel, rankdir: "LR" | "TB"): FlowLayout {
       pts[pts.length - 1],
       pts[pts.length - 2],
     );
-    return { ...e, style, points };
+    return { ...e, style, ends, points };
   });
   return { rankdir, nodes, edges, width: layout.width, height: layout.height };
 }
