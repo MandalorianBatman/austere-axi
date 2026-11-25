@@ -67,9 +67,14 @@ export function DiagramFrame({
     setExpanded(true);
   };
   const collapse = () => dialogRef.current?.close();
+  const ready = room !== null;
+  const inline = room === null ? null : children({ room, full: false });
+  const full = expanded && room !== null && !inline?.error ? children({ room, full: true }) : null;
+  const hasContent = !inline?.error && inline !== null;
+
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
-    if (!expanded || !dialog) return undefined;
+    if (!expanded || !hasContent || !dialog) return undefined;
     if (!dialog.open) dialog.showModal();
     // A modal dialog makes everything outside it inert, and draws above any
     // z-index. The annotate layer (hover box, note) moves in so it stays usable.
@@ -79,18 +84,18 @@ export function DiagramFrame({
       if (ui) document.body.appendChild(ui);
       if (dialog.open) dialog.close();
     };
-  }, [expanded]);
+  }, [expanded, hasContent]);
   useEffect(() => {
     if (!expanded) return undefined;
+    if (!hasContent) {
+      setExpanded(false);
+      return undefined;
+    }
     // Rotating the phone resizes the dialog, not the inline box.
     window.addEventListener("resize", checkCut);
     return () => window.removeEventListener("resize", checkCut);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded]);
-
-  const ready = room !== null;
-  const inline = room === null ? null : children({ room, full: false });
-  const full = expanded && room !== null && !inline?.error ? children({ room, full: true }) : null;
+  }, [expanded, hasContent]);
 
   // The content may have changed size: look at the cut again after every render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -204,7 +209,11 @@ export function DiagramFrame({
                   "Close",
                 ),
               ),
-              h(Fragment, { key: "pane" }, pane(full, true)),
+              h(
+                Fragment,
+                { key: "pane" },
+                full.error ? (full.error as ReactNode) : pane(full, true),
+              ),
             ]
           : null,
       ),

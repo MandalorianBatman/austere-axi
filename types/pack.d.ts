@@ -1,6 +1,7 @@
 // Types for "austere-axi/pack": what a component pack imports. Hand-written
 // to match src/runtime/pack-api.ts and src/runtime/define.ts.
 import type { core, ZodObject, ZodRawShape, infer as ZodInfer } from "zod";
+import type { ReactNode } from "react";
 
 export type { Catalog, CatalogEntry, PackCatalog, Tier } from "./catalog.js";
 
@@ -125,16 +126,24 @@ export interface RuntimeError {
 export declare function reportRuntimeError(err: RuntimeError): void;
 
 /** What the content function of a DiagramFrame returns for one view of the diagram. */
-export interface DiagramContent {
-  /** The drawing (React node), usually one <svg> that fills its width. */
-  content: unknown;
-  /** Natural width in px (the diagram at scale 1.0). Lets the frame shrink it to the legible scale, then scroll. Leave out to size the content yourself. */
-  width?: number;
-  /** Rendered under the scroll box (a legend); not scrolled. */
-  caption?: unknown;
-  /** Shown instead of the drawing, with no Expand button, when nothing can be drawn. */
-  error?: unknown;
-}
+export type DiagramContent =
+  | {
+      /** The drawing (React node), usually one <svg> that fills its width. */
+      content: unknown;
+      /** Natural width in px (the diagram at scale 1.0). Lets the frame shrink it to the legible scale, then scroll. Leave out to size the content yourself. */
+      width?: number;
+      /** Rendered under the scroll box (a legend); not scrolled. */
+      caption?: unknown;
+      /** Shown instead of the drawing, with no Expand button, when nothing can be drawn. */
+      error?: unknown;
+    }
+  | {
+      /** Shown instead of the drawing, with no Expand button, when nothing can be drawn. */
+      error: unknown;
+      content?: unknown;
+      width?: number;
+      caption?: unknown;
+    };
 
 export interface DiagramFrameProps {
   /**
@@ -157,4 +166,4 @@ export interface DiagramFrameProps {
  * a focusable named region, an Expand button (modal dialog, Esc returns focus),
  * and print rules. Use it as the renderer's root.
  */
-export declare function DiagramFrame(props: DiagramFrameProps): unknown;
+export declare function DiagramFrame(props: DiagramFrameProps): ReactNode;
