@@ -29,6 +29,7 @@ import {
   tailwindPlugin,
   zodLocalesPlugin,
 } from "./lib/plugins.ts";
+import { guideStubPlugin } from "../src/pack-kit/shim.ts";
 
 const DIST = path.join(ROOT, "dist");
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as {
@@ -62,6 +63,8 @@ async function buildRuntime() {
       slimHighlighterPlugin,
       zodLocalesPlugin,
       bundledPacksPlugin(DIST),
+      // Usage guides are catalog text (`components show`); the page never reads them.
+      guideStubPlugin,
     ],
     // One runtime per page: a second copy (an exported page, which inlines one, opened for
     // review) would render the page twice and open two annotate boxes. The first sets

@@ -4,6 +4,10 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Added
+
+- **A diagram read path: the `Diagrams` group, a chooser, usage guides and recipes.** `Architecture`, `Node`, `Edge` and `Group` move from `Content` to a new `Diagrams` group (signatures unchanged), which ends with one line naming the other diagram types. `components list <Group>` prints each component and recipe with what it is for (`Diagrams` by family); `components show` adds the signatures of the parts, where it may sit, a usage guide and up to two examples; `components search` takes `--group`, ranks `keywords`, and no longer matches a component on the names in its child list (`search timeline`: 2,488 → 434 characters). Recipes `Swimlane`, `BarComparison`, `LineTrend` and `ScatterPlot` are drawn with existing components; a page that calls one gets a `check` error naming them. Components and pack catalogs take optional `guide`, `keywords`, `family`, `limits` (a `check` warning with statement and line) and `alsoIn`; older catalogs work as before. `spec` prints only core names in the child lists of `Card`, `TabItem` and `AccordionItem` (the parser still accepts the rest): ~5828 → ~5725 tokens. Coverage of the 52 diagram-design types: [Diagrams](docs/diagrams.md). (RLM-467)
+
 ## 0.23.0 (2026-11-25)
 
 ### Added

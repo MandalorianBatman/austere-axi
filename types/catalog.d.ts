@@ -5,20 +5,62 @@ export declare const CATALOG_FORMAT: 1;
 
 export type Tier = "core" | "extended";
 
-export interface CatalogEntry {
+/** A list prop's longest sensible length; `check` warns past it. */
+export interface ComponentLimit {
+  /** Name of a list prop. */
+  prop: string;
+  max: number;
+  /** What to do instead, e.g. "Split it into two diagrams." */
+  message: string;
+}
+
+/**
+ * The read-path fields a component (or a recipe) may carry. None of them goes into `spec`;
+ * `components list|show|search` and `check` read them.
+ */
+export interface EntryDetails {
+  /** Usage guide (markdown): `## Use for`, `## Not for`, `## Limits`, `## Usual errors`. */
+  guide?: string;
+  /** Words a user would say for it (funnel, spider, root cause); they rank search. */
+  keywords?: string[];
+  /** Short heading the `components list <Group>` chooser groups it under. */
+  family?: string;
+  limits?: ComponentLimit[];
+  /** Other groups whose chooser lists it too (Steps in Diagrams). */
+  alsoIn?: string[];
+}
+
+export interface CatalogEntry extends EntryDetails {
   name: string;
   group: string;
+  /** "" for a recipe. */
   signature: string;
   description: string;
   tier: Tier;
   /** "core", or the name of the pack that owns the component. */
   pack: string;
   examples: string[];
+  /** Parent slots it may fill ("Card.children"); null for a value-only part. Absent in older catalogs. */
+  slots?: string[] | null;
+  /** Set on a recipe: it has no component of its own; the page writes these. */
+  uses?: string[];
+}
+
+/** A catalog entry with no component: an upstream diagram type an existing component draws well. */
+export interface Recipe extends EntryDetails {
+  name: string;
+  group: string;
+  description: string;
+  /** The components the page writes. */
+  uses: string[];
+  examples: string[];
 }
 
 export interface CatalogGroup {
   name: string;
   notes: string[];
+  /** Order of the chooser's families in this group; families not named here come after. */
+  families?: string[];
 }
 
 export interface Catalog {
@@ -61,6 +103,12 @@ export interface CatalogFromSpecOptions {
   version?: string;
   tiers?: Record<string, string>;
   examples?: Record<string, string[]>;
+  /** Guide, keywords, family, limits and alsoIn by component name. */
+  details?: Record<string, EntryDetails>;
+  /** Parent slots by component name (null for a value-only part). */
+  slots?: Record<string, string[] | null>;
+  /** Group → order of its chooser families. */
+  families?: Record<string, string[]>;
   /** Keep just these components (a pack's own, out of a library that also holds the core). */
   only?: string[] | null;
 }
@@ -70,11 +118,31 @@ export declare function catalogFromSpec(
   options?: CatalogFromSpecOptions,
 ): Catalog;
 
+/** What is wrong with a component's or recipe's read-path fields, or null. `props`: the prop names `limits` may name. */
+export declare function detailsProblem(d: EntryDetails, props?: string[]): string | null;
+
+/** A recipe as a catalog entry. */
+export declare function recipeEntry(recipe: Recipe, pack?: string): CatalogEntry;
+
+export interface PromptSpecOptions {
+  /** Names left out of the printed child lists of these parents; the parser schema keeps them. */
+  lean?: { parents: string[]; hide: string[] };
+  /** Group → names its generated line lists, pointing at `components list <Group>` (instead of "Also in"). */
+  chooser?: Record<string, string[]>;
+}
+
 /** The spec the prompt is generated from: extended-tier components leave it. */
 export declare function promptSpec<S extends LibrarySpec>(
   spec: S,
   tiers?: Record<string, string>,
+  options?: PromptSpecOptions,
 ): S;
+
+/** The chooser's "use for" text: the first sentence under the guide's `## Use for`, else the description. */
+export declare function purposeOf(entry: Pick<CatalogEntry, "guide" | "description">): string;
+
+/** True when the `components list <group>` chooser lists the entry: a container or a recipe in, or also in, that group. */
+export declare function inChooser(entry: CatalogEntry, group: string): boolean;
 
 export interface SearchOptions {
   notesOf?: (entry: CatalogEntry) => string[];

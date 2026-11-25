@@ -10,7 +10,14 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { after, before, test } from "node:test";
-import { catalogFromSpec, promptSpec, searchCatalog } from "../src/shared/catalog.ts";
+import {
+  catalogFromSpec,
+  inChooser,
+  promptSpec,
+  purposeOf,
+  recipeEntry,
+  searchCatalog,
+} from "../src/shared/catalog.ts";
 import { formatPacksMeta, parsePacksMeta, splitSpec } from "../src/shared/packs-meta.ts";
 import { mergePackSchemas, setPacksMeta } from "../src/cli/packs.ts";
 import { packedScripts } from "../src/cli/export.ts";
@@ -145,6 +152,89 @@ test("catalog: tiers leave the prompt but stay searchable; search ranks names fi
   assert.equal(hits[0].entry.name, "AreaChart");
   assert.equal(searchCatalog(cat.components, "rows")[0].entry.name, "Table");
   assert.deepEqual(searchCatalog(cat.components, "   "), []);
+});
+
+test("catalog: child lists do not match, keywords rank, lean lists, the chooser line and its use-for text", () => {
+  const spec = {
+    components: {
+      Card: {
+        signature: "Card(children: (Table | Timeline | Gauge)[], variant?: string)",
+        description: "Styled container",
+      },
+      Table: { signature: "Table(cols: Col[])", description: "Rows and columns" },
+      Timeline: { signature: "Timeline(items: TimelineItem[])", description: "Events in order" },
+      TimelineItem: { signature: "TimelineItem(title: string)", description: "One event" },
+      Gauge: { signature: "Gauge(value: number)", description: "A dial" },
+    },
+    componentGroups: [
+      { name: "Layout", components: ["Card"], notes: [] },
+      { name: "Data", components: ["Table", "Gauge"], notes: [] },
+      { name: "Diagrams", components: ["Timeline", "TimelineItem"], notes: [] },
+    ],
+  };
+  const tiers = { Timeline: "extended", TimelineItem: "extended" };
+  const cat = catalogFromSpec(spec, {
+    tiers,
+    details: {
+      Timeline: {
+        guide: "## Use for\nEvents in time order. Oldest first.\n\n## Not for\n- Plans",
+        keywords: ["roadmap", "history"],
+        family: "Time",
+      },
+    },
+    slots: { Timeline: ["Card.children"], TimelineItem: null, Table: ["Card.children"] },
+    families: { Diagrams: ["Time"] },
+  });
+  cat.components.push(
+    recipeEntry({
+      name: "Roadmap",
+      group: "Diagrams",
+      description: "Quarters as a Timeline",
+      uses: ["Timeline", "TimelineItem"],
+      examples: ["r = Timeline([])"],
+      keywords: ["quarters"],
+    }),
+  );
+  const names = (q: string) => searchCatalog(cat.components, q).map((h) => h.entry.name);
+  assert.equal(names("timeline")[0], "Timeline");
+  assert.ok(!names("timeline").includes("Card"), "Card's child list does not count");
+  assert.equal(names("roadmap")[0], "Roadmap");
+  assert.ok(names("history").includes("Timeline"), "keywords match");
+  assert.equal(names("quarters")[0], "Roadmap");
+  assert.deepEqual(cat.groups.find((g) => g.name === "Diagrams")?.families, ["Time"]);
+  const chooser = cat.components.filter((e) => inChooser(e, "Diagrams")).map((e) => e.name);
+  assert.deepEqual(
+    chooser,
+    ["Timeline", "Roadmap"],
+    "containers and recipes, not value-only parts",
+  );
+  assert.equal(purposeOf(cat.components[2]), "Events in time order");
+  assert.equal(purposeOf(cat.components[1]), "Rows and columns");
+  assert.equal(
+    purposeOf({
+      guide: "## Use for\nEvents in time order, from a release\nhistory to a roadmap. More.",
+      description: "",
+    }),
+    "Events in time order, from a release history to a roadmap",
+    "a hard-wrapped paragraph is read whole",
+  );
+  assert.equal(
+    purposeOf({ guide: "", description: "Shown on hover, e.g. a definition. Static." }),
+    "Shown on hover, e.g. a definition",
+  );
+  const p = promptSpec(
+    spec,
+    { ...tiers, Gauge: "extended" },
+    {
+      lean: { parents: ["Card"], hide: ["Timeline"] },
+      chooser: { Diagrams: ["Timeline", "Roadmap"] },
+    },
+  );
+  assert.equal(p.components.Card.signature, "Card(children: (Table)[], variant?: string)");
+  const notes = p.componentGroups.find((g) => g.name === "Diagrams")?.notes ?? [];
+  assert.deepEqual(notes, [
+    "- More Diagrams (`austere-axi components list Diagrams` says what each is for): Timeline, Roadmap.",
+  ]);
 });
 
 test("mergePackSchemas adds the component, its defs and its slots, and leaves core components alone", () => {
@@ -408,6 +498,59 @@ test("unknown components point at search instead of listing everything", async (
   assert.doesNotMatch(r.out, /Available components/);
 });
 
+test("the Diagrams chooser, show and search read the built catalog; a recipe called as a component names what to write", async () => {
+  let r = await cli("components", "list", "Diagrams");
+  assert.equal(r.code, 0, r.out);
+  for (const n of [
+    "Architecture",
+    "Steps",
+    "Timeline",
+    "Swimlane",
+    "BarComparison",
+    "LineTrend",
+    "ScatterPlot",
+  ])
+    assert.match(
+      r.out,
+      new RegExp(`- "?${n}( \\(recipe: \\w+\\))?: \\S`),
+      `${n} has a use-for line`,
+    );
+  assert.doesNotMatch(r.out, /\b(Node|Edge|Group|StepsItem|TimelineItem):/);
+  assert.ok(r.out.indexOf("Architecture:") < r.out.indexOf("Flow:"), "families in their order");
+  r = await cli("components", "list", "Content");
+  assert.match(r.out, /^choose:\n\s+- /m, "a group with no family order is one flat list");
+  assert.doesNotMatch(r.out, /Other:/);
+
+  r = await cli("components", "show", "Architecture");
+  for (const part of ["Node(label", "Edge(from", "Group(label"]) assert.ok(r.out.includes(part));
+  assert.match(r.out, /sits: Card\.children, TabItem\.content, AccordionItem\.content, Stack/);
+  assert.match(r.out, /guide: \|\n\s+## Use for/);
+  assert.equal(r.out.match(/^\s+- \|\n\s+\w+ = Architecture\(/gm)?.length, 2, "two examples");
+
+  r = await cli("components", "show", "Swimlane");
+  assert.match(r.out, /recipe: "no component of its own: write Architecture, Node, Edge, Group"/);
+  assert.match(r.out, /from: core recipe/);
+
+  r = await cli("components", "search", "swimlane");
+  assert.match(r.out, /results:\n\s+- "Swimlane \(recipe/);
+  r = await cli("components", "search", "lanes", "--group", "Diagrams");
+  assert.ok(r.out.includes("Swimlane"));
+  for (const line of r.out.split("\n").filter((l) => /^\s+- /.test(l)))
+    assert.match(line, /\[Diagrams; /, "only Diagrams entries");
+  r = await cli("components", "search", "timeline");
+  assert.ok(r.out.length < 1000, `search timeline prints ${r.out.length} characters`);
+  assert.doesNotMatch(r.out, /\b(Card|TabItem|AccordionItem)\(/);
+
+  const file = path.join(WORK, "recipe.html");
+  fs.writeFileSync(file, page('root = Stack([s])\ns = Swimlane("release")'));
+  r = await cli("check", file);
+  assert.equal(r.code, 1);
+  assert.match(
+    r.out,
+    /Swimlane is a recipe, not a component: write it with Architecture, Node, Edge, Group/,
+  );
+});
+
 test("a removed component says what replaced it", async () => {
   const file = path.join(WORK, "removed.html");
   fs.writeFileSync(file, page('root = Stack([d])\nd = Mermaid("graph LR\\nA-->B")'));
@@ -647,7 +790,7 @@ test("search and show find packs on npm that are not installed, without installi
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /signature: "?Milestones\(events: string\[\]\)/);
     assert.match(r.out, /from: "?npm \S+@[\d.]+, not installed, (first|third)-party/);
-    assert.match(r.out, /example: /);
+    assert.match(r.out, /examples: /);
     assert.match(r.out, /use: .*components add /);
     assert.ok(!fs.existsSync(path.join(state, "packs.json")), "show installs nothing");
     assert.ok(!fs.existsSync(path.join(state, "packs")), "show writes no pack files");

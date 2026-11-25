@@ -5,11 +5,12 @@ import { createParser } from "@openuidev/lang-core";
 import type { Parser } from "@openuidev/lang-core";
 import { hasInlineRuntime, readArtifact } from "./artifact.ts";
 import { assetPath } from "./paths.ts";
-import { mergePackSchemas, packDefining, pagePacks } from "./packs.ts";
+import { coreCatalog, mergePackSchemas, packDefining, pagePacks } from "./packs.ts";
 import type { InstalledPack, PagePacks, SpecSchema } from "./packs.ts";
 import { splitStatements } from "../shared/statements.ts";
 import { checkProgram } from "../shared/check-program.ts";
 import type { CheckEntry } from "../shared/check-program.ts";
+import type { CatalogEntry, ComponentLimit } from "../../types/catalog.d.ts";
 
 export interface CheckResult {
   ok: boolean;
@@ -22,6 +23,15 @@ export interface CheckResult {
 export interface CheckOptions {
   schema?: SpecSchema;
   file?: string;
+  /** Component name → list limits; default: the core catalog's and the page's installed packs'. */
+  limits?: Record<string, ComponentLimit[]>;
+}
+
+/** The list limits the catalog entries declare, by component name. */
+function limitsOf(entries: CatalogEntry[]): Record<string, ComponentLimit[]> {
+  return Object.fromEntries(
+    entries.filter((e) => e.limits?.length && !e.uses).map((e) => [e.name, e.limits ?? []]),
+  );
 }
 
 let coreSpec: SpecSchema | null = null;
@@ -92,6 +102,14 @@ function unknownComponent(entry: CheckEntry, packs: PagePacks, file: string): Ch
   }
   const removed = name && REMOVED[name];
   if (removed) return { ...entry, message: removed };
+  const recipe = name ? coreCatalog().components.find((e) => e.uses && e.name === name) : null;
+  if (recipe?.uses) {
+    return {
+      ...entry,
+      code: "recipe",
+      message: `${name} is a recipe, not a component: write it with ${recipe.uses.join(", ")}. \`austere-axi components show ${name}\` has its guide and examples.`,
+    };
+  }
   const unseen = [...packs.missing, ...packs.mismatched];
   if (unseen.length) {
     return {
@@ -117,7 +135,7 @@ export function statementLines(html: string): Map<string, { line: number; text: 
 
 export function checkHtml(
   html: string,
-  { schema, file = "<file>" }: CheckOptions = {},
+  { schema, file = "<file>", limits }: CheckOptions = {},
 ): CheckResult {
   const art = readArtifact(html);
   const packs: PagePacks = schema
@@ -175,6 +193,12 @@ export function checkHtml(
     lineOf: (id) => (id && lines.get(id)?.line) || undefined,
     decorate: (entry) =>
       entry.code === "unknown-component" ? unknownComponent(entry, packs, file) : entry,
+    limits:
+      limits ??
+      limitsOf([
+        ...coreCatalog().components,
+        ...packs.installed.flatMap((p) => p.catalog.components),
+      ]),
   });
   result.statements = core.statements;
   result.errors.push(...core.errors);

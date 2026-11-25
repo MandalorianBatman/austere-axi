@@ -444,7 +444,7 @@ const nothing = () => null;
 
 const Node = austereComponent({
   name: "Node",
-  group: "Content",
+  group: "Diagrams",
   props: z.object({
     label: z.string(),
     kind: z.enum(NODE_KINDS).optional(),
@@ -462,7 +462,7 @@ const Node = austereComponent({
 
 const Edge = austereComponent({
   name: "Edge",
-  group: "Content",
+  group: "Diagrams",
   props: z.object({
     from: Node.definition.ref,
     to: Node.definition.ref,
@@ -479,7 +479,7 @@ const Edge = austereComponent({
 
 const Group = austereComponent({
   name: "Group",
-  group: "Content",
+  group: "Diagrams",
   props: z.object({
     label: z.string(),
     members: z.array(Node.definition.ref),
@@ -494,7 +494,7 @@ const Group = austereComponent({
 
 const Architecture = austereComponent({
   name: "Architecture",
-  group: "Content",
+  group: "Diagrams",
   props: z.object({
     nodes: z.array(Node.definition.ref),
     edges: z.array(Edge.definition.ref),

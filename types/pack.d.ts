@@ -3,7 +3,16 @@
 import type { core, ZodObject, ZodRawShape, infer as ZodInfer } from "zod";
 import type { ReactNode } from "react";
 
-export type { Catalog, CatalogEntry, PackCatalog, Tier } from "./catalog.js";
+import type { EntryDetails } from "./catalog.js";
+
+export type {
+  Catalog,
+  CatalogEntry,
+  ComponentLimit,
+  EntryDetails,
+  PackCatalog,
+  Tier,
+} from "./catalog.js";
 
 /** Version of the pack API. A pack built for another major version is refused. */
 export declare const PACK_API: 1;
@@ -18,10 +27,14 @@ export interface RendererArgs<Props> {
   statementId?: string;
 }
 
-export interface ComponentSpec<Shape extends ZodRawShape = ZodRawShape> {
+/**
+ * Besides the fields below, the read-path fields (none of them reaches `spec`): `guide`
+ * (markdown; import it from an adjacent .md file), `keywords`, `family`, `limits` and `alsoIn`.
+ */
+export interface ComponentSpec<Shape extends ZodRawShape = ZodRawShape> extends EntryDetails {
   /** PascalCase name the agent writes. */
   name: string;
-  /** A stock group (Layout, Content, Data, Charts, Forms, Buttons) or a short capitalized category of your own. */
+  /** A stock group (Layout, Content, Data, Charts, Diagrams, Forms, Buttons) or a short capitalized category of your own. */
   group: string;
   /** zod props in positional order. Append-only once published. */
   props: ZodObject<Shape>;
@@ -66,7 +79,7 @@ export interface ComponentDefinition<Props = unknown> {
 }
 
 /** What austereComponent() returns. Put `definition.ref` in another component's props to nest it. */
-export interface AustereComponent<Props = unknown> {
+export interface AustereComponent<Props = unknown> extends EntryDetails {
   name: string;
   group: string;
   notes: string[];

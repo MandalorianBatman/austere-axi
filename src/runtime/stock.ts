@@ -188,6 +188,11 @@ export const STOCK_GROUPS = [
     ],
   },
   {
+    name: "Diagrams",
+    components: [],
+    notes: [],
+  },
+  {
     name: "Forms",
     components: [
       "Form",

@@ -23,3 +23,9 @@ declare module "*.css" {
   const css: string;
   export default css;
 }
+
+/** Usage guides are imported as text in Node builds (the catalog) and as empty in browser bundles. */
+declare module "*.md" {
+  const markdown: string;
+  export default markdown;
+}

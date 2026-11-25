@@ -12,6 +12,7 @@ The [project README](../README.md) says what austere-axi is and how to start. Th
 | [Upgrading to 0.18](upgrading-to-0.18.md) | The chrome is React on shadcn/Tailwind: changed class names and roles, removed `dom.ts` and `nav.ts`, and the projects sidebar's defaults |
 | [CLI reference](cli.md) | Every command, the review rules, and the environment variables |
 | [Components and packs](components-and-packs.md) | Finding components, installing packs, the trust list, private registries |
+| [Diagrams](diagrams.md) | The diagram types of diagram-design: which component or recipe draws each, and its status; how an agent picks one |
 | [Writing a pack](writing-a-pack.md) | From scaffold to `npm publish` |
 | [Team review](team-review.md) | `share`: teammates on your tailnet review a page under their own name |
 | [Hosted pages](hosted-pages.md) | `publish`: a hosted copy of a page with one invite link per reviewer |

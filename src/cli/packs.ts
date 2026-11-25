@@ -270,7 +270,11 @@ export function packDefining(name: string): InstalledPack | null {
 /** The meta tag `check --fix` writes: installed packs whose components the program calls. */
 export function neededPacks(program: string): PackRef[] {
   const called = calledComponents(program);
-  const coreNames = new Set(coreCatalog().components.map((c) => c.name));
+  const coreNames = new Set(
+    coreCatalog()
+      .components.filter((c) => !c.uses)
+      .map((c) => c.name),
+  );
   const out: PackRef[] = [];
   for (const p of installedPacks()) {
     if (p.catalog.components.some((c) => called.has(c.name) && !coreNames.has(c.name))) {

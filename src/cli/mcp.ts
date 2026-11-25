@@ -39,6 +39,7 @@ type ToolArgs = {
   command: string;
   args?: string[];
   pack?: string;
+  group?: string;
   session?: string;
   id: string;
   words?: string;
@@ -112,7 +113,7 @@ const TOOLS: Record<string, Tool> = {
         type: "array",
         items: { type: "string" },
         description:
-          "Optional: Layout, Content, Data, Charts, Forms, Buttons, or an installed pack name.",
+          "Optional: Layout, Content, Data, Charts, Diagrams, Forms, Buttons, or an installed pack name.",
       },
     },
     run: (a) =>
@@ -509,7 +510,7 @@ const TOOLS: Record<string, Tool> = {
   components: {
     title: "Find and install components",
     description:
-      "Components spec leaves out, and packs on npm. Third-party packs the user has not trusted are refused: ask the user to install them.",
+      "Components and diagram recipes spec leaves out, and packs on npm. list Diagrams says what each diagram type is for; show gives its usage guide and examples. Third-party packs the user has not trusted are refused: ask the user to install them.",
     openWorld: true,
     properties: {
       command: {
@@ -528,6 +529,10 @@ const TOOLS: Record<string, Tool> = {
         description:
           "show only: look the names up in this pack (core, or an npm package name) when two packs share a name.",
       },
+      group: {
+        type: "string",
+        description: "search only: keep this group's components and recipes, e.g. Diagrams.",
+      },
     },
     required: ["command"],
     reject: (a) => {
@@ -536,6 +541,7 @@ const TOOLS: Record<string, Tool> = {
         if (a.pack !== "core" && !isValidPackName(a.pack))
           return "pack must be core or an npm package name";
       }
+      if (a.group !== undefined && a.command !== "search") return "group is only for search";
       // An MCP client installs from the registry only: a folder or .tgz would run local files the user never vetted.
       if (a.command !== "add") return null;
       if (a.args?.length !== 1) return "add takes exactly one npm package name[@version] in args";
@@ -549,6 +555,7 @@ const TOOLS: Record<string, Tool> = {
           "components",
           a.command,
           ...(a.pack !== undefined ? ["--pack", a.pack] : []),
+          ...(a.group !== undefined ? ["--group", a.group] : []),
           "--",
           ...(a.args ?? []),
         ],

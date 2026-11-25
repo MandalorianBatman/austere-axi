@@ -146,7 +146,10 @@ function runCheck() {
   statementIndex = new Map(splitStatements(program).map((s) => [s.id, s]));
   const lineOf = (id: string | undefined) =>
     id === undefined ? undefined : statementIndex.get(id)?.line;
-  const result = checkProgram(program, { parser: () => parser, lineOf });
+  const limits = Object.fromEntries(
+    data.catalog.components.filter((c) => c.limits?.length).map((c) => [c.name, c.limits ?? []]),
+  );
+  const result = checkProgram(program, { parser: () => parser, lineOf, limits });
   const problems: Problem[] = [
     ...result.errors.map((e) => ({ ...e, severity: "error" as const })),
     ...result.warnings.map((e) => ({ ...e, severity: "warning" as const })),
@@ -453,9 +456,9 @@ function renderReference(filter = "") {
       const items = g.items
         .map(
           (c) => `<article class="comp">
-  <h4><span>${escapeHtml(c.name)}</span>${c.tier === "extended" ? '<em class="tag">extended</em>' : ""}${c.pack !== "core" ? `<em class="tag">${escapeHtml(c.pack.replace(/^@austere-axi\//, ""))}</em>` : ""}<button type="button" class="copy" data-signature="${escapeHtml(c.signature)}" aria-label="Copy signature of ${escapeHtml(c.name)}">Copy</button></h4>
+  <h4><span>${escapeHtml(c.name)}</span>${c.uses ? '<em class="tag">recipe</em>' : c.tier === "extended" ? '<em class="tag">extended</em>' : ""}${c.pack !== "core" ? `<em class="tag">${escapeHtml(c.pack.replace(/^@austere-axi\//, ""))}</em>` : ""}<button type="button" class="copy" data-signature="${escapeHtml(c.signature || c.examples[0] || "")}" aria-label="Copy signature of ${escapeHtml(c.name)}">Copy</button></h4>
   <p>${code(c.description)}</p>
-  <pre tabindex="0"><code>${escapeHtml(c.signature)}</code></pre>
+  <pre tabindex="0"><code>${escapeHtml(c.signature || c.examples[0] || "")}</code></pre>
 </article>`,
         )
         .join("");

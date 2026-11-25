@@ -79,7 +79,7 @@ What each field does:
 - **`name`**: PascalCase, the word the agent writes. It must not collide with a core component; the build warns if it does, and pages get the core one.
 - **`props`**: a zod object. **Props are positional**: the order in `z.object` is the order in the call. Once you publish, append only, and make new props optional. Reordering breaks every page that uses the pack.
 - **`description`**: one line the agent reads in `components show`. Say what the props mean, including formats (`"YYYY-MM-DD"`).
-- **`group`**: a core group (`Layout`, `Content`, `Data`, `Charts`, `Forms`, `Buttons`) or a short capitalized category of your own.
+- **`group`**: a core group (`Layout`, `Content`, `Data`, `Charts`, `Diagrams`, `Forms`, `Buttons`) or a short capitalized category of your own.
 - **`example`**: statements whose first one calls this component. Required except for value-only parts (`slots: null`), whose parent's example shows them. It lands in `catalog.json`, so an agent that runs `components show Gantt` gets something to copy. Every example should pass `austere-axi check`.
 - **`stress`** (optional): the same with hostile input: a bad date, a very long name. It never reaches the prompt. Render it yourself at phone width.
 - **`slots`**: where it may be placed besides a `Stack`. The default is `Card.children`, `TabItem.content` and `AccordionItem.content`. `null` for value-only parts; `"Parent.prop"` names (the parent must be in your pack or core) to fill another component's slot.
@@ -87,6 +87,16 @@ What each field does:
 - **`tagged`**: wraps the output with its statement name, which is what annotations address. Default `true`.
 
 To nest components, put `Child.definition.ref` in the parent's props, as `Gantt` does with `GanttTask`. The parent's renderer receives each child as an `ElementValue` (`{ type: "element", typeName, props, partial }`) whose `props` are typed from the child's schema; in TypeScript, `AustereComponent<Props>` and `ElementValue<Props>` come from `austere-axi/pack`.
+
+### Read-path fields
+
+Optional, and never in `spec`: `components list|show|search` and `check` read them from `catalog.json`. A catalog without them (a pack built by an older austere-axi) installs, lists and shows as before.
+
+- **`guide`**: a usage guide in markdown, shown in full by `components show`. Use the headings `## Use for`, `## Not for` (name the nearest alternative), `## Limits` and `## Usual errors`, about 250 words at most. The first sentence under `## Use for` is the component's line in the `components list <Group>` chooser; without a guide the chooser uses the description. Keep it in a `.md` file next to the component and import it (`import guide from "./Gantt.md"`): the build reads it as text for the catalog and leaves it out of `pack.js`.
+- **`keywords`**: words a user would say for it (`["roadmap", "schedule", "milestones"]`). They rank `components search`.
+- **`family`**: a short heading the chooser files it under, e.g. `"Time and plan"` in `Diagrams` (see [Diagrams](diagrams.md)).
+- **`limits`**: `[{ prop: "tasks", max: 40, message: "Split the plan by phase." }]`. `check` warns, with the statement and line, when a page passes a longer list.
+- **`alsoIn`**: other groups whose chooser lists it too, e.g. `["Diagrams"]` for a component that lives in `Data`.
 
 ## 3. Render
 

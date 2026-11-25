@@ -6,7 +6,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { Catalog, LibrarySpec } from "../../types/catalog.d.ts";
+import type {
+  Catalog,
+  CatalogEntry,
+  CatalogFromSpecOptions,
+  EntryDetails,
+  LibrarySpec,
+  PromptSpecOptions,
+  Recipe,
+} from "../../types/catalog.d.ts";
 import type { AustereComponent } from "../../types/pack.d.ts";
 
 const require = createRequire(import.meta.url);
@@ -293,16 +301,21 @@ interface LibraryModule {
   GROUPS: { name: string; components: string[]; notes?: string[] }[];
   TIERS: Record<string, string>;
   EXAMPLES: Record<string, string[]>;
+  DETAILS: Record<string, EntryDetails>;
+  RECIPES: Recipe[];
+  DIAGRAM_FAMILIES: string[];
+  CONTENT_SLOTS: string[];
+  slotsFor: (spec: LibrarySpec, components: AustereComponent[]) => Record<string, string[] | null>;
   buildLibrary: (extra?: AustereComponent[], options?: BuildLibraryOptions) => AustereLibrary;
-  catalogFromSpec: (
+  catalogFromSpec: (spec: LibrarySpec, options?: CatalogFromSpecOptions) => Catalog;
+  recipeEntry: (recipe: Recipe) => CatalogEntry;
+  detailsProblem: (d: EntryDetails, props?: string[]) => string | null;
+  inChooser: (entry: CatalogEntry, group: string) => boolean;
+  promptSpec: (
     spec: LibrarySpec,
-    options?: {
-      version?: string;
-      tiers?: Record<string, string>;
-      examples?: Record<string, string[]>;
-    },
-  ) => Catalog;
-  promptSpec: (spec: LibrarySpec, tiers?: Record<string, string>) => LibrarySpec;
+    tiers?: Record<string, string>,
+    options?: PromptSpecOptions,
+  ) => LibrarySpec;
   PROMPT_OPTIONS: unknown;
   generateSystemPrompt: (options: { library: LibrarySpec; promptOptions: unknown }) => string;
 }
@@ -313,6 +326,23 @@ export interface LoadedLibrary extends LibraryModule {
   schema: () => Record<string, unknown> & { root: string };
 }
 
+/** Recipes as catalog entries, refused when one takes a component's name or uses one that does not exist. */
+function recipeEntries(mod: LibraryModule, componentNames: Set<string>): CatalogEntry[] {
+  return mod.RECIPES.map((r) => {
+    const where = `recipe ${r.name}`;
+    if (!/^[A-Z][A-Za-z0-9]*$/.test(r.name)) throw new Error(`${where}: name must be PascalCase`);
+    if (componentNames.has(r.name))
+      throw new Error(`${where}: a component has that name; list the component instead`);
+    const missing = r.uses.filter((n) => !componentNames.has(n));
+    if (!r.uses.length || missing.length)
+      throw new Error(`${where}: uses must name components (unknown: ${missing.join(", ")})`);
+    if (r.examples.length < 1 || !r.guide) throw new Error(`${where}: needs a guide and examples`);
+    const problem = mod.detailsProblem(r);
+    if (problem) throw new Error(`${where}: ${problem}`);
+    return mod.recipeEntry(r);
+  });
+}
+
 export async function loadLibrary(): Promise<LoadedLibrary> {
   const tmp = path.join(ROOT, "node_modules/.austere-build");
   fs.mkdirSync(tmp, { recursive: true });
@@ -321,7 +351,7 @@ export async function loadLibrary(): Promise<LoadedLibrary> {
   await esbuild.build({
     stdin: {
       contents: `
-        import { buildLibrary, CUSTOM_COMPONENTS as CORE_COMPONENTS, groupsFor, tiersFor, examplesFor } from "./src/runtime/library.tsx";
+        import { buildLibrary, CUSTOM_COMPONENTS as CORE_COMPONENTS, groupsFor, tiersFor, examplesFor, detailsFor, slotsFor } from "./src/runtime/library.tsx";
         ${packs.map((p, i) => `import pack${i} from ${JSON.stringify("./" + path.relative(ROOT, p.entry).split(path.sep).join("/"))};`).join("\n")}
         // Bundled packs (shadcn) are part of the core spec: no tag needed to use them.
         export const BUNDLED_PACKS = [${packs
@@ -336,8 +366,12 @@ export async function loadLibrary(): Promise<LoadedLibrary> {
         export const GROUPS = groupsFor(CUSTOM_COMPONENTS);
         export const TIERS = tiersFor(CUSTOM_COMPONENTS);
         export const EXAMPLES = examplesFor(CUSTOM_COMPONENTS);
-        export { buildLibrary };
-        export { catalogFromSpec, promptSpec } from "./src/shared/catalog.ts";
+        export const DETAILS = detailsFor(CUSTOM_COMPONENTS);
+        export { buildLibrary, slotsFor };
+        export { RECIPES } from "./src/runtime/recipes/index.ts";
+        export { DIAGRAM_FAMILIES } from "./src/runtime/groups.ts";
+        export { CONTENT_SLOTS } from "./src/runtime/define.ts";
+        export { catalogFromSpec, detailsProblem, inChooser, promptSpec, recipeEntry } from "./src/shared/catalog.ts";
         export { PROMPT_OPTIONS } from "./src/runtime/prompt.ts";
         export { generateSystemPrompt } from "@openuidev/lang-core";
       `,
@@ -348,7 +382,7 @@ export async function loadLibrary(): Promise<LoadedLibrary> {
     platform: "node",
     format: "esm",
     jsx: "automatic",
-    loader: { ".css": "empty", ".scss": "empty" },
+    loader: { ".css": "empty", ".scss": "empty", ".md": "text" },
     plugins: [fontPlugin, registryPlugin, packApiAlias, nodeExternals],
     outfile: out,
     logLevel: "error",
@@ -356,26 +390,47 @@ export async function loadLibrary(): Promise<LoadedLibrary> {
   process.env.OPENUI_TELEMETRY_DISABLED = "1";
   try {
     const mod = (await import(pathToFileURL(out).href)) as LibraryModule;
+    const catalog = (version: string): Catalog => {
+      const spec = mod.austereLibrary.toSpec();
+      const cat = mod.catalogFromSpec(spec, {
+        version,
+        tiers: mod.TIERS,
+        examples: mod.EXAMPLES,
+        details: mod.DETAILS,
+        slots: mod.slotsFor(spec, mod.CUSTOM_COMPONENTS),
+        families: { Diagrams: mod.DIAGRAM_FAMILIES },
+      });
+      // Mark what a bundled pack provides, so `components` can say where it comes from.
+      for (const p of mod.BUNDLED_PACKS) {
+        for (const e of cat.components)
+          if (p.components.some((c) => c.name === e.name)) e.pack = p.name;
+      }
+      cat.components.push(...recipeEntries(mod, new Set(cat.components.map((e) => e.name))));
+      return cat;
+    };
     return {
       ...mod,
-      prompt: () =>
-        mod.generateSystemPrompt({
-          library: mod.promptSpec(mod.austereLibrary.toSpec(), mod.TIERS),
+      prompt: () => {
+        const entries = catalog("").components;
+        // The Diagrams line names the diagram types whose signatures the group does not print.
+        const diagrams = entries
+          .filter(
+            (e) => mod.inChooser(e, "Diagrams") && !(e.group === "Diagrams" && e.tier === "core"),
+          )
+          .map((e) => e.name);
+        return mod.generateSystemPrompt({
+          library: mod.promptSpec(mod.austereLibrary.toSpec(), mod.TIERS, {
+            // Child lists print core components only; the parser still takes the rest.
+            lean: {
+              parents: mod.CONTENT_SLOTS.map((s) => s.split(".")[0]),
+              hide: mod.BUNDLED_PACKS.flatMap((p) => p.components.map((c) => c.name)),
+            },
+            chooser: { Diagrams: diagrams },
+          }),
           promptOptions: mod.PROMPT_OPTIONS,
-        }),
-      catalog: (version: string) => {
-        const cat = mod.catalogFromSpec(mod.austereLibrary.toSpec(), {
-          version,
-          tiers: mod.TIERS,
-          examples: mod.EXAMPLES,
         });
-        // Mark what a bundled pack provides, so `components` can say where it comes from.
-        for (const p of mod.BUNDLED_PACKS) {
-          for (const e of cat.components)
-            if (p.components.some((c) => c.name === e.name)) e.pack = p.name;
-        }
-        return cat;
       },
+      catalog,
       schema: () => ({
         ...mod.austereLibrary.toJSONSchema(),
         root: mod.austereLibrary.root || "Stack",
