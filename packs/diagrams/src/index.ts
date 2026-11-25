@@ -5,10 +5,34 @@
 import { Sequence, Actor, Message, Branch } from "./Sequence.tsx";
 import { Nested, NestedLevel } from "./Nested.tsx";
 import { LayerStack, Layer } from "./LayerStack.tsx";
+import { Kanban, KanbanCard } from "./Kanban.tsx";
+import { StoryMap, Story } from "./StoryMap.tsx";
+import { UserJourney, JourneyStep } from "./UserJourney.tsx";
+import { ServiceBlueprint, BlueprintStep } from "./ServiceBlueprint.tsx";
+import { EventModel, EventItem } from "./EventModel.tsx";
 import css from "./diagrams.css";
 import type { PackModule } from "austere-axi/pack";
 
 export default {
-  components: [Sequence, Actor, Message, Branch, Nested, NestedLevel, LayerStack, Layer],
+  components: [
+    Sequence,
+    Actor,
+    Message,
+    Branch,
+    Nested,
+    NestedLevel,
+    LayerStack,
+    Layer,
+    Kanban,
+    KanbanCard,
+    StoryMap,
+    Story,
+    UserJourney,
+    JourneyStep,
+    ServiceBlueprint,
+    BlueprintStep,
+    EventModel,
+    EventItem,
+  ],
   css,
 } satisfies PackModule;
