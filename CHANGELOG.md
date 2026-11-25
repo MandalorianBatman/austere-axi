@@ -12,6 +12,7 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 - **`BarChart`, `LineChart`, `AreaChart`, `ScatterChart` and `HorizontalBarChart`** use one distinct hue for each series (blue, green, amber, orange, violet), bars are up to 44 px wide (16 before), and a scatter prints its axis titles. (RLM-479)
 - **`Radar`, `PolarChart` and `Quadrant` fit the width of a phone** at full size instead of scrolling sideways; labels are cut shorter there. (RLM-479)
 - **Expand** is a slim row (36 px; 44 px on a phone). **`RadioGroup`**: the unselected ring shows on the card and a description sits under its label (also for checkboxes and switches). **`Timeline`**: `done` is neutral grey, not green. **`Architecture`**: a tag chip takes its node's tone; tags and the `Radar`, `PolarChart` and `Waterfall` ticks are 11 px. (RLM-479)
+- **Markdown headings**: `#` is 30 px and `##` 24 px, both larger than a `CardHeader` title (22 px); `###` is 17 px. (RLM-479)
 - `check` warns (`state-dot`) when a `State` of kind `initial` or `final` has a detail, and (`node-tag`) when a `Node` tag is a style word such as `"emphasis"`. (RLM-479)
 - `spec` is ~5,877 tokens against the 5,950 budget (`better` and its description).
 

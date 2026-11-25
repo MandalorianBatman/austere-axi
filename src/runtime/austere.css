@@ -1415,3 +1415,20 @@ html.austere-annotating .austere-page :where(a, button, input, select, textarea,
     min-height: 44px;
   }
 }
+
+/* ── Markdown headings: h1 > h2 > the CardHeader title (22px) ── */
+.austere-page .openui-markdown-renderer h1 {
+  font-size: 1.875rem;
+  line-height: 1.2;
+  font-weight: 650;
+}
+.austere-page .openui-markdown-renderer h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  font-weight: 650;
+}
+.austere-page .openui-markdown-renderer h3 {
+  font-size: 1.0625rem;
+  line-height: 1.3;
+  font-weight: 600;
+}
