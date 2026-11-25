@@ -30,6 +30,16 @@ import {
   buildKanban,
   buildStoryMap,
 } from "../packs/diagrams/src/_board-model.ts";
+import {
+  buildHeatmap,
+  buildPermissions,
+  buildTrace,
+  buildUnitGrid,
+  inkFor,
+  luminance,
+  parseAccess,
+  rampFill,
+} from "../packs/diagrams/src/_matrix-model.ts";
 import { LAYER_SPEC, NESTED_SPEC, buildLevels } from "../packs/diagrams/src/_containment-model.ts";
 
 const pick = (e: FileEntry | null): Record<string, unknown> | null =>
@@ -1435,4 +1445,143 @@ test("ServiceBlueprint and EventModel: fixed rows, the line of visibility betwee
     ],
   );
   assert.equal(events.problems.length, 0);
+});
+
+test("Heatmap: every cell reads at 4.5:1 on its fill, the focal cell is outside the scale, a missing value takes no fill", () => {
+  const ratio = (fill: [number, number, number], ink: "light" | "dark") => {
+    const l = luminance(fill);
+    return ink === "light" ? 1.05 / (l + 0.05) : (l + 0.05) / 0.05;
+  };
+  for (let t = 0; t <= 1; t += 0.01) {
+    const { fill, ink } = rampFill(t);
+    const c = fill.match(/\d+/g)!.map(Number) as [number, number, number];
+    assert.ok(ratio(c, ink) >= 4.5, `t=${t.toFixed(2)} ${fill} ${ink}`);
+    assert.equal(inkFor(c), ink);
+  }
+  const heat = buildHeatmap({
+    columns: ["A", "B", "C"],
+    unit: "%",
+    rows: [
+      part({ label: "r1", values: [1, 3, 1000], focus: " c " }, "r1"),
+      part({ label: "r2", values: [2, "n/a", "1,2"] }),
+    ],
+  });
+  assert.deepEqual(
+    heat.rows.map((r) => r.cells.map((c) => c.text)),
+    [
+      ["1%", "3%", "1000%"],
+      ["2%", "–", "12%"],
+    ],
+  );
+  assert.deepEqual(
+    [heat.low, heat.high],
+    ["1%", "12%"],
+    "1000 is focal: it does not set the scale",
+  );
+  assert.equal(heat.rows[0].cells[2].focal, true);
+  assert.equal(heat.rows[1].cells[1].fill, "", "a missing value has no fill");
+  assert.equal(heat.problems.length, 0);
+  const bad = buildHeatmap({
+    columns: ["A", "B"],
+    rows: [part({ label: "x", values: [1], focus: "Z" })],
+  });
+  assert.ok(bad.problems.some((p) => /1 values for 2 columns/.test(p)));
+  assert.ok(bad.problems.some((p) => /focus "Z", which is not a column/.test(p)));
+});
+
+test("PermissionMatrix: near words map to a level, an unknown word is printed as written, a short row is reported", () => {
+  assert.deepEqual(["R/W", "SELECT", " Full ", "-", "", "break-glass"].map(parseAccess), [
+    "write",
+    "read",
+    "admin",
+    "none",
+    "none",
+    null,
+  ]);
+  const matrix = buildPermissions({
+    roles: ["Admins", "Analysts"],
+    rows: [
+      part({ resource: "Raw", grants: ["admin", "break-glass"], focus: "analysts" }),
+      part({ resource: "Agg", grants: ["write"] }),
+    ],
+  });
+  assert.deepEqual(
+    matrix.rows.map((r) => r.cells.map((c) => [c.text, c.level, c.focal])),
+    [
+      [
+        ["Admin", "admin", false],
+        ["break-glass", null, true],
+      ],
+      [
+        ["Write", "write", false],
+        ["None", "none", false],
+      ],
+    ],
+  );
+  assert.deepEqual(matrix.used, ["none", "write", "admin"]);
+  assert.ok(matrix.problems.some((p) => /AccessRow "Agg" has 1 grants for 2 roles/.test(p)));
+});
+
+test("UnitGrid: 100 squares in reading order, a fraction is rounded and said so, counts over 100 are cut", () => {
+  const grid = buildUnitGrid({
+    parts: [part({ name: "A", count: 63.4 }), part({ name: "B", count: 10 })],
+    unit: "check",
+  });
+  assert.equal(grid.cells.length, 100);
+  assert.deepEqual([grid.parts[0].count, grid.parts[0].asked], [63, "63.4"]);
+  assert.equal(grid.remaining, 27);
+  assert.deepEqual(
+    [grid.cells[0], grid.cells[62], grid.cells[63], grid.cells[72], grid.cells[73]],
+    [0, 0, 1, 1, -1],
+  );
+  const over = buildUnitGrid({
+    parts: [part({ name: "A", count: 80 }), part({ name: "B", count: 40 })],
+  });
+  assert.deepEqual(
+    over.parts.map((p) => p.count),
+    [80, 20],
+  );
+  assert.equal(over.remaining, 0);
+  assert.ok(over.problems.some((p) => /B is cut to 20/.test(p)));
+  const bad = buildUnitGrid({ parts: [part({ name: "A", count: -4 })] });
+  assert.equal(bad.parts[0].count, 0);
+  assert.equal(bad.problems.length, 1);
+});
+
+test("Traceability: items link to requirements by ID, a requirement with no design or test is a gap, a stray link is reported", () => {
+  const trace = buildTrace({
+    requirements: [
+      part({ id: "REQ-1", text: "One", source: "Policy 3" }, "r1"),
+      part({ id: "REQ-2", text: "Two" }, "r2"),
+      part({ id: "req-1", text: "Dup" }),
+    ],
+    items: [
+      part(
+        { id: "D-1", name: "Design", kind: "design", covers: ["req-1", "REQ-2", "REQ-9"] },
+        "d1",
+      ),
+      part({ id: "T-1", name: "Test", kind: "test", covers: ["REQ-1"] }, "t1"),
+      part({ id: "T-2", name: "Orphan", kind: "test", covers: [] }),
+      part({ id: "X-1", name: "Odd", kind: "doc", covers: ["REQ-1"] }),
+    ],
+  });
+  assert.deepEqual(
+    trace.rows.map((r) => [r.code, r.design.map((l) => l.id), r.tests.map((l) => l.id)]),
+    [
+      ["REQ-1", ["d1"], ["t1"]],
+      ["REQ-2", ["d1"], []],
+    ],
+  );
+  assert.deepEqual([trace.gaps, trace.sourced], [{ noDesign: [], noTest: ["REQ-2"] }, true]);
+  for (const re of [
+    /"req-1" is used twice|Requirement id "req-1" is used twice/,
+    /covers "REQ-9"/,
+    /"T-2" covers no requirement/,
+    /"X-1" has kind "doc"/,
+  ]) {
+    assert.ok(
+      trace.problems.some((p) => re.test(p)),
+      String(re),
+    );
+  }
 });

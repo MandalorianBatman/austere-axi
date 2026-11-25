@@ -231,6 +231,20 @@ describe("renders cleanly", () => {
   }
 });
 
+test("a UserJourney score dot is announced with its scale, not as a bare number", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { context, frame } = await openReview(pages()[0].file, VIEWPORTS[0]);
+  try {
+    const names = await frame.evaluate(() =>
+      Array.from(document.querySelectorAll(".dg-b-dot")).map((d) => d.getAttribute("aria-label")),
+    );
+    assert.ok(names.length > 0, "no score dots rendered");
+    for (const name of names) assert.match(name ?? "", /^score [1-5] of 5$/);
+  } finally {
+    await context.close();
+  }
+});
+
 test("every component part is annotatable end to end", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const gallery = pages()[0];
