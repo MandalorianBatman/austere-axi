@@ -439,8 +439,8 @@ pkWeb = Node("web", "frontend", "apps/web")
 pkApi = Node("api", "backend", "services/api")
 pkWorker = Node("worker", "backend", "services/worker")
 pkAuth = Node("auth", "backend", "packages/auth", "cycle", "danger")
-pkBilling = Node("billing", "backend", "packages/billing", "cycle", "danger")
-pkDb = Node("db", "database", "packages/db", "4 in", "strong")
+pkBilling = Node("billing", "backend", "packages/billing", "cycle · 3 in", "danger")
+pkDb = Node("db", "database", "packages/db", "2 in", "strong")
 pkLog = Node("log", "backend", "packages/log", "2 in")
 pkStripe = Node("stripe", "external", "npm", "3rd party")
 pkWebApi = Edge(pkWeb, pkApi)
@@ -465,6 +465,7 @@ pkBillingAuth = Edge(pkBilling, pkAuth, "session lookup", "dashed", "danger")`,
     uses: USES,
     keywords: [
       "sbgn",
+      "biochemical",
       "biological pathway",
       "pathway",
       "metabolic map",
