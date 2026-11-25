@@ -46,6 +46,15 @@ import {
   buildSchedule,
   layoutSchedule,
 } from "../packs/diagrams/src/_plan-model.ts";
+import {
+  QUAD,
+  buildPyramid,
+  buildQuadrant,
+  buildVenn,
+  buildWardley,
+  layoutFishbone,
+  layoutLoop,
+} from "../packs/diagrams/src/_shape-model.ts";
 import { LAYER_SPEC, NESTED_SPEC, buildLevels } from "../packs/diagrams/src/_containment-model.ts";
 
 const pick = (e: FileEntry | null): Record<string, unknown> | null =>
@@ -1739,4 +1748,200 @@ test("ScheduleNetwork: unknown ids, self links, cycles, duplicates and zero dura
     );
   }
   assert.doesNotThrow(() => layoutSchedule(buildSchedule(undefined)));
+});
+
+test("Quadrant: no label overlaps another or crosses an axis; an item on an axis, out of range or missing x is reported", () => {
+  const q = buildQuadrant({
+    xAxis: "Effort",
+    yAxis: "Impact",
+    items: [
+      part({ label: "Alpha item", x: 20, y: 80 }, "a"),
+      part({ label: "Beta item", x: 22, y: 79 }, "b"),
+      part({ label: "Gamma item", x: 24, y: 78 }, "c"),
+      part({ label: "On the axis", x: 50, y: 10 }, "d"),
+      part({ label: "Outside", x: 140, y: 5 }, "e"),
+      part({ label: "No y", x: 5 }, "f"),
+    ],
+  });
+  assert.equal(q.items.length, 5, "the item with no y is dropped");
+  assert.equal(q.items[4].x, 100, "out of range is clamped");
+  for (const re of [/on an axis line/, /outside 0 to 100/, /needs x and y/]) {
+    assert.ok(
+      q.problems.some((p) => re.test(p)),
+      String(re),
+    );
+  }
+  const box = (i: (typeof q.items)[number]) => {
+    const w = i.shown.length * 6.96;
+    const x0 = i.anchor === "start" ? i.lx : i.anchor === "end" ? i.lx - w : i.lx - w / 2;
+    return { x0, x1: x0 + w, y0: i.ly - 11, y1: i.ly + 4 };
+  };
+  const boxes = q.items.slice(0, 3).map(box);
+  for (let a = 0; a < boxes.length; a++) {
+    for (let b = a + 1; b < boxes.length; b++) {
+      const A = boxes[a];
+      const B = boxes[b];
+      assert.ok(
+        A.x1 <= B.x0 || B.x1 <= A.x0 || A.y1 <= B.y0 || B.y1 <= A.y0,
+        `labels ${a} and ${b} do not overlap`,
+      );
+    }
+    const cx = (QUAD.x0 + QUAD.x1) / 2;
+    assert.ok(boxes[a].x1 <= cx || boxes[a].x0 >= cx, "a label does not cross the vertical axis");
+  }
+});
+
+test("Venn: a pair names the sets it joins, an unknown or repeated overlap is dropped and reported, a fourth set is not drawn", () => {
+  const sets = [
+    part({ name: "A" }, "sa"),
+    part({ name: "B" }, "sb"),
+    part({ name: "C" }, "sc"),
+    part({ name: "D" }, "sd"),
+  ];
+  const v = buildVenn({
+    sets,
+    overlaps: [
+      part({ label: "AB", of: ["a", "B"] }, "o1"),
+      part({ label: "ABC", of: ["A", "B", "C"], focus: true }, "o2"),
+      part({ label: "Again", of: ["B", "A"] }, "o3"),
+      part({ label: "Ghost", of: ["A", "Z"] }, "o4"),
+    ],
+  });
+  assert.equal(v.sets.length, 3);
+  assert.deepEqual(
+    v.overlaps.map((o) => [o.label, o.of]),
+    [
+      ["AB", [0, 1]],
+      ["ABC", [0, 1, 2]],
+    ],
+  );
+  assert.ok(
+    v.overlaps.every((o) => o.text),
+    "every overlap has room for its label",
+  );
+  for (const re of [/not drawn/, /same sets/, /"Z", which is not a set/]) {
+    assert.ok(
+      v.problems.some((p) => re.test(p)),
+      String(re),
+    );
+  }
+  const sized = buildVenn({
+    sets: [part({ name: "Big", size: 400 }), part({ name: "Small", size: 100 })],
+  });
+  assert.ok(
+    Math.abs(sized.sets[1].r / sized.sets[0].r - 0.5) < 1e-9,
+    "area follows size: radius goes with its square root",
+  );
+  assert.equal(buildVenn({ sets: [part({ name: "Only" })] }).sets.length, 0);
+});
+
+test("Pyramid: a funnel is as wide as its values and prints the drop; without values it says it is not to scale", () => {
+  const f = buildPyramid({
+    shape: "funnel",
+    layers: [
+      part({ name: "Visit", value: 1000 }),
+      part({ name: "Join", value: 250 }),
+      part({ name: "Pay", value: 50 }),
+    ],
+  });
+  assert.ok(f.toScale);
+  const width = (i: number) => f.layers[i].points[1][0] - f.layers[i].points[0][0];
+  assert.ok(Math.abs(width(1) / width(0) - 0.25) < 1e-9);
+  assert.ok(Math.abs(width(2) / width(0) - 0.05) < 1e-9);
+  assert.deepEqual(
+    f.layers.map((l) => l.drop),
+    ["", "−75%", "−80%"],
+  );
+  const loose = buildPyramid({
+    shape: "funnel",
+    layers: [part({ name: "A", value: 5 }), part({ name: "B" })],
+  });
+  assert.equal(loose.toScale, false);
+  assert.ok(loose.problems.some((p) => /not to scale/.test(p)));
+  const p = buildPyramid({
+    layers: [part({ name: "Top" }), part({ name: "Mid" }), part({ name: "Base" })],
+  });
+  assert.equal(p.layers[0].points[0][0], p.layers[0].points[1][0], "the apex is a point");
+  assert.ok(p.layers[2].points[1][0] > p.layers[1].points[1][0]);
+});
+
+test("Loop: the last step leads back to the first, every arc is on one circle, a spoke leaves each step when there is a hub", () => {
+  const steps = ["a", "b", "c", "d", "e"].map((n) => part({ name: n, writes: n }, n));
+  const lay = layoutLoop({ steps, hub: part({ name: "Hub" }, "h") });
+  assert.equal(lay.arcs.length, 5);
+  assert.equal(lay.spokes.length, 5);
+  const radii = new Set(lay.arcs.map((a) => a.d.match(/A([\d.]+) /)?.[1]));
+  assert.equal(radii.size, 1, "one radius");
+  assert.equal(layoutLoop({ steps }).spokes.length, 0);
+  const many = layoutLoop({ steps: Array.from({ length: 10 }, (_, i) => part({ name: `s${i}` })) });
+  assert.equal(many.steps.length, 8);
+  assert.ok(many.problems.some((p) => /8 steps at most/.test(p)));
+});
+
+test("Fishbone: bones alternate above and below in order of first use, one root only, a cause with no category is filed under Other", () => {
+  const fb = layoutFishbone({
+    effect: "Slow",
+    causes: [
+      part({ text: "one", category: "Data", root: true }, "c1"),
+      part({ text: "two", category: "Deploy" }, "c2"),
+      part({ text: "three", category: "data" }, "c3"),
+      part({ text: "four", category: "", root: true }, "c4"),
+    ],
+  });
+  assert.deepEqual(
+    fb.bones.map((b) => [b.category, b.above, b.causes.length, b.root]),
+    [
+      ["Data", true, 2, true],
+      ["Deploy", false, 1, false],
+      ["Other", true, 1, false],
+    ],
+  );
+  assert.ok(fb.problems.some((p) => /no category/.test(p)));
+  assert.ok(fb.problems.some((p) => /root cause/.test(p)));
+  assert.ok(
+    fb.bones.every((b) => b.causes.every((c) => c.box.x0 >= fb.x)),
+    "every label is inside the view",
+  );
+});
+
+test("WardleyMap: the stage is a band, links go by name, a part in the same band is nudged aside, a commodity cannot move, a third arrow is not drawn", () => {
+  const m = buildWardley({
+    parts: [
+      part(
+        { name: "User need", stage: "Custom-built", visibility: 90, needs: ["Core", "Ghost"] },
+        "p1",
+      ),
+      part(
+        { name: "Core", stage: "product", visibility: 50, needs: ["Core"], evolving: true },
+        "p2",
+      ),
+      part({ name: "Core 2", stage: "Product", visibility: 50, evolving: true }, "p3"),
+      part({ name: "Utility", stage: "commodity", visibility: 5, evolving: true }, "p4"),
+      part({ name: "Third", stage: "genesis", visibility: 40, evolving: true }, "p5"),
+      part({ name: "Lost", stage: "someday", visibility: 40 }, "p6"),
+    ],
+  });
+  assert.equal(m.parts.length, 5, "an unknown stage is dropped");
+  assert.deepEqual(
+    m.parts.map((p) => p.stage),
+    [1, 2, 2, 3, 0],
+  );
+  assert.deepEqual(m.links, [{ from: 0, to: 1 }]);
+  assert.notEqual(m.parts[1].px, m.parts[2].px, "same band and height: apart");
+  assert.deepEqual(
+    m.parts.map((p) => p.arrowTo !== null),
+    [false, true, true, false, false],
+  );
+  for (const re of [
+    /"Ghost", which is not a part/,
+    /needs itself/,
+    /commodity/,
+    /2 movement arrows at most/,
+    /needs a stage/,
+  ]) {
+    assert.ok(
+      m.problems.some((p) => re.test(p)),
+      String(re),
+    );
+  }
 });

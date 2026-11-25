@@ -7,7 +7,8 @@ Which chain of tasks decides the finish, and where the slack is. Tasks have dura
 - Events or milestones with no duration: Timeline.
 
 ## Limits
-- 2 to 8 tasks. `check` warns above 8: split the plan. Keep 5 ranks and 12 links at most.
+- 2 to 8 tasks. `check` warns above 8: split the plan.
+- Advice, not checked: keep to 5 ranks and 12 links. Beyond that the boxes crowd; split the plan.
 - `ScheduleTask(id, name, duration, after?)`. `id` is a short unique code (`"A"`, `"DB1"`), `after` lists the ids that must finish first.
 - `duration` is a number above 0, in the unit of the network (`unit`, default `"days"`). No zero-length milestones.
 - No calendars, lag, deadlines or three-point estimates. Finish-to-start only.
