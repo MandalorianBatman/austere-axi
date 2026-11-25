@@ -1,0 +1,10 @@
+{
+  "name": "@austere-axi/pack-diagrams",
+  "private": true,
+  "description": "Diagram types for austere-axi that need no graph layout: Sequence, and the types added after it. Bundled with austere-axi and versioned with it; a page that uses none of them does not load it.",
+  "type": "module",
+  "austere": {
+    "bundled": true,
+    "entry": "src/index.ts"
+  }
+}
