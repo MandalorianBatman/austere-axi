@@ -8,6 +8,7 @@ import swimlane from "./Swimlane.md";
 import barComparison from "./BarComparison.md";
 import lineTrend from "./LineTrend.md";
 import scatterPlot from "./ScatterPlot.md";
+import databaseSchema from "./DatabaseSchema.md";
 
 export const RECIPES: Recipe[] = [
   {
@@ -85,6 +86,42 @@ financeLane = Group("Finance", [firstInvoice])`,
     examples: [
       `effortImpact = ScatterChart([ScatterSeries("Ideas", [Point(2, 8), Point(5, 6), Point(8, 3), Point(3, 3)])], "Effort (days)", "Impact (1-10)")`,
       `payloadLatency = ScatterChart([ScatterSeries("eu-west", [Point(12, 80), Point(40, 95), Point(85, 140), Point(120, 160), Point(200, 230), Point(260, 250)]), ScatterSeries("us-east", [Point(15, 60), Point(50, 72), Point(90, 110), Point(150, 150), Point(210, 390)])], "Payload (KB)", "Latency (ms)")`,
+    ],
+  },
+  {
+    name: "DatabaseSchema",
+    group: "Diagrams",
+    family: "Data model",
+    description:
+      "Physical tables with SQL types, key marks and foreign keys with their delete rules, drawn with ERDiagram: one Entity for each table.",
+    uses: ["ERDiagram", "Entity", "Relation"],
+    keywords: [
+      "database schema",
+      "db schema",
+      "tables",
+      "columns",
+      "sql",
+      "foreign key",
+      "primary key",
+      "migration",
+      "ddl",
+      "postgres",
+      "on delete cascade",
+    ],
+    guide: databaseSchema,
+    examples: [
+      `blog = ERDiagram([dbUsers, dbPosts], [dbAuthor])
+dbUsers = Entity("users", ["id uuid pk", "email text unique nn"])
+dbPosts = Entity("posts", ["id uuid pk", "author_id uuid fk users.id", "title text nn"])
+dbAuthor = Relation(dbUsers, dbPosts, "1:N", "posts.author_id → users.id, on delete cascade")`,
+      `orders = ERDiagram([dbCustomers, dbOrders, dbItems, dbProducts], [dbPlaced, dbHolds, dbOfProduct])
+dbCustomers = Entity("public.customers", ["id uuid pk", "email text unique nn", "created_at timestamptz nn"])
+dbOrders = Entity("public.orders", ["id uuid pk", "customer_id uuid fk customers.id index", "status text nn", "total numeric(12,2) nn", "placed_at timestamptz index"])
+dbItems = Entity("public.order_items", ["order_id uuid pk fk orders.id", "line int pk", "product_id uuid fk products.id", "quantity int nn"], "danger")
+dbProducts = Entity("public.products", ["id uuid pk", "sku text unique nn", "price_cents int nn"])
+dbPlaced = Relation(dbCustomers, dbOrders, "1:N", "orders.customer_id → customers.id, on delete restrict")
+dbHolds = Relation(dbOrders, dbItems, "1:N", "order_items.order_id → orders.id, on delete cascade")
+dbOfProduct = Relation(dbProducts, dbItems, "1:N", "order_items.product_id → products.id, on delete restrict")`,
     ],
   },
 ];

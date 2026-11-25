@@ -928,6 +928,68 @@ span.austere-filetree-toggle {
   fill: #141417;
 }
 
+/* ── ERDiagram and ClassDiagram: boxes with rows, and a mark at each end of a relation ── */
+.austere-data-node .austere-data-rule {
+  stroke: var(--k);
+  stroke-opacity: 0.4;
+  stroke-width: 1;
+}
+.austere-data-node .austere-data-stereo {
+  pointer-events: none;
+  fill: var(--austere-muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.austere-data-node .austere-arch-node-label.is-italic {
+  font-style: italic;
+}
+.austere-data-node .austere-data-name {
+  fill: #ececef;
+  font-size: 12px;
+}
+.austere-data-node .austere-data-type,
+.austere-data-node .austere-data-member {
+  fill: var(--austere-muted);
+  font-family: var(--openui-font-code);
+  font-size: 11px;
+}
+.austere-data-node .austere-data-member {
+  fill: #c4c4cc;
+}
+.austere-data-node .austere-data-mark {
+  fill: var(--austere-accent);
+  font-family: var(--openui-font-code);
+  font-size: 10px;
+  font-weight: 600;
+}
+.austere-data-node .austere-flow-hit {
+  fill: transparent;
+}
+.austere-data-node .austere-flow-hit:hover {
+  fill: rgba(255, 255, 255, 0.04);
+}
+.austere-data-end path,
+.austere-data-end polygon,
+.austere-data-end circle {
+  fill: none;
+  stroke: #8b8b94;
+  stroke-width: 1.4;
+}
+.austere-data-end .is-hollow {
+  fill: #121214;
+}
+.austere-data-end .is-fill {
+  fill: #8b8b94;
+}
+.austere-data-mult {
+  fill: #c4c4cc;
+  font-size: 10px;
+  /* A halo in the page colour keeps it readable where it meets a line. */
+  paint-order: stroke;
+  stroke: #0d0d0f;
+  stroke-width: 3px;
+}
+
 .austere-render-error {
   border: 1px solid rgba(240, 96, 96, 0.35);
   background: var(--austere-del);

@@ -3,20 +3,22 @@
 // each edge) its own click target. Helper, not a component (the file name
 // starts with "_").
 import React, { useEffect, useId, useMemo } from "react";
-import type { ReactNode, SVGProps } from "react";
 import type { DiagramContent } from "../../../types/pack.d.ts";
 import { reportRuntimeError } from "../env.ts";
 import { DiagramFrame } from "./_diagram-frame.ts";
 import { DEFAULT_TARGET_WIDTH, edgePath } from "./_architecture-model.ts";
 import type { LaidOutEdge } from "./_architecture-model.ts";
 import { DOT_BOX, DOT_R, RING_R, buildFlow, layoutFlow } from "./_flow-model.ts";
-import type { FlowInput, FlowKind, FlowLaidOutNode, FlowLayout, FlowModel } from "./_flow-model.ts";
+import type {
+  FlowInput,
+  FlowKind,
+  FlowLaidOutEdge,
+  FlowLaidOutNode,
+  FlowLayout,
+  FlowModel,
+} from "./_flow-model.ts";
 
-// Every SVG text ends in a space: annotation quotes use textContent, which
-// would otherwise run a label and the next one together.
-const T = ({ children, ...rest }: SVGProps<SVGTextElement> & { children?: ReactNode }) => (
-  <text {...rest}>{children} </text>
-);
+import { DataNode, EndMarkView, T } from "./_data-view.tsx";
 
 function Shape({ n }: { n: FlowLaidOutNode }) {
   const cx = n.x + n.width / 2;
@@ -187,14 +189,15 @@ function drawing(layout: FlowLayout, uid: string, kind: FlowKind): DiagramConten
   const byId = new Map(layout.nodes.map((n) => [n.id, n]));
   const nodeComponent = kind.nodeName;
   const edgeComponent = kind.edgeName;
-  // Part names: "From → To", plus the answer or event when there is one.
-  const partOf = (e: LaidOutEdge) => {
+  // Part names: "From → To", plus the answer or event when there is one; a data-model relation words its own.
+  const partOf = (e: FlowLaidOutEdge) => {
+    if (e.ends?.part) return e.ends.part;
     const base = `${byId.get(e.from)?.label} → ${byId.get(e.to)?.label}`;
     return e.label ? `${base} (${e.label})` : base;
   };
   // A hierarchy has right-angle parent links and no arrowheads; lines are not targets.
   const hierarchy = !!kind.hierarchy;
-  const styles = hierarchy ? [] : [...new Set(layout.edges.map((e) => e.style))];
+  const styles = hierarchy || kind.edgeEnds ? [] : [...new Set(layout.edges.map((e) => e.style))];
   const content = (
     <svg
       className="austere-arch-svg"
@@ -236,8 +239,24 @@ function drawing(layout: FlowLayout, uid: string, kind: FlowKind): DiagramConten
             <path
               className="austere-arch-edge-line"
               d={d}
-              markerEnd={hierarchy ? undefined : `url(#${uid}-${e.style})`}
+              markerEnd={hierarchy || kind.edgeEnds ? undefined : `url(#${uid}-${e.style})`}
             />
+            {e.ends && e.points.length >= 2 ? (
+              <>
+                <EndMarkView
+                  mark={e.ends.fromMark}
+                  at={e.points[0]}
+                  toward={e.points[1]}
+                  text={e.ends.fromText}
+                />
+                <EndMarkView
+                  mark={e.ends.toMark}
+                  at={e.points[e.points.length - 1]}
+                  toward={e.points[e.points.length - 2]}
+                  text={e.ends.toText}
+                />
+              </>
+            ) : null}
           </g>
         );
       })}
@@ -273,9 +292,13 @@ function drawing(layout: FlowLayout, uid: string, kind: FlowKind): DiagramConten
         ) : null;
       })}
 
-      {layout.nodes.map((n) => (
-        <NodeView key={n.id} n={n} component={nodeComponent} />
-      ))}
+      {layout.nodes.map((n) =>
+        n.data ? (
+          <DataNode key={n.id} n={n} component={nodeComponent} />
+        ) : (
+          <NodeView key={n.id} n={n} component={nodeComponent} />
+        ),
+      )}
     </svg>
   );
   return { content, width: layout.width };

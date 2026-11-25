@@ -21,6 +21,8 @@ import {
 } from "../src/runtime/components/_flow-model.ts";
 import type { FlowLaidOutNode } from "../src/runtime/components/_flow-model.ts";
 import { ORG_CHART, TREE } from "../src/runtime/components/_tree-model.ts";
+import { parseCardinality, parseField } from "../src/runtime/components/_data-parse.ts";
+import { CLASS_DIAGRAM, ER_DIAGRAM } from "../src/runtime/components/_data-model.ts";
 import { LAYER_SPEC, NESTED_SPEC, buildLevels } from "../packs/diagrams/src/_containment-model.ts";
 
 const pick = (e: FileEntry | null): Record<string, unknown> | null =>
@@ -1131,4 +1133,159 @@ test("Tree and OrgChart: siblings draw in list order, left to right going down a
   assert.ok(org);
   const x = (id: string) => org.nodes.find((n) => n.id === id)?.x ?? NaN;
   assert.ok(x("a") < x("b") && x("b") < x("c"));
+});
+
+test("ER fields: the lines agents write parse to name, type and marks", () => {
+  const cases: [string, ReturnType<typeof parseField>][] = [
+    ["id uuid pk", { name: "id", type: "uuid", marks: ["PK"] }],
+    ["email text unique", { name: "email", type: "text", marks: ["UQ"] }],
+    ["user_id uuid fk users.id", { name: "user_id", type: "uuid", marks: ["FK users.id"] }],
+    ["- bullet text NOT NULL", { name: "bullet", type: "text", marks: ["NN"] }],
+    ["id uuid PRIMARY KEY", { name: "id", type: "uuid", marks: ["PK"] }],
+    [
+      "total numeric(12, 2) nn idx",
+      { name: "total", type: "numeric(12, 2)", marks: ["NN", "IDX"] },
+    ],
+    [
+      "created_at timestamp with time zone",
+      { name: "created_at", type: "timestamp with time zone", marks: [] },
+    ],
+    ["order_id uuid pk, fk", { name: "order_id", type: "uuid", marks: ["PK", "FK"] }],
+    ["notes", { name: "notes", type: "", marks: [] }],
+    ["", { name: "", type: "", marks: [] }],
+  ];
+  for (const [line, want] of cases) assert.deepEqual(parseField(line), want, line);
+});
+
+test("ER cardinality: 1:N reads from the first entity to the second; junk reads as null", () => {
+  assert.deepEqual(parseCardinality("1:N"), { from: "one", to: "many" });
+  assert.deepEqual(parseCardinality(" n : m "), { from: "many", to: "many" });
+  assert.deepEqual(parseCardinality("0..1:1..*"), { from: "zero-one", to: "one-many" });
+  assert.deepEqual(parseCardinality("1:0..*"), { from: "one", to: "zero-many" });
+  assert.deepEqual(parseCardinality("1-N"), { from: "one", to: "many" });
+  assert.deepEqual(parseCardinality("1 to many"), { from: "one", to: "many" });
+  for (const junk of ["", "lots", "1:2:3", "1:", "?"])
+    assert.equal(parseCardinality(junk), null, junk);
+});
+
+test("ERDiagram: relation marks, part names, missing cardinality and unreadable cardinality", () => {
+  const entity = (name: string, fields?: unknown[]) => ({
+    props: { name, fields },
+    statementId: name,
+  });
+  const a = entity("A", ["id uuid pk", 7, "x text"]);
+  const b = entity("B");
+  const rel = (cardinality: unknown, label?: string) => ({
+    props: { from: a, to: b, cardinality, label },
+    statementId: `r${String(cardinality)}`,
+  });
+  const model = buildFlow(
+    { entities: [a, b], relations: [rel("1:N", "has"), rel(undefined), rel("lots")] },
+    ER_DIAGRAM,
+  );
+  assert.deepEqual(model.nodes[0].lines, ["id uuid pk", "x text"]);
+  assert.equal(model.nodes[0].shape, "entity");
+  assert.deepEqual(
+    model.edges.map((e) => [e.ends?.fromMark, e.ends?.toMark, e.ends?.part]),
+    [
+      ["one", "many", "A → B (has)"],
+      ["", "", "A → B"],
+      ["", "", "A → B"],
+    ],
+  );
+  assert.match(model.problems.join("\n"), /Relation rlots: cardinality "lots" is not one of/);
+  const notes = flowNotes(
+    { entities: [a, b], relations: [rel("1:N"), rel(undefined)] },
+    ER_DIAGRAM,
+  );
+  assert.match(notes.map((n) => n.message).join("\n"), /1 relation with no cardinality \(A → B\)/);
+  // An unreadable cardinality is reported once, as itself.
+  const unreadable = flowNotes({ entities: [a, b], relations: [rel("lots")] }, ER_DIAGRAM).map(
+    (n) => n.message,
+  );
+  assert.equal(unreadable.length, 1);
+  assert.match(unreadable[0], /cardinality "lots"/);
+  // A long field list and a self relation lay out without throwing.
+  const wide = entity(
+    "W",
+    Array.from({ length: 40 }, (_, i) => `field_${i}_${"x".repeat(i * 3)} text pk`),
+  );
+  const self = { props: { from: wide, to: wide, cardinality: "1:N" }, statementId: "self" };
+  const layout = layoutFlow(buildFlow({ entities: [wide, a], relations: [self] }, ER_DIAGRAM));
+  assert.ok(layout);
+  const box = layout.nodes.find((n) => n.id === "W");
+  assert.ok(box && box.width <= 360 && box.data?.rows.length === 40);
+});
+
+test("ClassDiagram: inheritance runs parent-first so the parent sits above; multiplicities follow their ends", () => {
+  const box = (name: string, members?: string[], kind?: string) => ({
+    props: { name, members, kind },
+    statementId: name,
+  });
+  const shape = box("Shape", ["+area(): float"], "interface");
+  const circle = box("Circle", ["-radius: float", "+area(): float"]);
+  const link = (
+    from: object,
+    to: object,
+    kind: string,
+    label?: string,
+    fm?: string,
+    tm?: string,
+  ) => ({
+    props: { from, to, kind, label, fromMultiplicity: fm, toMultiplicity: tm },
+    statementId: `${kind}${fm ?? ""}`,
+  });
+  const props = {
+    classes: [shape, circle],
+    links: [link(circle, shape, "inheritance", "", "0..*", "1")],
+  };
+  const model = buildFlow(props, CLASS_DIAGRAM);
+  assert.equal(model.nodes[0].shape, "interface");
+  const [edge] = model.edges;
+  assert.deepEqual([edge.from, edge.to], ["Shape", "Circle"]);
+  assert.equal(edge.ends?.fromMark, "triangle");
+  assert.deepEqual([edge.ends?.fromText, edge.ends?.toText], ["1", "0..*"]);
+  assert.equal(edge.ends?.part, "Circle extends Shape");
+  const layout = layoutFlow(buildFlow({ ...props, direction: "down" }, CLASS_DIAGRAM));
+  const y = (id: string) => layout?.nodes.find((n) => n.id === id)?.y ?? NaN;
+  assert.ok(y("Shape") < y("Circle"), "the parent is above");
+  const boxLayout = layout?.nodes.find((n) => n.id === "Circle")?.data;
+  assert.deepEqual(
+    boxLayout?.rows.map((r) => [r.part, r.divider]),
+    [
+      ["-radius: float", false],
+      ["+area(): float", true],
+    ],
+  );
+});
+
+test("ClassDiagram notes: members over 5, accessors, bare associations, and a class diagram that is a data model", () => {
+  const box = (name: string, members: string[], kind?: string) => ({
+    props: { name, members, kind },
+    statementId: name,
+  });
+  const many = box("Many", [
+    ...Array.from({ length: 6 }, (_, i) => `-a${i}: int`),
+    "+getName(): string",
+    "+setName(n): void",
+  ]);
+  const other = box("Other", ["-id: int"]);
+  const assoc = (from: object, to: object, fm?: string) => ({
+    props: { from, to, kind: "association", fromMultiplicity: fm },
+    statementId: `assoc${fm ?? ""}`,
+  });
+  const notes = (props: Record<string, unknown>) =>
+    flowNotes(props, CLASS_DIAGRAM)
+      .map((n) => n.message)
+      .join("\n");
+  const text = notes({ classes: [many, other], links: [assoc(many, other)] });
+  assert.match(text, /Class "Many" has 6 attributes, over 5/);
+  assert.match(text, /lists getters or setters \(\+getName\(\): string\)/);
+  assert.match(text, /1 association with no multiplicity/);
+  assert.match(notes({ classes: [other], links: [] }), /No inheritance and no operations/);
+  assert.doesNotMatch(
+    notes({ classes: [many, other], links: [assoc(many, other, "1")] }),
+    /no multiplicity/,
+  );
+  assert.doesNotMatch(notes({ classes: [box("A", ["+run(): void"])], links: [] }), /data model/);
 });
