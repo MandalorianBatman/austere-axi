@@ -55,6 +55,14 @@ import {
   layoutFishbone,
   layoutLoop,
 } from "../packs/diagrams/src/_shape-model.ts";
+import {
+  buildPolar,
+  buildRadar,
+  buildSankey,
+  buildTreemap,
+  buildWaterfall,
+  squarify,
+} from "../packs/diagrams/src/_quantity-model.ts";
 import { LAYER_SPEC, NESTED_SPEC, buildLevels } from "../packs/diagrams/src/_containment-model.ts";
 
 const pick = (e: FileEntry | null): Record<string, unknown> | null =>
@@ -2000,4 +2008,169 @@ test("Venn: with honest sizes every label lies inside its own region and no two 
       "a label with no room is reported",
     );
   }
+});
+
+test("Venn: a label that does not fit is wrapped at spaces and cut with …, never inside a word", () => {
+  const long = "Resellers and distributors";
+  const v = buildVenn({
+    sets: [part({ name: "Backend teams", size: 100 }, "a"), part({ name: "Small", size: 30 }, "b")],
+    overlaps: [part({ label: long, of: ["Backend teams", "Small"] }, "o")],
+  });
+  const text = v.overlaps[0].text?.lines.map((l) => l.text) ?? [];
+  assert.ok(text.length > 0, "the label is placed");
+  for (const line of text) {
+    for (const word of line.replace(/…$/, "").split(" ")) {
+      assert.ok(long.includes(word), `"${word}" is a whole word of the label or a cut one`);
+    }
+  }
+  const cjk = buildVenn({
+    sets: [part({ name: "A", size: 100 }, "a"), part({ name: "B", size: 40 }, "b")],
+    overlaps: [part({ label: "支払いの確認", of: ["A", "B"] }, "o")],
+  });
+  const shown = cjk.overlaps[0].text?.lines.map((l) => l.text).join("") ?? "";
+  assert.ok(shown.startsWith("支払") || shown === "支払いの確認", `cut at the end: ${shown}`);
+});
+
+test("Waterfall: steps carry the running total; a total that does not add up is reported and drawn where it was given", () => {
+  const ok = buildWaterfall({
+    labels: ["Start", "Up", "Down", "End"],
+    values: [240, 64, -38, 266],
+  });
+  assert.deepEqual(ok.problems, []);
+  assert.deepEqual(
+    ok.bars.map((b) => [b.kind, b.from, b.to]),
+    [
+      ["total", 0, 240],
+      ["up", 240, 304],
+      ["down", 304, 266],
+      ["total", 0, 266],
+    ],
+  );
+  const bad = buildWaterfall({
+    labels: ["Start", "Up", "Zero", "End"],
+    values: [100, 20, 0, 500],
+  });
+  for (const re of [/is 0. A zero step is not drawn/, /does not add up/]) {
+    assert.ok(
+      bad.problems.some((p) => re.test(p)),
+      String(re),
+    );
+  }
+  assert.equal(bad.bars.length, 3, "the zero step is dropped");
+  assert.equal(bad.bars[2].to, 500, "the end total is drawn at the value given");
+  assert.equal(buildWaterfall({ labels: ["Only"], values: [1] }).bars.length, 0);
+  const pennies = buildWaterfall({ labels: ["S", "a", "b", "E"], values: [0.1, 0.2, 0.3, 0.6] });
+  assert.deepEqual(pennies.problems, [], "decimal sums do not trip on float error");
+});
+
+test("Treemap: areas follow the values and tile the plot; a part with no value above 0 is reported", () => {
+  const values = [412, 268, 96, 74, 31];
+  const rects = squarify(values, { x: 0, y: 0, w: 640, h: 400 });
+  const total = values.reduce((a, b) => a + b, 0);
+  rects.forEach((r, i) => {
+    assert.ok(Math.abs((r.w * r.h) / (640 * 400) - values[i] / total) < 1e-9);
+  });
+  const t = buildTreemap({
+    labels: ["a", "b", "zero", "gap"],
+    values: [5, 3, 0, null],
+    unit: "KB",
+  });
+  assert.equal(t.cells.length, 2);
+  assert.equal(t.problems.length, 2);
+  assert.ok(t.cells.every((c) => c.part.includes("KB")));
+  const two = buildTreemap({
+    labels: ["a", "b", "c"],
+    values: [4, 3, 3],
+    groups: ["X", "X", "Y"],
+  });
+  assert.deepEqual(
+    two.groups.map((g) => [g.name, g.value]),
+    [
+      ["X", 7],
+      ["Y", 3],
+    ],
+  );
+});
+
+test("Sankey: stages follow the flows, a loop is dropped and reported, an unbalanced node is reported", () => {
+  const s = buildSankey({
+    sources: ["In", "In", "Mid"],
+    targets: ["Mid", "Out B", "Out A"],
+    values: [60, 40, 50],
+  });
+  assert.equal(s.layers, 3);
+  assert.deepEqual(s.nodes.map((n) => [n.name, n.layer]).sort(), [
+    ["In", 0],
+    ["Mid", 1],
+    ["Out A", 2],
+    ["Out B", 1],
+  ]);
+  assert.ok(s.problems.some((p) => /Mid: 60 flows in and 50 flows out/.test(p)));
+  const bar = (name: string) => (s.nodes.find((n) => n.name === name) as { h: number }).h;
+  assert.ok(Math.abs(bar("In") - (bar("Mid") + bar("Out B"))) < 1e-9, "one scale for every bar");
+  const loop = buildSankey({
+    sources: ["A", "B", "Src"],
+    targets: ["B", "A", "Out"],
+    values: [1, 1, 8],
+  });
+  assert.ok(loop.problems.some((p) => /B → A flows back/.test(p)));
+  assert.equal(loop.flows.length, 2, "only the flow back is dropped");
+  const retry = buildSankey({
+    sources: ["Start", "Run", "Run", "Retry"],
+    targets: ["Run", "Pass", "Retry", "Run"],
+    values: [10, 8, 2, 2],
+  });
+  assert.deepEqual(retry.flows.map((f) => f.part).sort(), [
+    "Run → Pass: 8",
+    "Run → Retry: 2",
+    "Start → Run: 10",
+  ]);
+  assert.ok(retry.problems.some((p) => /Retry → Run flows back/.test(p)));
+  assert.equal(buildSankey({ sources: ["A"], targets: ["A"], values: [1] }).flows.length, 0);
+});
+
+test("PolarChart: a missing value is reported and not drawn as 0, a negative is dropped, max follows the data", () => {
+  const p = buildPolar({
+    labels: ["a", "b", "c", "d"],
+    values: [3, null, -2, 12],
+    focus: "d",
+  });
+  assert.equal(p.max, 20);
+  assert.equal(p.problems.length, 2);
+  assert.deepEqual(
+    p.categories.map((c) => c.valueText),
+    ["3", "–", "–", "12"],
+  );
+  assert.ok(p.categories[3].focus);
+  const raised = buildPolar({ labels: ["a", "b", "c"], values: [5, 9, 1], max: 4 });
+  assert.ok(raised.problems.some((m) => /max is raised/.test(m)));
+});
+
+test("Radar: a score is scaled to the largest on one ring, a short or bad list is padded with 0 and reported, one focus only", () => {
+  const r = buildRadar({
+    labels: ["Speed", "Cost", "Ops"],
+    series: [
+      part({ name: "A", values: [10, 5, 0], focus: true }, "a"),
+      part({ name: "B", values: [4, "n/a"], focus: true }, "b"),
+    ],
+  });
+  assert.equal(r.max, 10);
+  assert.deepEqual(r.series[1].values, [4, 0, 0]);
+  for (const re of [
+    /has 2 values for 3 labels/,
+    /no number for Cost/,
+    /More than one RadarSeries has focus/,
+  ]) {
+    assert.ok(
+      r.problems.some((p) => re.test(p)),
+      String(re),
+    );
+  }
+  assert.ok(r.series[0].focus && !r.series[1].focus);
+  const [x, y] = r.series[0].points[0];
+  assert.ok(
+    Math.abs(x - 320) < 1e-9 && y < 244,
+    "the first axis points up, full score on the outer ring",
+  );
+  assert.equal(buildRadar({ labels: ["a", "b"], series: [] }).axes.length, 2);
 });

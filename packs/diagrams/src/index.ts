@@ -23,6 +23,11 @@ import { Pyramid, PyramidLayer } from "./Pyramid.tsx";
 import { Loop, LoopStep, LoopHub } from "./Loop.tsx";
 import { Fishbone, FishCause } from "./Fishbone.tsx";
 import { WardleyMap, WardleyPart } from "./WardleyMap.tsx";
+import { Radar, RadarSeries } from "./Radar.tsx";
+import PolarChart from "./PolarChart.tsx";
+import Waterfall from "./Waterfall.tsx";
+import Treemap from "./Treemap.tsx";
+import Sankey from "./Sankey.tsx";
 import css from "./diagrams.css";
 import type { PackModule } from "austere-axi/pack";
 
@@ -75,6 +80,12 @@ export default {
     FishCause,
     WardleyMap,
     WardleyPart,
+    Radar,
+    RadarSeries,
+    PolarChart,
+    Waterfall,
+    Treemap,
+    Sankey,
   ],
   css,
 } satisfies PackModule;

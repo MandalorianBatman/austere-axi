@@ -61,6 +61,42 @@ export function wrapText(text: string, max: number, size: number, maxLines: numb
   return lines.length ? lines : [""];
 }
 
+/**
+ * Lines of at most `max` px, broken only at spaces. With `strict`, returns null when a word is
+ * wider than `max` or the text needs more than `maxLines`; otherwise such a word, or the end of
+ * the last line, is cut with "…".
+ */
+export function wrapWords(
+  text: string,
+  max: number,
+  size: number,
+  maxLines: number,
+  strict: boolean,
+): string[] | null {
+  const lines: string[] = [];
+  let line = "";
+  for (const raw of text.split(" ").filter(Boolean)) {
+    let word = raw;
+    if (textW(word, size) > max) {
+      if (strict) return null;
+      word = fit(word, max, size);
+    }
+    const next = line ? `${line} ${word}` : word;
+    if (textW(next, size) > max) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    if (strict) return null;
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = fit(`${kept[maxLines - 1]} ${lines.slice(maxLines).join(" ")}`, max, size);
+    return kept;
+  }
+  return lines.length ? lines : [""];
+}
+
 export interface Rect {
   x0: number;
   y0: number;
@@ -134,22 +170,23 @@ export function buildQuadrant(props: Record<string, unknown> | undefined): QuadM
   let focused = false;
   for (const part of partsOf(props?.items, "item", "QuadrantItem", "Quadrant", problems)) {
     const label = clean(part.props.label) || part.id;
+    const said = fit(label, 120, 12);
     let x = parseNumber(part.props.x);
     let y = parseNumber(part.props.y);
     if (x === null || y === null) {
       problems.push(
-        `QuadrantItem "${label}" needs x and y from 0 to 100 (x: ${clean(part.props.x) || "none"}, y: ${clean(part.props.y) || "none"}). It is not drawn.`,
+        `QuadrantItem "${said}" needs x and y from 0 to 100 (x: ${clean(part.props.x) || "none"}, y: ${clean(part.props.y) || "none"}). It is not drawn.`,
       );
       continue;
     }
     if (x < 0 || x > 100 || y < 0 || y > 100) {
-      problems.push(`QuadrantItem "${label}" is outside 0 to 100. It is drawn at the edge.`);
+      problems.push(`QuadrantItem "${said}" is outside 0 to 100. It is drawn at the edge.`);
       x = Math.min(100, Math.max(0, x));
       y = Math.min(100, Math.max(0, y));
     }
     if (x === 50 || y === 50) {
       problems.push(
-        `QuadrantItem "${label}" sits on an axis line, so its quadrant is unclear. Move it off 50.`,
+        `QuadrantItem "${said}" sits on an axis line, so its quadrant is unclear. Move it off 50.`,
       );
     }
     let focus = flag(part.props.focus);
@@ -218,7 +255,7 @@ export function buildQuadrant(props: Record<string, unknown> | undefined): QuadM
     if (best.box) taken.push(best.box);
     if (best.cost >= 1000) {
       problems.push(
-        `The label of "${item.label}" overlaps another label or an axis. Move the items apart.`,
+        `The label of "${fit(item.label, 120, 12)}" overlaps another label or an axis. Move the items apart.`,
       );
     }
   }
@@ -389,27 +426,38 @@ export function buildVenn(props: Record<string, unknown> | undefined): VennModel
       .map((q) => ({ q, d: (q.x - mx) ** 2 + (q.y - my) ** 2 }))
       .sort((u, v) => u.d - v.d)
       .map((u) => u.q);
-    for (const W of [150, 110, 84, 64, 48, 36]) {
-      const lines: RegionLine[] = [];
-      for (const bl of blocks) {
-        if (!bl.text) continue;
-        const room = Math.max(1, 4 - lines.length);
-        for (const text of wrapText(bl.text, W, bl.size, Math.min(bl.max, room))) {
-          lines.push({ text, cls: bl.cls });
+    // First try to keep every word whole and nothing cut; then allow a cut with "…".
+    for (const strict of [true, false]) {
+      for (const W of [150, 110, 84, 64, 48, 36]) {
+        const lines: RegionLine[] = [];
+        let whole = true;
+        for (const bl of blocks) {
+          if (!bl.text) continue;
+          const room = Math.max(1, 4 - lines.length);
+          const wrapped = wrapWords(bl.text, W, bl.size, Math.min(bl.max, room), strict);
+          if (!wrapped) {
+            whole = false;
+            break;
+          }
+          for (const text of wrapped) lines.push({ text, cls: bl.cls });
         }
-      }
-      const width = Math.max(...lines.map((l) => textW(l.text, l.cls === "detail" ? 11 : 13)), 12);
-      const height = lines.length * LH;
-      for (const q of order.slice(0, 1500)) {
-        const box: Rect = {
-          x0: q.x - width / 2 - 3,
-          y0: q.y - height / 2 - 2,
-          x1: q.x + width / 2 + 3,
-          y1: q.y + height / 2 + 2,
-        };
-        if (inside(mask, box) && !placed.some((o) => hit(box, o))) {
-          placed.push(box);
-          return { x: q.x, y: q.y, lines, box };
+        if (!whole) continue;
+        const width = Math.max(
+          ...lines.map((l) => textW(l.text, l.cls === "detail" ? 11 : 13)),
+          12,
+        );
+        const height = lines.length * LH;
+        for (const q of order.slice(0, 1500)) {
+          const box: Rect = {
+            x0: q.x - width / 2 - 3,
+            y0: q.y - height / 2 - 2,
+            x1: q.x + width / 2 + 3,
+            y1: q.y + height / 2 + 2,
+          };
+          if (inside(mask, box) && !placed.some((o) => hit(box, o))) {
+            placed.push(box);
+            return { x: q.x, y: q.y, lines, box };
+          }
         }
       }
     }

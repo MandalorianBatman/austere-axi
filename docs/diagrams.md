@@ -31,8 +31,8 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Git graph | `GitGraph` (`GitCommit`) | component | built |
 | Swimlane | `Swimlane`: `Architecture` with lanes | recipe | built |
 | Quadrant | `Quadrant` (`QuadrantItem`) | component | built |
-| Radar / Spider | `RadarChart`, or a pack component | component | planned |
-| Polar chart | `RadialChart`, or a pack component | component | planned |
+| Radar / Spider | `Radar` (`RadarSeries`) | component | built |
+| Polar chart | `PolarChart` | component | built |
 | Loop | `Loop` (`LoopStep`, `LoopHub`) | component | built |
 | Nested | `Nested` (`NestedLevel`) | component | built |
 | Tree | `Tree` (`TreeNode`) | component | built |
@@ -43,8 +43,8 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Venn | `Venn` (`VennSet`, `VennOverlap`) | component | built |
 | Pyramid / funnel | `Pyramid` (`PyramidLayer`) | component | built |
 | Bar chart | `BarComparison`: `BarChart` | recipe | built |
-| Waterfall | `Waterfall` | component | planned |
-| Treemap | `Treemap` | component | planned |
+| Waterfall | `Waterfall` | component | built |
+| Treemap | `Treemap` | component | built |
 | Heatmap | `Heatmap` (`HeatRow`) | component | built |
 | Line chart | `LineTrend`: `LineChart` | recipe | built |
 | Gantt | `Gantt` (`GanttTask`) | component | built |
@@ -55,7 +55,7 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Data flow | `Architecture` with lanes | recipe | planned |
 | DP integration | `Architecture` with lanes | recipe | planned |
 | DP security matrix | `PermissionMatrix` (`AccessRow`) | component | built |
-| Sankey | `Sankey` | component | planned |
+| Sankey | `Sankey` | component | built |
 | Fishbone | `Fishbone` (`FishCause`) | component | built |
 | Wardley map | `WardleyMap` (`WardleyPart`) | component | built |
 | Kanban | `Kanban` (`KanbanCard`) | component | built |
@@ -71,6 +71,8 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Event modeling | `EventModel` (`EventItem`) | component | built |
 | Unit Grid | `UnitGrid` (`UnitShare`) | component | built |
 | Schedule network | `ScheduleNetwork` (`ScheduleTask`) | component | built |
+
+The stock `RadarChart` and `RadialChart` stay off. `RadarChart` draws every series in nearly the same blue and has no part a reviewer can click, so it cannot compare several entities. `RadialChart` draws concentric arcs, so the ray length that a polar chart needs is not there. `Radar` and `PolarChart` replace them.
 
 Named variants of a type (slopegraph, ridgeline, streamgraph, bump, bubble, beeswarm, box plot, marimekko, dumbbell) are not built. Animation, brand skins, and import from Mermaid, draw.io, Excalidraw or PlantUML are not planned.
 

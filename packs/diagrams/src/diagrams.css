@@ -1512,3 +1512,322 @@
 .dg-wd-move-head {
   fill: var(--austere-accent);
 }
+
+/* ── Quantity: Radar, PolarChart, Waterfall, Treemap, Sankey ── */
+.dg-rd-svg,
+.dg-pl-svg,
+.dg-wf-svg,
+.dg-tm-svg,
+.dg-sk-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+  font-family: var(--openui-font-body);
+}
+.dg-note {
+  margin: 6px 0 0;
+  color: var(--austere-muted);
+  font-size: 12px;
+}
+
+.dg-rd-ring {
+  fill: none;
+  stroke: #3a3a42;
+  stroke-width: 1;
+}
+.dg-rd-ring.is-outer {
+  stroke: #5a5a64;
+}
+.dg-rd-spoke {
+  stroke: #4a4a52;
+  stroke-width: 0.8;
+}
+.dg-rd-tick {
+  fill: var(--austere-muted);
+  font-size: 10px;
+}
+.dg-rd-axis {
+  fill: #ececef;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dg-rd-series,
+.dg-rd-legend li {
+  --c: #aab3c5;
+}
+.dg-rd-series.c-1,
+.dg-rd-legend li.c-1 {
+  --c: #74d3a0;
+}
+.dg-rd-series.c-2,
+.dg-rd-legend li.c-2 {
+  --c: #f2c46d;
+}
+.dg-rd-series.c-3,
+.dg-rd-legend li.c-3 {
+  --c: #e08a5b;
+}
+.dg-rd-series.c-4,
+.dg-rd-legend li.c-4 {
+  --c: #c4a7ff;
+}
+.dg-rd-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14px;
+  stroke-linejoin: round;
+  pointer-events: stroke;
+}
+.dg-rd-shape {
+  fill: var(--c);
+  fill-opacity: 0.16;
+  stroke: var(--c);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  pointer-events: stroke;
+}
+.dg-rd-series.is-focal .dg-rd-shape {
+  fill: var(--austere-accent);
+  fill-opacity: 0.22;
+  stroke: var(--austere-accent);
+  stroke-width: 2.6;
+}
+.dg-rd-dot {
+  fill: var(--austere-accent);
+  pointer-events: none;
+}
+.dg-rd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: #ececef;
+}
+.dg-rd-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dg-rd-swatch {
+  width: 16px;
+  height: 8px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--c) 30%, transparent);
+  border: 1.5px solid var(--c);
+}
+.dg-rd-legend li.is-focal .dg-rd-swatch {
+  border-color: var(--austere-accent);
+  background: color-mix(in srgb, var(--austere-accent) 30%, transparent);
+}
+.dg-rd-legend li.is-focal {
+  color: var(--austere-accent);
+  font-weight: 600;
+}
+.dg-rd-legend .dg-rd-scale {
+  flex-basis: 100%;
+  color: var(--austere-muted);
+  font-size: 12px;
+}
+
+.dg-pl-ring {
+  fill: none;
+  stroke: #3a3a42;
+  stroke-width: 1;
+}
+.dg-pl-ring.is-outer {
+  stroke: #5a5a64;
+}
+.dg-pl-spoke {
+  stroke: #4a4a52;
+  stroke-width: 0.8;
+}
+.dg-pl-tick {
+  fill: var(--austere-muted);
+  font-size: 10px;
+}
+.dg-pl-hit {
+  stroke: transparent;
+  stroke-width: 16px;
+  pointer-events: stroke;
+}
+.dg-pl-ray {
+  stroke: #a8a8b2;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+.dg-pl-end {
+  fill: #a8a8b2;
+}
+.dg-pl-cat.is-focal .dg-pl-ray {
+  stroke: var(--austere-accent);
+  stroke-width: 3;
+}
+.dg-pl-cat.is-focal .dg-pl-end {
+  fill: var(--austere-accent);
+}
+.dg-pl-name {
+  fill: #ececef;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dg-pl-value {
+  fill: #c4c4cc;
+  font-family: var(--openui-font-code, monospace);
+  font-size: 11px;
+}
+.dg-pl-cat.is-focal .dg-pl-name {
+  fill: var(--austere-accent);
+}
+
+.dg-wf-grid {
+  stroke: #2e2e34;
+  stroke-width: 0.8;
+}
+.dg-wf-base {
+  stroke: #6a6a74;
+  stroke-width: 1;
+}
+.dg-wf-tick {
+  fill: var(--austere-muted);
+  font-size: 10px;
+}
+.dg-wf-carry {
+  stroke: #9a9aa4;
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+.dg-wf-rect {
+  fill: rgba(255, 255, 255, 0.14);
+  stroke: #c4c4cc;
+  stroke-width: 1.4;
+}
+.dg-wf-bar.k-up .dg-wf-rect {
+  fill: rgba(116, 211, 160, 0.3);
+  stroke: #74d3a0;
+}
+.dg-wf-bar.k-down .dg-wf-rect {
+  fill: transparent;
+  stroke: #f08a8a;
+  stroke-dasharray: 4 2;
+}
+.dg-wf-bar.is-focal .dg-wf-rect {
+  stroke: var(--austere-accent);
+  stroke-width: 2;
+}
+.dg-wf-bar.is-focal:not(.k-down) .dg-wf-rect {
+  stroke-dasharray: none;
+}
+.dg-wf-bar.k-up.is-focal .dg-wf-rect {
+  fill: color-mix(in srgb, var(--austere-accent) 24%, transparent);
+}
+.dg-wf-value {
+  fill: #ececef;
+  font-family: var(--openui-font-code, monospace);
+  font-size: 11px;
+}
+.dg-wf-bar.is-focal .dg-wf-value,
+.dg-wf-bar.is-focal .dg-wf-label {
+  fill: var(--austere-accent);
+}
+.dg-wf-label {
+  fill: #ececef;
+  font-size: 12px;
+}
+
+.dg-tm-group-box {
+  fill: none;
+  stroke: #8b8b94;
+  stroke-width: 1.4;
+}
+.dg-tm-group-name {
+  fill: #c4c4cc;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.dg-tm-rect {
+  fill: rgba(255, 255, 255, 0.15);
+  stroke: #6a6a74;
+  stroke-width: 1;
+}
+.dg-tm-cell.r-1 .dg-tm-rect {
+  fill: rgba(255, 255, 255, 0.125);
+}
+.dg-tm-cell.r-2 .dg-tm-rect {
+  fill: rgba(255, 255, 255, 0.1);
+}
+.dg-tm-cell.r-3 .dg-tm-rect {
+  fill: rgba(255, 255, 255, 0.08);
+}
+.dg-tm-cell.r-4 .dg-tm-rect {
+  fill: rgba(255, 255, 255, 0.06);
+}
+.dg-tm-cell.r-5 .dg-tm-rect {
+  fill: rgba(255, 255, 255, 0.045);
+}
+.dg-tm-cell.is-focal .dg-tm-rect {
+  fill: color-mix(in srgb, var(--austere-accent) 20%, transparent);
+  stroke: var(--austere-accent);
+  stroke-width: 2;
+}
+.dg-tm-name {
+  fill: #ececef;
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.dg-tm-value {
+  fill: #c4c4cc;
+  font-family: var(--openui-font-code, monospace);
+  font-size: 12px;
+  pointer-events: none;
+}
+.dg-tm-cell.is-focal .dg-tm-name {
+  fill: var(--austere-accent);
+}
+
+.dg-sk-band {
+  fill: #a8a8b2;
+  fill-opacity: 0.22;
+  stroke: #121214;
+  stroke-width: 0.8px;
+}
+.dg-sk-band:hover {
+  fill-opacity: 0.34;
+}
+.dg-sk-band.is-focal {
+  fill: var(--austere-accent);
+  fill-opacity: 0.36;
+}
+.dg-sk-bar {
+  fill: #c4c4cc;
+}
+.dg-sk-node.is-focal .dg-sk-bar {
+  fill: var(--austere-accent);
+}
+.dg-sk-name {
+  fill: #ececef;
+  font-size: 12px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: #121214;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.dg-sk-value {
+  fill: #c4c4cc;
+  font-family: var(--openui-font-code, monospace);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: #121214;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.dg-sk-node.is-focal .dg-sk-name {
+  fill: var(--austere-accent);
+}
