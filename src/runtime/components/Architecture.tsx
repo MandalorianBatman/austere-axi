@@ -1,22 +1,21 @@
-import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo } from "react";
 import { z } from "zod";
-import type { ReactNode, RefObject, SVGProps } from "react";
+import type { ReactNode, SVGProps } from "react";
 import {
   Cloud,
   Database,
-  Maximize2,
   Globe,
   Inbox,
   Monitor,
   Server,
   ShieldCheck,
   TriangleAlert,
-  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { RendererArgs } from "../../../types/pack.d.ts";
+import type { DiagramContent, RendererArgs } from "../../../types/pack.d.ts";
 import { austereComponent } from "../define.ts";
 import { reportRuntimeError } from "../env.ts";
+import { DiagramFrame } from "./_diagram-frame.ts";
 import { LANES, orthogonalPath } from "./_architecture-lanes.ts";
 import {
   DIRECTIONS,
@@ -41,6 +40,7 @@ import type {
   LaidOutEdge,
   LaidOutNode,
   Layout,
+  Model,
   NodeKind,
 } from "./_architecture-model.ts";
 
@@ -152,98 +152,45 @@ function errorText(err: unknown): string {
   return String(message || err);
 }
 
+// Layout is a pure function of the model and the width, and the frame asks for
+// the inline and the Expand view on every render: remember the answers.
+type LayoutResult = { layout: Layout | null; error: string | null };
+const layoutCache = new WeakMap<Model, Map<number, LayoutResult>>();
+function layoutFor(model: Model, width: number): LayoutResult {
+  let byWidth = layoutCache.get(model);
+  if (!byWidth) layoutCache.set(model, (byWidth = new Map()));
+  let hit = byWidth.get(width);
+  if (!hit) {
+    try {
+      hit = { layout: layoutModel(model, width), error: null };
+    } catch (err) {
+      hit = { layout: null, error: errorText(err) };
+    }
+    byWidth.set(width, hit);
+  }
+  return hit;
+}
+
+function LayoutFailed({ error, statementId }: { error: string; statementId?: string }) {
+  useEffect(() => {
+    reportRuntimeError({
+      source: "architecture",
+      statementId,
+      component: "Architecture",
+      message: `Layout failed: ${error}`,
+    });
+  }, [error, statementId]);
+  return (
+    <div className="austere-render-error">
+      <strong>Diagram failed to lay out.</strong> {error}
+    </div>
+  );
+}
+
 function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput>) {
   const rawId = useId();
   const uid = `austere-arch-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const model = useMemo(() => buildModel(props), [props]);
-  // Room the page gives us, so "auto" can run across on desktop and down on a phone.
-  // Measured before the first layout, so a diagram is laid out once for the
-  // width it really has.
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [room, setRoom] = useState<number | null>(null);
-  // A diagram wider than its box scrolls; fade the cut edge so that shows.
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [cut, setCut] = useState({ start: false, end: false });
-  const [regionName, setRegionName] = useState("Architecture diagram");
-  const checkCut = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const start = el.scrollLeft > 4;
-    const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
-    setCut((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
-  };
-  useLayoutEffect(() => {
-    const el = boxRef.current;
-    if (!el) return undefined;
-    const update = () => {
-      const w = el.clientWidth;
-      setRoom((prev) => {
-        if (prev === null) return w > 0 ? w : DEFAULT_TARGET_WIDTH;
-        return w > 0 && Math.abs(prev - w) > 40 ? w : prev;
-      });
-      checkCut();
-    };
-    if (typeof ResizeObserver === "undefined") {
-      update();
-      return undefined;
-    }
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  // Expand: the same Drawing, in a modal dialog at its natural size. The inline
-  // figure gives way while it is open, so each part id exists once.
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const expandRef = useRef<HTMLButtonElement>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [inlineHeight, setInlineHeight] = useState(0);
-  const { layout, error } = useMemo((): {
-    layout: Layout | null;
-    error: string | null;
-  } => {
-    if (room === null) return { layout: null, error: null };
-    try {
-      return { layout: layoutModel(model, room), error: null };
-    } catch (err) {
-      return { layout: null, error: errorText(err) };
-    }
-  }, [model, room]);
-  // As wide as the diagram wants: left-to-right, or lanes as columns.
-  const fullLayout = useMemo((): Layout | null => {
-    if (!expanded || error) return null;
-    try {
-      return layoutModel(model, Number.MAX_SAFE_INTEGER);
-    } catch {
-      return null;
-    }
-  }, [model, expanded, error]);
-  const expand = () => {
-    const figure = boxRef.current?.querySelector(".austere-arch");
-    setInlineHeight(figure instanceof HTMLElement ? figure.offsetHeight : 0);
-    setExpanded(true);
-  };
-  const collapse = () => dialogRef.current?.close();
-  useLayoutEffect(() => {
-    const dialog = dialogRef.current;
-    if (!expanded || !dialog) return undefined;
-    if (!dialog.open) dialog.showModal();
-    // A modal dialog makes everything outside it inert, and draws above any
-    // z-index. The annotate layer (hover box, note) moves in so it stays usable.
-    const ui = document.querySelector("body > .austere-ui");
-    if (ui) dialog.appendChild(ui);
-    return () => {
-      if (ui) document.body.appendChild(ui);
-      if (dialog.open) dialog.close();
-    };
-  }, [expanded]);
-  useEffect(() => {
-    if (!expanded) return undefined;
-    // Rotating the phone resizes the dialog, not the inline box.
-    window.addEventListener("resize", checkCut);
-    return () => window.removeEventListener("resize", checkCut);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded]);
   // Known before measuring (it does not depend on the width), so the page can
   // widen first and the diagram is measured in the wider column.
   const wide = useMemo(() => {
@@ -254,10 +201,9 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
     }
   }, [model]);
 
-  const problems = error ? [`Layout failed: ${error}`] : model.problems;
-  const problemKey = problems.join("\n");
+  const problemKey = model.problems.join("\n");
   useEffect(() => {
-    for (const message of problems) {
+    for (const message of model.problems) {
       reportRuntimeError({
         source: "architecture",
         statementId,
@@ -268,115 +214,24 @@ function ArchitectureView({ props, statementId }: RendererArgs<ArchitectureInput
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [problemKey, statementId]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(checkCut, [layout, fullLayout]);
-  // The scroll box is named from the title of the Card it sits in.
-  useEffect(() => {
-    const title = boxRef.current
-      ?.closest(".openui-card")
-      ?.querySelector(".openui-header-top-left")
-      ?.textContent?.trim();
-    setRegionName(title || "Architecture diagram");
-  }, [layout]);
-
   return (
-    <div className={`austere-arch-box${wide ? " is-wide" : ""}`} ref={boxRef}>
-      {error ? (
-        <div className="austere-render-error">
-          <strong>Diagram failed to lay out.</strong> {error}
-        </div>
-      ) : layout ? (
-        <>
-          <div className="austere-arch-tools">
-            <button
-              type="button"
-              className="austere-arch-expand"
-              ref={expandRef}
-              onClick={expand}
-              aria-haspopup="dialog"
-              aria-label={`Expand ${regionName}`}
-            >
-              <Maximize2 size={15} aria-hidden="true" />
-              Expand
-            </button>
-          </div>
-          {expanded ? (
-            <div style={{ height: inlineHeight }} aria-hidden="true" />
-          ) : (
-            <Drawing
-              layout={layout}
-              uid={uid}
-              cut={cut}
-              boxWidth={room ?? 0}
-              regionName={regionName}
-              scrollRef={scrollRef}
-              checkCut={checkCut}
-            />
-          )}
-          <dialog
-            ref={dialogRef}
-            className="austere-arch-dialog"
-            aria-label={regionName}
-            onClose={() => {
-              setExpanded(false);
-              expandRef.current?.focus();
-            }}
-          >
-            {expanded && fullLayout ? (
-              <>
-                <div className="austere-arch-dialog-bar">
-                  <span className="austere-arch-dialog-title">{regionName}</span>
-                  <button
-                    type="button"
-                    className="austere-arch-expand"
-                    onClick={collapse}
-                    aria-label="Close"
-                  >
-                    <X size={18} aria-hidden="true" />
-                    Close
-                  </button>
-                </div>
-                <Drawing
-                  full
-                  layout={fullLayout}
-                  uid={uid}
-                  cut={cut}
-                  boxWidth={fullLayout.width}
-                  regionName={regionName}
-                  scrollRef={scrollRef}
-                  checkCut={checkCut}
-                />
-              </>
-            ) : null}
-          </dialog>
-        </>
-      ) : null}
-    </div>
+    <DiagramFrame className="austere-arch" name="Architecture diagram" wide={wide}>
+      {({ room, full }) => {
+        const { layout, error } = layoutFor(model, room);
+        if (error) {
+          return { content: null, error: <LayoutFailed error={error} statementId={statementId} /> };
+        }
+        if (!layout) return null;
+        // As wide as the diagram wants: left-to-right, or lanes as columns.
+        const shown = full ? layoutFor(model, Number.MAX_SAFE_INTEGER).layout : layout;
+        if (!shown) return null;
+        return drawing(shown, uid);
+      }}
+    </DiagramFrame>
   );
 }
 
-interface DrawingProps {
-  layout: Layout;
-  uid: string;
-  cut: { start: boolean; end: boolean };
-  boxWidth: number;
-  regionName: string;
-  scrollRef: RefObject<HTMLDivElement | null>;
-  checkCut: () => void;
-  /** In the Expand dialog: natural size, scrolling both ways. */
-  full?: boolean;
-}
-
-function Drawing({
-  layout,
-  uid,
-  cut,
-  boxWidth,
-  regionName,
-  scrollRef,
-  checkCut,
-  full,
-}: DrawingProps) {
+function drawing(layout: Layout, uid: string): DiagramContent {
   const byId = new Map(layout.nodes.map((n) => [n.id, n]));
   const kinds = [...new Set(layout.nodes.map((n) => n.kind))];
   // A tone overrides the style's colour, so a toned main-path edge stays out
@@ -390,10 +245,6 @@ function Drawing({
     layout.nodes.some((n) => n.tone === "danger") || layout.edges.some((e) => e.tone === "danger");
   const W = layout.width;
   const H = layout.height;
-  // Shrink to fit down to the legible scale, then scroll. The floor is never
-  // wider than the diagram, and never narrower than its box, so a diagram that
-  // fits at the legible scale does not scroll.
-  const minWidth = Math.round(Math.min(W, Math.max(boxWidth, W * LEGIBLE_SCALE)));
   // Part names: "From → To", plus the label when two edges join the same pair.
   const pairs = new Map<string, number>();
   for (const e of layout.edges)
@@ -403,209 +254,190 @@ function Drawing({
     return (pairs.get(`${e.from}>${e.to}`) ?? 0) > 1 && e.label ? `${base} (${e.label})` : base;
   };
 
-  return (
-    <figure className={`austere-arch${full ? " is-full" : ""}`}>
-      <div
-        className={`austere-arch-scroll${cut.start ? " is-cut-start" : ""}${cut.end ? " is-cut-end" : ""}`}
-        ref={scrollRef}
-        onScroll={checkCut}
-        role="region"
-        aria-label={regionName}
-        tabIndex={0}
-      >
-        <svg
-          className="austere-arch-svg"
-          viewBox={`0 0 ${W} ${H}`}
-          style={{ maxWidth: `${W}px`, minWidth: `${minWidth}px` }}
-          role="img"
-          aria-label={`Architecture diagram: ${layout.nodes.map((n) => n.label).join(", ")}`}
-        >
-          <defs>
-            {[...EDGE_STYLES, ...EDGE_TONES.map((t) => `t-${t}`)].map((s) => (
-              <marker
-                key={s}
-                id={`${uid}-${s}`}
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerUnits="userSpaceOnUse"
-                markerWidth="9"
-                markerHeight="9"
-                orient="auto-start-reverse"
-              >
-                <path
-                  d="M0,0L10,5L0,10z"
-                  className={`austere-arch-arrow ${s.startsWith("t-") ? s : `s-${s}`}`}
-                />
-              </marker>
-            ))}
-          </defs>
+  const content = (
+    <svg
+      className="austere-arch-svg"
+      viewBox={`0 0 ${W} ${H}`}
+      role="img"
+      aria-label={`Architecture diagram: ${layout.nodes.map((n) => n.label).join(", ")}`}
+    >
+      <defs>
+        {[...EDGE_STYLES, ...EDGE_TONES.map((t) => `t-${t}`)].map((s) => (
+          <marker
+            key={s}
+            id={`${uid}-${s}`}
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerUnits="userSpaceOnUse"
+            markerWidth="9"
+            markerHeight="9"
+            orient="auto-start-reverse"
+          >
+            <path
+              d="M0,0L10,5L0,10z"
+              className={`austere-arch-arrow ${s.startsWith("t-") ? s : `s-${s}`}`}
+            />
+          </marker>
+        ))}
+      </defs>
 
-          {layout.groups.map((g) =>
-            g.kind === "plain" ? null : (
-              <g
-                key={g.id}
-                className={`austere-arch-group g-${g.kind}${g.lane ? " is-lane" : ""}`}
-                data-oui-id={g.named ? g.id : undefined}
-                data-oui-c={g.named ? "Group" : undefined}
-              >
+      {layout.groups.map((g) =>
+        g.kind === "plain" ? null : (
+          <g
+            key={g.id}
+            className={`austere-arch-group g-${g.kind}${g.lane ? " is-lane" : ""}`}
+            data-oui-id={g.named ? g.id : undefined}
+            data-oui-c={g.named ? "Group" : undefined}
+          >
+            <rect
+              className="austere-arch-group-frame"
+              x={g.x}
+              y={g.y}
+              width={g.width}
+              height={g.height}
+              rx={g.lane ? 10 : 12}
+            />
+          </g>
+        ),
+      )}
+
+      {layout.edges.map((e) => {
+        const d = e.orthogonal ? orthogonalPath(e.points) : edgePath(e.points);
+        if (!d) return null;
+        return (
+          <g
+            key={e.id}
+            className={`austere-arch-edge s-${e.style}${e.tone ? ` t-${e.tone}` : ""}${e.orthogonal ? " is-orth" : ""}`}
+            data-oui-id={e.named ? e.id : undefined}
+            data-oui-c={e.named ? "Edge" : undefined}
+          >
+            <path className="austere-arch-edge-hit" d={d} data-austere-part={partOf(e)} />
+            <path
+              className="austere-arch-edge-line"
+              d={d}
+              markerEnd={`url(#${uid}-${e.tone ? `t-${e.tone}` : e.style})`}
+            />
+          </g>
+        );
+      })}
+
+      {/* Labels sit above every line so a crossing edge never hides them. */}
+      {layout.groups.map((g) =>
+        g.label ? (
+          <g
+            key={`gl-${g.id}`}
+            className={`austere-arch-group g-${g.kind}`}
+            data-oui-id={g.named ? g.id : undefined}
+            data-oui-c={g.named ? "Group" : undefined}
+          >
+            {/* Titles stay outside the part: its text becomes the annotation quote. */}
+            {g.labelLine !== g.label ? <title>{g.label}</title> : null}
+            {g.lane ? (
+              // A lane names its column with a heading inside the top edge.
+              <g className="austere-arch-lane-head" data-austere-part={g.label}>
+                {/* A target the size of the heading text (lines may pass beside it). */}
                 <rect
-                  className="austere-arch-group-frame"
-                  x={g.x}
-                  y={g.y}
-                  width={g.width}
-                  height={g.height}
-                  rx={g.lane ? 10 : 12}
+                  x={g.x + 8}
+                  y={g.y + 5}
+                  width={textWidth(g.labelLine, LANES.headSize + 1, true) + 12}
+                  height={LANES.head - 8}
                 />
+                <T x={g.x + 14} y={g.y + 21}>
+                  {g.labelLine}
+                </T>
               </g>
-            ),
-          )}
-
-          {layout.edges.map((e) => {
-            const d = e.orthogonal ? orthogonalPath(e.points) : edgePath(e.points);
-            if (!d) return null;
-            return (
-              <g
-                key={e.id}
-                className={`austere-arch-edge s-${e.style}${e.tone ? ` t-${e.tone}` : ""}${e.orthogonal ? " is-orth" : ""}`}
-                data-oui-id={e.named ? e.id : undefined}
-                data-oui-c={e.named ? "Edge" : undefined}
-              >
-                <path className="austere-arch-edge-hit" d={d} data-austere-part={partOf(e)} />
-                <path
-                  className="austere-arch-edge-line"
-                  d={d}
-                  markerEnd={`url(#${uid}-${e.tone ? `t-${e.tone}` : e.style})`}
+            ) : (
+              <g className="austere-arch-group-label" data-austere-part={g.label}>
+                <rect
+                  x={g.x + 12}
+                  y={g.y - 9}
+                  width={textWidth(g.labelLine, SIZES.group) + 14}
+                  height="18"
+                  rx="5"
                 />
+                <T x={g.x + 19} y={g.y + 4}>
+                  {g.labelLine}
+                </T>
               </g>
-            );
-          })}
+            )}
+          </g>
+        ) : null,
+      )}
+      {layout.edges.map((e) => {
+        const box = e.labelBox;
+        return box ? (
+          <g
+            key={`el-${e.id}`}
+            className={`austere-arch-edge s-${e.style}${e.tone ? ` t-${e.tone}` : ""}`}
+            data-oui-id={e.named ? e.id : undefined}
+            data-oui-c={e.named ? "Edge" : undefined}
+          >
+            {box.lines.join(" ") !== e.label ? <title>{e.label}</title> : null}
+            <g className="austere-arch-edge-label" data-austere-part={partOf(e)}>
+              <rect
+                x={box.cx - box.width / 2}
+                y={box.cy - box.height / 2}
+                width={box.width}
+                height={box.height}
+                rx="5"
+              />
+              <text textAnchor="middle">
+                {box.lines.map((line, i) => (
+                  <tspan key={i} x={box.cx} y={box.cy + 4 + (i - (box.lines.length - 1) / 2) * 13}>
+                    {line}{" "}
+                  </tspan>
+                ))}
+              </text>
+            </g>
+          </g>
+        ) : null;
+      })}
 
-          {/* Labels sit above every line so a crossing edge never hides them. */}
-          {layout.groups.map((g) =>
-            g.label ? (
-              <g
-                key={`gl-${g.id}`}
-                className={`austere-arch-group g-${g.kind}`}
-                data-oui-id={g.named ? g.id : undefined}
-                data-oui-c={g.named ? "Group" : undefined}
-              >
-                {/* Titles stay outside the part: its text becomes the annotation quote. */}
-                {g.labelLine !== g.label ? <title>{g.label}</title> : null}
-                {g.lane ? (
-                  // A lane names its column with a heading inside the top edge.
-                  <g className="austere-arch-lane-head" data-austere-part={g.label}>
-                    {/* A target the size of the heading text (lines may pass beside it). */}
-                    <rect
-                      x={g.x + 8}
-                      y={g.y + 5}
-                      width={textWidth(g.labelLine, LANES.headSize + 1, true) + 12}
-                      height={LANES.head - 8}
-                    />
-                    <T x={g.x + 14} y={g.y + 21}>
-                      {g.labelLine}
-                    </T>
-                  </g>
-                ) : (
-                  <g className="austere-arch-group-label" data-austere-part={g.label}>
-                    <rect
-                      x={g.x + 12}
-                      y={g.y - 9}
-                      width={textWidth(g.labelLine, SIZES.group) + 14}
-                      height="18"
-                      rx="5"
-                    />
-                    <T x={g.x + 19} y={g.y + 4}>
-                      {g.labelLine}
-                    </T>
-                  </g>
-                )}
-              </g>
-            ) : null,
-          )}
-          {layout.edges.map((e) => {
-            const box = e.labelBox;
-            return box ? (
-              <g
-                key={`el-${e.id}`}
-                className={`austere-arch-edge s-${e.style}${e.tone ? ` t-${e.tone}` : ""}`}
-                data-oui-id={e.named ? e.id : undefined}
-                data-oui-c={e.named ? "Edge" : undefined}
-              >
-                {box.lines.join(" ") !== e.label ? <title>{e.label}</title> : null}
-                <g className="austere-arch-edge-label" data-austere-part={partOf(e)}>
-                  <rect
-                    x={box.cx - box.width / 2}
-                    y={box.cy - box.height / 2}
-                    width={box.width}
-                    height={box.height}
-                    rx="5"
-                  />
-                  <text textAnchor="middle">
-                    {box.lines.map((line, i) => (
-                      <tspan
-                        key={i}
-                        x={box.cx}
-                        y={box.cy + 4 + (i - (box.lines.length - 1) / 2) * 13}
-                      >
-                        {line}{" "}
-                      </tspan>
-                    ))}
-                  </text>
-                </g>
-              </g>
-            ) : null;
-          })}
-
-          {layout.nodes.map((n) => (
-            <NodeBox key={n.id} n={n} />
-          ))}
-        </svg>
-      </div>
-      {cut.start || cut.end ? (
-        <p className="austere-arch-cue" aria-hidden="true">
-          {cut.start ? "← " : ""}Scroll sideways for more{cut.end ? " →" : ""}
-        </p>
-      ) : null}
-      {kinds.length > 1 || groupKinds.length || risky || styles.some((s) => s !== "solid") ? (
-        <figcaption className="austere-arch-legend">
-          {kinds.map((k) => {
-            const Icon = ICONS[k];
-            return (
-              <span key={k} className={`austere-arch-legend-item k-${k}`}>
-                <Icon size={13} aria-hidden="true" />
-                {k}
-              </span>
-            );
-          })}
-          {risky ? (
-            <span className="austere-arch-legend-item is-risk">
-              <TriangleAlert size={13} aria-hidden="true" />
-              risk
-            </span>
-          ) : null}
-          {groupKinds.map((k) => (
-            <span key={`g-${k}`} className={`austere-arch-legend-item g-${k}`}>
-              <svg width="18" height="12" aria-hidden="true">
-                <rect x="1" y="1" width="16" height="10" rx="3" />
-              </svg>
-              {GROUP_NAMES[k]}
-            </span>
-          ))}
-          {styles
-            .filter((s) => s !== "solid")
-            .map((s) => (
-              <span key={s} className={`austere-arch-legend-item s-${s}`}>
-                <svg width="22" height="8" aria-hidden="true">
-                  <line x1="0" y1="4" x2="22" y2="4" />
-                </svg>
-                {STYLE_NAMES[s]}
-              </span>
-            ))}
-        </figcaption>
-      ) : null}
-    </figure>
+      {layout.nodes.map((n) => (
+        <NodeBox key={n.id} n={n} />
+      ))}
+    </svg>
   );
+  const caption =
+    kinds.length > 1 || groupKinds.length || risky || styles.some((s) => s !== "solid") ? (
+      <figcaption className="austere-arch-legend">
+        {kinds.map((k) => {
+          const Icon = ICONS[k];
+          return (
+            <span key={k} className={`austere-arch-legend-item k-${k}`}>
+              <Icon size={13} aria-hidden="true" />
+              {k}
+            </span>
+          );
+        })}
+        {risky ? (
+          <span className="austere-arch-legend-item is-risk">
+            <TriangleAlert size={13} aria-hidden="true" />
+            risk
+          </span>
+        ) : null}
+        {groupKinds.map((k) => (
+          <span key={`g-${k}`} className={`austere-arch-legend-item g-${k}`}>
+            <svg width="18" height="12" aria-hidden="true">
+              <rect x="1" y="1" width="16" height="10" rx="3" />
+            </svg>
+            {GROUP_NAMES[k]}
+          </span>
+        ))}
+        {styles
+          .filter((s) => s !== "solid")
+          .map((s) => (
+            <span key={s} className={`austere-arch-legend-item s-${s}`}>
+              <svg width="22" height="8" aria-hidden="true">
+                <line x1="0" y1="4" x2="22" y2="4" />
+              </svg>
+              {STYLE_NAMES[s]}
+            </span>
+          ))}
+      </figcaption>
+    ) : null;
+  return { content, width: W, caption };
 }
 
 const nothing = () => null;

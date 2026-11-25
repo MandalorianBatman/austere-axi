@@ -2,7 +2,7 @@
 // A wide Architecture scrolls sideways in a focusable, named region; a cue and edge fades show
 // only while part of it is hidden, and print shows the full width.
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -128,18 +128,18 @@ test("a wide architecture scrolls in a named, focusable region with a cue only w
       const page = await context.newPage();
       await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
       const frame = (await (await page.waitForSelector("iframe.frame")).contentFrame()) as Frame;
-      await frame.locator(".austere-arch-scroll").first().waitFor({ timeout: 15_000 });
+      await frame.locator(".austere-diagram-scroll").first().waitFor({ timeout: 15_000 });
       await page.waitForTimeout(400);
-      assert.equal(await frame.locator(".austere-arch-scroll").count(), 2);
+      assert.equal(await frame.locator(".austere-diagram-scroll").count(), 2);
       for (const [index, title] of ["Platform lanes", "Forced chain"].entries()) {
-        const scroll = frame.locator(".austere-arch-scroll").nth(index);
+        const scroll = frame.locator(".austere-diagram-scroll").nth(index);
         const read = () =>
           scroll.evaluate((el) => ({
             cut: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 || el.scrollLeft > 4,
             end: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
             start: el.classList.contains("is-cut-start"),
             endClass: el.classList.contains("is-cut-end"),
-            cue: !!el.parentElement?.querySelector(".austere-arch-cue"),
+            cue: !!el.parentElement?.querySelector(".austere-diagram-cue"),
             pageOverflow:
               document.documentElement.scrollWidth > document.documentElement.clientWidth,
           }));
@@ -202,8 +202,8 @@ test("a wide architecture scrolls in a named, focusable region with a cue only w
           return {
             hidden: el.scrollWidth - el.clientWidth,
             overflow: getComputedStyle(el).overflowX,
-            cue: el.parentElement?.querySelector(".austere-arch-cue")
-              ? getComputedStyle(el.parentElement.querySelector(".austere-arch-cue")!).display
+            cue: el.parentElement?.querySelector(".austere-diagram-cue")
+              ? getComputedStyle(el.parentElement.querySelector(".austere-diagram-cue")!).display
               : "none",
             svg: svg.getBoundingClientRect().width,
             box: el.getBoundingClientRect().width,
@@ -234,9 +234,9 @@ test("Expand opens the natural-size diagram in a modal dialog: scroll, annotate,
     const page = await context.newPage();
     await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
     const frame = (await (await page.waitForSelector("iframe.frame")).contentFrame()) as Frame;
-    await frame.locator(".austere-arch-expand").first().waitFor({ timeout: 15_000 });
+    await frame.locator(".austere-diagram-expand").first().waitFor({ timeout: 15_000 });
     await page.waitForTimeout(400);
-    const buttons = frame.locator(".austere-arch-expand");
+    const buttons = frame.locator(".austere-diagram-expand");
     assert.equal(await buttons.count(), 2, "every diagram has an Expand button");
     for (const i of [0, 1]) {
       const box = (await buttons.nth(i).boundingBox()) as { width: number; height: number };
@@ -248,7 +248,7 @@ test("Expand opens the natural-size diagram in a modal dialog: scroll, annotate,
     assert.equal(await buttons.first().getAttribute("aria-label"), "Expand Platform lanes");
 
     await buttons.first().click();
-    const dialog = frame.locator("dialog.austere-arch-dialog[open]");
+    const dialog = frame.locator("dialog.austere-diagram-dialog[open]");
     await dialog.waitFor({ timeout: 5_000 });
     assert.equal(await dialog.getAttribute("aria-label"), "Platform lanes");
     assert.equal(await dialog.evaluate((el) => el.matches(":modal")), true);
@@ -276,7 +276,7 @@ test("Expand opens the natural-size diagram in a modal dialog: scroll, annotate,
     assert.equal(open.columns, 5, "5 lanes show as 5 columns");
     assert.equal(open.ids, 1, "part ids are duplicated");
 
-    const scroll = dialog.locator(".austere-arch-scroll");
+    const scroll = dialog.locator(".austere-diagram-scroll");
     await scroll.evaluate((el) => (el.scrollLeft = 200));
     await page.waitForTimeout(200);
     assert.ok(
@@ -340,10 +340,10 @@ test("Expand opens the natural-size diagram in a modal dialog: scroll, annotate,
     await page.keyboard.press("Escape");
     await frame.locator("dialog[open]").waitFor({ state: "detached", timeout: 5_000 });
     const after = await frame.evaluate(() => ({
-      expand: document.activeElement?.classList.contains("austere-arch-expand"),
+      expand: document.activeElement?.classList.contains("austere-diagram-expand"),
       label: document.activeElement?.getAttribute("aria-label"),
       uiInBody: !!document.querySelector("body > .austere-ui"),
-      scrolls: document.querySelectorAll(".austere-arch-scroll").length,
+      scrolls: document.querySelectorAll(".austere-diagram-scroll").length,
     }));
     assert.equal(after.expand, true, "focus did not return to the Expand button");
     assert.equal(after.label, "Expand Platform lanes");
@@ -353,7 +353,7 @@ test("Expand opens the natural-size diagram in a modal dialog: scroll, annotate,
     // The Close button closes too.
     await buttons.first().click();
     await frame.locator("dialog[open]").waitFor();
-    await frame.locator("dialog[open] .austere-arch-dialog-bar button").click();
+    await frame.locator("dialog[open] .austere-diagram-dialog-bar button").click();
     await frame.locator("dialog[open]").waitFor({ state: "detached", timeout: 5_000 });
     assert.equal(
       await frame.evaluate(() => document.activeElement?.getAttribute("aria-label")),
@@ -361,5 +361,175 @@ test("Expand opens the natural-size diagram in a modal dialog: scroll, annotate,
     );
   } finally {
     await context.close();
+  }
+});
+
+// A third-party pack component that wraps its drawing in DiagramFrame from "austere-axi/pack".
+const FRAMED_JSX = `import React from "react";
+import { z } from "zod";
+import { austereComponent, DiagramFrame } from "austere-axi/pack";
+
+function FramedView({ props }) {
+  return (
+    <DiagramFrame name="Framed diagram">
+      {({ full }) => ({
+        width: props.width,
+        content: (
+          <div className="pack-framed" style={{ width: props.width, height: 120, display: "flex", alignItems: "center" }}>
+            <span data-austere-part="wide block" style={{ padding: 12, border: "1px solid currentColor" }}>
+              {props.label}{full ? " (expanded)" : ""}
+            </span>
+          </div>
+        ),
+      })}
+    </DiagramFrame>
+  );
+}
+
+export default austereComponent({
+  name: "Framed",
+  group: "Content",
+  props: z.object({ label: z.string(), width: z.number() }),
+  description: "A fixed-width block in a DiagramFrame.",
+  renderer: FramedView,
+  example: \`framed = Framed("hello", 1400)\`,
+});
+`;
+
+test("a pack component in DiagramFrame gets the cue, fades, named region, Expand and print rules", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const cli = (...args: string[]) => {
+    const r = spawnSync(process.execPath, [path.join(ROOT, "src/cli/main.ts"), ...args], {
+      env: { ...process.env, AUSTERE_AXI_STATE_DIR: STATE, OPENUI_TELEMETRY_DISABLED: "1" },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return r.stdout;
+  };
+  const dir = path.join(WORK, "austere-pack-framed");
+  cli("components", "new", dir);
+  fs.rmSync(path.join(dir, "src/Milestones.jsx"));
+  fs.writeFileSync(path.join(dir, "src/Framed.jsx"), FRAMED_JSX);
+  fs.writeFileSync(
+    path.join(dir, "src/index.js"),
+    'import Framed from "./Framed.jsx";\nimport css from "./style.css";\n\nexport default { components: [Framed], css };\n',
+  );
+  cli("components", "build", dir);
+  cli("components", "add", dir, "--trust");
+  const file = path.join(WORK, "framed.html");
+  fs.writeFileSync(
+    file,
+    htmlPage(
+      "Framed",
+      'root = Stack([c])\nc = Card([CardHeader("Frame check"), f])\nf = Framed("hello", 1400)',
+      CDN_RUNTIME_URL,
+    ),
+  );
+  cli("check", "--fix", file);
+  const fit = path.join(WORK, "framed-fit.html");
+  fs.writeFileSync(
+    fit,
+    htmlPage(
+      "Framed",
+      'root = Stack([c])\nc = Card([CardHeader("Frame check"), f])\nf = Framed("hello", 300)',
+      CDN_RUNTIME_URL,
+    ),
+  );
+  cli("check", "--fix", fit);
+  const open = async (width: number, height: number, target = file) => {
+    const { session } = await api("/api/open", { file: target });
+    const { code } = await api("/api/login", {});
+    const context = await browser.newContext({ viewport: { width, height } });
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${port}/s/${session.id}?login=${code}`);
+    const frame = (await (await page.waitForSelector("iframe.frame")).contentFrame()) as Frame;
+    await frame.locator(".pack-framed").waitFor({ timeout: 15_000 });
+    await page.waitForTimeout(400);
+    return { context, page, frame };
+  };
+
+  // Narrow: the block is wider than the box.
+  const narrow = await open(360, 640);
+  try {
+    const { page, frame } = narrow;
+    const scroll = frame.locator(".austere-diagram-scroll");
+    assert.equal(await scroll.getAttribute("role"), "region");
+    assert.equal(await scroll.getAttribute("aria-label"), "Frame check");
+    assert.equal(await scroll.getAttribute("tabindex"), "0");
+    const state = () =>
+      frame.evaluate(() => {
+        const el = document.querySelector(".austere-diagram-scroll") as HTMLElement;
+        const cue = document.querySelector(".austere-diagram-cue");
+        return {
+          cue: cue?.textContent ?? null,
+          mask: getComputedStyle(el).maskImage,
+          scrolls: el.scrollWidth > el.clientWidth,
+        };
+      });
+    let s = await state();
+    assert.equal(s.scrolls, true);
+    assert.equal(s.cue, "Scroll sideways for more →");
+    assert.notEqual(s.mask, "none", "no edge fade while content is hidden");
+    await scroll.evaluate((el) => (el.scrollLeft = el.scrollWidth));
+    await page.waitForTimeout(200);
+    s = await state();
+    assert.equal(s.cue, "← Scroll sideways for more");
+
+    await page.emulateMedia({ media: "print" });
+    const print = await frame.evaluate(() => {
+      const el = document.querySelector(".austere-diagram-scroll") as HTMLElement;
+      const cue = document.querySelector(".austere-diagram-cue");
+      const tools = document.querySelector(".austere-diagram-tools") as HTMLElement;
+      return {
+        mask: getComputedStyle(el).maskImage,
+        overflow: getComputedStyle(el).overflowX,
+        cue: cue ? getComputedStyle(cue).display : "none",
+        tools: getComputedStyle(tools).display,
+      };
+    });
+    assert.deepEqual(print, { mask: "none", overflow: "visible", cue: "none", tools: "none" });
+    await page.emulateMedia({ media: "screen" });
+
+    const expand = frame.locator(".austere-diagram-expand");
+    assert.equal(await expand.getAttribute("aria-label"), "Expand Frame check");
+    await expand.click();
+    const dialog = frame.locator("dialog.austere-diagram-dialog[open]");
+    await dialog.waitFor({ timeout: 5_000 });
+    assert.equal(await dialog.getAttribute("aria-label"), "Frame check");
+    assert.match(await dialog.innerText(), /hello \(expanded\)/);
+    assert.equal(await frame.locator(".pack-framed").count(), 1, "the drawing is cloned");
+    await dialog.locator('[data-austere-part="wide block"]').click();
+    await frame.locator(".austere-pop").waitFor({ state: "visible" });
+    assert.equal(
+      await frame.evaluate(() => !!document.querySelector(".austere-pop")?.closest("dialog[open]")),
+      true,
+      "the note is not inside the dialog",
+    );
+    assert.match((await frame.locator(".austere-pop-path").textContent()) as string, /›f$/);
+    assert.match(await frame.locator(".austere-pop").innerText(), /hello \(expanded\)/);
+    await frame.locator('.austere-pop [data-act="cancel"]').click();
+    await page.keyboard.press("Escape");
+    await frame.locator("dialog[open]").waitFor({ state: "detached", timeout: 5_000 });
+    assert.equal(
+      await frame.evaluate(() => document.activeElement?.getAttribute("aria-label")),
+      "Expand Frame check",
+    );
+  } finally {
+    await narrow.context.close();
+  }
+
+  // Fits, so no cue and no fade.
+  const wide = await open(1280, 900, fit);
+  try {
+    const s = await wide.frame.evaluate(() => {
+      const el = document.querySelector(".austere-diagram-scroll") as HTMLElement;
+      return {
+        cue: !!document.querySelector(".austere-diagram-cue"),
+        cut: el.className.includes("is-cut"),
+      };
+    });
+    assert.deepEqual(s, { cue: false, cut: false });
+  } finally {
+    await wide.context.close();
   }
 });

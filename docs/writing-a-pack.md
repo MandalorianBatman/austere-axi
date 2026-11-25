@@ -101,6 +101,34 @@ Rules the Gantt pack follows, and any pack should:
 - **Work at 390 px wide.** The label column in the Gantt pack is `clamp(88px, 28%, 200px)` and the bars use percentages.
 - **Touch no `window` or `document` at module level.** `components build` also loads the pack in Node to read its component definitions. Use them inside renderers and effects.
 
+### Diagrams: `DiagramFrame`
+
+A component that draws a diagram wider than a phone should not rebuild the scroll cue, the Expand dialog and the print rules. Wrap the drawing in `DiagramFrame` from `austere-axi/pack`; `Architecture` and the bundled diagrams use the same one.
+
+```jsx
+import { austereComponent, DiagramFrame } from "austere-axi/pack";
+
+function SequenceView({ props }) {
+  return (
+    <DiagramFrame name="Sequence diagram">
+      {({ room, full }) => {
+        const d = layout(props, full ? Infinity : room); // your layout: a pure function of the width
+        return { content: <svg viewBox={`0 0 ${d.width} ${d.height}`}>…</svg>, width: d.width };
+      }}
+    </DiagramFrame>
+  );
+}
+```
+
+The frame gives you:
+
+- **Room.** It measures the box the page gives the diagram and calls your function with `room` (px). Lay out for that width; the frame calls again if the box changes by more than 40 px.
+- **Sideways scroll.** Return the natural `width` (the diagram at scale 1.0). The drawing shrinks with the box down to `legibleScale` (default 0.85) of that width, then scrolls. A fade on each cut edge and a text cue show only while part of the diagram is hidden. The scroll box is a focusable `role="region"`, named after the Card title (else `name`, default "Diagram"), so the arrow keys scroll it.
+- **Expand.** A button opens the same React subtree in a modal `<dialog>`, not a clone, so `data-oui-id` values stay unique and Annotate works inside it. The function is called with `full: true`: draw at natural size, at `room` as wide as you like. Esc or Close returns focus to the button. It uses no Fullscreen API and has no custom zoom.
+- **Print.** No fades, no cue, no button; the full diagram.
+
+Return `null` to draw nothing, or `{ error: <node> }` to show a message instead of the drawing (no Expand button). `caption` is shown under the scroll box and does not scroll (a legend). `wide: true` asks the page for the wide column, and `className` adds a class to the `<figure>`. Keep the function pure: it runs on every render of the frame, so memoise an expensive layout by its width.
+
 ## 4. Build
 
 ```sh
