@@ -951,6 +951,32 @@ export async function activeWorkNow(file = hubDbFile()): Promise<boolean> {
   }
 }
 
+/**
+ * Where the local hub files `file`: its project's name and its path in the project (the group and path the cloud hub
+ * lists a published page under). Stores the page as `register` does. Null when hub.db cannot be written (another
+ * version holds the state dir): `publish` then sends neither, and the page is listed as Ungrouped.
+ */
+export async function placeWithHub(
+  file: string,
+): Promise<{ project: string; relPath: string } | null> {
+  try {
+    const hub = await openHubDirect({ write: true });
+    try {
+      return inTransaction(hub.db, () => {
+        const loc = resolveProject(hub.db, file, process.cwd());
+        const row = hub.db.prepare("SELECT name FROM projects WHERE id = ?").get(loc.projectId) as
+          | { name: string }
+          | undefined;
+        return row ? { project: row.name, relPath: loc.relPath } : null;
+      });
+    } finally {
+      hub.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
 /** Register an artifact with the hub from a CLI command. Never fails the command; skipped while another version holds the state dir. */
 export async function registerWithHub(
   file: string,

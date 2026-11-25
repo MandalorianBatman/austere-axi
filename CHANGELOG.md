@@ -4,6 +4,12 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Added
+
+- **The hub shell has a cloud mode.** austere-cloud's signed-in `/` can load `chrome/shell.js` with the boot flag `mode: "cloud"` (and `account`): the sidebar, type and colours of the local hub, with the views a hosted account can fill: **Pages** (grouped by project, with an Ungrouped group), **Shared**, search over titles, a **People** dialog (grant and revoke by email) and an account footer with Sign out. Inbox, Notes, Runs and Settings are not shown. The local hub is unchanged. (RLM-458)
+- **`publish` sends `project` and `relPath`**: the project the local hub files the page under and its path in the project, so the cloud hub can group hosted pages. Both are optional; `SYNC_VERSION` is 2. A page published before this, or with a hub.db another version holds, is listed as Ungrouped. (RLM-458)
+- **`austere-axi/hub-api`**: the `/hub/api` types (including the cloud routes), generated from `src/shared/hub-api.ts` by `npm run hub-api-types`, so austere-cloud's adapter type-checks against them. (RLM-458)
+
 ## 0.24.0 (2026-11-25)
 
 ### Added

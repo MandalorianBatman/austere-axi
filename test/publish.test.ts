@@ -423,6 +423,8 @@ test("publish uploads objects and sends the publish mutation; republish keeps th
       auto: false,
       unlisted: false,
       presence: true,
+      project: path.basename(WORK),
+      relPath: "plan.html",
     },
   ]);
   assert.equal(field(r.out, "id"), id);
@@ -629,6 +631,35 @@ test("session ids stay on this machine: nothing publish sends carries the agent 
   for (const secret of [sid, "6789ab", env.PI_SESSION_FILE]) {
     assert.ok(!stub.wire.some((w) => w.includes(secret)), `${secret} reached the service`);
     assert.ok(!r.out.includes(secret), `${secret} is in the printed links`);
+  }
+});
+
+test("publish sends the project and page path the local hub files the file under (RLM-458)", async () => {
+  const dir = path.join(WORK, "docs", "plans");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, "deep.html");
+  fs.writeFileSync(file, page('root = Stack([intro])\nintro = TextContent("deep")'));
+  const r = await cli(["publish", file]);
+  assert.equal(r.code, 0, r.out);
+  const sent = stub.publishes.at(-1);
+  assert.equal(sent?.relPath, "docs/plans/deep.html", "the path inside the project, with /");
+  // The hub (what the local Pages view lists the page under) says the same.
+  const db = new DatabaseSync(path.join(STATE, "hub.db"), { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        "SELECT p.name, g.rel_path FROM pages g JOIN projects p ON p.id = g.project_id WHERE g.rel_path = ?",
+      )
+      .get("docs/plans/deep.html") as { name: string; rel_path: string };
+    assert.deepEqual(
+      { project: sent?.project, relPath: sent?.relPath },
+      {
+        project: row.name,
+        relPath: row.rel_path,
+      },
+    );
+  } finally {
+    db.close();
   }
 });
 

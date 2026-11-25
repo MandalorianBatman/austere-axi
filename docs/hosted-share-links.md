@@ -236,7 +236,7 @@ import type { Mutation, Row } from "austere-axi/sync";
 
 ### Versioning and compatibility
 
-- `v` is the integer protocol version (`SYNC_VERSION`, now 1). Every frame, mutation and row carries it.
+- `v` is the integer protocol version (`SYNC_VERSION`, now 2: v2 added the optional `project` and `relPath` to `publish`). Every frame, mutation and row carries it.
 - `v` below `MIN_SYNC_VERSION` is `upgrade_required`. A higher `v` is read as far as this version knows it.
 - Unknown fields are kept on the parsed value and ignored. A row of an unknown `type` is kept (`skipped` on the parsed `changes` frame), not applied, and its `seq` still counts toward the cursor. A server frame of an unknown `t` is skipped (parses to `null`).
 - The server rejects an unknown mutation or client frame type with `invalid`. The service always deploys before a CLI that sends something new.
@@ -292,7 +292,7 @@ A reviewer session, start to first note:
 
 | Mutation | Sent by | `args` | Effect |
 |---|---|---|---|
-| `publish` | owner | `{ title, cliVersion, html, packs: [{ sha256, name, version }], auto, unlisted, presence }` | Points the page at a new version. `publishedAt` = now, `expiresAt` = now + 30 days. Updates the D1 `pages` index. Counts toward the publish limits. `page` row. |
+| `publish` | owner | `{ title, cliVersion, html, packs: [{ sha256, name, version }], auto, unlisted, presence, project?, relPath? }` | Points the page at a new version. `publishedAt` = now, `expiresAt` = now + 30 days. Updates the D1 `pages` index. Counts toward the publish limits. `page` row. `project` is the local hub's project name for the file and `relPath` its path in that project (sync v2, both optional): the cloud hub groups a page under `project`, and lists one without it as Ungrouped. |
 | `addNote` | reviewer | `{ items, name? }` | New note. `author` = the invite name; on an unlisted page `name`, truncated to 40 characters (`Reviewer` when empty). `state` = `released` on an `auto` page, else `held`. `note` row. |
 | `releaseNote` | owner | `{ note }` | `held` → `released`. Already released or discarded: no change. `note` row. |
 | `discardNote` | owner | `{ note }` | `held` → `discarded`. Already released or discarded: no change. `note` row. |

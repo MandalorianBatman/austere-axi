@@ -10,13 +10,18 @@ import type {
   ProjectsResponse,
   ShellPage,
 } from "../shared/hub-api.ts";
-import { isView } from "./views.ts";
+import { CLOUD_VIEWS, isView } from "./views.ts";
 import type { SideStatus, View } from "./views.ts";
+import { CLOUD } from "./hub-env.ts";
 import { get } from "./hub-http.ts";
 import { CLOSED_PROJECTS, store, stored } from "./side-state.ts";
 
 /** The view the hub opened on last (RLM-358). */
 const LAST_VIEW = "austere:hub:view";
+
+/** The view the hub opens on with no other say: the inbox, and on austere-cloud (no inbox) the pages. */
+const HOME: View = CLOUD ? "pages" : "inbox";
+const views = CLOUD ? CLOUD_VIEWS : undefined;
 
 export interface State {
   view: View;
@@ -35,13 +40,13 @@ function fromUrl(): State {
   const asked = p.get("view");
   const pagesView: PagesView = p.has("all") ? "all" : p.has("archived") ? "archived" : "open";
   let view: View;
-  if (asked === "search" || isView(asked)) view = asked;
+  if (asked === "search" || isView(asked, views)) view = asked;
   // Links from before the shell: `/?q=…` searched, `/?all=1` and `/?archived=1` were the page lists.
   else if (p.get("q")) view = "search";
   else if (pagesView !== "open") view = "pages";
   else {
-    const last = stored<string>(LAST_VIEW, "inbox");
-    view = isView(last) ? last : "inbox";
+    const last = stored<string>(LAST_VIEW, HOME);
+    view = isView(last, views) ? last : HOME;
   }
   return {
     view,
@@ -88,7 +93,7 @@ const initial = fromUrl();
 
 export const useHub = create<Hub>(() => ({
   state: initial,
-  previous: initial.view === "search" ? "inbox" : initial.view,
+  previous: initial.view === "search" ? HOME : initial.view,
   projects: [],
   sidePages: [],
   sideStatus: "loading",
@@ -144,7 +149,10 @@ export async function loadSide(): Promise<void> {
     const [p, pages, asks] = await Promise.all([
       get<ProjectsResponse>("/hub/api/projects", mine.signal),
       get<PagesResponse>("/hub/api/pages", mine.signal),
-      get<AccessRequestsResponse>("/hub/api/people/requests", mine.signal),
+      // Access requests are the local server's: the cloud has none.
+      CLOUD
+        ? { waiting: [] }
+        : get<AccessRequestsResponse>("/hub/api/people/requests", mine.signal),
     ]);
     if (mine.signal.aborted) return;
     set({

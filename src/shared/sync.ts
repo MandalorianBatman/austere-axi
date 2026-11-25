@@ -58,7 +58,7 @@ export type {
   ViewerStatus,
 } from "austere-axi/sync";
 
-export const SYNC_VERSION = 1;
+export const SYNC_VERSION = 2;
 export const MIN_SYNC_VERSION = 1;
 export const SUBPROTOCOL = "austere-sync.1";
 export const LIMITS = { frameBytes: 65536, noteItemsBytes: 4096, nameChars: 40 } as const;
@@ -154,6 +154,8 @@ const ARGS: { [N in api.MutationName]: z.ZodType<api.MutationArgs[N]> } = {
     auto: z.boolean(),
     unlisted: z.boolean(),
     presence: z.boolean(),
+    project: z.string().max(200).optional(),
+    relPath: z.string().max(1000).optional(),
   }),
   addNote: z.looseObject({ items: z.array(noteItem).min(1), name: z.string().optional() }),
   releaseNote: z.looseObject({ note: z.string().min(1) }),
