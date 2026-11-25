@@ -154,6 +154,26 @@ test("every example page: every statement reads as text, and only containers and
     "Breadcrumb",
     "AvatarGroup",
     "Skeleton",
+    // A diagram holds its parts by reference, and each part has a row of its own.
+    "Flowchart",
+    "StateMachine",
+    "Sequence",
+    "OrgChart",
+    "Tree",
+    "Nested",
+    "LayerStack",
+    "ClassDiagram",
+    "ERDiagram",
+    "Traceability",
+    "ScheduleNetwork",
+    "Venn",
+    "Pyramid",
+    "Loop",
+    "WardleyMap",
+    // A link with no label carries only its style.
+    "FlowLink",
+    "Transition",
+    "ClassLink",
   ]);
   for (const f of fs.readdirSync(examples).filter((x) => x.endsWith(".html"))) {
     const page = fs.readFileSync(path.join(examples, f), "utf8");

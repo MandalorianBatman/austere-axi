@@ -11,6 +11,7 @@ Messages between actors in time order: a login request across browser, API and d
 - 12 messages in all, those inside a Branch too. More: split at the failure or refresh path.
 - One Branch is usual. A Branch holds Messages only: no Branch in a Branch. `alt` takes a second region (an else guard and its messages); `opt` and `loop` take one.
 - One main result: give `"emphasis"` to a single Message.
+- A Message from an Actor to itself is fine (`Message(api, api, "verify hash")`). A Message inside a Branch is listed in that Branch only, not in the top-level list.
 
 ## Usual errors
 - A Message from an Actor that is not in the actors list. It is added as the last column and the page reports the problem. List every Actor.

@@ -12,6 +12,7 @@ The integration points of a data platform: which source systems plug in, which c
 ## Limits
 - Up to 6 sources and 6 consumers. About 4 lanes fit a laptop; phones stack them as bands.
 - The platform lane holds the components that the integrations touch, not all of them.
+- Pin `row` on the platform nodes (the last argument of `Node`) to line them up beside the sources and consumers they serve.
 - One protocol on each edge.
 
 ## Usual errors

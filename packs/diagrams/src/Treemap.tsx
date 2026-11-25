@@ -75,8 +75,10 @@ function TreemapView({ props, statementId }: RendererArgs<TreemapProps>) {
                       y={g.y + 13}
                       data-austere-part={g.part}
                     >
-                      {g.name.length > Math.max(4, (g.w - 16) / 7)
-                        ? `${g.name.slice(0, Math.max(3, Math.floor((g.w - 16) / 7) - 1))}…`
+                      {Array.from(g.name).length > Math.max(4, (g.w - 16) / 7)
+                        ? `${Array.from(g.name)
+                            .slice(0, Math.max(3, Math.floor((g.w - 16) / 7) - 1))
+                            .join("")}…`
                         : g.name}
                     </T>
                   ) : null}

@@ -54,7 +54,7 @@ exPublish = Edge(exApi, exQueue, "publish", null, "success")
 exWrite = Edge(exBilling, exLedger, "append", null, "success")
 exOld = Edge(exApi, exOldTable, "insert", "dashed", "danger")
 exOldRead = Edge(exOldTable, exBilling, "backfill once", "dashed", "info")
-exBoundary = Group("billing-service repo", [exBilling, exLedger], "plain")`,
+exBoundary = Group("billing-service repo", [exBilling, exLedger])`,
     ],
   },
   {
@@ -134,9 +134,8 @@ hlPull = Edge(hlSource, hlIngest, "JDBC")
 hlLoad = Edge(hlIngest, hlStore, "batch")
 hlServe = Edge(hlStore, hlDash, "SQL")
 hlCluster = Group("Kubernetes cluster", [hlIngest, hlStore, hlDash], "region")`,
-      `analyticsStack = Architecture([hsDb, hsFiles, hsNifi, hsMinio, hsTrino, hsDbt, hsBi, hsNotebook, hsAirflow, hsAuth], [hsDbIn, hsFilesIn, hsRaw, hsQuery, hsModel, hsDashboards, hsNotebooks, hsSchedule, hsLogin], [hsCluster, hsSecurity])
+      `analyticsStack = Architecture([hsDb, hsNifi, hsMinio, hsTrino, hsDbt, hsBi, hsNotebook, hsAirflow, hsAuth], [hsDbIn, hsRaw, hsQuery, hsModel, hsDashboards, hsNotebooks, hsSchedule, hsLogin], [hsCluster, hsSecurity])
 hsDb = Node("Operational DBs", "database", "MariaDB · Postgres", "source", "info")
-hsFiles = Node("SFTP drops", "external", "CSV · Excel", "source", "info")
 hsNifi = Node("NiFi", "backend", "flow-based ETL", "ingest")
 hsMinio = Node("MinIO", "database", "S3 · Iceberg", "store", "strong")
 hsTrino = Node("Trino", "backend", "federated SQL", "query")
@@ -146,7 +145,6 @@ hsNotebook = Node("JupyterHub", "frontend", "Python · R", "analyze")
 hsAirflow = Node("Airflow", "backend", "DAG scheduler", "orchestrate")
 hsAuth = Node("Keycloak", "security", "SSO · RBAC", "identity")
 hsDbIn = Edge(hsDb, hsNifi, "JDBC")
-hsFilesIn = Edge(hsFiles, hsNifi, "SFTP")
 hsRaw = Edge(hsNifi, hsMinio, "raw write")
 hsQuery = Edge(hsTrino, hsMinio, "read")
 hsModel = Edge(hsDbt, hsTrino, "SQL")
@@ -326,11 +324,10 @@ dpOut = Edge(dpNifi, dpBi, "ODBC")
 dpSources = Group("SOURCES", [dpDb], "plain")
 dpPlatform = Group("DATA PLATFORM", [dpNifi])
 dpConsumers = Group("CONSUMERS", [dpBi], "plain")`,
-      `platformEdges = Architecture([ipDb, ipSftp, ipMail, ipLegacy, ipTrino, ipNifi, ipMinio, ipAirflow, ipDesktop, ipNotebook, ipApi], [ipJdbc, ipSftpIn, ipImap, ipFile, ipFederate, ipStore, ipSchedule, ipOdbc, ipJupyter, ipRest], [ipSources, ipPlatform, ipConsumers], "lanes")
+      `platformEdges = Architecture([ipDb, ipSftp, ipMail, ipTrino, ipNifi, ipMinio, ipAirflow, ipDesktop, ipNotebook, ipApi], [ipJdbc, ipSftpIn, ipImap, ipFederate, ipStore, ipSchedule, ipOdbc, ipJupyter, ipRest], [ipSources, ipPlatform, ipConsumers], "lanes")
 ipDb = Node("Databases", "database", "MariaDB · SQL")
 ipSftp = Node("SFTP drops", "external", "scheduled pulls")
 ipMail = Node("Email", "external", "IMAP attachments")
-ipLegacy = Node("Mainframe", "external", "file export")
 ipTrino = Node("Trino", "backend", "federated query", null, "strong", 1)
 ipNifi = Node("Apache NiFi", "backend", "flow-based ETL", null, null, 2)
 ipMinio = Node("MinIO", "database", "S3 · medallion", null, null, 3)
@@ -341,14 +338,13 @@ ipApi = Node("Partner apps", "cloud", "REST clients")
 ipJdbc = Edge(ipDb, ipNifi, "JDBC")
 ipSftpIn = Edge(ipSftp, ipNifi, "SFTP")
 ipImap = Edge(ipMail, ipNifi, "IMAP")
-ipFile = Edge(ipLegacy, ipNifi, "FILE")
 ipFederate = Edge(ipDb, ipTrino, "federate", "dashed")
 ipStore = Edge(ipNifi, ipMinio, "S3")
 ipSchedule = Edge(ipAirflow, ipNifi, "trigger", "dashed")
 ipOdbc = Edge(ipTrino, ipDesktop, "ODBC")
 ipJupyter = Edge(ipTrino, ipNotebook, "Python client")
 ipRest = Edge(ipTrino, ipApi, "REST")
-ipSources = Group("SOURCES", [ipDb, ipSftp, ipMail, ipLegacy], "plain")
+ipSources = Group("SOURCES", [ipDb, ipSftp, ipMail], "plain")
 ipPlatform = Group("DATA PLATFORM", [ipTrino, ipNifi, ipMinio, ipAirflow])
 ipConsumers = Group("CONSUMERS", [ipDesktop, ipNotebook, ipApi], "plain")`,
     ],
@@ -403,7 +399,7 @@ dyMetrics = Edge(dyWorker, dyObs, "OTLP", "dashed")
 dyEdge = Group("edge", [dyCdn, dyGateway], "security")
 dyProd = Group("prod / eu-west-1", [dyWeb, dyApi, dyWorker, dyDb, dyQueue], "region")
 dyCluster = Group("k8s cluster", [dyWeb, dyApi, dyWorker])
-dyData = Group("data zone", [dyDb, dyQueue], "plain")`,
+dyData = Group("data zone", [dyDb, dyQueue])`,
     ],
   },
   {

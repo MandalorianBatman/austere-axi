@@ -9,7 +9,7 @@ Items scored on two measures at once, to see which quadrant each falls in: impac
 ## Limits
 - 12 items at most. `check` warns above that. Cluster or split beyond it.
 - `QuadrantItem(label, x, y, focus?)`: `x` runs left to right and `y` bottom to top, both from 0 to 100. Out of range is drawn at the edge and reported.
-- `Quadrant(items, xAxis, yAxis, quadrants?)`: axis names are one word each (`"Effort"`), shown at the end where the value is high. `quadrants` has four names in order: top left, top right, bottom left, bottom right.
+- `Quadrant(items, xAxis, yAxis, quadrants?)`: axis names are one word each (`"Effort"`), shown at the end where the value is high. `quadrants` has four names in order: top left, top right, bottom left, bottom right. With the axes `"Effort"` (x) and `"Impact"` (y), top left is low effort and high impact, bottom right is high effort and low impact.
 - One item may have `focus`: the one to do first. Two erase the signal; the second is drawn plain.
 - Labels are placed so none overlaps another or crosses an axis. If none can, the page reports it.
 

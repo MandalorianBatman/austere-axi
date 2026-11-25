@@ -10,6 +10,7 @@ Entities and how they relate: a domain model, the resources of an API, a data mo
 - About 5 to 8 entities. More: draw one diagram for each cluster.
 - Fields are the ones the model is about, up to about 12 for each entity. `check` warns past that.
 - One line for each relation. Do not draw an arrow for every foreign key of a large model.
+- A many-to-many relation is one `"N:M"` relation. Add a join entity only when it has fields of its own (an order line with a quantity).
 
 ## Usual errors
 - A relation with no cardinality. Say `"1:N"`, `"N:M"` and so on; `check` warns.

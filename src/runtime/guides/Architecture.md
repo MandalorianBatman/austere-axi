@@ -3,7 +3,7 @@ Components and the connections between them in one snapshot: services, stores, q
 
 ## Not for
 - Work that passes between teams in order: Swimlane (Architecture with lanes).
-- Messages in time order between a few actors: Sequence, when it ships; until then, a Table of the messages.
+- Messages in time order between a few actors: Sequence.
 - A short ordered method with no branches: Steps.
 
 ## Limits

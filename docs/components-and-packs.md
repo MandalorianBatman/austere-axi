@@ -39,7 +39,7 @@ A page names its packs in the head, so it renders anywhere:
   rollout = Progress(64, "Rows migrated")
   freeze = Calendar("2026-11", ["2026-11-04 Code freeze"])
   ```
-  - `diagrams`: the diagram types that need no graph layout: `Sequence` (`Actor`, `Message`, `Branch`), and more as they ship (see [Diagrams](diagrams.md)). Read-only.
+  - `diagrams`: the diagram types that need no graph layout, read-only: `Sequence`, `Nested`, `LayerStack`, `Kanban`, `StoryMap`, `UserJourney`, `ServiceBlueprint`, `EventModel`, `Heatmap`, `PermissionMatrix`, `UnitGrid`, `Traceability`, `Gantt`, `GitGraph`, `ScheduleNetwork`, `Quadrant`, `Venn`, `Pyramid`, `Loop`, `Fishbone`, `WardleyMap`, `Radar`, `PolarChart`, `Waterfall`, `Treemap` and `Sankey`, each with its parts (see [Diagrams](diagrams.md)). A page that names one needs no tag. The types that need the graph layout (`Architecture`, `Flowchart`, `StateMachine`, `Tree`, `OrgChart`, `ERDiagram`, `ClassDiagram`) are in core, and the recipes draw the rest with `Architecture`, `ERDiagram` and the stock charts.
 
 **Trust.** Pack code runs inside your review pages, where notes and button presses also come from. Packs under `@austere-axi/` on npm install directly. Other npm packs and any `.tgz` need `--trust`, so read them first. A local folder counts as your own. A page with third-party packs shows a warning, and `poll` tells the agent.
 

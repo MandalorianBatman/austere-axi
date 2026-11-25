@@ -10,7 +10,7 @@ How data moves through a pipeline across roles: who ingests it, who changes it, 
 - Amounts that split along the path: Sankey.
 
 ## Limits
-- Up to 4 lanes and 6 stages. About 4 lanes fit a laptop; phones stack them as bands.
+- Up to 4 lanes and 8 stages. About 4 lanes fit a laptop; phones stack them as bands.
 - One payload word on each edge.
 
 ## Usual errors

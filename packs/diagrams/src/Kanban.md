@@ -12,6 +12,7 @@ A snapshot of work by state: what is queued, what is moving, what is stuck, and 
 - Give each column that work passes through a limit; the first and last columns need none. Pass `limits` in column order, `0` for no limit.
 - `column` is the name of a listed column, any case. An unlisted name adds a last column and reports a problem.
 - Cards draw top to bottom in list order. Put the oldest first.
+- A card has no "blocked by" field: say what blocks it in `detail` (`"waiting on AX-12"`) and give it `state` `"blocked"`. For a chain of blockers, use DependencyGraph.
 
 ## Usual errors
 - `limits` shorter than `columns`. The missing ones mean no limit.

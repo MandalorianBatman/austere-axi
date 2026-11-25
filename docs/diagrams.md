@@ -1,6 +1,6 @@
 # Diagrams
 
-austere-axi draws the diagram types of [`cathrynlavery/diagram-design`](https://github.com/cathrynlavery/diagram-design) at commit [`58b7dcf`](https://github.com/cathrynlavery/diagram-design/blob/58b7dcf/skills/diagram-design/SKILL.md) ("Visual-type guide (52)") as native components: typed statements, automatic layout, and each part a click target. The types marked **built** in the table below ship with austere-axi: a page needs no install and no tag. The others are not available yet.
+austere-axi draws the diagram types of [`cathrynlavery/diagram-design`](https://github.com/cathrynlavery/diagram-design) at commit [`58b7dcf`](https://github.com/cathrynlavery/diagram-design/blob/58b7dcf/skills/diagram-design/SKILL.md) ("Visual-type guide (52)") as native components: typed statements, automatic layout, and each part a click target. The types marked **built** in the table below ship with austere-axi: a page needs no install and no tag. Two upstream types are not planned. [Every type on one page](../examples/diagram-types.html) shows each one drawn.
 
 An agent finds them in this order:
 

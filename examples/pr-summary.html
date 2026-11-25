@@ -8,7 +8,7 @@
 </head>
 <body>
 <script type="text/openui">
-root = Stack([summary, flow, change, tests, files, followUps], "column", "l")
+root = Stack([summary, flow, request, change, tests, files, followUps], "column", "l")
 summary = Card([CardHeader("PR #482: token-bucket rate limiter", "5 files, +96 -12"), facts, why])
 facts = EntityList([{left: "Author", right: "dana"}, {left: "Tests", right: "212 passed, 6 new"}, {left: "Risk", right: "Medium: sits on every request"}, {left: "Flag", right: "RATE_LIMIT_V2, off by default"}])
 why = MarkDownRenderer("The fixed-window limiter let a client burst **2x** the limit across a window boundary. This swaps it for a token bucket per API key, kept in Redis, and returns `Retry-After` on 429.")
@@ -23,6 +23,15 @@ toGateway = Edge(client, gateway, "HTTPS", "emphasis")
 toLimiter = Edge(gateway, limiter)
 toRedis = Edge(limiter, redis, "EVALSHA", "dashed")
 toApi = Edge(limiter, api, "allowed", "solid", "success")
+request = Card([CardHeader("One request, call by call", "The 429 path costs one Redis round trip"), requestSeq])
+requestSeq = Sequence([rqClient, rqLimiter, rqRedis], [rqSend, rqTake, rqLeft, rqDenied])
+rqClient = Actor("Client", "external")
+rqLimiter = Actor("Rate limiter")
+rqRedis = Actor("Redis", "database")
+rqSend = Message(rqClient, rqLimiter, "GET /v2/invoices")
+rqTake = Message(rqLimiter, rqRedis, "take 1 token (Lua)")
+rqLeft = Message(rqRedis, rqLimiter, "0 left", "return")
+rqDenied = Message(rqLimiter, rqClient, "429 + Retry-After", "return", "emphasis")
 change = Card([CardHeader("Core change", "src/middleware/rate-limit.ts"), limiterPatch])
 limiterPatch = Diff("diff --git a/src/middleware/rate-limit.ts b/src/middleware/rate-limit.ts
 --- a/src/middleware/rate-limit.ts
