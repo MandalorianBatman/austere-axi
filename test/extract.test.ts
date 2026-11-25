@@ -20,6 +20,7 @@ const PORT = await freePort();
 const STATE = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-extract-state-")));
 const WORK = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "austere-extract-work-")));
 const EXAMPLES = path.join(import.meta.dirname, "..", "examples");
+const FIXTURES = path.join(import.meta.dirname, "fixtures");
 const ENV: NodeJS.ProcessEnv = {
   ...process.env,
   AUSTERE_AXI_STATE_DIR: STATE,
@@ -78,7 +79,8 @@ function owner(method: string, route: string, body: unknown): Promise<number | u
 
 const copy = (name: string, as = name): string => {
   const file = path.join(WORK, as);
-  fs.copyFileSync(path.join(EXAMPLES, name), file);
+  const gallery = path.join(EXAMPLES, name);
+  fs.copyFileSync(fs.existsSync(gallery) ? gallery : path.join(FIXTURES, name), file);
   return file;
 };
 
@@ -101,9 +103,10 @@ test("outline: the tree from root, a row per named statement; the largest exampl
     .split("\nnext:")[0]
     .split("\n")
     .map((l) => l.replace(/^ {2}/, ""));
-  assert.deepEqual(rows.slice(0, 9), [
-    "root Stack (8)",
-    "  intro Card (1): Session storage migration Move sessions from Redis to…",
+  assert.deepEqual(rows.slice(0, 10), [
+    "root Stack (9)",
+    "  title MarkDownRenderer: # Session storage migration Move sessions from Redis…",
+    "  intro Card (1)",
     "    introText MarkDownRenderer: Sessions live only in Redis and are lost…",
     "  kpis OverviewCardBlock (3)",
     "    kpiUsers OverviewCardItem: Forced logouts / mo 38,214 last 30 days",
@@ -147,7 +150,7 @@ test("show: source, plain text, dependencies; an unknown name lists the page's s
   );
   const bad = await cli(["show", file, "nope"]);
   assert.equal(bad.code, 1);
-  assert.match(bad.out, /has no statement nope; it has: root, intro, introText/);
+  assert.match(bad.out, /has no statement nope; it has: root, title, intro, introText/);
 });
 
 test("find: words in a page's statements, best first; the last line says how to copy", async () => {

@@ -149,6 +149,7 @@ test("every example page: every statement reads as text, and only containers and
   const mayBeEmpty = new Set([
     "Stack",
     "Card",
+    "Tabs",
     "OverviewCardBlock",
     "Timeline",
     "Breadcrumb",
@@ -166,6 +167,7 @@ test("every example page: every statement reads as text, and only containers and
     "ERDiagram",
     "Traceability",
     "ScheduleNetwork",
+    "Gantt",
     "Venn",
     "Pyramid",
     "Loop",

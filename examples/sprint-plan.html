@@ -8,8 +8,9 @@
 </head>
 <body>
 <script type="text/openui">
-root = Stack([goal, schedule, capacity, scope, risks, decide], "column", "l")
-goal = Card([CardHeader("Sprint 24", "2 Nov – 13 Nov · 4 engineers"), goalText, goalKpis])
+root = Stack([title, goal, schedule, capacity, scope, risks, decide], "column", "l")
+title = MarkDownRenderer("# Sprint 24\n\nSprint plan · 2 Nov to 13 Nov · 4 engineers")
+goal = Card([goalText, goalKpis])
 goalText = MarkDownRenderer("**Goal:** ship team workspaces to 10% of accounts behind a flag, with billing seats correct on day one.
 
 Anything that does not serve that goal waits for sprint 25.")
@@ -18,22 +19,14 @@ kpiPoints = OverviewCardItem("points", Text("text", "Planned"), MetricIndicatorI
 kpiCarry = OverviewCardItem("carry", Text("text", "Carry-over"), MetricIndicatorInline("5 pts", "2 stories"))
 kpiBuffer = OverviewCardItem("buffer", Text("text", "Unplanned buffer"), MetricIndicatorInline("15%", "one day for bugs"))
 schedule = Card([CardHeader("Schedule", "Billing is the long pole: it cannot start before the membership API lands."), scheduleMap])
-scheduleMap = Architecture([schemaWork, apiWork, billingWork, switcherWork, inviteWork, rolloutWork, bufferWork], [schemaToApi, apiToBilling, switcherToInvite, billingToRollout, inviteToRollout], [backendLane, frontendLane, releaseLane], "lanes")
-schemaWork = Node("Workspace schema + migration", "database", "2–3 Nov · Ben", "done", "success", 1)
-apiWork = Node("Membership API", "backend", "4–7 Nov · Ben", "in progress", "info", 2)
-billingWork = Node("Seat counting in billing", "backend", "8–10 Nov · Chi", "long pole", "warning", 3)
-switcherWork = Node("Workspace switcher", "frontend", "4–7 Nov · Ana", "in progress", "info", 2)
-inviteWork = Node("Invite flow", "frontend", "8–10 Nov · Ana", null, null, 3)
-rolloutWork = Node("Flag + staged rollout", "cloud", "12 Nov", "milestone", "strong", 4)
-bufferWork = Node("Bug buffer", "backend", "12–13 Nov", null, null, 5)
-schemaToApi = Edge(schemaWork, apiWork)
-apiToBilling = Edge(apiWork, billingWork, "API contract", "emphasis")
-switcherToInvite = Edge(switcherWork, inviteWork)
-billingToRollout = Edge(billingWork, rolloutWork, "seats on day one", "emphasis")
-inviteToRollout = Edge(inviteWork, rolloutWork)
-backendLane = Group("Backend", [schemaWork, apiWork, billingWork], "plain")
-frontendLane = Group("Frontend", [switcherWork, inviteWork], "plain")
-releaseLane = Group("Release", [rolloutWork, bufferWork], "plain")
+scheduleMap = Gantt([tSchema, tApi, tSwitcher, tBilling, tInvite, tRollout, tBuffer])
+tSchema = GanttTask("Workspace schema + migration", "2026-11-02", "2026-11-03", 100, "Ben")
+tApi = GanttTask("Membership API", "2026-11-04", "2026-11-07", 60, "Ben")
+tSwitcher = GanttTask("Workspace switcher", "2026-11-04", "2026-11-07", 60, "Ana")
+tBilling = GanttTask("Seat counting in billing", "2026-11-08", "2026-11-10", 0, "Chi")
+tInvite = GanttTask("Invite flow", "2026-11-08", "2026-11-10", 0, "Ana")
+tRollout = GanttTask("Flag on for 10% of accounts", "2026-11-12")
+tBuffer = GanttTask("Bug buffer", "2026-11-12", "2026-11-13", 0, "Dev")
 capacity = Card([CardHeader("Capacity by person"), capacityChart])
 capacityChart = BarChart(["Ana", "Ben", "Chi", "Dev"], [Series("Planned pts", [10, 9, 8, 7]), Series("Available pts", [11, 10, 8, 9])], "grouped", "Engineer", "pts")
 scope = Card([CardHeader("Committed stories"), storyTable])
@@ -48,7 +41,7 @@ riskList = Steps([StepsItem("Wed 4 Nov", "Checkpoint: membership API contract fr
 decide = Card([CardHeader("Your call"), decideForm])
 decideForm = Form("scope", decideButtons, [auditField])
 auditField = FormControl("Audit log", RadioGroup("audit", [RadioItem("Keep in sprint", "3 pts, leaves 12% buffer", "keep"), RadioItem("Move to sprint 25", "Buffer back to 21%", "move")], "move"))
-decideButtons = Buttons([Button("Commit the sprint", @ToAssistant("Sprint 24 committed"), "primary"), Button("Rebalance Ana's load")])
+decideButtons = Buttons([Button("Commit the sprint", @ToAssistant("Sprint 24 committed"), "primary"), Button("Rebalance Ana's load", null, "secondary")])
 </script>
 </body>
 </html>

@@ -8,8 +8,22 @@
 </head>
 <body>
 <script type="text/openui">
-root = Stack([overview, endpoints, shapes, pagination, risks, decide], "column", "l")
-overview = Card([CardHeader("Bulk invoice export", "Proposal for /v2/invoices/exports"), overviewText, breakingNote])
+root = Stack([title, overview, flow, endpoints, shapes, pagination, risks, decide], "column", "l")
+title = MarkDownRenderer("# Bulk invoice export\n\nAPI design review · proposal for /v2/invoices/exports")
+overview = Card([overviewText, breakingNote])
+flow = Card([CardHeader("One export, end to end", "Create, poll, download. The client never holds a connection open."), flowSeq])
+flowSeq = Sequence([fClient, fApi, fWorker, fStore], [fCreate, fQueue, fAccepted, fWrite, fPoll, fDone, fDownload])
+fClient = Actor("Client", "external")
+fApi = Actor("API", "service")
+fWorker = Actor("Export worker", "service")
+fStore = Actor("File storage", "database")
+fCreate = Message(fClient, fApi, "POST /v2/invoices/exports")
+fQueue = Message(fApi, fWorker, "enqueue job", "async")
+fAccepted = Message(fApi, fClient, "202 + job id", "return")
+fWrite = Message(fWorker, fStore, "write CSV", "async")
+fPoll = Message(fClient, fApi, "GET .../exports/{id}")
+fDone = Message(fApi, fClient, "200 status: done", "return")
+fDownload = Message(fClient, fStore, "GET signed URL (302)", "call", "emphasis")
 overviewText = MarkDownRenderer("Finance needs every invoice for a quarter as CSV. Today they page through `GET /v1/invoices` for about 40 minutes and hit the rate limit twice.
 
 **Proposal:** an asynchronous export job. Create it, poll it, download one file.
@@ -22,34 +36,34 @@ endpoints = Card([CardHeader("Endpoints"), endpointTable])
 endpointTable = Table([Col("Method", ["POST", "GET", "GET", "DELETE"]), Col("Path", ["/v2/invoices/exports", "/v2/invoices/exports/{id}", "/v2/invoices/exports/{id}/file", "/v2/invoices/exports/{id}"]), Col("Purpose", ["Start a job", "Status and progress", "Download when ready (302 to a signed URL)", "Cancel or delete early"]), Col("Success", ["202", "200", "302", "204"])])
 shapes = Card([CardHeader("Request and response"), shapeTabs])
 shapeTabs = Tabs([TabItem("create", "Create", [createReq, createRes]), TabItem("status", "Poll", [statusRes]), TabItem("error", "Errors", [errorRes])])
-createReq = CodeBlock("http", "POST /v2/invoices/exports
+createReq = CodeBlock("http", 'POST /v2/invoices/exports
 Idempotency-Key: 7c1e0f3a-2b0d-4a51-9a40-6f1d1e9c2b11
 
 {
-  \"from\": \"2026-07-01\",
-  \"to\": \"2026-09-30\",
-  \"format\": \"csv\",
-  \"status\": [\"paid\", \"open\"]
-}")
-createRes = CodeBlock("json", "{
-  \"id\": \"exp_01J9ZK3Q\",
-  \"status\": \"queued\",
-  \"links\": { \"self\": \"/v2/invoices/exports/exp_01J9ZK3Q\" }
-}")
-statusRes = CodeBlock("json", "{
-  \"id\": \"exp_01J9ZK3Q\",
-  \"status\": \"running\",
-  \"rows_written\": 182400,
-  \"rows_total\": 311250,
-  \"retry_after\": 5
-}")
-errorRes = CodeBlock("json", "{
-  \"error\": {
-    \"code\": \"range_too_large\",
-    \"message\": \"A range may cover at most 366 days.\",
-    \"param\": \"to\"
+  "from": "2026-07-01",
+  "to": "2026-09-30",
+  "format": "csv",
+  "status": ["paid", "open"]
+}')
+createRes = CodeBlock("json", '{
+  "id": "exp_01J9ZK3Q",
+  "status": "queued",
+  "links": { "self": "/v2/invoices/exports/exp_01J9ZK3Q" }
+}')
+statusRes = CodeBlock("json", '{
+  "id": "exp_01J9ZK3Q",
+  "status": "running",
+  "rows_written": 182400,
+  "rows_total": 311250,
+  "retry_after": 5
+}')
+errorRes = CodeBlock("json", '{
+  "error": {
+    "code": "range_too_large",
+    "message": "A range may cover at most 366 days.",
+    "param": "to"
   }
-}")
+}')
 pagination = Card([CardHeader("Why a job, not a bigger page"), alternatives])
 alternatives = Table([Col("Option", ["Raise page size to 10,000", "Streaming NDJSON response", "Async export job"]), Col("Client effort", ["Low", "Medium", "Medium"]), Col("Timeouts", ["Likely above 30 s", "Connection can drop mid-file", "None, polled"]), Col("Verdict", [vNo, vNo, vYes])])
 vNo = Tag("rejected", null, "sm", "danger")
@@ -61,7 +75,7 @@ privacyText = MarkDownRenderer("Signed URLs last 10 minutes and are bound to the
 decide = Card([CardHeader("Your call"), decideForm])
 decideForm = Form("format", decideButtons, [formatField])
 formatField = FormControl("Output formats at launch", CheckBoxGroup("formats", [CheckBoxItem("CSV", "Required by finance", "csv"), CheckBoxItem("NDJSON", "For the data team", "ndjson"), CheckBoxItem("Parquet", "Not yet requested", "parquet")]))
-decideButtons = Buttons([Button("Send decision", @ToAssistant("Decision: export formats"), "primary"), Button("Split large accounts by month")])
+decideButtons = Buttons([Button("Send decision", @ToAssistant("Decision: export formats"), "primary"), Button("Split large accounts by month", null, "secondary")])
 </script>
 </body>
 </html>

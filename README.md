@@ -42,9 +42,9 @@ Repeat until it is right. When you are done, press **Done** (or **Send & finish*
 
 | | Example |
 |---|---|
-| An architecture review | [Multi-region event mesh](https://mandalorianbatman.github.io/austere-axi/gallery/architecture-review.html): topology, Radar trade-offs and Waterfall latency |
-| An interactive learning guide | [Raft consensus internals](https://mandalorianbatman.github.io/austere-axi/gallery/learning-guide.html): node state machine, election sequence, Polar metrics and Treemap |
-| A research benchmark report | [Reasoning model evaluation](https://mandalorianbatman.github.io/austere-axi/gallery/research-report.html): quality vs latency Quadrant, token flow Sankey and domain metrics |
+| An architecture review | [Multi-region event mesh](https://mandalorianbatman.github.io/austere-axi/gallery/architecture-review.html): topology with an EU residency boundary, Radar trade-offs and a Waterfall latency budget |
+| An interactive learning guide | [How Raft elects a leader](https://mandalorianbatman.github.io/austere-axi/gallery/learning-guide.html): role state machine, election and log replication sequences, and a quiz |
+| A research benchmark report | [austere-axi vs lavish-axi](https://mandalorianbatman.github.io/austere-axi/gallery/research-report.html): the repo's own benchmark as KPIs, a Sankey of validation outcomes and a per-task chart |
 | A plan, before any work starts | [Moving a database, with a diagram, rollout options and a decision form](https://mandalorianbatman.github.io/austere-axi/gallery/session-migration.html) |
 | A design, with alternatives to choose from | [API design review](https://mandalorianbatman.github.io/austere-axi/gallery/api-design-review.html) |
 | A summary of what the agent changed | [Pull request summary](https://mandalorianbatman.github.io/austere-axi/gallery/pr-summary.html) |
