@@ -58,17 +58,17 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Sankey | `Sankey` | component | planned |
 | Fishbone | `Fishbone` | component | planned |
 | Wardley map | `WardleyMap` | component | planned |
-| Kanban | `Kanban` | component | planned |
-| User journey | `UserJourney` | component | planned |
-| Service blueprint | `ServiceBlueprint` | component | planned |
+| Kanban | `Kanban` (`KanbanCard`) | component | built |
+| User journey | `UserJourney` (`JourneyStep`) | component | built |
+| Service blueprint | `ServiceBlueprint` (`BlueprintStep`) | component | built |
 | Deployment | `Architecture` with nested groups | recipe | planned |
 | Dependency graph | `Architecture` | recipe | planned |
 | UML class | `ClassDiagram` (`ClassBox`, `ClassLink`) | component | built |
-| Story map | `StoryMap` | component | planned |
+| Story map | `StoryMap` (`Story`) | component | built |
 | Database schema | `DatabaseSchema`: `ERDiagram` with typed field lines | recipe | built |
 | SBGN | `Architecture` | recipe | planned |
 | Requirement traceability | `Traceability` | component | planned |
-| Event modeling | `EventModel` | component | planned |
+| Event modeling | `EventModel` (`EventItem`) | component | built |
 | Unit Grid | `UnitGrid` | component | planned |
 | Schedule network | `ScheduleNetwork` | component | planned |
 

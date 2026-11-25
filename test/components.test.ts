@@ -23,6 +23,13 @@ import type { FlowLaidOutNode } from "../src/runtime/components/_flow-model.ts";
 import { ORG_CHART, TREE } from "../src/runtime/components/_tree-model.ts";
 import { parseCardinality, parseField } from "../src/runtime/components/_data-parse.ts";
 import { CLASS_DIAGRAM, ER_DIAGRAM } from "../src/runtime/components/_data-model.ts";
+import {
+  buildBlueprint,
+  buildEventModel,
+  buildJourney,
+  buildKanban,
+  buildStoryMap,
+} from "../packs/diagrams/src/_board-model.ts";
 import { LAYER_SPEC, NESTED_SPEC, buildLevels } from "../packs/diagrams/src/_containment-model.ts";
 
 const pick = (e: FileEntry | null): Record<string, unknown> | null =>
@@ -1288,4 +1295,144 @@ test("ClassDiagram notes: members over 5, accessors, bare associations, and a cl
     /no multiplicity/,
   );
   assert.doesNotMatch(notes({ classes: [box("A", ["+run(): void"])], links: [] }), /data model/);
+});
+
+const part = (props: Record<string, unknown>, statementId?: string) => ({ props, statementId });
+
+test("Kanban: a column over its limit is marked, an unlisted column is added and reported, a card listed twice is drawn once", () => {
+  const a = part({ title: "A", column: "doing" }, "a");
+  const board = buildKanban({
+    columns: ["Todo", "Doing", "Done"],
+    limits: [0, 1, 3],
+    cards: [
+      a,
+      part({ title: "B", column: " Doing ", state: "blocked" }),
+      a,
+      part({ title: "C", column: "Lost" }),
+    ],
+  });
+  assert.deepEqual(
+    board.columns.map((c) => [c.label, c.chip, c.over]),
+    [
+      ["Todo", "0", false],
+      ["Doing", "2/1", true],
+      ["Done", "0/3", false],
+      ["Lost", "1", false],
+    ],
+    "Lost is added",
+  );
+  assert.equal(board.cards.length, 3);
+  assert.deepEqual(
+    board.cards.map((c) => [c.title, c.col, c.state]),
+    [
+      ["A", 1, ""],
+      ["B", 1, "blocked"],
+      ["C", 3, ""],
+    ],
+  );
+  assert.ok(
+    board.problems.some((p) =>
+      /KanbanCard "C" has column "Lost", which Kanban does not list/.test(p),
+    ),
+  );
+  assert.ok(board.problems.some((p) => /KanbanCard a is listed twice in Kanban/.test(p)));
+  assert.equal(buildKanban(undefined).columns.length, 0);
+});
+
+test("StoryMap: the cut runs under the first slice, a story with no slice goes in it, no slices means no cut", () => {
+  const props = {
+    activities: ["Find", "Buy"],
+    slices: ["MVP", "Later"],
+    stories: [
+      part({ title: "S", activity: "find", risk: true }),
+      part({ title: "T", activity: "Buy", slice: "later" }),
+    ],
+  };
+  const map = buildStoryMap(props);
+  assert.deepEqual(map.lines, [{ after: 0, kind: "cut", label: "Release cut" }]);
+  assert.deepEqual(
+    map.cards.map((c) => [c.row, c.col, c.state]),
+    [
+      [0, 0, "risk"],
+      [1, 1, ""],
+    ],
+  );
+  assert.equal(buildStoryMap({ ...props, cut: 2 }).lines.length, 0, "nothing lies under the cut");
+  const bare = buildStoryMap({ activities: ["Find"], stories: [] });
+  assert.equal(bare.lines.length, 0);
+  assert.ok(bare.problems.some((p) => /no slices/.test(p)));
+});
+
+test("UserJourney: the curve meets between stages, the lowest stage is the trough, a stage with no score breaks the curve", () => {
+  const step = (stage: string, score?: number) => part({ action: stage, stage, score });
+  const journey = buildJourney({
+    stages: ["A", "B", "C", "D"],
+    steps: [step("A", 5), step("B", 1), step("C", 9), step("D")],
+  });
+  const [a, b, c, d] = journey.cards;
+  assert.equal(a.curve?.y, 0);
+  assert.equal(a.curve?.left, null);
+  assert.equal(a.curve?.right, 0.5, "halfway between 5 and 1");
+  assert.equal(b.curve?.left, 0.5, "the same point from the other side");
+  assert.equal(c.curve?.score, 5, "scores clamp to 1..5");
+  assert.equal(c.curve?.right, null, "D has no score");
+  assert.equal(d.curve, null);
+  assert.deepEqual(
+    journey.cards.map((k) => k.trough),
+    [false, true, false, false],
+  );
+  assert.ok(journey.problems.some((p) => /Stage "D" has no score/.test(p)));
+  const flat = buildJourney({ stages: ["A", "B"], steps: [step("A", 3), step("B", 3)] });
+  assert.ok(
+    flat.cards.every((k) => !k.trough),
+    "a flat curve has no trough",
+  );
+});
+
+test("ServiceBlueprint and EventModel: fixed rows, the line of visibility between front and back", () => {
+  const step = (layer: string, stage = "S") => part({ action: layer, stage, layer });
+  const blueprint = buildBlueprint({
+    stages: ["S"],
+    steps: [step("customer"), step("backstage"), step("plaid")],
+  });
+  assert.deepEqual(
+    blueprint.rows.map((r) => r.key),
+    ["customer", "frontstage", "backstage"],
+  );
+  assert.deepEqual(
+    blueprint.lines.map((l) => [l.after, l.kind]),
+    [
+      [0, "interaction"],
+      [1, "visibility"],
+    ],
+  );
+  assert.ok(blueprint.problems.some((p) => /layer "plaid"/.test(p)));
+  const withSupport = buildBlueprint({ stages: ["S"], steps: [step("support"), step("evidence")] });
+  assert.deepEqual(
+    withSupport.rows.map((r) => r.key),
+    ["evidence", "customer", "frontstage", "backstage", "support"],
+  );
+  assert.deepEqual(
+    withSupport.lines.map((l) => l.after),
+    [1, 2, 3],
+  );
+  const events = buildEventModel({
+    stages: ["One"],
+    items: [
+      part({ name: "Place", stage: "One", kind: "command" }),
+      part({ name: "List", stage: "one", kind: "read-model" }),
+    ],
+  });
+  assert.deepEqual(
+    events.rows.map((r) => r.key),
+    ["command", "event", "read-model"],
+  );
+  assert.deepEqual(
+    events.cards.map((c) => [c.row, c.col]),
+    [
+      [0, 0],
+      [2, 0],
+    ],
+  );
+  assert.equal(events.problems.length, 0);
 });

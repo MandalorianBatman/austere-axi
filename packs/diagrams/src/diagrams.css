@@ -319,3 +319,291 @@
   --dg-tint: rgba(255, 255, 255, 0.08);
   box-shadow: inset 3px 0 0 #ececef;
 }
+
+/* ── Boards: Kanban, StoryMap, UserJourney, ServiceBlueprint, EventModel ── */
+.dg-board {
+  --dg-label: 120px;
+}
+.dg-b-grid {
+  display: grid;
+  align-items: stretch;
+  font-family: var(--openui-font-body);
+}
+.dg-b-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 4px 8px;
+  border-bottom: 1px solid #5a5a64;
+}
+.dg-b-head-name {
+  min-width: 0;
+  color: #ececef;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.dg-b-chip {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--austere-line);
+  border-radius: 3px;
+  color: var(--austere-muted);
+  font-family: var(--openui-font-code);
+  font-size: 11px;
+}
+.dg-b-head.is-over .dg-b-chip {
+  border-style: dashed;
+  border-color: #f06060;
+  color: #f06060;
+}
+.dg-b-chip[data-over]::after {
+  content: " " attr(data-over);
+}
+.dg-b-rowlabel {
+  padding: 10px 4px 0 0;
+  color: var(--austere-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.dg-b-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.dg-b-cell.is-empty {
+  min-height: 40px;
+}
+.dg-b-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #5a5a64;
+  border-radius: 6px;
+  background: #1b1b1f;
+}
+.dg-b-title {
+  color: #ececef;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.dg-b-detail,
+.dg-b-pain {
+  color: var(--austere-muted);
+  font-family: var(--openui-font-code);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.dg-b-card[data-flag]::before {
+  content: attr(data-flag);
+  align-self: flex-start;
+  margin-bottom: 2px;
+  padding: 0 5px;
+  border: 1px solid currentcolor;
+  border-radius: 2px;
+  color: var(--austere-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.dg-b-card.s-blocked,
+.dg-b-card.s-risk,
+.dg-b-card.is-trough {
+  border-style: dashed;
+  border-color: #f06060;
+  background: rgba(240, 96, 96, 0.08);
+  box-shadow: inset 4px 0 0 #f06060;
+}
+.dg-b-card.s-blocked::before,
+.dg-b-card.s-risk::before,
+.dg-b-card.is-trough::before {
+  color: #f06060;
+}
+.dg-b-card.s-waiting {
+  border-style: dashed;
+  border-color: #85858f;
+}
+.dg-b-card.s-done {
+  border-color: #3a3a42;
+  background: rgba(255, 255, 255, 0.04);
+}
+.dg-b-card.s-done .dg-b-title {
+  color: #a9a9b2;
+  font-weight: 500;
+}
+.dg-b-card.s-focus {
+  border-color: #f0b450;
+  background: rgba(240, 180, 80, 0.1);
+  box-shadow: inset 4px 0 0 #f0b450;
+}
+.dg-b-card.s-focus::before {
+  color: #f0b450;
+}
+
+/* Rules between rows: the release cut, the line of visibility. */
+.dg-b-line {
+  position: relative;
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  height: 18px;
+  margin: -4px 0;
+}
+.dg-b-line::before {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  border-top: 1px solid #5a5a64;
+}
+.dg-b-line > span {
+  position: relative;
+  align-self: center;
+  padding: 0 8px;
+  background: var(--openui-background, #121214);
+  color: var(--austere-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dg-b-line.is-interaction::before {
+  border-top-style: dashed;
+  border-top-color: #4a4a52;
+}
+.dg-b-line.is-visibility::before {
+  border-top: 2px solid #c4c4cc;
+}
+.dg-b-line.is-visibility > span {
+  color: #ececef;
+}
+.dg-b-line.is-cut::before {
+  border-top: 2px solid #f0b450;
+}
+.dg-b-line.is-cut > span {
+  color: #f0b450;
+}
+
+/* Blueprint: the layers below the line are hidden work. */
+.dg-b-cell.k-backstage,
+.dg-b-cell.k-support {
+  background: rgba(255, 255, 255, 0.06);
+}
+.dg-b-card.k-backstage,
+.dg-b-card.k-support {
+  border-color: #4a4a52;
+}
+
+/* Event model: a colour and a row label for each kind. */
+.dg-b-card.k-command {
+  box-shadow: inset 4px 0 0 #8fb0ff;
+}
+.dg-b-card.k-event {
+  box-shadow: inset 4px 0 0 #f0b450;
+}
+.dg-b-card.k-read-model {
+  box-shadow: inset 4px 0 0 #6fcf97;
+}
+
+/* UserJourney: the feeling curve runs through the top of each stage. */
+.dg-board-journey .dg-b-grid {
+  border: 1px solid #5a5a64;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.dg-board-journey .dg-b-head {
+  padding: 10px 12px;
+}
+.dg-board-journey .dg-b-head + .dg-b-head {
+  border-left: 1px solid var(--austere-line);
+}
+.dg-board-journey .dg-b-cell {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+.dg-board-journey .dg-b-card {
+  flex: 1;
+  gap: 6px;
+  padding: 0 12px 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.dg-board-journey .dg-b-cell + .dg-b-cell .dg-b-card {
+  border-left: 1px solid var(--austere-line);
+}
+.dg-b-sent {
+  position: relative;
+  order: -1;
+  height: 96px;
+  margin: 0 -12px 4px;
+  background:
+    linear-gradient(var(--austere-line), var(--austere-line)) 0 12% / 100% 1px no-repeat,
+    linear-gradient(var(--austere-line), var(--austere-line)) 0 50% / 100% 1px no-repeat,
+    linear-gradient(var(--austere-line), var(--austere-line)) 0 88% / 100% 1px no-repeat;
+}
+.dg-b-sent svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.dg-b-sent line {
+  stroke: #8b8b94;
+  stroke-width: 1.6;
+}
+.dg-b-dot {
+  position: absolute;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #8b8b94;
+  border-radius: 50%;
+  background: #1b1b1f;
+  transform: translate(-50%, -50%);
+}
+.dg-b-score {
+  color: #ececef;
+  font-family: var(--openui-font-code);
+  font-size: 11px;
+  font-weight: 600;
+}
+.dg-b-card.is-trough .dg-b-dot {
+  border-color: #f06060;
+}
+.dg-b-card.is-trough {
+  background: rgba(240, 96, 96, 0.08);
+  border-style: solid;
+  box-shadow: none;
+}
+.dg-b-pain {
+  padding: 3px 6px;
+  border: 1px dashed #f06060;
+  border-radius: 3px;
+  color: #f8b4b4;
+}
+.dg-b-legend {
+  margin: 8px 2px 0;
+  color: var(--austere-muted);
+  font-size: 12px;
+}
