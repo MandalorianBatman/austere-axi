@@ -57,6 +57,9 @@ const THUMB = { width: 1280, height: 800 };
 const HERO_EXAMPLE = "session-migration";
 // Gallery order. Examples not listed follow, alphabetically.
 const ORDER = [
+  "architecture-review",
+  "learning-guide",
+  "research-report",
   "session-migration",
   "incident-postmortem",
   "api-design-review",

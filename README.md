@@ -42,6 +42,9 @@ Repeat until it is right. When you are done, press **Done** (or **Send & finish*
 
 | | Example |
 |---|---|
+| An architecture review | [Multi-region event mesh](https://mandalorianbatman.github.io/austere-axi/gallery/architecture-review.html): topology, Radar trade-offs and Waterfall latency |
+| An interactive learning guide | [Raft consensus internals](https://mandalorianbatman.github.io/austere-axi/gallery/learning-guide.html): node state machine, election sequence, Polar metrics and Treemap |
+| A research benchmark report | [Reasoning model evaluation](https://mandalorianbatman.github.io/austere-axi/gallery/research-report.html): quality vs latency Quadrant, token flow Sankey and domain metrics |
 | A plan, before any work starts | [Moving a database, with a diagram, rollout options and a decision form](https://mandalorianbatman.github.io/austere-axi/gallery/session-migration.html) |
 | A design, with alternatives to choose from | [API design review](https://mandalorianbatman.github.io/austere-axi/gallery/api-design-review.html) |
 | A summary of what the agent changed | [Pull request summary](https://mandalorianbatman.github.io/austere-axi/gallery/pr-summary.html) |

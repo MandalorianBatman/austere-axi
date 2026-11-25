@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="description" content="Interactive learning guide to the Raft consensus protocol: node state machine, leader election sequence, and quorum replication profile.">
+<title>Interactive guide: Raft consensus algorithm</title>
+<script src="../dist/austere.js"></script>
+</head>
+<body>
+<script type="text/openui">
+root = Stack([titleCard, lifecycleCard, electionCard, clusterMetricsCard, quizCard], "column", "l")
+titleCard = Card([CardHeader("Raft consensus: distributed state machines", "Interactive systems guide · 15 min read"), introText, coreRule])
+introText = MarkDownRenderer("Raft decomposes distributed consensus into three independent subproblems: **Leader Election**, **Log Replication**, and **Safety**. Each server in the cluster is in one of three states at any given moment: **Follower**, **Candidate**, or **Leader**.
+
+- **Follower:** passive role; responds to incoming RPCs from candidates and leaders.
+- **Candidate:** transitions on election timeout; solicits votes from peers.
+- **Leader:** handles all client interactions and replicates log entries across the quorum.")
+coreRule = Callout("info", "Leader Completeness Property", "If a log entry is committed in a given term, then that entry will be present in the logs of the leaders for all higher-numbered terms.")
+lifecycleCard = Card([CardHeader("Node lifecycle state machine", "Transitions between Follower, Candidate, and Leader states"), lifecycleMachine])
+lifecycleMachine = StateMachine([stFollower, stCandidate, stLeader], [trTimeout, trVoteOk, trSplit, trHigherTerm])
+stFollower = State("Follower", "initial", "resets election timer on heartbeat")
+stCandidate = State("Candidate", "state", "increments term, votes for self")
+stLeader = State("Leader", "state", "sends periodic empty AppendEntries")
+trTimeout = Transition(stFollower, stCandidate, "timeout", null, "start election")
+trVoteOk = Transition(stCandidate, stLeader, "majority", null, "become leader")
+trSplit = Transition(stCandidate, stCandidate, "split vote", null, "restart timer")
+trHigherTerm = Transition(stLeader, stFollower, "discover peer", "term > currentTerm", "step down")
+electionCard = Card([CardHeader("Leader election sequence", "Candidate requests votes from cluster peers"), electionSeq])
+electionSeq = Sequence([candidateNode, peerA, peerB], [msgRequestVoteA, msgVoteA, msgRequestVoteB, msgVoteB, msgHeartbeatA])
+candidateNode = Actor("Candidate S1", "service")
+peerA = Actor("Peer S2", "service")
+peerB = Actor("Peer S3", "service")
+msgRequestVoteA = Message(candidateNode, peerA, "RequestVote(term=2, id=S1)", "call")
+msgVoteA = Message(peerA, candidateNode, "VoteGranted(term=2)", "return", "emphasis")
+msgRequestVoteB = Message(candidateNode, peerB, "RequestVote(term=2, id=S1)", "call")
+msgVoteB = Message(peerB, candidateNode, "VoteGranted(term=2)", "return")
+msgHeartbeatA = Message(candidateNode, peerA, "AppendEntries(term=2)", "async")
+clusterMetricsCard = Card([CardHeader("Cluster telemetry", "5-node peer latency (ms) and storage allocation (MB)"), metricsStack])
+metricsStack = Stack([latencyPolar, memoryTreemap], "row", "m")
+latencyPolar = PolarChart(["Peer 1", "Peer 2", "Peer 3", "Peer 4", "Witness"], [12, 15, 28, 14, 8], "ms", "Peer 3")
+memoryTreemap = Treemap(["Segment WAL", "Snapshots", "Term Cache", "Peer Buffers", "RPC Logs"], [512, 256, 128, 64, 32], "MB", "Segment WAL")
+quizCard = Card([CardHeader("Knowledge check"), quizForm])
+quizForm = Form("raft_quiz", quizButtons, [q1Control, notesControl])
+q1Control = FormControl("When does a follower reject an AppendEntries RPC?", RadioGroup("q1", [RadioItem("Term mismatch", "Leader term is less than follower currentTerm", "term_mismatch"), RadioItem("More log entries", "Leader has more log entries than follower", "more_logs"), RadioItem("Timer running", "Election timeout timer is currently active", "timer_active")]))
+notesControl = FormControl("Questions or observations", TextArea("notes", "Add notes or ask for clarification on term increments", 2))
+quizButtons = Buttons([Button("Check answer", @ToAssistant("Checked Raft quiz"), "primary"), Button("Reset")])
+</script>
+</body>
+</html>
