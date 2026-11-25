@@ -1,0 +1,2 @@
+# Usage guides are imported as text into the catalog: keep them LF on every checkout.
+*.md text eol=lf

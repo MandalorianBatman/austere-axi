@@ -339,6 +339,8 @@ test("Expand opens the natural-size diagram in a modal dialog: scroll, annotate,
     await scroll.focus();
     await page.keyboard.press("Escape");
     await frame.locator("dialog[open]").waitFor({ state: "detached", timeout: 5_000 });
+    // The dialog loses `open` before React's close handler moves the annotate layer back.
+    await frame.locator("body > .austere-ui").waitFor({ state: "attached", timeout: 5_000 });
     const after = await frame.evaluate(() => ({
       expand: document.activeElement?.classList.contains("austere-diagram-expand"),
       label: document.activeElement?.getAttribute("aria-label"),

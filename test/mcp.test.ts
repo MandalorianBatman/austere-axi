@@ -157,7 +157,12 @@ test("initializes and lists the review tools", async () => {
   );
   for (const t of list.result.tools) assert.equal(t.inputSchema.type, "object");
   const components = list.result.tools.find((t) => t.name === "components")!;
-  assert.deepEqual(Object.keys(components.inputSchema.properties), ["command", "args", "pack"]);
+  assert.deepEqual(Object.keys(components.inputSchema.properties), [
+    "command",
+    "args",
+    "pack",
+    "group",
+  ]);
   assert.doesNotMatch(
     JSON.stringify(components.inputSchema),
     /trust/i,

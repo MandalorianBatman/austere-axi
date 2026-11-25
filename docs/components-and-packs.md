@@ -1,13 +1,19 @@
 # Components and packs
 
-`spec` covers the common components (~5.8k tokens). Rare ones (area and scatter charts, sliders, switches, editable tables, …) are in the library but not in `spec`. Find them with `components`:
+`spec` covers the common components (~5.7k tokens). Rare ones (area and scatter charts, sliders, switches, editable tables, …) are in the library but not in `spec`. Find them with `components`:
 
 ```sh
-austere-axi components                  # every component, by group
-austere-axi components search scatter   # search by name, group, description; also packs on npm
-austere-axi components show AreaChart   # signature, notes, example
+austere-axi components                  # every component, by group (names only)
+austere-axi components list Diagrams    # a group's chooser: each component and recipe with what it is for
+austere-axi components search scatter   # search by name, keywords, group, description; also packs on npm
+austere-axi components search lanes --group Diagrams   # only that group's entries
+austere-axi components show AreaChart   # signature, its parts' signatures, where it sits, usage guide, two examples
 austere-axi components show Milestones --pack austere-pack-orbit   # one pack's, when several share the name
 ```
+
+`list <Group>` prints one line for each component that can stand on its own (value-only parts such as `Node` are left out) and each recipe: its name and the first sentence of its usage guide. `Diagrams` files them by family. A **recipe** is a diagram type an existing component draws well, such as `Swimlane` (`Architecture` with lanes): it has no component of its own, `show` prints the components to write, and `check` answers a page that calls it with the same. [Diagrams](diagrams.md) lists every diagram type and its status.
+
+A list prop longer than a component's declared limit is a `check` warning (`limit`), with the statement and the line.
 
 **Packs** add components. A pack is an npm package with `dist/pack.js` (the components, a few KB) and `dist/catalog.json` (signatures, examples, schema).
 

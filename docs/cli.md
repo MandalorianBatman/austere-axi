@@ -24,8 +24,8 @@ austere-axi history <file>       every version of a page, newest first, with the
 austere-axi restore <file> --rev n [statement…]   put the page, or named statements, back as they were (a patch, kept as a new revision)
 austere-axi changes [file]       what changed since a cursor: statements before and after, causes, replies   [--project p] [--since cursor] [--limit n]
 austere-axi decisions [file]     forms submitted, buttons pressed, batches sent with Send & finish   [--project p] [--since cursor] [--limit n]
-austere-axi spec [group|pack...] component reference (~5.8k tokens; groups narrow it)
-austere-axi components ...       list | search | show | add | remove | new | build
+austere-axi spec [group|pack...] component reference (~5.7k tokens; groups narrow it)
+austere-axi components ...       list [group] | search <words> [--group G] | show <Name…> | add | remove | new | build; `list Diagrams` is the diagram chooser (see Diagrams)
 austere-axi trust list|add|remove   packs your agent may add without --trust (see Trust)
 austere-axi registry list|add|remove   private npm registries for scopes (see Private registries)
 austere-axi adapter list|command|set     how a run starts an agent: harness binaries, capabilities, the owner's extra arguments (see Adapters)

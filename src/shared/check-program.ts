@@ -4,6 +4,7 @@
 import type { ElementNode, ParseResult } from "@openuidev/react-lang";
 import { splitStatements } from "./statements.ts";
 import { architectureNotes } from "../runtime/components/_architecture-model.ts";
+import type { ComponentLimit } from "../../types/catalog.d.ts";
 
 /** An error or warning `check` reports. */
 export interface CheckEntry {
@@ -29,6 +30,8 @@ export interface CheckProgramOptions {
   lineOf?: (id: string | undefined) => number | undefined;
   /** Rewrite an error or warning before it is reported. */
   decorate?: (entry: CheckEntry) => CheckEntry;
+  /** Component name → its list limits, from the catalog (core and the page's packs). */
+  limits?: Record<string, ComponentLimit[]>;
 }
 
 /** Every rendered element of a component, found by walking from the root. */
@@ -51,7 +54,12 @@ function elementsOf(root: unknown, typeName: string): ElementNode[] {
 /** `program` is OpenUI Lang source. */
 export function checkProgram(
   program: string,
-  { parser, lineOf = () => undefined, decorate = (entry) => entry }: CheckProgramOptions,
+  {
+    parser,
+    lineOf = () => undefined,
+    decorate = (entry) => entry,
+    limits = {},
+  }: CheckProgramOptions,
 ): CheckResult {
   const errors: CheckEntry[] = [];
   const warnings: CheckEntry[] = [];
@@ -128,6 +136,28 @@ export function checkProgram(
       }
     } catch {
       // A layout bug must never fail check; the page reports it when it renders.
+    }
+  }
+  // Limits a component declares (catalog data, no pack code): a list prop past its maximum.
+  for (const [component, list] of Object.entries(limits)) {
+    const warned = new Set<string>();
+    for (const el of elementsOf(parsed.root, component)) {
+      const props: Record<string, unknown> = el.props;
+      for (const limit of list) {
+        const value = props[limit.prop];
+        // A statement shown in two places is one statement: warn once.
+        const key = el.statementId ? `${el.statementId}\0${limit.prop}` : null;
+        if (!Array.isArray(value) || value.length <= limit.max || (key && warned.has(key)))
+          continue;
+        if (key) warned.add(key);
+        warnings.push({
+          code: "limit",
+          statement: el.statementId,
+          line: lineOf(el.statementId),
+          component,
+          message: `${component} ${limit.prop} has ${value.length} items, over its limit of ${limit.max}. ${limit.message}`,
+        });
+      }
     }
   }
   const dupes = new Map<string, number>();

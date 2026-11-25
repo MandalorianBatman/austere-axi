@@ -3,6 +3,7 @@ import { z } from "zod";
 import { austereComponent } from "austere-axi/pack";
 import type { RendererArgs } from "austere-axi/pack";
 import { isElement } from "./element.ts";
+import guide from "./Timeline.md";
 
 const nothing = () => null;
 const STATES = ["done", "current", "upcoming"] as const;
@@ -68,12 +69,24 @@ export const Timeline = austereComponent({
   name: "Timeline",
   group: "Content",
   tier: "extended",
+  alsoIn: ["Diagrams"],
+  family: "Time and plan",
+  keywords: ["timeline", "history", "milestones", "roadmap", "incident", "chronology"],
+  guide,
   props: z.object({ items: z.array(TimelineItem.definition.ref) }),
   description:
     "Vertical history or schedule of TimelineItems, oldest first. Each item is a click target.",
   renderer: TimelineView,
-  example: `history = Timeline([found, fixed, rollout])
+  example: [
+    `history = Timeline([found, fixed, rollout])
 found = TimelineItem("Bug found", "Oct 28", "Retries double-charge on timeout.")
 fixed = TimelineItem("Fix merged", "Oct 29", "Idempotency key added.", "current")
 rollout = TimelineItem("Rollout", "Nov 3", "", "upcoming")`,
+    `incident = Timeline([alert, page, mitigate, rootCause, postmortem])
+alert = TimelineItem("p99 alert fires", "14:02", "checkout-api p99 over 2 s for 5 min")
+page = TimelineItem("On-call paged", "14:04")
+mitigate = TimelineItem("Rolled back 1.14.2", "14:21", "Error rate back to baseline by 14:30.")
+rootCause = TimelineItem("Root cause found", "16:40", "N+1 query in the new cart summary.", "current")
+postmortem = TimelineItem("Postmortem", "Nov 27", "", "upcoming")`,
+  ],
 });

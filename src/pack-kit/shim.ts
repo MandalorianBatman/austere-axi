@@ -28,3 +28,14 @@ export const hostShimPlugin: Plugin = {
     }));
   },
 };
+
+/**
+ * Browser bundles: a usage guide (`import guide from "./X.md"`) is catalog text the page never
+ * reads, so it becomes "". esbuild's "empty" loader would give `{}`, which is not a guide.
+ */
+export const guideStubPlugin: Plugin = {
+  name: "austere-guide-stub",
+  setup(build) {
+    build.onLoad({ filter: /\.md$/ }, () => ({ contents: 'export default "";', loader: "js" }));
+  },
+};

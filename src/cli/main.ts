@@ -521,22 +521,24 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
   spec: {
     usage: "spec [group|pack...]",
-    summary: "component reference; groups: Layout Content Data Charts Forms Buttons",
+    summary: "component reference; groups: Layout Content Data Charts Diagrams Forms Buttons",
     flags: {},
     example: "spec Charts Forms",
   },
   components: {
     usage:
-      "components [list [group] | search <words> | show <Name...> [--pack pkg] | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
+      "components [list [group] | search <words> [--group G] | show <Name...> [--pack pkg] | add <pkg|folder|file.tgz> [--trust] | remove <pkg> | new <dir> [--name pkg] | build [dir]]",
     summary:
-      "every component, including ones spec leaves out; search also lists up to 3 from packs on npm (not installed) under `npm`, and show finds them; install, remove and write packs",
+      "every component and recipe, including ones spec leaves out. list <group>: what each is for (Diagrams by family); show: signature, parts, where it sits, usage guide, examples; search also lists up to 3 from packs on npm (not installed) under `npm`, and show finds them; install, remove and write packs",
     flags: {
       trust:
         "install a third-party pack not on the user's trust list; ask the user to review it and run the command themselves",
       name: "npm package name for `new`",
       pack: "`show` looks only in this pack (core, an installed pack, or one on npm), for a name several packs share",
+      group:
+        "`search` keeps only this group's components and recipes (and those also listed in it)",
     },
-    example: "components search scatter",
+    example: "components list Diagrams",
   },
   trust: {
     usage: "trust [list | add <pkg[@range]|@scope> | remove <pkg|@scope>]",
@@ -723,6 +725,7 @@ const VALUE_FLAGS = new Set([
   "timeout-ms",
   "name",
   "pack",
+  "group",
   "project",
   "as",
   "cursor",
@@ -1752,7 +1755,7 @@ function cmdSpec(groups: string[]): boolean | void {
   );
   if (!picked.length)
     return usage(
-      `unknown group; one of: Layout Content Data Charts Forms Buttons, or an installed pack`,
+      `unknown group; one of: Layout Content Data Charts Diagrams Forms Buttons, or an installed pack`,
       "spec",
     );
   const trimmed = picked.map((p) => p.split(/\n## /)[0]);
@@ -1787,7 +1790,9 @@ async function cmdComponents(sub: string | undefined, args: string[], flags: Fla
     case "list":
       return printResult(listComponents(args[0]));
     case "search":
-      return printResult(await searchComponents(args));
+      return printResult(
+        await searchComponents(args, typeof flags.group === "string" ? flags.group : undefined),
+      );
     case "show":
       return printResult(
         await showComponents(args, typeof flags.pack === "string" ? flags.pack : undefined),

@@ -10,8 +10,11 @@ import type {
 import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
 // Every file in ./components/ (not starting with "_"), collected at build time.
 import customComponents from "austere:components";
+import type { EntryDetails } from "../../types/catalog.d.ts";
 import type { AustereComponent } from "../../types/pack.d.ts";
 import { EXTENDED, REMOVED, STOCK_GROUPS, STOCK_RENDERERS, STOCK_UNTAGGED } from "./stock.ts";
+import { CONTENT_SLOTS } from "./define.ts";
+import { CORE_DETAILS } from "./guides/index.ts";
 import { storingShownDefault } from "./overrides/FieldDefaults.tsx";
 
 export interface BuildLibraryOptions {
@@ -68,6 +71,50 @@ export function examplesFor(
     components
       .filter((c): c is AustereComponent & { example: string[] } => !!c.example)
       .map((c) => [c.name, c.example] as const),
+  );
+}
+
+/** Guide, keywords, family, limits and alsoIn by component name, for the catalog: CORE_DETAILS, then each component's own. */
+export function detailsFor(
+  components: AustereComponent[] = customComponents,
+): Record<string, EntryDetails> {
+  const out: Record<string, EntryDetails> = { ...CORE_DETAILS };
+  for (const c of components) {
+    const own: EntryDetails = {};
+    if (c.guide) own.guide = c.guide;
+    if (c.keywords) own.keywords = c.keywords;
+    if (c.family) own.family = c.family;
+    if (c.limits) own.limits = c.limits;
+    if (c.alsoIn) own.alsoIn = c.alsoIn;
+    if (Object.keys(own).length) out[c.name] = { ...out[c.name], ...own };
+  }
+  return out;
+}
+
+/**
+ * Where each component of a library spec may sit, for the catalog: the content slots
+ * (Card.children, ...) whose printed list names it, or null for a value-only part.
+ */
+export function slotsFor(
+  spec: { components: Record<string, { signature: string }> },
+  components: AustereComponent[] = customComponents,
+): Record<string, string[] | null> {
+  const valueOnly = new Set([
+    ...STOCK_UNTAGGED,
+    ...components.filter((c) => c.slots === null).map((c) => c.name),
+  ]);
+  const lists = CONTENT_SLOTS.map((slot) => {
+    const [parent, prop] = slot.split(".");
+    const m = new RegExp(`\\b${prop}\\??: \\(([^)]*)\\)\\[\\]`).exec(
+      spec.components[parent]?.signature || "",
+    );
+    return { slot, names: new Set(m ? m[1].split(" | ") : []) };
+  });
+  return Object.fromEntries(
+    Object.keys(spec.components).map((name) => [
+      name,
+      valueOnly.has(name) ? null : lists.filter((l) => l.names.has(name)).map((l) => l.slot),
+    ]),
   );
 }
 

@@ -20,7 +20,7 @@ import type { BuildFailure, BuildOptions } from "esbuild";
 import type { PackCatalog } from "../../types/catalog.d.ts";
 import type { AustereComponent } from "../../types/pack.d.ts";
 import type { BuildPackOptions, BuildPackResult, PackageJson } from "../../types/pack-kit.d.ts";
-import { hostShimPlugin } from "./shim.ts";
+import { guideStubPlugin, hostShimPlugin } from "./shim.ts";
 import { installHost } from "../runtime/host.ts";
 import { PACK_API } from "../runtime/pack-api.ts";
 import { CONTENT_SLOTS } from "../runtime/define.ts";
@@ -137,6 +137,8 @@ export async function buildPack({
         loader: "js",
       },
       format: "iife",
+      // Usage guides are catalog text; the page never reads them.
+      plugins: [hostShimPlugin, guideStubPlugin],
       minify,
       target: "es2020",
       legalComments: "none",
@@ -156,6 +158,7 @@ export async function buildPack({
       entryPoints: [entry],
       platform: "node",
       format: "esm",
+      loader: { ...BUILD_DEFAULTS.loader, ".md": "text" },
       outfile: tmp,
     });
     installHost();
@@ -224,6 +227,8 @@ export async function buildPack({
         .filter((c): c is AustereComponent & { example: string[] } => !!c.example)
         .map((c) => [c.name, c.example] as const),
     ),
+    // Each component carries its own guide, keywords, family, limits and alsoIn (if any).
+    details: Object.fromEntries(components.map((c) => [c.name, c] as const)),
   });
   const bytes = fs.readFileSync(packFile);
   const catalog: PackCatalog = {

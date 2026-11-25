@@ -62,7 +62,7 @@ function MilestonesView({ props }) {
 
 export default austereComponent({
   name: "Milestones",
-  // A core group (Layout Content Data Charts Forms Buttons) or a category of your own.
+  // A core group (Layout Content Data Charts Diagrams Forms Buttons) or a category of your own.
   group: "Content",
   props: z.object({
     events: z.array(z.string()),
@@ -212,7 +212,9 @@ export async function buildPackDir(dir = "."): Promise<{
   const { catalog, warnings, packFile, catalogFile } = await kit.buildPack({
     dir: abs,
     esbuild,
-    coreNames: coreCatalog().components.map((c) => c.name),
+    coreNames: coreCatalog()
+      .components.filter((c) => !c.uses)
+      .map((c) => c.name),
   });
   return {
     name: catalog.pack,

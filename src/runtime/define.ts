@@ -7,6 +7,7 @@ import type { ComponentRenderer } from "@openuidev/react-lang";
 import type { ZodObject, ZodRawShape, infer as ZodInfer } from "zod";
 import type { AustereComponent, ComponentSpec } from "../../types/pack.d.ts";
 import { GROUP_NAMES } from "./groups.ts";
+import { detailsProblem } from "../shared/catalog.ts";
 
 /** Where a content component may appear besides a Stack (which takes anything). */
 export const CONTENT_SLOTS = ["Card.children", "TabItem.content", "AccordionItem.content"];
@@ -29,6 +30,14 @@ export const CONTENT_SLOTS = ["Card.children", "TabItem.content", "AccordionItem
  * c.tagged        Wrap the output with its statement name (default true).
  * c.tier          "extended" keeps it out of the prompt (searchable with
  *                 `components search|show`); default "core".
+ * c.guide         Usage guide in markdown (`## Use for`, `## Not for`, `## Limits`,
+ *                 `## Usual errors`); import it from an adjacent .md file. Never in
+ *                 the prompt: `components show` prints it, the chooser quotes its
+ *                 first "Use for" sentence. The runtime bundle leaves it out.
+ * c.keywords      Words a user would say for it; they rank `components search`.
+ * c.family        Heading the `components list <Group>` chooser files it under.
+ * c.limits        [{ prop, max, message }]: `check` warns when a list prop is longer.
+ * c.alsoIn        Other groups whose chooser lists it too.
  */
 export function austereComponent<Shape extends ZodRawShape>(
   c: ComponentSpec<Shape>,
@@ -68,6 +77,8 @@ export function austereComponent<Shape extends ZodRawShape>(
   const notes = c.notes ?? [];
   for (const n of notes)
     if (!n.startsWith("- ")) throw new Error(`${where}: notes start with "- "`);
+  const problem = detailsProblem(c, Object.keys(c.props?.shape ?? {}));
+  if (problem) throw new Error(`${where}: ${problem}`);
   return {
     name: c.name,
     group: c.group,
@@ -77,6 +88,11 @@ export function austereComponent<Shape extends ZodRawShape>(
     tier: c.tier === "extended" ? "extended" : "core",
     example,
     stress,
+    ...(c.guide ? { guide: c.guide } : {}),
+    ...(c.keywords ? { keywords: c.keywords } : {}),
+    ...(c.family ? { family: c.family } : {}),
+    ...(c.limits ? { limits: c.limits } : {}),
+    ...(c.alsoIn ? { alsoIn: c.alsoIn } : {}),
     // types/pack.d.ts gives the renderer's result as unknown (packs need not depend on React's types); it renders a React node.
     definition: defineComponent({
       name: c.name,

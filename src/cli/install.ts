@@ -31,7 +31,7 @@ import type { TrustList } from "./trust.ts";
 import { authHeaders, npmView, readRegistries, registryFor } from "./registries.ts";
 import type { Registry } from "./registries.ts";
 import { isValidPackName, isValidVersion, splitSpec } from "../shared/packs-meta.ts";
-import { CATALOG_FORMAT } from "../shared/catalog.ts";
+import { CATALOG_FORMAT, detailsProblem } from "../shared/catalog.ts";
 
 /** The part of a registry packument (`GET <registry>/<name>`) installing reads. */
 export interface RegistryMeta {
@@ -386,6 +386,11 @@ function parseCatalog(buf: Buffer, label: string): PackCatalog {
         `${label}: ${c.name} has malformed slots (expected ["Card.children", ...] or null)`,
       );
     }
+    // Guide, keywords, family, limits, alsoIn and uses are optional; a catalog without them is fine.
+    const problem = detailsProblem(c);
+    if (problem) throw new Error(`${label}: ${c.name}: ${problem}`);
+    if (c.uses != null && !(Array.isArray(c.uses) && c.uses.every((x) => typeof x === "string")))
+      throw new Error(`${label}: ${c.name} has malformed uses (expected an array of names)`);
   }
   return cat;
 }
@@ -474,7 +479,11 @@ export async function addPack(
   }
 
   const warnings: string[] = [];
-  const coreNames = new Set(coreCatalog().components.map((c) => c.name));
+  const coreNames = new Set(
+    coreCatalog()
+      .components.filter((c) => !c.uses)
+      .map((c) => c.name),
+  );
   const others = installedPacks().filter((p) => p.name !== cat.pack);
   for (const c of cat.components) {
     if (coreNames.has(c.name))

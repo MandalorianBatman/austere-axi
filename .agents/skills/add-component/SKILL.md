@@ -63,7 +63,7 @@ function ThingView({ props }) {
 
 export default austereComponent({
   name: "Thing",
-  group: "Content", // Layout | Content | Data | Charts | Forms | Buttons
+  group: "Content", // Layout | Content | Data | Charts | Diagrams | Forms | Buttons
   props: z.object({ items: z.array(z.string()), title: z.string().optional() }),
   description: "…one line…",
   notes: ["- …only if needed…"],
@@ -71,6 +71,8 @@ export default austereComponent({
   example: `myThing = Thing(["…realistic…"])`,
   stress: `stressThing = Thing(["…hostile…"])`, // optional; see section 5
   // slots: null, tagged: false  ← only for value-only sub-components (like Series)
+  // guide (import from ./Thing.md), keywords, family, limits, alsoIn: read path only, never
+  // in spec; every diagram type sets them (docs/diagrams.md, "Adding a type")
 });
 ```
 
