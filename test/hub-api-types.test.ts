@@ -6,7 +6,10 @@ import { test } from "node:test";
 import { hubApiDeclarations } from "../scripts/hub-api-types.ts";
 
 test("types/hub-api.d.ts is current (npm run hub-api-types)", () => {
-  assert.equal(fs.readFileSync("types/hub-api.d.ts", "utf8"), hubApiDeclarations());
+  assert.equal(
+    fs.readFileSync("types/hub-api.d.ts", "utf8").replace(/\r\n/g, "\n"),
+    hubApiDeclarations(),
+  );
 });
 
 test("the shared source is types only: nothing in it exists at runtime", () => {

@@ -8,7 +8,10 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 export function hubApiDeclarations(): string {
-  const src = fs.readFileSync(path.join(ROOT, "src/shared/hub-api.ts"), "utf8");
+  // A Windows checkout has CRLF endings: the generated file is LF either way.
+  const src = fs
+    .readFileSync(path.join(ROOT, "src/shared/hub-api.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
   return `// Generated from src/shared/hub-api.ts by scripts/hub-api-types.ts: do not edit. Run \`npm run hub-api-types\`.\n${src}`;
 }
 
