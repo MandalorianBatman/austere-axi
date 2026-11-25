@@ -43,6 +43,26 @@ export function packsFor(program: string, declared: PackRef[]): WantedPack[] {
   return out;
 }
 
+const bundledPackNames = new Set(Object.values(bundledPacks).map((b) => b.name));
+// Components of the diagrams pack: some began as installed packs (austere-pack-gantt's Gantt), and a page that still declares one gets the bundled component.
+const diagramNames = new Set(
+  Object.values(bundledPacks)
+    .filter((b) => b.name === "@austere-axi/pack-diagrams")
+    .flatMap((b) => b.components),
+);
+
+/** Packs in library order: the bundled ones first, so a name both define is the bundled component's. */
+export function bundledFirst<P extends { name: string }>(packs: P[]): P[] {
+  return [...packs].sort(
+    (a, b) => Number(bundledPackNames.has(b.name)) - Number(bundledPackNames.has(a.name)),
+  );
+}
+
+/** An installed pack's component that the bundled diagrams pack replaces (an older pack for a type austere-axi now draws itself): skipped without an error. */
+export function replacedByBundled(packName: string, component: string): boolean {
+  return !bundledPackNames.has(packName) && diagramNames.has(component);
+}
+
 /** Under review: the runtime came from the local server, which also serves installed packs. */
 export function served(): boolean {
   return /\/__austere\/$/.test(RUNTIME_BASE);

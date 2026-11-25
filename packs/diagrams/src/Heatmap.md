@@ -8,11 +8,12 @@ Rows against columns with a number in every cell, where one cell or a cluster of
 - Rows and columns whose cells name linked items: Traceability.
 
 ## Limits
-- 8 columns, 7 rows. `check` warns above both. Fewer than 3 rows or columns: a Table says it with less ink.
+- 6 columns, 7 rows. `check` warns above both. Fewer than 3 rows or columns: a Table says it with less ink.
 - Give every `HeatRow` one value for each column, in column order. `null` or text that is not a number shows `–` and takes no fill.
 - The value is printed in every cell, so the fill is never the only signal. A lighter fill is a higher value.
 - `focus` on a `HeatRow` names a column: that cell is ringed and left out of the scale, so an outlier does not flatten the rest. One focal cell at most; use none when no cell is the point.
 - `unit` (`"%"`) is printed after each value.
+- A click on a cell reaches the agent with its row and column; the row label and the column name are targets of their own.
 
 ## Usual errors
 - A row with more or fewer values than columns. The extra are dropped; the missing show `–`.

@@ -100,13 +100,22 @@ export function DiagramFrame({
   // The content may have changed size: look at the cut again after every render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(checkCut);
-  // The scroll box is named from the title of the Card it sits in.
+  // The scroll box is named from the title of the Card it sits in. Two regions with one name
+  // are told apart by their order on the page ("Git graph", "Git graph 2").
   useEffect(() => {
-    const title = boxRef.current
+    const box = boxRef.current;
+    const title = box
       ?.closest(".openui-card")
       ?.querySelector(".openui-header-top-left")
       ?.textContent?.trim();
-    setRegionName(title || name);
+    const base = title || name;
+    if (!box) return;
+    box.dataset.regionBase = base;
+    const same = Array.from(document.querySelectorAll<HTMLElement>("[data-region-base]")).filter(
+      (el) => el.dataset.regionBase === base,
+    );
+    const nth = same.indexOf(box) + 1;
+    setRegionName(nth > 1 ? `${base} ${nth}` : base);
   }, [name, ready]);
 
   const pane = (content: DiagramContent, isFull: boolean) => {

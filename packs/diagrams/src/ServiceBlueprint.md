@@ -9,7 +9,7 @@ How a service really runs across a few stages: what the customer does, what they
 
 ## Limits
 - 4 to 6 stages; `check` warns above 6. One action for each stage and layer, 24 steps at most.
-- Layers, top to bottom: `evidence` (optional), `customer`, `frontstage`, `backstage`, `support` (optional). The line of visibility sits between frontstage and backstage.
+- Layers, top to bottom: `evidence` (optional), `customer`, `frontstage`, `backstage`, `support` (optional). The line of visibility sits between frontstage and backstage. `support` is what the backstage depends on: shared systems, vendors, other teams.
 - A layer a stage does not use stays empty. An empty cell is fine; say "not applicable" in the step if it matters.
 - Mark one step `focus: true`: the failure or wait the diagram is about, usually on or under the line.
 - `detail` is a system or a wait, one short line.

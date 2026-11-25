@@ -60,7 +60,10 @@ function Links({ list, gap }: { list: TraceLink[]; gap: { code: string; text: st
           data-oui-id={link.named ? link.id : undefined}
           data-oui-c={link.named ? "TraceItem" : undefined}
         >
-          <span className="dg-tr-code" data-austere-part={`${link.code}: ${link.name}`}>
+          <span
+            className="dg-tr-code"
+            data-austere-part={`${link.code}: ${link.name} (for ${gap.code})`}
+          >
             {link.code}
           </span>{" "}
           <span className="dg-tr-name">{link.name}</span>
@@ -105,8 +108,12 @@ function TraceView({ props, statementId }: RendererArgs<TraceProps>) {
             >
               <thead>
                 <tr>
-                  {trace.sourced ? <th scope="col">Source</th> : null}
                   <th scope="col">Requirement</th>
+                  {trace.sourced ? (
+                    <th scope="col" className="dg-tr-source">
+                      Source
+                    </th>
+                  ) : null}
                   <th scope="col">Satisfied by</th>
                   <th scope="col">Verified by</th>
                 </tr>
@@ -118,6 +125,15 @@ function TraceView({ props, statementId }: RendererArgs<TraceProps>) {
                     data-oui-id={row.named ? row.id : undefined}
                     data-oui-c={row.named ? "TraceReq" : undefined}
                   >
+                    <th scope="row" className="dg-tr-req">
+                      <span className="dg-tr-code" data-austere-part={`${row.code}: ${row.text}`}>
+                        {row.code}
+                      </span>{" "}
+                      <span className="dg-tr-name">{row.text}</span>
+                      {row.source ? (
+                        <span className="dg-tr-source-inline">{row.source}</span>
+                      ) : null}
+                    </th>
                     {trace.sourced ? (
                       <td className="dg-tr-source">
                         {row.source ? (
@@ -127,12 +143,6 @@ function TraceView({ props, statementId }: RendererArgs<TraceProps>) {
                         ) : null}
                       </td>
                     ) : null}
-                    <td className="dg-tr-req">
-                      <span className="dg-tr-code" data-austere-part={`${row.code}: ${row.text}`}>
-                        {row.code}
-                      </span>{" "}
-                      <span className="dg-tr-name">{row.text}</span>
-                    </td>
                     <td className={row.design.length ? undefined : "is-gap"}>
                       <Links
                         list={row.design}

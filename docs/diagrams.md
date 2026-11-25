@@ -28,7 +28,7 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | ER / data model | `ERDiagram` (`Entity`, `Relation`) | component | built |
 | Steps | `Steps` | component | built |
 | Timeline | `Timeline` | component | built |
-| Git graph | `GitGraph` | component | planned |
+| Git graph | `GitGraph` (`GitCommit`) | component | built |
 | Swimlane | `Swimlane`: `Architecture` with lanes | recipe | built |
 | Quadrant | `Quadrant` | component | planned |
 | Radar / Spider | `RadarChart`, or a pack component | component | planned |
@@ -47,7 +47,7 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Treemap | `Treemap` | component | planned |
 | Heatmap | `Heatmap` (`HeatRow`) | component | built |
 | Line chart | `LineTrend`: `LineChart` | recipe | built |
-| Gantt | `Gantt`, `GanttTask` | component | planned |
+| Gantt | `Gantt` (`GanttTask`) | component | built |
 | Scatter plot | `ScatterPlot`: `ScatterChart` | recipe | built |
 | High-Level | `Architecture` with groups | recipe | planned |
 | Process | `Architecture` with lanes | recipe | planned |
@@ -70,7 +70,7 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Requirement traceability | `Traceability` (`TraceReq`, `TraceItem`) | component | built |
 | Event modeling | `EventModel` (`EventItem`) | component | built |
 | Unit Grid | `UnitGrid` (`UnitShare`) | component | built |
-| Schedule network | `ScheduleNetwork` | component | planned |
+| Schedule network | `ScheduleNetwork` (`ScheduleTask`) | component | built |
 
 Named variants of a type (slopegraph, ridgeline, streamgraph, bump, bubble, beeswarm, box plot, marimekko, dumbbell) are not built. Animation, brand skins, and import from Mermaid, draw.io, Excalidraw or PlantUML are not planned.
 

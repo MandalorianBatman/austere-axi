@@ -92,9 +92,9 @@ function PermissionView({ props, statementId }: RendererArgs<PermissionProps>) {
                       <td
                         key={c}
                         className={`dg-perm-cell l-${cell.level ?? "other"}${cell.focal ? " is-focal" : ""}`}
+                        data-sr={cell.focal ? " (key rule)" : undefined}
                       >
                         {cell.text}
-                        {cell.focal ? <span className="dg-sr"> (key rule)</span> : null}
                       </td>
                     ))}
                   </tr>
