@@ -12,6 +12,7 @@ export async function sendAll(end = false): Promise<void> {
   const s = S();
   if (s.sending || s.archived) return;
   const text = s.draft.trim();
+  const sentQids = new Set(s.queue.map((q) => q.qid));
   const items: QueueItem[] = s.queue.map(({ qid, ...rest }) => rest);
   if (text) items.push({ kind: "message", text });
   if (end && !OWNER) return;
@@ -27,7 +28,7 @@ export async function sendAll(end = false): Promise<void> {
     const data: { error?: string; entry?: Entry } = await r.json().catch(() => ({}));
     if (!r.ok)
       throw new Error(data.error || `The agent service answered ${r.status}`, { cause: "http" });
-    setQueue([]);
+    setQueue(S().queue.filter((q) => !sentQids.has(q.qid)));
     set({ draft: "" });
     const entry = data.entry;
     if (entry && !S().transcript.some((e) => e.id === entry.id))

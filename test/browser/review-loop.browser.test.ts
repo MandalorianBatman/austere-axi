@@ -30,8 +30,8 @@ const VIEWPORTS = [
   { name: "phone", width: 390, height: 844 },
 ];
 const MAX_PARTS_PER_STATEMENT = 3;
-// A poll returns at most 200 items.
-const BATCH = 100;
+// A poll returns at most 200 items; keep each batch well under the cap.
+const BATCH = 80;
 
 let port: number;
 let server: ChildProcess;
@@ -276,40 +276,58 @@ test("every component part is annotatable end to end", async (t) => {
     }
     assert.ok(targets.length > 0, "no data-austere-part targets found");
 
-    // One poll returns at most 200 items: send the targets in batches.
+    // One poll returns at most 200 items: send the targets in batches and drain with cursor.
+    let cursor: number | undefined;
     for (let from = 0; from < targets.length; from += BATCH) {
       const batch = targets.slice(from, from + BATCH);
       for (const { id, part } of batch) {
         const loc = frame
           .locator(`[data-oui-id="${id}"] [data-austere-part="${part.replace(/"/g, '\\"')}"]`)
           .first();
-        await loc.evaluate((el: Element) => {
+        // An SVG stroke (a diagram edge) is not hit at its bounding-box centre:
+        // find a point on the stroke (or its label) that nothing covers, and click exactly there.
+        // Scroll first and let the page lay out, then measure.
+        await loc.evaluate(async (el) => {
           el.scrollIntoView({ block: "center", inline: "center" });
-          let clientX = 0;
-          let clientY = 0;
-          if (el instanceof SVGGeometryElement && typeof el.getTotalLength === "function") {
-            const len = el.getTotalLength();
-            const ctm = el.getScreenCTM();
-            if (len && ctm) {
-              const q = el.getPointAtLength(len * 0.5);
-              const p = new DOMPoint(q.x, q.y).matrixTransform(ctm);
-              clientX = p.x;
-              clientY = p.y;
-            }
-          } else {
-            const r = el.getBoundingClientRect();
-            clientX = r.left + r.width / 2;
-            clientY = r.top + r.height / 2;
-          }
-          const evt = new MouseEvent("click", {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-            clientX,
-            clientY,
-          });
-          el.dispatchEvent(evt);
+          await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
         });
+        const point = await loc.evaluate(
+          (el: SVGGeometryElement, { id, part }: { id: string; part: string }) => {
+            if (typeof el.getTotalLength !== "function") return null;
+            const len = el.getTotalLength();
+            if (!len) return null;
+            const ctm = el.getScreenCTM() as DOMMatrix;
+            if (!ctm) return null;
+            const isTargetHit = (hit: Element | null) => {
+              if (!hit) return false;
+              if (hit === el) return true;
+              const targetEl = hit.closest("[data-oui-id]");
+              if (targetEl?.getAttribute("data-oui-id") !== id) return false;
+              const partEl = hit.closest("[data-austere-part]");
+              return partEl?.getAttribute("data-austere-part") === part;
+            };
+            const samples = [0.5, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9, 0.4, 0.6, 0.15, 0.85];
+            for (const t of samples) {
+              const q = el.getPointAtLength(len * t);
+              const p = new DOMPoint(q.x, q.y).matrixTransform(ctm);
+              const hit = el.ownerDocument.elementFromPoint(p.x, p.y);
+              if (isTargetHit(hit)) return { x: p.x, y: p.y };
+            }
+            return null;
+          },
+          { id, part },
+        );
+        if (point) {
+          const origin = await (
+            await frame.frameElement()
+          ).evaluate((f: HTMLIFrameElement) => {
+            const r = f.getBoundingClientRect();
+            return { x: r.left + f.clientLeft, y: r.top + f.clientTop };
+          });
+          await page.mouse.click(origin.x + point.x, origin.y + point.y);
+        } else {
+          await loc.click();
+        }
         const pop = frame.locator(".austere-pop");
         await pop.waitFor({ state: "visible", timeout: 3000 }).catch(() => {
           throw new Error(`clicking part "${part}" in ${id} did not open the annotation popover`);
@@ -320,9 +338,18 @@ test("every component part is annotatable end to end", async (t) => {
         await frame.locator(".austere-pop textarea").press("Enter");
         await pop.waitFor({ state: "hidden", timeout: 3000 });
       }
+      // Wait for all queued notes to reach the host composer before sending
+      await page
+        .locator(".composer .send")
+        .filter({ hasText: `Send ${batch.length} note` })
+        .waitFor({ timeout: 5000 });
       await page.locator(".composer .send").click();
-      const res = await api("/api/poll", { file: gallery.file, timeoutMs: 5000 });
+      // Wait for send to complete and composer to settle before next batch
+      await page.locator(".composer .send:not([aria-disabled])").waitFor({ timeout: 5000 });
+
+      const res = await api("/api/poll", { file: gallery.file, cursor, timeoutMs: 5000 });
       assert.equal(res.status, "feedback", `poll returned ${res.status}`);
+      cursor = res.cursor;
       for (const { id, part } of batch) {
         const hit = res.items.find(
           (i) => i.kind === "annotation" && i.note === `check ${id}: ${part}`,
