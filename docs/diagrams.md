@@ -34,10 +34,10 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Radar / Spider | `RadarChart`, or a pack component | component | planned |
 | Polar chart | `RadialChart`, or a pack component | component | planned |
 | Loop | `Loop` | component | planned |
-| Nested | `Nested` | component | planned |
-| Tree | `Tree` | component | planned |
-| Org chart | `OrgChart` | component | planned |
-| Layer stack | `LayerStack` | component | planned |
+| Nested | `Nested` (`NestedLevel`) | component | built |
+| Tree | `Tree` (`TreeNode`) | component | built |
+| Org chart | `OrgChart` (`Person`) | component | built |
+| Layer stack | `LayerStack` (`Layer`) | component | built |
 | Exploded axonometric | none: an illustration with no data model | — | not planned |
 | Axonometric plan | none: an illustration with no data model | — | not planned |
 | Venn | `Venn` | component | planned |

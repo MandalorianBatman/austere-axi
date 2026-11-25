@@ -20,6 +20,8 @@ import {
   layoutFlow,
 } from "../src/runtime/components/_flow-model.ts";
 import type { FlowLaidOutNode } from "../src/runtime/components/_flow-model.ts";
+import { ORG_CHART, TREE } from "../src/runtime/components/_tree-model.ts";
+import { LAYER_SPEC, NESTED_SPEC, buildLevels } from "../packs/diagrams/src/_containment-model.ts";
 
 const pick = (e: FileEntry | null): Record<string, unknown> | null =>
   e && {
@@ -950,4 +952,183 @@ test("StateMachine: the label reads event [guard] / action, and check flags a tr
   assert.ok(layout);
   assert.ok(layout.edges.every((e) => e.points.length >= 2));
   assert.ok(layout.edges.find((e) => e.id === "t2")?.labelBox, "a self-transition keeps its label");
+});
+
+test("Flowchart: the id of an unnamed step cannot collide with a named one", () => {
+  const named = { props: { label: "Named" }, statementId: "_node0" };
+  const inline = { props: { label: "Inline" } };
+  const toInline = { props: { from: named, to: inline }, statementId: "link" };
+  const model = buildFlow({ steps: [inline, named], links: [toInline] }, FLOWCHART);
+  assert.equal(model.nodes.length, 2, "both steps are drawn");
+  assert.deepEqual(
+    model.nodes.map((n) => [n.label, n.named]),
+    [
+      ["Inline", false],
+      ["Named", true],
+    ],
+  );
+  assert.equal(model.edges.length, 1);
+  assert.notEqual(model.edges[0].from, model.edges[0].to);
+  // An unnamed link does not drop a named one called _edge0.
+  const a = { props: { label: "A" }, statementId: "a" };
+  const b = { props: { label: "B" }, statementId: "b" };
+  const links = [
+    { props: { from: a, to: b } },
+    { props: { from: b, to: a }, statementId: "_edge0" },
+  ];
+  assert.equal(buildFlow({ steps: [a, b], links }, FLOWCHART).edges.length, 2);
+});
+
+test("Tree: a node names its parent; a missing parent is added, a loop is cut, check flags a second root, depth and breadth", () => {
+  const node = (label: string, statementId: string, parent?: object) => ({
+    props: { label, parent },
+    statementId,
+  });
+  const root = node("Root", "root");
+  const kids = ["a", "b", "c", "d", "e", "f"].map((k) => node(k, k, root));
+  const deep = node("deep", "deep", node("mid", "mid", kids[0]));
+  const ghost = node("Ghost", "ghost");
+  const orphan = node("Orphan", "orphan", ghost);
+  const lone = node("Lone", "lone");
+  const loopA = node("Loop A", "loopA");
+  const loopB = node("Loop B", "loopB", loopA);
+  loopA.props.parent = loopB;
+  const props = {
+    nodes: [root, ...kids, deep, node("deeper", "deeper", deep), orphan, lone, loopA, loopB],
+  };
+  const model = buildFlow(props, TREE);
+  assert.equal(model.direction, "auto");
+  assert.ok(
+    model.nodes.some((n) => n.id === "ghost"),
+    "the parent the list left out is drawn",
+  );
+  assert.ok(
+    model.problems.some((m) => /orphan names ghost as its parent.*not in the Tree list/.test(m)),
+  );
+  assert.ok(
+    model.problems.some((m) => /is its own ancestor/.test(m)),
+    "a parent loop is cut",
+  );
+  assert.ok(
+    model.edges.every((e) => !e.named),
+    "parent links are not click targets",
+  );
+  assert.equal(
+    model.edges.find((e) => e.to === "a")?.from,
+    "root",
+    "the edge runs from parent to child",
+  );
+  const messages = flowNotes(props, TREE).map((n) => n.message);
+  assert.ok(messages.some((m) => /nodes have no parent .* A tree has one root/.test(m)));
+  assert.ok(messages.some((m) => /Level 2 has 8 nodes, over 5/.test(m)));
+  assert.ok(messages.some((m) => /5 levels deep, over 4/.test(m)));
+  const layout = layoutFlow(model);
+  assert.ok(layout);
+  assert.equal(layout.edges.length, model.edges.length);
+  // A parent that is not a statement is reported, not drawn.
+  const bad = buildFlow(
+    { nodes: [{ props: { label: "X", parent: "Root" }, statementId: "x" }] },
+    TREE,
+  );
+  assert.match(bad.problems[0], /parent must be the name of a TreeNode statement, not "Root"/);
+  assert.equal(bad.edges.length, 0);
+});
+
+test("OrgChart: reportsTo and dotted links, the kind of a person, and the limits check reports", () => {
+  const person = (name: string, statementId: string, extra: Record<string, unknown> = {}) => ({
+    props: { name, ...extra },
+    statementId,
+  });
+  const boss = person("Boss", "boss", { tone: "strong" });
+  const bot = person("Bot", "bot", { reportsTo: boss, kind: "agent", role: "triage" });
+  const peer = person("Peer", "peer", { reportsTo: boss, dotted: bot, kind: "robot" });
+  const reports = ["r1", "r2", "r3", "r4", "r5", "r6"].map((r) => person(r, r, { reportsTo: bot }));
+  const props = { people: [boss, bot, peer, ...reports] };
+  const model = buildFlow(props, ORG_CHART);
+  assert.equal(model.direction, "down");
+  assert.equal(model.nodes.find((n) => n.id === "bot")?.shape, "agent");
+  assert.equal(model.nodes.find((n) => n.id === "bot")?.detail, "triage");
+  assert.equal(
+    model.nodes.find((n) => n.id === "peer")?.shape,
+    "person",
+    "an unknown kind is a person",
+  );
+  const dotted = model.edges.find((e) => e.style === "dashed");
+  assert.deepEqual(
+    [dotted?.from, dotted?.to],
+    ["bot", "peer"],
+    "a dotted line runs from the second manager down",
+  );
+  const messages = flowNotes(props, ORG_CHART).map((n) => n.message);
+  assert.ok(messages.some((m) => /Bot has 6 direct reports, over 5/.test(m)));
+  assert.equal(messages.length, 1, "one strong node, one root, three levels: nothing else to say");
+  assert.ok(
+    flowNotes({ people: [boss, person("Two", "two", { tone: "strong" })] }, ORG_CHART).some((n) =>
+      /2 people report to no one/.test(n.message),
+    ),
+  );
+  assert.ok(layoutFlow(model));
+});
+
+test("Nested and LayerStack: levels keep their order, a level listed twice is drawn once, an unnamed one cannot take a statement's id", () => {
+  const level = (label: string, statementId?: string, extra: Record<string, unknown> = {}) => ({
+    props: { label, ...extra },
+    statementId,
+  });
+  const outer = level("Outer", "_level0");
+  const inner = level("Inner", undefined, { note: " aside ", tone: "strong" });
+  const nested = buildLevels([outer, inner, outer, "junk"], NESTED_SPEC);
+  assert.deepEqual(
+    nested.levels.map((l) => [l.label, l.named]),
+    [
+      ["Outer", true],
+      ["Inner", false],
+    ],
+  );
+  assert.equal(nested.levels[1].note, "aside");
+  assert.equal(nested.levels[1].tone, "strong");
+  assert.notEqual(nested.levels[0].id, nested.levels[1].id);
+  assert.match(nested.problems[0], /NestedLevel _level0 is listed twice in Nested/);
+  const stack = buildLevels(
+    [
+      {
+        props: { name: "App", tag: "L7", items: ["HTTP", " ", 3], tone: "plaid" },
+        statementId: "app",
+      },
+    ],
+    LAYER_SPEC,
+  );
+  assert.deepEqual(stack.levels[0].items, ["HTTP", "3"]);
+  assert.equal(stack.levels[0].note, "L7");
+  assert.equal(stack.levels[0].tone, "");
+  assert.deepEqual(buildLevels(undefined, LAYER_SPEC).levels, []);
+});
+
+test("Tree and OrgChart: siblings draw in list order, left to right going down and top to bottom going across", () => {
+  const node = (label: string, parent?: object) => ({
+    props: { label, parent },
+    statementId: label,
+  });
+  const root = node("r");
+  const props = { nodes: [root, ...["a", "b", "c"].map((k) => node(k, root))] };
+  for (const [direction, axis] of [
+    ["down", "x"],
+    ["right", "y"],
+  ] as const) {
+    const layout = layoutFlow(buildFlow({ ...props, direction }, TREE));
+    assert.ok(layout);
+    const at = (id: string) => layout.nodes.find((n) => n.id === id)?.[axis] ?? NaN;
+    assert.ok(at("a") < at("b") && at("b") < at("c"), `${direction}: a, b, c in order`);
+  }
+  const person = (name: string, reportsTo?: object) => ({
+    props: { name, reportsTo },
+    statementId: name,
+  });
+  const boss = person("boss");
+  const org = layoutFlow(
+    buildFlow({ people: [boss, ...["a", "b", "c"].map((k) => person(k, boss))] }, ORG_CHART),
+  );
+  assert.ok(org);
+  const x = (id: string) => org.nodes.find((n) => n.id === id)?.x ?? NaN;
+  assert.ok(x("a") < x("b") && x("b") < x("c"));
 });

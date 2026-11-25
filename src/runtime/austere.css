@@ -908,6 +908,26 @@ span.austere-filetree-toggle {
   fill: transparent;
 }
 
+/* ── Tree and OrgChart: the same look; the shape tells a person, a team, an agent or an open seat ── */
+.austere-flow .austere-flow-node.s-person {
+  --k: var(--austere-k-backend);
+}
+.austere-flow .austere-flow-node.s-team {
+  --k: var(--austere-k-cloud);
+}
+.austere-flow .austere-flow-node.s-agent {
+  --k: var(--austere-k-messagebus);
+}
+.austere-flow .austere-flow-node.s-gap {
+  --k: var(--austere-k-external);
+}
+.austere-flow .austere-flow-node.s-gap .austere-arch-node-box {
+  stroke-dasharray: 5 4;
+}
+.austere-flow .austere-arch-node-box.is-behind {
+  fill: #141417;
+}
+
 .austere-render-error {
   border: 1px solid rgba(240, 96, 96, 0.35);
   background: var(--austere-del);

@@ -1,6 +1,7 @@
-// The drawing Flowchart and StateMachine share: shaped nodes and labelled edges
-// in Architecture's look (its CSS classes), each node and edge its own click
-// target. Helper, not a component (the file name starts with "_").
+// The drawing Flowchart, StateMachine, Tree and OrgChart share: shaped nodes and
+// edges in Architecture's look (its CSS classes), each node (and, in graphs,
+// each edge) its own click target. Helper, not a component (the file name
+// starts with "_").
 import React, { useEffect, useId, useMemo } from "react";
 import type { ReactNode, SVGProps } from "react";
 import type { DiagramContent } from "../../../types/pack.d.ts";
@@ -49,6 +50,39 @@ function Shape({ n }: { n: FlowLaidOutNode }) {
           rx={n.height / 2}
         />
       );
+    case "team":
+      // A second card behind: a group of people, not one.
+      return (
+        <>
+          <rect
+            className="austere-arch-node-box is-behind"
+            x={n.x + 5}
+            y={n.y + 5}
+            width={n.width}
+            height={n.height}
+            rx={6}
+          />
+          <rect
+            className="austere-arch-node-box"
+            x={n.x}
+            y={n.y}
+            width={n.width}
+            height={n.height}
+            rx={6}
+          />
+        </>
+      );
+    case "agent":
+      return (
+        <rect
+          className="austere-arch-node-box"
+          x={n.x}
+          y={n.y}
+          width={n.width}
+          height={n.height}
+          rx={Math.min(18, n.height / 2)}
+        />
+      );
     default:
       return (
         <rect
@@ -70,9 +104,9 @@ function NodeView({ n, component }: { n: FlowLaidOutNode; component: string }) {
   // Labels centre in the shape; a detail block hangs below the label lines.
   const first = dot
     ? 0
-    : n.shape === "step" || n.shape === "state"
-      ? n.y + 25
-      : cy - ((n.labelLines.length - 1) * 17) / 2 + 4.5;
+    : n.shape === "decision" || n.shape === "start" || n.shape === "end"
+      ? cy - ((n.labelLines.length - 1) * 17) / 2 + 4.5
+      : n.y + 25;
   return (
     <g
       className={`austere-arch-node austere-flow-node s-${n.shape}${n.tone ? ` t-${n.tone}` : ""}`}
@@ -119,6 +153,36 @@ function NodeView({ n, component }: { n: FlowLaidOutNode; component: string }) {
   );
 }
 
+/**
+ * A parent link as a right-angle route: down from the parent, across on a bus
+ * just above the children, down into the child (or the same turned sideways).
+ * A dotted-line link keeps dagre's route, which steers round other boxes.
+ */
+function hierarchyPath(
+  e: LaidOutEdge,
+  byId: Map<string, FlowLaidOutNode>,
+  rankdir: string,
+): string {
+  if (e.style !== "solid") return edgePath(e.points);
+  const from = byId.get(e.from);
+  const to = byId.get(e.to);
+  if (!from || !to) return "";
+  const f = (v: number) => Math.round(v * 10) / 10;
+  if (rankdir === "LR") {
+    const x1 = from.x + from.width;
+    const x2 = to.x;
+    const xm = Math.max(x1 + 8, x2 - 23);
+    const y1 = from.y + from.height / 2;
+    const y2 = to.y + to.height / 2;
+    return `M${f(x1)},${f(y1)}H${f(xm)}V${f(y2)}H${f(x2)}`;
+  }
+  const y1 = from.y + from.height;
+  const y2 = to.y;
+  const ym = Math.max(y1 + 8, y2 - 21);
+  const x1 = from.x + from.width / 2;
+  const x2 = to.x + to.width / 2;
+  return `M${f(x1)},${f(y1)}V${f(ym)}H${f(x2)}V${f(y2)}`;
+}
 function drawing(layout: FlowLayout, uid: string, kind: FlowKind): DiagramContent {
   const byId = new Map(layout.nodes.map((n) => [n.id, n]));
   const nodeComponent = kind.nodeName;
@@ -128,13 +192,15 @@ function drawing(layout: FlowLayout, uid: string, kind: FlowKind): DiagramConten
     const base = `${byId.get(e.from)?.label} → ${byId.get(e.to)?.label}`;
     return e.label ? `${base} (${e.label})` : base;
   };
-  const styles = [...new Set(layout.edges.map((e) => e.style))];
+  // A hierarchy has right-angle parent links and no arrowheads; lines are not targets.
+  const hierarchy = !!kind.hierarchy;
+  const styles = hierarchy ? [] : [...new Set(layout.edges.map((e) => e.style))];
   const content = (
     <svg
       className="austere-arch-svg"
       viewBox={`0 0 ${layout.width} ${layout.height}`}
       role="img"
-      aria-label={`${kind.component === "Flowchart" ? "Flowchart" : "State machine"}: ${layout.nodes.map((n) => n.label).join(", ")}`}
+      aria-label={`${kind.title}: ${layout.nodes.map((n) => n.label).join(", ")}`}
     >
       <defs>
         {styles.map((s) => (
@@ -155,7 +221,7 @@ function drawing(layout: FlowLayout, uid: string, kind: FlowKind): DiagramConten
       </defs>
 
       {layout.edges.map((e) => {
-        const d = edgePath(e.points);
+        const d = hierarchy ? hierarchyPath(e, byId, layout.rankdir) : edgePath(e.points);
         if (!d) return null;
         return (
           <g
@@ -164,8 +230,14 @@ function drawing(layout: FlowLayout, uid: string, kind: FlowKind): DiagramConten
             data-oui-id={e.named ? e.id : undefined}
             data-oui-c={e.named ? edgeComponent : undefined}
           >
-            <path className="austere-arch-edge-hit" d={d} data-austere-part={partOf(e)} />
-            <path className="austere-arch-edge-line" d={d} markerEnd={`url(#${uid}-${e.style})`} />
+            {hierarchy ? null : (
+              <path className="austere-arch-edge-hit" d={d} data-austere-part={partOf(e)} />
+            )}
+            <path
+              className="austere-arch-edge-line"
+              d={d}
+              markerEnd={hierarchy ? undefined : `url(#${uid}-${e.style})`}
+            />
           </g>
         );
       })}
@@ -280,10 +352,7 @@ export function FlowView({
   }, [problemKey, statementId]);
 
   return (
-    <DiagramFrame
-      className="austere-arch austere-flow"
-      name={kind.component === "Flowchart" ? "Flowchart" : "State machine"}
-    >
+    <DiagramFrame className="austere-arch austere-flow" name={kind.title}>
       {({ room, full }) => {
         const { layout, error } = layoutFor(model, room || DEFAULT_TARGET_WIDTH);
         if (error) {

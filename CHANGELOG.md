@@ -4,6 +4,10 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Added
+
+- **`Tree`, `OrgChart`, `Nested` and `LayerStack` diagrams.** `Tree(nodes, direction?)` and `OrgChart(people, direction?)` draw a hierarchy with right-angle connectors: each `TreeNode(label, parent?, detail?, tone?)` names its parent, each `Person(name, role?, reportsTo?, kind?, dotted?, tone?)` names who they report to (`kind`: person, team, agent, or `gap` for an owner not set up; `dotted` adds a dashed second line). They use Architecture's layout engine, so `Node`, `Edge` and `Group` keep their signatures. `Nested(levels)` draws boxes in boxes from `NestedLevel(label, note?, tone?)` (outermost first); `LayerStack(layers, top?, bottom?)` draws stacked bands from `Layer(name, items?, tag?, tone?)`. Both live in the bundled `diagrams` pack. Each part is a click target. `check` warns on a second root, a tree deeper than 4 levels, more than 5 nodes on a level, more than 5 direct reports, more than one `strong` node, and above 12 people, 6 levels or 6 layers. `spec` grows by the four names in its Diagrams line. (RLM-471)
+
 ## 0.25.0 (2026-11-25)
 
 ### Added
@@ -12,6 +16,10 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 - **`publish` sends `project` and `relPath`**: the project the local hub files the page under and its path in the project, so the cloud hub can group hosted pages. Both are optional; `SYNC_VERSION` is 2. A page published before this, or with a hub.db another version holds, is listed as Ungrouped. (RLM-458)
 - **`austere-axi/hub-api`**: the `/hub/api` types (including the cloud routes), generated from `src/shared/hub-api.ts` by `npm run hub-api-types`, so austere-cloud's adapter type-checks against them. (RLM-458)
 - **`Flowchart` and `StateMachine` diagrams.** `Flowchart(steps, links, direction?)` draws decision logic top to bottom: `FlowStep`s (oval `start` and `end`, rectangle step, diamond `decision`) joined by `FlowLink`s, each decision exit labelled with its answer. `StateMachine(states, transitions, direction?)` draws `State`s (rounded boxes, a filled `initial` dot, a ringed `final` dot) and `Transition(from, to, event, guard, action)`, labelled `event [guard] / action`, with self-transitions. They use Architecture's layout engine and look, with shapes of their own, so `Node` and `Edge` keep their signatures. Each part is a click target. `check` warns on a decision with more than 3 exits or an unlabeled exit, a transition with no event (none needed from an initial or into a final state), and more transitions than twice the states. They are `extended`: `spec` names them in its Diagrams line and is a net 4 tokens smaller (5728 → 5724: the lanes note moved its phone sentence to the Architecture guide). (RLM-470)
+
+### Fixed
+
+- `Flowchart` and `StateMachine`: an unnamed step or link could take the id of a statement called `_node0` or `_edge0`, merging two nodes or dropping a link. Unnamed parts now get ids no statement name can have.
 
 ## 0.24.0 (2026-11-25)
 
