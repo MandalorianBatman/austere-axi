@@ -152,7 +152,7 @@ function People({ page, opener }: { page: { id: string; title: string }; opener:
         {data ? (
           <table className="people w-full text-sm">
             <caption className="sr-only">Who can open {page.title || "Untitled page"}</caption>
-            <thead className="text-left text-xs tracking-wider text-muted-foreground uppercase">
+            <thead className="max-xs:hidden text-left text-xs tracking-wider text-muted-foreground uppercase">
               <tr>
                 <th scope="col" className="py-1 font-semibold">
                   Account
@@ -166,10 +166,10 @@ function People({ page, opener }: { page: { id: string; title: string }; opener:
               </tr>
             </thead>
             <tbody>
-              <tr className="border-t border-[var(--line)]">
+              <tr className="border-t border-[var(--line)] max-xs:grid max-xs:grid-cols-[1fr_auto] max-xs:items-center max-xs:gap-x-2">
                 <th
                   scope="row"
-                  className="py-2 pr-2 text-left font-normal [overflow-wrap:anywhere]"
+                  className="py-2 pr-2 text-left font-normal [overflow-wrap:anywhere] max-xs:col-span-2 max-xs:pb-0"
                 >
                   {data.owner}
                 </th>
@@ -178,14 +178,19 @@ function People({ page, opener }: { page: { id: string; title: string }; opener:
               </tr>
               {data.grants.length ? (
                 data.grants.map((g) => (
-                  <tr key={g.email} className="border-t border-[var(--line)]">
+                  <tr
+                    key={g.email}
+                    className="border-t border-[var(--line)] max-xs:grid max-xs:grid-cols-[1fr_auto] max-xs:items-center max-xs:gap-x-2"
+                  >
                     <th
                       scope="row"
-                      className="py-2 pr-2 text-left font-normal [overflow-wrap:anywhere]"
+                      className="py-2 pr-2 text-left font-normal [overflow-wrap:anywhere] max-xs:col-span-2 max-xs:pb-0"
                     >
                       {g.email}
                     </th>
-                    <td className="py-2 pr-2 whitespace-nowrap">Added {dateOf(g.added_at)}</td>
+                    <td className="py-2 pr-2 whitespace-nowrap max-xs:text-muted-foreground">
+                      Added {dateOf(g.added_at)}
+                    </td>
                     <td className="py-1 text-right">
                       <Button
                         type="button"
