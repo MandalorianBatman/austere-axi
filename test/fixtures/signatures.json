@@ -28,6 +28,9 @@
   "EditableTable": {"props":["name","columns","data"],"required":["name","columns","data"]},
   "EntityList": {"props":["rows","size","header","footer"],"required":["rows","size"]},
   "FileTree": {"props":["entries"],"required":["entries"]},
+  "FlowLink": {"props":["from","to","label","style"],"required":["from","to"]},
+  "FlowStep": {"props":["label","kind","detail","tone"],"required":["label"]},
+  "Flowchart": {"props":["steps","links","direction"],"required":["steps","links"]},
   "Form": {"props":["name","buttons","fields"],"required":["name","buttons","fields"]},
   "FormControl": {"props":["label","input","hint"],"required":["label","input"]},
   "Group": {"props":["label","members","kind"],"required":["label","members"]},
@@ -64,6 +67,8 @@
   "Skeleton": {"props":["lines","shape"],"required":[]},
   "Slider": {"props":["name","variant","min","max","step","defaultValue","label","rules","value"],"required":["name","variant","min","max"]},
   "Stack": {"props":["children","direction","gap","align","justify","wrap"],"required":["children"]},
+  "State": {"props":["label","kind","detail","tone"],"required":["label"]},
+  "StateMachine": {"props":["states","transitions","direction"],"required":["states","transitions"]},
   "Steps": {"props":["items"],"required":["items"]},
   "StepsItem": {"props":["title","details"],"required":["title","details"]},
   "SwitchGroup": {"props":["name","items","variant","value"],"required":["name","items"]},
@@ -78,5 +83,6 @@
   "TextContent": {"props":["text","size"],"required":["text"]},
   "Timeline": {"props":["items"],"required":["items"]},
   "TimelineItem": {"props":["title","date","detail","state"],"required":["title"]},
-  "Tooltip": {"props":["text","tip"],"required":["text","tip"]}
+  "Tooltip": {"props":["text","tip"],"required":["text","tip"]},
+  "Transition": {"props":["from","to","event","guard","action"],"required":["from","to"]}
 }

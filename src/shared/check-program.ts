@@ -4,6 +4,7 @@
 import type { ElementNode, ParseResult } from "@openuidev/react-lang";
 import { splitStatements } from "./statements.ts";
 import { architectureNotes } from "../runtime/components/_architecture-model.ts";
+import { FLOWCHART, STATE_MACHINE, flowNotes } from "../runtime/components/_flow-model.ts";
 import type { ComponentLimit } from "../../types/catalog.d.ts";
 
 /** An error or warning `check` reports. */
@@ -120,22 +121,32 @@ export function checkProgram(
     });
   }
   // Diagrams: what the layout will do, which the parser cannot see.
-  const diagrams = new Set<string | undefined>();
-  for (const el of elementsOf(parsed.root, "Architecture")) {
-    // A diagram shown in two places is one statement: warn once.
-    if (el.statementId && diagrams.has(el.statementId)) continue;
-    diagrams.add(el.statementId);
-    try {
-      for (const note of architectureNotes(el.props)) {
-        warnings.push({
-          code: note.code,
-          statement: el.statementId,
-          line: lineOf(el.statementId),
-          message: note.message,
-        });
+  const notesFor: [
+    string,
+    (props: Record<string, unknown>) => { code: string; message: string }[],
+  ][] = [
+    ["Architecture", architectureNotes],
+    ["Flowchart", (props) => flowNotes(props, FLOWCHART)],
+    ["StateMachine", (props) => flowNotes(props, STATE_MACHINE)],
+  ];
+  for (const [component, notes] of notesFor) {
+    const diagrams = new Set<string | undefined>();
+    for (const el of elementsOf(parsed.root, component)) {
+      // A diagram shown in two places is one statement: warn once.
+      if (el.statementId && diagrams.has(el.statementId)) continue;
+      diagrams.add(el.statementId);
+      try {
+        for (const note of notes(el.props)) {
+          warnings.push({
+            code: note.code,
+            statement: el.statementId,
+            line: lineOf(el.statementId),
+            message: note.message,
+          });
+        }
+      } catch {
+        // A layout bug must never fail check; the page reports it when it renders.
       }
-    } catch {
-      // A layout bug must never fail check; the page reports it when it renders.
     }
   }
   // Limits a component declares (catalog data, no pack code): a list prop past its maximum.

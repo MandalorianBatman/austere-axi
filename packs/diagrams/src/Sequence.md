@@ -3,7 +3,7 @@ Messages between actors in time order: a login request across browser, API and d
 
 ## Not for
 - Parts and their links with no order: Architecture.
-- Decision logic with many branches: Flowchart, when it ships; until then, Steps.
+- Decision logic with many branches: Flowchart.
 - Two actors and one line each way: a Table or a short list.
 
 ## Limits
