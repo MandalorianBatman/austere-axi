@@ -40,6 +40,12 @@ import {
   parseAccess,
   rampFill,
 } from "../packs/diagrams/src/_matrix-model.ts";
+import {
+  buildGantt,
+  buildGitGraph,
+  buildSchedule,
+  layoutSchedule,
+} from "../packs/diagrams/src/_plan-model.ts";
 import { LAYER_SPEC, NESTED_SPEC, buildLevels } from "../packs/diagrams/src/_containment-model.ts";
 
 const pick = (e: FileEntry | null): Record<string, unknown> | null =>
@@ -1584,4 +1590,153 @@ test("Traceability: items link to requirements by ID, a requirement with no desi
       String(re),
     );
   }
+});
+
+test("Gantt: dates are inclusive UTC days, no end is a milestone, a bad row keeps its place with its error", () => {
+  const plan = buildGantt({
+    tasks: [
+      part({ name: "A", start: "2026-11-02", end: "2026-11-03", progress: 250 }),
+      part({ name: "M", start: "2026-11-04" }),
+      part({ name: "Typo", start: "next tuesday" }),
+      part({ name: "Back", start: "2026-11-04", end: "2026-11-01" }),
+      part({ name: "Feb", start: "2026-02-31" }),
+    ],
+  });
+  assert.deepEqual(
+    plan.rows.map((r) => [r.name, r.milestone, r.progress, Boolean(r.error)]),
+    [
+      ["A", false, 100, false],
+      ["M", true, 0, false],
+      ["Typo", true, 0, true],
+      ["Back", false, 0, true],
+      ["Feb", true, 0, true],
+    ],
+  );
+  assert.equal(plan.axis?.span, 3, "Nov 2 to Nov 4");
+  assert.equal(plan.rows[0].width, (2 / 3) * 100, "end is inclusive");
+  assert.deepEqual(
+    plan.problems,
+    [],
+    "a bad row shows its error in its row, not in the review panel",
+  );
+  const started = Date.now();
+  const wide = buildGantt({
+    tasks: [part({ name: "Typo year", start: "0100-01-01", end: "9999-12-31" })],
+  });
+  assert.ok(wide.axis && wide.axis.ticks.length <= 8, "month ticks, thinned");
+  assert.ok(Date.now() - started < 500, "a typo year does not build a day list");
+  const none = buildGantt({ tasks: [part({ name: "Typo", start: "x" })] });
+  assert.equal(none.axis, null);
+  assert.match(none.rows[0].error ?? "", /not YYYY-MM-DD/);
+});
+
+test("GitGraph: a commit follows its lane, a lane's first commit is cut from branchFrom, mergeFrom adds the second parent", () => {
+  const g = buildGitGraph({
+    lanes: ["main", "feat", "main"],
+    commits: [
+      part({ message: "c0", lane: "main" }, "c0"),
+      part({ message: "c1", lane: "feat", branchFrom: "main" }, "c1"),
+      part({ message: "c2", lane: "feat" }, "c2"),
+      part({ message: "m", lane: "main", mergeFrom: "feat", tag: "v1", focus: true }, "m"),
+      part({ message: "x", lane: "hot", branchFrom: "ghost" }),
+      part({ message: "self", lane: "main", mergeFrom: "main" }),
+    ],
+  });
+  assert.deepEqual(g.lanes, ["main", "feat", "hot"]);
+  const [c0, c1, c2, m, x, self] = g.commits;
+  assert.equal(c0.parent, null);
+  assert.deepEqual(c1.parent, { column: 0, lane: 0 });
+  assert.deepEqual(c2.parent, { column: 1, lane: 1 });
+  assert.deepEqual(
+    [m.parent, m.merged],
+    [
+      { column: 0, lane: 0 },
+      { column: 2, lane: 1 },
+    ],
+  );
+  assert.deepEqual([m.tag, m.focal], ["v1", true]);
+  assert.deepEqual([x.parent, self.merged], [null, null]);
+  for (const re of [
+    /listed twice/,
+    /lane "hot", which GitGraph does not list/,
+    /"ghost", which has no commit yet/,
+    /merges its own lane/,
+  ]) {
+    assert.ok(
+      g.problems.some((p) => re.test(p)),
+      String(re),
+    );
+  }
+});
+
+test("ScheduleNetwork: ES/EF/LS/LF/float, ties keep every critical path, a shortcut between critical tasks is not a critical link", () => {
+  const net = buildSchedule({
+    tasks: [
+      part({ id: "a", name: "Scope", duration: 2 }),
+      part({ id: "B", name: "Build", duration: 5, after: ["A"] }),
+      part({ id: "C", name: "Docs", duration: 3, after: ["A"] }),
+      part({ id: "D", name: "Ship", duration: 2, after: ["B", "C"] }),
+    ],
+  });
+  const by = Object.fromEntries(net.tasks.map((t) => [t.key, t]));
+  assert.equal(net.finish, 9);
+  assert.deepEqual(
+    [by.C.es, by.C.ef, by.C.ls, by.C.lf, by.C.tf, by.C.critical],
+    [2, 5, 4, 7, 2, false],
+  );
+  assert.deepEqual(net.path, ["A", "B", "D"]);
+  assert.deepEqual(
+    net.links.map((l) => `${l.from}${l.to}${l.critical ? "!" : ""}`),
+    ["AB!", "AC", "BD!", "CD"],
+  );
+  const tie = buildSchedule({
+    tasks: [
+      part({ id: "A", name: "a", duration: 1 }),
+      part({ id: "B", name: "b", duration: 2, after: ["A"] }),
+      part({ id: "C", name: "c", duration: 2, after: ["A"] }),
+      part({ id: "D", name: "d", duration: 1, after: ["B", "C"] }),
+      part({ id: "E", name: "e", duration: 0.1, after: ["A", "D"] }),
+    ],
+  });
+  assert.deepEqual(tie.path, ["A", "B", "C", "D", "E"], "both tied branches are critical");
+  assert.equal(tie.finish, 4.1);
+  assert.equal(tie.links.find((l) => l.from === "A" && l.to === "E")?.critical, false);
+  const L = layoutSchedule(tie);
+  assert.equal(L.boxes.length, 5);
+  assert.ok(
+    L.links.every((l) => /^M[\d.,H V-]+$/.test(l.d)),
+    "orthogonal routes only",
+  );
+});
+
+test("ScheduleNetwork: unknown ids, self links, cycles, duplicates and zero durations are dropped and reported, never thrown", () => {
+  const net = buildSchedule({
+    tasks: [
+      part({ id: "A", name: "a", duration: 1, after: ["A", "GHOST"] }),
+      part({ id: "B", name: "b", duration: 1, after: ["C"] }),
+      part({ id: "C", name: "c", duration: 1, after: ["B"] }),
+      part({ id: "A", name: "again", duration: 1 }),
+      part({ id: "Z", name: "zero", duration: 0 }),
+      part({ id: "", name: "none", duration: 1 }),
+    ],
+  });
+  assert.deepEqual(
+    net.tasks.map((t) => t.key),
+    ["A", "B", "C"],
+  );
+  assert.equal(net.links.length, 1, "of B after C and C after B, one remains");
+  for (const re of [
+    /comes after itself/,
+    /"GHOST", which is not a task id|GHOST, which is not a task id/,
+    /closes a cycle/,
+    /used twice/,
+    /duration must be a number above 0/,
+    /has no id/,
+  ]) {
+    assert.ok(
+      net.problems.some((p) => re.test(p)),
+      String(re),
+    );
+  }
+  assert.doesNotThrow(() => layoutSchedule(buildSchedule(undefined)));
 });

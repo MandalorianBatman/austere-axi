@@ -65,7 +65,7 @@ function HeatmapView({ props, statementId }: RendererArgs<HeatmapProps>) {
           content: (
             <table
               className="dg-mx-table"
-              style={{ minWidth: `${120 + map.columns.length * 64}px` }}
+              style={{ minWidth: `${88 + map.columns.length * 52}px` }}
             >
               <thead>
                 <tr>
@@ -93,9 +93,9 @@ function HeatmapView({ props, statementId }: RendererArgs<HeatmapProps>) {
                         className={`dg-hm-cell${cell.value === null ? " is-na" : ""}${cell.focal ? " is-focal" : ""}`}
                         style={cell.fill ? { background: cell.fill } : undefined}
                         data-ink={cell.fill ? cell.ink : undefined}
+                        data-sr={cell.focal ? " (key cell)" : undefined}
                       >
                         {cell.text}
-                        {cell.focal ? <span className="dg-sr"> (key cell)</span> : null}
                       </td>
                     ))}
                   </tr>
@@ -132,8 +132,8 @@ export const Heatmap = austereComponent({
   limits: [
     {
       prop: "columns",
-      max: 8,
-      message: "Heatmap: 8 columns at most. Group the columns, or split the figure.",
+      max: 6,
+      message: "Heatmap: 6 columns at most. Group the columns, or split the figure.",
     },
     {
       prop: "rows",
@@ -161,10 +161,10 @@ tkExport = HeatRow("Export", [3, 4, 2, 6, 5])
 tkApi = HeatRow("API", [8, 7, 11, null, 9])`,
   ],
   stress: [
-    `stressHeat = Heatmap(["COLUMN_WITH_A_VERY_LONG_UNBROKEN_NAME_THAT_MUST_WRAP", "支払い", "C", "D", "E", "F", "G", "H"], [hsA, hsB, hsC], "%")
-hsA = HeatRow("ROW_WITH_A_VERY_LONG_UNBROKEN_LABEL_THAT_MUST_WRAP_OR_BE_CUT_AT_THE_EDGE", [0, 1, 2, 3, 4, 5, 6, 1234567.891], "H")
-hsB = HeatRow("東京", [5, 5, 5, 5, 5, 5, 5, 5])
-hsC = HeatRow("Gaps", [null, "n/a", "12", "1,200", -3, 0, 0.5, 7])`,
+    `stressHeat = Heatmap(["COLUMN_WITH_A_VERY_LONG_UNBROKEN_NAME_THAT_MUST_WRAP", "支払い", "C", "D", "E", "F"], [hsA, hsB, hsC], "%")
+hsA = HeatRow("ROW_WITH_A_VERY_LONG_UNBROKEN_LABEL_THAT_MUST_WRAP_OR_BE_CUT_AT_THE_EDGE", [0, 1, 2, 3, 4, 1234567.891], "F")
+hsB = HeatRow("東京", [5, 5, 5, 5, 5, 5])
+hsC = HeatRow("Gaps", [null, "n/a", "12", "1,200", -3, 0])`,
   ],
 });
 

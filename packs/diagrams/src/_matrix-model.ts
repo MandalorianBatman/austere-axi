@@ -3,8 +3,8 @@
 // wrong still draws what it can, and says what it dropped in `problems`.
 import { isElement } from "./element.ts";
 
-const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
-const clean = (v: unknown): string => str(v).trim().replace(/\s+/g, " ");
+export const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
+export const clean = (v: unknown): string => str(v).trim().replace(/\s+/g, " ");
 const key = (v: unknown): string => clean(v).toLowerCase();
 
 /** Labels in list order. A repeat is kept: values line up with columns by position. */
@@ -12,7 +12,7 @@ export function labels(v: unknown): string[] {
   return (Array.isArray(v) ? v : []).map((item, i) => clean(item) || `#${i + 1}`);
 }
 
-interface Part {
+export interface Part {
   /** The statement name; "#row0" and so on for an inline (unnamed) part. */
   id: string;
   named: boolean;
@@ -20,7 +20,7 @@ interface Part {
 }
 
 /** Parts in list order. A part listed twice is drawn once. */
-function partsOf(
+export function partsOf(
   list: unknown,
   tag: string,
   part: string,

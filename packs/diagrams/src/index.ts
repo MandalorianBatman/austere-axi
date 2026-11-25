@@ -14,6 +14,9 @@ import { Heatmap, HeatRow } from "./Heatmap.tsx";
 import { PermissionMatrix, AccessRow } from "./PermissionMatrix.tsx";
 import { UnitGrid, UnitShare } from "./UnitGrid.tsx";
 import { Traceability, TraceReq, TraceItem } from "./Traceability.tsx";
+import { Gantt, GanttTask } from "./Gantt.tsx";
+import { GitGraph, GitCommit } from "./GitGraph.tsx";
+import { ScheduleNetwork, ScheduleTask } from "./ScheduleNetwork.tsx";
 import css from "./diagrams.css";
 import type { PackModule } from "austere-axi/pack";
 
@@ -46,6 +49,12 @@ export default {
     Traceability,
     TraceReq,
     TraceItem,
+    Gantt,
+    GanttTask,
+    GitGraph,
+    GitCommit,
+    ScheduleNetwork,
+    ScheduleTask,
   ],
   css,
 } satisfies PackModule;

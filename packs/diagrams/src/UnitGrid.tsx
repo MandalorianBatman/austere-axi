@@ -63,7 +63,10 @@ function UnitGridView({ props, statementId }: RendererArgs<UnitGridProps>) {
                     </span>
                   ) : (
                     <span className="dg-ug-cell" key={i}>
-                      <i className="dg-ug-unit is-rest" />
+                      <i
+                        className="dg-ug-unit is-rest"
+                        data-austere-part={`Remaining: ${grid.remaining} of ${UNIT_TOTAL}`}
+                      />
                     </span>
                   );
                 })}

@@ -16,7 +16,15 @@ import type { Annotator, AnnotatorMessage, FocusMark, RefsTo } from "./annotate.
 import { onRuntimeError, reportRuntimeError } from "./env.ts";
 import type { RuntimeErrorEntry } from "./env.ts";
 import { registeredPacks } from "./pack-api.ts";
-import { declaredPacks, injectPackStyles, loadPacks, packsFor, served } from "./packs.ts";
+import {
+  bundledFirst,
+  declaredPacks,
+  injectPackStyles,
+  loadPacks,
+  packsFor,
+  replacedByBundled,
+  served,
+} from "./packs.ts";
 import type { WantedPack } from "./packs.ts";
 import type { PackRef } from "../shared/packs-meta.ts";
 import { changedStatementIds, referencesTo, statementMap } from "../shared/statements.ts";
@@ -215,7 +223,7 @@ function packError(pack: WantedPack, err: Error) {
 
 /** The library with every registered pack, rebuilt only when the set of packs changes. */
 function libraryWithPacks() {
-  const packs = registeredPacks();
+  const packs = bundledFirst(registeredPacks());
   const signature = packs.map((p) => `${p.name}@${p.version}`).join(",");
   if (signature === librarySignature) return currentLibrary;
   librarySignature = signature;
@@ -225,8 +233,11 @@ function libraryWithPacks() {
       ? buildLibrary(
           packs.flatMap((p) => p.components),
           {
-            onSkip: (c, message) =>
-              reportRuntimeError({ source: "pack", component: c.name, message }),
+            onSkip: (c, message) => {
+              const from = packs.find((p) => p.components.includes(c));
+              if (from && replacedByBundled(from.name, c.name)) return;
+              reportRuntimeError({ source: "pack", component: c.name, message });
+            },
           },
         )
       : austereLibrary;

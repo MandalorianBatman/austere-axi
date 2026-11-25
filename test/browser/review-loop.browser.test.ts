@@ -245,6 +245,22 @@ test("a UserJourney score dot is announced with its scale, not as a bare number"
   }
 });
 
+test("two diagrams with the same title get different region names", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  const { context, frame } = await openReview(pages()[0].file, VIEWPORTS[0]);
+  try {
+    const names = await frame.evaluate(() =>
+      Array.from(document.querySelectorAll(".austere-diagram-scroll")).map((d) =>
+        d.getAttribute("aria-label"),
+      ),
+    );
+    assert.ok(names.length > 1, "no diagrams rendered");
+    assert.equal(new Set(names).size, names.length, `repeated region names: ${names.join(" | ")}`);
+  } finally {
+    await context.close();
+  }
+});
+
 test("every component part is annotatable end to end", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const gallery = pages()[0];

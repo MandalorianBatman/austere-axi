@@ -13,6 +13,7 @@ Who can do what: roles across, resources or components down, one access level in
 - The level is printed in every cell. Give every `AccessRow` one grant for each role, in role order; a missing one shows `None`.
 - `focus` on an `AccessRow` names a role: that cell is ringed as the key rule ("analysts can only SELECT here"). One at most.
 - `hint` is a short aside beside the resource ("S3 API").
+- A click on a cell reaches the agent with its row and column; the resource and the role name are targets of their own.
 
 ## Usual errors
 - Fewer grants than roles. The rest show `None`, which reads as a denial: count them.

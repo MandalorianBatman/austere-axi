@@ -9,7 +9,7 @@ Which requirements have a design element that satisfies them and a test that ver
 
 ## Limits
 - 6 requirements. `check` warns above that. Split the trace by area.
-- Each `TraceReq` has a stable `id` and a `source` (optional; the Source column shows only when one is set). Each `TraceItem` has its own `id`, a `kind` (`design` satisfies, `test` verifies) and `covers`, the requirement IDs it links to.
+- Each `TraceReq` has a stable `id` and a `source` (optional; the Source column, after the requirement, shows only when one is set). Each `TraceItem` has its own `id`, a `kind` (`design` satisfies, `test` verifies) and `covers`, the requirement IDs it links to.
 - One item may cover several requirements and shows in each row.
 - A requirement with no design element or no test shows `No linked element` or `No verification`, marked as a gap. Never invent a link to fill it.
 - IDs match ignoring case.
