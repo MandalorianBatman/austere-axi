@@ -2,7 +2,7 @@ import React from "react";
 import { z } from "zod";
 import { austereComponent, DiagramFrame } from "austere-axi/pack";
 import type { RendererArgs } from "austere-axi/pack";
-import { SK, buildSankey } from "./_quantity-model.ts";
+import { PHONE_ROOM, SK, SK_PHONE, buildSankey } from "./_quantity-model.ts";
 import { T } from "./_shape-view.tsx";
 import { useProblems } from "./_matrix-view.tsx";
 import guide from "./Sankey.md";
@@ -16,11 +16,14 @@ type SankeyProps = {
 };
 
 function SankeyView({ props, statementId }: RendererArgs<SankeyProps>) {
-  const model = React.useMemo(() => buildSankey(props), [props]);
-  useProblems(model.problems, "sankey", "Sankey", statementId);
+  const base = React.useMemo(() => buildSankey(props), [props]);
+  useProblems(base.problems, "sankey", "Sankey", statementId);
   return (
     <DiagramFrame className="dg-sankey" name="Sankey diagram">
-      {() => {
+      {({ room, full }) => {
+        const phone = !full && room < PHONE_ROOM;
+        const model = phone ? buildSankey(props, true) : base;
+        const bar = phone ? SK_PHONE.bar : SK.bar;
         if (model.layers < 2 || !model.flows.length) {
           return {
             error: (
@@ -60,7 +63,7 @@ function SankeyView({ props, statementId }: RendererArgs<SankeyProps>) {
                   </path>
                 ))}
               {model.nodes.map((n) => {
-                const x = n.side === "left" ? n.x - 8 : n.x + SK.bar + 8;
+                const x = n.side === "left" ? n.x - 8 : n.x + bar + 8;
                 const anchor = n.side === "left" ? "end" : "start";
                 const y = n.y + n.h / 2 - (n.lines.length === 2 ? 2 : 0);
                 return (
@@ -69,7 +72,7 @@ function SankeyView({ props, statementId }: RendererArgs<SankeyProps>) {
                       className="dg-sk-bar"
                       x={n.x}
                       y={n.y}
-                      width={SK.bar}
+                      width={bar}
                       height={n.h}
                       data-austere-part={n.part}
                     >

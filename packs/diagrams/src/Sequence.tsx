@@ -5,12 +5,13 @@ import type { DiagramContent, RendererArgs } from "austere-axi/pack";
 import {
   ACTOR_KINDS,
   BRANCH_OPS,
-  GEOM,
+  phoneGeom,
   MESSAGE_KINDS,
   buildModel,
   layoutModel,
 } from "./_sequence-model.ts";
-import type { Layout, MessageKind, PlacedMessage, SequenceInput } from "./_sequence-model.ts";
+import { PHONE_ROOM } from "./_quantity-model.ts";
+import type { Geom, Layout, MessageKind, PlacedMessage, SequenceInput } from "./_sequence-model.ts";
 import guide from "./Sequence.md";
 
 const nothing = () => null;
@@ -24,8 +25,8 @@ const T = ({
   <text {...rest}>{children} </text>
 );
 
-function ActorBox({ a, y }: { a: Layout["actors"][number]; y: number }) {
-  const { actorW, actorH } = GEOM;
+function ActorBox({ a, y, geom }: { a: Layout["actors"][number]; y: number; geom: Geom }) {
+  const { actorW, actorH } = geom;
   const x = a.x - actorW / 2;
   const mid = y + actorH / 2;
   const first = mid - ((a.lines.length - 1) * 16) / 2 + 4.5;
@@ -64,11 +65,21 @@ function markerFor(m: PlacedMessage, uid: string): string {
   return `url(#${uid}-${m.message.kind === "async" ? "open" : "filled"})`;
 }
 
-function MessageRow({ m, names, uid }: { m: PlacedMessage; names: string[]; uid: string }) {
+function MessageRow({
+  m,
+  names,
+  uid,
+  geom,
+}: {
+  m: PlacedMessage;
+  names: string[];
+  uid: string;
+  geom: Geom;
+}) {
   const { message } = m;
   const part = `${names[message.from]} → ${names[message.to]}${message.label ? `: ${message.label}` : ""}`;
   const d = m.loop
-    ? `M${m.x1},${m.y} h${GEOM.loopW} v${GEOM.loopH} h${-GEOM.loopW}`
+    ? `M${m.x1},${m.y} h${geom.loopW} v${geom.loopH} h${-geom.loopW}`
     : `M${m.x1},${m.y} L${m.x2 + (m.x2 > m.x1 ? -1 : 1)},${m.y}`;
   return (
     <g
@@ -91,7 +102,7 @@ function MessageRow({ m, names, uid }: { m: PlacedMessage; names: string[]; uid:
             key={i}
             className="dg-seq-message-label"
             x={m.labelX}
-            y={m.labelY + i * GEOM.line}
+            y={m.labelY + i * geom.line}
             textAnchor={m.anchor}
           >
             {line}
@@ -170,13 +181,19 @@ function drawing(layout: Layout, uid: string): DiagramContent {
             <title>{b.branch.guard}</title>
           ) : null}
           <g data-austere-part={`${b.branch.op}${b.branch.guard ? ` [${b.branch.guard}]` : ""}`}>
-            <rect className="dg-seq-hit" x={b.x} y={b.y} width={b.headWidth} height={GEOM.tabH} />
+            <rect
+              className="dg-seq-hit"
+              x={b.x}
+              y={b.y}
+              width={b.headWidth}
+              height={layout.geom.tabH}
+            />
             <rect
               className="dg-seq-branch-tab"
               x={b.x}
               y={b.y}
               width={b.tabWidth}
-              height={GEOM.tabH}
+              height={layout.geom.tabH}
               rx="3"
             />
             <T
@@ -220,11 +237,11 @@ function drawing(layout: Layout, uid: string): DiagramContent {
       ))}
 
       {layout.messages.map((m) => (
-        <MessageRow key={m.message.id} m={m} names={names} uid={uid} />
+        <MessageRow key={m.message.id} m={m} names={names} uid={uid} geom={layout.geom} />
       ))}
 
       {layout.actors.map((a) => (
-        <ActorBox key={a.actor.id} a={a} y={8} />
+        <ActorBox key={a.actor.id} a={a} y={8} geom={layout.geom} />
       ))}
     </svg>
   );
@@ -272,7 +289,7 @@ function SequenceView({ props, statementId }: RendererArgs<SequenceInput>) {
   const rawId = useId();
   const uid = `dg-seq-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const model = useMemo(() => buildModel(props), [props]);
-  const layout = useMemo(() => (model.actors.length ? layoutModel(model) : null), [model]);
+  const full = useMemo(() => (model.actors.length ? layoutModel(model) : null), [model]);
 
   const problemKey = model.problems.join("\n");
   useEffect(() => {
@@ -282,12 +299,12 @@ function SequenceView({ props, statementId }: RendererArgs<SequenceInput>) {
   }, [problemKey, statementId]);
 
   return (
-    <DiagramFrame
-      className="dg-seq"
-      name="Sequence diagram"
-      wide={layout ? layout.width > 900 : false}
-    >
-      {() => {
+    <DiagramFrame className="dg-seq" name="Sequence diagram" wide={full ? full.width > 900 : false}>
+      {({ room, full: expanded }) => {
+        const layout =
+          full && room < PHONE_ROOM && !expanded
+            ? layoutModel(model, phoneGeom(room, model.actors.length))
+            : full;
         if (!layout) {
           return {
             error: (

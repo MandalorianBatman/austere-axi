@@ -223,6 +223,15 @@ export const GEOM = {
   selfRoom: 150,
 } as const;
 
+export type Geom = { [K in keyof typeof GEOM]: number };
+
+/** On a phone the columns share the room, so every actor and message shows at scale 1. */
+export function phoneGeom(room: number, actors: number): Geom {
+  const pad = 8;
+  const col = Math.max(60, Math.floor((room - pad * 2) / Math.max(actors, 1)));
+  return { ...GEOM, pad, col, actorW: col - 4, selfRoom: col + 20, loopW: 24 };
+}
+
 export interface PlacedMessage {
   message: ModelMessage;
   x1: number;
@@ -264,19 +273,19 @@ export interface Layout {
   branches: PlacedBranch[];
   lifelineTop: number;
   lifelineBottom: number;
+  geom: Geom;
 }
 
-const colX = (i: number) => GEOM.pad + GEOM.col / 2 + i * GEOM.col;
-
-export function layoutModel(model: Model): Layout {
-  const { col, pad, actorW, actorH, gap, line, font, loopW, loopH, tabH } = GEOM;
+export function layoutModel(model: Model, geom: Geom = GEOM): Layout {
+  const { col, pad, actorW, actorH, gap, line, font, loopW, loopH, tabH } = geom;
+  const colX = (i: number) => pad + col / 2 + i * col;
   const n = Math.max(model.actors.length, 1);
   const hasSelfLast = model.items.some((it) =>
     (it.type === "message" ? [it.message] : [...it.branch.main, ...it.branch.other]).some(
       (m) => m.from === m.to && m.from === n - 1,
     ),
   );
-  const width = pad * 2 + n * col + (hasSelfLast ? GEOM.selfRoom - col / 2 + 8 : 0);
+  const width = pad * 2 + n * col + (hasSelfLast ? geom.selfRoom - col / 2 + 8 : 0);
   const xs = model.actors.map((_, i) => colX(i));
 
   const actors = model.actors.map((actor, i) => ({
@@ -293,7 +302,7 @@ export function layoutModel(model: Model): Layout {
     const x1 = xs[m.from];
     const x2 = xs[m.to];
     if (m.from === m.to) {
-      const roomRight = (m.from < n - 1 ? col : GEOM.selfRoom) - loopW - 14;
+      const roomRight = (m.from < n - 1 ? col : geom.selfRoom) - loopW - 14;
       const lines = m.label ? wrap(m.label, font, roomRight, 3) : [];
       const block = Math.max(lines.length * line, loopH);
       const ay = y + 6 + (block - loopH) / 2;
@@ -358,7 +367,7 @@ export function layoutModel(model: Model): Layout {
     const inset = col * 0.42;
     const selfRight = Math.max(
       0,
-      ...all.filter((m) => m.from === m.to && m.from === hi).map(() => GEOM.selfRoom - 8),
+      ...all.filter((m) => m.from === m.to && m.from === hi).map(() => geom.selfRoom - 8),
     );
     const spanOf = () =>
       Math.max(xs[hi] - xs[lo] + inset * 2, selfRight && lo === hi ? selfRight + inset : 0);
@@ -410,5 +419,6 @@ export function layoutModel(model: Model): Layout {
     branches,
     lifelineTop: top,
     lifelineBottom: height - 6,
+    geom,
   };
 }
