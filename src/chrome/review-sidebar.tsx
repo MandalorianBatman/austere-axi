@@ -7,7 +7,7 @@ import { AppSidebar, SearchField } from "./projects-sidebar.tsx";
 import { ACCOUNT, SID } from "./review-env.ts";
 import { AccountFooter, pageHref } from "./cloud-views.tsx";
 import { openUrl } from "./review-nav.ts";
-import { loadSide, toggleClosed, useSide } from "./review-side.ts";
+import { SHARED, loadSide, toggleClosed, useSide } from "./review-side.ts";
 import { CLOUD_VIEWS } from "./views.ts";
 
 /** Keeps the sidebar's data current. Always mounted: the phone's sheet draws its content only while open. */
@@ -59,7 +59,9 @@ export function ReviewSidebar(): ReactElement {
         pages,
         selected: "",
         collapsed: closed,
-        projectHref: (id) => `/?project=${encodeURIComponent(id)}`,
+        // The shared group is the cloud's Shared view, not a project of the hub.
+        projectHref: (id) =>
+          id === SHARED ? "/?view=shared" : `/?project=${encodeURIComponent(id)}`,
         allHref: "/",
         onSelect: () => {},
         onToggle: toggleClosed,

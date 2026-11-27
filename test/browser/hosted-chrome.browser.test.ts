@@ -481,6 +481,11 @@ test("hosted chrome: a signed-in viewer gets the projects sidebar and Go to page
     await side.getByText("Shared plan").waitFor();
     assert.equal(await side.getByText("Shared with you").count(), 1);
     assert.equal(await side.locator("a[href='/p/pg_shared']").count(), 1);
+    assert.equal(
+      await side.locator("a[href='/?view=shared']").count(),
+      2,
+      "view link and group header",
+    );
     assert.match(await side.innerText(), /ana@example\.com/);
     assert.equal(await side.locator("form[action='/auth/logout']").count(), 1);
 
