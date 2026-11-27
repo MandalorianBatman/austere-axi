@@ -11,6 +11,7 @@ What austere-axi is and how to start: the [project README](../README.md).
 | [CLI reference](cli.md) | Every command, the review rules, environment variables |
 | [Components and packs](components-and-packs.md) | Finding components, installing packs, the trust list, private registries |
 | [Diagrams](diagrams.md) | Every diagram type, which component or recipe draws it, its status; how an agent picks one |
+| [Report pages](report-pages.md) | A backtest report as a page: components, the patch-only flow after a form, token cost for long charts, and what does not work yet |
 | [Writing a pack](writing-a-pack.md) | From scaffold to `npm publish` |
 | [Team review](team-review.md) | `share`: teammates on your tailnet review a page under their own name |
 | [Hosted pages](hosted-pages.md) | `publish`: a hosted copy of a page with one invite link per reviewer |

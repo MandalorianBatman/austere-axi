@@ -60,6 +60,7 @@ const ORDER = [
   "architecture-review",
   "learning-guide",
   "research-report",
+  "backtest-report",
   "session-migration",
   "incident-postmortem",
   "api-design-review",

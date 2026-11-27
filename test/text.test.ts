@@ -150,6 +150,7 @@ test("every example page: every statement reads as text, and only containers and
     "Stack",
     "Card",
     "OverviewCardBlock",
+    "Tabs",
     "Timeline",
     "Breadcrumb",
     "AvatarGroup",
