@@ -26,6 +26,7 @@ function Receipt({ entry }: { entry: Entry }): ReactElement | null {
   const wake = useReview((s) => s.wake);
   const unread = useReview((s) => s.unread);
   const viewerName = useReview((s) => s.viewerName);
+  const hostedOwner = useReview((s) => s.hostedOwner);
   // Hosted notes have no delivery receipts: the owner's agent sees them after a sync.
   if (HOSTED) {
     if (entry.pending)
@@ -34,19 +35,27 @@ function Receipt({ entry }: { entry: Entry }): ReactElement | null {
           <em>Sending…</em>
         </div>
       );
-    return entry.author === viewerName ? (
-      <div className="receipt">
-        <em>Sent to the page owner</em>
-      </div>
-    ) : null;
+    if (hostedOwner && !entry.held)
+      return (
+        <div className="receipt">
+          <em>Sent to the agent</em>
+        </div>
+      );
+    if (!hostedOwner)
+      return entry.author === viewerName ? (
+        <div className="receipt">
+          <em>Sent to the page owner</em>
+        </div>
+      ) : null;
   }
+  const mayRelease = OWNER || hostedOwner;
   if (entry.held)
     return (
       <div className="receipt held">
         <span className="held-label">
-          {OWNER ? "Held · not sent to the agent" : "Waiting for the owner to send it on"}
+          {mayRelease ? "Held · not sent to the agent" : "Waiting for the owner to send it on"}
         </span>
-        {OWNER ? (
+        {mayRelease ? (
           <>
             <Button size="xs" type="button" onClick={() => void heldAction("release", [entry.id])}>
               Send
@@ -224,7 +233,7 @@ export function Log({ inert }: { inert?: boolean }): ReactElement {
   const rows: (Entry | RunMark)[] = marks.length
     ? [...entries, ...marks].sort((a, b) => a.at - b.at)
     : entries;
-  const heldIds = OWNER ? s.transcript.filter((e) => e.held).map((e) => e.id) : [];
+  const heldIds = OWNER || s.hostedOwner ? s.transcript.filter((e) => e.held).map((e) => e.id) : [];
   const count = rows.length + s.queue.length;
 
   const last = useRef({ count, first: entries[0]?.id });

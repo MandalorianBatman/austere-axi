@@ -66,7 +66,8 @@ export function presenceView(s: Slice, now: number): PresenceView {
 }
 
 /** Only someone whose notes go straight to an agent is told it takes them; a held reviewer's wait for the owner. */
-export const notesGoToAgent = (): boolean => OWNER || VIEWER.auto === true;
+export const notesGoToAgent = (hostedOwner: boolean): boolean =>
+  OWNER || hostedOwner || VIEWER.auto === true;
 
 // The roster of the others on the page (presence.ts) draws into the header's chips; it is made once that exists.
 let roster: Presence | null = null;

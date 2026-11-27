@@ -96,8 +96,9 @@ function RetryBadge({ until }: { until: number }): ReactElement {
   );
 }
 
-function hint(viewerName: string): string {
+function hint(viewerName: string, hostedOwner: boolean): string {
   if (OWNER) return "Enter sends · Shift+Enter newline";
+  if (hostedOwner) return "Enter sends to the agent · Shift+Enter newline";
   const base =
     HOSTED || VIEWER.auto ? "Enter sends" : "the owner sends your notes on · Enter sends";
   return viewerName ? `Posting as ${viewerName} · ${base}` : base;
@@ -124,6 +125,7 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
       wake: r.wake,
       unread: r.unread,
       attachInfo: r.attachInfo,
+      hostedOwner: r.hostedOwner,
     })),
   );
   const now = useNow();
@@ -140,7 +142,7 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
   });
   const send = form.handleSubmit(() => sendAll(false));
   // Nobody listens: what Send does now, and for the owner the way to start an agent.
-  const showSaved = view.cls === "idle" && !view.attached && notesGoToAgent();
+  const showSaved = view.cls === "idle" && !view.attached && notesGoToAgent(s.hostedOwner);
   useEffect(() => {
     if (showSaved && OWNER) void loadAgentPrompt();
   }, [showSaved]);
@@ -257,13 +259,13 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
               )}
             </Button>
           </div>
-          <span className="composer-hint">{hint(s.viewerName)}</span>
+          <span className="composer-hint">{hint(s.viewerName, s.hostedOwner)}</span>
           {s.rateLimit ? <RetryBadge until={s.rateLimit} /> : null}
           {/* Said once, when the wait starts; the countdown in the Badge is not announced every second. */}
           <p className="sr-only" role="status">
             {s.rateLimit ? "Too many notes. Sending again soon." : ""}
           </p>
-          <div className="composer-listen" hidden={view.cls !== "listening" || !notesGoToAgent()}>
+          <div className="composer-listen" hidden={view.cls !== "listening" || !notesGoToAgent(s.hostedOwner)}>
             <span className="composer-dot" aria-hidden="true" />
             <span>An agent is listening and takes your notes as soon as you send</span>
           </div>

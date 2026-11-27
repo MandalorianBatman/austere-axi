@@ -139,6 +139,7 @@ export async function loadHostedFrame(): Promise<boolean> {
   }
   if (typeof answer.title === "string" && answer.title.trim()) set({ title: answer.title.trim() });
   ownerView = !!answer.owner;
+  set({ hostedOwner: ownerView });
   const inviteName = answer.name ?? null;
   if (inviteName) set({ inviteName, viewerName: inviteName });
   else {
@@ -237,6 +238,8 @@ function applyChanges(changes: ReceivedChanges): void {
     // Reviewers see notes in every state; discarded ones are hidden.
     else if (row.type === "note")
       entries.push({
+        // Only the owner sees held notes as held: they are theirs to release.
+        held: ownerView && row.state === "held",
         id: `note:${row.id}`,
         role: "user",
         author: row.author.slice(0, NAME_MAX),
