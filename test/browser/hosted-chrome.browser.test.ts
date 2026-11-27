@@ -611,12 +611,19 @@ test("hosted chrome: the shell names no page until access is granted; the owner 
     assert.match(await page.locator(".composer-hint").innerText(), /Enter sends to the agent/);
     // The owner is not "a shared page" reviewer: the label and its title say the notes go to the agent.
     assert.equal(await page.locator(".presence").innerText(), "Your shared page");
-    assert.match((await page.locator(".presence").getAttribute("title")) ?? "", /straight to the agent/);
+    assert.match(
+      (await page.locator(".presence").getAttribute("title")) ?? "",
+      /straight to the agent/,
+    );
     await page.fill(".composer textarea", "owner note");
     await page.click(".composer .send");
     await mutationsReceived(1);
     await page.waitForSelector(".msg.user .receipt em:text('Sent to the agent')");
-    assert.equal(await page.locator(".receipt.held").count(), 0, "the owner's own note is not held");
+    assert.equal(
+      await page.locator(".receipt.held").count(),
+      0,
+      "the owner's own note is not held",
+    );
     assert.ok(svc.rows.some((r) => r.type === "note" && r.author === "Owner"));
 
     // Teammates' held notes: Send releases one, Discard all drops the rest, over the socket (no /release request).
@@ -645,7 +652,9 @@ test("hosted chrome: the shell names no page until access is granted; the owner 
     assert.deepEqual(svc.mutations.at(-1)?.name, "discardNote");
     assert.deepEqual(svc.mutations.at(-1)?.args, { note: "n-ana2" });
     await page.waitForSelector(".held-bar", { state: "detached" });
-    assert.ok(svc.rows.some((r) => r.id === "n-ana1" && r.type === "note" && r.state === "released"));
+    assert.ok(
+      svc.rows.some((r) => r.id === "n-ana1" && r.type === "note" && r.state === "released"),
+    );
     assert.ok(!svc.requests.some((r) => /\/(release|discard)$/.test(r)));
 
     // The same link again is refused: it was single-use.

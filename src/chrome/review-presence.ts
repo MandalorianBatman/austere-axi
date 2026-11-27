@@ -22,7 +22,15 @@ export function agentFor(since: number | null, now: number): string {
 
 type Slice = Pick<
   ReviewState,
-  "archived" | "lockout" | "connected" | "presence" | "since" | "wake" | "unread" | "attachInfo" | "hostedOwner"
+  | "archived"
+  | "lockout"
+  | "connected"
+  | "presence"
+  | "since"
+  | "wake"
+  | "unread"
+  | "attachInfo"
+  | "hostedOwner"
 >;
 
 export function presenceView(s: Slice, now: number): PresenceView {

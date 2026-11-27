@@ -265,7 +265,10 @@ export function Composer({ inert }: { inert?: boolean }): ReactElement {
           <p className="sr-only" role="status">
             {s.rateLimit ? "Too many notes. Sending again soon." : ""}
           </p>
-          <div className="composer-listen" hidden={view.cls !== "listening" || !notesGoToAgent(s.hostedOwner)}>
+          <div
+            className="composer-listen"
+            hidden={view.cls !== "listening" || !notesGoToAgent(s.hostedOwner)}
+          >
             <span className="composer-dot" aria-hidden="true" />
             <span>An agent is listening and takes your notes as soon as you send</span>
           </div>

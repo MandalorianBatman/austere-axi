@@ -50,7 +50,10 @@ export async function sendAll(end = false): Promise<void> {
 export async function heldAction(kind: "release" | "discard", ids?: string[]): Promise<void> {
   // Hosted: the owner's browser socket carries it; "all" is every held note the page shows.
   if (HOSTED) {
-    for (const id of ids ?? S().transcript.filter((e) => e.held).map((e) => e.id))
+    for (const id of ids ??
+      S()
+        .transcript.filter((e) => e.held)
+        .map((e) => e.id))
       sendOwnerAction(kind === "release" ? "releaseNote" : "discardNote", id.replace(/^note:/, ""));
     return;
   }
