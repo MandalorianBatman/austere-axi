@@ -19,7 +19,7 @@ export interface Caller {
   sessionFile?: string;
 }
 
-/** The variables each harness sets in its tool calls' environment (docs/review-loop-v2.md, "Harness facts"). */
+/** The variables each harness sets in its tool calls' environment (docs/cli.md, "Adapters"). */
 const ENV: Record<CallerHarness, { id: string; file?: string }> = {
   omp: { id: "PI_SESSION_ID", file: "PI_SESSION_FILE" },
   copilot: { id: "COPILOT_AGENT_SESSION_ID" },

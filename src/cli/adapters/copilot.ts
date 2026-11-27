@@ -1,4 +1,4 @@
-// Copilot CLI (1.0.112 observed, docs/review-loop-v2.md "Harness facts"): the prompt on stdin
+// Copilot CLI (1.0.112 observed, docs/cli.md "Adapters"): the prompt on stdin
 // (no `-p`), `--output-format json` so the last line carries the session id, `--no-ask-user` so a
 // run never blocks, and always `--model` (default `auto`): the session saves the model and a bad
 // one breaks later resumes (A15). There is no fork. A resume of a session open in another process

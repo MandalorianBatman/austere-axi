@@ -1,8 +1,12 @@
 # Diagrams
 
-austere-axi draws the diagram types of [`cathrynlavery/diagram-design`](https://github.com/cathrynlavery/diagram-design) at commit [`58b7dcf`](https://github.com/cathrynlavery/diagram-design/blob/58b7dcf/skills/diagram-design/SKILL.md) ("Visual-type guide (52)") as native components: typed statements, automatic layout, and each part a click target. The types marked **built** in the table below ship with austere-axi: a page needs no install and no tag. Two upstream types are not planned. [Every type on one page](../examples/diagram-types.html) shows each one drawn.
+austere-axi draws the diagram types of [`cathrynlavery/diagram-design`](https://github.com/cathrynlavery/diagram-design) at commit [`58b7dcf`](https://github.com/cathrynlavery/diagram-design/blob/58b7dcf/skills/diagram-design/SKILL.md) ("Visual-type guide (52)") as native components: typed statements, automatic layout, each part a click target.
 
-An agent finds them in this order:
+- **built** types ship with austere-axi: no install, no tag.
+- Two upstream types are not planned.
+- [Every type on one page](../examples/diagram-types.html) shows each one drawn.
+
+How an agent finds them:
 
 | Step | Command | What it reads |
 |---|---|---|
@@ -11,11 +15,11 @@ An agent finds them in this order:
 | A type is chosen | `austere-axi components show <Name>` | Signature, the signatures of its parts, where it may sit, the usage guide, two examples |
 | Free text | `austere-axi components search <words> --group Diagrams` | One short line for each match |
 
-A **recipe** is a type an existing component draws well, so it has no component of its own: `show` prints its guide and two examples, which write the components it names. A page that calls a recipe by name fails `check` with the components to write.
+A **recipe** is a type an existing component draws well; it has no component of its own. `show` prints its guide and two examples, which use the components it names. A page that calls a recipe by name fails `check`, which names the components to write.
 
 ## Coverage
 
-Status: **built** (in this version), **planned** (scheduled, not released yet), **not planned**. To compare with upstream, read its "Visual-type guide" table at a newer commit and look for rows missing here.
+Status: **built** (in this version), **planned** (scheduled, not released), **not planned**. To compare with upstream, read its "Visual-type guide" at a newer commit and look for rows missing here.
 
 | Upstream type | austere-axi | Kind | Status |
 |---|---|---|---|
@@ -72,10 +76,18 @@ Status: **built** (in this version), **planned** (scheduled, not released yet), 
 | Unit Grid | `UnitGrid` (`UnitShare`) | component | built |
 | Schedule network | `ScheduleNetwork` (`ScheduleTask`) | component | built |
 
-The stock `RadarChart` and `RadialChart` stay off. `RadarChart` draws every series in nearly the same blue and has no part a reviewer can click, so it cannot compare several entities. `RadialChart` draws concentric arcs, so the ray length that a polar chart needs is not there. `Radar` and `PolarChart` replace them.
-
-Named variants of a type (slopegraph, ridgeline, streamgraph, bump, bubble, beeswarm, box plot, marimekko, dumbbell) are not built. Animation, brand skins, and import from Mermaid, draw.io, Excalidraw or PlantUML are not planned.
+- The stock `RadarChart` and `RadialChart` stay off; `Radar` and `PolarChart` replace them.
+  - `RadarChart` draws every series in nearly the same blue with no clickable part, so it cannot compare entities.
+  - `RadialChart` draws concentric arcs, without the ray length a polar chart needs.
+- Named variants (slopegraph, ridgeline, streamgraph, bump, bubble, beeswarm, box plot, marimekko, dumbbell) are not built.
+- Not planned: animation, brand skins, import from Mermaid, draw.io, Excalidraw or PlantUML.
 
 ## Adding a type
 
-Follow `.agents/skills/add-component/SKILL.md`. A diagram type sets `group: "Diagrams"` and a `family`, ships a usage guide in an adjacent `.md` file (`## Use for`, `## Not for`, `## Limits`, `## Usual errors`), two examples, `keywords` and, where upstream gives a number, `limits`. Change its row above to **built** and add a line to `CHANGELOG.md`. The read-path fields are in [Writing a pack](writing-a-pack.md#read-path-fields).
+Follow `.agents/skills/add-component/SKILL.md`. A diagram type:
+
+- sets `group: "Diagrams"` and a `family`;
+- ships a usage guide in an adjacent `.md` file (`## Use for`, `## Not for`, `## Limits`, `## Usual errors`), two examples, `keywords` and, where upstream gives a number, `limits`;
+- changes its row above to **built** and adds a line to `CHANGELOG.md`.
+
+Read-path fields: [Writing a pack](writing-a-pack.md#read-path-fields).

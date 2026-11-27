@@ -1,18 +1,20 @@
 # Contributing to austere-axi
 
-Bug reports, examples, docs fixes, component packs and code are all welcome. Issues labelled [`good first issue`](https://github.com/MandalorianBatman/austere-axi/labels/good%20first%20issue) are small and have a clear finish line; comment on one before you start so two people don't take it.
+Bug reports, examples, docs fixes, component packs and code are welcome.
 
-Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). Accessibility barriers are bugs; [ACCESSIBILITY.md](ACCESSIBILITY.md) says what works today and how to report one.
+- Issues labelled [`good first issue`](https://github.com/MandalorianBatman/austere-axi/labels/good%20first%20issue) are small with a clear finish line. Comment on one before starting so two people don't take it.
+- Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+- Accessibility barriers are bugs: see [ACCESSIBILITY.md](ACCESSIBILITY.md).
 
 ## Reporting a bug
 
 Open an issue with:
 
-- `npx -y austere-axi --version`, your OS, and `node --version` (22.18 or later is required).
+- `npx -y austere-axi --version`, your OS, and `node --version` (22.18 or later required).
 - The page that shows the problem (the `.html` file, or the smallest OpenUI Lang program that still fails).
-- What the CLI printed. For a review-page problem, the browser and a screenshot help.
+- What the CLI printed. For a review-page problem, the browser and a screenshot.
 
-Security problems: do not open a public issue. Use [private vulnerability reporting](https://github.com/MandalorianBatman/austere-axi/security/advisories/new).
+Security problems: no public issue. Use [private vulnerability reporting](https://github.com/MandalorianBatman/austere-axi/security/advisories/new).
 
 ## Setting up
 
@@ -24,17 +26,20 @@ npm run build
 npm test
 ```
 
-`npm run test:browser`, `npm run gallery` and `npm run shot` need Chrome, or `CHROME_PATH` pointing at a Chrome or Chromium binary. `npm run test:browser` also needs Firefox for one engine-specific check: `npx playwright-core install firefox`, or `FIREFOX_PATH`. Run the CLI you just built with `node dist/cli.mjs <command>`, for example `node dist/cli.mjs examples/session-migration.html`. From a checkout it keeps its state in `.dev/state` and serves on a port of its own, not your installed `~/.austere-axi` and 4388; set `AUSTERE_AXI_STATE_DIR` to a scratch dir to choose one ([docs/cli.md](docs/cli.md#environment)).
+- `npm run test:browser`, `npm run gallery` and `npm run shot` need Chrome, or `CHROME_PATH` pointing at Chrome or Chromium.
+- `npm run test:browser` also needs Firefox for one engine-specific check: `npx playwright-core install firefox`, or `FIREFOX_PATH`.
+- Run your build with `node dist/cli.mjs <command>`, e.g. `node dist/cli.mjs examples/session-migration.html`.
+- From a checkout, state lives in `.dev/state` and the server uses its own port, not your installed `~/.austere-axi` and 4388. Set `AUSTERE_AXI_STATE_DIR` to a scratch dir to choose one ([Environment](docs/cli.md#environment)).
 
 ## Making a change
 
-[`AGENTS.md`](AGENTS.md) lists the commands and the rules that apply to almost every change: which file owns what, how component props evolve, what the server may bind to, and what gets published. Read it first; it is short. It applies to people too.
+Read [`AGENTS.md`](AGENTS.md) first (it is short and applies to people too): commands, file ownership, how component props evolve, what the server may bind to, what gets published.
 
-- **A new component** in core: follow `.agents/skills/add-component/SKILL.md`. Released props are positional and append-only, and the component reference has a token budget, so most new components belong in a pack instead.
-- **A new pack:** you do not need a PR here. Build it in your own repo against `austere-axi/pack` (see [`docs/writing-a-pack.md`](docs/writing-a-pack.md), and [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt) as a worked example), publish it to npm, then open an issue so we can link it.
-- **User-facing behaviour** (CLI output, flags, the review page): update the matching guide in [`docs/`](docs/README.md) in the same PR, and `README.md` when the change alters what a reviewer sees or how they start. Agents read `--help` and `spec`, so change those in `src/cli/main.ts` and `src/runtime/prompt.ts` when the workflow changes.
+- **New core component:** follow `.agents/skills/add-component/SKILL.md`. Released props are positional and append-only, and the component reference has a token budget, so most new components belong in a pack.
+- **New pack:** no PR needed. Build it in your own repo against `austere-axi/pack` ([Writing a pack](docs/writing-a-pack.md); worked example: [austere-pack-gantt](https://github.com/MandalorianBatman/austere-pack-gantt)), publish to npm, then open an issue so we can link it.
+- **User-facing behaviour** (CLI output, flags, review page): update the matching guide in [`docs/`](docs/README.md) in the same PR, and `README.md` when it changes what a reviewer sees or how they start. Agents read `--help` and `spec`: update `src/cli/main.ts` and `src/runtime/prompt.ts` when the workflow changes.
 
-Before you open the PR:
+Before opening the PR:
 
 ```sh
 npm run build
@@ -44,7 +49,7 @@ npm run lint
 npm run format:check   # npm run format fixes it
 ```
 
-If you use a coding agent, `.agents/skills/review-change/SKILL.md` runs these checks and the review agents in `.agents/agents/`.
+With a coding agent, `.agents/skills/review-change/SKILL.md` runs these checks and the review agents in `.agents/agents/`.
 
 ## Repository layout
 
@@ -52,7 +57,7 @@ If you use a coding agent, `.agents/skills/review-change/SKILL.md` runs these ch
 |---|---|
 | `src/runtime/components/` | Custom components (`Architecture` family, `Diff`, `FileTree`), one file each |
 | `src/runtime/stock.ts` | Which stock components ship, which stay out of `spec`, their groups |
-| `docs/` | User guides ([index](docs/README.md)), [Writing a pack](docs/writing-a-pack.md), the benchmark and design notes |
+| `docs/` | User guides ([index](docs/README.md)), [Writing a pack](docs/writing-a-pack.md), benchmark, sync protocol |
 | `packs/` | Packs bundled with austere-axi (`shadcn`) |
 | `src/runtime/pack-api.ts`, `src/pack-kit/` | `austere-axi/pack` and the `components build` pipeline |
 | `src/shared/catalog.ts` | Component catalog and prompt tiers |
@@ -63,24 +68,40 @@ If you use a coding agent, `.agents/skills/review-change/SKILL.md` runs these ch
 | `skills/` | Published skills: `austere`, `austere-setup` |
 | `.claude-plugin/` | Claude Code marketplace and plugin manifest (in git, not in the npm package) |
 
-Maintainer guides (not published): [`AGENTS.md`](AGENTS.md), [`.agents/skills/add-component`](.agents/skills/add-component/SKILL.md) to add a component, [`.agents/skills/review-change`](.agents/skills/review-change/SKILL.md) before you commit. Tests enforce the component rules: every component has a group, `spec` stays in its token budget, released prop orders are append-only (`npm run signatures`), and every example passes `check`.
+- **Maintainer guides** (not published): [`AGENTS.md`](AGENTS.md); [`.agents/skills/add-component`](.agents/skills/add-component/SKILL.md) to add a component; [`.agents/skills/review-change`](.agents/skills/review-change/SKILL.md) before committing.
+- **Tests enforce component rules:** every component has a group, `spec` stays in its token budget, released prop orders are append-only (`npm run signatures`), every example passes `check`.
+- **Visual checks:** `npm run gallery`, `npm run shot`, `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
 
-**Visual checks:** `npm run gallery`, `npm run shot`, and `npm run test:browser` (real review loop in headless Chrome; needs Chrome or `CHROME_PATH`).
+### Website
 
-**Website:** `npm run site` builds `_site/` (needs Chrome or `CHROME_PATH`, and the npm registry: the footer names npm's latest version, not `package.json`'s). `site/` holds the hand-written pages and CSS, `examples/` feeds the gallery (add a file there and it appears with a generated thumbnail), `docs/*.md` become `/docs/` pages (no extra step: edit a guide and the next push to `main` publishes it; the build fails on a broken link), `scripts/site.ts` builds `_site/`, and `.github/workflows/pages.yml` deploys it to GitHub Pages on every push to `main` and after each npm release. Examples need a `<meta name="description">` for the gallery blurb. None of it is published to npm.
+`npm run site` builds `_site/`. Needs Chrome or `CHROME_PATH`, and the npm registry (the footer shows npm's latest version, not `package.json`'s). None of it is published to npm.
 
-**Playground** (`/play/`, source in `site/play/`): a textarea editor beside a sandboxed frame running `dist/austere.js`. It plays the part of the review chrome over the same `postMessage` bridge, so edits re-render in place and clicks arrive as the annotations `poll` prints. Problems come from `src/shared/check-program.ts`, the same code as `austere-axi check`, bundled for the browser by `scripts/site.ts` (with the spec, the component catalog and one template per example in `play/data.json`). The program travels in the URL hash (`#code=v1.<deflate-raw, base64url>`), so there is no server. `test/browser/play.browser.test.ts` drives it in headless Chrome as part of `npm run test:browser`. Packs other than the bundled ones are not available there.
+- `site/`: hand-written pages and CSS.
+- `examples/`: feeds the gallery; a new file appears with a generated thumbnail. Examples need `<meta name="description">` for the blurb.
+- `docs/*.md`: become `/docs/` pages; the next push to `main` publishes edits. The build fails on a broken link.
+- `scripts/site.ts`: builds `_site/`.
+- `.github/workflows/pages.yml`: deploys to GitHub Pages on every push to `main` and after each npm release.
 
-**Benchmark** against lavish-axi: `npm run bench` (needs model keys; see [docs/benchmark.md](docs/benchmark.md)). `npm run bench:report` rebuilds its tables from the committed results.
+### Playground
 
-**CI** builds and tests every push to `main` and every pull request (Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite). `action.yml` runs the GitHub Action on fixture pages (`test/fixtures/action/`).
+`/play/`, source in `site/play/`: a textarea editor beside a sandboxed frame running `dist/austere.js`.
 
-**Release:** bump `version` in `package.json`, date its entry in [`CHANGELOG.md`](CHANGELOG.md), push, and publish a GitHub Release whose notes are that entry (and, for a breaking release, its upgrade guide in `docs/`). `publish.yml` tests again and publishes to npm with trusted publishing; `pages.yml` then redeploys the site with the new version.
+- Acts as the review chrome over the same `postMessage` bridge: edits re-render in place; clicks arrive as the annotations `poll` prints.
+- Problems come from `src/shared/check-program.ts` (same code as `austere-axi check`), bundled by `scripts/site.ts` with the spec, the component catalog and one template per example in `play/data.json`.
+- The program travels in the URL hash (`#code=v1.<deflate-raw, base64url>`); no server.
+- `test/browser/play.browser.test.ts` drives it in headless Chrome as part of `npm run test:browser`.
+- Only bundled packs are available.
+
+### Benchmark, CI, release
+
+- **Benchmark** vs lavish-axi: `npm run bench` (needs model keys; see [docs/benchmark.md](docs/benchmark.md)). `npm run bench:report` rebuilds its tables from committed results.
+- **CI** builds and tests every push to `main` and every PR: Node 22, 24, 26 on Linux; Node 24 on Windows; browser suite. `action.yml` runs the GitHub Action on fixture pages (`test/fixtures/action/`).
+- **Release:** bump `version` in `package.json`, date its entry in [`CHANGELOG.md`](CHANGELOG.md), push, and publish a GitHub Release whose notes are that entry. `publish.yml` tests again and publishes to npm with trusted publishing; `pages.yml` then redeploys the site.
 
 ## Pull requests
 
-- One change per PR, with a description of what changed and how you checked it. For a visual change, attach a screenshot at 1280 and 390 px wide (`npm run shot -- <page> --width 390`).
-- CI runs on Node 22, 24 and 26 on Linux, Node 24 on Windows, and a headless-Chrome suite. All of it has to pass.
+- One change per PR, describing what changed and how you checked it. Visual change: attach screenshots at 1280 and 390 px wide (`npm run shot -- <page> --width 390`).
+- All CI (Node 22, 24, 26 on Linux, Node 24 on Windows, headless-Chrome suite) must pass.
 - Keep commits focused; the maintainer squashes or rebases on merge.
 
-By contributing you agree that your work is released under the [MIT License](LICENSE).
+By contributing you agree your work is released under the [MIT License](LICENSE).

@@ -1,4 +1,4 @@
-// Hosted share links on austere-cloud (docs/hosted-share-links.md): `publish` and its owner
+// Hosted share links on austere-cloud (docs/sync-protocol.md): `publish` and its owner
 // socket, and cloud.json. The local server's sync peer (peer.ts) opens the same owner socket;
 // nothing else talks to the service.
 //

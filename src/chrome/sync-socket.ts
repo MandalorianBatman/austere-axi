@@ -1,4 +1,4 @@
-// The reviewer's socket to a hosted page (docs/hosted-share-links.md, "WebSocket endpoints" and
+// The reviewer's socket to a hosted page (docs/sync-protocol.md, "WebSocket endpoints" and
 // "Errors"): opens it with the given subprotocols, parses every frame with the shared module, and
 // reconnects with backoff. What the frames mean is up to the listeners: the chrome's row feed and
 // note queue, and presence, which adds its own onOpen/onFrame listeners to the same socket.

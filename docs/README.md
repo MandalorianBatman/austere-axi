@@ -1,36 +1,32 @@
 # austere-axi documentation
 
-The [project README](../README.md) says what austere-axi is and how to start. These guides hold the reference detail.
+What austere-axi is and how to start: the [project README](../README.md).
 
 ## Guides
 
 | Guide | What is in it |
 |---|---|
-| [Install and quick start](install.md) | The commands your agent runs, the setup skill, the Claude Code plugin, and the MCP server for Claude Desktop, Cursor and Codex |
-| [How it works](how-it-works.md) | What the agent writes (OpenUI Lang), the review loop, the comparison with lavish-axi, and what is not in v1 |
-| [Upgrading to 0.12](upgrading-to-0.12.md) | Removed commands, flags and poll statuses and what replaces them, closed pages that become archived, and how to upgrade a server your own unit runs |
-| [Upgrading to 0.18](upgrading-to-0.18.md) | The chrome is React on shadcn/Tailwind: changed class names and roles, removed `dom.ts` and `nav.ts`, and the projects sidebar's defaults |
-| [CLI reference](cli.md) | Every command, the review rules, and the environment variables |
+| [Install and quick start](install.md) | CLI commands, setup skill, Claude Code plugin, MCP server for Claude Desktop, Cursor and Codex |
+| [How it works](how-it-works.md) | What the agent writes (OpenUI Lang), the review loop, comparison with lavish-axi, what is not in v1 |
+| [CLI reference](cli.md) | Every command, the review rules, environment variables |
 | [Components and packs](components-and-packs.md) | Finding components, installing packs, the trust list, private registries |
-| [Diagrams](diagrams.md) | The diagram types of diagram-design: which component or recipe draws each, and its status; how an agent picks one |
+| [Diagrams](diagrams.md) | Every diagram type, which component or recipe draws it, its status; how an agent picks one |
 | [Writing a pack](writing-a-pack.md) | From scaffold to `npm publish` |
 | [Team review](team-review.md) | `share`: teammates on your tailnet review a page under their own name |
 | [Hosted pages](hosted-pages.md) | `publish`: a hosted copy of a page with one invite link per reviewer |
-| [Attach an agent](attach.md) | Turning an agent on for a page, from the page or a terminal: modes, sessions, the write grant, runs, Stop and Retry |
-| [Hub](hub.md) | The home page over every review and note, and `server install`: the server always on, also behind a reverse proxy |
-| [Docker](docker.md) | The review server in a container on Linux: `compose.yaml`, why it needs the host's network and PIDs, and what it cannot do |
+| [Attach an agent](attach.md) | Turning an agent on for a page: modes, sessions, the write grant, runs, Stop and Retry |
+| [Hub](hub.md) | Home page over every review and note; `server install` for an always-on server, also behind a reverse proxy |
+| [Docker](docker.md) | The review server in a Linux container: `compose.yaml`, host network and PIDs, limits |
 | [GitHub Action](github-action.md) | Check and export review pages on every pull request |
-| [Security](security.md) | What the server binds to, the owner key, browser sign-in, the page sandbox, packs, telemetry |
+| [Security](security.md) | Server binding, owner key, browser sign-in, page sandbox, packs, telemetry |
 
-## Measurements and design notes
+## Reference
 
 | Document | What is in it |
 |---|---|
-| [Benchmark](benchmark.md) | austere-axi against lavish-axi: output tokens, time, cost, and the caveats |
-| [Hosted share links](hosted-share-links.md) | Design and wire protocol of hosted pages, sync and presence |
-| [Durable notes](durable-notes.md) | Design of note storage and the cursor that acknowledges feedback |
-| [Review loop v2](review-loop-v2.md) | Design of projects, pages without sessions, attach, history and reuse, the dashboard shell and the wiki; the settled decisions and the build order |
+| [Benchmark](benchmark.md) | austere-axi vs lavish-axi: output tokens, time, cost, caveats |
+| [Sync protocol](sync-protocol.md) | Wire protocol of hosted pages: versioning, WebSocket endpoints, frames, mutations, access, presence |
 
 ## Contributing
 
-Setup, repository layout and release steps are in [CONTRIBUTING.md](../CONTRIBUTING.md).
+Setup, repository layout and release steps: [CONTRIBUTING.md](../CONTRIBUTING.md).

@@ -1,8 +1,8 @@
 # Docker
 
-Run the review server in a container instead of `server install`. The agent keeps running the `austere-axi` CLI on the host; the CLI finds the container's server the way it finds any running server, through the state dir and the port.
+Run the review server in a container instead of `server install`. The agent runs the `austere-axi` CLI on the host, which finds the container's server like any running server: through the state dir and port.
 
-Linux only. The container uses the host's network: Docker Desktop on macOS and Windows does not give a container the host's loopback.
+Linux only: the container uses the host network, and Docker Desktop (macOS, Windows) does not expose the host's loopback.
 
 ## Run it
 
@@ -16,7 +16,7 @@ docker compose up -d --build
 austere-axi server status                       # server: v…, pid …, port 4388, not run by a service
 ```
 
-Put the three variables in a `.env` file beside `compose.yaml` to keep them. `AUSTERE_AXI_PORT` picks another port; set it on the host too.
+Keep the three variables in a `.env` file beside `compose.yaml`. `AUSTERE_AXI_PORT` picks another port; set it on the host too.
 
 The same with `docker run`:
 
@@ -32,7 +32,7 @@ docker run -d --name austere-axi --restart unless-stopped --init \
 
 ## Why it runs this way
 
-Each setting follows from a rule of the server ([Security](security.md)):
+Each follows from a server rule ([Security](security.md)):
 
 | Setting | Why |
 |---|---|
@@ -44,7 +44,7 @@ Each setting follows from a rule of the server ([Security](security.md)):
 
 ## Limits
 
-- **Keep the versions equal.** A host CLI newer than the image stops the container's server and starts its own on the host (a server no service runs is replaced; see [Always on](hub.md#always-on)); with `restart: unless-stopped` the container then comes back and fails to take the port while the host's server runs. Rebuild the image when you update the CLI (`docker compose up -d --build`), or run the CLI from the image: `docker exec -w "$PWD" austere-axi austere-axi <command>` (the folder must be mounted).
-- **Attach and triggers run in the container.** A [run](attach.md) or a [trigger](cli.md#triggers) starts its command in the container, which has Node and npm but no coding agent. Use `server install` on the host if you need them.
-- **Tailscale.** The image has no `tailscale` CLI, so the server listens on loopback only and phone review over the tailnet is off. `AUSTERE_AXI_HOST` and the local-network switch in Settings still work, since the container shares the host's addresses.
-- **`server install` and `server restart`** manage a systemd unit on the host, not the container; `server status` reports the container's server as `not run by a service`. Use `docker compose restart` and `docker compose logs`; the server also writes `server.log` in the state dir.
+- **Keep versions equal.** A host CLI newer than the image stops the container's server and starts its own on the host (see [Always on](hub.md#always-on)); with `restart: unless-stopped` the container returns and fails to take the port. Rebuild on CLI update (`docker compose up -d --build`), or run the CLI from the image: `docker exec -w "$PWD" austere-axi austere-axi <command>` (the folder must be mounted).
+- **Attach and triggers run in the container**, which has Node and npm but no coding agent. A [run](attach.md) or [trigger](cli.md#triggers) needs `server install` on the host instead.
+- **Tailscale:** the image has no `tailscale` CLI, so the server listens on loopback only; no phone review over the tailnet. `AUSTERE_AXI_HOST` and the local-network switch still work (shared host addresses).
+- **`server install` / `server restart`** manage a host systemd unit, not the container; `server status` reports the container's server as `not run by a service`. Use `docker compose restart` and `docker compose logs`; the server also writes `server.log` in the state dir.

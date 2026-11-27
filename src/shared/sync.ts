@@ -2,7 +2,7 @@
 // CLI (owner peer), the chrome (reviewer) and austere-cloud (page object). Published as
 // "austere-axi/sync" (dist/sync.mjs, zod bundled in). The types live in types/sync.d.ts, the
 // contract; this file implements it and checks itself against it at the bottom. The wire
-// protocol is in docs/hosted-share-links.md, "Sync, access and presence". No Node APIs here:
+// protocol is in docs/sync-protocol.md. No Node APIs here:
 // the chrome and the Worker run it too.
 import { z } from "zod";
 import type * as api from "austere-axi/sync";

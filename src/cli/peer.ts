@@ -1,5 +1,5 @@
-// The local server as a sync peer of the owner's hosted pages (docs/hosted-share-links.md,
-// "CLI side" and "Sync, access and presence"). For each page in cloud.json it opens the owner
+// The local server as a sync peer of the owner's hosted pages (docs/sync-protocol.md).
+// For each page in cloud.json it opens the owner
 // socket (cloud.ts) while it has a reason to: once at start, for a `feedback` read, while a poll
 // listens on the page's session, and while mutations wait in the queue. Offline, it retries
 // with backoff up to 60 s; local review goes on as before.

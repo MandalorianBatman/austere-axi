@@ -1,6 +1,6 @@
 // Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH):
 // the review chrome in hosted mode, against a tiny stub of the austere-cloud
-// reviewer routes (docs/hosted-share-links.md, "Sync, access and presence"),
+// reviewer routes (docs/sync-protocol.md),
 // served with the service's CSP: the shell, the asset-token trade, the token-scoped
 // frame, the reviewer socket (pull, changes, addNote acks, revocation) and the report.
 import assert from "node:assert/strict";
@@ -35,7 +35,7 @@ const ID = "pg_test";
 const BASE = `/p/${ID}`;
 const ANA = "ana-invite-token-0123456789";
 const BO = "bo-invite-token-0123456789";
-// As austere-cloud sends it (src/serve.ts), and as docs/hosted-share-links.md states it.
+// As austere-cloud sends it (src/serve.ts).
 const SHELL_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const FRAME_CSP =
