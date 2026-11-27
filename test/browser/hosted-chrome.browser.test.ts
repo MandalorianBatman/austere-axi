@@ -264,6 +264,24 @@ function reviewerSocket(s: Socket) {
         rows: svc.rows.filter((r) => r.seq > frame.after),
         cursor: svc.seq,
       });
+    } else if (
+      frame.t === "mutation" &&
+      (frame.name === "releaseNote" || frame.name === "discardNote")
+    ) {
+      svc.mutations.push(frame);
+      svc.mutationTimes.push(Date.now());
+      svc.onMutation?.();
+      const row = svc.rows.find((r) => r.type === "note" && r.id === frame.args.note);
+      if (!s.owner || !row || row.type !== "note")
+        return send(s.ws, {
+          v: SYNC_VERSION,
+          t: "ack",
+          clientId: frame.clientId,
+          n: frame.n,
+          error: { code: "forbidden", message: "not allowed" },
+        });
+      put({ ...row, state: frame.name === "releaseNote" ? "released" : "discarded" });
+      send(s.ws, { v: SYNC_VERSION, t: "ack", clientId: frame.clientId, n: frame.n });
     } else if (frame.t === "mutation" && frame.name === "addNote") {
       svc.mutations.push(frame);
       svc.mutationTimes.push(Date.now());
@@ -293,7 +311,8 @@ function reviewerSocket(s: Socket) {
           author,
           items: frame.args.items,
           at: Date.now(),
-          state: "held",
+          // The owner's own notes go straight to the agent.
+          state: s.owner ? "released" : "held",
         } satisfies NoteRow);
       }
       send(s.ws, { v: SYNC_VERSION, t: "ack", clientId: frame.clientId, n: frame.n });
@@ -589,12 +608,54 @@ test("hosted chrome: the shell names no page until access is granted; the owner 
     assert.equal(await page.title(), "Plan · austere");
     assert.equal(await page.locator(".title").innerText(), "Plan");
     assert.equal(svc.inviteHeaders.at(-1), "", "no invite is offered");
-    assert.match(await page.locator(".composer-hint").innerText(), /Posting as Owner/);
+    assert.match(await page.locator(".composer-hint").innerText(), /Enter sends to the agent/);
+    // The owner is not "a shared page" reviewer: the label and its title say the notes go to the agent.
+    assert.equal(await page.locator(".presence").innerText(), "Your shared page");
+    assert.match(
+      (await page.locator(".presence").getAttribute("title")) ?? "",
+      /straight to the agent/,
+    );
     await page.fill(".composer textarea", "owner note");
     await page.click(".composer .send");
     await mutationsReceived(1);
-    await page.waitForSelector(".msg.user .receipt em:text('Sent to the page owner')");
+    await page.waitForSelector(".msg.user .receipt em:text('Sent to the agent')");
+    assert.equal(
+      await page.locator(".receipt.held").count(),
+      0,
+      "the owner's own note is not held",
+    );
     assert.ok(svc.rows.some((r) => r.type === "note" && r.author === "Owner"));
+
+    // Teammates' held notes: Send releases one, Discard all drops the rest, over the socket (no /release request).
+    const held = (id: string, text: string): NoteRow => ({
+      v: 1,
+      type: "note",
+      id,
+      seq: 0,
+      author: "Ana",
+      items: [{ kind: "message", text }],
+      at: Date.now(),
+      state: "held",
+    });
+    put(held("n-ana1", "ana one"));
+    put(held("n-ana2", "ana two"));
+    await page.waitForSelector(".held-bar >> text=2 held from teammates");
+    assert.equal(await page.locator(".receipt.held button:text('Send')").count(), 2);
+    const before = svc.mutations.length;
+    await page.locator(".receipt.held button:text('Send')").first().click();
+    await mutationsReceived(before + 1);
+    assert.deepEqual(svc.mutations.at(-1)?.name, "releaseNote");
+    assert.deepEqual(svc.mutations.at(-1)?.args, { note: "n-ana1" });
+    await page.waitForSelector(".held-bar >> text=1 held from teammates");
+    await page.click(".held-bar button:text('Discard all')");
+    await mutationsReceived(before + 2);
+    assert.deepEqual(svc.mutations.at(-1)?.name, "discardNote");
+    assert.deepEqual(svc.mutations.at(-1)?.args, { note: "n-ana2" });
+    await page.waitForSelector(".held-bar", { state: "detached" });
+    assert.ok(
+      svc.rows.some((r) => r.id === "n-ana1" && r.type === "note" && r.state === "released"),
+    );
+    assert.ok(!svc.requests.some((r) => /\/(release|discard)$/.test(r)));
 
     // The same link again is refused: it was single-use.
     const again = await ctx.newPage();

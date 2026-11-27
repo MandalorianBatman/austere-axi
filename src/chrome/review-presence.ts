@@ -22,7 +22,15 @@ export function agentFor(since: number | null, now: number): string {
 
 type Slice = Pick<
   ReviewState,
-  "archived" | "lockout" | "connected" | "presence" | "since" | "wake" | "unread" | "attachInfo"
+  | "archived"
+  | "lockout"
+  | "connected"
+  | "presence"
+  | "since"
+  | "wake"
+  | "unread"
+  | "attachInfo"
+  | "hostedOwner"
 >;
 
 export function presenceView(s: Slice, now: number): PresenceView {
@@ -32,6 +40,8 @@ export function presenceView(s: Slice, now: number): PresenceView {
   if (s.archived) [label, cls] = ["Page archived", "ended"];
   else if (s.lockout) [label, cls] = [s.lockout, "ended"];
   else if (!s.connected) [label, cls] = ["Reconnecting…", "off"];
+  // The page socket carries no agent presence (only the other viewers'), so the owner gets a neutral label.
+  else if (HOSTED && s.hostedOwner) [label, cls] = ["Your shared page", "hosted"];
   else if (HOSTED) [label, cls] = ["Shared page", "hosted"];
   else if (s.presence === "listening") [label, cls] = ["Agent listening", "listening"];
   else if (s.presence === "working")
@@ -56,7 +66,9 @@ export function presenceView(s: Slice, now: number): PresenceView {
         : cls === "stale"
           ? "The agent took your last notes. It has not replied or changed the page for a while."
           : cls === "hosted"
-            ? "Notes go to the page owner. Replies show up here as they are posted."
+            ? s.hostedOwner
+              ? "Notes go straight to the agent. Replies show up here as they are posted."
+              : "Notes go to the page owner. Replies show up here as they are posted."
             : cls === "busy"
               ? "The agent session that worked on this page is in a turn. Your notes start its next turn when this one ends."
               : s.wake
@@ -66,7 +78,8 @@ export function presenceView(s: Slice, now: number): PresenceView {
 }
 
 /** Only someone whose notes go straight to an agent is told it takes them; a held reviewer's wait for the owner. */
-export const notesGoToAgent = (): boolean => OWNER || VIEWER.auto === true;
+export const notesGoToAgent = (hostedOwner: boolean): boolean =>
+  OWNER || hostedOwner || VIEWER.auto === true;
 
 // The roster of the others on the page (presence.ts) draws into the header's chips; it is made once that exists.
 let roster: Presence | null = null;

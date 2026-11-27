@@ -1,6 +1,6 @@
 // Send: the queue and the note in the box go to the agent (local) or into the outbox (hosted).
 import { BASE, OWNER, HOSTED } from "./review-env.ts";
-import { sendHosted } from "./review-outbox.ts";
+import { sendHosted, sendOwnerAction } from "./review-outbox.ts";
 import { S, set, setQueue } from "./review-store.ts";
 import type { Entry, QueueItem } from "./review-types.ts";
 
@@ -48,6 +48,15 @@ export async function sendAll(end = false): Promise<void> {
 
 /** Release or discard held notes (the owner's, from a teammate); an unreachable server shows in the composer. */
 export async function heldAction(kind: "release" | "discard", ids?: string[]): Promise<void> {
+  // Hosted: the owner's browser socket carries it; "all" is every held note the page shows.
+  if (HOSTED) {
+    for (const id of ids ??
+      S()
+        .transcript.filter((e) => e.held)
+        .map((e) => e.id))
+      sendOwnerAction(kind === "release" ? "releaseNote" : "discardNote", id.replace(/^note:/, ""));
+    return;
+  }
   try {
     await fetch(`${BASE}/${kind}`, {
       method: "POST",

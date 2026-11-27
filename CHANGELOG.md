@@ -26,6 +26,7 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ### Fixed
 
+- Hosted review page, signed in as owner (`publish login`): notes go straight to the agent and show as sent; held teammate notes show Send/Discard (and the "held from teammates" bar), sent as `releaseNote`/`discardNote` over the page socket. Needs the service to store owner notes as `released` and accept those mutations from the owner's socket. (RLM-497)
 - A multi-line double-quoted string no longer keeps `\"` and `\n` literally (e.g. in a multi-line `CodeBlock`), in `check`, `show`, the runtime and the playground.
 
 ## 0.26.0 (2026-11-25)

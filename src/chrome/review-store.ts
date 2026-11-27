@@ -24,6 +24,8 @@ export interface ReviewState {
   packs: string[];
   /** Hosted: whether the page is unlisted (anyone with the plain link may open it); null until the service says. */
   unlisted: boolean | null;
+  /** Hosted: the service let this browser in as the page's owner (`publish login`); its notes go straight to the agent. */
+  hostedOwner: boolean;
   /** Hosted: "Download standalone HTML" is being built. */
   exporting: boolean;
   /** The ⋯ menu is open. */
@@ -124,6 +126,7 @@ const initial: ReviewState = {
   title: BOOT.title,
   packs: [],
   unlisted: null,
+  hostedOwner: false,
   exporting: false,
   menuOpen: false,
   mode: LS.get<Mode>("austere:mode", "annotate"),

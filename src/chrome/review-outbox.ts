@@ -149,6 +149,11 @@ export function sendHosted(queued: QueueItem[]): void {
   refreshPending();
 }
 
+/** Hosted owner: releases or discards a held note over the page socket. Not kept for a re-send; an ack error shows in `settle`. */
+export function sendOwnerAction(name: "releaseNote" | "discardNote", note: string): void {
+  sync?.send(mutation(name, { note }, { clientId: CLIENT, n: ++clientN }));
+}
+
 /**
  * An ack settles one queued note. `rate_limited` keeps it in the outbox and sends the same mutation
  * again after `retryAfter` (the service does not store that answer). Any other error puts its items
@@ -156,7 +161,11 @@ export function sendHosted(queued: QueueItem[]): void {
  */
 export function settle(ack: AckFrame): void {
   const i = outbox.findIndex((o) => o.m.clientId === ack.clientId && o.m.n === ack.n);
-  if (i < 0) return;
+  if (i < 0) {
+    // Not a note of the outbox: a release or discard the service refused.
+    if (ack.error) set({ composerError: ack.error.message });
+    return;
+  }
   if (ack.error?.code === "rate_limited") {
     const entry = outbox[i];
     const wait = Math.max(1, ack.error.retryAfter ?? 5);
