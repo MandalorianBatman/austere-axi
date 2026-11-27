@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: MandalorianBatman/austere-axi/action@v0.26.0   # newest release tag; @main tracks unreleased code
+      - uses: MandalorianBatman/austere-axi/action@v0.27.0   # newest release tag; @main tracks unreleased code
         with:
           pages: reviews/*.html
 ```
