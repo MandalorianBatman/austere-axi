@@ -274,6 +274,9 @@ test("at 1280 px the Agent popover leaves the Notes, Agent and History tabs free
   }
 });
 
+// Chrome reports a CSS 66px box as 65.99993px on some builds; a layout rounding, not a short box.
+const SUBPIXEL = 0.1;
+
 test("at 390 px Send and Done are at least 44 px high", async (t) => {
   if (skipReason) return t.skip(skipReason);
   const { page, context } = await ownerPage(writePage("touch"), 390);
@@ -281,16 +284,16 @@ test("at 390 px Send and Done are at least 44 px high", async (t) => {
     for (const sel of [".composer .send", ".composer .send-end"]) {
       await page.locator(sel).waitFor({ state: "attached" });
       const box = await page.locator(sel).evaluate((el) => el.getBoundingClientRect().height);
-      assert.ok(box >= 44, `${sel} is ${box}px high`);
+      assert.ok(box >= 44 - SUBPIXEL, `${sel} is ${box}px high`);
     }
     const copy = await page
       .locator(".copy-prompt")
       .evaluate((el) => el.getBoundingClientRect().height);
-    assert.ok(copy >= 32, `Copy agent prompt is ${copy}px high`);
+    assert.ok(copy >= 32 - SUBPIXEL, `Copy agent prompt is ${copy}px high`);
     const note = await page
       .locator(".composer textarea")
       .evaluate((el) => el.getBoundingClientRect().height);
-    assert.ok(note >= 66, `the note box is ${note}px high`);
+    assert.ok(note >= 66 - SUBPIXEL, `the note box is ${note}px high`);
   } finally {
     await context.close();
   }
