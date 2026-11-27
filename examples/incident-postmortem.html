@@ -8,17 +8,18 @@
 </head>
 <body>
 <script type="text/openui">
-root = Stack([summary, impact, timeline, cause, actions, decide], "column", "l")
-summary = Card([CardHeader("Checkout outage, 14 Oct", "SEV-1 · 47 minutes · resolved"), summaryText, resolvedNote])
+root = Stack([title, summary, impact, timeline, cause, actions, decide], "column", "l")
+title = MarkDownRenderer("# Checkout outage, 14 Oct\n\nPostmortem · SEV-1 · 47 minutes · resolved")
+summary = Card([summaryText, resolvedNote])
 summaryText = MarkDownRenderer("A config push changed the payments client timeout from **8 s** to **800 ms**: one zero dropped. Every card payment that needed a 3-D Secure round trip timed out, and the retry loop turned each failure into three requests.
 
 **Root cause:** nothing rejected a timeout shorter than the processor's normal 3-D Secure latency.")
 resolvedNote = Callout("success", "Resolved", "Rolled back at 15:09 UTC. Error rate back under 0.5% by 15:14.")
-impact = Card([CardHeader("Impact"), impactKpis, errorChart])
+impact = Card([CardHeader("Impact", "Config push at 14:22, rollback at 15:09"), impactKpis, errorChart])
 impactKpis = OverviewCardBlock([kpiOrders, kpiRevenue, kpiTickets])
 kpiOrders = OverviewCardItem("orders", Text("text", "Failed orders"), MetricIndicatorInline("2,340", "of 6,100 attempts"))
 kpiRevenue = OverviewCardItem("revenue", Text("text", "Revenue deferred"), MetricIndicatorInline("$118k", "~71% recovered by retry email"))
-kpiTickets = OverviewCardItem("tickets", Text("text", "Support tickets"), MetricIndicatorInline("412", "peak 9/min", {direction: "up", value: 340}))
+kpiTickets = OverviewCardItem("tickets", Text("text", "Support tickets"), MetricIndicatorInline("412", "peak 9/min", {direction: "up", value: 340}, "down"))
 errorChart = LineChart(["14:15", "14:25", "14:35", "14:45", "14:55", "15:05", "15:15"], [Series("Checkout error rate %", [0.4, 61, 74, 72, 70, 66, 0.5])], "linear", "UTC", "%")
 timeline = Card([CardHeader("Timeline", "all times UTC"), timelineList])
 timelineList = Timeline([tPush, tAlert, tPage, tWrong, tRollback, tRecover])
@@ -26,8 +27,8 @@ tPush = TimelineItem("Config push", "14:22", "payments-client timeout: 8000 → 
 tAlert = TimelineItem("First alert", "14:25", "Checkout error rate above 5% for 3 minutes.")
 tPage = TimelineItem("Incident declared", "14:31", "On-call pages payments; SEV-1 opened.")
 tWrong = TimelineItem("Wrong hypothesis", "14:38", "Blamed the card processor; status page showed green. 24 minutes lost.")
-tRollback = TimelineItem("Rollback", "15:09", "Config reverted by hand.", "current")
-tRecover = TimelineItem("Recovered", "15:14", "Error rate under 0.5%.")
+tRollback = TimelineItem("Rollback", "15:09", "Config reverted by hand.")
+tRecover = TimelineItem("Recovered", "15:14", "Error rate under 0.5%.", "done")
 cause = Card([CardHeader("What failed"), causeDiagram])
 causeDiagram = Architecture([shopper, checkout, payments, processor, config], [toCheckout, toPayments, toProcessor, fromConfig], [platform])
 shopper = Node("Shopper", "external", "browser / app")

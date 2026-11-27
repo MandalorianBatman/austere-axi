@@ -1,9 +1,10 @@
-// npm run shot -- <file.html|url> [--out shot.png] [--width 1280] [--height 900] [--full] [--parts]
+// npm run shot -- <file.html|url> [--out shot.png] [--width 1280] [--height 900] [--full] [--parts] [--figure] [--scale 2]
 //
 // Renders an artifact headlessly with the freshly built runtime (requests for
 // austere.js / bundled packs, including the CDN tag, are served from dist/,
 // and installed packs from AUSTERE_AXI_STATE_DIR)
-// and saves a screenshot. Prints page errors, render errors, and with --parts
+// and saves a screenshot. --figure crops to the first card that holds a diagram or chart (the page's
+// top when it has none); --scale sets the device pixel ratio. Prints page errors, render errors, and with --parts
 // every data-austere-part a reviewer could click, grouped by statement.
 //
 // Browser: CHROME_PATH if set, otherwise an installed Chrome (channel "chrome").
@@ -28,7 +29,7 @@ const target = args.find(
 );
 if (!target) {
   console.error(
-    "usage: npm run shot -- <file.html|url> [--out shot.png] [--width 1280] [--height 900] [--full] [--parts]",
+    "usage: npm run shot -- <file.html|url> [--out shot.png] [--width 1280] [--height 900] [--full] [--parts] [--figure] [--scale 2]",
   );
   process.exit(2);
 }
@@ -43,7 +44,10 @@ if (!browser) {
   console.error(`Could not start a browser: ${reason}`);
   process.exit(2);
 }
-const page = await browser.newPage({ viewport: { width, height } });
+const page = await browser.newPage({
+  viewport: { width, height },
+  deviceScaleFactor: Number(flag("scale", 1)),
+});
 const problems: string[] = [];
 page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
 page.on("console", (m) => {
@@ -92,7 +96,31 @@ const info = await page.evaluate(() => {
   };
 });
 fs.mkdirSync(path.dirname(out), { recursive: true });
-await page.screenshot({ path: out, fullPage: !!flag("full", false) });
+// The first card around a drawing at least 300 x 150 px: the picture a gallery thumbnail shows.
+const figure = flag("figure", false)
+  ? await page.evaluateHandle(() => {
+      for (const svg of document.querySelectorAll("svg")) {
+        const r = svg.getBoundingClientRect();
+        if (r.width < 300 || r.height < 150) continue;
+        for (let el = svg.parentElement; el; el = el.parentElement)
+          if (parseFloat(getComputedStyle(el).borderTopWidth) > 0) return el;
+      }
+      // No drawing (a form or a list): the first card, the section that opens the page.
+      for (const el of document.querySelectorAll("main *, body *")) {
+        const r = el.getBoundingClientRect();
+        if (
+          r.width >= 300 &&
+          r.height >= 100 &&
+          parseFloat(getComputedStyle(el).borderTopWidth) > 0
+        )
+          return el;
+      }
+      return null;
+    })
+  : null;
+const card = figure?.asElement();
+if (card) await card.screenshot({ path: out });
+else await page.screenshot({ path: out, fullPage: !!flag("full", false) });
 await browser.close();
 
 console.log(`screenshot: ${out}`);

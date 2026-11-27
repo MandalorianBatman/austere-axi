@@ -3,8 +3,8 @@
 //   site/**             copied as is; every .html goes through render() for {{root}}, {{nav}}, {{hero}}, {{version}} (npm's latest)
 //   dist/austere.js ... the runtime and the bundled packs, so live pages load them from the site itself
 //   gallery/<id>.html   each file in examples/, with its runtime tag pointed at ../austere.js
-//   gallery/thumbs/     screenshots of those pages, taken by scripts/shot.ts (which also fails on render errors)
-//   gallery/index.html  thumbnail, OpenUI Lang source and token count for each example
+//   gallery/thumbs/     each page's first figure at 2x, taken by scripts/shot.ts (which also fails on render errors)
+//   gallery/index.html  thumbnail, token count and (folded) OpenUI Lang source for each example
 //   assets/hero.png     the landing page's screenshot, unless docs/demo.gif exists (copied to assets/demo.gif)
 //   assets/social-preview.png  og:image, copied from docs/social-preview.png when present (else hero.png)
 //   docs/<name>.html    each docs/*.md rendered with marked into the site's page template (docs/README.md is docs/index.html);
@@ -33,6 +33,7 @@ interface Example {
   statements: number;
   check: ReturnType<typeof checkHtml>;
   live: string;
+  thumb?: { width: number; height: number }; // CSS px of the cropped figure, set after the screenshots
 }
 
 interface ShotResult {
@@ -66,7 +67,6 @@ const ORDER = [
   "api-design-review",
   "pr-summary",
   "sprint-plan",
-  "code-review",
   "shadcn",
 ];
 const NAV = [
@@ -318,6 +318,7 @@ function shot(
   file: string,
   out: string,
   { width, height }: { width: number; height: number },
+  figure = false,
 ): Promise<ShotResult> {
   return new Promise((resolve) => {
     const child = spawn(
@@ -331,6 +332,7 @@ function shot(
         String(width),
         "--height",
         String(height),
+        ...(figure ? ["--figure", "--scale", "2"] : []),
       ],
       {
         cwd: ROOT,
@@ -358,6 +360,12 @@ async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>)
   return results;
 }
 
+/** A bar above a live gallery page: the way back, and what the page costs. */
+function withBanner(id: string, html: string, tokens: number, statements: number): string {
+  const bar = `<nav class="gallery-bar"><style>.gallery-bar{display:flex;flex-wrap:wrap;gap:4px 16px;justify-content:space-between;padding:10px 16px;font:13px/1.4 system-ui,sans-serif;color:#8b8b94;background:#0a0a0a;border-bottom:1px solid #26262b}.gallery-bar a{color:#9db4ff}</style><a href="./">&larr; Gallery</a><span>~${formatInt(tokens)} tokens &middot; ${statements} statements &middot; passes austere-axi check</span><a href="${REPO}/blob/main/examples/${id}.html">Source</a></nav>`;
+  return html.replace(/<body[^>]*>/i, (m) => m + bar);
+}
+
 function loadExamples(): Example[] {
   const ids = fs
     .readdirSync(EXAMPLES)
@@ -370,9 +378,8 @@ function loadExamples(): Example[] {
     const art = readArtifact(html);
     if (art.program === null)
       throw new Error(`examples/${id}.html has no <script type="text/openui"> block`);
-    const description = /<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i.exec(
-      html,
-    )?.[1];
+    const meta = /<meta\s+name=["']description["']\s+content=(?:"([^"]*)"|'([^']*)')/i.exec(html);
+    const description = meta?.[1] ?? meta?.[2];
     const program = art.program.trim();
     const result = checkHtml(html);
     return {
@@ -383,42 +390,38 @@ function loadExamples(): Example[] {
       tokens: estimateTokens(program),
       statements: result.statements,
       check: result,
-      live: rewriteRuntime(html, '<script src="../austere.js"></script>'),
+      live: withBanner(
+        id,
+        rewriteRuntime(html, '<script src="../austere.js"></script>'),
+        estimateTokens(program),
+        result.statements,
+      ),
     };
   });
 }
 
 function galleryPage(examples: Example[]): string {
   const entries = examples.map((ex) => {
-    const alt = `Screenshot of the ${ex.title} page`;
+    const alt = `The ${ex.title} page: its first figure`;
+    const { width, height } = ex.thumb || THUMB;
     return `<article class="entry" id="${ex.id}">
-  <div>
-    <a class="thumb" href="${ex.id}.html"><img src="thumbs/${ex.id}.png" width="${THUMB.width}" height="${THUMB.height}" loading="lazy" alt="${escapeHtml(alt)}"><span>Open live page</span></a>
-    <h2>${escapeHtml(ex.title)}</h2>
-    ${ex.description ? `<p class="desc">${escapeHtml(ex.description)}</p>` : ""}
-    <ul class="stats">
-      <li class="tokens">~${formatInt(ex.tokens)} tokens</li>
-      <li>${ex.statements} statements</li>
-      <li>passes <code>austere-axi check</code></li>
-    </ul>
-    <p class="links-row"><a href="${ex.id}.html">Live page</a> · <a href="${REPO}/blob/main/examples/${ex.id}.html">Source file on GitHub</a></p>
-  </div>
-  <div class="source">
-    <h3>OpenUI Lang source</h3>
+  <a class="thumb" href="${ex.id}.html"><img src="thumbs/${ex.id}.png" width="${width}" height="${height}" loading="lazy" alt="${escapeHtml(alt)}"><span>Open live page</span></a>
+  <h2>${escapeHtml(ex.title)}</h2>
+  ${ex.description ? `<p class="desc">${escapeHtml(ex.description)}</p>` : ""}
+  <p class="meta">~${formatInt(ex.tokens)} tokens · ${ex.statements} statements · <a href="${ex.id}.html">Live page</a> · <a href="${REPO}/blob/main/examples/${ex.id}.html">Source file</a></p>
+  <details class="source">
+    <summary>OpenUI Lang source</summary>
     <pre tabindex="0"><code>${escapeHtml(ex.program)}</code></pre>
-  </div>
+  </details>
 </article>`;
   });
-  const index = examples
-    .map((ex) => `<li><a href="#${ex.id}">${escapeHtml(ex.title)}</a></li>`)
-    .join("");
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gallery · austere-axi</title>
-<meta name="description" content="Review pages written in OpenUI Lang: an incident postmortem, an API design review, a PR summary, a sprint plan and more, each next to its source and token count.">
+<meta name="description" content="Review pages written in OpenUI Lang: an architecture review, a postmortem, an API design, a PR summary, a sprint plan and more, each next to its source and token count.">
 <link rel="stylesheet" href="{{root}}site.css">
 <link rel="icon" href="{{root}}favicon.svg" type="image/svg+xml">
 </head>
@@ -432,11 +435,12 @@ function galleryPage(examples: Example[]): string {
 <main class="wrap">
   <div class="page-head">
     <h1>Gallery</h1>
-    <p>Every page here is a plain <code>.html</code> file: one runtime script tag and one OpenUI Lang program. The thumbnails are screenshots taken at build time. Open one to see the live page. Token counts are estimates of the program text (characters ÷ 3.8).</p>
-    <p>Buttons and forms do nothing on this site. Under <code>austere-axi &lt;file&gt;</code> they send your choices to the agent.</p>
-    <ul class="index">${index}</ul>
+    <p>An agent writes a short program in OpenUI Lang, and austere-axi draws it as a review page with diagrams, charts, tables and forms. These ${examples.length} pages are real: open one, or read the source under its picture.</p>
+    <p class="note">Each picture is the page's first figure. Source size is an estimate (characters ÷ 3.8). Buttons and forms do nothing here: under <code>austere-axi &lt;file&gt;</code> they send your choices to the agent.</p>
   </div>
+  <div class="entries">
 ${entries.join("\n")}
+  </div>
 </main>
 <footer class="site-footer">
   <div class="wrap">
@@ -530,26 +534,37 @@ fs.writeFileSync(
     })),
   }),
 );
-// 3. Screenshots, from the pages as deployed. shot.ts fails on render errors.
-const jobs = examples.map((ex) => ({
-  ex,
-  file: path.join(OUT, "gallery", `${ex.id}.html`),
-  out: path.join(OUT, "gallery", "thumbs", `${ex.id}.png`),
-}));
+// 3. Screenshots. shot.ts fails on render errors.
+// Thumbnails are each page's first figure at 2x; the landing page's hero is the top of one page.
+const jobs = [
+  ...examples.map((ex) => ({
+    ex,
+    file: path.join(EXAMPLES, `${ex.id}.html`), // the source page: no gallery bar in the picture
+    out: path.join(OUT, "gallery", "thumbs", `${ex.id}.png`),
+    figure: true,
+  })),
+  {
+    ex: heroExample,
+    file: path.join(EXAMPLES, `${heroExample.id}.html`),
+    out: path.join(OUT, "assets", "hero.png"),
+    figure: false,
+  },
+];
 const shots = await pool(jobs, 4, async (job) => ({
   job,
-  ...(await shot(job.file, job.out, THUMB)),
+  ...(await shot(job.file, job.out, THUMB, job.figure)),
 }));
 const broken = shots.filter((s) => s.code !== 0);
 for (const s of broken)
   console.error(
-    `gallery/${s.job.ex.id}.html did not render cleanly (exit ${s.code}):\n${s.output}`,
+    `examples/${s.job.ex.id}.html did not render cleanly (exit ${s.code}):\n${s.output}`,
   );
 if (broken.length) process.exit(1);
-fs.copyFileSync(
-  path.join(OUT, "gallery", "thumbs", `${heroExample.id}.png`),
-  path.join(OUT, "assets", "hero.png"),
-);
+for (const ex of examples) {
+  const png = fs.readFileSync(path.join(OUT, "gallery", "thumbs", `${ex.id}.png`));
+  // PNG header: width and height are big-endian u32s at bytes 16 and 20.
+  ex.thumb = { width: png.readUInt32BE(16) / 2, height: png.readUInt32BE(20) / 2 };
+}
 if (fs.existsSync(DEMO_GIF)) fs.copyFileSync(DEMO_GIF, path.join(OUT, "assets", "demo.gif"));
 const social = fs.existsSync(SOCIAL);
 if (social) fs.copyFileSync(SOCIAL, path.join(OUT, "assets", "social-preview.png"));

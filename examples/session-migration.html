@@ -8,8 +8,9 @@
 </head>
 <body>
 <script type="text/openui">
-root = Stack([intro, kpis, flow, options, openQuestion, change, files, decide], "column", "l")
-intro = Card([CardHeader("Session storage migration", "Move sessions from Redis to Postgres"), introText])
+root = Stack([title, intro, kpis, flow, options, openQuestion, change, files, decide], "column", "l")
+title = MarkDownRenderer("# Session storage migration\n\nMove sessions from Redis to Postgres · plan for review")
+intro = Card([introText])
 introText = MarkDownRenderer("Sessions live only in Redis and are lost on failover — last month that logged out **~38k users** twice.
 
 **Goal:** durable sessions with no forced logout, and no extra p99 latency on the auth path.
@@ -17,7 +18,7 @@ introText = MarkDownRenderer("Sessions live only in Redis and are lost on failov
 - Keep the `SessionStore` interface unchanged
 - Cut over behind the `sessions_pg` flag")
 kpis = OverviewCardBlock([kpiUsers, kpiP99, kpiCost])
-kpiUsers = OverviewCardItem("users", Text("text", "Forced logouts / mo"), MetricIndicatorInline("38,214", "last 30 days", {direction: "up", value: 12}))
+kpiUsers = OverviewCardItem("users", Text("text", "Forced logouts / mo"), MetricIndicatorInline("38,214", "last 30 days", {direction: "up", value: 12}, "down"))
 kpiP99 = OverviewCardItem("p99", Text("text", "Auth p99"), MetricIndicatorInline("41 ms", "target ≤ 45 ms"))
 kpiCost = OverviewCardItem("cost", Text("text", "Extra storage"), MetricIndicatorInline("$140/mo", "Postgres, 3 replicas"))
 flow = Card([CardHeader("Request path after the change"), flowDiagram])
@@ -25,8 +26,8 @@ flowDiagram = Architecture([client, edge, api, pg, redis], [toEdge, toApi, toPg,
 client = Node("Client", "external", "browser / mobile")
 edge = Node("Edge worker", "cloud", "Cloudflare")
 api = Node("API", "backend", "Node :8080")
-pg = Node("Postgres", "database", "sessions table", "new")
-redis = Node("Redis", "database", "read-through cache")
+pg = Node("Postgres", "database", "sessions table", "added", "success")
+redis = Node("Redis", "database", "read-through cache", "changed", "warning")
 toEdge = Edge(client, edge, "HTTPS", "emphasis")
 toApi = Edge(edge, api)
 toPg = Edge(api, pg, "SQL")
@@ -57,7 +58,7 @@ decide = Card([CardHeader("Your call"), decideForm])
 decideForm = Form("rollout", decideButtons, [strategyField, notesField])
 strategyField = FormControl("Rollout", RadioGroup("strategy", [RadioItem("Big bang", "One deploy, short maintenance window", "bigbang"), RadioItem("Dual-write", "Two weeks writing to both stores", "dualwrite")]))
 notesField = FormControl("Notes", TextArea("notes", "Anything to change?", 3))
-decideButtons = Buttons([Button("Send decision", @ToAssistant("Decision: rollout strategy"), "primary"), Button("Explain the risk column")])
+decideButtons = Buttons([Button("Send decision", @ToAssistant("Decision: rollout strategy"), "primary"), Button("Explain the risk column", null, "secondary")])
 </script>
 </body>
 </html>

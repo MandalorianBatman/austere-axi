@@ -2,37 +2,27 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="description" content="Research report evaluating reasoning models and quantization strategies: accuracy-latency quadrant, token flow sankey, and benchmark analysis.">
-<title>Research report: reasoning model evaluation</title>
+<meta name="description" content="Benchmark report: 36 paired runs of austere-axi against lavish-axi on six review pages. Output tokens, time and cost, and where austere-axi lost.">
+<title>Benchmark report: austere-axi vs lavish-axi</title>
 <script src="../dist/austere.js"></script>
 </head>
 <body>
 <script type="text/openui">
-root = Stack([headerCard, kpiCard, quadrantCard, flowCard, benchmarkCard, reviewCard], "column", "l")
-headerCard = Card([CardHeader("Research report: reasoning model benchmark", "Evaluation of frontier reasoning architectures · AI Research Lab"), summaryText, findingCallout])
-summaryText = MarkDownRenderer("We evaluated five frontier reasoning models across 1,200 complex multi-step coding, architectural synthesis, and mathematical proof tasks. We measured accuracy, token efficiency, time-to-first-token (TTFT), and compute spend per benchmark solve.")
-findingCallout = Callout("success", "Key Research Finding", "Chain-of-thought scaling yields diminishing accuracy returns beyond 4,000 reasoning tokens unless paired with dynamic tree-search pruning.")
-kpiCard = Card([CardHeader("Aggregate benchmark metrics"), kpiBlock])
-kpiBlock = OverviewCardBlock([kpiAccuracy, kpiThroughput, kpiCost])
-kpiAccuracy = OverviewCardItem("accuracy", Text("text", "Top-1 Accuracy"), MetricIndicatorInline("88.4%", "+6.2% vs baseline", {direction: "up", value: 6}))
-kpiThroughput = OverviewCardItem("throughput", Text("text", "Median Throughput"), MetricIndicatorInline("142 tok/s", "p50 on 8xH100"))
-kpiCost = OverviewCardItem("cost", Text("text", "Cost per 1k solves"), MetricIndicatorInline("$4.80", "-24% with FP8", {direction: "down", value: 24}))
-quadrantCard = Card([CardHeader("Quality vs latency trade-off space", "Top-right represents ideal frontier performance"), modelQuadrant])
-modelQuadrant = Quadrant([mFrontier, mFast, mReasoning, mOpen, mDistilled], "Latency & Cost (p95)", "Benchmark Accuracy (0-100)")
-mFrontier = QuadrantItem("Frontier-Thought-v3", 75, 92)
-mFast = QuadrantItem("Flash-Reason-1.5", 25, 78)
-mReasoning = QuadrantItem("DeepThink-R2", 60, 89)
-mOpen = QuadrantItem("OpenReason-70B", 45, 82)
-mDistilled = QuadrantItem("Distill-8B-CoT", 15, 68)
-flowCard = Card([CardHeader("Inference token budget flow", "Mean token allocation from prompt to generated answer"), tokenSankey])
-tokenSankey = Sankey(["Context Window", "Context Window", "Context Window", "User Query", "Retrieved Chunks", "CoT Reasoning", "CoT Reasoning"], ["System Prompt", "User Query", "Retrieved Chunks", "CoT Reasoning", "CoT Reasoning", "Draft Answer", "Final Output"], [1200, 800, 3200, 800, 3200, 2400, 1600], "tokens", "CoT Reasoning")
-benchmarkCard = Card([CardHeader("Domain benchmark accuracy comparison"), benchmarkBar])
-benchmarkBar = BarChart(["Coding (SWE)", "Math (AIME)", "SysDesign", "Logic Puzzles"], [Series("Frontier-Thought-v3", [89, 84, 91, 95]), Series("Flash-Reason-1.5", [78, 72, 82, 85]), Series("OpenReason-70B", [81, 76, 85, 88])], "grouped", "Domain", "Accuracy %")
-reviewCard = Card([CardHeader("Peer review sign-off"), reviewForm])
-reviewForm = Form("research_review", reviewButtons, [verdictControl, commentsControl])
-verdictControl = FormControl("Verdict", RadioGroup("verdict", [RadioItem("Accept", "Ready for publication with no changes", "accept"), RadioItem("Minor revisions", "Add latency variance intervals", "minor"), RadioItem("Ablations needed", "Include FP16 vs INT4 quantization ablation", "ablation")]))
-commentsControl = FormControl("Methodology notes", TextArea("comments", "Feedback on benchmark harness and statistical significance", 2))
-reviewButtons = Buttons([Button("Submit peer review", @ToAssistant("Research review submitted"), "primary"), Button("Export dataset")])
+root = Stack([title, finding, kpiCard, flowCard, taskCard, tableCard, caveat], "column", "l")
+title = MarkDownRenderer("# Benchmark: austere-axi vs lavish-axi\n\nResearch report · 36 paired runs, 6 review pages, 2 models · run 2026-11-06 · austere-axi 0.4.1")
+finding = Callout("info", "Same page, 3.2x fewer output tokens", "Each model wrote the same six review pages with each tool. Across all pairs, the lavish-axi page took a median 3.2x the output tokens, 2.4x the time and 2.5x the cost.")
+kpiCard = Card([CardHeader("Median lavish-axi ÷ austere-axi, all 36 pairs"), kpiBlock])
+kpiBlock = OverviewCardBlock([kpiTokens, kpiTime, kpiCost])
+kpiTokens = OverviewCardItem("tokens", Text("text", "Output tokens"), MetricIndicatorInline("3.2x", "page, fix turn included"))
+kpiTime = OverviewCardItem("time", Text("text", "Time"), MetricIndicatorInline("2.4x", "wall clock per page"))
+kpiCost = OverviewCardItem("cost", Text("text", "Cost"), MetricIndicatorInline("2.5x", "per page"))
+flowCard = Card([CardHeader("What happened to the 36 austere-axi pages", "Validator result on the first answer, then on the fix turn"), pageSankey])
+pageSankey = Sankey(["Pages", "Pages", "Needed a fix turn", "Needed a fix turn"], ["Valid first try", "Needed a fix turn", "Fixed", "Still invalid"], [25, 11, 9, 2], "pages", "Needed a fix turn")
+taskCard = Card([CardHeader("Output tokens, lavish-axi ÷ austere-axi, by task", "Above 1 means lavish-axi used more. Median output tokens per page, fix turn included."), taskBar])
+taskBar = BarChart(["Migration plan", "Code review", "Architecture", "Comparison", "Dashboard", "Triage"], [Series("claude-sonnet", [4.0, 1.8, 2.5, 2.5, 2.1, 2.3]), Series("minimax-m3", [4.9, 2.7, 5.9, 4.9, 3.6, 5.1])], "grouped", "Task", "Ratio")
+tableCard = Card([CardHeader("Medians per page"), pageTable])
+pageTable = Table([Col("Model and tool", ["sonnet, austere-axi", "sonnet, lavish-axi", "minimax-m3, austere-axi", "minimax-m3, lavish-axi"]), Col("Tokens", ["2,391", "5,687", "1,108", "4,890"], "number"), Col("Time", ["16.9 s", "35.0 s", "8.2 s", "23.9 s"], "number"), Col("Cost", ["$0.025", "$0.059", "$0.0023", "$0.0067"], "number")])
+caveat = Callout("warning", "Where austere-axi lost", "minimax-m3 passed austere-axi's validator on the first try in 7 of 18 pages (39%), against 16 of 18 (89%) for lavish-axi. 9 of its 11 fix turns worked. claude-sonnet passed 18 of 18.")
 </script>
 </body>
 </html>

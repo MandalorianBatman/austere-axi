@@ -402,47 +402,34 @@ section.block > .wrap > p {
   margin: 0 0 8px;
 }
 
-.index {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  list-style: none;
-  padding: 0;
-  margin: 20px 0 0;
-}
-.index a {
-  display: inline-block;
-  padding: 4px 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
+.page-head .note {
   font-size: 0.9rem;
 }
-.index a:hover {
-  color: var(--text);
-  text-decoration: none;
-  border-color: #3a3a42;
-}
 
-.entry {
+.entries {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 24px;
-  padding: 32px 0;
-  border-bottom: 1px solid var(--line);
-  scroll-margin-top: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px 24px;
+  padding: 16px 0 48px;
 }
-.entry:last-child {
-  border-bottom: 0;
+.entry {
+  min-width: 0;
+  scroll-margin-top: 8px;
 }
 .entry h2 {
   margin: 0 0 6px;
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   letter-spacing: -0.02em;
 }
 .entry .desc {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.entry .meta {
   margin: 0 0 12px;
   color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .thumb {
@@ -461,9 +448,7 @@ section.block > .wrap > p {
 .thumb img {
   display: block;
   width: 100%;
-  aspect-ratio: 8 / 5;
-  object-fit: cover;
-  object-position: top;
+  height: auto;
 }
 .thumb span {
   position: absolute;
@@ -477,47 +462,17 @@ section.block > .wrap > p {
   font-size: 0.85rem;
 }
 
-.stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  list-style: none;
-  padding: 0;
-  margin: 0 0 12px;
-}
-.stats li {
-  padding: 2px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
+.source summary {
+  cursor: pointer;
   color: var(--muted);
   font-size: 0.85rem;
 }
-.stats li.tokens {
+.source summary:hover {
   color: var(--text);
 }
-.entry .links-row {
-  margin: 0;
-  font-size: 0.95rem;
-}
-
-.source {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.source h3 {
-  margin: 0 0 8px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
 .source pre {
-  flex: 1;
-  margin: 0;
-  max-height: 440px;
+  margin: 8px 0 0;
+  max-height: 360px;
 }
 
 /* Docs: docs/*.md rendered by scripts/site.ts */
@@ -634,9 +589,8 @@ section.block > .wrap > p {
   .installs {
     grid-template-columns: 1fr;
   }
-  .entry {
+  .entries {
     grid-template-columns: 1fr;
-    gap: 16px;
   }
   .source pre {
     max-height: 320px;
