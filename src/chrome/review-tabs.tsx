@@ -26,6 +26,7 @@ export function PanelTabs(): ReactElement {
       wake: r.wake,
       unread: r.unread,
       attachInfo: r.attachInfo,
+      hostedOwner: r.hostedOwner,
     })),
   );
   const presence = presenceView(s, useNow());
@@ -108,6 +109,7 @@ export function Dock(): ReactElement {
       wake: r.wake,
       unread: r.unread,
       attachInfo: r.attachInfo,
+      hostedOwner: r.hostedOwner,
     })),
   );
   const now = useNow();

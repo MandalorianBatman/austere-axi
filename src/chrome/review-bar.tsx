@@ -24,6 +24,7 @@ export function PresencePill(): ReactElement {
       wake: r.wake,
       unread: r.unread,
       attachInfo: r.attachInfo,
+      hostedOwner: r.hostedOwner,
     })),
   );
   const view = presenceView(s, useNow());
