@@ -41,13 +41,13 @@ The agent re-runs the backtest with `roll_days = 10`, then sends the statements 
 austere-axi patch examples/backtest-report.html <<'PATCH'
 kpiPnl = OverviewCardItem("pnl", Text("text", "Net P&L (synthetic units)"), MetricIndicatorInline("+103", "10-day roll window"))
 equityChart = AreaChart(["1","2", ... "180"], [Series("Equity", [0,0, ... 103])], "step", "Trading day", "P&L (synthetic units)", 280)
-tradesTable = Table([Col("Entry day", [21,51,81,111,141], "number"), ... Col("P&L", [17,12,20,13,19], "number")])
+tradesTable = Table([Col("Roll", ["Roll 1", ... "Roll 6"]), Col("Entry day", [20,50,80,110,140,170], "number"), ... Col("Entry premium", [128,119,127,123,128,129], "number"), ... Col("P&L", [17,12,20,13,19,22], "number")])
 PATCH
 ```
 
-`...` marks long arrays shortened here; the agent sends them in full. The command printed `status: patched` and `check: ok (25 statements)`. The page changed in place and the review chrome showed "3 changed". The other KPI statements read the same for both windows, so the agent left them out; the form, the premium chart and the methodology were not sent either.
+`...` marks long arrays shortened here; the agent sends them in full. The command printed `status: patched` and `check: ok (25 statements)`. The page changed in place and the review chrome showed "3 changed". The P&L column sums to the KPI (17+12+20+13+19+22 = 103). A changed statement inside an inactive tab does not flash where the reader can see it; the "N changed" chip is the only cue. The other KPI statements read the same for both windows, so the agent left them out; the form, the premium chart and the methodology were not sent either.
 
-For a roll window of 10 instead of 7 the patch is about 610 tokens. The whole page is about 1,680.
+For a roll window of 10 instead of 7 the patch is about 630 tokens. The whole page is about 1,700.
 
 ## Token cost
 
@@ -55,8 +55,8 @@ Counts use the repo's estimate (characters ÷ 3.8), not a model tokenizer. Treat
 
 | What | Tokens |
 |---|---|
-| The example page, 180 points in each of two charts | ~1,680 |
-| The patch above (3 statements, 180-point equity chart) | ~610 |
+| The example page, 180 points in each of two charts | ~1,700 |
+| The patch above (3 statements, 180-point equity chart) | ~630 |
 | One `LineChart` with 500 points and its labels | ~1,290 |
 | The same 500 values without labels | ~520 |
 | Premium and equity chart, 500 points each | ~2,500 |
