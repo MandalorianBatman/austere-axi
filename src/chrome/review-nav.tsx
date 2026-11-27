@@ -6,7 +6,8 @@ import { ChevronDown, ChevronLeft, FileText, GitBranch, Search } from "lucide-re
 import { cn } from "cn";
 import { Button } from "@/chrome/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/chrome/ui/tooltip";
-import { shortcut } from "./review-env.ts";
+import { SID, shortcut } from "./review-env.ts";
+import { useSide } from "./review-side.ts";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -48,7 +49,9 @@ const kbd = "rounded-sm border px-1.5 font-mono text-2xs leading-normal text-mut
 
 /** The breadcrumb `Hub / ` before the title: the project's name once the hub has answered. On a phone, a back arrow. */
 export function Crumbs(): ReactElement {
-  const project = useNav((s) => s.page?.project);
+  const local = useNav((s) => s.page?.project);
+  const listed = useSide((s) => s.pages.find((p) => p.id === SID));
+  const project = local ?? (listed ? { id: listed.project_id, name: listed.project } : undefined);
   const name = project?.name ?? "Hub";
   return (
     <Breadcrumb aria-label="Breadcrumb" className="flex-none">

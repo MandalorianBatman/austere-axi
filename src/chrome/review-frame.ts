@@ -1,7 +1,7 @@
 // The artifact frame: loading it, and what comes back over the bridge. The page inside is untrusted, so each message
 // is checked where it is read (strings only, the owner's own messages only for the owner).
 import { useEffect } from "react";
-import { BASE, BOOT, HOSTED, OWNER, SID, SS, str } from "./review-env.ts";
+import { BASE, BOOT, HOSTED, NAV, OWNER, SID, SS, str } from "./review-env.ts";
 import { post, getFrame } from "./review-bridge.ts";
 import { postHighlight } from "./review-changes.ts";
 import { openHistory, sendHistoryCounts } from "./review-history.ts";
@@ -76,7 +76,7 @@ function onMessage(e: MessageEvent): void {
         state: SS.get(`austere:form:${SID}`),
         scrollY: s.scrollY,
         // The owner's quick switcher: the frame hands Ctrl/Cmd+K over instead of letting the browser take it.
-        quickSwitch: OWNER && !HOSTED,
+        quickSwitch: NAV,
       });
       break;
     case "ready":
@@ -148,8 +148,7 @@ function onMessage(e: MessageEvent): void {
       break;
     case "toggle-sidebar":
       // Ctrl/Cmd+B pressed inside the frame: the sidebar's own shortcut (ui/sidebar.tsx) answers it, wide or narrow.
-      if (OWNER && !HOSTED)
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true }));
+      if (NAV) window.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true }));
       break;
     case "history":
       // The popover's History (n) on a statement: the owner's only, and only a statement name is taken from the frame.

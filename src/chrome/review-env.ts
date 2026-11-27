@@ -16,6 +16,10 @@ export const HOSTED = BOOT.hosted || null;
 export const BASE = BOOT.hosted?.base ?? `/s/${SID}`;
 export const VIEWER = BOOT.viewer || { role: "owner", name: "" };
 export const OWNER = !HOSTED && VIEWER.role === "owner";
+/** The signed-in account behind a hosted page, when the viewer has one and access. */
+export const ACCOUNT = HOSTED ? (BOOT.account ?? null) : null;
+/** The projects sidebar, the Go to page switcher and the link home: the local owner's, and a hosted viewer signed in to an account. */
+export const NAV = OWNER || !!ACCOUNT;
 export const NAME_MAX = LIMITS.nameChars;
 export const LS = {
   get<T>(key: string, fallback: T): T {

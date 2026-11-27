@@ -1,12 +1,13 @@
 // The owner's way between pages and the hub, in the review header only: the data and actions behind the
 // breadcrumb, the copy switcher, the quick switcher (Ctrl/Cmd+K) and "Next page with unanswered notes". The markup is
-// review-nav.tsx. Reviewers and hosted pages never load it; its routes (/hub/api/*) answer the owner only.
+// review-nav.tsx. Reviewers never load it, nor do hosted pages without a signed-in account; its routes (/hub/api/*)
+// answer the owner, or on austere-cloud the signed-in account.
 import { create } from "zustand";
 import type { CopySummary, InboxResponse, SearchResponse, ShellPage } from "../shared/hub-api.ts";
 import { flash } from "./review-banner.ts";
 import { openAttach } from "./review-attach.ts";
 import { post } from "./review-bridge.ts";
-import { SID } from "./review-env.ts";
+import { HOSTED, SID } from "./review-env.ts";
 
 interface NavState {
   /** This page and its copies in other worktrees; null until the hub answers. */
@@ -107,10 +108,14 @@ function remember(r: Recent): void {
   }
 }
 
-export const openUrl = (id: string, extra = ""): string => `/hub/open/${id}${extra}`;
+/** Where a page opens: the local hub's redirect to its newest copy, or on austere-cloud the page itself. */
+export const openUrl = (id: string, extra = ""): string =>
+  HOSTED ? `/p/${id}${extra}` : `/hub/open/${id}${extra}`;
 
 /** Reads this page's summary from the hub, for the breadcrumb and the copy switcher, and files it under "opened lately". */
 export async function loadPage(signal: AbortSignal): Promise<void> {
+  // The cloud has no per-page summary: the crumb takes its project from the sidebar's list.
+  if (HOSTED) return;
   try {
     const r = await fetch(`/hub/api/page/${SID}`, { signal });
     if (!r.ok) return;

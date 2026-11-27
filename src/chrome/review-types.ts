@@ -1,4 +1,5 @@
 // The shapes the review page reads and writes: the boot object, the transcript, the iframe bridge, the server's events.
+import type { CloudAccount } from "../shared/hub-api.ts";
 import type { Mutation } from "../shared/sync.ts";
 
 export type Mode = "annotate" | "explore";
@@ -13,6 +14,8 @@ export interface Boot {
   artifactUrl?: string;
   hosted?: { base?: string; report?: string; publishedAt?: number; signIn?: string } | null;
   viewer?: { role: string; name: string; auto?: boolean };
+  /** Hosted only: the signed-in account that may open this page (austere-cloud writes it for a viewer with access). */
+  account?: CloudAccount;
 }
 
 /** A queued note. Items come from the frame (untrusted), localStorage or the server. */
