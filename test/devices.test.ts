@@ -1,4 +1,4 @@
-// Team review devices (RLM-397): a link claimed once, expiry, scope, revoke, and invites.json from 0.12.
+// Team review devices: a link claimed once, expiry, scope, revoke, and invites.json from 0.12.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";

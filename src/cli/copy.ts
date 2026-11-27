@@ -1,4 +1,4 @@
-// `patch --from <src>#<a>[,<b>…]` (RLM-354): take statements that already exist on another page,
+// `patch --from <src>#<a>[,<b>…]`: take statements that already exist on another page,
 // with everything they reference. A copy, not an include: the page keeps rendering from its own
 // file (L15). The copy is merged by the patch path, so a part nothing references is dropped
 // and reported like any other.

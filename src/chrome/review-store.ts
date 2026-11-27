@@ -48,7 +48,7 @@ export interface ReviewState {
   /** False until the server's first answer: the Conversation shows a skeleton, not "Nothing sent yet". */
   loaded: boolean;
   transcript: Entry[];
-  /** The owner's Conversation entries for agent runs (RLM-346), by `<run id>:start|end`: from the `run` events and `/runs`, never stored. */
+  /** The owner's Conversation entries for agent runs, by `<run id>:start|end`: from the `run` events and `/runs`, never stored. */
   runMarks: Record<string, RunMark>;
   presence: string;
   /** When the agent took the notes it works on, by this browser's clock; null when no agent has them. */
@@ -70,7 +70,7 @@ export interface ReviewState {
   parserErrors: RenderIssue[];
   runtimeErrors: RenderIssue[];
   changes: string[];
-  /** The owner's: statements changed by the revisions since they last looked (RLM-352). */
+  /** The owner's: statements changed by the revisions since they last looked. */
   sinceChanges: string[];
   highlight: boolean;
   sheetOpen: boolean;

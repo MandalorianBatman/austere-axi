@@ -1,4 +1,4 @@
-// Settings (RLM-396): the owner's page for this local server, a view of the hub shell (shell.tsx). People
+// Settings: the owner's page for this local server, a view of the hub shell (shell.tsx). People
 // (links, devices, requests: /hub/api/people), Network, Review defaults, Cloud, Projects and About (/hub/api/settings).
 // Nothing here runs a command: what names one (`server install`, `adapter set`, `trigger add`) stays at a
 // terminal. Every setting here has a CLI form too; the hints name it.
@@ -897,7 +897,7 @@ const tailscaleSchema = z.object({
 });
 
 /**
- * Settings → Network → Names from Tailscale (RLM-399): what Tailscale tells about reviewers here, and a
+ * Settings → Network → Names from Tailscale: what Tailscale tells about reviewers here, and a
  * form that lets a Tailscale login in without a link (`share tailscale <login>`).
  */
 function TailscaleNames({

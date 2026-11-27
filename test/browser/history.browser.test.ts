@@ -1,5 +1,5 @@
-// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): history in the review page
-// (RLM-352). The owner sees what changed while the tab was away, how a part got to its text, and puts
+// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): history in the review
+// page. The owner sees what changed while the tab was away, how a part got to its text, and puts
 // a part back; a reviewer sees none of it and the routes answer 403.
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";

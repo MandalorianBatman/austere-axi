@@ -1,4 +1,4 @@
-// The owner's attach setting, data side (RLM-345; RLM-346 adds the CLI, routes and UI on top):
+// The owner's attach setting, data side (the CLI, routes and UI sit on top):
 // which pages an agent is attached to, which session a run resumes (Q11), and the rule that
 // attach and unattended input exclude each other (Q3, A17). Rows are in hub.db `attach_settings`:
 // scope `page` (scope_id = `pages.id`, so every copy of a page shares it, A19) or `project`
@@ -200,7 +200,7 @@ export function autoConflict(
   return null;
 }
 
-// ── the owner's changes and the status report (RLM-346) ──
+// ── the owner's changes and the status report ──
 
 /** What `attach on|off`, or the popover, sets besides the state; an absent field keeps the row's value. */
 export interface AttachFields {

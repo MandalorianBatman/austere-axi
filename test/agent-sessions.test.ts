@@ -1,4 +1,4 @@
-// The agent session registry (RLM-343): caller detection from the harness's environment and
+// The agent session registry: caller detection from the harness's environment and
 // `--session`, the harness process found among the CLI's parents (liveness), the author /
 // editor / listener roles in hub.db, and `sessions list`.
 import assert from "node:assert/strict";

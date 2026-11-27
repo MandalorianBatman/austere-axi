@@ -1,4 +1,4 @@
-// The Copilot CLI extension for push delivery (RLM-452): the wake client (client.ts) on Copilot's
+// The Copilot CLI extension for push delivery: the wake client (client.ts) on Copilot's
 // extension SDK (`@github/copilot-sdk/extension`, CLI 1.0.112, experimental). `copilot-extension.ts`
 // joins the session; this file is the part that does not need the SDK, so tests drive it.
 //

@@ -1,4 +1,4 @@
-// Request access (RLM-398): a browser nobody has given a link opens a page's address, types a
+// Request access: a browser nobody has given a link opens a page's address, types a
 // name and asks; the owner approves, denies, or blocks it. The browser that asked holds a pending
 // secret in a cookie (hub.db keeps its hash), so an approval reaches that browser only: the
 // address, hostname and browser it came from are evidence for the owner, never the key.
@@ -27,7 +27,7 @@ export interface AccessRequestRow {
   /** The address's hostname, from a reverse lookup (best effort; filled in after the request is stored). */
   host: string | null;
   user_agent: string | null;
-  /** The Tailscale login and device, when the request came over Tailscale (RLM-399 fills them). */
+  /** The Tailscale login and device, when the request came over Tailscale. */
   verified_login: string | null;
   ts_device: string | null;
   /** The device an approval made. */
@@ -206,7 +206,7 @@ export class RequestStore {
   }
 
   /**
-   * The owner's default for a new reviewer's notes (RLM-396): held for the owner (false, the default) or
+   * The owner's default for a new reviewer's notes: held for the owner (false, the default) or
    * straight to the agent (true). A share or an approval that does not say takes it. Kept in access_settings
    * as the row (scope 'notes', scope_id ''), `requests` 1 for straight to the agent: no schema change.
    */
@@ -226,7 +226,7 @@ export class RequestStore {
   }
 
   /**
-   * The local-network address the owner switched on in Settings → Network (RLM-399), or null (off, the
+   * The local-network address the owner switched on in Settings → Network, or null (off, the
    * default). Kept in access_settings as the row (scope 'lan', scope_id the address): no schema change.
    */
   lanAddress(): string | null {

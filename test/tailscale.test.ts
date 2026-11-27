@@ -1,4 +1,4 @@
-// Who a reviewer is (RLM-399). Tailscale names a person only for a connection the tailnet listener
+// Who a reviewer is. Tailscale names a person only for a connection the tailnet listener
 // accepted, asked with the socket's own address (a fake `tailscale` here); a header never does. The
 // local-network listener serves reviewers only: every owner path answers 403 there.
 import assert from "node:assert/strict";

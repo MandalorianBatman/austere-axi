@@ -1,4 +1,4 @@
-// A `command` adapter (RLM-365 uses it): a fixed binary and arguments the owner set in
+// A `command` adapter (a trigger command uses it): a fixed binary and arguments the owner set in
 // adapters.json at a terminal, the prompt on stdin. It has no session to resume or fork, so
 // it runs `new` only, and its output carries no session id.
 import { OK, requireMode } from "./types.ts";

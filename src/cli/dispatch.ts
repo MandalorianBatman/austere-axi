@@ -1,4 +1,4 @@
-// The dispatcher (RLM-345): with attach on, a note the owner sent or released starts the
+// The dispatcher: with attach on, a note the owner sent or released starts the
 // attached harness headless, so the agent reads the notes, patches the page and replies with the
 // normal CLI. Runs are rows in hub.db `runs`; each has a 0600 prompt file piped on stdin and a
 // 0600 log in `<state>/runs/`. Limits come from `<state>/attach.json`, read only from the state
@@ -80,7 +80,7 @@ export interface RunRow {
   pid_start: string | null;
   /** The file the run spawned (`omp.exe`, or `cmd.exe` for a `.cmd` shim): on Windows, with no start time, it tells a run's process from a later one with the same pid. */
   bin: string | null;
-  /** A trigger run (RLM-360): the trigger in triggers.json that started it. */
+  /** A trigger run: the trigger in triggers.json that started it. */
   trigger_id: string | null;
 }
 

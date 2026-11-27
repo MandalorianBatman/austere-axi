@@ -257,7 +257,7 @@ export async function ensureServer({
   } else if (!h) {
     // No server answers. If a service is installed for this state dir, start it: a CLI that
     // starts its own server instead takes the port and the state dir away from the unit,
-    // and the unit could never come back (RLM-311). A restart restarts it: a unit that is
+    // and the unit could never come back. A restart restarts it: a unit that is
     // active while its server does not answer would ignore a start.
     const started = startInstalledService(serviceContext(probePort), stateDir(), port, { restart });
     if (!started) exited = spawnServer(port);

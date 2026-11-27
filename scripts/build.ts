@@ -9,9 +9,9 @@
 //   chrome/          review UI and the hub shell, served by the local server
 //   cli.mjs          the CLI + server, dependencies bundled
 //   sync.mjs         hosted-page sync protocol ("austere-axi/sync"), zod bundled
-//   harness/omp.js   the omp / Pi extension that wakes an idle agent session (RLM-447); .js, which omp's extensions/ folder loads
-//   harness/copilot/extension.mjs   the same for Copilot CLI (RLM-452); link the folder into ~/.copilot/extensions/
-//   harness/opencode.js   the same for OpenCode (RLM-451); link it into ~/.config/opencode/plugins/
+//   harness/omp.js   the omp / Pi extension that wakes an idle agent session; .js, which omp's extensions/ folder loads
+//   harness/copilot/extension.mjs   the same for Copilot CLI; link the folder into ~/.copilot/extensions/
+//   harness/opencode.js   the same for OpenCode; link it into ~/.config/opencode/plugins/
 import * as esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";

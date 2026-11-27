@@ -1,4 +1,4 @@
-// The owner's history (RLM-352): what changed since they last looked, every version, a part's earlier texts, restore.
+// The owner's history: what changed since they last looked, every version, a part's earlier texts, restore.
 // The newest answer wins without counters: each load belongs to an effect, and the effect's cleanup aborts it.
 import { useEffect, useRef, useState } from "react";
 import { BASE, UNREACHABLE, failure } from "./review-env.ts";

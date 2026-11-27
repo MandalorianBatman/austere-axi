@@ -1,4 +1,4 @@
-// Request access (RLM-398): an unknown browser asks from the page's address; the owner approves,
+// Request access: an unknown browser asks from the page's address; the owner approves,
 // denies or blocks; limits; requests off unless the owner turns them on.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";

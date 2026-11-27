@@ -10,7 +10,7 @@ export const VIEWS: { id: NavView; label: string; icon: IconName }[] = [
   { id: "runs", label: "Runs", icon: "terminal" },
   { id: "settings", label: "Settings", icon: "sliders" },
 ];
-/** The views on austere-cloud (RLM-458): what D1 holds. No Inbox, Notes, Runs or Settings: those are machine data. */
+/** The views on austere-cloud: what D1 holds. No Inbox, Notes, Runs or Settings: those are machine data. */
 export const CLOUD_VIEWS: typeof VIEWS = [
   { id: "pages", label: "Pages", icon: "file" },
   { id: "shared", label: "Shared", icon: "person" },

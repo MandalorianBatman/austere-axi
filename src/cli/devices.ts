@@ -1,4 +1,4 @@
-// Team review access (RLM-397): a device the owner knows by name. A named link is the way in:
+// Team review access: a device the owner knows by name. A named link is the way in:
 // the first browser to open it claims it and becomes that person's device, and the link stops
 // working. The browser holds a fresh random secret in a cookie; hub.db keeps only its hash. A link
 // nobody claimed expires. A device reaches one page, a project, or every page, until revoked.
@@ -21,7 +21,7 @@ export interface Scope {
   id: string | null;
 }
 
-/** How a device came in: a named link, a request the owner approved (RLM-398), or Tailscale (RLM-399). */
+/** How a device came in: a named link, a request the owner approved, or Tailscale. */
 export type DeviceOrigin = "link" | "request" | "tailscale";
 
 /** A row of `devices`: an unclaimed link (claimed_at null), or a device (claimed). */
@@ -308,7 +308,7 @@ export class DeviceStore {
   }
 
   /**
-   * A Tailscale login the owner lets in without a link or a request (RLM-399): the row is the person,
+   * A Tailscale login the owner lets in without a link or a request: the row is the person,
    * found again by `tailscale whois` on every visit over the tailnet listener, so it has no secret
    * and no cookie. Refused, as a link is, when a live row of that name or that login already has this scope.
    */

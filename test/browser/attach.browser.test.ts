@@ -1,5 +1,5 @@
-// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): the owner's Agent pill
-// (RLM-346). A fake `omp` and `copilot` on the server's PATH stand in for the harnesses: they read
+// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): the owner's Agent pill.
+// A fake `omp` and `copilot` on the server's PATH stand in for the harnesses: they read
 // the prompt on stdin and drive the real CLI (feedback, patch, reply), sleep, or fail, as a
 // marker file beside them says.
 import assert from "node:assert/strict";

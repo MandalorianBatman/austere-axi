@@ -1,4 +1,4 @@
-// The wake client a harness extension runs inside an agent session (RLM-447): `omp.ts` (omp / Pi)
+// The wake client a harness extension runs inside an agent session: `omp.ts` (omp / Pi)
 // and `copilot.ts` (Copilot CLI) only adapt their harness to `WakeHost`. Loaded into every session,
 // it stays inert until the austere-axi server reports a role for the session's id: one check when
 // the session starts (and again after a turn that ran austere-axi), and nothing else. With a role,

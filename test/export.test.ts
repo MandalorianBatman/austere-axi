@@ -189,7 +189,7 @@ test("an export from before packing counts as an exported copy", () => {
   assert.ok(!hasInlineRuntime(page("root = Stack([])")), "a page with a runtime tag is not");
 });
 
-test("session ids stay on this machine: export of a page an agent session patched carries no session id (RLM-343)", () => {
+test("session ids stay on this machine: export of a page an agent session patched carries no session id", () => {
   const state = path.join(ROOT, "state");
   const file = path.join(PAGE, "session.html");
   const sid = "5e55d343-aaaa-4bbb-8ccc-0123456789ab";

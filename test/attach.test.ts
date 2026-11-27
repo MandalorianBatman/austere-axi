@@ -1,4 +1,4 @@
-// Attach (RLM-346): which setting applies to a page, the CLI that shows it anywhere and changes
+// Attach: which setting applies to a page, the CLI that shows it anywhere and changes
 // it only at a terminal, and the owner's routes behind the review page's Agent pill.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
