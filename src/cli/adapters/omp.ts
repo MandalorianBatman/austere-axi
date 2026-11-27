@@ -1,4 +1,4 @@
-// omp (18.13.3 observed, docs/review-loop-v2.md "Harness facts"): print mode with the prompt on
+// omp (18.13.3 observed, docs/cli.md "Adapters"): print mode with the prompt on
 // stdin, `--mode json` so line 1 is the session header, `--wait-async` so background jobs finish
 // inside the run (A16). `--max-time` is not passed (A15); exit 3 is the cost cap.
 import { OK, jsonLine, lines, requireMode, requireSession, str } from "./types.ts";

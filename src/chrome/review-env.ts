@@ -10,7 +10,7 @@ export const BOOT: Boot =
   (window as Window & { __AUSTERE__?: Boot }).__AUSTERE__ ??
   JSON.parse(document.getElementById("austere-boot")?.textContent || "{}");
 export const SID = BOOT.id;
-// Hosted mode (austere-cloud, docs/hosted-share-links.md): a reviewer page that syncs over the
+// Hosted mode (austere-cloud, docs/sync-protocol.md): a reviewer page that syncs over the
 // page's WebSocket instead of the local event stream and has no owner controls.
 export const HOSTED = BOOT.hosted || null;
 export const BASE = BOOT.hosted?.base ?? `/s/${SID}`;

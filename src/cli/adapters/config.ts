@@ -1,6 +1,6 @@
 // <state>/adapters.json: the owner's extra arguments per harness and the `command` adapters.
 // Only this file in the state dir is read, never one in a project or a page, and only
-// `adapter set` at a terminal writes it (docs/review-loop-v2.md "Security"). The extra arguments
+// `adapter set` at a terminal writes it (docs/security.md). The extra arguments
 // are where the owner grants a harness the right to write (A13).
 import fs from "node:fs";
 import path from "node:path";

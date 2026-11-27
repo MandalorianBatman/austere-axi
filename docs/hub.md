@@ -1,160 +1,212 @@
 # Hub
 
-The server starts when needed and stops after 30 idle minutes; to keep it running for good, see [Always on](#always-on). The hub has no on/off switch: it is the home page over `~/.austere-axi/hub.db` (SQLite), which keeps every page you open for review, `check` or `patch`, and its notes. It is there whenever the server runs:
+The hub is the home page over `~/.austere-axi/hub.db` (SQLite): every page you open for review, `check` or `patch`, and its notes. It has no on/off switch; it is there whenever the server runs. The server starts when needed and stops after 30 idle minutes (to keep it running, see [Always on](#always-on)).
 
 ```sh
-austere-axi hub open    # http://127.0.0.1:4388/, signed in: the inbox, every page by project, notes, runs, search
+austere-axi hub open    # http://127.0.0.1:4388/, signed in: inbox, pages by project, notes, runs, search
 austere-axi hub list    # the same, for an agent: [words] [--project p] [--archived] [--all] [--limit n]
-austere-axi hub notes   # every note, same for an agent: [words] [--project p] [--unanswered] [--limit n]
+austere-axi hub notes   # every note, for an agent: [words] [--project p] [--unanswered] [--limit n]
 ```
 
-The home page has a sidebar and five views. The sidebar lists the projects, each with its pages open for review and its unanswered notes; a page in several worktrees has a small chip per copy. ▸ folds a project away. The views:
+- `hub list` and `hub notes` show 40 and say `40 of 45 pages shown` when there are more; `--limit n` shows more.
+- `hub open` starts a browser unless `AUSTERE_AXI_NO_OPEN=1` (a machine with no screen); then it prints the url and how to sign in.
+- `hub on`, `hub off` and `hub status` exit 2 and point at `hub open`.
 
-- **Inbox** (the first time; then the view you used last): the pages open for review, in three groups, newest activity first in each.
-  - **Needs you:** the agent changed the page since you last had it open (`Changed since you looked: 2 revisions`), a reviewer's notes wait for you to release them, or the last agent run on it failed. A page you never had open in a browser is not "changed".
-  - **Waiting on agent:** notes no agent has answered, with who takes them: **an agent is listening** (a `poll` covers the page); **agent on**, the attached agent (see [Attach](attach.md)): **a run is working on them**, or **your next note starts a run** (turning attach on does not start a run for notes already there); or **nobody is taking them**, with a **Turn agent on** link that opens the page's Agent popover.
+## Views
+
+**Sidebar:** the projects, each with its pages open for review and its unanswered notes. A page in several worktrees has a chip per copy. ▸ folds a project.
+
+- **Inbox** (shown first time; then the last view used): pages open for review, newest activity first, in three groups:
+  - **Needs you:** the agent changed the page since you last had it open (`Changed since you looked: 2 revisions`; a page never opened in a browser is not "changed"), a reviewer's notes wait for release, or the last agent run failed.
+  - **Waiting on agent:** unanswered notes, with who takes them:
+    - **an agent is listening** (a `poll` covers the page);
+    - **agent on** ([Attach](attach.md)): **a run is working on them**, or **your next note starts a run** (turning attach on does not start a run for existing notes);
+    - **nobody is taking them**, with a **Turn agent on** link to the page's Agent popover.
   - **Quiet:** the rest.
-  A row shows the page's title (it opens the page), its path, project, last activity, its newest unanswered notes, and its chips. **Archive** puts every open copy of the page away (notes kept); **Undo** right after brings back exactly those copies.
-- **Pages:** one section per project and one row per page, pages with unanswered notes first. **Open** (opened for review, not archived), **Everything** and **Archived** each show their page count; when a view is empty it names the others that are not. In **Archived** a row has **Unarchive**.
-- **Notes:** every note, newest first, with its project and copy; search, status and author filters. `/notes` (and its old links, with their filters) opens this view.
-- **Runs:** the newest 100 agent runs, with their state, page, harness and reason.
-- **Settings:** this server, without a terminal. See [Settings](#settings).
+  - A row shows title (opens the page), path, project, last activity, newest unanswered notes and chips. **Archive** puts every open copy away (notes kept); **Undo** right after restores exactly those copies.
+- **Pages:** a section per project, a row per page, pages with unanswered notes first. **Open** (open for review, not archived), **Everything** and **Archived** show their counts; an empty view names the non-empty ones. **Archived** rows have **Unarchive**.
+- **Notes:** every note, newest first, with project and copy; search, status and author filters. `/notes` (and its old links with filters) opens this view.
+- **Runs:** the newest 100 agent runs: state, page, harness, reason.
+- **Settings:** see [Settings](#settings).
 
-The search box at the top of the sidebar (on a phone, the search button in the top bar) looks for pages by title, path or project, and for **parts**: statements whose text matches (the same index as `find`). A part opens its page with that part outlined. Every view and filter is in the address (`/?view=pages&project=shop`), so the back button and bookmarks work.
+**Search** (top of sidebar; on a phone, the search button in the top bar) finds pages by title, path or project, and **parts**: statements whose text matches (the `find` index). A part opens its page with that part outlined.
 
-`hub list` and `hub notes` show 40 and say `40 of 45 pages shown` when there are more; `--limit n` shows more. `hub open` starts a browser unless `AUSTERE_AXI_NO_OPEN=1` is set (a machine with no screen); then it prints the url and how to sign in.
+Every view and filter is in the address (`/?view=pages&project=shop`), so back and bookmarks work.
 
 ### From a review page
 
-The owner's review header has a breadcrumb, **project /** title, back to the hub (filtered to that project), and, on a page with copies in several worktrees, a list that opens the same page in another copy. On a phone the breadcrumb is a back arrow and the list is left out for room: the hub's chips and the quick switcher open the other copies. **Ctrl+K** (**⌘K** on a Mac; anywhere on the page, the composer and the page itself too), or **Go to page…** in the `⋯` menu, opens a quick switcher: pages you opened lately first, then type to find pages and parts. **Next page with unanswered notes** in the `⋯` menu goes to the next page in the inbox with notes no agent answered, at the copy that has them. A reviewer's page, and a hosted page, has none of this.
+Owner only; a reviewer's page and a hosted page have none of this.
 
-The owner's review page has the hub's projects sidebar beside the page: every project with its pages, this page marked, a click opens another. The button at the left of the header, or **Ctrl+B** (**⌘B** on a Mac; the page itself too), opens or folds it; it starts folded, and the choice is kept in the browser and shared with the hub (the hub's own sidebar starts open). Under 1100 px wide, and on a phone, it opens over the page, with a scrim. A reviewer's page and a hosted page have none of it.
+- **Breadcrumb** (**project /** title): back to the hub, filtered to that project. On a page with copies in several worktrees, a list opens the same page in another copy. On a phone: a back arrow, no list (use the hub's chips or the quick switcher).
+- **Quick switcher:** **Ctrl+K** (**⌘K**; anywhere, including the composer and the page) or **Go to page…** in `⋯`. Recent pages first, then type to find pages and parts.
+- **Next page with unanswered notes** (`⋯`): the next inbox page with unanswered notes, at the copy that has them.
+- **Projects sidebar** beside the page: every project and its pages, this one marked; click to open another. Toggle with the header's left button or **Ctrl+B** (**⌘B**; the page too). Starts folded; the choice is kept in the browser and shared with the hub (whose sidebar starts open). Under 1100 px and on a phone it opens over the page with a scrim.
 
 ### Settings
 
-**Settings** (`/?view=settings`) is the owner's page for this local server: hosted pages keep their own invites (`publish --invite`). Its count in the sidebar is the people waiting for access. Every setting on it has a terminal form, named on the page, so nothing is lost without it; what runs a command (`server install`, `adapter set`, `trigger add`) stays at a terminal.
+**Settings** (`/?view=settings`) is the owner's page for this local server (hosted pages keep their own invites: `publish --invite`). Its sidebar count is the people waiting for access. Every setting has a terminal form, named on the page; commands that run things (`server install`, `adapter set`, `trigger add`) stay at a terminal.
 
-- **People and access:** who waits for access, with **Approve** (this page, the page's project, or every page; their notes held for you or sent straight to the agent), **Deny** and **Block**; where browsers without a link may ask (every page, or per project; a project's own choice wins); **New link**, a named link for one page, its project or every page, as **Share** in a page's `⋯` menu makes it; the links nobody has opened yet (**Copy link**, **Cancel link**, **Make single-use** for an old-style one); and the devices with access: how they got in, what they reach, where their notes go, when and from which address they were last seen, **Notes by** them, a new reach, **Rename** and **Revoke**. At a terminal: `share`, `share list|revoke`, `share requests`, `share approve|deny|block`. See [Team review](team-review.md).
-- **Network:** the addresses the server answers on (this computer, Tailscale, the local network, an address added at a terminal), the address to share and what set it, and whether the server stays on: run by a service (`server install`), started to stay on, or stopping after 30 idle minutes. **Names from Tailscale** says whether Tailscale names reviewers here and lets a Tailscale login in without a link (`share tailscale`). **Local network** is a switch, off by default, that also listens on one of this computer's local-network addresses, for reviewers only (`server lan`); it asks first and says that the traffic is not encrypted. See [Team review](team-review.md#who-is-this-reviewer).
-- **Review defaults:** where a new reviewer's notes go unless a share or an approval says: **Hold them for me** (the default) or **Send them straight to the agent** (`share default hold|auto`; `share --hold` or `--auto` for one). Reviewers you let in already keep their own. **On pages now** lists the pages someone has open and who.
-- **Cloud:** a switch for the cloud features, **off by default**: `publish`, `clone`, `cloud login|whoami` and the server's sync of hosted pages. Off, only local features work and nothing reaches the hosted service; pages published before stay up there but do not sync, and turning it off asks first when there are some. It shows the service, the account this machine is signed in as and how many pages it published, all from `cloud.json` without asking the service. At a terminal: `cloud on|off|status`. See [Hosted pages](hosted-pages.md#cloud-switch).
-- **Projects:** each project's folders, **Rename**, **Merge into** an older project of the same repository, **Forget** a folder (a folder that is gone: its pages are archived, notes kept), and **Archive missing pages** for copies whose file is gone. At a terminal: `project rename|merge|forget-root`, `archive --missing`.
-- **About:** the version, the state folder and the port, and a note when the austere-axi you run at the terminal is newer than the server (restart it: `server restart`).
+| Section | What it does | Terminal |
+|---|---|---|
+| **People and access** | Waiting requests: **Approve** (this page, its project, or every page; notes held or sent to the agent), **Deny**, **Block**. Where browsers without a link may ask (every page or per project; a project's own choice wins). **New link** for a page, its project or every page (as **Share** in a page's `⋯`). Unopened links: **Copy link**, **Cancel link**, **Make single-use** (old-style links). Devices: how they got in, reach, where notes go, last seen (time, address), **Notes by**, new reach, **Rename**, **Revoke**. See [Team review](team-review.md). | `share`, `share list\|revoke`, `share requests`, `share approve\|deny\|block` |
+| **Network** | Addresses the server answers on (this computer, Tailscale, local network, one added at a terminal); the address to share and what set it; whether the server stays on (service, started to stay on, or stops after 30 idle minutes). **Names from Tailscale:** whether Tailscale names reviewers and lets a Tailscale login in without a link. **Local network:** switch, off by default, to also listen on one local-network address, for reviewers only; asks first and warns traffic is not encrypted. See [Team review](team-review.md#who-is-this-reviewer). | `server install`, `share tailscale`, `server lan` |
+| **Review defaults** | Where a new reviewer's notes go unless a share or approval says otherwise: **Hold them for me** (default) or **Send them straight to the agent**. Existing reviewers keep theirs. **On pages now:** who has which page open. | `share default hold\|auto`; `share --hold\|--auto` per share |
+| **Cloud** | Cloud features, **off by default**: `publish`, `clone`, `cloud login\|whoami`, hosted-page sync. Off: only local features; nothing reaches the hosted service; published pages stay up but do not sync; turning off asks first if there are any. Shows the service, signed-in account and published-page count, from `cloud.json` (no request). See [Hosted pages](hosted-pages.md#cloud-switch). | `cloud on\|off\|status` |
+| **Projects** | Each project's folders, **Rename**, **Merge into** an older project of the same repository, **Forget** a folder (gone folder: pages archived, notes kept), **Archive missing pages**. | `project rename\|merge\|forget-root`, `archive --missing` |
+| **About** | Version, state folder, port; a note when the terminal's austere-axi is newer than the server. | `server restart` |
 
-Settings reads `/hub/api/settings` and `/hub/api/people`; its changes are `POST /hub/api/settings/review`, `/hub/api/settings/cloud`, `/hub/api/people/…` and `/hub/api/projects/…`, with the owner's cookie from the same site, as every hub route.
+Routes: reads `/hub/api/settings`, `/hub/api/people`; changes via `POST /hub/api/settings/review`, `/hub/api/settings/cloud`, `/hub/api/people/…`, `/hub/api/projects/…`.
 
 ### What the hub sends
 
-The hub is a small app over `/hub/api/` (`projects`, `pages`, `inbox`, `search`, `page/<copy id>`, `notes`, `runs`, and `page/<copy id>/archive|unarchive`). Like the hub, every route needs the owner's cookie: loopback alone, a reviewer's device and another site's page get 403, and a host not on the allowlist too.
+The hub is an app over `/hub/api/` (`projects`, `pages`, `inbox`, `search`, `page/<copy id>`, `notes`, `runs`, `page/<copy id>/archive|unarchive`). Every hub route needs the owner's cookie from the same site: loopback alone, a reviewer's device, another site's page, or a host not on the allowlist get 403.
 
 ## Projects and copies
 
-A project is a name and a list of root folders. A page is a path inside a root, so the same file in two worktrees of one repository is one page with two copies. The row shows a chip per copy, labelled with the branch that worktree has checked out (or the folder's name), marked when it has unanswered notes; a chip opens that copy. A row shows 3 chips: copies with unanswered notes first, then one with an agent listening, then the newest; the rest are behind **+n more**. A long branch name is shortened in the middle; the chip's tooltip has the full name and the file. Notes stay with their copy: each branch's file can differ.
+A project is a name plus root folders. A page is a path inside a root, so one file in two worktrees of a repository is one page with two copies.
 
-The hub finds a page's project without git; it never runs it. Walking up from the page's folder it takes the first of:
+- A chip per copy, labelled with the worktree's branch (or the folder name), marked when it has unanswered notes; it opens that copy.
+- A row shows 3 chips (unanswered notes first, then one with an agent listening, then newest); the rest under **+n more**. Long branch names are shortened in the middle; the tooltip has the full name and file.
+- Notes stay with their copy.
 
-1. a root it already knows: a root holds every folder below it, except a folder it guessed at `/`, your home folder or the temp folder, which holds only that folder;
-2. a folder with a `.git` entry: a `.git` directory is a repository; a `.git` file of a worktree joins the project of its main repository when git registered it there: its git dir sits in the repository's `worktrees/` folder, and points back at that `.git` file (`<gitdir>/gitdir`, as `git worktree add` writes it). A submodule, or any other `.git` file, is its own project. A worktree moved by hand is one of those until you run `git worktree repair`; if a page was already opened from the moved folder, its root is stored (see below), so also run `austere-axi project forget-root <folder>` once after the repair. Inside a root you assigned (`project add`), the repository or worktree joins that root's project, and its page paths start with the repository's folder inside that root (`shop/docs/plan.html`), so two repositories there stay apart and the repository's worktrees, wherever they are, share its pages;
-3. a guessed folder: the folder the command ran in when the page is inside it (never `/`, your home folder or the temp folder), else the page's own folder. So `cd notes && austere-axi a/sprint.html` and `austere-axi b/plan.html` make one project, `notes`. A guessed folder takes in the folders guessed below it earlier, with their pages; a project `poll` waiting on one of those ends with `status: moved`.
+**Finding a page's project** (no git is run). Walking up from the page's folder, the first of:
 
-A bare `poll` or `feedback` finds its project from the folder it runs in by the same rule, so it covers the pages opened from there.
+1. **A known root.** A root holds every folder below it, except a root guessed at `/`, home or the temp folder, which holds only itself.
+2. **A folder with a `.git` entry.**
+   - A `.git` directory is a repository.
+   - A worktree's `.git` file joins its main repository's project when git registered it (its git dir is in the repository's `worktrees/` and `<gitdir>/gitdir` points back, as `git worktree add` writes it).
+   - A submodule or any other `.git` file is its own project.
+   - A worktree moved by hand is its own project until `git worktree repair`; if a page was already opened from the moved folder, also run `austere-axi project forget-root <folder>` once after the repair.
+   - Inside a root you assigned (`project add`), the repository or worktree joins that root's project; page paths start with the repository folder (`shop/docs/plan.html`), so repositories there stay apart and its worktrees, wherever they are, share its pages.
+3. **A guessed folder:** the folder the command ran in if the page is inside it (never `/`, home or temp), else the page's folder. So `cd notes && austere-axi a/sprint.html` and `austere-axi b/plan.html` make one project, `notes`. A guessed folder absorbs folders guessed below it earlier, with their pages; a project `poll` waiting on one ends with `status: moved`.
 
-A new project takes the repository's name: the `url` of its `origin` remote in the repository's `config` (`…/austere-axi.git` → `austere-axi`), for a bare repository and its worktrees too. With no origin it takes the folder's name without `.git` (a `.bare` folder: its parent's). When another project already has the name, the parent folder is added: `shop (work)`. The section heading on the home page, and `project list`, show the project's main root first: a root you assigned, else the repository, else a guessed folder, else a worktree; the first stored of a kind.
+A bare `poll` or `feedback` finds its project from its working folder the same way.
 
-Two clones of one repository (one origin) that git does not tie together, such as a normal clone and a bare repository's worktrees, stay two projects. The newer one says so on the home page and in `project list`: `same repository as project austere-axi: austere-axi project merge austere-axi <id>`. Merging is your call; nothing is grouped on its own.
+**Naming:** a new project takes the repository's name from the `origin` `url` in its `config` (`…/austere-axi.git` → `austere-axi`), also for bare repositories and their worktrees. No origin: the folder name without `.git` (a `.bare` folder: its parent's). A taken name gets the parent folder added: `shop (work)`. The home page heading and `project list` show the main root first: an assigned root, else the repository, else a guessed folder, else a worktree; the first stored of a kind.
 
-What it finds is stored, so it does not look again. Change it with `project`:
+**Two clones** of one origin that git does not tie together stay two projects. The newer one says so in the hub and `project list`: `same repository as project austere-axi: austere-axi project merge austere-axi <id>`. Nothing is merged automatically.
+
+What it finds is stored. Change it with `project`:
 
 ```sh
-austere-axi project list                     # projects, their main root, root counts by kind, page counts
+austere-axi project list                     # projects, main root, root counts by kind, page counts
 austere-axi project list --roots             # every root folder, with its kind
-austere-axi project add ~/work/plans --name plans   # assign a root (a folder with no .git, holding pages in subfolders)
+austere-axi project add ~/work/plans --name plans   # assign a root (a folder with no .git, pages in subfolders)
 austere-axi project merge shop shop-clone    # the second project's roots move to the first
-austere-axi project rename shop storefront     # refused if another project is named storefront
+austere-axi project rename shop storefront   # refused if storefront exists
 austere-axi project forget-root ~/old/clone  # its pages, and the project's other roots, are filed again
-austere-axi project forget-root ~/gone/repo --drop  # a root whose folder is gone: its pages are archived
+austere-axi project forget-root ~/gone/repo --drop  # a gone root: its pages are archived
 ```
 
-`project add` takes in the folders it guessed below the new root, and refuses a folder inside another project's root, or around one, naming that project; `project merge` is the way to join them. When the new root would take roots or pages from other projects, `add` lists each one (name, id, pages, roots) and changes nothing until you run it again with `--yes`. It refuses `/`, the temp folder, and the home folder or any folder holding it. A name is never empty and never looks like an id (12 hex characters). When two projects share a name, an error asking for an id lists each one's id and main root.
-
-`forget-root` says where the root's pages went (`went:` each project, its root and page count). A folder with a `.git` is a root again at once, of a new project: `status: found again`, and the note gives the `project merge` that joins it back. A root whose folder is gone and holds pages needs `--drop`: its copies are archived (their notes are kept, `hub list --archived` shows them) and stay in their project, instead of being filed under folders that do not exist.
-
-`--project` (on `poll`, `feedback`, `hub list` and `hub notes`) and the home page's project link take a name, an id, or any folder a root holds.
+- `project add` absorbs folders guessed below the new root. It refuses a folder inside or around another project's root (naming it; use `project merge`), and `/`, the temp folder, and home or any folder holding it. If it would take roots or pages from other projects, it lists each (name, id, pages, roots) and changes nothing until rerun with `--yes`.
+- Names are never empty and never look like an id (12 hex characters). When two projects share a name, the error lists each one's id and main root.
+- `forget-root` reports where pages went (`went:` each project, root, page count). A folder with a `.git` becomes a root of a new project at once (`status: found again`; the note gives the `project merge` to join back). A gone root holding pages needs `--drop`: its copies are archived (notes kept, shown by `hub list --archived`) and stay in their project.
+- `--project` (on `poll`, `feedback`, `hub list`, `hub notes`) and the hub's project link take a name, an id, or any folder a root holds.
 
 ## What the lists leave out
 
-- Pages only `check`ed or `patch`ed, never opened for review. `hub list --all` (or **Everything** on the home page) shows them.
-- Archived pages: `austere-axi archive <file>` puts a page away and it stops taking notes, notes kept; `unarchive <file>` brings it back; `hub list --archived` shows them. Archive works per copy: with a copy in another worktree, the row stays, without the archived copy's notes in its counts, and opens the copy that is still open (`--every-copy` takes them all). A review closed in an older version (0.10.4 can still share this `hub.db`) is archived the next time `hub.db` is opened by this version, however late it was closed.
-- Nothing else: a page whose file is gone stays listed, marked `missing`, with its notes. A page's title opens a copy that is still there; the chips open each copy.
+- Pages only `check`ed or `patch`ed, never opened for review: `hub list --all` or **Everything** shows them.
+- Archived pages. `austere-axi archive <file>` puts a page away (stops taking notes, notes kept); `unarchive <file>` brings it back; `hub list --archived` shows them. Archive is per copy: other copies keep the row (without the archived copy's notes in counts); `--every-copy` archives all.
+- Nothing else: a page whose file is gone stays listed, marked `missing`, with its notes. The title opens a copy that still exists; chips open each copy.
 
 ## A copy whose file is gone
 
-A row or chip marked `missing` opens a page of its own (status 410) with the file's path, the notes the copy still holds, and an **Archive this copy** button. Archiving leaves the copy out of the lists and keeps its notes. In the CLI, `archive <file>` does the same for one copy, and `archive --missing [--project p]` for every copy opened for review whose file is gone (a deleted worktree); `reply <file>` still answers its notes, and `feedback` marks its batch `missing: true`.
+A `missing` row or chip opens a page (status 410) with the path, the copy's notes and **Archive this copy** (leaves the lists, keeps notes). CLI:
+
+- `archive <file>`: one copy.
+- `archive --missing [--project p]`: every copy open for review whose file is gone (e.g. a deleted worktree).
+- `reply <file>` still answers its notes; `feedback` marks its batch `missing: true`.
 
 ## History and text index
 
-hub.db also holds each page's revisions (the whole program every time) and its statements as plain text, with a full-text index. They are filled by `patch`, `open`, `check` and the server watching a page, and read by `history`, `show`, `outline`, `find`, `changes` and `decisions` ([CLI](cli.md#history-and-reuse)). `austere-axi hub reindex` rebuilds the index from the files that still exist. A hub.db from 0.10.4 or 0.12 gets the tables on first open, and a page's first revision on its first open.
+`hub.db` also holds each page's revisions (the whole program each time) and its statements as plain text with a full-text index. Filled by `patch`, `open`, `check` and the server watching a page; read by `history`, `show`, `outline`, `find`, `changes`, `decisions` ([CLI](cli.md#history-and-reuse)). `austere-axi hub reindex` rebuilds the index from files that still exist.
 
-## Notes
+## Server lock
 
-- Session files from before 0.5 (`~/.austere-axi/sessions/*.json`) are imported into `hub.db` on first start and renamed to `*.imported`. A `hub.db` from an older version gets its projects on first open.
-- One server runs per state dir; a second one refuses to start. `server.lock` holds the running server's pid and port. If that server no longer answers on the port, the lock is stale and is taken over.
-- `hub on`, `hub off` and `hub status` are gone, because the hub has no on/off switch: they exit 2 and point at `hub open`.
+One server runs per state dir; a second refuses to start. `server.lock` holds the running server's pid and port. If that server no longer answers on the port, the lock is stale and is taken over.
 
 ## Always on
 
-Without a service, the server a CLI command starts exits after 30 idle minutes. To keep one running for good, at a terminal:
+Without a service, a server a CLI command starts exits after 30 idle minutes. To keep one running, at a terminal:
 
 ```sh
-npm install -g austere-axi      # a stable path for the service to run; npx's cache is not one
-austere-axi server install      # [--port n] [--link-url https://austere.example.com]
-austere-axi server status       # running, starting, failing to start or stopped; starts at login or boot; linger; which server answers
-austere-axi server restart      # restart it, after upgrading austere-axi too; starts a stopped one
+npm install -g austere-axi      # a stable path for the service; npx's cache is not one
+austere-axi server install      # [--port n] [--link-url https://austere.example.com] [--force] [--adopt]
+austere-axi server status       # running, starting, failing to start or stopped; starts at login/boot; linger; which server answers
+austere-axi server restart      # restart it (also after updating austere-axi); starts a stopped one
 austere-axi server uninstall    # stop it and remove the unit
 ```
 
-`server install` writes a per-user service that runs the installed CLI as `server --persist`, starts at login and restarts it when it fails:
+`server install` writes a per-user service running the installed CLI as `server --persist`, started at login, restarted on failure:
 
-- **Linux:** a systemd user unit, `~/.config/systemd/user/austere-axi.service`, then `systemctl --user daemon-reload` and `systemctl --user enable --now austere-axi.service`. With linger off (the default), systemd starts it when you log in and stops it when your last session ends: you log out, or the last ssh connection closes. Run `loginctl enable-linger` once to keep it running without a session and start it at boot. `server install` says so when linger is off; `server status` shows which applies (`linger: on|off`, `starts: at login|at boot`).
-- **macOS:** a launchd agent, `~/Library/LaunchAgents/xyz.kasat.austere-axi.plist`, loaded with `launchctl bootstrap gui/<uid>`.
-- **Windows:** it prints the Task Scheduler commands (`schtasks`) to do it by hand and changes nothing.
+| OS | Service |
+|---|---|
+| Linux | systemd user unit `~/.config/systemd/user/austere-axi.service`; then `systemctl --user daemon-reload` and `systemctl --user enable --now austere-axi.service`. With linger off (default) it starts at login and stops when your last session ends (logout or last ssh connection). `loginctl enable-linger` keeps it running without a session and starts it at boot. `server install` warns when linger is off; `server status` shows `linger: on\|off`, `starts: at login\|at boot`. |
+| macOS | launchd agent `~/Library/LaunchAgents/xyz.kasat.austere-axi.plist`, loaded with `launchctl bootstrap gui/<uid>`. |
+| Windows | Prints the Task Scheduler (`schtasks`) commands; changes nothing. |
 
-Before it writes anything it checks that the service manager answers (`systemctl --user show-environment`; on macOS `launchctl print gui/<uid>`). A shell from `su` or `sudo`, a container, or WSL without systemd has none: it then writes nothing and prints the command to run at login some other way. It refuses without a terminal, so an agent or a page cannot set it up, and while a server no service started holds the state dir (`server.lock`): run `austere-axi stop` first. On Windows it refuses the same way, and prints the steps to a terminal that runs it. A command it prints for you to paste is quoted for your shell. Run from npx, it warns: npm may clear npx's cache, and the service would stop starting. Run by a node in a folder of one Node release (nvm's `~/.nvm/versions/node/v24.1.0/bin/node`, a tarball's `node-v24.22.3-linux-x64/bin/node`, Homebrew's `Cellar/node/24.1.0`), it warns too: the next Node update removes that folder. When a `node` without a version in its path leads to the same file (on `PATH`, or in `/usr/local/bin`, `/usr/bin`, `/opt/homebrew/bin`), the unit runs that link instead, and an update moves the link. `server status` repeats the warning, and says so when the unit's node is gone.
+### Install checks
 
-It shows what it will do and asks (y/N): the command the unit runs, the port, the state dir, the link url, what it keeps of the unit it replaces and what it does not. If the service then fails to start, or another server answers on its port instead of the unit's own process within 15 s, it stops the unit and puts back what was there, and says where to see why (`journalctl --user -u austere-axi.service`, or `server.log` in the state dir on macOS).
+- Checks the service manager answers first (`systemctl --user show-environment`; macOS `launchctl print gui/<uid>`). None (shell from `su`/`sudo`, a container, WSL without systemd): writes nothing, prints the command to run at login another way.
+- Refuses without a terminal (an agent or a page cannot set it up). On Windows it refuses the same way and prints the steps to a terminal.
+- Refuses while a server no service started holds the state dir (`server.lock`): run `austere-axi stop` first.
+- Printed commands are quoted for your shell.
+- Warns when run from npx (npm may clear its cache and the service would stop starting).
+- Warns when run by a node in a single-release folder (nvm's `~/.nvm/versions/node/v24.1.0/bin/node`, a tarball's `node-v24.22.3-linux-x64/bin/node`, Homebrew's `Cellar/node/24.1.0`): the next Node update removes it. If a versionless `node` leads to the same file (on `PATH`, or in `/usr/local/bin`, `/usr/bin`, `/opt/homebrew/bin`), the unit runs that link instead. `server status` repeats the warning, and says when the unit's node is gone.
+- Shows what it will do and asks (y/N): the command, port, state dir, link url, and what it keeps or drops of the unit it replaces.
+- If the service fails to start, or another server answers on its port within 15 s, it stops the unit, restores what was there, and says where to look (`journalctl --user -u austere-axi.service`; on macOS `server.log` in the state dir).
+- `server install` and `server uninstall` refuse a unit that runs another CLI or another state dir (so a build from a checkout, with its own state dir, cannot repoint or remove your service); `--force` overrides. A unit running from npx's cache is not refused for its CLI.
 
-`--port n` sets the port the service listens on. CLI commands on the same state dir find it without `AUSTERE_AXI_PORT`: the running server's `server.lock` names its port, and while the service is stopped the unit does. `AUSTERE_AXI_PORT`, when set, wins over both. `--link-url` sets `AUSTERE_AXI_LINK_URL` in the unit (see below). Run `server install` again to change either; without them it keeps the installed unit's, and it restarts the service. A re-install that changes the unit backs it up first (`austere-axi.service.bak`, then `.bak.1`; a backup is never overwritten). Lines you added to the unit (`Environment=`, `EnvironmentFile=`, `ExecStartPre=`, `ExecStartPost=`, `After=`, `Wants=`, `Requires=`) move to a drop-in, `~/.config/systemd/user/austere-axi.service.d/kept.conf`, which later installs leave alone; your own drop-ins there (`systemctl --user edit austere-axi.service`) are left alone too. Any other line you changed is not kept, and the summary names it. On macOS, extra `EnvironmentVariables` of the agent are kept in the new agent.
+### Port, link url and re-install
 
-`server status` reports the service for this state dir in plain words: `running`, `starting`, `failing to start` (systemd restarts it in a loop, or gave up after 5 tries; launchd's last start exited with an error) or `stopped`; when it starts (`at login`, `at boot` with linger on, or `not on its own` when disabled); and the server that answers, with its version and pid and whether a service runs it. A unit that serves another state dir (`AUSTERE_AXI_STATE_DIR` points elsewhere) is named as `not installed for this state dir`; its state is not reported as this one's.
+- `--port n`: the service's port. CLI commands on the same state dir find it without `AUSTERE_AXI_PORT` (from `server.lock` while running, from the unit while stopped). `AUSTERE_AXI_PORT`, if set, wins.
+- `--link-url`: sets `AUSTERE_AXI_LINK_URL` in the unit.
+- Running `server install` again changes either (omitted flags keep the installed values) and restarts the service.
+- A re-install that changes the unit backs it up first (`austere-axi.service.bak`, then `.bak.1`; never overwritten).
+- Lines you added (`Environment=`, `EnvironmentFile=`, `ExecStartPre=`, `ExecStartPost=`, `After=`, `Wants=`, `Requires=`) move to the drop-in `~/.config/systemd/user/austere-axi.service.d/kept.conf`, which later installs leave alone, as are your own drop-ins (`systemctl --user edit austere-axi.service`). Other changed lines are not kept; the summary names them. On macOS, extra `EnvironmentVariables` are kept.
 
-`server restart` restarts the server for this state dir and waits until the new one answers. Under a service it restarts the unit that runs it (`systemctl --user reset-failed` and `restart`, or `launchctl kickstart -k`), whatever its name, and starts a stopped one. A server no service runs is stopped and started again where it listened, with `--persist` if it had it; a CLI older than that server refuses, rather than put its own older version in its place. With no server and no service it starts one, as any command would.
+### Status and restart
 
-`server install` and `server uninstall` refuse a unit that runs another CLI or another state dir than the one they run with: a build from a checkout, which uses a state dir of its own, must not repoint or remove the owner's service. `--force` goes ahead. A unit that runs from npx's cache is not refused for its CLI: moving it to an installed CLI is what the npx warning asks for.
+- `server status` states: `running`, `starting`, `failing to start` (systemd restart loop, or gave up after 5 tries; launchd's last start exited with an error), `stopped`. When it starts: `at login`, `at boot` (linger on), or `not on its own` (disabled). Also the answering server's version, pid and whether a service runs it. A unit serving another state dir (`AUSTERE_AXI_STATE_DIR` elsewhere) shows as `not installed for this state dir`.
+- `server restart` restarts the server for this state dir and waits until it answers. Under a service: restarts its unit, whatever the name (`systemctl --user reset-failed` + `restart`, or `launchctl kickstart -k`), starting a stopped one. Without a service: stops and restarts it where it listened, with `--persist` if it had it; a CLI older than the server refuses. No server and no service: starts one.
 
-A server the service runs never idles out, and a CLI never replaces it. What counts as a service is what the system says, and it is checked: the server asks systemd (or launchd) whether the unit that owns it runs the austere server (a `server` command that names `austere-axi`, or the very script this server runs; another project's `cli.mjs server` is not it), and whether that unit runs this process. A unit whose command is `npx -y austere-axi server --persist` counts too, although the server sits below the unit's main process. On macOS the agent can have any label: the CLI lists the running agents (`launchctl list`) and takes the one whose main process is the server or sits above it and runs the austere server; `server restart` restarts that label. An agent that wraps the server in a script that does not name `austere-axi` and does not `exec` it is not recognised; stop that server with `austere-axi stop` before upgrading. No variable can claim a supervisor that is not there, so a server you start by hand is an ordinary one. A CLI asks the system the same question about an older server before it replaces it, so a server from before 0.12 (which does not report a supervisor) that a unit runs, your own unit included, is left alone too. After upgrading austere-axi, the old server keeps running, and every CLI command says it needs a restart: `austere-axi server restart` (for a launchd agent whose label it cannot find, `launchctl kickstart -k gui/<uid>/<its label>`). A command that needs a server starts the service rather than one of its own. If the service does not start, the error names `systemctl --user status austere-axi.service` (or `launchctl print`) to see why, and `austere-axi server uninstall` to remove it. `austere-axi stop` stops the server; the next command that needs one starts the service again, which is what "always on" means. `austere-axi server uninstall` takes the service away for good. A server started any other way is still replaced by a newer CLI, which says so on stderr (`replaced server 0.11.0 (pid N) with 0.12.0 from <path>`) and starts the new one where the old one listened, with `--persist` if the old one had it, and with the old one's `AUSTERE_AXI_LINK_URL`, `AUSTERE_AXI_LINK_HOST` and `AUSTERE_AXI_ALLOWED_HOSTS` (a server from 0.12 on reports them; for an older one the caller's apply). `AUSTERE_AXI_PERSIST=1` is the same as `--persist`.
+### Service-run servers
 
-While such a server holds the service's port, the service cannot start. `server status` and every CLI command say so: ``the service cannot start: pid N holds port P and was not started by the service. Run `austere-axi stop`.`` The unit `server install` writes stops trying after 5 failed starts in 2 minutes (`failed` in `systemctl --user status`) instead of restarting for ever; after `austere-axi stop`, the next CLI command resets it and starts it. Health checks do not count as use, so an ordinary server still idles out while something probes it.
+- A service-run server never idles out and is never replaced by a CLI.
+- What counts as a service is checked with systemd/launchd: the owning unit must run the austere server (a `server` command naming `austere-axi`, or the script this server runs; another project's `cli.mjs server` is not) and run this process. `npx -y austere-axi server --persist` counts too.
+- macOS: any agent label works; the CLI finds it via `launchctl list` (main process is the server or above it and runs the austere server), and `server restart` restarts that label. A wrapper script that neither names `austere-axi` nor `exec`s it is not recognised; stop that server with `austere-axi stop` before updating.
+- No variable can fake a supervisor: a server started by hand is ordinary. A CLI checks the same before replacing any server, so a unit-run server (including your own unit) is left alone.
+- After updating austere-axi, the old server keeps running and every CLI command says it needs `austere-axi server restart` (for a launchd agent whose label it cannot find: `launchctl kickstart -k gui/<uid>/<its label>`).
+- A command that needs a server starts the service, not its own. If the service does not start, the error names `systemctl --user status austere-axi.service` (or `launchctl print`) and `austere-axi server uninstall`.
+- `austere-axi stop` stops the server; the next command that needs one starts the service again. `server uninstall` removes the service for good.
+- A server started any other way is replaced by a newer CLI, which says so on stderr (`replaced server 0.11.0 (pid N) with 0.12.0 from <path>`) and starts the new one where the old one listened, with `--persist` if it had it and the old one's `AUSTERE_AXI_LINK_URL`, `AUSTERE_AXI_LINK_HOST` and `AUSTERE_AXI_ALLOWED_HOSTS`. `AUSTERE_AXI_PERSIST=1` equals `--persist`.
+- While a non-service server holds the service's port, the service cannot start; `server status` and every command say: ``the service cannot start: pid N holds port P and was not started by the service. Run `austere-axi stop`.`` The unit stops trying after 5 failed starts in 2 minutes (`failed` in `systemctl --user status`); after `austere-axi stop`, the next CLI command resets and starts it.
+- Health checks do not count as use: an ordinary server still idles out while probed.
 
-The server asks Tailscale for its address again every minute (`AUSTERE_AXI_TAILNET_CHECK_MS`, `0` turns it off). It starts listening on the tailnet when Tailscale comes up after the server (a service that starts at boot), listens again when the listener there stops accepting connections after Tailscale restarts, and moves when the address changes. While Tailscale does not answer, it keeps what it has. A proxy that points at the tailnet address needs no wait script or watchdog for this; it may answer 502 for up to a minute after Tailscale comes back.
+### Tailscale
+
+The server re-checks its Tailscale address every minute (`AUSTERE_AXI_TAILNET_CHECK_MS`; `0` disables). It starts listening on the tailnet when Tailscale comes up after the server, re-listens when the tailnet listener stops accepting after a Tailscale restart, and moves when the address changes. While Tailscale does not answer, it keeps what it has. A proxy pointing at the tailnet address needs no wait script or watchdog; it may answer 502 for up to a minute after Tailscale returns.
 
 ### From a unit you wrote yourself
 
-`server install` will not replace a unit it did not write unless told to, and `server uninstall` leaves one alone: yours may carry settings only you know about. This covers a unit at `~/.config/systemd/user/austere-axi.service`, and the unit that runs the server holding the state dir, whatever its name (for a server from before 0.12, the system names it). To move to the one this command writes:
+`server install` does not replace a unit it did not write, and `server uninstall` leaves one alone. This covers `~/.config/systemd/user/austere-axi.service` and the unit running the server that holds the state dir, whatever its name. To switch to the generated unit:
 
 ```sh
 austere-axi server install --adopt
 ```
 
-It shows your unit's command, port, state dir and link url, and what it keeps: the port (`--port` or `AUSTERE_AXI_PORT`) and `AUSTERE_AXI_LINK_URL` become the new unit's own settings, and the other `Environment=`, `EnvironmentFile=`, `ExecStartPre=`, `ExecStartPost=`, `After=`, `Wants=` and `Requires=` lines go into the drop-in `austere-axi.service.d/kept.conf`. It lists the lines it does not keep (`Restart=always`, `Type=`, …). Say yes and it stops and disables your unit, moves its file to `<name>.bak` beside it, and installs and starts its own. If that fails, your unit is moved back, enabled and started again as it was. A unit outside `~/.config/systemd/user` (in `/etc`, or linked from elsewhere) is not moved: it says to disable it yourself (`systemctl --user disable --now <name>`) and run `server install` again. Other units of yours (a watchdog timer, a wait script) are not touched.
-
-On macOS, `--adopt` takes the place of an agent at `~/Library/LaunchAgents/xyz.kasat.austere-axi.plist` that `server install` did not write, and keeps its `EnvironmentVariables`. An agent under another label is not found.
+- Shows your unit's command, port, state dir and link url, and what it keeps: the port (`--port` or `AUSTERE_AXI_PORT`) and `AUSTERE_AXI_LINK_URL` become the new unit's settings; other `Environment=`, `EnvironmentFile=`, `ExecStartPre=`, `ExecStartPost=`, `After=`, `Wants=`, `Requires=` lines go to `austere-axi.service.d/kept.conf`. Lists lines it drops (`Restart=always`, `Type=`, …).
+- On yes: stops and disables your unit, moves it to `<name>.bak` beside it, installs and starts its own. On failure, your unit is moved back, enabled and started.
+- A unit outside `~/.config/systemd/user` (in `/etc`, or linked) is not moved: disable it yourself (`systemctl --user disable --now <name>`) and rerun `server install`.
+- Other units of yours (a watchdog timer, a wait script) are not touched.
+- macOS: `--adopt` replaces a non-generated agent at `~/Library/LaunchAgents/xyz.kasat.austere-axi.plist`, keeping its `EnvironmentVariables`. Agents under other labels are not found.
 
 ### Behind a reverse proxy
 
-Install the service with the address reviewers reach it at, and point the proxy at its port:
+Install with the address reviewers use, and point the proxy at the port:
 
 ```sh
 austere-axi server install --link-url https://austere.example.com
 ```
 
-Read the [trust model](team-review.md) first: behind a proxy on the same machine, every request looks local.
+Read the [trust model](team-review.md#trust-model) first: behind a proxy on the same machine, every request looks local.

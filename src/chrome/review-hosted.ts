@@ -1,4 +1,4 @@
-// A hosted page (austere-cloud, docs/hosted-share-links.md, "Sync, access and presence"): a reviewer's page that has
+// A hosted page (austere-cloud, docs/sync-protocol.md): a reviewer's page that has
 // no owner controls. It trades its invite for a frame token, then syncs over the page's WebSocket instead of the local
 // event stream; notes go out through the outbox (review-outbox.ts).
 import { SYNC_VERSION, syncProtocols } from "../shared/sync.ts";

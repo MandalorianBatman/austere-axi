@@ -1,8 +1,8 @@
 # Writing a pack
 
-A pack adds components to austere-axi review pages. It is an npm package that ships two files: `dist/pack.js`, the components in a few KB, and `dist/catalog.json`, their signatures, examples and schema. This guide builds one from nothing and uses [`austere-pack-gantt`](https://github.com/MandalorianBatman/austere-pack-gantt) as the worked example. That repo is a real third-party pack: it builds only against the public `austere-axi/pack` API and the catalog format, and imports nothing from inside austere-axi. Read it next to this page, or copy it.
+A pack is an npm package that adds components to review pages. It ships `dist/pack.js` (the components, a few KB) and `dist/catalog.json` (signatures, examples, schema).
 
-It adds a Gantt chart:
+Worked example: [`austere-pack-gantt`](https://github.com/MandalorianBatman/austere-pack-gantt), a real third-party pack built only against the public `austere-axi/pack` API and catalog format; it imports nothing from inside austere-axi. Read it alongside, or copy it. It adds a Gantt chart:
 
 ```
 plan = Gantt([design, build, launch], "Q4 rollout")
@@ -145,9 +145,12 @@ Return `null` to draw nothing, or `{ error: <node> }` to show a message instead 
 npm run build        # austere-axi components build .
 ```
 
-The build bundles `src/index.js` into `dist/pack.js`, an IIFE that calls `registerPack({ name, version, api, components, css })` when the page loads it. It then loads the same module in Node and writes `dist/catalog.json` with each component's signature, group, examples and slots, the JSON schema `check` merges into the core one, the pack's `size` and a `sha384` `integrity` hash. The Gantt pack comes to about 8 KB.
+The build:
 
-The build runs the pack's own code, so build only packs you trust. The pack's `esbuild` does the bundling; austere-axi ships none.
+1. bundles `src/index.js` into `dist/pack.js`, an IIFE that calls `registerPack({ name, version, api, components, css })` when the page loads it;
+2. loads the same module in Node and writes `dist/catalog.json`: each component's signature, group, examples and slots, the JSON schema `check` merges into the core one, the pack's `size` and a `sha384` `integrity` hash.
+
+The Gantt pack is about 8 KB. The build runs the pack's own code, so build only packs you trust. Bundling uses the pack's own `esbuild`; austere-axi ships none.
 
 ## 5. Try it
 
@@ -200,11 +203,15 @@ Pin `austere-axi` as a dev dependency (`^0.4.1`) and publish only `dist`, `READM
 npm publish
 ```
 
-The `austere-axi-pack` keyword makes the pack discoverable. `austere-axi components search` finds the components of every published pack with that keyword and lists up to three of them apart from the installed ones, and `components show` prints their signatures and examples before anyone installs the pack. Both read `dist/catalog.json` from the published tarball, so write descriptions and examples that sell the component. For a pack that is not installed, `show` cuts the description to 140 characters, the example to 600, and the group notes to three of 140 each. A pack whose catalog fails the install checks (format, pack API, a component without a name, signature or group, a `dist/pack.js` that changed after the build) is left out of search.
+The `austere-axi-pack` keyword makes the pack discoverable:
 
-Once it is published, users install it with `austere-axi components add austere-pack-gantt --trust`. The Gantt pack is not on npm yet, so until then use `austere-axi components add <path-to-clone> --trust` or the `.tgz` from step 5. `--trust` is required for any pack outside `@austere-axi/` unless the user put it on their trust list (`austere-axi trust add`): its code runs inside the review page, so tell users what it does and keep it small enough to read. The README of the Gantt pack is a template for that.
+- `components search` finds components of every published pack with that keyword, listing up to three apart from installed ones; `components show` prints their signatures and examples before install.
+- Both read `dist/catalog.json` from the published tarball, so write descriptions and examples that sell the component. For an uninstalled pack, `show` cuts the description to 140 characters, the example to 600, and group notes to three of 140 each.
+- A pack whose catalog fails the install checks (format, pack API, a component without name, signature or group, a `dist/pack.js` changed after the build) is left out of search.
 
-A team pack can live on a private registry (Verdaccio, Artifactory, GitHub Packages) under the team's npm scope. Publish it there with the same keyword, and each user maps the scope once: `austere-axi registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN`. Search, `show` and `components add` then fetch `@acme/` packs from that registry.
+Users install it with `austere-axi components add austere-pack-gantt --trust`. (The Gantt pack is not on npm yet; use `austere-axi components add <path-to-clone> --trust` or the `.tgz` from step 5.) `--trust` is required for any pack outside `@austere-axi/` unless the user trusts it (`austere-axi trust add`). Its code runs inside the review page, so tell users what it does and keep it small enough to read; the Gantt pack's README is a template.
+
+A team pack can live on a private registry (Verdaccio, Artifactory, GitHub Packages) under the team's npm scope. Publish with the same keyword; each user maps the scope once (`austere-axi registry add @acme https://npm.acme.dev/ --token-env ACME_NPM_TOKEN`), then search, `show` and `components add` fetch `@acme/` packs from it.
 
 A GitHub Release can publish through npm trusted publishing instead of a token. Copy [`publish.yml`](https://github.com/MandalorianBatman/austere-pack-gantt/blob/main/.github/workflows/publish.yml) and set the trusted publisher once on npmjs.com.
 

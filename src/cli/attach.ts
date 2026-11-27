@@ -69,7 +69,7 @@ export function readSetting(
   return row ?? null;
 }
 
-/** The effective attach setting of a copy (docs/review-loop-v2.md "Data model > Attach"). */
+/** The effective attach setting of a copy (docs/attach.md). */
 export function effectiveAttach(db: sqlite.DatabaseSync, artifactId: string): EffectiveAttach {
   const ids = scopeIds(db, artifactId);
   return resolveSetting(

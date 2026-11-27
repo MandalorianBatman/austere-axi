@@ -1,7 +1,7 @@
-// Harness adapters (RLM-344): turn (mode, session, model, prompt) into one command line per
+// Harness adapters: turn (mode, session, model, prompt) into one command line per
 // harness, and read the session id of the run back from its output. The argv of each harness
-// is the "Adapter argv (RLM-344)" table in docs/review-loop-v2.md. An adapter only builds and
-// parses: the dispatcher (RLM-345) spawns, times out and logs.
+// is in docs/cli.md "Adapters". An adapter only builds and
+// parses: the dispatcher spawns, times out and logs.
 
 /** A harness an agent session can run in. */
 export type HarnessId = "omp" | "copilot";

@@ -14,29 +14,26 @@
 
 ## The problem
 
-You ask an AI coding agent (Claude Code, Codex, Cursor and the like) for a plan, a comparison, or a summary of what it changed. The answer comes back as a long chat message.
+Ask an AI coding agent (Claude Code, Codex, Cursor and the like) for a plan, a comparison or a change summary, and you get a long chat message. Reviewing it is slow:
 
-Reviewing that message is slow:
-
-- You have to describe which part you mean ("the second option in the rollout table") before you can say what is wrong with it.
-- The agent guesses what you pointed at, then often rewrites the whole answer, so you read all of it again to find what changed.
-- A diagram or a side-by-side comparison would make the decision easy, and chat gives you paragraphs.
+- You must describe which part you mean ("the second option in the rollout table") before saying what is wrong.
+- The agent guesses, often rewrites the whole answer, and you reread all of it to find what changed.
+- A diagram or side-by-side comparison would make the decision easy; chat gives you paragraphs.
 
 ## What austere-axi does
 
-The agent puts its answer on a page: sections, tables, diagrams (50 types, from sequence and flow diagrams to boards, matrices and plans), charts, code changes, and a form for the decision it needs from you.
-
-You click the exact thing you want changed and write a note, the way you would comment on a shared document. The agent changes only that part, and the page updates while you watch.
+- The agent puts its answer on a page: sections, tables, diagrams (50 types, from sequence and flow diagrams to boards, matrices and plans), charts, code changes, and a form for the decision it needs.
+- You click the exact thing you want changed and write a note, like commenting on a shared document.
+- The agent changes only that part, and the page updates while you watch.
 
 ## How you use it
 
-1. **Ask your agent for a page.** Say "show me this plan as a page", or type `/austere` followed by what you want to see. The page opens in your browser.
-2. **Click what you want changed and write a note.** Anything on the page works: a section, one cell of a table, one box in a diagram, one line of a code change, or a sentence you select. Where the page offers choices, pick one or fill in the form.
-3. **Press Send.** The agent gets each note attached to the part you clicked and changes only those parts. The page updates in place and highlights what changed, so you don't have to hunt for it.
+1. **Ask your agent for a page.** Say "show me this plan as a page", or type `/austere` and what you want to see. The page opens in your browser.
+2. **Click what you want changed and write a note.** A section, a table cell, a diagram box, a line of a code change, or selected text. Where the page offers choices, pick one or fill in the form.
+3. **Press Send.** The agent gets each note tied to the part you clicked and changes only those parts. The page updates in place and highlights what changed.
 
-Repeat until it is right. When you are done, press **Done** (or **Send & finish** with a last note) and carry on in the chat. The agent stops listening; a note you add later waits until an agent checks.
-
-**Come back any time.** Open the page and add a note. If it says *Agent not listening*, tell your agent to check your austere notes.
+- Repeat until it is right, then press **Done** (or **Send & finish** with a last note) and carry on in the chat. The agent stops listening; a later note waits until an agent checks.
+- **Come back any time.** Open the page and add a note. If it says *Agent not listening*, tell your agent to check your austere notes.
 
 ## What people review with it
 
@@ -55,88 +52,95 @@ Repeat until it is right. When you are done, press **Done** (or **Send & finish*
 
 ## What else it does
 
-- **Bring in a teammate.** Ask your agent to publish the page and invite someone by name (first turn cloud features on and sign in once: `austere-axi cloud on`, then `austere-axi cloud login`). Each person gets their own link, and their notes appear under their name. You see their notes first and decide which ones go to the agent. [More on sharing](docs/hosted-pages.md). On your own network, the hub's **Settings** makes a named link, lets people ask for access, and shows who has it ([Team review](docs/team-review.md), [Settings](docs/hub.md#settings)).
-- **Review from your phone.** The review page has a phone layout. This needs [Tailscale](https://tailscale.com) on your computer and phone. [How it works](docs/how-it-works.md#the-review-loop).
-- **Send someone a copy.** "Download standalone HTML" in the page's ⋯ menu saves the page as one file that opens in any browser, offline.
-- **Nothing gets lost.** Every note is saved the moment you send it. If the agent is busy or your computer restarts, the notes are waiting when the agent comes back.
-- **Let the agent answer on its own.** Click the Agent pill at the top of a review page and turn it on: each note you send starts your coding agent, which patches the page and replies while you watch. Stop and Retry are right there. [More on attach](docs/attach.md).
-- **Find old pages.** Ask your agent to open the austere home page. Its inbox puts first the pages that need you: the agent changed them since you looked, or a run failed. A sidebar lists every project and its pages, and search finds a page or any part of one. From a review page, the project name goes back to the home page and Ctrl+K jumps to another page. To put a page away, choose Archive on its row or in its ⋯ menu. [More on the home page](docs/hub.md).
+- **Bring in a teammate.** Turn cloud features on and sign in once (`austere-axi cloud on`, then `austere-axi cloud login`), then ask your agent to publish the page and invite someone by name. Each person gets their own link; their notes appear under their name. You see their notes first and choose which go to the agent. [Hosted pages](docs/hosted-pages.md). On your own network, the hub's **Settings** makes a named link, lets people ask for access, and shows who has it ([Team review](docs/team-review.md), [Settings](docs/hub.md#settings)).
+- **Review from your phone.** The review page has a phone layout; needs [Tailscale](https://tailscale.com) on computer and phone. [How it works](docs/how-it-works.md#the-review-loop).
+- **Send someone a copy.** "Download standalone HTML" in the page's ⋯ menu saves one file that opens in any browser, offline.
+- **Nothing gets lost.** Every note is saved when you send it. If the agent is busy or your computer restarts, notes wait for the agent.
+- **Let the agent answer on its own.** Turn on the Agent pill at the top of a review page: each note you send starts your coding agent, which patches the page and replies while you watch. Stop and Retry are right there. [Attach](docs/attach.md).
+- **Find old pages.** Ask your agent to open the austere home page ([Hub](docs/hub.md)):
+  - The inbox lists first the pages that need you: changed by the agent since you looked, or a failed run.
+  - A sidebar lists every project and its pages; search finds a page or any part of one.
+  - From a review page, the project name goes back home and Ctrl+K jumps to another page.
+  - To put a page away, choose Archive on its row or in its ⋯ menu.
 
 ## Get started
 
-You need two things:
+You need:
 
 - An AI coding agent, such as Claude Code, Codex or Cursor.
-- [Node.js](https://nodejs.org) version 22.18 or later. It is free, and you install it once.
+- [Node.js](https://nodejs.org) 22.18 or later (free, installed once).
 
 Then:
 
-1. Run these once in a terminal:
+1. Run once in a terminal:
 
    ```sh
    npm install -g austere-axi
    npx skills add MandalorianBatman/austere-axi --skill austere --skill austere-setup
    ```
 
-2. Tell your agent: **"set up austere-axi"**. It checks the install, offers phone review and an always-on server, and opens a test page so you can see it work.
+2. Tell your agent: **"set up austere-axi"**. It checks the install, offers phone review and an always-on server, and opens a test page.
 
 After that, ask for a page whenever an answer would be easier to review as one.
 
-Using Claude Code? You can install it as a plugin instead:
+Using Claude Code? Install it as a plugin instead:
 
 ```sh
 claude plugin marketplace add MandalorianBatman/austere-axi
 claude plugin install austere@austere-axi
 ```
 
-Claude Desktop, Cursor, Codex and manual setup are covered in the [install guide](docs/install.md).
+Claude Desktop, Cursor, Codex and manual setup: [install guide](docs/install.md).
 
 ## Why it is quick
 
-Other tools have the agent hand-write a whole web page, which is slow, costs more, and looks different every time.
+Other tools have the agent hand-write a whole web page: slow, costly, and different every time. With austere-axi the agent writes a short outline naming what goes on the page, and austere-axi draws it.
 
-With austere-axi the agent writes a short outline that names what goes on the page, and austere-axi draws it. Three things follow:
-
-- **Pages arrive sooner and cost less.** In our [benchmark](docs/benchmark.md), an agent hand-writing the same pages as full web pages took more than twice as long and cost more than twice as much. The benchmark also lists the cases where the other approach did better.
-- **Every page looks the same.** One clean, dark design, so you learn where things are once.
-- **Changes are small.** The agent edits the one part you pointed at instead of rebuilding the page.
+- **Faster and cheaper.** In our [benchmark](docs/benchmark.md), hand-writing the same pages as full web pages took more than twice as long and cost more than twice as much. The benchmark also lists where the other approach did better.
+- **Every page looks the same.** One clean dark design; learn where things are once.
+- **Small changes.** The agent edits the one part you pointed at, not the whole page.
 
 ## Private by default
 
-- It runs on your own computer. Local review needs no account and no sign-up.
-- Your pages and notes stay on your computer unless you choose to publish a page. Cloud features are off by default; until you turn them on (`austere-axi cloud on`, or the hub's **Settings → Cloud**), nothing is sent to the hosted service.
-- A published page is invite-only unless you ask for an open link, and it expires 30 days after you last published it. Hosted review needs a sign-in: reviewers sign in with the email you granted the page to (or open their invite link), and `austere-axi cloud login` makes you the owner of all your hosted pages.
-- It is free and open source (MIT license).
+- Runs on your own computer. Local review needs no account.
+- Pages and notes stay on your computer unless you publish a page. Cloud features are off by default; until you turn them on (`austere-axi cloud on`, or the hub's **Settings → Cloud**), nothing is sent to the hosted service.
+- A published page is invite-only unless you ask for an open link, and expires 30 days after you last published it.
+- Hosted review needs a sign-in: reviewers sign in with the email you granted the page to (or open their invite link); `austere-axi cloud login` makes you owner of all your hosted pages.
+- Free and open source (MIT).
 
-The details are in the [security guide](docs/security.md).
+Details: [security guide](docs/security.md).
 
-## What it does not do yet
+## Not yet supported
 
-- You cannot attach an image to a note.
-- A page is a snapshot. It does not show live data.
-- There is one look: the dark theme.
+- Attaching an image to a note.
+- Live data: a page is a snapshot.
+- Themes: dark only.
 
 ## Documentation
 
-The reference material lives in [`docs/`](docs/README.md).
+Full index: [`docs/`](docs/README.md).
 
 | Guide | What is in it |
 |---|---|
-| [Install and quick start](docs/install.md) | Setup skill, Claude Code plugin, Claude Desktop, Cursor, Codex |
-| [How it works](docs/how-it-works.md) | What the agent writes, the review loop, how it compares with lavish-axi |
+| [Install and quick start](docs/install.md) | Setup skill, Claude Code plugin, MCP for Claude Desktop, Cursor, Codex |
+| [How it works](docs/how-it-works.md) | What the agent writes, the review loop, comparison with lavish-axi |
 | [CLI reference](docs/cli.md) | Every command, the review rules, settings |
 | [Components and packs](docs/components-and-packs.md) | What can go on a page, and how to add more |
+| [Diagrams](docs/diagrams.md) | Every diagram type and how an agent picks one |
 | [Writing a pack](docs/writing-a-pack.md) | Build and publish your own components |
 | [Team review](docs/team-review.md) | Invite teammates over your own private network |
 | [Hosted pages](docs/hosted-pages.md) | Publish a page and invite reviewers by link |
-| [Hub](docs/hub.md) | A home page with every review and note; running it all the time |
-| [GitHub Action](docs/github-action.md) | Post a review page on every pull request |
+| [Attach an agent](docs/attach.md) | Let an agent answer notes on its own |
+| [Hub](docs/hub.md) | Home page with every review and note; running it all the time |
+| [Docker](docs/docker.md) | The review server in a container |
+| [GitHub Action](docs/github-action.md) | A review page on every pull request |
 | [Security](docs/security.md) | Who can reach your pages, and how they are protected |
-| [Benchmark](docs/benchmark.md) | The speed and cost comparison, with its caveats |
+| [Benchmark](docs/benchmark.md) | Speed and cost comparison, with caveats |
+| [Sync protocol](docs/sync-protocol.md) | Wire protocol of hosted pages, sync and presence |
 
 ## Contributing
 
-Bug reports, examples, docs fixes and packs are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup and the rules. Issues labelled [`good first issue`](https://github.com/MandalorianBatman/austere-axi/labels/good%20first%20issue) are small and have a clear finish line. Security problems: [report them privately](https://github.com/MandalorianBatman/austere-axi/security/advisories/new), not in an issue.
+Bug reports, examples, docs fixes and packs are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Issues labelled [`good first issue`](https://github.com/MandalorianBatman/austere-axi/labels/good%20first%20issue) are small with a clear finish line. Security problems: [report privately](https://github.com/MandalorianBatman/austere-axi/security/advisories/new), not in an issue.
 
 ## License
 

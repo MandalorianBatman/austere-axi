@@ -2,7 +2,7 @@
 // attached harness headless, so the agent reads the notes, patches the page and replies with the
 // normal CLI. Runs are rows in hub.db `runs`; each has a 0600 prompt file piped on stdin and a
 // 0600 log in `<state>/runs/`. Limits come from `<state>/attach.json`, read only from the state
-// dir (docs/review-loop-v2.md "Security"). The adapters build the command line; this module
+// dir (docs/security.md). The adapters build the command line; this module
 // decides when a run starts, spawns it, times it out, kills its process tree and judges it.
 import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
