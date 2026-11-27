@@ -113,10 +113,11 @@ after(async () => {
   const exited = new Promise((r) => mcp.once("exit", r));
   mcp.stdin.end();
   await exited;
-  await api("POST", "/api/shutdown", {}).catch(() => {});
+  // The server runs in WORK, and Windows refuses to remove a live process's working directory:
+  // /api/shutdown answers before the server exits, `stop` returns once it has.
+  const stop = spawn(process.execPath, [path.resolve("src/cli/main.ts"), "stop"], { env: ENV, stdio: "ignore" });
+  await new Promise((r) => stop.once("exit", r));
   fs.rmSync(WORK, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-  // The server may still be flushing its state when it acknowledges shutdown.
-  await new Promise((r) => setTimeout(r, 300));
   fs.rmSync(STATE, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
