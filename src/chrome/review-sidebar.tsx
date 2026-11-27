@@ -40,6 +40,7 @@ export function ReviewSidebar(): ReactElement {
       {...(ACCOUNT
         ? {
             views: CLOUD_VIEWS,
+            phoneViews: true,
             brand: { name: "austere cloud", href: "/" },
             footer: <AccountFooter account={ACCOUNT} />,
           }
@@ -70,11 +71,8 @@ export function ReviewSidebar(): ReactElement {
           ? {
               pageHref,
               service: "austere cloud",
-              empty: (
-                <>
-                  No pages yet. Run <code>austere-axi publish &lt;file&gt;</code>.
-                </>
-              ),
+              // A reviewer has no pages of their own to publish: no command here.
+              empty: <>No pages yet.</>,
             }
           : {}),
       }}

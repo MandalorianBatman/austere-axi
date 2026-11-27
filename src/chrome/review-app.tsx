@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
 import { ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
-import { NAV, OWNER, shortcut } from "./review-env.ts";
+import { ACCOUNT, NAV, OWNER, shortcut } from "./review-env.ts";
 import { AttachPill } from "./review-attach.tsx";
 import { useAttachFeed } from "./review-attach.ts";
 import { useBanner } from "./review-banner.ts";
@@ -76,7 +76,8 @@ const SHEET_BELOW = 1100;
 
 /** The page of the owner, or of a viewer signed in to the cloud, sits beside the projects sidebar (wide: it pushes the page; narrow: a sheet over it). */
 function WithSidebar({ children }: { children: ReactElement }): ReactElement {
-  const side = useSidebarOpen(false);
+  // Folded for the local owner; a signed-in cloud viewer on a wide screen starts with it open. A stored choice wins.
+  const side = useSidebarOpen(!!ACCOUNT && window.innerWidth >= SHEET_BELOW);
   return (
     <SidebarProvider className="review-shell min-h-0" breakpoint={SHEET_BELOW} {...side}>
       <PanelBoundary name="The projects sidebar">

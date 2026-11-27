@@ -38,6 +38,11 @@ const BO = "bo-invite-token-0123456789";
 // As austere-cloud sends it (src/serve.ts).
 const SHELL_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+// With `account` the shell also lets the sidebar's Sign out form post to WorkOS.
+const ACCOUNT_CSP = SHELL_CSP.replace(
+  "form-action 'none'",
+  "form-action 'self' https://workos.test",
+);
 const FRAME_CSP =
   "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'none'";
 
@@ -81,6 +86,8 @@ const svc = {
   ownerSession: null as string | null,
   /** The shell's `hosted.signIn`, as austere-cloud sets it when accounts are on; null: accounts off. */
   signIn: null as string | null,
+  /** The shell's boot `account`, as austere-cloud sets it for a signed-in viewer with access; null: none. */
+  account: null as { email: string; name: string } | null,
 };
 let stub: http.Server | undefined;
 let origin: string;
@@ -157,6 +164,7 @@ function shell() {
     artifactUrl: `${BASE}/a/`,
     version: "0.8.1",
     viewer: { role: "reviewer", name: "" },
+    ...(svc.account ? { account: svc.account } : {}),
     hosted,
   };
   return `<!doctype html>
@@ -201,9 +209,60 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (url.pathname === BASE) {
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": SHELL_CSP,
+      "content-security-policy": svc.account ? ACCOUNT_CSP : SHELL_CSP,
     });
     return res.end(shell());
+  }
+  if (svc.account && url.pathname.startsWith("/hub/api/")) {
+    // The hub's JSON API for the signed-in account: its own pages, and pages shared with it.
+    const own = {
+      id: "pg_own",
+      project_id: "plans",
+      project: "plans",
+      rel_path: "a.html",
+      title: "Own plan",
+      updated_at: 1,
+      activity: 1,
+      open_id: "pg_own",
+      copies: [],
+      unanswered: 0,
+      addressed: 0,
+      held: 0,
+      attach: "off",
+      needs_you: false,
+      changed: 0,
+      failed: 0,
+      waiting_on_agent: false,
+      taker: null,
+      run_active: false,
+      group: "quiet",
+    };
+    const answers: Record<string, unknown> = {
+      "/hub/api/projects": {
+        projects: [
+          {
+            id: "plans",
+            name: "plans",
+            roots: [],
+            same_as: null,
+            pages: 1,
+            unanswered: 0,
+            needs_you: 0,
+          },
+        ],
+      },
+      "/hub/api/pages": {
+        view: "open",
+        project: null,
+        pages: [own],
+        counts: { open: 1, everything: 1, archived: 0, checked: 0 },
+      },
+      "/hub/api/shared": {
+        pages: [{ id: "pg_shared", title: "Shared plan", owner: "Olga", expires_at: 9e12 }],
+      },
+    };
+    const answer = answers[url.pathname];
+    return answer ? json(res, 200, answer) : json(res, 404, { error: "not found" });
   }
   const framed = /^\/p\/pg_test\/a\/([^/]+)\/$/.exec(url.pathname);
   if (framed && svc.assetTokens.has(framed[1])) {
@@ -394,9 +453,96 @@ beforeEach(() => {
     loginCode: null,
     ownerSession: null,
     signIn: null,
+    account: null,
   });
   svc.invites = new Map([[ANA, "Ana"]]);
   put(pageRow(1_000));
+});
+
+test("hosted chrome: a signed-in viewer gets the projects sidebar and Go to page, and none of the owner's controls", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  svc.unlisted = true;
+  svc.account = { email: "ana@example.com", name: "Ana Lopez" };
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await ctx.newPage();
+    const errors = watchErrors(page);
+    await page.goto(`${origin}${BASE}`);
+    await page.waitForSelector(".presence.hosted");
+
+    // Wide: the sidebar starts open, with the cloud's views, own pages, the shared ones and the account.
+    const side = page.locator('[data-slot="sidebar"][data-state="expanded"]');
+    await side.waitFor();
+    assert.deepEqual(await side.locator('[aria-label="Views"] a').allInnerTexts(), [
+      "Pages",
+      "Shared",
+    ]);
+    await side.getByText("Own plan").waitFor();
+    await side.getByText("Shared plan").waitFor();
+    assert.equal(await side.getByText("Shared with you").count(), 1);
+    assert.equal(await side.locator("a[href='/p/pg_shared']").count(), 1);
+    assert.match(await side.innerText(), /ana@example\.com/);
+    assert.equal(await side.locator("form[action='/auth/logout']").count(), 1);
+
+    // Ctrl+K opens the switcher over the hub's search.
+    await page.keyboard.press("Control+k");
+    await page.waitForSelector("[cmdk-input]");
+    await page.keyboard.press("Escape");
+
+    // None of the owner's controls.
+    for (const name of ["Agent", "Share", "History", "Revision"])
+      assert.equal(
+        await page.getByRole("button", { name: new RegExp(`^${name}`) }).count(),
+        0,
+        name,
+      );
+    await page.click(".menu-btn");
+    await page.waitForSelector('[data-cmd="goto"]');
+    for (const cmd of ["archive", "unarchive", "share", "copy-agent-prompt", "next-unanswered"])
+      assert.equal(await page.locator(`[data-cmd="${cmd}"]`).count(), 0, cmd);
+    await page.keyboard.press("Escape");
+
+    // A stored choice wins over the default: folded stays folded.
+    await page.keyboard.press("Control+b");
+    await page
+      .locator('[data-slot="sidebar"][data-state="collapsed"]')
+      .waitFor({ state: "attached" });
+    await page.reload();
+    await page.waitForSelector(".presence.hosted");
+    await page
+      .locator('[data-slot="sidebar"][data-state="collapsed"]')
+      .waitFor({ state: "attached" });
+    assert.deepEqual(errors, []);
+
+    // A phone: the sheet holds the views too.
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.click('button[data-sidebar="trigger"]');
+    const sheet = page.locator('[data-mobile="true"]');
+    await sheet.waitFor();
+    assert.deepEqual(await sheet.locator('[aria-label="Views"] a').allInnerTexts(), [
+      "Pages",
+      "Shared",
+    ]);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("hosted chrome: no account, no sidebar", async (t) => {
+  if (skipReason) return t.skip(skipReason);
+  svc.unlisted = true;
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const page = await ctx.newPage();
+    await page.goto(`${origin}${BASE}`);
+    await page.waitForSelector(".presence.hosted");
+    assert.equal(await page.locator('[data-slot="sidebar"]').count(), 0);
+    await page.keyboard.press("Control+k");
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator("[cmdk-input]").count(), 0);
+  } finally {
+    await ctx.close();
+  }
 });
 
 /** Collects CSP violations and page errors: the hosted shell allows no inline script and no eval. */
