@@ -1,4 +1,4 @@
-// A build run from a checkout keeps off the owner's state dir and port (RLM-376); an installed
+// A build run from a checkout keeps off the owner's state dir and port; an installed
 // build uses them. And no test or script runs the CLI without its own AUSTERE_AXI_STATE_DIR.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

@@ -1,5 +1,5 @@
 // The test host the CLI once defaulted to refuses requests ("host not allowed"), so a new user's
-// first `publish` failed (RLM-384). Nothing the package or its guides ship may name it again.
+// first `publish` failed. Nothing the package or its guides ship may name it again.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

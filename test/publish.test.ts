@@ -57,7 +57,7 @@ const ACCOUNT = {
   refreshToken: "rt_unused",
   user: { id: "user_ana", email: "ana@example.com", name: "Ana" },
 };
-/** Sign a state dir in, as `cloud login` leaves cloud.json (RLM-432: every owner command needs the account). */
+/** Sign a state dir in, as `cloud login` leaves cloud.json (every owner command needs the account). */
 const signIn = (state: string, extra: Record<string, unknown> = {}) =>
   fs.writeFileSync(
     path.join(state, "cloud.json"),
@@ -592,7 +592,7 @@ test("a page that cannot be bundled fails before any request", async () => {
   assert.deepEqual(stub.requests, []);
 });
 
-test("session ids stay on this machine: nothing publish sends carries the agent session the hub registered (RLM-343)", async () => {
+test("session ids stay on this machine: nothing publish sends carries the agent session the hub registered", async () => {
   const sid = "5e55d343-aaaa-4bbb-8ccc-0123456789ab";
   const env = { PI_SESSION_ID: sid, PI_SESSION_FILE: path.join(STATE, `${sid}.jsonl`) };
   const file = path.join(WORK, "session.html");
@@ -634,7 +634,7 @@ test("session ids stay on this machine: nothing publish sends carries the agent 
   }
 });
 
-test("publish sends the project and page path the local hub files the file under (RLM-458)", async () => {
+test("publish sends the project and page path the local hub files the file under", async () => {
   const dir = path.join(WORK, "docs", "plans");
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, "deep.html");
@@ -663,7 +663,7 @@ test("publish sends the project and page path the local hub files the file under
   }
 });
 
-test("publish without hub.db access sends neither project nor relPath (RLM-458)", async () => {
+test("publish without hub.db access sends neither project nor relPath", async () => {
   const state = tmp("austere-publish-nohub-");
   cloudOn(state);
   signIn(state);
@@ -1194,7 +1194,7 @@ test("cloud off (the default): publish and clone refuse before any request, and 
   }
 });
 
-test("not signed in: every owner command refuses before any request, a pre-0.17 owner token too; help leaves publish and clone out until cloud login (RLM-432)", async () => {
+test("not signed in: every owner command refuses before any request, a pre-0.17 owner token too; help leaves publish and clone out until cloud login", async () => {
   const state = tmp("austere-publish-anon-");
   const file = path.join(WORK, "anon.html");
   fs.writeFileSync(file, page('root = TextContent("x")'));

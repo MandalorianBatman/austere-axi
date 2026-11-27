@@ -299,7 +299,7 @@ test("CLI output has no `session` key, and a page that is not registered gets on
     keys.includes("pages") && keys.includes("status"),
     `output keys were read: ${keys.join(" ")}`,
   );
-  // `session:` is the agent's own session line and `sessions` a command name (RLM-343); the review-session key `open_sessions` is gone.
+  // `session:` is the agent's own session line and `sessions` a command name; the review-session key `open_sessions` is gone.
   assert.deepEqual(
     keys.filter((k) => /session/i.test(k) && k !== "session" && k !== "sessions"),
     [],
@@ -1510,7 +1510,7 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
         ["on feat", "on main"],
         "notes survive",
       );
-      // RLM-343: the session registry's tables are there, with the columns the design note names.
+      // The session registry's tables are there, with the columns the design note names.
       const tables = (
         db
           .prepare(
@@ -1536,7 +1536,7 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
         "last_seen",
       ]);
       assert.deepEqual(columns("page_sessions"), ["artifact_id", "agent_session_id", "role", "at"]);
-      // RLM-345: the attach settings and the runs, with the columns the design note names (plus `requeued_from`, `pid`, `pid_start` and `bin`, A20).
+      // The attach settings and the runs, with the columns the design note names (plus `requeued_from`, `pid`, `pid_start` and `bin`, A20).
       assert.deepEqual(columns("attach_settings"), [
         "scope",
         "scope_id",
@@ -1569,9 +1569,9 @@ test("a 0.10.4 hub.db opens: a repo and its worktree become one project with two
         "bin",
         "trigger_id",
       ]);
-      // RLM-360: what a trigger last saw.
+      // What a trigger last saw.
       assert.deepEqual(columns("trigger_state"), ["trigger_id", "last_cursor", "last_run_at"]);
-      // RLM-398: access requests and where they are on (off everywhere: no rows).
+      // Access requests and where they are on (off everywhere: no rows).
       assert.deepEqual(columns("access_requests"), [
         "id",
         "name",
@@ -1893,7 +1893,7 @@ test("hub list on a state dir a server of another version holds: hub.db is left 
   }
 });
 
-test("/hub/api/settings (RLM-396): the owner's only; network, defaults, about; the default for notes; project commands as the CLI does them", async () => {
+test("/hub/api/settings: the owner's only; network, defaults, about; the default for notes; project commands as the CLI does them", async () => {
   const port = await freePort();
   const state = fs.mkdtempSync(path.join(os.tmpdir(), "austere-hub-settings-"));
   const env = {

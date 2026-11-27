@@ -1,4 +1,4 @@
-// History and the content index (RLM-349 to RLM-351, RLM-353): every version of a page, whole,
+// History and the content index: every version of a page, whole,
 // tied to the notes that caused it; every statement of every copy as plain text, with full-text
 // search. hub.db is the only store: nothing is written into the project. The tables are made in
 // migrate() (hub.ts); the Hub and the server both call these with their connection.
@@ -881,7 +881,7 @@ export function ageOf(at: number, now = Date.now()): string {
   return `${Math.round(s / 86400)}d`;
 }
 
-// ── similar pages (RLM-353) ──
+// ── similar pages ──
 
 const GENERIC = new Set([
   "the",
@@ -995,7 +995,7 @@ export function statementTextOf(program: string, name: string, html: string | nu
   return statementText(parsed?.root ?? null, name, source, parsed?.spec).text;
 }
 
-// ── the review page's history (RLM-352) ──
+// ── the review page's history ──
 
 /** The newest `rev` of a copy, 0 before the first. */
 export function headRev(db: sqlite.DatabaseSync, artifactId: string): number {

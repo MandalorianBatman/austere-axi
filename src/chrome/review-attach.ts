@@ -1,4 +1,4 @@
-// The Agent pill's data (RLM-346; the owner's only, never on a reviewer's or a hosted page): the page's attach setting,
+// The Agent pill's data (the owner's only, never on a reviewer's or a hosted page): the page's attach setting,
 // the run of the attached agent, and what changing either does. The setting is read in an effect that aborts when a
 // newer read starts; a run event beats an answer that was asked before it.
 import { useEffect } from "react";

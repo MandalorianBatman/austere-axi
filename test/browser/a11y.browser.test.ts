@@ -1,5 +1,5 @@
 // Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): the owner's review page by keyboard and
-// by axe (RLM-440): Enter opens the Agent panel and puts focus in it, the tabs name no missing element, dialogs and
+// by axe: Enter opens the Agent panel and puts focus in it, the tabs name no missing element, dialogs and
 // History give focus back to what opened them, the Agent popover leaves the Notes tab free.
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";

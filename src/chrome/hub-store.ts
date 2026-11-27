@@ -16,7 +16,7 @@ import { CLOUD } from "./hub-env.ts";
 import { get } from "./hub-http.ts";
 import { CLOSED_PROJECTS, store, stored } from "./side-state.ts";
 
-/** The view the hub opened on last (RLM-358). */
+/** The view the hub opened on last. */
 const LAST_VIEW = "austere:hub:view";
 
 /** The view the hub opens on with no other say: the inbox, and on austere-cloud (no inbox) the pages. */
@@ -81,7 +81,7 @@ interface Hub {
   sidePages: ShellPage[];
   /** Whether the sidebar's lists have been read, are on their way, or could not be. */
   sideStatus: SideStatus;
-  /** Access requests waiting for the owner (RLM-398): a count on Settings. */
+  /** Access requests waiting for the owner: a count on Settings. */
   waitingPeople: number;
   /** Projects the owner folded: they show their pages until then. */
   closedProjects: string[];

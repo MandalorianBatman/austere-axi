@@ -1,5 +1,5 @@
 // Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): a `patch` to one part of
-// a diagram type outlines that part and nothing else in the diagram (RLM-466). The array types
+// a diagram type outlines that part and nothing else in the diagram. The array types
 // (PolarChart, Waterfall, Treemap, Sankey) have no part statements, so their patch outlines the chart.
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";

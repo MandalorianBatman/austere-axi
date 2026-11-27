@@ -1,4 +1,4 @@
-// Reading parts of pages cheaply (RLM-351): outline, show, find, changes, decisions, on examples/.
+// Reading parts of pages cheaply: outline, show, find, changes, decisions, on examples/.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";

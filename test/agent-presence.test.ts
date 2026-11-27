@@ -1,4 +1,4 @@
-// Agent presence on a page tells the truth over time (RLM-385): a poll that took the notes and
+// Agent presence on a page tells the truth over time: a poll that took the notes and
 // then went quiet turns "working" into "stale" after STALE_WORKING_MS, and the owner's open page
 // hears it without a request of its own. The server runs in a child process under a fake clock
 // (node:test mock timers on Date and setTimeout), moved forward over IPC.

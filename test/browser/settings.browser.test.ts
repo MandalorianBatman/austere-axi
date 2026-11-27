@@ -1,4 +1,4 @@
-// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): the hub's Settings (RLM-396) on a
+// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): the hub's Settings on a
 // seeded state dir. Each section loads; a request is approved, a link made and a device revoked from the page;
 // the default for new reviewers' notes is saved; a project is renamed; a reviewer gets 403 and another site's
 // POST is refused. Set HUB_SHOTS to a folder to keep screenshots at 1280 and 390 px.

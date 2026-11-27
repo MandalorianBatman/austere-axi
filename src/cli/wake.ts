@@ -1,4 +1,4 @@
-// Push delivery (RLM-447): a live, idle agent session that wrote, edited or listened to a page is
+// Push delivery: a live, idle agent session that wrote, edited or listened to a page is
 // woken when the owner sends notes on it. A harness client inside the session (the omp/Pi and
 // Copilot CLI extensions, `src/harness/`) long-polls `POST /api/sessions/<harness>:<id>/wake-poll` while
 // its session is idle, gets a claim and a prompt that points at the pages, starts a turn with it,
@@ -27,7 +27,7 @@ export const WAKE_POLL_MAX_MS = 55_000;
 export const WAKE_BUSY_MS = 15 * 60_000;
 
 /**
- * What the review page hears about a woken session (RLM-447): `idle`, a client waits and Send wakes
+ * What the review page hears about a woken session: `idle`, a client waits and Send wakes
  * it now; `busy`, its session is in a turn, and the notes go to it when the turn ends.
  */
 export interface WakeStatus {

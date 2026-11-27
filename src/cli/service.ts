@@ -234,7 +234,7 @@ export function thisMachine(): ProcessView {
 /**
  * The unit that runs the server with process id `pid`, or null when none does. It asks the
  * system, not the server: a server from before 0.12 does not report `supervised`, and a CLI
- * that replaced it would lock its unit out (RLM-311, RLM-375). On Linux the pid's cgroup names
+ * that replaced it would lock its unit out. On Linux the pid's cgroup names
  * the unit; the unit counts when it runs the austere server (runsTheServer, with the script
  * that pid runs) and its main process is that pid or an ancestor of it. On macOS it is the
  * launchd agent whose main process is that pid or an ancestor of it, whatever its label (a
@@ -1453,7 +1453,7 @@ export function serverPort(
 /**
  * Start the installed service, when it is the one for this state dir and this port. A CLI
  * that starts its own server instead would take the port and the state dir away from the
- * unit, and the unit could never come back (RLM-311). `restart` restarts a unit that is already
+ * unit, and the unit could never come back. `restart` restarts a unit that is already
  * active (its server does not answer), which a start would leave as it is. Returns whether a
  * service was started.
  */

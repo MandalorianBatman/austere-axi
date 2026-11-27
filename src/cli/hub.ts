@@ -102,7 +102,7 @@ export interface HubNoteRow {
   text: string | null;
   status: string;
   author: string;
-  /** The team-review device that wrote it (RLM-397); null for the owner's notes and notes from before devices. */
+  /** The team-review device that wrote it; null for the owner's notes and notes from before devices. */
   device_id: string | null;
   /** 1 when the note came from a hosted page. */
   remote: number;
@@ -181,12 +181,12 @@ async function loadSqlite(): Promise<typeof sqlite.DatabaseSync> {
 /**
  * hub.db's schema version, kept in `PRAGMA user_version`. Raise it with every change to migrate():
  * a build whose schema is newer than a database's must not read it without migrating it.
- * 1 is the schema of 0.12.0, the first build that records it. 2 adds attach (RLM-343–346):
- * `agent_sessions`, `page_sessions`, `attach_settings`, `runs`. 3 adds team-review devices
- * (RLM-397): `devices`, and `device_id` on `notes` and `items`. 4 adds access requests
- * (RLM-398): `access_requests` and `access_settings`. 5 adds history (RLM-349–354):
+ * 1 is the schema of 0.12.0, the first build that records it. 2 adds attach:
+ * `agent_sessions`, `page_sessions`, `attach_settings`, `runs`. 3 adds team-review devices:
+ * `devices`, and `device_id` on `notes` and `items`. 4 adds access requests:
+ * `access_requests` and `access_settings`. 5 adds history:
  * `revisions`, `statements`, `statements_fts` and `statement_origins`. 6 adds activity
- * triggers (RLM-360): `trigger_state` and `runs.trigger_id`. 7 adds push delivery (RLM-447):
+ * triggers: `trigger_state` and `runs.trigger_id`. 7 adds push delivery:
  * `notes.seen_by`, the harness a wake handed a note to.
  */
 export const SCHEMA_VERSION = 7;
@@ -356,7 +356,7 @@ CREATE INDEX IF NOT EXISTS project_roots_project ON project_roots(project_id);
 CREATE TABLE IF NOT EXISTS pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, rel_path TEXT NOT NULL, UNIQUE (project_id, rel_path));
 `;
 
-// Attach (agent-sessions.ts, RLM-343): the harness sessions that ran a CLI command on a page.
+// Attach (agent-sessions.ts): the harness sessions that ran a CLI command on a page.
 // A session id stays on this machine: nothing here is published, exported or synced.
 // page_sessions keeps one row per page, session and role; `at` is the last time.
 const AGENT_SESSIONS = `
@@ -385,7 +385,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS page_sessions_key ON page_sessions(artifact_id
 CREATE INDEX IF NOT EXISTS page_sessions_session ON page_sessions(agent_session_id);
 `;
 
-// Attach (attach.ts, dispatch.ts, RLM-345/346): the owner's attach setting per page (`pages.id`)
+// Attach (attach.ts, dispatch.ts): the owner's attach setting per page (`pages.id`)
 // and per project, and the agent runs the dispatcher started. A run's log is a file beside
 // hub.db (`log_file`); `requeued_from` names the run a restart interrupted, so it is queued once;
 // `pid`, `pid_start` and `bin` (the file it spawned) are its process, which a restart after a crash kills.
@@ -425,7 +425,7 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS runs_artifact ON runs(artifact_id, status);
 `;
 
-// History (history.ts, RLM-349–354). `revisions` keeps every version of a page's program, whole
+// History (history.ts). `revisions` keeps every version of a page's program, whole
 // (programs are a few KB; diffs are computed on read): `id` is global and only grows, so a
 // `changes` cursor is one number; `rev` counts per copy from 1. `statements` is the head
 // revision of each copy as plain text, and `statements_fts` its full-text index (its rowid is
@@ -512,20 +512,20 @@ function migrate(db: sqlite.DatabaseSync, fts = true): void {
     if (!has("runs", "pid")) db.exec("ALTER TABLE runs ADD COLUMN pid INTEGER");
     if (!has("runs", "pid_start")) db.exec("ALTER TABLE runs ADD COLUMN pid_start TEXT");
     if (!has("runs", "bin")) db.exec("ALTER TABLE runs ADD COLUMN bin TEXT");
-    // Activity triggers (RLM-360): a trigger run has no page (`artifact_id` NULL) and names its trigger; what a trigger last saw is kept here, not in triggers.json.
+    // Activity triggers: a trigger run has no page (`artifact_id` NULL) and names its trigger; what a trigger last saw is kept here, not in triggers.json.
     if (!has("runs", "trigger_id")) db.exec("ALTER TABLE runs ADD COLUMN trigger_id TEXT");
     db.exec(
       "CREATE TABLE IF NOT EXISTS trigger_state (trigger_id TEXT PRIMARY KEY, last_cursor INTEGER NOT NULL DEFAULT 0, last_run_at INTEGER)",
     );
-    // Team review devices (RLM-397): who may review, and which device wrote each note.
+    // Team review devices: who may review, and which device wrote each note.
     db.exec(DEVICES_SCHEMA);
     if (!has("notes", "device_id")) db.exec("ALTER TABLE notes ADD COLUMN device_id TEXT");
-    // Push delivery (RLM-447): which harness a wake handed the note to.
+    // Push delivery: which harness a wake handed the note to.
     if (!has("notes", "seen_by")) db.exec("ALTER TABLE notes ADD COLUMN seen_by TEXT");
     if (!has("items", "device_id")) db.exec("ALTER TABLE items ADD COLUMN device_id TEXT");
-    // Access requests (RLM-398): browsers that asked to review, and where the owner lets them ask.
+    // Access requests: browsers that asked to review, and where the owner lets them ask.
     db.exec(REQUESTS_SCHEMA);
-    // History (RLM-349–354): a page's versions, its statements as text, and where parts were copied from.
+    // History: a page's versions, its statements as text, and where parts were copied from.
     db.exec(HISTORY);
     // The newest revision the owner had the page open on, to say what changed since they last looked.
     if (!has("artifacts", "last_viewed_rev"))
@@ -901,8 +901,8 @@ export class Hub {
 
 /**
  * Whether work is going on: a run is active, or an agent is attached to a page somewhere.
- * The idle exit waits while this is true (RLM-340). The tables come with the dispatcher and
- * the attach settings (RLM-345, RLM-346); before they exist there is no run and no attach,
+ * The idle exit waits while this is true. The tables come with the dispatcher and
+ * the attach settings; before they exist there is no run and no attach,
  * so the answer is false.
  */
 export function hasActiveWork(db: sqlite.DatabaseSync): boolean {

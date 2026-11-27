@@ -1,4 +1,4 @@
-// History (RLM-349): every version of a page is kept whole in hub.db, tied to the notes that
+// History: every version of a page is kept whole in hub.db, tied to the notes that
 // caused it, and can be put back. The CLI runs against a real server for the cases that need one
 // (a watched file, a note delivered to a poll, a run).
 import assert from "node:assert/strict";

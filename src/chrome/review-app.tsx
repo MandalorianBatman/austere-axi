@@ -43,7 +43,7 @@ const LOGO: Shape[] = [
   ["path", { d: "M6.75 17.25 12 6l5.25 11.25M8.6 13.5h6.8", className: "logo-a" }],
 ];
 
-// The owner's own controls: a hosted viewer, or a reviewer on the local server, has none of them (RLM-265, RLM-322).
+// The owner's own controls: a hosted viewer, or a reviewer on the local server, has none of them.
 const OWNER_BAR = OWNER && !HOSTED;
 
 /** What the page says above the frame: a notice with its buttons, and short confirmations. */

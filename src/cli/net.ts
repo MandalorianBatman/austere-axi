@@ -195,7 +195,7 @@ export function allowedHosts(extra: (string | null | undefined)[] = []): Set<str
 /**
  * The variables that set the addresses a server answers to and prints. /api/health reports
  * them, so a CLI that replaces the server starts the new one with the same ones, not with
- * whatever its own caller's environment says (RLM-311).
+ * whatever its own caller's environment says.
  */
 export const ADDRESS_ENV = {
   linkUrl: "AUSTERE_AXI_LINK_URL",

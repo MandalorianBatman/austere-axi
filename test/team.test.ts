@@ -1487,7 +1487,7 @@ test("a long transcript loses nothing: every entry, held and waiting notes too, 
   }
 });
 
-// ── devices (RLM-397): claimed once, expiry, scope, People ──
+// ── devices: claimed once, expiry, scope, People ──
 
 /** A page in a folder of its own with a `.git` entry, so it lands in that folder's project. */
 function projectPage(project: string, name: string): string {

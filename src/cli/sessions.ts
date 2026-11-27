@@ -34,7 +34,7 @@ export interface UserEntry {
   items: NoteItem[];
   end?: boolean;
   seenAt: number | null;
-  /** The harness of the agent session a wake handed the note to (RLM-447); none when a poll or `feedback` took it. */
+  /** The harness of the agent session a wake handed the note to; none when a poll or `feedback` took it. */
   seenBy?: string;
   doneAt: number | null;
   seq: number | null;

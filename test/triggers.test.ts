@@ -1,4 +1,4 @@
-// Activity triggers (RLM-360): a command the owner named at a terminal runs once a project has gone
+// Activity triggers: a command the owner named at a terminal runs once a project has gone
 // quiet. The scheduler is driven with a fake clock and a fake command; one test runs the real
 // server end to end. `triggers.json` is read from the state dir only.
 import assert from "node:assert/strict";

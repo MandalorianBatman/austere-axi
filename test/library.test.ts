@@ -25,8 +25,8 @@ import { compareSignatures, readSnapshot, signaturesOf } from "../scripts/lib/si
 const PROMPT_BUDGET_TOKENS = 5950;
 const DESCRIPTION_MAX_CHARS = 280;
 // Every agent reads `--help` once per session, before spec. 1100: one loop, owner-only rows
-// in `help all` (RLM-380; ~1418 → ~1083 tokens). 1160: step 0, `find` (RLM-353), and the
-// `outline`/`show` line (RLM-351): ~1098 → ~1154.
+// in `help all` (~1418 → ~1083 tokens). 1160: step 0, `find`, and the
+// `outline`/`show` line: ~1098 → ~1154.
 const HELP_BUDGET_TOKENS = 1160;
 
 let lib: LoadedLibrary;

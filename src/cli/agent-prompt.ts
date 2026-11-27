@@ -2,8 +2,8 @@
 // so it starts polling; the review page's "Copy agent prompt" menu item fetches it from the server
 // (`GET /s/:id/agent-prompt`), which knows the file, its project and whether it is published. It
 // teaches the loop `austere-axi --help` documents (one poll for the page's project). `runPrompt`:
-// what the dispatcher pipes to an attached harness (RLM-345). `wakePrompt`: the turn a woken
-// agent session gets (RLM-447). None carries a key, token, invite link or note text.
+// what the dispatcher pipes to an attached harness. `wakePrompt`: the turn a woken
+// agent session gets. None carries a key, token, invite link or note text.
 import { quote } from "./paths.ts";
 
 const BIN = "austere-axi";
@@ -57,7 +57,7 @@ export function agentPrompt({ file, hosted, project }: AgentPromptInput): string
 }
 
 /**
- * The prompt of a dispatched run (RLM-345): the page, the three commands, and `cursor`, the
+ * The prompt of a dispatched run: the page, the three commands, and `cursor`, the
  * newest note the run is for, so its reply acknowledges exactly those notes. It goes in a 0600
  * file piped on stdin, never in argv.
  */
@@ -79,7 +79,7 @@ export function runPrompt({ file, cursor }: { file: string; cursor: number }): s
 }
 
 /**
- * The turn a woken session gets (RLM-447): which pages have notes, and the three commands per page.
+ * The turn a woken session gets: which pages have notes, and the three commands per page.
  * A pointer only: the notes' text stays on the server (a teammate's note is untrusted), and the agent
  * reads it with `feedback`. `cursor` is each page's newest note, so the reply acknowledges exactly those.
  */

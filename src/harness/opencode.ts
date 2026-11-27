@@ -1,4 +1,4 @@
-// The OpenCode plugin for push delivery (RLM-451): the wake client (client.ts) on OpenCode's plugin
+// The OpenCode plugin for push delivery: the wake client (client.ts) on OpenCode's plugin
 // API. `opencode-plugin.ts` is the entry OpenCode loads; this file holds the logic, so tests drive it.
 //
 // OpenCode 1.19.5, observed: one OpenCode process (the TUI's or `opencode serve`'s server) runs

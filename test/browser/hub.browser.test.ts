@@ -1,5 +1,5 @@
-// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): the hub shell (RLM-357)
-// and the owner's way between the hub and review pages (RLM-358), on a seeded state dir. The inbox
+// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): the hub shell
+// and the owner's way between the hub and review pages, on a seeded state dir. The inbox
 // groups pages by what they need; archive takes a row away; search opens a page at a part; a worktree
 // chip opens its copy; the review header has a breadcrumb, a copy switcher, a quick switcher and
 // "Next unanswered page"; a reviewer sees none of it. Set HUB_SHOTS to a folder to keep screenshots.
@@ -837,8 +837,8 @@ test("a refresh keeps focus and scroll; a slow answer to an older request never 
   }
 });
 
-// The hosted chrome's CSP, as austere-cloud's shell sends it (src/serve.ts `shell()`, read off the Worker's real answer for
-// RLM-442): only the hash differs, because the boot script is the page's own. Nothing allows eval or inline script; style-src
+// The hosted chrome's CSP, as austere-cloud's shell sends it (src/serve.ts `shell()`, read off the Worker's real
+// answer): only the hash differs, because the boot script is the page's own. Nothing allows eval or inline script; style-src
 // allows 'unsafe-inline', which is what Radix (popper, portals) and Sonner need for their inline `style`.
 const HOSTED_CSP = (hashes: string[]): string =>
   `default-src 'none'; script-src 'self' ${hashes.map((h) => `'sha256-${h}'`).join(" ")}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`;
