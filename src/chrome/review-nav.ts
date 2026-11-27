@@ -1,4 +1,4 @@
-// The owner's way between pages and the hub (RLM-358), in the review header only: the data and actions behind the
+// The owner's way between pages and the hub, in the review header only: the data and actions behind the
 // breadcrumb, the copy switcher, the quick switcher (Ctrl/Cmd+K) and "Next page with unanswered notes". The markup is
 // review-nav.tsx. Reviewers and hosted pages never load it; its routes (/hub/api/*) answer the owner only.
 import { create } from "zustand";

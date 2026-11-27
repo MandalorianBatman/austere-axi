@@ -167,7 +167,7 @@ export interface HealthInfo {
   stateDir: string;
   proof?: string;
   listen: string[];
-  /** The local-network address Settings switched on (RLM-399): a CLI that replaces this server leaves it out of --also-listen, as the new one reads the setting itself. */
+  /** The local-network address Settings switched on: a CLI that replaces this server leaves it out of --also-listen, as the new one reads the setting itself. */
   lan?: string;
   tailnet?: Tailnet;
   remote?: string;
@@ -337,7 +337,7 @@ export interface RevokeResponse {
   revoked: { id: string; name: string; kind: "link" | "device" }[];
 }
 
-/** One access request in /api/share/requests and GET /hub/api/people/requests (RLM-398). */
+/** One access request in /api/share/requests and GET /hub/api/people/requests. */
 export interface AccessRequestSummary {
   id: string;
   /** The name the browser typed. */
@@ -352,7 +352,7 @@ export interface AccessRequestSummary {
   host: string | null;
   userAgent: string | null;
   browser: string;
-  /** The Tailscale login and device when it came over Tailscale (RLM-399); null until then. */
+  /** The Tailscale login and device when it came over Tailscale; null until then. */
   verifiedLogin: string | null;
   tailscaleDevice: string | null;
   createdAt: number;
@@ -384,13 +384,13 @@ export interface LoginResponse {
   ttlMs: number;
 }
 
-/** /api/run/stop and /s/:id/run/stop: how many runs of the page ended (RLM-345). */
+/** /api/run/stop and /s/:id/run/stop: how many runs of the page ended. */
 export interface RunStopResponse {
   ok: true;
   stopped: number;
 }
 
-/** GET /s/:id/runs (RLM-346): the page's runs, the newest first. */
+/** GET /s/:id/runs: the page's runs, the newest first. */
 export interface RunsResponse {
   runs: RunSummary[];
 }
@@ -401,7 +401,7 @@ export interface RunLogResponse {
   tail: string[];
 }
 
-/** GET /s/:id/attach (RLM-346): what the owner's attach popover shows. */
+/** GET /s/:id/attach: what the owner's attach popover shows. */
 export interface AttachInfo {
   effective: EffectiveAttach;
   /** The page's own row (shared by every copy, A19), and the project's. */
@@ -411,7 +411,7 @@ export interface AttachInfo {
   target: { mode: AttachMode; harness: string; session: string | null };
   /** The page's author session, which `author` resolves to (Q11). */
   author: { id: string; harness: string; short: string } | null;
-  /** The agent sessions registered for this copy (RLM-343). */
+  /** The agent sessions registered for this copy. */
   sessions: {
     id: string;
     harness: string;
@@ -550,7 +550,7 @@ const LINK_EXPIRED = "This link expired before anyone opened it. Ask the owner f
 /** Why the owner cannot sign in on the local-network listener (P7). */
 const LAN_NO_OWNER =
   "The owner does not sign in over the local network: its traffic is not encrypted. Use this computer, Tailscale or HTTPS.";
-// A browser that asked for access (RLM-398) holds its request's pending secret here until the owner decides.
+// A browser that asked for access holds its request's pending secret here until the owner decides.
 const REQUEST_COOKIE = "austere_rq";
 const REQUEST_COOKIE_MAX_AGE = 30 * 86_400;
 // How often the waiting page asks whether the owner has decided.
@@ -619,7 +619,7 @@ export async function runServer({
   // the port, so a later process can tell this server from an unrelated one with its pid,
   // and the unit, so `server install` can tell a server it started from one it did not.
   // Who runs this server: a systemd or launchd unit, when one does. A supervised server is the
-  // unit's, so a CLI never replaces it (RLM-311).
+  // unit's, so a CLI never replaces it.
   const runBy: ServerUnit | null = unit === undefined ? detectUnit() : unit;
   const supervisorName: Supervisor | null = runBy?.supervisor ?? null;
   const releaseLock = await lockStateDir(stateDir(), { port, wait: 3000, unit: runBy });
@@ -651,7 +651,7 @@ export async function runServer({
     listening: (s) => Boolean(listener(s)),
     changed: (s, entries) => {
       broadcastTranscript(s, entries);
-      // A hosted note that arrived released (or was released on another machine) is the owner's (RLM-345).
+      // A hosted note that arrived released (or was released on another machine) is the owner's.
       wakeOrRun(
         s,
         entries.some(
@@ -668,7 +668,7 @@ export async function runServer({
     },
   });
   const liveAuto: LiveAuto = (pageId, fallback) => peer.liveAuto(pageId, fallback);
-  // Attached agents (RLM-345): a note the owner sent or released starts a run when no poll holds the page.
+  // Attached agents: a note the owner sent or released starts a run when no poll holds the page.
   const dispatcher = new Dispatcher({
     db: store.db,
     store,
@@ -679,7 +679,7 @@ export async function runServer({
     autoConflict: (s) => autoConflict(store.db, s.file, s.id, liveAuto),
     emit: (id, event) => broadcastOwners(id, "run", event),
   });
-  // Push delivery (RLM-447): a live, idle agent session with a role on the page is woken when no poll holds it.
+  // Push delivery: a live, idle agent session with a role on the page is woken when no poll holds it.
   const wakes = new Wake({
     db: store.db,
     store,
@@ -701,7 +701,7 @@ export async function runServer({
       }
     },
   });
-  // Activity triggers (RLM-360): a command the owner named at a terminal runs once a project has gone quiet.
+  // Activity triggers: a command the owner named at a terminal runs once a project has gone quiet.
   const triggers = new TriggerScheduler({
     db: store.db,
     port,
@@ -725,7 +725,7 @@ export async function runServer({
   // Per page: the timer that tells its open review pages when a quiet agent turns stale.
   const staleTimers = new Map<string, NodeJS.Timeout>();
   /**
-   * The local-network address Settings → Network switched on, while the server listens there (RLM-399).
+   * The local-network address Settings → Network switched on, while the server listens there.
    * That listener serves reviewers only: no owner sign-in, cookie or link works on it (P7).
    */
   let lanHost: string | null = null;
@@ -1009,7 +1009,7 @@ export async function runServer({
     };
   }
 
-  // ── access requests (RLM-398) ──
+  // ── access requests ──
 
   function requestSummary(r: AccessRequestRow): AccessRequestSummary {
     const art = hub.artifact(r.page);
@@ -1452,7 +1452,7 @@ export async function runServer({
   }
 
   /**
-   * Who is asking, in this order (RLM-399): the owner (the owner key cookie, on any listener but the
+   * Who is asking, in this order: the owner (the owner key cookie, on any listener but the
    * local network's, with no reviewer cookie); a person Tailscale names (`person`) whose login the owner
    * let in for this page; a device the owner approved (a reviewer cookie of a live device whose scope
    * reaches this page; over the tailnet, only for the login first seen behind it); else nobody. A
@@ -1579,7 +1579,7 @@ export async function runServer({
 
   /**
    * Presence as the review page gets it: `since`, while an agent has the notes, is when it took them; `now` lets the page read it against its own clock.
-   * `wake` (RLM-447): an agent session that a note would wake now (`idle`), or once its turn ends (`busy`).
+   * `wake`: an agent session that a note would wake now (`idle`), or once its turn ends (`busy`).
    */
   function presenceInfo(s: Session): {
     presence: Presence;
@@ -1688,7 +1688,7 @@ export async function runServer({
     pending: Promise<string[] | null> | null;
   } = { at: 0, models: null, pending: null };
 
-  /** What the owner's attach popover shows for a copy (RLM-346). A malformed adapters.json is a warning here, not an error. */
+  /** What the owner's attach popover shows for a copy. A malformed adapters.json is a warning here, not an error. */
   async function attachInfo(s: Session): Promise<AttachInfo> {
     let cfg: AdaptersConfig = { extraArgs: {}, commands: {} };
     let configError: string | null = null;
@@ -2134,8 +2134,8 @@ export async function runServer({
 
   /**
    * New notes on `s`: a listening poll gets them, else, when the owner sent or released them
-   * (`ownersNote`), an idle agent session with a role on the page is woken (RLM-447) and the
-   * attached agent's run is queued (RLM-345); a wake that is delivered cancels that run before its
+   * (`ownersNote`), an idle agent session with a role on the page is woken and the
+   * attached agent's run is queued; a wake that is delivered cancels that run before its
    * debounce ends. Who listens is read before the wake, which ends the poll it answers.
    */
   function wakeOrRun(s: Session, ownersNote: boolean): void {
@@ -2147,7 +2147,7 @@ export async function runServer({
   }
 
   /**
-   * `POST /api/sessions/<harness>:<id>/wake-poll` and `/wake-ack` (RLM-447): a harness client inside
+   * `POST /api/sessions/<harness>:<id>/wake-poll` and `/wake-ack`: a harness client inside
    * the agent session asks for a wake while the session is idle, then acknowledges it. `client` names
    * the client process, so two processes on one session never both deliver.
    */
@@ -2411,7 +2411,7 @@ export async function runServer({
     for (const s of mine) broadcastPresence(s);
   }
 
-  /** Record the agent session a CLI command runs in and link it to the pages it works on (RLM-343). Never fails the request. */
+  /** Record the agent session a CLI command runs in and link it to the pages it works on. Never fails the request. */
   function noteCaller(
     caller: CallerReport | null,
     artifactIds: string[],
@@ -2516,12 +2516,12 @@ export async function runServer({
     // `cloud status`: the cloud switch of Settings → Cloud.
     if (route === "settings/cloud" && req.method === "GET")
       return send(res, 200, cloudView() satisfies CloudSettings);
-    // `server lan`: the local-network switch of Settings → Network (RLM-399).
+    // `server lan`: the local-network switch of Settings → Network.
     if (route === "settings/lan" && req.method === "GET")
       return send(res, 200, settingsView().network.lan satisfies LocalNetwork);
     if (req.method !== "POST") return send(res, 405, { error: "POST expected" });
     const body = await readBody(req);
-    // The agent session the command runs in (RLM-343); recorded once the route knows its pages.
+    // The agent session the command runs in; recorded once the route knows its pages.
     let caller: CallerReport | null;
     try {
       caller = parseCallerReport(body.session);
@@ -2557,7 +2557,7 @@ export async function runServer({
       if (failed) return send(res, 400, { error: failed });
       return send(res, 200, settingsView().network.lan satisfies LocalNetwork);
     }
-    // `share tailscale <login> [file] [--project <p> | --all]`: let a Tailscale login in without a link (RLM-399).
+    // `share tailscale <login> [file] [--project <p> | --all]`: let a Tailscale login in without a link.
     if (route === "share/tailscale") {
       let s: Session | null = null;
       if (typeof body.file === "string" && body.file) {
@@ -2577,7 +2577,7 @@ export async function runServer({
         ? send(res, made.status, { error: made.error })
         : send(res, 200, made satisfies AccessSummary);
     }
-    // Access requests (RLM-398): `share requests on|off [--project]`, `share approve|deny|block <id>`.
+    // Access requests: `share requests on|off [--project]`, `share approve|deny|block <id>`.
     if (
       route === "share/requests" ||
       route === "share/approve" ||
@@ -2625,7 +2625,7 @@ export async function runServer({
       for (const c of copies) setArchived(c.id, at);
       return send(res, 200, { ok: true, copies } satisfies ArchiveMissingResponse);
     }
-    // A project's trigger runs (RLM-360): no page.
+    // A project's trigger runs: no page.
     if (route === "run/stop" && typeof body.project === "string") {
       let projectId: string | undefined;
       try {
@@ -3078,7 +3078,7 @@ export async function runServer({
     return p.ref ? { id: p.id === "\0none" ? "" : p.id, name: p.name, ref: p.ref } : null;
   }
 
-  /** The hub (RLM-357): a client app over /hub/api, built like the review chrome (src/chrome/shell.tsx). */
+  /** The hub: a client app over /hub/api, built like the review chrome (src/chrome/shell.tsx). */
   function hubShell(): string {
     const boot = { version: VERSION, home: os.homedir(), sep: path.sep };
     return `<!doctype html>
@@ -3103,7 +3103,7 @@ export async function runServer({
   }
 
   /**
-   * The hub shell's data (RLM-356), the owner's only: GET /hub/api/projects, /pages?project=&view=open|all|archived,
+   * The hub shell's data, the owner's only: GET /hub/api/projects, /pages?project=&view=open|all|archived,
    * /inbox?project=, /search?q=, /page/<copy id>, /notes?q=&status=&project=&author=&device=, /runs?project=;
    * POST /hub/api/page/<copy id>/archive (every open copy of the page) and /unarchive (every archived copy); with `{ids}`, exactly those copies of the page (Undo).
    */
@@ -3296,8 +3296,8 @@ export async function runServer({
   }
 
   /**
-   * Settings (RLM-396), the owner's only: GET /hub/api/settings; POST /hub/api/settings/review {auto}; the
-   * project commands of RLM-333 and RLM-389 (`project rename|merge|forget-root`, `archive --missing`), each as
+   * Settings, the owner's only: GET /hub/api/settings; POST /hub/api/settings/review {auto}; the
+   * project commands (`project rename|merge|forget-root`, `archive --missing`), each as
    * the CLI does it: POST /hub/api/projects/<id>/rename {name}, /merge {from}, /forget-root {root, drop?}, and
    * POST /hub/api/projects/archive-missing {project?}. People is /hub/api/people (hubPeople).
    */
@@ -3328,7 +3328,7 @@ export async function runServer({
           : "New reviewers' notes wait for you.",
       );
     }
-    // Cloud features (RLM-421): `{ on }`. `cloud on|off` at a terminal does the same.
+    // Cloud features: `{ on }`. `cloud on|off` at a terminal does the same.
     if (route === "settings/cloud") {
       if (typeof body.on !== "boolean")
         return send(res, 400, { error: "on must be true or false" });
@@ -3476,14 +3476,14 @@ export async function runServer({
   }
 
   /**
-   * People (RLM-397), for the hub's Settings → People (RLM-396): GET /hub/api/people lists the links
+   * People, for the hub's Settings → People: GET /hub/api/people lists the links
    * nobody has claimed and the devices; POST /hub/api/people/<id>/rename {name}, /scope {scope, page
    * or project}, /revoke, and /single-use (an old-style link gets a fresh single-use token).
-   * Requests (RLM-398), for People → Waiting and the hub header's count: GET /hub/api/people/requests;
+   * Requests, for People → Waiting and the hub header's count: GET /hub/api/people/requests;
    * POST /hub/api/people/requests/switch {on, project?}; POST /hub/api/people/requests/<id>/approve
    * {scope?, project?, auto?, name?}, /deny, /block. Settings → People → New link: POST /hub/api/people/share
    * {page (a copy's id), name, scope?, project?, auto?} (auto left out: the owner's default). Settings →
-   * Network → Names from Tailscale (RLM-399): POST /hub/api/people/tailscale {login, name?, scope (all or
+   * Network → Names from Tailscale: POST /hub/api/people/tailscale {login, name?, scope (all or
    * project), project?, auto?} lets a Tailscale login in without a link. The owner's only.
    */
   async function hubPeople(
@@ -3802,7 +3802,7 @@ export async function runServer({
     const who = identify(req, s, person);
     if (!who) {
       const presented = reviewerCookies(req.headers.cookie);
-      // An unknown browser may ask for access where the owner turned requests on (RLM-398).
+      // An unknown browser may ask for access where the owner turned requests on.
       if (!presented.length && asking && (await requestRoute(req, res, s, sub, person))) return;
       if (!presented.length)
         return send(res, 403, notOwner(req, "Ask the owner for a link to this page."));
@@ -4016,7 +4016,7 @@ export async function runServer({
       if (!setArchived(s.id, null)) return send(res, 404, { error: "not in the hub" });
       return send(res, 200, { ok: true });
     }
-    // History (RLM-352): the owner's only, as reviewers are refused above. GET lists a page's revisions, or with `statement` one
+    // History: the owner's only, as reviewers are refused above. GET lists a page's revisions, or with `statement` one
     // statement's earlier texts; both name the owner's notes, so a foreign Origin is refused.
     if (sub === "/history" && req.method === "GET") {
       if (!checkOrigin(req)) return send(res, 403, { error: "cross-origin request refused" });
@@ -4087,7 +4087,7 @@ export async function runServer({
       fs.writeFileSync(s.file, next);
       return send(res, 200, { ok: true, rev: done?.rev ?? headRev(store.db, s.id) });
     }
-    // The menu's Share (RLM-397): a named link for this page, its project, or every page. The owner's only, as reviewers are refused above.
+    // The menu's Share: a named link for this page, its project, or every page. The owner's only, as reviewers are refused above.
     if (sub === "/share" && req.method === "POST") {
       const made = await createShare(s, await readBody(req, 16 * 1024));
       if ("error" in made) return send(res, made.status, { error: made.error });
@@ -4103,7 +4103,7 @@ export async function runServer({
         auto: requests.defaultAuto(),
       });
     }
-    // The attach popover and the run panel (RLM-346): the owner's only, as reviewers are refused above.
+    // The attach popover and the run panel: the owner's only, as reviewers are refused above.
     // A GET from a foreign Origin is refused too: it lists the page's agent sessions.
     if ((sub === "/attach" || sub === "/runs" || sub.startsWith("/run/")) && !checkOrigin(req))
       return send(res, 403, { error: "cross-origin request refused" });

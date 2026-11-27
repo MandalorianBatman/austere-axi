@@ -1,4 +1,4 @@
-// Push delivery (RLM-447, RLM-452, RLM-451): the server's wake-poll and wake-ack routes, and the omp,
+// Push delivery: the server's wake-poll and wake-ack routes, and the omp,
 // Copilot and OpenCode extensions' client against a real server with a fake harness (idle or busy, and what it was sent).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";

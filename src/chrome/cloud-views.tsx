@@ -1,4 +1,4 @@
-// The hub shell on austere-cloud (RLM-458, `HubBoot.mode` "cloud"): the views the Worker can fill from D1 (Pages, Shared,
+// The hub shell on austere-cloud (`HubBoot.mode` "cloud"): the views the Worker can fill from D1 (Pages, Shared,
 // search over titles), the People dialog (grant and revoke by email) and the account footer. The frame, sidebar,
 // type and colours are the local hub's; only what a machine holds (inbox, notes, runs, settings, copies) is missing.
 import { Fragment, useEffect, useState } from "react";

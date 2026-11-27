@@ -1,4 +1,4 @@
-// The agent session registry (RLM-343): which harness session wrote, edited or listened to a
+// The agent session registry: which harness session wrote, edited or listened to a
 // page. A CLI command reports its caller (caller.ts); the server, or the CLI itself when it
 // works on hub.db directly, records it here. Session ids stay on this machine: nothing in
 // these tables goes into `publish`, `export`, hosted sync or a printed link.

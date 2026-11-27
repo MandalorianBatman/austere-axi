@@ -88,7 +88,7 @@ export interface PublishArgs {
   unlisted: boolean;
   /** Viewers exchange presence frames. */
   presence: boolean;
-  /** The local hub's project name for the file (sync v2, RLM-458): the group the page is listed under on the cloud hub. Absent when the CLI has no project for it. */
+  /** The local hub's project name for the file (sync v2): the group the page is listed under on the cloud hub. Absent when the CLI has no project for it. */
   project?: string;
   /** The page's path inside its project, `/`-separated (sync v2). */
   relPath?: string;

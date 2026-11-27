@@ -1,4 +1,4 @@
-// The plain-text projection of a statement (RLM-350): what the content index stores and `find` searches.
+// The plain-text projection of a statement: what the content index stores and `find` searches.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";

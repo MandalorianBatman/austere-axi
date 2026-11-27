@@ -1,4 +1,4 @@
-// The omp / Pi extension for push delivery (RLM-447): the wake client (client.ts) on omp's
+// The omp / Pi extension for push delivery: the wake client (client.ts) on omp's
 // extension API. Load with `omp -e`, or link into `~/.omp/agent/extensions/`.
 //
 // omp 18.22: `sendUserMessage(text, { deliverAs: "followUp" })` queues the message and does not

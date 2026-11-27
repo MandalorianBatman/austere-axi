@@ -814,7 +814,7 @@ test("parsePsScript extracts the script path and avoids space-split prefixes", (
 });
 
 test("a server under a launchd agent with its own label is the agent's: left alone, and the hint names that label", () => {
-  // RLM-400: a 0.11 server (no `supervised` in its health) under a hand-written agent, as the first 0.12 CLI sees it.
+  // A 0.11 server (no `supervised` in its health) under a hand-written agent, as the first 0.12 CLI sees it.
   const old: ServerHealth = {
     name: "austere-axi",
     version: "0.11.0",
@@ -883,7 +883,7 @@ test("a server started by hand on a Mac is not an agent's, even below an app tha
 });
 
 test("a stray server in another service's cgroup is not that service's, and is replaced", () => {
-  // RLM-374: an agent's CLI started the server, so it sits in the agent daemon's unit.
+  // An agent's CLI started the server, so it sits in the agent daemon's unit.
   const daemon = processView({
     cgroup: () =>
       "0::/user.slice/user-1000.slice/user@1000.service/app.slice/multica-host.service\n",
@@ -1082,8 +1082,8 @@ test("a supervised server says so in server.lock and /api/health, never idles ou
 });
 
 test("an unsupervised server waits out the idle exit while a run is active or an agent is attached", async () => {
-  // The tables come with the dispatcher and the attach settings (RLM-345, RLM-346); the
-  // idle exit waits for them (RLM-340).
+  // The tables come with the dispatcher and the attach settings; the
+  // idle exit waits for them.
   const { child, port } = await startServer({ AUSTERE_AXI_IDLE_TIMEOUT_MS: "200" });
   const db = await openDatabase(path.join(STATE, "hub.db"));
   try {
@@ -1314,7 +1314,7 @@ test("only a unit that runs the austere server counts as the server's unit", () 
   assert.equal(runsTheServer("/usr/bin/node /home/ana/other/dist/cli.mjs server", dev), false);
 });
 
-// ── server install over what is already there (RLM-382) ──
+// ── server install over what is already there ──
 
 // The hand-written unit the old README taught, as one ran on a Linux host (paths renamed): a
 // wait for Tailscale, the network, a link url, a port, Restart=always.

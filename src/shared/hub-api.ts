@@ -1,4 +1,4 @@
-// The hub shell's JSON API (`/hub/api/*`, RLM-356): what the server (src/cli/hub-api.ts) sends the
+// The hub shell's JSON API (`/hub/api/*`): what the server (src/cli/hub-api.ts) sends the
 // owner's hub (src/chrome/shell.tsx) and the owner's review header (src/chrome/review-nav.ts). Types only:
 // every route is the owner's, behind the owner cookie.
 
@@ -82,7 +82,7 @@ export interface ShellPage {
   /** A run is queued, waiting or running on a copy with such notes. With attach on and none, the owner's next note starts one. */
   run_active: boolean;
   group: Group;
-  /** Cloud only (RLM-458): what austere-cloud knows of a page. Absent from the local hub's answers. */
+  /** Cloud only: what austere-cloud knows of a page. Absent from the local hub's answers. */
   cloud?: CloudPageFacts;
 }
 
@@ -243,7 +243,7 @@ export interface ArchiveResult {
   ids: string[];
 }
 
-// ── Settings (RLM-396): the owner's page for the local server. People uses /hub/api/people (src/cli/server.ts). ──
+// ── Settings: the owner's page for the local server. People uses /hub/api/people (src/cli/server.ts). ──
 
 /**
  * An address the server answers on: this computer (loopback), Tailscale, the local network Settings switched on
@@ -256,7 +256,7 @@ export interface ListenAddress {
 }
 
 /**
- * Settings → Network → Local network (RLM-399): the address switched on (null: off, the default), whether the server
+ * Settings → Network → Local network: the address switched on (null: off, the default), whether the server
  * listens there now and at which URL, and this computer's local-network addresses.
  */
 export interface LocalNetwork {
@@ -292,7 +292,7 @@ export interface SettingsResponse {
     share: { url: string; from: "link_url" | "link_host" | "tailscale" | "host" | "lan" } | null;
     /** This machine on Tailscale, as Tailscale said last; null: Tailscale is not running here (or is turned off for this server). */
     tailscale: { ip: string; dns_name: string | null } | null;
-    /** Whether the server listens on the tailnet, so `tailscale whois` names who comes in over it (RLM-399). */
+    /** Whether the server listens on the tailnet, so `tailscale whois` names who comes in over it. */
     tailscale_names: boolean;
     lan: LocalNetwork;
     always_on: AlwaysOn;
@@ -316,7 +316,7 @@ export interface SettingsResponse {
 }
 
 /**
- * The cloud switch (RLM-421): GET /hub/api/settings's `cloud`, and GET|POST /api/settings/cloud {on}. Off by
+ * The cloud switch: GET /hub/api/settings's `cloud`, and GET|POST /api/settings/cloud {on}. Off by
  * default: `publish`, `clone`, `cloud login|whoami` and hosted-page sync refuse, and only local features work.
  */
 export interface CloudSettings {
@@ -339,7 +339,7 @@ export interface ProjectActionResult {
   message: string;
 }
 
-// ── Cloud mode (RLM-458): the same shell on austere-cloud's signed-in `/`, over a `/hub/api` the Worker answers. ──
+// ── Cloud mode: the same shell on austere-cloud's signed-in `/`, over a `/hub/api` the Worker answers. ──
 // The Worker fills a `ShellPage` with what D1 holds and zeros for the rest (no copies, no unanswered notes), so the
 // sidebar and `ProjectsResponse` need no second shape. `GET /hub/api/pages`, `projects` and `search` answer as above;
 // these are the routes only the cloud has. Every route answers the signed-in account, behind the session cookie.

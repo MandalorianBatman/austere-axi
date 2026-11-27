@@ -43,7 +43,7 @@ export interface Entry {
   held?: boolean;
   end?: boolean;
   seenAt?: number;
-  /** The harness of the agent session a wake handed the note to (RLM-447). */
+  /** The harness of the agent session a wake handed the note to. */
   seenBy?: string;
   workAt?: number;
   doneAt?: number;
@@ -130,7 +130,7 @@ export interface PresenceEvent extends SessionInfo {
   wake?: WakeInfo;
 }
 
-/** An agent session a note would wake (RLM-447): now (`idle`), or once its turn ends (`busy`). WakeStatus in src/cli/wake.ts. */
+/** An agent session a note would wake: now (`idle`), or once its turn ends (`busy`). WakeStatus in src/cli/wake.ts. */
 export interface WakeInfo {
   harness: string;
   state: "idle" | "busy";

@@ -253,7 +253,7 @@ ${shareLine()}
 `;
 }
 
-/** Commands that need the hosted service's account (RLM-432): help leaves them out until this machine can share. */
+/** Commands that need the hosted service's account: help leaves them out until this machine can share. */
 const ACCOUNT_COMMANDS: Record<string, true> = { publish: true, clone: true };
 
 /** Whether `publish` and `clone` can work here: cloud features on and this machine signed in. Reads files only. */
@@ -304,7 +304,7 @@ ENV
 `;
 }
 
-/** `--session` on the commands that register their caller (RLM-343). */
+/** `--session` on the commands that register their caller. */
 const SESSION_FLAG =
   "the agent session this runs in, as <harness>:<id> (omp, copilot, opencode, dsh), when the harness's environment does not name it; the id stays on this machine";
 
@@ -757,7 +757,7 @@ function parseArgs(argv: string[]): { flags: Flags; pos: string[]; error?: strin
       pos.push(...argv.slice(i + 1));
       break;
     }
-    // Page ids are base64url, so one may start with "--": after `publish rm` and `clone` it is the id, not a flag (RLM-403).
+    // Page ids are base64url, so one may start with "--": after `publish rm` and `clone` it is the id, not a flag.
     const idSlot =
       (pos.length === 2 && pos[0] === "publish" && pos[1] === "rm") ||
       (pos.length === 1 && pos[0] === "clone");
@@ -811,7 +811,7 @@ function usage(message: string, cmd?: string | null): void {
 }
 
 /**
- * Commands and flags the review loop dropped in 0.12 (RLM-338): a page always takes notes, so there is nothing to
+ * Commands and flags the review loop dropped in 0.12: a page always takes notes, so there is nothing to
  * end, close or reopen, and the newest poll wins. Each exits 2 with its replacement; 0.13 reports them as unknown.
  */
 const REMOVED_COMMANDS: Record<string, string> = {
@@ -942,7 +942,7 @@ async function cmdHome() {
   });
 }
 
-// ── the agent session a command runs in (RLM-343) ──
+// ── the agent session a command runs in ──
 
 /** The caller: `--session`, else the harness's environment, with its harness process when that is among this process's parents. */
 function callerOf(flags: Flags): CallerReport | null {
@@ -2084,7 +2084,7 @@ async function cmdRegistry(sub: string | undefined, args: string[], flags: Flags
   }
 }
 
-// ── adapter (how runs start an agent; RLM-344) ──
+// ── adapter (how runs start an agent) ──
 
 /** A capability as one word for `adapter list`: yes, or no with its reason. */
 function capabilityText(c: Capability): string {
@@ -2968,7 +2968,7 @@ async function cmdArchive(
   }
 }
 
-// ── agent sessions (RLM-343) ──
+// ── agent sessions ──
 
 /** `sessions list [<file>|--project p]`: the agent sessions that worked on a page, or on every page of a project. */
 async function cmdSessions(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
@@ -3029,10 +3029,10 @@ function projectScope(hub: Hub, flags: Flags): ProjectRow {
   );
 }
 
-/** `run list [<file>|--project p] | run log <id> | run stop <file>`: the attached agent's runs (RLM-345). */
+/** `run list [<file>|--project p] | run log <id> | run stop <file>`: the attached agent's runs. */
 async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
   if (sub === "stop" && typeof flags.project === "string") {
-    // A project's trigger runs (RLM-360): they need the server that runs them.
+    // A project's trigger runs: they need the server that runs them.
     if (args.length) return usage("run stop takes a file or --project, not both", "run");
     if (!(await serverIfRunning()))
       return print({
@@ -3206,7 +3206,7 @@ async function cmdRun(sub: string | undefined, args: string[], flags: Flags): Pr
   });
 }
 
-// ── triggers (RLM-360) ──
+// ── triggers ──
 
 /** `trigger list | add | remove`: commands that run when a project goes quiet. `add` and `remove` are the user's, at a terminal. */
 async function cmdTrigger(sub: string | undefined, args: string[], flags: Flags): Promise<void> {
@@ -3343,7 +3343,7 @@ async function cmdTrigger(sub: string | undefined, args: string[], flags: Flags)
   });
 }
 
-// ── attach (RLM-346) ──
+// ── attach ──
 
 /** What `attach status` prints for one copy: the setting that applies, where it comes from, where a run would go, and what would stop it. */
 function attachStatusOf(hub: Hub, abs: string, cfg: AdaptersConfig): Printed {
@@ -4110,7 +4110,7 @@ async function cmdPublish(args: string[], flags: Flags): Promise<void> {
   }
 }
 
-// ── cloud account and clone (RLM-414) ──
+// ── cloud account and clone ──
 
 /** `cloud on|off|status|login|logout|whoami`: the cloud switch, and the hosted service's account on this machine. */
 async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> {
@@ -4149,7 +4149,7 @@ async function cmdCloud(sub: string | undefined, rest: string[]): Promise<void> 
       });
     }
     const r = await cloud.login(async (p) => {
-      // Always print the link: on a headless or remote machine the browser opens nowhere useful (RLM-431).
+      // Always print the link: on a headless or remote machine the browser opens nowhere useful.
       const minutes = Math.round(p.expiresIn / 60);
       const lines = [
         `Sign in at ${p.verificationUriComplete} (code ${p.userCode}, works for ${minutes} minute${minutes === 1 ? "" : "s"}); any device works.`,
@@ -4407,7 +4407,7 @@ async function cmdServer(sub: string | undefined, rest: string[], flags: Flags):
   }
 }
 
-/** `server lan [<address>|off]`: Settings → Network → Local network, at a terminal (RLM-399). */
+/** `server lan [<address>|off]`: Settings → Network → Local network, at a terminal. */
 async function serverLan(arg: string | undefined): Promise<void> {
   await ensureServer();
   const r =

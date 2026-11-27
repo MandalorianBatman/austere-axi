@@ -1,6 +1,6 @@
-// `cloud login|logout|whoami` and `clone` (RLM-414) against a stub of austere-cloud and WorkOS in one
+// `cloud login|logout|whoami` and `clone` against a stub of austere-cloud and WorkOS in one
 // HTTP server: the device flow and its error codes, cloud.json (0600) and refresh-token rotation, a
-// pre-0.17 cloud.json and another account's pages (RLM-434), publish over the access token, and clone.
+// pre-0.17 cloud.json and another account's pages, publish over the access token, and clone.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -69,7 +69,7 @@ function tokens() {
   return { user: USER, access_token: at, refresh_token: rt };
 }
 
-/** Who a bearer access token is: "user:<id>", or null. The service takes nothing else (RLM-434). */
+/** Who a bearer access token is: "user:<id>", or null. The service takes nothing else. */
 function who(auth: string | undefined): string | null {
   const t = /^Bearer (\S+)$/.exec(auth ?? "")?.[1] ?? "";
   return stub.access.has(t) ? `user:${stub.access.get(t)}` : null;

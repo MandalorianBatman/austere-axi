@@ -1,5 +1,5 @@
-// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): the hub shell in cloud mode (RLM-458,
-// boot `mode: "cloud"`), against a stub of austere-cloud's `/hub/api` typed by src/shared/hub-api.ts. Pages grouped by
+// Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): the hub shell in cloud mode
+// (boot `mode: "cloud"`), against a stub of austere-cloud's `/hub/api` typed by src/shared/hub-api.ts. Pages grouped by
 // project with an Ungrouped group; the Pages and Shared views only (nothing a machine holds is asked for); the People
 // dialog (grant, revoke, refusals); the account footer with Sign out; the empty states; a phone. Set CLOUD_HUB_SHOTS
 // to a folder to keep screenshots.

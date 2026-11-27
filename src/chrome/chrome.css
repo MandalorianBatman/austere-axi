@@ -281,7 +281,7 @@ code {
   color: var(--text);
 }
 
-/* ── the Agent pill and its panel (RLM-346, owner only) ── */
+/* ── the Agent pill and its panel (owner only) ── */
 .attach {
   position: relative;
   display: inline-flex;
@@ -623,7 +623,7 @@ code {
   }
 }
 
-/* ── history (RLM-352) ── */
+/* ── history ── */
 /* "2 revisions since you last looked", in amber. */
 .since {
   flex: none;

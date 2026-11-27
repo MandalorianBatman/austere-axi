@@ -27,7 +27,7 @@ export interface Capabilities {
   maxCost: Capability;
 }
 
-/** Per-run limits from `<state>/attach.json` (RLM-345). Each adapter passes only its own. Time is the dispatcher's timeout (A15). */
+/** Per-run limits from `<state>/attach.json`. Each adapter passes only its own. Time is the dispatcher's timeout (A15). */
 export interface Limits {
   /** omp `--max-cost`, in dollars. */
   maxCost?: number;

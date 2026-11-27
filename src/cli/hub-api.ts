@@ -1,4 +1,4 @@
-// The data behind the hub shell (RLM-356): pages with their attention fields, the inbox, projects,
+// The data behind the hub shell: pages with their attention fields, the inbox, projects,
 // search, one copy's summary, notes and runs, as `/hub/api/*` answers them (server.ts). The owner's
 // only; the server checks the cookie, the Host and the Origin before any of this runs.
 import fs from "node:fs";

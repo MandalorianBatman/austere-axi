@@ -393,7 +393,7 @@ code.target {
     min-height: 44px;
   }
 }
-/* austere-cloud (RLM-458): Page · People · Notes · Expires, and Page · Owner · Expires. */
+/* austere-cloud: Page · People · Notes · Expires, and Page · Owner · Expires. */
 .pages-table.cloud-table {
   --cols: minmax(200px, 2.4fr) 110px minmax(110px, 0.8fr) minmax(190px, 1.4fr);
 }

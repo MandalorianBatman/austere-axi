@@ -672,7 +672,7 @@ test("names: never empty, never shaped like an id; two projects of one name are 
       /shaped like a project id/,
     );
     assert.equal(rootCount(db), 2, "nothing stored");
-    // New projects of one name get a suffix (RLM-390); one made before that, or by hand, can still share it.
+    // New projects of one name get a suffix; one made before that, or by hand, can still share it.
     db.prepare("UPDATE projects SET name = 'shop' WHERE id IN (?, ?)").run(
       one.projectId,
       two.projectId,

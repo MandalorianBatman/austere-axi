@@ -71,7 +71,7 @@ export function connect(): void {
       if (f && (f.t === "hello" || f.t === "status" || f.t === "focus" || f.t === "bye"))
         getRoster()?.handle(f);
     });
-    // The Agent pill (RLM-346): the setting and the runs, again on each (re)connect; then each run's changes as they happen.
+    // The Agent pill: the setting and the runs, again on each (re)connect; then each run's changes as they happen.
     source.addEventListener("snapshot", () => {
       reloadAttach();
       void loadRunMarks();

@@ -1,4 +1,4 @@
-// Which agent session runs this CLI command (RLM-343): read from the harness's environment
+// Which agent session runs this CLI command: read from the harness's environment
 // only, or from `--session <harness>:<id>`. No hooks and no discovery. The harness process is
 // found by walking this process's parents, so the registry can tell later whether that
 // session is still running (liveness: the same pid with the same start time).
@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-/** The harnesses a caller can be detected from. The adapters (RLM-344) run only some of them. */
+/** The harnesses a caller can be detected from. The adapters run only some of them. */
 export type CallerHarness = "omp" | "copilot" | "opencode" | "dsh";
 
 export const CALLER_HARNESSES: readonly CallerHarness[] = ["omp", "copilot", "opencode", "dsh"];

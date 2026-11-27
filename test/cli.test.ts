@@ -172,7 +172,7 @@ test(
   },
 );
 
-// ── missing files (RLM-388): a copy whose file is gone can still be answered and put away ──
+// ── missing files: a copy whose file is gone can still be answered and put away ──
 
 const PAGE = fs.readFileSync("test/fixtures/action/ok.html", "utf8");
 
@@ -351,7 +351,7 @@ test("poll on an archived page returns what is queued, then status: archived at 
     assert.match(r.out, /^status: timeout$/m, r.out);
   }));
 
-// ── one loop (RLM-380): open names the project poll; final ends one page, not the loop ──
+// ── one loop: open names the project poll; final ends one page, not the loop ──
 
 test("open names the bare poll; a project poll keeps going after final on one page; --timeout-ms is checked; interrupted keeps --cursor", () =>
   scratch(async ({ runIn, send }) => {

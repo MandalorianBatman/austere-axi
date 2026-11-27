@@ -1,4 +1,4 @@
-// The hub shell (RLM-357): the owner's home page, a small client app over /hub/api (src/cli/hub-api.ts).
+// The hub shell: the owner's home page, a small client app over /hub/api (src/cli/hub-api.ts).
 // A sidebar of projects and their pages; the views Inbox (default) · Pages · Notes · Runs · Settings (settings.tsx);
 // search over pages and parts. React over one store (hub-store.ts), shadcn's Sidebar for the frame, toasts
 // for what a change says. The server answers only the owner (the cookie); this page holds no secret of its own.
@@ -29,7 +29,7 @@ import { HubDialogs } from "./hub-dialog.tsx";
 import { Button } from "@/chrome/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/chrome/ui/tooltip";
 
-/** The views listed: the local hub's, or on austere-cloud the ones D1 can fill (RLM-458). */
+/** The views listed: the local hub's, or on austere-cloud the ones D1 can fill. */
 const SHELL_VIEWS = CLOUD ? CLOUD_VIEWS : VIEWS;
 
 function useCounts(): { needsYou: number; waiting: number } {

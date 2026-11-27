@@ -1,11 +1,11 @@
-// Activity triggers (RLM-360, Q9, A8): run a command once a project has gone quiet. The first "on
+// Activity triggers (Q9, A8): run a command once a project has gone quiet. The first "on
 // event" facility of the core, generic: the wiki's ingest is the first user, nothing here knows it.
 //
 // `<state>/triggers.json` names the commands; only `trigger add` at a terminal writes it, and it is
 // read only from the state dir, never from a project or a page (docs/security.md).
 // What a trigger last saw is kept in hub.db `trigger_state`, so the file stays the owner's to edit.
 // A run is a row of `runs` with kind `trigger`, no page, its project and its trigger: the same log,
-// limits (attach.json) and stop as a note's run (RLM-345).
+// limits (attach.json) and stop as a note's run.
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import crypto from "node:crypto";

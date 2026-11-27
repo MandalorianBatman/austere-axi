@@ -1,4 +1,4 @@
-// What `history`, `show`, `outline`, `changes`, `decisions` and `find` print (RLM-349, RLM-351).
+// What `history`, `show`, `outline`, `changes`, `decisions` and `find` print.
 // Each builds the output of one command from hub.db and the page file; main.ts wraps them with
 // the hub and the error handling. They throw an Error whose message the command prints.
 import fs from "node:fs";

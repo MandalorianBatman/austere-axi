@@ -1,4 +1,4 @@
-// The dispatcher (RLM-345): with attach on, a note the owner sends or releases starts the
+// The dispatcher: with attach on, a note the owner sends or releases starts the
 // attached harness headless. A fake `omp` and `copilot` on the server's PATH stand in for the
 // harnesses: they read the prompt on stdin, print what the real ones print, and drive the real
 // CLI (feedback, patch, reply), or fail as a marker file tells them to.

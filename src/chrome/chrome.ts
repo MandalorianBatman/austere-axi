@@ -31,7 +31,7 @@ const presence = new Presence({
 setRoster(presence);
 window.addEventListener("pagehide", () => presence.leave());
 
-// The owner's way between pages and the hub (RLM-358): never for a reviewer or a hosted page. The header's
+// The owner's way between pages and the hub: never for a reviewer or a hosted page. The header's
 // breadcrumb, copy switcher and quick switcher are React (review-nav.tsx); this reads what the address asks for.
 if (OWNER && !HOSTED) startNav();
 

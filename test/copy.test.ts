@@ -1,4 +1,4 @@
-// Reuse by copy (RLM-354) and the `similar:` line of a first open (RLM-353): patch --from takes
+// Reuse by copy and the `similar:` line of a first open: patch --from takes
 // statements with everything they reference from another page; open names pages that read alike.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
