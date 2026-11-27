@@ -4,6 +4,10 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ## Unreleased
 
+### Added
+
+- **Example `backtest-report.html`** and the guide [Report pages](docs/report-pages.md): a backtest report on synthetic data (charts, KPIs, trades table, parameter form), updated by patch after the form is sent. No component or CLI change. (RLM-487)
+
 ### Changed
 
 - **`MetricIndicatorInline(value, subtext?, trend?, better?)`**: `better` (`"up"` default, or `"down"`) says which direction is good, so a cost that fell 24% is green and tickets up 340% are red. The figure in an `OverviewCardItem` is now larger than its label. (RLM-479)

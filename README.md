@@ -48,6 +48,7 @@ Repeat until it is right. When you are done, press **Done** (or **Send & finish*
 | A plan, before any work starts | [Moving a database, with a diagram, rollout options and a decision form](https://mandalorianbatman.github.io/austere-axi/gallery/session-migration.html) |
 | A design, with alternatives to choose from | [API design review](https://mandalorianbatman.github.io/austere-axi/gallery/api-design-review.html) |
 | A summary of what the agent changed | [Pull request summary](https://mandalorianbatman.github.io/austere-axi/gallery/pr-summary.html) |
+| A backtest report on synthetic data, re-run by the agent from a form | [Gold futures roll backtest](https://mandalorianbatman.github.io/austere-axi/gallery/backtest-report.html): premium, equity curve, KPIs, trades and a parameter form |
 | A report on something that went wrong | [Outage postmortem](https://mandalorianbatman.github.io/austere-axi/gallery/incident-postmortem.html) |
 | A plan for the team | [Sprint plan](https://mandalorianbatman.github.io/austere-axi/gallery/sprint-plan.html) |
 | A picture of how something works | [Every diagram type](https://mandalorianbatman.github.io/austere-axi/gallery/diagram-types.html): flows, sequences, data models, boards, matrices, plans and charts |
