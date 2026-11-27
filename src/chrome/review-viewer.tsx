@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import { Icon } from "./icon.tsx";
 import { ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
-import { BOOT, HOSTED, OWNER, shortcut } from "./review-env.ts";
+import { BOOT, HOSTED, NAV, OWNER, shortcut } from "./review-env.ts";
 import { archivePage, openShare, unarchivePage } from "./review-page.ts";
 import { copyAgentPrompt, copyText, loadAgentPrompt } from "./review-clipboard.ts";
 import { post, setFrame } from "./review-bridge.ts";
@@ -42,7 +42,7 @@ export function TitleBlock(): ReactElement {
   }, [title]);
   return (
     <div className="bar-title">
-      {OWNER ? <Crumbs /> : null}
+      {NAV ? <Crumbs /> : null}
       <h1 className="title">{title}</h1>
       <span className="file" title={BOOT.file || ""}>
         {OWNER ? BOOT.name : name ? `reviewing as ${name}` : ""}
@@ -182,18 +182,20 @@ export function MoreMenu(): ReactElement {
       </DropdownMenuTrigger>
       {/* No exit animation: the menu is gone when a choice is made, so a click on ⋯ right after a choice opens it again (during an exit animation the menu still counts that click as outside). */}
       <DropdownMenuContent align="end" className="min-w-55 data-[state=closed]:animate-none!">
+        {NAV ? (
+          <DropdownMenuItem
+            data-cmd="goto"
+            className={ITEM}
+            title={`Pages and parts of every project (${shortcut("K")})`}
+            // After the menu has closed and given its focus back, as the dialog takes focus.
+            onSelect={() => setTimeout(() => openSwitcher(trigger.current), 0)}
+          >
+            Go to page…
+            <DropdownMenuShortcut>{shortcut("K")}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+        ) : null}
         {OWNER ? (
           <>
-            <DropdownMenuItem
-              data-cmd="goto"
-              className={ITEM}
-              title={`Pages and parts of every project (${shortcut("K")})`}
-              // After the menu has closed and given its focus back, as the dialog takes focus.
-              onSelect={() => setTimeout(() => openSwitcher(trigger.current), 0)}
-            >
-              Go to page…
-              <DropdownMenuShortcut>{shortcut("K")}</DropdownMenuShortcut>
-            </DropdownMenuItem>
             <DropdownMenuItem
               data-cmd="next-unanswered"
               className={ITEM}

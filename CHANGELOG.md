@@ -10,6 +10,7 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ### Changed
 
+- A hosted page opened by a viewer signed in to an account (owner or reviewer, when the service puts `account` in the page's boot object) shows the projects sidebar, Go to page (Ctrl/Cmd+K) and the link back to the hub, with the cloud's views (Pages, Shared). Without an account, the page is as before.
 - `MetricIndicatorInline(value, subtext?, trend?, better?)`: `better` (`"up"` default, or `"down"`) sets which direction is good (green) and which is bad (red). The figure in an `OverviewCardItem` is larger than its label.
 - A `Button` with no variant is secondary; mark the deciding action `"primary"`. A non-primary button no longer blocks on form validation.
 - Tables at 480 px and under show each row as a block of label/value lines.

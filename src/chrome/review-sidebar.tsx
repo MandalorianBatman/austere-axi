@@ -1,11 +1,14 @@
 // The owner's sidebar on the review page: the hub's own (projects-sidebar.tsx AppSidebar: name, search, views, projects
-// and pages) with this page marked. Owner on the local server only: /hub/api/* answers nobody else. Open or closed is side-state.ts's.
+// and pages) with this page marked. The owner on the local server, or a hosted viewer signed in to an account (then the
+// cloud's views and its own pages, as the cloud hub draws them): /hub/api/* answers nobody else. Open or closed is side-state.ts's.
 import { useEffect } from "react";
 import type { ReactElement } from "react";
 import { AppSidebar, SearchField } from "./projects-sidebar.tsx";
-import { SID } from "./review-env.ts";
+import { ACCOUNT, SID } from "./review-env.ts";
+import { AccountFooter, pageHref } from "./cloud-views.tsx";
 import { openUrl } from "./review-nav.ts";
-import { loadSide, toggleClosed, useSide } from "./review-side.ts";
+import { SHARED, loadSide, toggleClosed, useSide } from "./review-side.ts";
+import { CLOUD_VIEWS } from "./views.ts";
 
 /** Keeps the sidebar's data current. Always mounted: the phone's sheet draws its content only while open. */
 export function SideData(): null {
@@ -34,6 +37,14 @@ export function ReviewSidebar(): ReactElement {
     <AppSidebar
       version=""
       view=""
+      {...(ACCOUNT
+        ? {
+            views: CLOUD_VIEWS,
+            phoneViews: true,
+            brand: { name: "austere cloud", href: "/" },
+            footer: <AccountFooter account={ACCOUNT} />,
+          }
+        : {})}
       viewHref={(v) => `/?view=${v}`}
       counts={{ inbox: projects.reduce((n, p) => n + p.needs_you, 0), settings: 0 }}
       search={
@@ -48,7 +59,9 @@ export function ReviewSidebar(): ReactElement {
         pages,
         selected: "",
         collapsed: closed,
-        projectHref: (id) => `/?project=${encodeURIComponent(id)}`,
+        // The shared group is the cloud's Shared view, not a project of the hub.
+        projectHref: (id) =>
+          id === SHARED ? "/?view=shared" : `/?project=${encodeURIComponent(id)}`,
         allHref: "/",
         onSelect: () => {},
         onToggle: toggleClosed,
@@ -56,6 +69,14 @@ export function ReviewSidebar(): ReactElement {
         currentId: SID,
         status,
         onRetry: () => void loadSide(new AbortController().signal),
+        ...(ACCOUNT
+          ? {
+              pageHref,
+              service: "austere cloud",
+              // A reviewer has no pages of their own to publish: no command here.
+              empty: <>No pages yet.</>,
+            }
+          : {}),
       }}
     />
   );

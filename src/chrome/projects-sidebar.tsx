@@ -5,6 +5,7 @@
 import type { ComponentProps, MouseEvent, ReactElement, ReactNode } from "react";
 import type { ProjectSummary, ShellPage } from "../shared/hub-api.ts";
 import { ChevronRight } from "lucide-react";
+import { cn } from "cn";
 import { middle, plural, titleOf } from "./format.ts";
 import { Icon } from "./icon.tsx";
 import { VIEWS } from "./views.ts";
@@ -300,6 +301,8 @@ export interface AppSidebarProps {
   onView?(e: MouseEvent, view: NavView): void;
   /** The views listed; the local hub's by default. */
   views?: typeof VIEWS;
+  /** The views stay in the phone's drawer: the page has no tab bar to hold them (the review page on austere-cloud). */
+  phoneViews?: boolean;
   /** The name beside the mark and where it goes; the local hub's by default. */
   brand?: { name: string; href: string };
   /** Below the projects: the account, on austere-cloud. */
@@ -324,6 +327,7 @@ export function AppSidebar({
   search,
   projects,
   views = VIEWS,
+  phoneViews = false,
   brand = { name: "austere-axi", href: "/?view=inbox" },
   footer,
 }: AppSidebarProps): ReactElement {
@@ -343,7 +347,7 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent className="px-1">
         {/* A phone has the views in its tab bar (the hub); the drawer keeps search and projects. */}
-        <SidebarMenu className="views max-xs:hidden" aria-label="Views">
+        <SidebarMenu className={cn("views", !phoneViews && "max-xs:hidden")} aria-label="Views">
           {views.map((v) => {
             const n = v.id === "inbox" ? counts.inbox : v.id === "settings" ? counts.settings : 0;
             return (

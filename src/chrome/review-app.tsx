@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
 import { ShapeIcon } from "./icon.tsx";
 import type { Shape } from "./icons.ts";
-import { HOSTED, OWNER, shortcut } from "./review-env.ts";
+import { ACCOUNT, NAV, OWNER, shortcut } from "./review-env.ts";
 import { AttachPill } from "./review-attach.tsx";
 import { useAttachFeed } from "./review-attach.ts";
 import { useBanner } from "./review-banner.ts";
@@ -43,9 +43,6 @@ const LOGO: Shape[] = [
   ["path", { d: "M6.75 17.25 12 6l5.25 11.25M8.6 13.5h6.8", className: "logo-a" }],
 ];
 
-// The owner's own controls: a hosted viewer, or a reviewer on the local server, has none of them.
-const OWNER_BAR = OWNER && !HOSTED;
-
 /** What the page says above the frame: a notice with its buttons, and short confirmations. */
 function Banner(): ReactElement {
   const { text, actions } = useBanner();
@@ -77,9 +74,10 @@ function OwnerEffects(): null {
 /** The review header needs about 900 px of its own: under this width the sidebar is a sheet over the page, not a column. */
 const SHEET_BELOW = 1100;
 
-/** The owner's page sits beside the projects sidebar (wide: it pushes the page; narrow: a sheet over it). */
+/** The page of the owner, or of a viewer signed in to the cloud, sits beside the projects sidebar (wide: it pushes the page; narrow: a sheet over it). */
 function WithSidebar({ children }: { children: ReactElement }): ReactElement {
-  const side = useSidebarOpen(false);
+  // Folded for the local owner; a signed-in cloud viewer on a wide screen starts with it open. A stored choice wins.
+  const side = useSidebarOpen(!!ACCOUNT && window.innerWidth >= SHEET_BELOW);
   return (
     <SidebarProvider className="review-shell min-h-0" breakpoint={SHEET_BELOW} {...side}>
       <PanelBoundary name="The projects sidebar">
@@ -132,7 +130,7 @@ function App(): ReactElement {
       <div className="app">
         <header className="bar">
           <div className="bar-start">
-            {OWNER_BAR ? (
+            {NAV ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <SidebarTrigger
@@ -144,7 +142,7 @@ function App(): ReactElement {
                 <TooltipContent>{`Toggle the projects sidebar (${shortcut("B")})`}</TooltipContent>
               </Tooltip>
             ) : null}
-            {OWNER_BAR ? (
+            {NAV ? (
               <Button
                 asChild
                 variant="ghost"
@@ -174,7 +172,7 @@ function App(): ReactElement {
               {OWNER ? <AttachPill /> : null}
               <PresencePill />
               {OWNER ? <ShareButton /> : null}
-              {OWNER_BAR ? <GotoButton /> : null}
+              {NAV ? <GotoButton /> : null}
               <MoreMenu />
             </PanelBoundary>
           </div>
@@ -192,7 +190,7 @@ function App(): ReactElement {
             <Dialogs />
           </PanelBoundary>
         ) : null}
-        {OWNER_BAR ? (
+        {NAV ? (
           <PanelBoundary name="The page switcher">
             <OwnerNav />
           </PanelBoundary>
@@ -259,7 +257,7 @@ function App(): ReactElement {
       <a className="skip-link" href="#content">
         Skip to the page
       </a>
-      {OWNER_BAR ? <WithSidebar>{page}</WithSidebar> : page}
+      {NAV ? <WithSidebar>{page}</WithSidebar> : page}
     </TooltipProvider>
   );
 }

@@ -5,6 +5,7 @@ import { Fragment, useEffect, useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { create } from "zustand";
 import type {
+  CloudAccount,
   GrantResult,
   GrantsResponse,
   PagesResponse,
@@ -281,8 +282,11 @@ export function PeopleDialog(): ReactElement | null {
 // ── Pages ──
 
 /** The sidebar footer: who is signed in, and Sign out (a form POST: the Worker ends the session and answers a redirect). */
-export function AccountFooter(): ReactElement | null {
-  const account = BOOT.account;
+export function AccountFooter({
+  account = BOOT.account,
+}: {
+  account?: CloudAccount;
+}): ReactElement | null {
   if (!account) return null;
   return (
     <div className="account flex flex-col gap-2">
