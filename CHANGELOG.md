@@ -6,283 +6,298 @@ Versions before 0.11.0 are listed only in the [GitHub releases](https://github.c
 
 ### Changed
 
-- **`MetricIndicatorInline(value, subtext?, trend?, better?)`**: `better` (`"up"` default, or `"down"`) says which direction is good, so a cost that fell 24% is green and tickets up 340% are red. The figure in an `OverviewCardItem` is now larger than its label. (RLM-479)
-- **A `Button` with no variant is secondary**, so a form with two actions shows one primary button. Write `"primary"` on the action that decides, as the prompt's examples do. A button that is not primary no longer blocks on form validation. (RLM-479)
-- **Tables on a phone (480 px and under)** show each row as a block of label and value lines, so no column sits off-screen. (RLM-479)
-- **`BarChart`, `LineChart`, `AreaChart`, `ScatterChart` and `HorizontalBarChart`** use one distinct hue for each series (blue, green, amber, orange, violet), bars are up to 44 px wide (16 before), and a scatter prints its axis titles. (RLM-479)
-- **`Radar`, `PolarChart` and `Quadrant` fit the width of a phone** at full size instead of scrolling sideways; labels are cut shorter there. (RLM-479)
-- **`Sequence`, `Waterfall` and `Sankey` fit the width of a phone** (under 470 px): columns and bars share the room, a waterfall prints its unit under the figure, labels are cut shorter. The Expand dialog still draws the natural size. (RLM-479)
-- **Expand** is a slim row (36 px; 44 px on a phone). **`RadioGroup`**: the unselected ring shows on the card and a description sits under its label (also for checkboxes and switches). **`Timeline`**: `done` is neutral grey, not green. **`Architecture`**: a tag chip takes its node's tone; tags and the `Radar`, `PolarChart` and `Waterfall` ticks are 11 px. (RLM-479)
-- **Markdown headings**: `#` is 30 px and `##` 24 px, both larger than a `CardHeader` title (22 px); `###` is 17 px. (RLM-479)
-- `check` warns (`state-dot`) when a `State` of kind `initial` or `final` has a detail, and (`node-tag`) when a `Node` tag is a style word such as `"emphasis"`. (RLM-479)
-- `spec` is ~5,877 tokens against the 5,950 budget (`better` and its description).
+- `MetricIndicatorInline(value, subtext?, trend?, better?)`: `better` (`"up"` default, or `"down"`) sets which direction is good (green) and which is bad (red). The figure in an `OverviewCardItem` is larger than its label.
+- A `Button` with no variant is secondary; mark the deciding action `"primary"`. A non-primary button no longer blocks on form validation.
+- Tables at 480 px and under show each row as a block of label/value lines.
+- `BarChart`, `LineChart`, `AreaChart`, `ScatterChart`, `HorizontalBarChart`: one distinct hue per series; bars up to 44 px wide; scatter prints axis titles.
+- `Radar`, `PolarChart`, `Quadrant` fit a phone's width at full size; labels are cut shorter there.
+- `Sequence`, `Waterfall`, `Sankey` fit a phone's width (under 470 px); a waterfall prints its unit under the figure. Expand still draws the natural size.
+- Expand is a slim row (36 px; 44 px on a phone).
+- `RadioGroup`: the unselected ring shows on the card; a description sits under its label (also checkboxes and switches).
+- `Timeline`: `done` is neutral grey.
+- `Architecture`: a tag chip takes its node's tone; tags and `Radar`/`PolarChart`/`Waterfall` ticks are 11 px.
+- Markdown headings: `#` 30 px, `##` 24 px, `###` 17 px (`CardHeader` title is 22 px).
+- `check` warns `state-dot` when an `initial` or `final` `State` has a detail, and `node-tag` when a `Node` tag is a style word such as `"emphasis"`.
+- `spec` is ~5,877 tokens (budget 5,950).
 
 ### Fixed
 
-- A double-quoted string that spans lines kept `\"` and `\n` literally (a multi-line `CodeBlock` showed backslashes), because the parser reads it with `JSON.parse`, which refuses a raw newline. Programs are normalised before parsing (`src/shared/program-strings.ts`: `check`, `show`, the runtime and the playground). (RLM-479)
+- A multi-line double-quoted string no longer keeps `\"` and `\n` literally (e.g. in a multi-line `CodeBlock`), in `check`, `show`, the runtime and the playground.
 
 ## 0.26.0 (2026-11-25)
 
 ### Added
 
-- **`Tree`, `OrgChart`, `Nested` and `LayerStack` diagrams.** `Tree(nodes, direction?)` and `OrgChart(people, direction?)` draw a hierarchy with right-angle connectors: each `TreeNode(label, parent?, detail?, tone?)` names its parent, each `Person(name, role?, reportsTo?, kind?, dotted?, tone?)` names who they report to (`kind`: person, team, agent, or `gap` for an owner not set up; `dotted` adds a dashed second line). They use Architecture's layout engine, so `Node`, `Edge` and `Group` keep their signatures. `Nested(levels)` draws boxes in boxes from `NestedLevel(label, note?, tone?)` (outermost first); `LayerStack(layers, top?, bottom?)` draws stacked bands from `Layer(name, items?, tag?, tone?)`. Both live in the bundled `diagrams` pack. Each part is a click target. `check` warns on a second root, a tree deeper than 4 levels, more than 5 nodes on a level, more than 5 direct reports, more than one `strong` node, and above 12 people, 6 levels or 6 layers. `spec` grows by the four names in its Diagrams line. (RLM-471)
-- **`ERDiagram`, `ClassDiagram` and the `DatabaseSchema` recipe.** `ERDiagram(entities, relations, direction?)` draws `Entity(name, fields?, tone?)` boxes, one field line each (`"id uuid pk"`, `"user_id uuid fk users.id"`), joined by `Relation(from, to, cardinality?, label?)` with crow's foot marks (`"1:N"`, `"N:M"`, `"0..1:1..*"`). `ClassDiagram(classes, links, direction?)` draws `ClassBox(name, members?, kind?, tone?)` (class, interface, abstract, enum; attributes above a rule, operations below) and `ClassLink(from, to, kind?, label?, fromMultiplicity?, toMultiplicity?)` with UML's six relationship kinds; parents sit above their children. Both use Architecture's layout engine, so `Node`, `Edge` and `Group` keep their signatures, and each box, each field or member line and each relation is a click target. `DatabaseSchema` is a recipe: `ERDiagram` with typed field lines and the `ON DELETE` rule in the relation's label. `check` warns on a relation with no cardinality, over 12 fields, over 7 classes or 8 links, over 5 members in a compartment, getters and setters, and an association with no multiplicity. `spec` prompt 5734 -> 5744 tokens (three names in the Diagrams line). (RLM-472)
-- **`Kanban`, `StoryMap`, `UserJourney`, `ServiceBlueprint` and `EventModel` boards.** One grid draws all five, in the bundled `diagrams` pack: columns across, optional labelled rows, one click-target card for each statement. `Kanban(columns, cards, limits?)` with `KanbanCard(title, column, detail?, state?)` (`state`: blocked, waiting, done; a column over its WIP limit is marked). `StoryMap(activities, stories, slices?, cut?)` with `Story(title, activity, slice?, detail?, risk?)` and a release cut under the first slice. `UserJourney(stages, steps, persona?)` with `JourneyStep(action, stage, score?, touchpoint?, pain?)` draws the feeling curve and marks the lowest stage. `ServiceBlueprint(stages, steps)` with `BlueprintStep(action, stage, layer, detail?, focus?)` draws the layers with the line of visibility. `EventModel(stages, items)` with `EventItem(name, stage, kind, detail?)` draws commands, events and read models in their rows. Columns keep a legible width and the board scrolls in the frame on a phone. `check` warns above 5 columns or 12 cards (Kanban), 5 activities, 12 stories or 3 slices (StoryMap), and 6 stages (the others). ``spec` prompt 5744 -> 5761 tokens (five names in the Diagrams line). (RLM-473)
-- **`Heatmap`, `PermissionMatrix`, `UnitGrid` and `Traceability` matrices.** In the bundled `diagrams` pack. `Heatmap(columns, rows, unit?)` with `HeatRow(label, values, focus?)` fills each cell by its value, prints the value in it, and rings one `focus` cell outside the scale. `PermissionMatrix(roles, rows)` with `AccessRow(resource, grants, hint?, focus?)` prints an access level (none, read, write, admin) in every cell. `UnitGrid(parts, unit?)` with `UnitShare(name, count, detail?)` fills 100 squares in reading order, each part with its own shape and colour. `Traceability(requirements, items)` with `TraceReq(id, text, source?)` and `TraceItem(id, name, kind, covers)` links design elements and tests to requirements by ID and marks a requirement with no link as a gap. Each row, part and item is a click target; `components show <Name>` prints the guide and two examples.
-- **`Gantt`, `GitGraph` and `ScheduleNetwork` time and plan diagrams.** In the bundled `diagrams` pack. `Gantt(tasks, title?)` with `GanttTask(name, start, end?, progress?, owner?)` draws bars on a date axis; the names and positions are those of `austere-pack-gantt`, and a page that declares that pack now draws the bundled `Gantt`, with no error shown (the installed one is skipped). `GitGraph(lanes, commits)` with `GitCommit(message, lane, branchFrom?, mergeFrom?, tag?, focus?)` draws branches as lanes, one column for each commit in time order, merges with two parents and tags. `ScheduleNetwork(tasks, unit?)` with `ScheduleTask(id, name, duration, after?)` works out ES, EF, LS, LF and float, marks the critical path and the finish. Each part is a click target.
-- **`Quadrant`, `Venn`, `Pyramid`, `Loop`, `Fishbone` and `WardleyMap` shape diagrams.** In the bundled `diagrams` pack. `Quadrant(items, xAxis, yAxis, quadrants?)` with `QuadrantItem(label, x, y, focus?)` places items by x and y (0 to 100) and keeps the labels apart. `Venn(sets, overlaps?)` with `VennSet(name, size?, detail?)` and `VennOverlap(label, of, focus?)` draws 2 or 3 circles (area follows `size`) and names the overlaps. `Pyramid(layers, shape?)` with `PyramidLayer(name, value?, detail?, focus?)` draws ranked layers; `"funnel"` makes each layer as wide as its value and prints the drop. `Loop(steps, hub?)` with `LoopStep(name, detail?, writes?, focus?)` and `LoopHub(name, detail?)` draws a clockwise ring with dashed write-backs to the hub. `Fishbone(effect, causes)` with `FishCause(text, category, root?)` groups causes on bones by category. `WardleyMap(parts)` with `WardleyPart(name, stage, visibility, needs?, evolving?)` places parts on four evolution bands. Each part is a click target; `spec` grows by the type names only.
-- **`Radar`, `PolarChart`, `Waterfall`, `Treemap` and `Sankey` quantity diagrams.** In the bundled `diagrams` pack, in the stock chart style of label and value arrays. `Radar(labels, series, max?, unit?)` with `RadarSeries(name, values, focus?)` draws several entities on 3 to 5 criteria, each in its own colour, one entity stressed with dots. `PolarChart(labels, values, unit?, focus?, max?)` draws one ray for each category in a cycle, from 0 at the centre; a missing value shows `–`, never 0. `Waterfall(labels, values, unit?, focus?, subtotal?)` takes the start total, signed steps and the end total, carries the running total across, and reports a total that does not add up. `Treemap(labels, values, unit?, focus?, groups?)` lays out by area (squarified), with `groups` for a second level. `Sankey(sources, targets, values, unit?, focus?)` stages the flows left to right on one scale; it reports a loop or a node that does not balance. Each bar, cell, ray, band and node is a click target. The stock `RadarChart` (one blue for every series, nothing to click) and `RadialChart` (concentric arcs) stay off. `spec` grows only by names (5797 to 5809 tokens). (RLM-477)
-- **Ten Architecture recipes: `ArchitectureDelta`, `ITCurrentState`, `HighLevel`, `ProcessMap`, `Medallion`, `DataFlow`, `DPIntegration`, `Deployment`, `DependencyGraph` and `SBGN`.** Each is a lane, group or tone convention on `Architecture`, with a usage guide and two examples in `components show`; none is a component, so no signature changes and `spec` grows by one line of names (about 34 tokens, 5809 to 5843). `ArchitectureDelta` marks added, changed and removed with tone and tag; `Deployment` nests groups for zones and hosts. `SBGN` is not the notation: `Node` has no process, empty-set or modulation glyph, and the guide and `docs/diagrams.md` say so. (RLM-478)
-- **A gallery page of every diagram type** (`examples/diagram-types.html`, on the website gallery): the first example of each of the 48 chooser entries that have one, in sections by family. `pr-summary` gained a `Sequence` of one request through the rate limiter. `docs/diagrams.md`, `docs/components-and-packs.md`, `docs/how-it-works.md` and `README.md` describe the 50 types. `test/diagrams-doc.test.ts` keeps the coverage table and the catalog in step: 52 upstream rows, 50 built, each built row a component or recipe, each `Diagrams` component or recipe a row. (RLM-479)
-- `test/browser/diagram-patch.browser.test.ts`: a `patch` to one part of each of the 33 diagram types outlines that part only; `PolarChart`, `Waterfall`, `Treemap` and `Sankey` take arrays, so their patch outlines the whole chart. (RLM-479)
+- `Tree(nodes, direction?)` with `TreeNode(label, parent?, detail?, tone?)`, and `OrgChart(people, direction?)` with `Person(name, role?, reportsTo?, kind?, dotted?, tone?)` (`kind`: person, team, agent, `gap`; `dotted` adds a dashed second line).
+- `Nested(levels)` with `NestedLevel(label, note?, tone?)`; `LayerStack(layers, top?, bottom?)` with `Layer(name, items?, tag?, tone?)`.
+  - `check` warns on a second root, depth over 4, over 5 nodes per level, over 5 direct reports, more than one `strong` node, and over 12 people, 6 levels or 6 layers.
+- `ERDiagram(entities, relations, direction?)` with `Entity(name, fields?, tone?)` and `Relation(from, to, cardinality?, label?)` (crow's foot: `"1:N"`, `"N:M"`, `"0..1:1..*"`).
+- `ClassDiagram(classes, links, direction?)` with `ClassBox(name, members?, kind?, tone?)` (class, interface, abstract, enum) and `ClassLink(from, to, kind?, label?, fromMultiplicity?, toMultiplicity?)` (UML's six kinds).
+- `DatabaseSchema` recipe: `ERDiagram` with typed fields and the `ON DELETE` rule in the relation label.
+  - `check` warns on a relation with no cardinality, over 12 fields, over 7 classes or 8 links, over 5 members per compartment, getters/setters, an association with no multiplicity.
+- Boards: `Kanban(columns, cards, limits?)` with `KanbanCard(title, column, detail?, state?)` (blocked, waiting, done; WIP limit marked); `StoryMap(activities, stories, slices?, cut?)` with `Story(title, activity, slice?, detail?, risk?)`; `UserJourney(stages, steps, persona?)` with `JourneyStep(action, stage, score?, touchpoint?, pain?)`; `ServiceBlueprint(stages, steps)` with `BlueprintStep(action, stage, layer, detail?, focus?)`; `EventModel(stages, items)` with `EventItem(name, stage, kind, detail?)`.
+  - `check` warns above 5 columns or 12 cards (Kanban); 5 activities, 12 stories or 3 slices (StoryMap); 6 stages (others).
+- Matrices: `Heatmap(columns, rows, unit?)` with `HeatRow(label, values, focus?)`; `PermissionMatrix(roles, rows)` with `AccessRow(resource, grants, hint?, focus?)` (none, read, write, admin); `UnitGrid(parts, unit?)` with `UnitShare(name, count, detail?)`; `Traceability(requirements, items)` with `TraceReq(id, text, source?)` and `TraceItem(id, name, kind, covers)` (unlinked requirement marked as a gap).
+- Time and plan: `Gantt(tasks, title?)` with `GanttTask(name, start, end?, progress?, owner?)` (same API as `austere-pack-gantt`; a page declaring that pack now draws the bundled one); `GitGraph(lanes, commits)` with `GitCommit(message, lane, branchFrom?, mergeFrom?, tag?, focus?)`; `ScheduleNetwork(tasks, unit?)` with `ScheduleTask(id, name, duration, after?)` (computes ES/EF/LS/LF, float, critical path).
+- Shapes: `Quadrant(items, xAxis, yAxis, quadrants?)` with `QuadrantItem(label, x, y, focus?)`; `Venn(sets, overlaps?)` with `VennSet(name, size?, detail?)` and `VennOverlap(label, of, focus?)` (2 or 3 circles); `Pyramid(layers, shape?)` with `PyramidLayer(name, value?, detail?, focus?)` (`"funnel"` shape); `Loop(steps, hub?)` with `LoopStep(name, detail?, writes?, focus?)` and `LoopHub(name, detail?)`; `Fishbone(effect, causes)` with `FishCause(text, category, root?)`; `WardleyMap(parts)` with `WardleyPart(name, stage, visibility, needs?, evolving?)`.
+- Quantities: `Radar(labels, series, max?, unit?)` with `RadarSeries(name, values, focus?)`; `PolarChart(labels, values, unit?, focus?, max?)` (missing value shows `–`); `Waterfall(labels, values, unit?, focus?, subtotal?)` (reports a total that does not add up); `Treemap(labels, values, unit?, focus?, groups?)`; `Sankey(sources, targets, values, unit?, focus?)` (reports loops and unbalanced nodes). Stock `RadarChart` and `RadialChart` stay off.
+- All the above are in the bundled `diagrams` pack; every part is a click target; `components show <Name>` prints a guide and examples.
+- Ten `Architecture` recipes (conventions, not components): `ArchitectureDelta`, `ITCurrentState`, `HighLevel`, `ProcessMap`, `Medallion`, `DataFlow`, `DPIntegration`, `Deployment`, `DependencyGraph`, `SBGN` (not the full notation).
+- Gallery page of every diagram type: `examples/diagram-types.html`. `pr-summary` example gained a `Sequence`. Docs describe the 50 types.
 
 ### Changed
 
-- `check`: a signature error (`type-mismatch`, `missing-required`, `null-required`, `excess-args`) now ends with "Run `austere-axi components show <Name>` for its signature." (RLM-479)
-- `spec` is ~5843 tokens against a budget of 5950 (5828 before the diagram work began, 22145 to 22204 characters); `--help` is unchanged at 4399 characters. `dist/austere.js` grew from 3,040,416 to about 3,099,000 bytes; the `diagrams` pack, loaded only by a page that uses it, is `dist/packs/diagrams/pack.js` at about 218,000 bytes. Both budgets keep their earlier numbers. (RLM-479)
+- `check`: signature errors (`type-mismatch`, `missing-required`, `null-required`, `excess-args`) end with "Run `austere-axi components show <Name>` for its signature."
+- `spec` is ~5,843 tokens (budget 5,950); `--help` unchanged. The `diagrams` pack (`dist/packs/diagrams/pack.js`, ~218 KB) loads only on pages that use it.
 
 ### Fixed
 
-- `Radar`: the guide said 3 to 5 criteria but `check` warned only above 6; it now warns above 5. `Treemap`: a group name was cut by UTF-16 unit, so an emoji could split; it is now cut by character. `Sankey`: bands had no edge on the near-black page; they now have a thin stroke. `ScatterPlot`, `Architecture` and `Timeline` guides no longer say `Quadrant`, `Sequence` and `Gantt` are still to come; the `Quadrant` guide says which corner is which. (RLM-479)
-- `Venn`: a label that did not fit broke inside words ("Resell/ers") or was cut at the start ("支払いの確認" showed "確認"). It is now wrapped at spaces and cut at the end with `…`. The guide says to use short or fewer overlap labels for small sets. (RLM-477)
-- `ScheduleNetwork` printed "DUR 1 weeks"; a duration of 1 now takes the singular unit. Its guide now says the 5-rank and 12-link limits are advice, not checked. (RLM-475)
-- Review `Send`: a note queued while Send was in progress was lost, because `sendAll()` (`src/chrome/review-send.ts`) cleared the whole queue afterwards. It now removes only the notes it sent. (RLM-472)
-- `UserJourney`: the score dot now has the accessible name "score 4 of 5"; a screen reader heard only the number.
+- `Radar`: `check` now warns above 5 criteria (was 6).
+- `Treemap`: group names are cut by character, not UTF-16 unit.
+- `Sankey`: bands have a thin stroke on the dark page.
+- `Venn`: labels wrap at spaces and are cut at the end with `…`.
+- `ScheduleNetwork`: a duration of 1 uses the singular unit.
+- Review `Send`: a note queued while Send was in progress is no longer lost.
+- `UserJourney`: the score dot's accessible name is "score 4 of 5".
 
 ## 0.25.0 (2026-11-25)
 
 ### Added
 
-- **The hub shell has a cloud mode.** austere-cloud's signed-in `/` can load `chrome/shell.js` with the boot flag `mode: "cloud"` (and `account`): the sidebar, type and colours of the local hub, with the views a hosted account can fill: **Pages** (grouped by project, with an Ungrouped group), **Shared**, search over titles, a **People** dialog (grant and revoke by email) and an account footer with Sign out. Inbox, Notes, Runs and Settings are not shown. The local hub is unchanged. (RLM-458)
-- **`publish` sends `project` and `relPath`**: the project the local hub files the page under and its path in the project, so the cloud hub can group hosted pages. Both are optional; `SYNC_VERSION` is 2. A page published before this, or with a hub.db another version holds, is listed as Ungrouped. (RLM-458)
-- **`austere-axi/hub-api`**: the `/hub/api` types (including the cloud routes), generated from `src/shared/hub-api.ts` by `npm run hub-api-types`, so austere-cloud's adapter type-checks against them. (RLM-458)
-- **`Flowchart` and `StateMachine` diagrams.** `Flowchart(steps, links, direction?)` draws decision logic top to bottom: `FlowStep`s (oval `start` and `end`, rectangle step, diamond `decision`) joined by `FlowLink`s, each decision exit labelled with its answer. `StateMachine(states, transitions, direction?)` draws `State`s (rounded boxes, a filled `initial` dot, a ringed `final` dot) and `Transition(from, to, event, guard, action)`, labelled `event [guard] / action`, with self-transitions. They use Architecture's layout engine and look, with shapes of their own, so `Node` and `Edge` keep their signatures. Each part is a click target. `check` warns on a decision with more than 3 exits or an unlabeled exit, a transition with no event (none needed from an initial or into a final state), and more transitions than twice the states. They are `extended`: `spec` names them in its Diagrams line and is a net 4 tokens smaller (5728 → 5724: the lanes note moved its phone sentence to the Architecture guide). (RLM-470)
+- Hub shell cloud mode: `chrome/shell.js` with boot flag `mode: "cloud"` (and `account`) shows Pages (by project, plus Ungrouped), Shared, search, a People dialog (grant/revoke by email) and Sign out.
+- `publish` sends optional `project` and `relPath` so hosted pages can be grouped; `SYNC_VERSION` is 2. Older pages are listed as Ungrouped.
+- `austere-axi/hub-api`: types for `/hub/api`, generated by `npm run hub-api-types`.
+- `Flowchart(steps, links, direction?)` with `FlowStep` (start, end, step, `decision`) and `FlowLink`; `StateMachine(states, transitions, direction?)` with `State` (`initial`, `final`) and `Transition(from, to, event, guard, action)`. `check` warns on a decision with over 3 exits or an unlabeled exit, a transition with no event, and more transitions than twice the states.
 
 ### Fixed
 
-- `Flowchart` and `StateMachine`: an unnamed step or link could take the id of a statement called `_node0` or `_edge0`, merging two nodes or dropping a link. Unnamed parts now get ids no statement name can have.
+- `Flowchart`/`StateMachine`: unnamed parts no longer collide with statements named `_node0`/`_edge0`.
 
 ## 0.24.0 (2026-11-25)
 
 ### Added
 
-- **`Sequence` diagram, and the bundled `diagrams` pack.** `Sequence(actors, messages)` draws time-ordered messages between `Actor`s: lifelines as columns, `Message`s top to bottom (call, return, async, self loop, one `"emphasis"` result), and `Branch` frames for `alt`, `opt` and `loop`. Each `Actor`, `Message` and `Branch` is a click target. `check` warns above 5 actors or 12 messages. It lives in `packs/diagrams/`, bundled like `shadcn`: no install, no tag, and a page without a diagram from it does not load `packs/diagrams/pack.js`. `spec` grows by the name `Sequence` in its Diagrams line. (RLM-469)
-- **A diagram read path: the `Diagrams` group, a chooser, usage guides and recipes.** `Architecture`, `Node`, `Edge` and `Group` move from `Content` to a new `Diagrams` group (signatures unchanged), which ends with one line naming the other diagram types. `components list <Group>` prints each component and recipe with what it is for (`Diagrams` by family); `components show` adds the signatures of the parts, where it may sit, a usage guide and up to two examples; `components search` takes `--group`, ranks `keywords`, and no longer matches a component on the names in its child list (`search timeline`: 2,488 → 434 characters). Recipes `Swimlane`, `BarComparison`, `LineTrend` and `ScatterPlot` are drawn with existing components; a page that calls one gets a `check` error naming them. Components and pack catalogs take optional `guide`, `keywords`, `family`, `limits` (a `check` warning with statement and line) and `alsoIn`; older catalogs work as before. `spec` prints only core names in the child lists of `Card`, `TabItem` and `AccordionItem` (the parser still accepts the rest): ~5828 → ~5725 tokens. Coverage of the 52 diagram-design types: [Diagrams](docs/diagrams.md). (RLM-467)
+- `Sequence(actors, messages)` with `Actor`, `Message` (call, return, async, self loop, `"emphasis"`) and `Branch` (`alt`, `opt`, `loop`). `check` warns above 5 actors or 12 messages.
+- Bundled `diagrams` pack (`packs/diagrams/`): no install; loaded only by pages that use it.
+- `Diagrams` component group: `Architecture`, `Node`, `Edge`, `Group` move from `Content` (signatures unchanged).
+- `components list <Group>` shows each component's purpose; `components show` adds part signatures, placement, a usage guide and examples; `components search --group`, ranked by `keywords`.
+- Recipes `Swimlane`, `BarComparison`, `LineTrend`, `ScatterPlot`; calling one is a `check` error naming the components to use.
+- Catalogs take optional `guide`, `keywords`, `family`, `limits`, `alsoIn`.
+- Coverage of diagram types: [Diagrams](docs/diagrams.md).
+
+### Changed
+
+- `spec` lists only core children of `Card`, `TabItem`, `AccordionItem` (~5,725 tokens).
 
 ## 0.23.0 (2026-11-25)
 
 ### Added
 
-- **`DiagramFrame` for packs.** The sideways scroll cue and edge fades, the focusable named region, the Expand dialog and the print rules of `Architecture` now live in one component, exported from `austere-axi/pack` (additive; `PACK_API` stays 1). Diagrams in packs get the same behaviour without a copy of that code. See `docs/writing-a-pack.md`. (RLM-468)
+- `DiagramFrame` exported from `austere-axi/pack`: scroll cue, edge fades, focusable region, Expand dialog and print rules for pack diagrams. `PACK_API` stays 1. See [Writing a pack](docs/writing-a-pack.md).
 
 ### Fixed
 
-- Printing an architecture diagram that was scrolled sideways no longer keeps the edge fade.
+- Printing a sideways-scrolled architecture diagram no longer keeps the edge fade.
 
 ## 0.22.0 (2026-11-24)
 
 ### Added
 
-- **Expand an architecture diagram to full size.** An Expand button above each diagram opens a modal `<dialog>` over the artifact frame (no Fullscreen API, which the review iframe blocks). The diagram shows at 1.0 in its natural layout (left-to-right, or lanes as columns) and scrolls both ways; Esc or Close returns focus to the button. It is the same rendered diagram, so part ids stay unique, and Annotate works inside it. (RLM-464)
+- Expand button on architecture diagrams: opens a full-size modal that scrolls both ways; Esc or Close returns focus. Annotate works inside it.
 
 ## 0.21.0 (2026-11-24)
 
 ### Added
-- **Architecture diagrams that scroll sideways are easier to see, reach and print.** A fade shows on each cut edge and a short cue under the diagram shows only while part is hidden; the scroll box takes focus (named from its Card title, ←/→ scroll it), keeps a thin scrollbar and does not trigger back-swipe. The width floor is the box width, so a diagram that fits at the legible scale no longer scrolls (the stacked-lanes case lost 18px of clipping at 360px). Print drops the fades and cue and scales the whole diagram to the page. (RLM-463)
-- **The review server in a container.** A `Dockerfile` (the npm package on `node:24-bookworm-slim`) and a `compose.yaml` run `server --persist` on Linux with the host's network and PIDs, as the host user, with the state dir and page folders mounted at their host paths, so the host's CLI uses it as any running server. No coding agent or Tailscale in the image: attach runs, triggers and tailnet review need `server install` on the host. See [Docker](docs/docker.md). (RLM-460)
+
+- Wide architecture diagrams: edge fades and a scroll cue while part is hidden; the scroll box is focusable (←/→); print scales the diagram to the page.
+- `Dockerfile` and `compose.yaml` to run `server --persist` in a container. Attach runs, triggers and tailnet review still need `server install` on the host. See [Docker](docs/docker.md).
 
 ## 0.20.0 (2026-11-23)
 
 ### Added
 
-- **Push delivery for OpenCode.** The same wake for an open, idle OpenCode session (1.19.5; OpenCode 2 is not needed): `ln -s "$(npm root -g)/austere-axi/dist/harness/opencode.js" ~/.config/opencode/plugins/austere-wake.js`. OpenCode names no session to its bash tool, so the plugin sets `OPENCODE_SESSION_ID` there (the root session when a subagent runs the command), and `austere-axi` reads it as the `opencode` harness. It follows each session's `session.status` events, wakes an idle one with `session.promptAsync`, and does nothing for a session the server knows no page for. (RLM-451)
+- Push delivery for OpenCode (1.19.5+): `ln -s "$(npm root -g)/austere-axi/dist/harness/opencode.js" ~/.config/opencode/plugins/austere-wake.js`. The plugin sets `OPENCODE_SESSION_ID`, read as the `opencode` harness, and wakes an idle session the server knows a page for.
 
 ## 0.19.0 (2026-11-23)
 
 ### Changed
 
-- **UI/UX polish pass on the hub, Settings and the review page** (RLM-453). One type scale (11/12/13/15/22 px; Tailwind `text-xs`/`text-sm`/`text-md` now point at it, so there is no 14 px), one radius scale (`--radius-sm/md/lg` = 6/8/12 px, a pill only for status badges), one button scale (24 / 32 / 36 px, 44 px on a phone) and spacing on the 4 px grid. `rem` is 16 px on the hub too (shadcn parts were 19% smaller there). Dialogs are 480 px wide and their titles left-aligned. One projects sidebar on the hub and the review page. `hub-narrow.css` is gone: the phone layout is responsive Tailwind classes. Breakpoints are range queries (`width <= 860px`), so a fractional width at browser zoom no longer falls between two blocks.
-- **Contrast and focus.** Primary and destructive buttons had 1.8:1 and 2.2:1 text (an unlayered reset beat the Tailwind classes); they are 8.7:1 and 7.7:1. The `dark:` utilities of the shadcn parts now apply (they matched a `.dark` class nothing set), field, switch and radio edges are 3:1 or more, toasts have a background, and every control has one 2 px accent focus ring.
-- **Keyboard and screen reader.** On a phone the notes are a bottom `Sheet` (closed it is out of the tab order, open it traps focus and gives it back to the dock). The composer keeps focus while it sends. The hub has a skip link. Focus goes to the next row, or the page heading, when the focused row goes away (archive, Approve/Deny/Revoke, a link in the content). Share's radio groups are fieldsets, accessible names contain their visible text, count badges and receipt times have text, the review page has a `<main>`, History takes focus when it opens, and Ctrl/Cmd+I and Ctrl/Cmd+B ignore typing. The shortcut shows as ⌘K on a Mac.
-- **Forms and states.** Errors are an `Alert` with Try again (the page heading stays), loading is a skeleton, empty states name the next step (`austere-axi open <file>`), confirm dialogs name the verb ("Revoke Ana?"), a failed send says so in words and offers Retry, required fields are marked, and "Block" asks first. The notes setting reads "Hold notes for me" / "Send notes straight to the agent" everywhere. The undo toast stays 10 s.
-- Removed `next-themes` (the chrome is dark only) and the unused `ui/checkbox.tsx`. Gzip size: `chrome.js` 258,687 bytes (256,909 at 0.18.0), `shell.js` 186,753 (183,398). Code-splitting would cut it but needs the hosted Worker to proxy more asset paths.
-- For anyone who scripts the chrome: the notes sheet exists in the DOM only while it is open at 860 px and narrower; the copy switcher's name is "Worktree copy: <label>"; the hub's views are not in the phone drawer (the tab bar has them).
+- UI polish of the hub, Settings and review page: one type, radius, button and spacing scale; `rem` is 16 px on the hub; 480 px dialogs; one projects sidebar.
+- Contrast and focus: primary/destructive button text fixed; field edges 3:1 or more; one 2 px accent focus ring.
+- Keyboard and screen reader: notes are a bottom sheet on a phone; skip link on the hub; focus moves sensibly when a row disappears; Ctrl/Cmd+I and Ctrl/Cmd+B ignore typing; shortcut shows as ⌘K on a Mac.
+- Forms and states: errors show an `Alert` with Try again; skeletons while loading; empty states name the next step; confirm dialogs name the verb; failed sends offer Retry; "Block" asks first. The notes setting reads "Hold notes for me" / "Send notes straight to the agent". Undo toast stays 10 s.
+- For scripts: the notes sheet is in the DOM only while open at 860 px and narrower; the copy switcher is named "Worktree copy: <label>"; on a phone, hub views are in the tab bar.
 
 ## 0.18.0 (2026-11-23)
 
-Upgrading from 0.17: see [Upgrading to 0.18](docs/upgrading-to-0.18.md).
+Breaking.
 
 ### Added
 
-- **A collapsible projects sidebar on the review page** (RLM-442). The owner on the local server sees the hub's sidebar (projects and their pages, with the counts that need you) beside the page, with this page marked; a click opens another page. The trigger in the review header, or Ctrl/Cmd+B, folds it, also when the focus is in the artifact (the frame hands the key over, as it does Ctrl/Cmd+K). The choice is kept in `localStorage` (`austere:sidebar-open`) and is shared with the hub; the folded projects are the hub's too. On the review page it starts folded until you open it (the hub's starts open); a saved choice wins on both. Wide screens (1100 px and up): it pushes the page and the artifact frame takes the room back. Under 1100 px (the review header needs the room; the hub's breakpoint stays 768 px): a sheet over the page with a scrim. A folded sidebar is `inert`, so it has no Tab stop (this fixes the hub's too), and the skip link stays the first stop. Reviewers and hosted pages do not get it: `/hub/api/*` answers the owner only.
-- **Push delivery for omp.** A note the owner sends now starts the next turn of the open omp session that wrote, edited or listened to the page, when that session is idle, with no `poll` running. Load the extension with `omp -e "$(npm root -g)/austere-axi/dist/harness/omp.js"`, or link it into `~/.omp/agent/extensions/`. It does nothing in a session the server knows no page for (one check at start), never interrupts a running turn, and wakes a session once even when two omp processes have it open. The turn names the page and the `feedback`/`patch`/`reply` commands, never the notes' text. New server routes: `POST /api/sessions/<harness>:<id>/wake-poll` and `wake-ack`. A delivered wake cancels an attached run that has not started. In omp 18.22, `deliverAs: "followUp"` does not start a turn in an idle session, so the extension sends without it. See `docs/cli.md`, "Wake an idle session", and `docs/attach.md`, "Who gets a note". (RLM-447)
-- The review page says who would take a note: "Agent idle in omp · Send wakes it", "Agent busy in omp · notes wait for its turn", "Queued · agent busy" under a waiting note and "Delivered to omp 14:02" under a delivered one. "Agent not listening" shows only when nothing would take it. hub.db schema 7 adds `notes.seen_by`. (RLM-447)
-- **Push delivery for Copilot CLI.** The same wake for an open, idle Copilot CLI session (1.0.112, extensions are experimental): `ln -s "$(npm root -g)/austere-axi/dist/harness/copilot" ~/.copilot/extensions/austere-wake`, then `copilot --experimental` once. It uses Copilot's extension SDK (`joinSession`, `session.send`), waits for `session.idle` before it wakes the session, and sends the turn as an automation, not as the owner. The omp and Copilot extensions share one client (`src/harness/client.ts`). (RLM-452)
+- Collapsible projects sidebar on the review page (owner only): Ctrl/Cmd+B or the header trigger toggles it; state is kept in `localStorage` (`austere:sidebar-open`), shared with the hub. Starts folded on the review page. Under 1100 px it is a sheet.
+- Push delivery for omp: a note the owner sends starts the next turn of the idle omp session tied to the page. Load with `omp -e "$(npm root -g)/austere-axi/dist/harness/omp.js"` or link it into `~/.omp/agent/extensions/`. Never interrupts a running turn. New routes: `POST /api/sessions/<harness>:<id>/wake-poll` and `wake-ack`. A delivered wake cancels an attached run that has not started. See [Wake an idle session](docs/cli.md#wake-an-idle-session) and [Attach](docs/attach.md).
+- Review page shows who takes a note: "Agent idle in omp · Send wakes it", "Agent busy in omp · notes wait for its turn", "Queued · agent busy", "Delivered to omp 14:02". hub.db schema 7 (`notes.seen_by`).
+- Push delivery for Copilot CLI (1.0.112, experimental extensions): `ln -s "$(npm root -g)/austere-axi/dist/harness/copilot" ~/.copilot/extensions/austere-wake`, then `copilot --experimental` once.
 
 ### Changed
 
-- **Breaking for scripts and user CSS: the chrome (review page and hub) now uses shadcn/ui and Tailwind, so its CSS class names changed.** Classes of the hand-built DOM are gone or renamed (details under the entries below); `data-*` hooks and `aria-*` roles are the stable way to find a control. The hosted chrome was checked against the real austere-cloud shell header (`style-src 'self' 'unsafe-inline'`, boot script by hash): the ⋯ menu, tooltips, Share dialog, sidebar and its sheet draw in place and report no violation (RLM-442).
-- **The review page is React, on shadcn/ui and Tailwind v4** (RLM-440). `src/chrome/chrome.ts` (3,846 lines of hand-built DOM, 25 module-level variables, 76 `renderX()` calls, hand-made race counters) is a 60-line boot; the page is `review-*.tsx` over one `zustand` store (`review-store.ts`): queue and composer, Conversation, presence, changes and revision, History, Share and Archive, the Agent pill and its run state, tabs and dock, and the frame and menu. The iframe bridge (`{ austere: 1 }` messages), the outbox and its retry rules, the boot object and `nav.ts` are as they were. Hosted pages still load under the service's CSP (no inline script, no `eval`; the styles Tailwind and Radix add are allowed by `style-src 'unsafe-inline'`).
-  - Races end with the effect that started them: `useHistoryFeed` and `useAttachFeed` read `/history` and `/attach` in effects that abort when a newer read starts (replacing `histLoad`, `histLatest`, `histGen`, `infoGen`, `infoShown`), a run event beats an answer that was asked before it, and a run's elapsed time and an agent's "2 min" count in component timers.
-  - Composer and queue are shadcn `Textarea`, `Button`, `Badge` and `Tooltip`; the outbox's rate-limit wait is a Badge with a countdown. Share and Archive are `Dialog`s (Share is react-hook-form with a zod schema), the Agent panel is a `Popover` hung from its pill (it no longer covers the notes), panel views are `Tabs`, the Conversation and History scroll in `ScrollArea` with `Skeleton` while they load.
-  - `chrome.css` loads Tailwind through `tailwind-review.css`; the hub through `tailwind-hub.css`. Each lists its own `@source`, so a page gets only its own utilities. Preflight sits in a lower layer than `chrome.css`; the artifact is a separate document and is not touched by it. The page has a skip link to the page region.
-  - For anyone who scripts the page: tabs report `aria-selected`, not `aria-current`; dialogs are `role="dialog"` (Radix), not `<dialog>`; the Conversation scrolls in the ScrollArea viewport; the Agent panel is a popover, not an overlay on the notes. `dist/chrome/chrome.js` is larger because it now carries React: 83 KB gzip before, 238 KB after.
-- **The hub and Settings are React, on shadcn/ui and Tailwind v4** (`src/chrome/shell.tsx`, `settings.tsx`, primitives in `src/chrome/ui/`, added with the shadcn CLI; the one edit is in `ui/sidebar.tsx`, which no longer writes shadcn's `sidebar_state` cookie). One `zustand` store for the view and the sidebar's data, with `pushState`/`popstate` URL sync as before; each view loads in an effect and ignores an answer a newer request has replaced, so a refresh keeps scroll, focus and what you typed. The projects sidebar is the shadcn `Sidebar` in `projects-sidebar.tsx` (props only; the review page mounts it too, RLM-442). Every Settings form is a shadcn `Form` (react-hook-form + zod) with labels, inline errors, a pending button and Enter to submit. What a change says is a toast (Sonner), not a status line; `confirm()` and `prompt()` are dialogs; views show skeletons while they load. Colors come from `tokens.css` through Tailwind's `@theme`, one token set. Class names of the replaced controls (`.btn`, `.seg`, `.views`, `.proj-*`, `.status`, `.search-box`) are gone, and so is the CSS that styled them. `dist/chrome/shell.js` keeps its name and grows to about 760 KB (React, Radix, Sonner, react-hook-form, zod). (RLM-439)
-- **The review header's navigation is React, on shadcn/ui; `dom.ts` is gone** (RLM-441). `nav.ts`, `nav.css` and the `h()` DOM helper (`dom.ts`) are deleted, and so are the DOM icon builders in `icons.ts`. The breadcrumb is shadcn `Breadcrumb`, the copy switcher a `DropdownMenu` (it was a native `<select>`), the Ctrl/Cmd+K quick switcher a `CommandDialog` (cmdk: arrows, Enter, Esc and a focus trap come with it, the server ranks the matches), and the ⋯ menu a `DropdownMenu` with the same `data-cmd` items. The search runs in an effect that aborts when the text changes, replacing the `gen` counter.
-  - **Error boundaries.** Every panel of the review page (title, page bar, banner, mode switch, dock, frame, tabs, conversation, queue, note box, History, dialogs) is in its own `PanelBoundary`, and `mountApp` wraps the whole app in one more. A panel that throws shows an `Alert` with its name, a fixed sentence and Try again (the error message goes to `console.error`); the other panels keep working. New dev dependency for the chrome build: `cmdk` (bundled).
-  - For anyone who scripts the page: the ⋯ menu is a Radix menu (`role="menu"`, items are `role="menuitem"` and exist only while it is open; a disabled item has `data-disabled`), and the quick switcher is `role="dialog"` named "Go to page" with `role="option"` rows. Annotate/Explore and the attach popover's On/Off/default are shadcn `ToggleGroup`s (items are `role="radio"` with `aria-checked`, not `aria-pressed`; the attach items carry `data-attach`, not `data-state`). The Agent pill, the dock, a History row, a note's anchor, the logo link and the hosted Report link are `Button`s. The `.crumbs`, `.copy-switch`, `.qs*`, `.menu-pop`, `.seg*`, `.attach-state` and `.link-btn` classes are gone.
-- The `austere-setup` skill's description now lists when to use it (setup, a missing `austere-axi` or `/austere` command, old Node, pages that do not open, a server still on the old version after an update, phone review, an always-on server) instead of what it does, like the `austere` skill's in 0.17.0. After an update it restarts a running server. (RLM-425)
-- The guides in `docs/` are pages on the website (`/austere-axi/docs/`), with a Docs item in the nav. They are rebuilt on every push to `main`; the site build fails on a broken link or `#fragment` between them. (RLM-428)
-- **The skills no longer install anything.** The `austere` skill runs the `austere-axi` command the user installed (`npm install -g austere-axi`), not `npx -y austere-axi`; without it, it uses the austere MCP tools if the agent has them, or tells the user and stops. The `austere-setup` skill checks the installed CLI, offers phone review and an always-on server, and runs the test page; it no longer installs or updates the `austere` skill or the CLI. Install both from the README or `docs/install.md`: `npm install -g austere-axi`, then `npx skills add MandalorianBatman/austere-axi --skill austere --skill austere-setup`.
-- The `austere` skill runs the CLI's own subcommands from its output and asks the user before running anything else it suggests, and before acting beyond the page on a note marked `from:` (another reviewer's). With the above, this answers the skills.sh audits of the `austere` skill (Snyk E004, Gen Agent Trust Hub).
+- **Breaking for scripts and user CSS:** the review page and hub use React, shadcn/ui and Tailwind; CSS class names changed. Use `data-*` hooks and `aria-*` roles to find controls.
+  - Review page: tabs use `aria-selected`; dialogs are `role="dialog"`; the Agent panel is a popover.
+  - ⋯ menu is `role="menu"` with `role="menuitem"` items (present only while open; disabled items have `data-disabled`); the quick switcher is `role="dialog"` named "Go to page" with `role="option"` rows.
+  - Annotate/Explore and attach On/Off/default are toggle groups (`role="radio"`, `aria-checked`; attach items carry `data-attach`).
+  - Removed classes: `.crumbs`, `.copy-switch`, `.qs*`, `.menu-pop`, `.seg*`, `.attach-state`, `.link-btn`, `.btn`, `.seg`, `.views`, `.proj-*`, `.status`, `.search-box`.
+  - Each review page panel has an error boundary with Try again.
+  - Settings forms validate inline and submit on Enter; feedback is a toast; confirm/prompt are dialogs.
+- The `austere-setup` skill's description lists when to use it; after an update it restarts a running server.
+- Docs are published at `/austere-axi/docs/` on the website.
+- The skills no longer install anything. Install with `npm install -g austere-axi`, then `npx skills add MandalorianBatman/austere-axi --skill austere --skill austere-setup`. Without the CLI, the `austere` skill uses the austere MCP tools or tells the user and stops.
+- The `austere` skill asks before running commands other than the CLI's own, and before acting beyond the page on a note marked `from:`.
 
 ## 0.17.0 (2026-11-22)
 
 ### Changed
 
-- **Breaking: publishing needs an account.** `publish` (and `publish list|invites|revoke|login|rm`) and `clone` refuse until this machine is signed in with `cloud login`: they fail with `code: login_required` and `next: austere-axi cloud login` before any request, and before the page is bundled. The CLI never starts the sign-in by itself. The anonymous owner token is gone: no command creates, claims or sends one, and the local server does not sync hosted pages until you sign in. `--help`, `help all`, the home view and the unknown-command list leave `publish` and `clone` out until cloud is on and the machine is signed in, and show how to sign in instead; `publish --help` still prints its flags, with a note. `cloud on` says when sign-in is the next step. The hosted service no longer issues or accepts owner tokens either (austere-cloud, RLM-434). **Pages published anonymously** (with an owner token, without an account) are not moved to an account: the service takes them down. `cloud login` forgets their entries and drops the token from `cloud.json`; `publish` on such a file makes a new link. (RLM-432, RLM-434)
-- `cloud.json` records which account its published files belong to. `cloud login` as another account forgets them and says how many (`forgotten:`), so `publish` makes new links instead of failing with "the hosted page … is gone". Signing out and in again as the same account keeps them. (RLM-434)
-- The `austere` skill's description now lists when to use it (plans, option comparisons, decisions, code reviews, design proposals, system walkthroughs, reports) instead of what it does, so agents pick it up for those answers without being asked. Short answers and plain code edits stay out. (RLM-425)
-- `cloud login` always prints the sign-in link with the code in it, whether or not it opened a browser, so a headless or remote machine can be signed in from a phone or another computer. It also prints the bare link and the code to type in, and says when no browser was started. (RLM-431)
+- **Breaking: publishing needs an account.** `publish` (and `publish list|invites|revoke|login|rm`) and `clone` fail with `code: login_required` and `next: austere-axi cloud login` until signed in. Owner tokens are gone; the server does not sync hosted pages until you sign in. Help hides `publish`/`clone` until cloud is on and signed in. Pages published anonymously are not moved to an account: `cloud login` forgets them, and `publish` makes a new link.
+- `cloud.json` records the account; `cloud login` as another account forgets its published files (`forgotten:`).
+- The `austere` skill's description lists when to use it.
+- `cloud login` always prints the sign-in link with the code, the bare link and the code, and says when no browser was started.
 
 ## 0.16.0 (2026-11-20)
 
 ### Changed
 
-- **Cloud features are off by default.** `publish`, `clone`, `cloud login|whoami` and the local server's sync of hosted pages need the new switch: `cloud on|off|status`, or the hub's **Settings → Cloud**. Off, nothing reaches the hosted service: those commands fail with `cloud features are off` before any request, and the server opens no socket and queues nothing for hosted pages. The switch is kept in `<state dir>/settings.json`. **Upgrading with published pages:** they stop syncing until you run `austere-axi cloud on`. `cloud logout` works either way. (RLM-421)
+- **Cloud features are off by default.** Enable with `cloud on|off|status` or Settings → Cloud (stored in `<state dir>/settings.json`). Off: `publish`, `clone`, `cloud login|whoami` fail with `cloud features are off`, and nothing syncs. Existing published pages stop syncing until `austere-axi cloud on`. `cloud logout` always works.
 
 ## 0.15.0 (2026-11-20)
 
 ### Added
 
-- Accounts on the hosted service (WorkOS AuthKit). `cloud login` signs this machine in with a code you approve in the browser (email code, Google, GitHub or passkey); `cloud whoami` and `cloud logout`. Signed in, you are the owner of all your hosted pages: `publish` and the local server's sync use the account, and the same account in the browser is the owner on every page without `publish login`. The first login hands this machine's owner token to the account, so pages published before stay yours. The CLI keeps the tokens in `cloud.json` (0600) and stores the new refresh token at every refresh. Needs austere-cloud with accounts on. (RLM-414)
-- `clone` lists your hosted pages from every machine; `clone <id> [<file>]` writes one to a new local file and attaches it, so its notes sync here and `publish` updates the same link. (RLM-414)
-- A hosted page that refuses a viewer (no invite, or one no longer valid) offers **Sign in** when the service has accounts: a reviewer the owner granted the page to by email gets in under their account name. (RLM-414)
+- `cloud login` (browser-approved code), `cloud whoami`, `cloud logout`. Signed in, you own all your hosted pages in the browser without `publish login`. Tokens are kept in `cloud.json` (0600).
+- `clone` lists your hosted pages; `clone <id> [<file>]` writes one to a local file and attaches it.
+- A hosted page that refuses a viewer offers **Sign in**; a reviewer granted by email gets in under their account.
 
 ### Changed
 
-- The hub and the review page have a new look: Inter and JetBrains Mono (bundled, nothing is fetched), shared colour tokens with higher-contrast secondary text, line icons, and grouped list cards. The hub's Inbox shows each page's state as a coloured icon with one main action; Pages, Notes, Runs and Settings follow the same layout; on a phone the hub's views are a bottom tab bar. The review page has a 52px top bar, an Annotate/Explore bar above the page, and a side panel with Notes, Agent and History tabs; the queue lists numbered notes with Edit and Remove. The Go to page switcher groups pages and parts and shows each page's state. The comment popover's button reads **Add to queue**. No command, flag, route or stored data changes.
-- A service that hosts pages must send `font-src data:` in the `Content-Security-Policy` of the page's shell, for the fonts bundled in the review page's stylesheet (`docs/hosted-share-links.md`). austere-cloud already does.
+- New look for the hub and review page (bundled fonts, line icons, inbox state icons, bottom tab bar on a phone). The comment popover's button reads **Add to queue**. No command, flag, route or stored data changes.
+- A service hosting pages must send `font-src data:` in the page shell's CSP. See [Sync protocol](docs/sync-protocol.md).
 
 ### Fixed
 
-- Switching between Annotate and Explore no longer switches the Agent panel's disabled choices back on. The Annotate and Explore buttons tell a screen reader which one is on (`aria-pressed`).
-- `stop` returns when the server process has exited, not when it answers the shutdown request. Before, the server still held `hub.db` for 100 ms or more after `stop` returned, so a command or script that wrote `hub.db` at once could fail with `database is locked` (seen on Windows). If the server does not exit within 10 s, `stop` says `status: stopping`.
+- Switching Annotate/Explore no longer re-enables the Agent panel's disabled choices; the buttons expose `aria-pressed`.
+- `stop` returns once the server process has exited (fixes `database is locked`). If it does not exit within 10 s, `stop` says `status: stopping`.
 
 ## 0.14.1 (2026-11-19)
 
 ### Fixed
 
-- A Form's button sends every answer. A `RadioGroup` or `Slider` with a default, or a `CheckBoxGroup` or `SwitchGroup` with a `defaultChecked` item, showed its default but stored nothing until the reviewer changed it, so an answer left as pre-selected never reached the agent. Each field now stores the default it shows, as `OptionCards` and `Chips` already did. (RLM-412)
+- A Form sends default values of `RadioGroup`, `Slider`, `CheckBoxGroup` and `SwitchGroup` even when the reviewer did not change them.
 
 ## 0.14.0 (2026-11-18)
 
-To upgrade: install 0.14.0. A server that `server install` (or your own unit) runs keeps serving the old version until you run `austere-axi server restart`; the CLI says so. If you ran `server install` through `npx`, the unit still points at npx's cached copy: run `austere-axi server install` again with the installed 0.14.0 CLI, then restart. hub.db migrates on open (schema 6, additive), and no command or flag is removed. Two behaviours change for existing setups:
-
-- **Hub URLs:** `/` is now the hub app (Inbox, Pages, Notes, Runs, Settings), and `/notes` opens its Notes view with the same filters. Bookmarks keep working; a script that read the old server-rendered HTML of `/` should read the JSON routes instead, such as `/hub/api/pages`, `/hub/api/inbox` or `/hub/api/notes` (owner cookie).
-- **Reviewers over Tailscale:** a device first opened over Tailscale is bound to that login. The same device cookie from another Tailscale login is refused; give that person their own link, or `share tailscale <login>`.
-
-The new local-network listener (`server lan`) is off by default and never takes the owner's sign-in; the owner signs in on this computer or over Tailscale as before.
+- A unit-run server keeps the old version until `austere-axi server restart`. If `server install` ran through `npx`, rerun it with the installed CLI, then restart. hub.db migrates on open. No command or flag is removed.
+- Hub URLs: `/` is the hub app; `/notes` opens its Notes view. Scripts that read the old HTML of `/` should use `/hub/api/pages`, `/hub/api/inbox` or `/hub/api/notes` (owner cookie).
+- A device first opened over Tailscale is bound to that login; another login's use of its cookie is refused.
+- `server lan` is off by default and never accepts the owner's sign-in.
 
 ### Added
 
-- Activity triggers: `trigger add|list|remove` runs a command once a project has been quiet (`quiet:2h`), once per burst of activity, as a run (`run list --project p`, `run log`, `run stop --project p`). `add` and `remove` work only at a terminal; `triggers.json` is read only from the state dir. See [Triggers](docs/cli.md#triggers). (RLM-360)
-- The hub is an app with an inbox. **Needs you** first: pages the agent changed since you looked, reviewer notes waiting for you to release them, and pages whose last agent run failed. Then **Waiting on agent**, with who takes the notes (an agent listening, the attached agent, or nobody, with **Turn agent on**), then **Quiet**. A sidebar lists projects and their pages with a chip per worktree. The views are Inbox, Pages, Notes and Runs; the hub opens on the one you used last. Search finds pages and parts, and a part opens its page with that part outlined. Rows have **Archive**, with **Undo**. (RLM-355, RLM-357)
-- `/hub/api/` (`projects`, `pages`, `inbox`, `search`, `page/<copy id>`, `notes`, `runs`, `page/<copy id>/archive|unarchive`) serves the hub, with the attention fields computed on the server. It answers the owner's cookie only: 403 from loopback without it, to a reviewer's device, and to another site's page. (RLM-356)
-- The owner's review header has a breadcrumb back to the hub and a list of the page's copies in other worktrees. **Ctrl+K** (⌘K) opens a quick switcher over pages and parts, with recent pages first. **Next unanswered page** is in the `⋯` menu. Reviewers and hosted pages see none of it. (RLM-358)
-- The hub has **Settings**, the owner's page for this local server. **People and access**: who waits for access (Approve, Deny, Block), where browsers without a link may ask, a new named link for a page, its project or every page, the links nobody has opened yet, and the devices with access (rename, change what they reach, revoke, their notes). **Network**: the addresses the server answers on, the address to share, and whether it stays on. **Review defaults**: hold new reviewers' notes for you or send them straight to the agent, and who has a page open now. **Projects**: rename, merge into the same repository's project, forget a folder, archive missing pages. **About**: version, state folder, and a note when the CLI is newer than the server. The sidebar counts the people waiting. Every setting has a terminal form; nothing on the page runs a command. (RLM-396)
-- `share default [hold|auto]` sets where a new reviewer's notes go when a share or an approval does not say; `share --hold` and `share approve --hold` keep one reviewer's notes for you when the default is auto. (RLM-396)
-- Over Tailscale, the server asks `tailscale whois` who is behind each connection to its Tailscale address, with the connection's own address and never a header. An access request then carries the person's Tailscale name, login and device, shown as verified; a device opened over Tailscale keeps that login, and its cookie from another login is refused. A tagged device, or `tailscale` missing or failing, is unknown. `share tailscale <login> [file] [--project <p> | --all]` (Settings → Network → Names from Tailscale) lets a login in on any of its Tailscale devices without a link. (RLM-399)
-- `server lan [<address>|off]` and the switch in Settings → Network listen on one of this computer's local-network addresses as well, off by default, with a warning that its traffic is not encrypted. That listener serves reviewers only: the owner's sign-in, key link and cookie, the hub and `/api/*` answer 403 there. (RLM-399)
+- `trigger add|list|remove`: run a command once a project has been quiet (`quiet:2h`), once per burst; runs show in `run list --project p`, `run log`, `run stop --project p`. `add`/`remove` only at a terminal; `triggers.json` is read only from the state dir. See [Triggers](docs/cli.md#triggers).
+- Hub inbox: **Needs you**, **Waiting on agent** (with **Turn agent on**), **Quiet**. A sidebar lists projects and pages with worktree chips. Views: Inbox, Pages, Notes, Runs. Search over pages and parts. **Archive** with **Undo**.
+- `/hub/api/` routes: `projects`, `pages`, `inbox`, `search`, `page/<copy id>`, `notes`, `runs`, `page/<copy id>/archive|unarchive`. Owner cookie only (403 otherwise).
+- Owner review header: breadcrumb to the hub, copies in other worktrees, **Ctrl+K** (⌘K) quick switcher, **Next unanswered page** in the `⋯` menu.
+- Hub **Settings**: People and access, Network, Review defaults, Projects, About. Every setting has a terminal form.
+- `share default [hold|auto]`; `share --hold` and `share approve --hold`.
+- Tailscale identity via `tailscale whois`: access requests show verified name, login and device. `share tailscale <login> [file] [--project <p> | --all]`.
+- `server lan [<address>|off]`: also listen on a local-network address (unencrypted, reviewers only; owner routes, hub and `/api/*` answer 403).
 
 ### Changed
 
-- hub.db schema version 6 (additive; migrated on open): `trigger_state` and `runs.trigger_id`. (RLM-360)
-- Devices record the hostname of the address they were last seen at (reverse lookup, kept when it resolves back), or their Tailscale device name, instead of the `Host` header they sent. (RLM-399)
-- `/notes` opens the hub's Notes view, with the same filters. (RLM-357)
+- hub.db schema 6 (additive): `trigger_state`, `runs.trigger_id`.
+- Devices record a reverse-resolved hostname or Tailscale device name instead of the `Host` header.
+- `/notes` opens the hub's Notes view, with the same filters.
 
 ## 0.13.0 (2026-11-17)
 
 ### Added
 
-- Review page: cards fold. A column Card that starts with a titled `CardHeader` has a chevron beside the title; it hides the rest of the card and keeps the title. Cards start open; row Cards do not fold. A note in the history that points inside a folded card opens it, and a change inside it outlines the card. A click on a folded card's title still adds a note to the card. Agents write nothing new: no prop, no prompt text. (RLM-404)
-- History and reuse: hub.db keeps every revision of every page and its statements as plain text with a full-text index. New commands `find`, `outline`, `show`, `history`, `restore`, `changes` and `decisions`; `patch --from <src>#<a>[,<b>…] [--rev n]` copies statements from another page; `hub reindex` rebuilds the index. The first `open` of a page lists `similar:` pages. MCP tools of the same names. See [History and reuse](docs/cli.md#history-and-reuse). (RLM-348)
-- Review page: a bar when the page changed while the tab was hidden, **History…** in the `⋯` menu, and **History (n)** in a part's annotate popover. (RLM-348)
-- Community standards: code of conduct, issue and PR templates, and [ACCESSIBILITY.md](ACCESSIBILITY.md). (RLM-402)
+- Column Cards with a titled `CardHeader` fold via a chevron. A history note inside a folded card opens it.
+- History and reuse: hub.db keeps every revision with a full-text index. New commands `find`, `outline`, `show`, `history`, `restore`, `changes`, `decisions`; `patch --from <src>#<a>[,<b>…] [--rev n]`; `hub reindex`. First `open` lists `similar:` pages. Matching MCP tools. See [History and reuse](docs/cli.md#history-and-reuse).
+- Review page: a changed-while-hidden bar, **History…** in the `⋯` menu, **History (n)** in the annotate popover.
+- Code of conduct, issue and PR templates, [ACCESSIBILITY.md](ACCESSIBILITY.md).
 
 ### Changed
 
-- hub.db schema version 5 (additive; migrated on open). (RLM-348)
+- hub.db schema 5 (additive).
 
 ### Fixed
 
-- `publish rm <id>` takes a page id that starts with `--` (page ids are base64url) instead of reading it as a flag. Any other unknown flag after `publish rm` now says to put `--` before an id that starts with `--`. (RLM-403)
-- The site redeploy after Publish waits, up to 10 minutes, until npm's `latest` is the release tag, and renders that version, so the footer no longer shows the previous version; it fails if npm never shows it. (RLM-403)
+- `publish rm <id>` accepts an id starting with `--`; other unknown flags suggest `--` before the id.
+- The website footer shows the released version.
 
 ## 0.12.0 (2026-11-17)
 
-Breaking: the review session is gone. Read [Upgrading to 0.12](docs/upgrading-to-0.12.md) before you upgrade.
+Breaking: the review session is gone.
 
 ### Removed
 
-- `end`, `close`, `reopen`, `open --reopen`, `poll --takeover`, `poll --owner`, and `hub on|off|status`. Each exits 2 with `status: error`, `code: REMOVED` and names its replacement: nothing for `end` and `close` (archive a page only when the user asks), `unarchive` for `reopen`, nothing for `--takeover` and `--owner`, `hub open` for `hub on|off|status`. (RLM-338, RLM-395)
-- Poll statuses `ended`, `closed`, `listener_active` and `browser_disconnected`. The reviewer's last batch now carries `final: true`; a newer poll answers the older one with `replaced`. (RLM-338)
-- MCP: the `end` tool (a call answers that it was removed and to stop polling), `open`'s `reopen` argument and `poll`'s `takeover` argument. (RLM-338, RLM-395)
+- `end`, `close`, `reopen`, `open --reopen`, `poll --takeover`, `poll --owner`, `hub on|off|status`. Each exits 2 with `status: error`, `code: REMOVED` and names its replacement (`unarchive` for `reopen`, `hub open` for `hub on|off|status`, none for the rest).
+- Poll statuses `ended`, `closed`, `listener_active`, `browser_disconnected`. The last batch carries `final: true`; a newer poll answers an older one with `replaced`.
+- MCP: `end` tool, `open`'s `reopen`, `poll`'s `takeover`.
 
 ### Changed
 
-- A registered page always takes notes. Its state is derived: `listening`, `working`, `stale`, `idle` or `archived`. Archive is the only lock: an archived page stops taking notes. (RLM-338, RLM-385)
-- Closed pages become archived when 0.12 opens `hub.db`, on every open, so a page an older CLI closes later is archived too. (RLM-332, RLM-338)
-- Reviewer: **Done** tells the agent you have no more notes without typing one; **Send & finish** sends the composer's notes as the last batch. Both reach the agent as `final: true`. They replace Send & End. (RLM-381)
-- `--help`, the agent prompt, the docs and MCP teach one loop: one `poll` for the checkout, `patch`, `reply`. `poll <file>` is the one-page variant. `--help` is back under 1,100 tokens; owner-only rows move to `help all`. (RLM-380)
-- Vocabulary: pages, not sessions. `open` prints `status: registered` (or `archived`), the bare command prints `pages:`, and an unknown page gets one message: `this page is not registered yet`. (RLM-392)
-- A newer CLI never replaces a server that a unit runs, an older server included: a systemd user unit, or a launchd agent under any label. It leaves it serving and says to run `austere-axi server restart`. A server started any other way is still replaced, and keeps its address variables when it is from 0.12 on. (RLM-340, RLM-369, RLM-375, RLM-400)
-- `server install` checks the service manager first, shows what it will write and asks, backs up a unit it changes, rolls back when its unit does not answer within 15 s, and refuses a unit that runs another CLI or state dir unless `--force`. (RLM-382)
-- `server status` in plain words: `running`, `starting`, `failing to start` or `stopped`, when it starts, and linger. CLI commands find the port in `server.lock` or the installed unit, so `AUSTERE_AXI_PORT` is needed only to override. `server install` writes a `node` path that survives Node updates when one exists. (RLM-391)
-- Health checks no longer count as use, so an ordinary server still idles out while something probes it. (RLM-375)
-- A CLI run from a checkout of austere-axi uses `<checkout>/.dev/state` and a port of its own unless `AUSTERE_AXI_STATE_DIR` is set, so it keeps off the installed server. (RLM-376)
-- Projects without git: the folder the CLI runs in is the guessed root when the file is inside it (never `/`, the home folder or the temp folder). `open` prints the page's `project:` and the `poll` that covers it. (RLM-378)
-- Project names come from the repository's `origin`; equal names get the parent folder. Two clones of one repository stay apart, with a `project merge` hint. The main root is listed first. (RLM-390)
-- `project add` refuses `/`, home, temp and folders above home, and asks for `--yes` before it takes roots or pages from other projects. `forget-root` says where pages went, and needs `--drop` for a gone folder that holds pages. (RLM-389)
-- `archive` names the copy it archives, the copies that stay open and the unanswered notes that go with it; `--every-copy` archives them all. The review page asks the same in a dialog. (RLM-386)
-- Team review: a link is claimed by one device, expires after 7 days unclaimed (`--expires`), and reaches one page, a project (`--project`) or every page (`--all`). `share list` shows devices; `share revoke` closes their streams at once. Invites in `invites.json` move into `hub.db` and keep working. (RLM-397)
-- Hosted pages: the default service is `https://austere.blundertech.com`. The hosted shell no longer carries the page title. (RLM-384)
-- Hub: counts and empty states match the view; plain labels; `hub open` honours `AUSTERE_AXI_NO_OPEN`. A row shows 3 copy chips, then `+n more`; long labels are shortened in the middle; focus is visible. `project list` counts roots per kind (`--roots` lists them). (RLM-387, RLM-393)
-- Review page presence: `Agent working (2 min)`, and `stale` when an agent took notes and did nothing for 10 minutes (`AUSTERE_AXI_STALE_WORKING_MS`). When no agent listens, the composer says the notes wait, and the owner gets a **Copy agent prompt** button. (RLM-385)
+- A registered page always takes notes. States: `listening`, `working`, `stale`, `idle`, `archived`. Only archive stops notes.
+- Closed pages become archived when `hub.db` is opened.
+- Reviewer **Done** and **Send & finish** replace Send & End; both reach the agent as `final: true`.
+- One loop: `poll` for the checkout, `patch`, `reply`; `poll <file>` for one page. Owner-only help moves to `help all`.
+- Pages, not sessions: `open` prints `status: registered` (or `archived`); the bare command prints `pages:`; unknown page: `this page is not registered yet`.
+- A newer CLI never replaces a unit-run server (systemd user unit or launchd agent); it says to run `austere-axi server restart`. Other servers are replaced.
+- `server install` checks the service manager, previews and asks, backs up a changed unit, rolls back if the unit does not answer within 15 s, and refuses a unit for another CLI or state dir unless `--force`.
+- `server status` reports `running`, `starting`, `failing to start` or `stopped`, and linger. The port is found in `server.lock` or the unit; `AUSTERE_AXI_PORT` only overrides.
+- Health checks no longer count as use.
+- From an austere-axi checkout, the CLI uses `<checkout>/.dev/state` and its own port unless `AUSTERE_AXI_STATE_DIR` is set.
+- Without git, the current folder is the guessed root (never `/`, home or temp). `open` prints `project:` and the covering `poll`.
+- Project names come from `origin`; duplicates get the parent folder. Clones stay apart, with a `project merge` hint.
+- `project add` refuses `/`, home, temp and folders above home; needs `--yes` to take roots or pages from other projects. `forget-root` needs `--drop` for a gone folder holding pages.
+- `archive` names what it archives and what stays; `--every-copy` archives all copies.
+- Team review links: claimed by one device, expire after 7 days unclaimed (`--expires`), reach one page, `--project` or `--all`. `share list` shows devices; `share revoke` closes their streams.
+- Hosted pages: default service `https://austere.blundertech.com`.
+- Hub: `hub open` honours `AUSTERE_AXI_NO_OPEN`; up to 3 copy chips then `+n more`. `project list --roots`.
+- Presence: `Agent working (2 min)`; `stale` after 10 minutes idle (`AUSTERE_AXI_STALE_WORKING_MS`). Owner gets **Copy agent prompt** when no agent listens.
 
 ### Added
 
-- `poll` and `feedback` with no file cover every page of the checkout they run in; `--project` widens them to every checkout of the project. Each answers with one batch per page. MCP `poll` without `file` does the same from the server's folder. (RLM-339, RLM-377, RLM-380)
-- Poll statuses `moved` (the checkout's pages joined another project; `next:` says where to poll) and `archived` (a `poll <file>` on an archived page; `next:` says to stop). (RLM-378, RLM-386)
-- Attach: the owner turns an agent on for a page (the review page's Agent pill, or `attach on`), and a note the owner sends or releases starts the page's harness headless (omp or Copilot CLI) to read it, patch the page and reply. No adapter gets write permission until the owner grants it with `adapter set`. `sessions list`, `adapter list|set`, `run list|log|stop`, `attach status|on|off|inherit`; MCP `sessions_list`, `run_list`, `run_log`, `attach_status`. See [Attach](docs/attach.md). (RLM-341)
-- `server install|uninstall|status|restart`: an always-on server as a per-user systemd or launchd service. `server install --adopt` takes over a unit you wrote and keeps its settings in a drop-in. (RLM-340, RLM-382, RLM-391)
-- `server status` and every command say when a server the service did not start holds its port. The unit `server install` writes stops after 5 failed starts in 2 minutes; the next CLI command after `austere-axi stop` resets and starts it. (RLM-375)
-- Team review: `share requests on|off`: a browser without a link asks for access from the page address, and the owner approves (`share approve|deny|block`). Off by default. **Share…** in the page menu makes a link. (RLM-397, RLM-398)
-- `publish login <file>`: a single-use link that signs the owner in to a hosted page. (RLM-384)
-- Missing files: a page for a missing copy, `archive --missing [--project p]`, `missing: true` on its batch, and `reply` and `archive` without the file. (RLM-388)
-- hub.db records its schema version. Commands that open it without the server refuse to write, or open it read-only, while a server or command of another version holds the state dir. (RLM-376)
-- `AUSTERE_AXI_PROJECT_REFRESH_MS`, `AUSTERE_AXI_PAGE_HOLD_MS` and `AUSTERE_AXI_STALE_WORKING_MS`. (RLM-339, RLM-379, RLM-385)
+- `poll` and `feedback` without a file cover the checkout; `--project` widens to every checkout. MCP `poll` without `file` does the same.
+- Poll statuses `moved` and `archived`, each with `next:`.
+- Attach: `attach status|on|off|inherit`, `sessions list`, `adapter list|set`, `run list|log|stop`; MCP `sessions_list`, `run_list`, `run_log`, `attach_status`. No adapter writes until granted by `adapter set`. See [Attach](docs/attach.md).
+- `server install|uninstall|status|restart` (systemd or launchd); `server install --adopt`.
+- Commands say when a foreign server holds the port. The unit stops after 5 failed starts in 2 minutes; the next command after `austere-axi stop` resets it.
+- `share requests on|off` (off by default) and `share approve|deny|block`. **Share…** in the page menu.
+- `publish login <file>`: single-use owner sign-in link for a hosted page.
+- Missing files: `archive --missing [--project p]`, `missing: true` in batches, `reply`/`archive` without the file.
+- hub.db records its schema version; other-version commands open it read-only or refuse to write.
+- `AUSTERE_AXI_PROJECT_REFRESH_MS`, `AUSTERE_AXI_PAGE_HOLD_MS`, `AUSTERE_AXI_STALE_WORKING_MS`.
 
 ### Fixed
 
-- A note is no longer delivered twice to a page poll and the checkout or project poll, and `--cursor` acknowledges only notes a poll handed over: a note `--after` skipped stays unread. `reply` without a cursor still acknowledges after a server restart. (RLM-379, RLM-377)
-- A repository and its worktrees share one page prefix, whatever the order of `project merge` and `forget-root`. (RLM-368)
-- A folder whose `.git` file points into a real repository joins it only when git's back-pointer agrees. (RLM-394)
-- A page from 0.10.4 that was ended but not closed stays listed, and its unread note reaches the next poll. (RLM-395)
+- No double delivery between page and checkout/project polls; `--cursor` acknowledges only handed-over notes.
+- A repository and its worktrees share one page prefix.
+- A `.git` file joins a repository only when git's back-pointer agrees.
+- Ended-but-not-closed pages from 0.10.4 stay listed.
 
 ## 0.11.0 (2026-11-16)
 
 ### Removed
 
-- `hub on`, `hub off` and `hub status`. They exit 2 and point at `hub open`: the hub is always on, and `/` serves it. (RLM-335)
+- `hub on`, `hub off`, `hub status` (exit 2, point at `hub open`). The hub is always on at `/`.
 
 ### Changed
 
-- A review closed in an older version is archived when 0.11 first opens its `hub.db`: it leaves the hub's lists. `close` itself still closes a review, and a review closed later is not archived (0.12 fixes this). (RLM-335)
+- Reviews closed in an older version are archived on first open of `hub.db`.
 
 ### Added
 
-- Projects without git: `project list|add|merge|rename|forget-root`. (RLM-333)
-- Page identity: one page per project path, one copy per root; the same file in several worktrees shares a page and keeps its notes per copy. (RLM-334)
-- `archive <file>` and `unarchive <file>`; `hub list --archived`. Check-only copies are hidden by default. (RLM-335)
-- Hub home page grouped by project, one row per page with a chip per worktree copy, unanswered notes first. The notes view shows project and copy, with a project filter. (RLM-336)
+- `project list|add|merge|rename|forget-root` for projects without git.
+- One page per project path, one copy per root; worktree copies share a page and keep notes per copy.
+- `archive <file>`, `unarchive <file>`, `hub list --archived`. Check-only copies hidden by default.
+- Hub home grouped by project, one row per page with worktree chips, unanswered first. Notes view has a project filter.

@@ -1,4 +1,4 @@
-// Presence v1 in the review chrome (docs/hosted-share-links.md, "Presence (Q17)"): roster chips
+// Presence v1 in the review chrome (docs/sync-protocol.md, "Presence"): roster chips
 // in the header, other viewers' last click outlined in the frame, and this viewer's own status
 // and focus sent on. Transport-neutral: the hosted chrome feeds it the page socket, the local
 // review page the server's relay. Frames arrive already parsed (`parseServerFrame`).

@@ -1,6 +1,6 @@
 # GitHub Action
 
-Posts an austere review page on every pull request: runs `austere-axi check` on the pages you commit, exports each with `austere-axi export`, uploads them as a workflow artifact, and posts or updates **one** PR comment with a summary and a download link.
+Posts an austere review on every pull request: runs `austere-axi check` on your committed pages, exports each with `austere-axi export`, uploads them as a workflow artifact, and posts or updates **one** PR comment with a summary and download link.
 
 ```yaml
 # .github/workflows/austere.yml
@@ -33,9 +33,9 @@ jobs:
 
 Outputs: `ok` (`true` when every page passed) and `artifact-url`.
 
-- **A failing check fails the job.** The log and the job summary show each error with its statement and line. Pages that passed are still exported.
-- **Fork PRs** get a read-only token, so the comment is skipped with a warning. The job summary and the artifact still carry the report.
-- **Sticky comment:** the action updates only a marked comment posted by its own token's account (a bot account for `github.token`). If someone else posts a comment with the same marker, the action leaves it alone and posts its own.
-- **Triggers:** use `pull_request`. Do not use `pull_request_target` to run pages from a fork.
-- **Artifact:** GitHub zips it and needs a login to download. Unzip and open the HTML in a browser; it works offline. No Pages preview.
-- The action lives in this repo under `action/`, so one ref pins both the action and the CLI contract it calls. `version` still picks the CLI.
+- **A failing check fails the job.** The log and job summary show each error with its statement and line. Passing pages are still exported.
+- **Fork PRs** get a read-only token: the comment is skipped with a warning; the job summary and artifact still carry the report.
+- **Sticky comment:** updates only a marked comment posted by its own token's account (a bot for `github.token`). A same-marker comment by someone else is left alone; the action posts its own.
+- **Triggers:** use `pull_request`, never `pull_request_target`, to run pages from a fork.
+- **Artifact:** GitHub zips it and requires login to download. Unzip and open the HTML in a browser; works offline. No Pages preview.
+- The action lives under `action/` in this repo, so one ref pins the action and the CLI contract it calls; `version` still picks the CLI.

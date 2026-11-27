@@ -1,5 +1,5 @@
 // Opt-in browser test (npm run test:browser; needs Chrome or CHROME_PATH): presence in the
-// hosted chrome (docs/hosted-share-links.md, "Presence (Q17)") against a stub page socket that
+// hosted chrome (docs/sync-protocol.md, "Presence") against a stub page socket that
 // records the chrome's presence frames and plays the server's. Covers hello with the prompt name,
 // roster chips with status, other viewers' focus outlined and labelled in the frame, chip click,
 // this viewer's focus and writing status, bye, and a closed socket clearing the roster.

@@ -1,7 +1,7 @@
 // Types for "austere-axi/sync": the hosted-page sync protocol shared by the CLI
 // (owner peer), the chrome (reviewer) and austere-cloud (page object). Hand-written;
 // src/shared/sync.ts implements exactly this (it checks itself against this file).
-// The wire protocol is specified in docs/hosted-share-links.md, "Sync, access and presence".
+// The wire protocol is specified in docs/sync-protocol.md.
 //
 // Change additively only: new optional fields, new mutations, new row types, new
 // frame types. Never remove or retype a field, and never add a value to an existing
